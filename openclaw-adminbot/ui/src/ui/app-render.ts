@@ -106,11 +106,14 @@ import {
 } from "./adminbot/data/registrations.ts";
 import { feedbackConfigForTab } from "./adminbot/feedback-tab.ts";
 import "./components/feedback-widget.ts";
+import { buildGlobalSearchRecords } from "./adminbot/global-search.ts";
+import { seedMemberSearch } from "./adminbot/member-search-seed.ts";
 import { agoLabel, alertText, nudgeAlerts } from "./adminbot/nudge-alerts.ts";
 import { configureDraftSync, retryDraftSync } from "./adminbot/offline/draft-sync.ts";
 import { needsLabPapers, papersMissingFor } from "./adminbot/papers-required.ts";
 import { ownPapers } from "./adminbot/projects/model.ts";
 import { renderProjectsNav, type ProjectsNavState } from "./adminbot/projects/nav.ts";
+import { openPaperForViewer } from "./adminbot/projects/open-paper.ts";
 import { needsLabRoster } from "./adminbot/roster-required.ts";
 import { renderAdminPanelsSurface } from "./adminbot/surfaces/admin-panels.ts";
 import { renderCollaborateSurface } from "./adminbot/surfaces/collaborate.ts";
@@ -3000,6 +3003,38 @@ export function renderApp(state: AppViewState) {
       onSlashCommand: (cmd) => {
         state.setTab("chat" as import("./navigation.ts").Tab);
         state.handleChatDraftChange(cmd.endsWith(" ") ? cmd : `${cmd} `);
+      },
+      // The whole roster, not just the people the dashboard happened to load, so a name typed on
+      // any page finds its person. The read is the one Lab Members makes; it runs once.
+      onOpen: () => {
+        const list = state.adminBotMemberList;
+        if (hasMemberSession && !list.loading && !list.loadedAt && !list.error) {
+          void loadAdminBotMemberList(state).finally(() => requestHostUpdate?.());
+        }
+      },
+      // Built only while the palette is open: the app re-renders far more often than anyone searches.
+      records:
+        state.paletteOpen && !profileBlocked
+          ? buildGlobalSearchRecords({
+              members: state.adminBotMemberList.rows.length
+                ? state.adminBotMemberList.rows
+                : state.adminBotData.members,
+              papers: state.adminBotData.papers,
+            })
+          : [],
+      onOpenRecord: (kind, id) => {
+        if (kind === "paper") {
+          openPaperForViewer(state, id, requestHostUpdate);
+          return;
+        }
+        const member =
+          kind === "member"
+            ? [...state.adminBotMemberList.rows, ...state.adminBotData.members].find(
+                (row) => row.id === id,
+              )
+            : undefined;
+        seedMemberSearch(member?.name ?? id);
+        state.setTab("adminbotMembers");
       },
     })}
     ${state.memberId ? renderChangePasswordPopover(state) : nothing}

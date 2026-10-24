@@ -6,14 +6,21 @@ import { SLASH_COMMANDS } from "../chat/slash-commands.ts";
 import { icons, type IconName } from "../icons.ts";
 import { normalizeLowercaseStringOrEmpty } from "../string-coerce.ts";
 
-type PaletteItem = {
+export type PaletteRecordKind = "member" | "paper" | "project";
+
+export type PaletteItem = {
   id: string;
   label: string;
   icon: IconName;
-  category: "search" | "navigation" | "skills";
+  category: "search" | "navigation" | "skills" | "members" | "papers" | "projects";
   action: string;
   description?: string;
+  /** Extra text that matches the query without being shown (emails, aliases, topics). */
+  keywords?: string;
 };
+
+/** Lab records shown per category; the rest are one more keystroke away. */
+const RECORD_LIMIT = 8;
 
 function buildSlashPaletteItems(): PaletteItem[] {
   return SLASH_COMMANDS.map((command) => ({
@@ -107,23 +114,43 @@ export type CommandPaletteProps = {
   onActiveIndexChange: (index: number) => void;
   onNavigate: (tab: string) => void;
   onSlashCommand: (command: string) => void;
+  /** Members, papers and projects the viewer can open; matched only once something is typed. */
+  records?: readonly PaletteItem[];
+  onOpenRecord?: (kind: PaletteRecordKind, id: string) => void;
 };
 
-function filteredItems(query: string): PaletteItem[] {
-  const items = getPaletteItemsInternal();
-  if (!query) {
-    return items;
-  }
-  const q = normalizeLowercaseStringOrEmpty(query);
-  return items.filter(
-    (item) =>
-      normalizeLowercaseStringOrEmpty(item.label).includes(q) ||
-      normalizeLowercaseStringOrEmpty(item.description).includes(q),
+function matches(item: PaletteItem, q: string): boolean {
+  return (
+    normalizeLowercaseStringOrEmpty(item.label).includes(q) ||
+    normalizeLowercaseStringOrEmpty(item.description).includes(q) ||
+    normalizeLowercaseStringOrEmpty(item.keywords).includes(q)
   );
 }
 
-export function getFilteredPaletteItems(query: string): readonly PaletteItem[] {
-  return filteredItems(query);
+function filteredItems(query: string, records: readonly PaletteItem[] = []): PaletteItem[] {
+  const items = getPaletteItemsInternal();
+  const q = normalizeLowercaseStringOrEmpty(query.trim());
+  if (!q) {
+    return items;
+  }
+  // Records lead: someone typing a name is looking for that person, not for a command.
+  const counts = new Map<string, number>();
+  const found = records.filter((item) => {
+    if (!matches(item, q)) {
+      return false;
+    }
+    const count = counts.get(item.category) ?? 0;
+    counts.set(item.category, count + 1);
+    return count < RECORD_LIMIT;
+  });
+  return [...found, ...items.filter((item) => matches(item, q))];
+}
+
+export function getFilteredPaletteItems(
+  query: string,
+  records?: readonly PaletteItem[],
+): readonly PaletteItem[] {
+  return filteredItems(query, records);
 }
 
 function groupItems(items: PaletteItem[]): Array<[string, PaletteItem[]]> {
@@ -177,6 +204,9 @@ function restoreFocus() {
 function selectItem(item: PaletteItem, props: CommandPaletteProps) {
   if (item.action.startsWith("nav:")) {
     props.onNavigate(item.action.slice(4));
+  } else if (item.action.startsWith("record:")) {
+    const [, kind, ...id] = item.action.split(":");
+    props.onOpenRecord?.(kind as PaletteRecordKind, id.join(":"));
   } else {
     props.onSlashCommand(item.action);
   }
@@ -234,7 +264,7 @@ function handleKeydown(e: KeyboardEvent, props: CommandPaletteProps) {
     return;
   }
 
-  const items = filteredItems(props.query);
+  const items = filteredItems(props.query, props.records);
   if (items.length === 0 && (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Enter")) {
     return;
   }
@@ -271,6 +301,12 @@ function getCategoryLabel(category: string): string {
       return t("overview.palette.categories.navigation");
     case "skills":
       return t("overview.palette.categories.skills");
+    case "members":
+      return t("overview.palette.categories.members");
+    case "papers":
+      return t("overview.palette.categories.papers");
+    case "projects":
+      return t("overview.palette.categories.projects");
     default:
       return category;
   }
@@ -324,7 +360,7 @@ export function renderCommandPalette(props: CommandPaletteProps) {
   }
   activeProps = props;
 
-  const items = filteredItems(props.query);
+  const items = filteredItems(props.query, props.records);
   const grouped = groupItems(items);
   const activeItem = items[props.activeIndex];
   const activeOptionId = activeItem ? getOptionId(activeItem) : nothing;

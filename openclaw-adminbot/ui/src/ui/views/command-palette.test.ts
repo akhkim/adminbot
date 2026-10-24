@@ -2,6 +2,7 @@
 import { nothing, render } from "lit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { i18n } from "../../i18n/index.ts";
+import { buildGlobalSearchRecords } from "../adminbot/global-search.ts";
 import { refreshSlashCommands, resetSlashCommandsForTest } from "../chat/slash-commands.ts";
 import {
   getFilteredPaletteItems,
@@ -162,7 +163,7 @@ describe("command palette", () => {
     const label = container.querySelector<HTMLLabelElement>("#cmd-palette-label");
     const input = container.querySelector<HTMLInputElement>("#cmd-palette-input");
     const listbox = container.querySelector<HTMLElement>("#cmd-palette-listbox");
-    expect(label?.textContent).toBe("Type a command…");
+    expect(label?.textContent).toBe("Search people, papers, projects or commands…");
     expect(label?.getAttribute("for")).toBe("cmd-palette-input");
     expect(input?.getAttribute("role")).toBe("combobox");
     expect(input?.getAttribute("aria-autocomplete")).toBe("list");
@@ -227,6 +228,44 @@ describe("command palette", () => {
     );
     dialog.dispatchEvent(new Event("cancel", { cancelable: true }));
 
+    expect(onToggle).toHaveBeenCalledTimes(1);
+  });
+
+  it("finds lab records only once something is typed, ahead of commands", async () => {
+    const records = buildGlobalSearchRecords({
+      members: [
+        {
+          id: "m-ada",
+          name: "Ada Lovelace",
+          email: "ada@example.org",
+          privilege_level: "member",
+          projects: ["Engines"],
+        },
+      ] as never,
+      papers: [
+        { id: "p-1", title: "Notes on the Engine", alias: "engine", authors: ["Ada Lovelace"] },
+      ] as never,
+    });
+    expect(getFilteredPaletteItems("", records).some((item) => item.id.startsWith("member:"))).toBe(
+      false,
+    );
+    expect(getFilteredPaletteItems("ada@example", records).map((item) => item.id)).toEqual([
+      "member:m-ada",
+    ]);
+    expect(getFilteredPaletteItems("engine", records).map((item) => item.category)).toEqual([
+      "members",
+      "papers",
+      "projects",
+      "projects",
+    ]);
+
+    const onOpenRecord = vi.fn();
+    const onToggle = vi.fn();
+    await renderPalette({ query: "ada", records, onOpenRecord, onToggle });
+    const first = container.querySelector<HTMLElement>(".cmd-palette__item");
+    expect(container.querySelector(".cmd-palette__group-label")?.textContent).toBe("Members");
+    first?.click();
+    expect(onOpenRecord).toHaveBeenCalledWith("member", "m-ada");
     expect(onToggle).toHaveBeenCalledTimes(1);
   });
 });

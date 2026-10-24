@@ -903,12 +903,15 @@ export const en: TranslationMap = {
       terminal: "Terminal",
     },
     palette: {
-      placeholder: "Type a command…",
+      placeholder: "Search people, papers, projects or commands…",
       noResults: "No results",
       categories: {
         search: "Search",
         navigation: "Navigation",
         skills: "Skills",
+        members: "Members",
+        papers: "Papers",
+        projects: "Projects",
       },
       items: {
         overview: "Overview",
