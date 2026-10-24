@@ -2,7 +2,7 @@
 """
 Publish tracked submission deadlines to the Jinesis Lab Google Calendar.
 
-Reads the same `venues.json` the deadline board and reminders use, and writes one all-day event
+Reads the same `deadlines.json` the deadline board and reminders use, and writes one final-hour event
 per venue deadline to the lab calendar named by `ADMINBOT_DEADLINE_CALENDAR_ID`.
 
 Two things make this safe to run repeatedly:
@@ -14,9 +14,8 @@ Two things make this safe to run repeatedly:
   * Nothing is written without `--send`. The default prints the plan, matching every other script
     in the deadline set.
 
-Deadlines are AoE (UTC-12). The event is placed on the *AoE calendar date* rather than the instant
-converted into local time, because "the ICML deadline is the 15th" is what people act on; showing
-it on the 16th because Toronto is ahead of AoE would be actively misleading.
+Deadlines are AoE (UTC-12). Events span the hour before the actual cutoff, displayed in each
+viewer's local timezone; the description preserves the original AoE date and time.
 
 Env:
   ADMINBOT_DEADLINE_CALENDAR_ID   required; falls back to ADMINBOT_LAB_EMAIL
@@ -32,10 +31,11 @@ import os
 import subprocess
 import sys
 
-from adminbot_deadlines import DeadlineDataset
+from adminbot_deadlines import AoEClock, DeadlineDataset
+from adminbot_deadline_time import deadline_label
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-VENUES = os.path.join(HERE, "..", "extensions", "adminbot", "content", "deadlines", "venues.json")
+VENUES = os.path.join(HERE, "..", "extensions", "adminbot", "content", "deadlines", "deadlines.json")
 
 
 def _require_env(*names):
@@ -58,6 +58,8 @@ CALENDAR_ID = _require_env("ADMINBOT_DEADLINE_CALENDAR_ID", "ADMINBOT_LAB_EMAIL"
 GOG = os.environ.get("GOG_BIN", os.path.expanduser("~/.local/bin/gog"))
 ACCOUNT = _require_env("GOG_ACCOUNT", "ADMINBOT_BOT_EMAIL")
 MARKER = "adminbot-deadline"
+# AdminBot's calendar writes never email anyone (see CALENDAR_SEND_UPDATES in connectors/gog.ts).
+SEND_UPDATES = "none"
 
 
 def gog(args, check=True):
@@ -82,28 +84,29 @@ def marker_for(venue_id):
 
 
 def build_event(item):
-    day = aoe_date(item["deadline_aoe"])
+    end = AoEClock.instant(item["deadline_aoe"])
     summary = f"{item['name']} — {item.get('deadline_label') or 'deadline'}"
+    if item.get("deadline_time_precision") == "date_only":
+        summary += " (planning cutoff; time unknown)"
     lines = [
         f"{item['name']} ({item.get('venue_type', 'venue')})",
-        f"Deadline: {item['deadline_aoe']} AoE",
+        f"Deadline: {deadline_label(item)}",
     ]
     if item.get("notification_aoe"):
         lines.append(f"Notification: {item['notification_aoe']} AoE")
     if item.get("link"):
         lines.append(item["link"])
-    lines += ["", "Maintained by AdminBot from venues.json. Edits here are overwritten.", marker_for(item["id"])]
+    lines += ["", "Maintained by AdminBot from deadlines.json. Edits here are overwritten.", marker_for(item["id"])]
     return {
         "summary": summary[:200],
-        # All-day events are half-open in the Google API: end is the day after the deadline.
-        "start": day.isoformat(),
-        "end": (day + datetime.timedelta(days=1)).isoformat(),
+        "start": (end - datetime.timedelta(hours=1)).isoformat(),
+        "end": end.isoformat(),
         "description": "\n".join(lines),
     }
 
 
 def existing_events(window_start, window_end):
-    """Map marker -> eventId for AdminBot-managed events already on the calendar."""
+    """Map marker -> event for AdminBot-managed events already on the calendar."""
     result = gog(
         [
             "calendar", "events", CALENDAR_ID,
@@ -127,8 +130,36 @@ def existing_events(window_start, window_end):
         description = str(event.get("description") or "")
         for token in description.split():
             if token.startswith(f"[{MARKER}:"):
-                found[token.strip()] = event.get("id")
+                found[token.strip()] = event
     return found
+
+
+def _instant(value):
+    """A Google event start/end as an aware datetime, or None when it cannot be read."""
+    stamp = value.get("dateTime") if isinstance(value, dict) else value
+    if not isinstance(stamp, str) or not stamp:
+        return None
+    try:
+        return datetime.datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def is_current(existing, event):
+    """True when the calendar already shows exactly this event, so there is nothing to write.
+
+    Every write is a change guests and subscribers can be told about, so an event that already
+    matches is left alone. Anything that cannot be compared counts as changed.
+    """
+    start, end = _instant(existing.get("start")), _instant(existing.get("end"))
+    return (
+        str(existing.get("summary") or "") == event["summary"]
+        and str(existing.get("description") or "") == event["description"]
+        and start is not None
+        and end is not None
+        and start == datetime.datetime.fromisoformat(event["start"])
+        and end == datetime.datetime.fromisoformat(event["end"])
+    )
 
 
 def main():
@@ -140,8 +171,8 @@ def main():
     args = ap.parse_args()
 
     items = DeadlineDataset(os.path.dirname(VENUES)).venues()
-    today = datetime.date.today()
-    horizon = today + datetime.timedelta(days=args.within_days)
+    now = AoEClock.resolve().now
+    horizon = now + datetime.timedelta(days=args.within_days)
 
     planned = []
     for item in items:
@@ -149,8 +180,8 @@ def main():
             continue
         if args.venue_type != "all" and item.get("venue_type") != args.venue_type:
             continue
-        day = aoe_date(item["deadline_aoe"])
-        if day < today or day > horizon:
+        deadline = AoEClock.instant(item["deadline_aoe"])
+        if deadline < now or deadline > horizon:
             continue
         planned.append((item, build_event(item)))
     planned.sort(key=lambda pair: pair[1]["start"])
@@ -164,24 +195,29 @@ def main():
 
     if not args.send:
         for item, event in planned:
-            print(f"  would add  {event['start']}  {event['summary'][:70]}")
+            print(f"  would sync  {event['start']} → {event['end']}  {event['summary'][:70]}")
         print("\ndry-run: nothing written. Re-run with --send to publish.")
         return
 
-    window_start = min(datetime.date.fromisoformat(e["start"]) for _, e in planned)
-    window_end = max(datetime.date.fromisoformat(e["end"]) for _, e in planned)
+    # Include old all-day entries and new timed entries, with padding for calendar timezones.
+    window_start = min(aoe_date(item["deadline_aoe"]) for item, _ in planned) - datetime.timedelta(days=1)
+    window_end = max(datetime.datetime.fromisoformat(e["end"]).date() for _, e in planned) + datetime.timedelta(days=2)
     existing = existing_events(window_start, window_end)
 
-    created = updated = 0
+    created = updated = unchanged = 0
     for item, event in planned:
         marker = marker_for(item["id"])
-        event_id = existing.get(marker)
-        if event_id:
+        current = existing.get(marker)
+        event_id = current.get("id") if current else None
+        if event_id and is_current(current, event):
+            unchanged += 1
+        elif event_id:
             gog([
                 "calendar", "update", CALENDAR_ID, event_id,
                 "--summary", event["summary"],
                 "--description", event["description"],
-                "--from", event["start"], "--to", event["end"], "--all-day",
+                "--from", event["start"], "--to", event["end"], "--all-day=false",
+                "--send-updates", SEND_UPDATES,
             ])
             updated += 1
             print(f"  updated  {event['start']}  {event['summary'][:66]}")
@@ -190,12 +226,16 @@ def main():
                 "calendar", "create", CALENDAR_ID,
                 "--summary", event["summary"],
                 "--description", event["description"],
-                "--from", event["start"], "--to", event["end"], "--all-day",
+                "--from", event["start"], "--to", event["end"], "--all-day=false",
+                "--send-updates", SEND_UPDATES,
             ])
             created += 1
             print(f"  created  {event['start']}  {event['summary'][:66]}")
 
-    print(f"\ncreated: {created} | updated: {updated} | calendar: {CALENDAR_ID}")
+    print(
+        f"\ncreated: {created} | updated: {updated} | unchanged: {unchanged}"
+        f" | calendar: {CALENDAR_ID}"
+    )
 
 
 if __name__ == "__main__":

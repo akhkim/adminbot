@@ -42,7 +42,7 @@ function parseArgs(argv: string[]): Args {
   };
 }
 
-function main(): void {
+async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const { service, store, close } = createAdminBotSqliteService({
     databasePath: args.databasePath,
@@ -52,17 +52,18 @@ function main(): void {
   // seed run must not mail anyone or touch the real lab calendar.
   const auth = new AdminBotAuthService({
     store,
-    createMember: (input) => {
-      const result = service.upsertLabMember(input);
+    prepareMember: (input) => {
+      const result = service.prepareLabMember(input);
       if (!result.ok) {
         throw new Error(result.error.message);
       }
       return result.payload;
     },
+    afterMemberCreated: (member) => service.afterMemberCreated(member),
   });
 
   try {
-    const signup = auth.signup({
+    const signup = await auth.signup({
       email: args.email,
       password: args.password,
       profile: { name: args.name },
@@ -71,14 +72,14 @@ function main(): void {
       throw new Error(`signup failed: ${signup.error.message}`);
     }
 
-    const pending = auth
-      .listRegistrations("pending")
-      .find((entry) => entry.email.toLowerCase() === args.email.toLowerCase());
+    const pending = (await auth.listRegistrations("pending")).find(
+      (entry) => entry.email.toLowerCase() === args.email.toLowerCase(),
+    );
     if (!pending) {
       throw new Error("signup did not produce a pending registration");
     }
 
-    const approval = auth.approveRegistration(pending.id, "seed-admin-script");
+    const approval = await auth.approveRegistration(pending.id, "seed-admin-script");
     if (!approval.ok) {
       throw new Error(`approval failed: ${approval.error.message}`);
     }
@@ -102,4 +103,4 @@ function main(): void {
   }
 }
 
-main();
+await main();

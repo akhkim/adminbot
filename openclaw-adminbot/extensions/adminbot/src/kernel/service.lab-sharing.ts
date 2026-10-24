@@ -83,19 +83,50 @@ export class LabSharingService {
         : null;
     return { ok: true as const, status: 200, payload: { requests, next_cursor: nextCursor } };
   }
+  /**
+   * The Collaborate tab's view of what the viewer may act on.
+   *
+   * Two questions, kept separate, because one answer cannot serve both:
+   *
+   *   canManage -- may I act on this row? Ownership, or an administrator overseeing the lab. It
+   *                decides what is *visible and actionable* here, and it is deliberately wide:
+   *                an admin reads everything.
+   *   owns      -- did I author this paper? It decides nothing about access and everything about
+   *                *order*. An admin who reads the whole lab still opens this tab to their own
+   *                work, and scrolling the lab to find it is the thing to avoid.
+   *
+   * So every list below is filtered by the first and sorted by the second, own work first, each
+   * group keeping the ordering it would otherwise have had. Discover is left alone on purpose:
+   * its order is the caller's (title or hours) and its pagination cursor is built from those
+   * columns, so re-sorting it would silently break paging through the lab.
+   */
   list(memberId: string, managedOnly = false) {
     const member = this.store.getLabMember(memberId);
     if (!member) {
       return failure(403, "A member session is required.");
     }
     const papers = this.store.listPapers();
+    const owns = (paper: AdminBotPaperRecord) => this.ownsPaper(member, paper);
     const canManage = (paper: AdminBotPaperRecord) =>
-      member.privilege_level === "admin" || this.ownsPaper(member, paper);
+      member.privilege_level === "admin" || owns(paper);
+    // Resolved once: ownership walks a paper's authors, and the lists below ask about the same
+    // papers repeatedly.
+    const ownedPaperIds = new Set(papers.filter(owns).map((paper) => paper.id));
+    // Sorts own work to the front while leaving everything else in the order it arrived. Array
+    // sort is stable, so "mine first" is all this says -- it does not reshuffle either group.
+    const mineFirst = <T>(rows: T[], paperIdOf: (row: T) => string) =>
+      rows.toSorted(
+        (left, right) =>
+          Number(ownedPaperIds.has(paperIdOf(right))) - Number(ownedPaperIds.has(paperIdOf(left))),
+      );
     return {
       ok: true as const,
       status: 200,
       payload: {
-        interests: this.store.listHelpInterests().flatMap((interest) => {
+        interests: mineFirst(
+          this.store.listHelpInterests(),
+          (interest) => interest.paper_id,
+        ).flatMap((interest) => {
           const paper = papers.find((entry) => entry.id === interest.paper_id);
           if (
             !paper ||
@@ -112,9 +143,12 @@ export class LabSharingService {
             },
           ];
         }),
-        projects: papers.filter(canManage).map((paper) => ({ id: paper.id, title: paper.title })),
+        projects: mineFirst(papers.filter(canManage), (paper) => paper.id).map((paper) => ({
+          id: paper.id,
+          title: paper.title,
+        })),
         requests: (managedOnly
-          ? papers.filter(canManage).flatMap((paper) => {
+          ? mineFirst(papers.filter(canManage), (paper) => paper.id).flatMap((paper) => {
               const request = this.store.getHelpRequest(paper.id);
               return request ? [request] : [];
             })
@@ -134,7 +168,11 @@ export class LabSharingService {
               },
             ];
           })
-          .toSorted((a, b) => b.updated_at.localeCompare(a.updated_at)),
+          .toSorted(
+            (a, b) =>
+              Number(ownedPaperIds.has(b.paper_id)) - Number(ownedPaperIds.has(a.paper_id)) ||
+              b.updated_at.localeCompare(a.updated_at),
+          ),
       },
     };
   }

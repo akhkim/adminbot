@@ -118,3 +118,63 @@ describe("paper recency", () => {
     expect(String(afterSlot?.updated_at) >= String(afterEdit?.updated_at)).toBe(true);
   });
 });
+
+describe("author list edits", () => {
+  it("persists name-only additions, removals and ordering without dropping retained identities", () => {
+    const service = serviceWithPaper();
+    const external = {
+      name: "External Author",
+      email: "external@example.test",
+      twitter: "external",
+    };
+    unwrap(
+      service.upsertOwnPaper("ada", {
+        id: "paper-1",
+        author_links: [
+          { name: "Ada Lovelace", member_id: "ada" },
+          external,
+          { name: "Removed Author" },
+        ],
+      }),
+    );
+    const saved = unwrap(
+      service.upsertOwnPaper("ada", {
+        id: "paper-1",
+        authors: ["External Author", "Ada Lovelace", "New Author"],
+      }),
+    );
+    expect(saved.authors).toEqual(["External Author", "Ada Lovelace", "New Author"]);
+    expect(saved.author_links).toEqual([
+      external,
+      { name: "Ada Lovelace", member_id: "ada" },
+      { name: "New Author" },
+    ]);
+    const reread = unwrap(service.listPapers()).papers.find((paper) => paper.id === "paper-1");
+    expect(reread?.author_links).toEqual(saved.author_links);
+    expect(
+      unwrap(service.upsertOwnPaper("ada", { id: "paper-1", title: "Updated title" })).author_links,
+    ).toEqual(saved.author_links);
+  });
+
+  it("uses explicit picker order over stale names and refuses removal of every author", () => {
+    const service = serviceWithPaper();
+    const links = [{ name: "New Author" }, { name: "Ada Lovelace", member_id: "ada" }];
+    const saved = unwrap(
+      service.upsertOwnPaper("ada", {
+        id: "paper-1",
+        authors: ["Ada Lovelace"],
+        author_links: links,
+      }),
+    );
+    expect(saved.author_links).toEqual(links);
+    for (const patch of [{ authors: [] }, { author_links: [], authors: ["Ada Lovelace"] }]) {
+      expect(service.upsertOwnPaper("ada", { id: "paper-1", ...patch })).toMatchObject({
+        ok: false,
+        status: 400,
+      });
+      expect(
+        unwrap(service.listPapers()).papers.find((paper) => paper.id === "paper-1")?.author_links,
+      ).toEqual(links);
+    }
+  });
+});

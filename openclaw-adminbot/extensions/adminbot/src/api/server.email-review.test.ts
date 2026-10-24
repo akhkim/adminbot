@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { AdminBotLabMemberInput } from "../contracts/actions.js";
+import { withCompleteProfile } from "../contracts/profile-completion.test-helpers.js";
 import { createAdminBotMockService } from "./server.js";
 
 const SERVICE_TOKEN = "email-review-service-token";
@@ -47,7 +48,9 @@ async function startLab() {
       privilege_level: "member",
     },
   ]) {
-    const saved = mock.service.upsertLabMember(member as AdminBotLabMemberInput);
+    const saved = mock.service.upsertLabMember(
+      withCompleteProfile(member as AdminBotLabMemberInput),
+    );
     if (!saved.ok) {
       throw new Error(saved.error.message);
     }
@@ -92,13 +95,13 @@ async function memberSession(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ member_id: memberId, email, password: "correcthorse" }),
   });
-  const registration = mock.auth
-    .listRegistrations("pending")
-    .find((entry) => entry.member_id === memberId);
+  const registration = (await mock.auth.listRegistrations("pending")).find(
+    (entry) => entry.member_id === memberId,
+  );
   if (!registration) {
     throw new Error(`no registration for ${memberId}`);
   }
-  const approved = mock.auth.approveRegistration(registration.id, "test-admin");
+  const approved = await mock.auth.approveRegistration(registration.id, "test-admin");
   if (!approved.ok) {
     throw new Error(approved.error.message);
   }
@@ -136,6 +139,7 @@ describe("email review routes", () => {
           sender: "notifications@openreview.net",
         }),
       ],
+      total: 1,
       paperflow_candidates: [
         expect.objectContaining({
           paper_id: "paper-1",
@@ -231,5 +235,9 @@ describe("email review routes", () => {
         resolved_by: "admin",
       }),
     ]);
+    // An empty queue has nothing to attach, so the open-stage walk is skipped and no targets ship,
+    // though paper-1 still has an open stage.
+    const queue = await fetch(`${baseUrl}/automation/email/review`, { headers: admin });
+    expect(await queue.json()).toMatchObject({ reviews: [], paperflow_candidates: [] });
   });
 });

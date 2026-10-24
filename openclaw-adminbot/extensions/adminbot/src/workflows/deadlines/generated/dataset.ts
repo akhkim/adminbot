@@ -1,7 +1,144 @@
-// Generated from extensions/adminbot/content/deadlines/venues.json by
+// Generated from extensions/adminbot/content/deadlines by
 // scripts/adminbot-deadline-collect.py. Do not hand-edit; regenerate instead.
 
 export const DEADLINE_VENUES = [
+  {
+    "id": "colm2026_abstract",
+    "name": "COLM 2026",
+    "venue_type": "conference",
+    "venue_group": "COLM 2026",
+    "track": "main",
+    "deadline_label": "abstract deadline",
+    "deadline_aoe": "2026-03-26 23:59:00",
+    "notification_aoe": "",
+    "link": "https://colm.cc/Conferences/2026",
+    "venue_family": "COLM",
+    "submission_type": "",
+    "entry_type": "main_conference",
+    "archival_status": "archival",
+    "venue_priority": "primary",
+    "archival": true,
+    "source_url": "https://colm.cc/Conferences/2026/Dates",
+    "source_checked_at": "2026-10-24T00:00:00Z",
+    "deadline_source_kind": "official",
+    "deadline_source_status": "portal_unverified",
+    "deadline_source_precision": "date_only",
+    "deadline_source_evidence": "COLM 2026 Dates (Anywhere on Earth): Abstract Submission Deadline Mar 26 '26; Full Paper Submission Deadline Mar 31 '26. Rebuttal Period Begins May 22 '26; Rebuttal Period Ends Jun 08 '26; Paper Decision Notifications Jul 08 '26; Main Conference Begins Oct 06 '26; Main Conference Ends Oct 08 '26.",
+    "deadline_official_url": "https://colm.cc/Conferences/2026/Dates",
+    "deadline_official_evidence": "COLM 2026 Dates (Anywhere on Earth): Abstract Submission Deadline Mar 26 '26; Full Paper Submission Deadline Mar 31 '26. Rebuttal Period Begins May 22 '26; Rebuttal Period Ends Jun 08 '26; Paper Decision Notifications Jul 08 '26; Main Conference Begins Oct 06 '26; Main Conference Ends Oct 08 '26.",
+    "deadline_extended": false,
+    "deadline_history_status": "not_extended",
+    "milestone": "abstract",
+    "deadline_id": "colm2026_abstract",
+    "venue_id": "COLM",
+    "venue_aliases": [
+      "COLM",
+      "colm2026_abstract"
+    ],
+    "revisions": [
+      {
+        "observed_at": "2026-10-24T00:00:00Z",
+        "deadline_aoe": "2026-03-26 23:59:59",
+        "notification_aoe": "",
+        "deadline_label": "abstract deadline",
+        "link": "https://colm.cc/Conferences/2026/Dates"
+      }
+    ],
+    "stale": false,
+    "schedule": [
+      {
+        "milestone": "rebuttal",
+        "label": "Rebuttal period",
+        "starts": "2026-05-22",
+        "ends": "2026-06-08",
+        "kind": "period"
+      },
+      {
+        "milestone": "notification",
+        "label": "Paper decision notifications",
+        "date": "2026-07-08",
+        "kind": "date"
+      },
+      {
+        "milestone": "conference",
+        "label": "Conference",
+        "starts": "2026-10-06",
+        "ends": "2026-10-08",
+        "kind": "period"
+      }
+    ],
+    "conference_location": "San Francisco, USA",
+    "workshop_location": ""
+  },
+  {
+    "id": "colm2026_paper",
+    "name": "COLM 2026",
+    "venue_type": "conference",
+    "venue_group": "COLM 2026",
+    "track": "main",
+    "deadline_label": "full paper",
+    "deadline_aoe": "2026-03-31 23:59:00",
+    "notification_aoe": "",
+    "link": "https://colm.cc/Conferences/2026",
+    "venue_family": "COLM",
+    "submission_type": "",
+    "entry_type": "main_conference",
+    "archival_status": "archival",
+    "venue_priority": "primary",
+    "archival": true,
+    "source_url": "https://colm.cc/Conferences/2026/Dates",
+    "source_checked_at": "2026-10-24T00:00:00Z",
+    "deadline_source_kind": "official",
+    "deadline_source_status": "portal_unverified",
+    "deadline_source_precision": "date_only",
+    "deadline_source_evidence": "COLM 2026 Dates (Anywhere on Earth): Abstract Submission Deadline Mar 26 '26; Full Paper Submission Deadline Mar 31 '26. Rebuttal Period Begins May 22 '26; Rebuttal Period Ends Jun 08 '26; Paper Decision Notifications Jul 08 '26; Main Conference Begins Oct 06 '26; Main Conference Ends Oct 08 '26.",
+    "deadline_official_url": "https://colm.cc/Conferences/2026/Dates",
+    "deadline_official_evidence": "COLM 2026 Dates (Anywhere on Earth): Abstract Submission Deadline Mar 26 '26; Full Paper Submission Deadline Mar 31 '26. Rebuttal Period Begins May 22 '26; Rebuttal Period Ends Jun 08 '26; Paper Decision Notifications Jul 08 '26; Main Conference Begins Oct 06 '26; Main Conference Ends Oct 08 '26.",
+    "deadline_extended": false,
+    "deadline_history_status": "not_extended",
+    "milestone": "full_paper",
+    "deadline_id": "colm2026_paper",
+    "venue_id": "COLM",
+    "venue_aliases": [
+      "COLM",
+      "colm2026_paper"
+    ],
+    "revisions": [
+      {
+        "observed_at": "2026-10-24T00:00:00Z",
+        "deadline_aoe": "2026-03-31 23:59:59",
+        "notification_aoe": "",
+        "deadline_label": "full paper",
+        "link": "https://colm.cc/Conferences/2026/Dates"
+      }
+    ],
+    "stale": false,
+    "schedule": [
+      {
+        "milestone": "rebuttal",
+        "label": "Rebuttal period",
+        "starts": "2026-05-22",
+        "ends": "2026-06-08",
+        "kind": "period"
+      },
+      {
+        "milestone": "notification",
+        "label": "Paper decision notifications",
+        "date": "2026-07-08",
+        "kind": "date"
+      },
+      {
+        "milestone": "conference",
+        "label": "Conference",
+        "starts": "2026-10-06",
+        "ends": "2026-10-08",
+        "kind": "period"
+      }
+    ],
+    "conference_location": "San Francisco, USA",
+    "workshop_location": "",
+    "abstract_deadline_id": "colm2026_abstract"
+  },
   {
     "id": "arr_2026_may",
     "name": "ARR — May 2026 cycle (direct submission)",
@@ -260,6 +397,12 @@ export const DEADLINE_VENUES = [
         "kind": "period"
       },
       {
+        "milestone": "rebuttal",
+        "label": "Initial author response due",
+        "date": "2026-09-19",
+        "kind": "date"
+      },
+      {
         "milestone": "notification",
         "label": "Meta-reviews released",
         "date": "2026-10-08",
@@ -284,7 +427,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "commitment",
     "deadline_label": "ARR commitment",
     "deadline_aoe": "2026-08-03 23:59:59",
-    "notification_aoe": "2026-08-15 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://sites.google.com/view/nlp4positiveimpact",
     "cfp_url": "https://sites.google.com/view/nlp4positiveimpact/call-for-papers-2026",
     "openreview_url": "https://openreview.net/group?id=EMNLP/2026/Workshop/NLP4PI_ARR_Commitment",
@@ -301,7 +444,7 @@ export const DEADLINE_VENUES = [
     "cross_submission_source_url": "https://sites.google.com/view/nlp4positiveimpact/call-for-papers-2026",
     "profile_extracted_at": "2026-09-11T00:00:00Z",
     "deadline_source_kind": "openreview",
-    "deadline_source_status": "openreview_only",
+    "deadline_source_status": "legacy_unverified",
     "deadline_source_precision": "exact",
     "deadline_source_evidence": "",
     "deadline_official_url": "",
@@ -332,7 +475,9 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-08-15 23:59:59",
+    "notification_status": "unverified"
   },
   {
     "id": "neurips2026_rebuttal",
@@ -978,7 +1123,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-08-24 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://sites.google.com/wimlworkshop.org/wimlworkshopneurips2026/",
     "cfp_url": "",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/WiML",
@@ -1031,7 +1176,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "aacl2026_commitment_second",
@@ -1365,7 +1519,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-08-26 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://www.latinxinai.org/neurips-2026",
     "cfp_url": "",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/LXAI",
@@ -1422,7 +1576,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "emnlp2026_ws_SALMA_ARR_Commitment",
@@ -1585,7 +1748,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-08-27 22:00:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://neurreps.org/",
     "cfp_url": "https://neurreps.org/#cfp",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/NeurReps_Extended_Abstracts",
@@ -1638,7 +1801,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_NeurReps_Proceedings",
@@ -1650,7 +1822,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-08-27 22:00:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://neurreps.org/",
     "cfp_url": "https://neurreps.org/#cfp",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/NeurReps_Proceedings",
@@ -1703,7 +1875,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "emnlp2026_ws_NLLP_ARR_Commitment",
@@ -1780,7 +1961,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-08-28 00:00:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://flmsec.github.io/",
     "cfp_url": "",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/FLMSec",
@@ -1840,7 +2021,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "emnlp2026_ws_PANDORA_ARR_Commitment",
@@ -1917,7 +2107,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-08-29 10:00:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://epistemic-intelligence-in-ml.github.io",
     "cfp_url": "",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/EIML",
@@ -1970,7 +2160,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_AXIOM",
@@ -1982,7 +2181,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-08-29 11:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://axiom-neurips2026.github.io/",
     "cfp_url": "https://axiom-neurips2026.github.io/#cfp",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/AXIOM",
@@ -2035,7 +2234,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_JUDGe",
@@ -2047,7 +2255,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-08-29 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://judge2026.github.io",
     "cfp_url": "https://judge2026.github.io#cfp",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/JUDGe",
@@ -2100,7 +2308,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_TAE",
@@ -2112,7 +2329,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-08-29 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://tai-eval.github.io",
     "cfp_url": "https://tai-eval.github.io/cfp/",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/TAE",
@@ -2184,7 +2401,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_AI4MetaScience",
@@ -2196,7 +2422,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-08-29 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://ai4metascience.org/",
     "cfp_url": "https://ai4metascience.org/cfp.html",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/AI4MetaScience",
@@ -2268,7 +2494,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_ML4Molecules",
@@ -2280,7 +2515,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-08-29 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://moleculediscovery.github.io/workshop2026/",
     "cfp_url": "https://moleculediscovery.github.io/workshop2026/#call-for-papers",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/ML4Molecules",
@@ -2352,7 +2587,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_Child_Safety_in_AI",
@@ -2364,7 +2608,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-08-29 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://childsafety-ai.github.io/",
     "cfp_url": "https://childsafety-ai.github.io/#cfp",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/Child_Safety_in_AI",
@@ -2417,7 +2661,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_NewInML",
@@ -2429,7 +2682,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-08-29 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://newinml.github.io/NewInML2026NeurIPS/",
     "cfp_url": "",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/NewInML",
@@ -2482,7 +2735,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_RPS",
@@ -2494,7 +2756,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-08-29 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://representations-physical-sciences.github.io/workshop-2026/",
     "cfp_url": "",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/RPS",
@@ -2547,7 +2809,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_RCMLR",
@@ -2559,7 +2830,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-08-29 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://translatingmlresearch.github.io/RCMLR/",
     "cfp_url": "https://translatingmlresearch.github.io/RCMLR/call-for-papers/",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/RCMLR",
@@ -2617,7 +2888,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_TCCML",
@@ -2629,7 +2909,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "full paper",
     "deadline_aoe": "2026-08-29 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://www.climatechange.ai/events/neurips2026",
     "cfp_url": "",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/TCCML",
@@ -2683,7 +2963,17 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    },
+    "abstract_deadline_id": "neurips2026_ws_TCCML_abstract"
   },
   {
     "id": "neurips2026_ws_TCCML_abstract",
@@ -2695,7 +2985,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "abstract registration",
     "deadline_aoe": "2026-08-29 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://www.climatechange.ai/events/neurips2026",
     "cfp_url": "",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/TCCML",
@@ -2749,7 +3039,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_EconML_abstract",
@@ -2761,7 +3060,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "abstract registration",
     "deadline_aoe": "2026-08-29 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://econml26-workshop.github.io/",
     "cfp_url": "https://econml26-workshop.github.io/#call-for-papers",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/EconML",
@@ -2817,7 +3116,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_RAAAI",
@@ -2829,7 +3137,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-08-29 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://resource-aware-workshop.github.io/",
     "cfp_url": "https://resource-aware-workshop.github.io/#cfp",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/RAAAI",
@@ -2882,7 +3190,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_TCCML_Tutorials_Track",
@@ -2894,7 +3211,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-08-29 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://www.climatechange.ai/events/neurips2026",
     "cfp_url": "",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/TCCML_Tutorials_Track",
@@ -2947,7 +3264,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_ML4PS",
@@ -2959,7 +3285,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-08-29 23:59:59",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://ml4physicalsciences.github.io/2026/",
     "cfp_url": "",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/ML4PS",
@@ -2986,7 +3312,7 @@ export const DEADLINE_VENUES = [
         "link": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/ML4PS"
       }
     ],
-    "stale": false,
+    "stale": true,
     "topic_profile": [
       "Machine Learning and the Physical Sciences 2026"
     ],
@@ -3006,7 +3332,16 @@ export const DEADLINE_VENUES = [
     "deadline_official_evidence": "",
     "deadline_extended": false,
     "deadline_history_status": "not_extended",
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_AI4Mat",
@@ -3018,7 +3353,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-08-30 00:00:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://sites.google.com/view/ai4mat/home",
     "cfp_url": "",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/AI4Mat",
@@ -3071,7 +3406,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_LIGHT",
@@ -3083,7 +3427,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-08-30 00:00:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://almaai-disi-unibo.github.io/neurips2026-light-smallModels/",
     "cfp_url": "https://almaai-disi-unibo.github.io/neurips2026-light-smallModels/cfp.html",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/LIGHT",
@@ -3136,7 +3480,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_SocialAgent",
@@ -3148,7 +3501,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-08-30 00:00:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://social-llm-workshop.github.io/",
     "cfp_url": "https://social-llm-workshop.github.io/#cfp",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/SocialAgent",
@@ -3233,7 +3586,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_EconML",
@@ -3245,7 +3607,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "full paper",
     "deadline_aoe": "2026-08-30 00:00:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://econml26-workshop.github.io/",
     "cfp_url": "https://econml26-workshop.github.io/#call-for-papers",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/EconML",
@@ -3301,7 +3663,17 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    },
+    "abstract_deadline_id": "neurips2026_ws_EconML_abstract"
   },
   {
     "id": "neurips2026_ws_AgenticOS",
@@ -3313,7 +3685,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-08-30 00:31:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://agentic-fmos.github.io/",
     "cfp_url": "https://agentic-fmos.github.io/#cfp",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/AgenticOS",
@@ -3373,7 +3745,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_IAEval",
@@ -3385,7 +3766,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-08-30 00:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://eval-interactive-agents-workshop.github.io/",
     "cfp_url": "",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/IAEval",
@@ -3447,7 +3828,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_Verify-Agents",
@@ -3459,7 +3849,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-08-30 01:00:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://verify-agents-workshop.github.io/",
     "cfp_url": "https://verify-agents-workshop.github.io/#cfp",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/Verify-Agents",
@@ -3519,7 +3909,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_PALM",
@@ -3531,7 +3930,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-08-30 02:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://palm-neurips-2026.github.io/",
     "cfp_url": "https://palm-neurips-2026.github.io/#cfp",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/PALM",
@@ -3603,7 +4002,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_AI4Science",
@@ -3615,7 +4023,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-08-30 11:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://ai4sciencecommunity.github.io/neurips26.html",
     "cfp_url": "https://ai4sciencecommunity.github.io/neurips26/call.html",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/AI4Science",
@@ -3687,7 +4095,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "emnlp2026_ws_DocInsights_ARR_Commitment",
@@ -3780,7 +4197,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "abstract registration",
     "deadline_aoe": "2026-08-31 12:00:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://asci.artificialintelligencepathology.org/",
     "cfp_url": "",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/ASCI",
@@ -3834,7 +4251,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_AI4PowerGrids",
@@ -3846,7 +4272,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-08-31 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://ai4powergrids.github.io",
     "cfp_url": "https://ai4powergrids.github.io/cfp",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/AI4PowerGrids",
@@ -3899,7 +4325,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_AI4ChipDesign",
@@ -3911,7 +4346,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-08-31 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://neurips-ai-for-chip-design-2026.github.io/",
     "cfp_url": "https://neurips-ai-for-chip-design-2026.github.io/#call-for-papers",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/AI4ChipDesign",
@@ -3983,7 +4418,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "emnlp2026_ws_MINT_ARR_Commitment",
@@ -4067,7 +4511,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-08-31 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://mlforsystems.org",
     "cfp_url": "https://mlforsystems.org/call_for_papers.html",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/MLForSys",
@@ -4139,7 +4583,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_MLxOR",
@@ -4151,7 +4604,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-08-31 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://mlxor-2026.github.io/",
     "cfp_url": "",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/MLxOR",
@@ -4223,7 +4676,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "emnlp2026_ws_REALM_ARR_Commitment",
@@ -4300,7 +4762,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-01 00:00:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://sites.google.com/view/aaba4et",
     "cfp_url": "https://sites.google.com/view/aaba4et/call-for-papers",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/AABA4ET",
@@ -4367,7 +4829,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "emnlp2026_ws_IMPACT-SPEECH_ARR_Commitment",
@@ -4559,7 +5030,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-01 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://interpscience.github.io/",
     "cfp_url": "https://interpscience.github.io/cfp",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/InterpScience",
@@ -4612,7 +5083,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "emnlp2026_ws_NLLP",
@@ -4689,7 +5169,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-01 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://usersim-workshop.github.io/",
     "cfp_url": "https://usersim-workshop.github.io/#cfp",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/UserSim",
@@ -4749,7 +5229,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_PhysUnderstand",
@@ -4761,7 +5250,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-01 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://sites.google.com/view/neurips-2026-workshop-pudm",
     "cfp_url": "",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/PhysUnderstand",
@@ -4814,7 +5303,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_AI4GOOD",
@@ -4826,7 +5324,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-02 00:00:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://trustworthy-ai-for-good.github.io/",
     "cfp_url": "",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/AI4GOOD",
@@ -4902,7 +5400,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_RL4XS",
@@ -4914,7 +5421,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-02 01:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://rl-experimental-sciences-workshop.github.io/",
     "cfp_url": "https://rl-experimental-sciences-workshop.github.io/#cfp",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/RL4XS",
@@ -4967,7 +5474,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_Interp4Discovery",
@@ -4979,7 +5495,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-02 23:29:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://interpretability4discovery.github.io/",
     "cfp_url": "https://interpretability4discovery.github.io/cfp.html",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/Interp4Discovery",
@@ -5046,7 +5562,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_HAIC",
@@ -5058,7 +5583,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-02 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "http://Neurips2026haic.com",
     "cfp_url": "https://neurips2026haic.com/cfp.html",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/HAIC",
@@ -5118,7 +5643,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_ICBINB-BIO",
@@ -5130,7 +5664,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-02 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://icbinb-bio.github.io/",
     "cfp_url": "https://icbinb-bio.github.io/submit/",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/ICBINB-BIO",
@@ -5201,7 +5735,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_GDDL",
@@ -5213,7 +5756,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-02 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://gddl-neurips-2026.github.io",
     "cfp_url": "https://gddl-neurips-2026.github.io#cfp",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/GDDL",
@@ -5275,7 +5818,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_Robotics_World_Modeling",
@@ -5287,7 +5839,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-02 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://robowm-ws.github.io/",
     "cfp_url": "",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/Robotics_World_Modeling",
@@ -5361,7 +5913,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_Sim2Sci",
@@ -5373,7 +5934,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-02 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://www.sim2science.com/",
     "cfp_url": "https://www.sim2science.com/cfp.html",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/Sim2Sci",
@@ -5437,7 +5998,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_ReMuCAI",
@@ -5449,7 +6019,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-03 02:00:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://sites.google.com/view/remucai",
     "cfp_url": "https://sites.google.com/view/remucai/call-for-papers",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/ReMuCAI",
@@ -5509,7 +6079,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_AutoMLR_abstract",
@@ -5521,7 +6100,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "abstract registration",
     "deadline_aoe": "2026-09-03 11:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://automlr.com",
     "cfp_url": "",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/AutoMLR",
@@ -5575,7 +6154,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "emnlp2026_ws_MRL",
@@ -5682,7 +6270,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-04 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://sites.google.com/view/dynafrontneurips26",
     "cfp_url": "https://sites.google.com/view/dynafrontneurips26/call-for-papers",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/DynaFront",
@@ -5753,7 +6341,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_CLEA",
@@ -5765,7 +6362,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-04 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://clea-neurips.github.io/",
     "cfp_url": "https://clea-neurips.github.io/#cfp",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/CLEA",
@@ -5818,7 +6415,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_BiAlign",
@@ -5830,7 +6436,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-04 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://bialign-workshop.github.io/",
     "cfp_url": "",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/BiAlign",
@@ -5883,7 +6489,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_Simbiochem",
@@ -5895,7 +6510,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-04 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://www.simbiochem.com",
     "cfp_url": "https://www.simbiochem.com#call-for-papers",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/Simbiochem",
@@ -5948,7 +6563,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_Pre-to-Post",
@@ -5960,7 +6584,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-05 00:00:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://pretrain2posttrain.github.io",
     "cfp_url": "https://pretrain2posttrain.github.io/call.html",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/Pre-to-Post",
@@ -6020,7 +6644,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_OPT",
@@ -6032,7 +6665,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-05 00:00:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://opt-ml.org/",
     "cfp_url": "https://opt-ml.org/cfp.html",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/OPT",
@@ -6100,7 +6733,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_FLLMPT_abstract",
@@ -6112,7 +6754,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "abstract registration",
     "deadline_aoe": "2026-09-05 10:00:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://www.fllmpt-work.shop/",
     "cfp_url": "https://www.fllmpt-work.shop/call/",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/FLLMPT",
@@ -6185,7 +6827,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_AutoMLR",
@@ -6197,7 +6848,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "full paper",
     "deadline_aoe": "2026-09-05 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://automlr.com",
     "cfp_url": "",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/AutoMLR",
@@ -6251,7 +6902,17 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    },
+    "abstract_deadline_id": "neurips2026_ws_AutoMLR_abstract"
   },
   {
     "id": "neurips2026_ws_AIDaR",
@@ -6263,7 +6924,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-05 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://aidar-workshop.github.io/2026/",
     "cfp_url": "https://aidar-workshop.github.io/2026/#cfp",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/AIDaR",
@@ -6330,7 +6991,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_BeNTo",
@@ -6342,7 +7012,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-05 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://bento-neurips.github.io/",
     "cfp_url": "https://bento-neurips.github.io/#cfp",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/BeNTo",
@@ -6397,7 +7067,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_DiffuLM",
@@ -6409,7 +7088,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-05 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://7amin.github.io/diffulm-neurips2026/",
     "cfp_url": "https://7amin.github.io/diffulm-neurips2026/cfp.html",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/DiffuLM",
@@ -6469,7 +7148,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_AI4DD",
@@ -6481,7 +7169,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-05 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://ai4dd-neurips2026.github.io/",
     "cfp_url": "https://ai4dd-neurips2026.github.io/#cfp",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/AI4DD",
@@ -6541,7 +7229,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_AI-Native_Academia",
@@ -6553,7 +7250,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-05 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://ai-native-academia.github.io",
     "cfp_url": "https://ai-native-academia.github.io#cfp",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/AI-Native_Academia",
@@ -6613,7 +7310,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_SaTQuML",
@@ -6625,7 +7331,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-05 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://satquml.github.io/",
     "cfp_url": "",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/SaTQuML",
@@ -6685,7 +7391,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_TTCL",
@@ -6697,7 +7412,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-05 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://ttcl-agents.github.io",
     "cfp_url": "https://ttcl-agents.github.io#cfp",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/TTCL",
@@ -6776,7 +7491,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_CODEC-FM",
@@ -6788,7 +7512,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-05 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://collaborative-open-decentralized-fomo.github.io/",
     "cfp_url": "https://collaborative-open-decentralized-fomo.github.io/#cfp",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/CODEC-FM",
@@ -6841,7 +7565,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_ODI",
@@ -6853,7 +7586,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-05 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://odi2026.github.io/",
     "cfp_url": "",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/ODI",
@@ -6906,7 +7639,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_PTA",
@@ -6918,7 +7660,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-05 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://ptaworkshop.github.io/",
     "cfp_url": "https://ptaworkshop.github.io/call-for-papers.html",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/PTA",
@@ -6994,7 +7736,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_IAB",
@@ -7006,7 +7757,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-05 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://iab-agents.github.io/",
     "cfp_url": "",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/IAB",
@@ -7059,7 +7810,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_IAB_Competition_Paper_Track",
@@ -7071,7 +7831,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-05 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://iab-agents.github.io/",
     "cfp_url": "",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/IAB_Competition_Paper_Track",
@@ -7124,7 +7884,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_ATTRIB",
@@ -7136,7 +7905,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-05 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://attrib-workshop.cc/",
     "cfp_url": "",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/ATTRIB",
@@ -7189,7 +7958,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_TS-LIMITS",
@@ -7201,7 +7979,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-05 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://ts-limits.github.io/",
     "cfp_url": "https://ts-limits.github.io/#cfp",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/TS-LIMITS",
@@ -7254,7 +8032,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_BrainBodyFM",
@@ -7266,7 +8053,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-06 00:00:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://brainbodyfm-workshop.github.io",
     "cfp_url": "https://brainbodyfm-workshop.github.io/call-for-papers.html",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/BrainBodyFM",
@@ -7334,7 +8121,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_MPLR-FM",
@@ -7346,7 +8142,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-06 00:00:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://neurips-workshop2026.github.io/foundation_model_agentic_privacy/",
     "cfp_url": "https://neurips-workshop2026.github.io/foundation_model_agentic_privacy/call_for_papers.html",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/MPLR-FM",
@@ -7432,7 +8228,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_XAI4Science",
@@ -7444,7 +8249,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-06 00:00:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://xai4science.github.io/",
     "cfp_url": "",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/XAI4Science",
@@ -7511,7 +8316,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_VLM4RWD",
@@ -7523,7 +8337,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-06 00:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://vlm4rwd.github.io",
     "cfp_url": "",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/VLM4RWD",
@@ -7583,7 +8397,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_E-values",
@@ -7595,7 +8418,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-06 01:00:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://e-values-workshop.github.io/",
     "cfp_url": "https://e-values-workshop.github.io/#cfp",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/E-values",
@@ -7657,7 +8480,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_AIWILD",
@@ -7669,7 +8501,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-06 01:00:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://agentwild-workshop.github.io/neurips2026/",
     "cfp_url": "https://agentwild-workshop.github.io/neurips2026/#cfp",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/AIWILD",
@@ -7729,7 +8561,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_WM_PAI",
@@ -7741,7 +8582,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-06 01:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "http://www.worldmodels-physicalai.com/",
     "cfp_url": "https://www.worldmodels-physicalai.com/#cfp",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/WM_PAI",
@@ -7821,7 +8662,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_FAST",
@@ -7833,7 +8683,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-06 02:40:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://fast-workshop.github.io",
     "cfp_url": "",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/FAST",
@@ -7900,7 +8750,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_ML4SpatialBio",
@@ -7912,7 +8771,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-06 04:00:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://imsb-uke.github.io/ml4spatialbio-2026/",
     "cfp_url": "https://imsb-uke.github.io/ml4spatialbio-2026/cfp.html",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/ML4SpatialBio",
@@ -7990,7 +8849,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_STODY",
@@ -8002,7 +8870,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-06 11:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://eethanshi.github.io/stochastic-dynamics-2026/",
     "cfp_url": "https://eethanshi.github.io/stochastic-dynamics-2026/#cfp",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/STODY",
@@ -8070,7 +8938,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_AgenticWeb",
@@ -8082,7 +8959,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-06 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://theagenticweb.ai",
     "cfp_url": "https://projectnanda.org/workshops/neurips26/#cfp",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/AgenticWeb",
@@ -8142,7 +9019,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_CWM",
@@ -8154,7 +9040,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-06 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://continual-world-models-workshop.github.io",
     "cfp_url": "",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/CWM",
@@ -8214,7 +9100,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_LP4FM",
@@ -8226,7 +9121,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-06 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://lp4fm.github.io/",
     "cfp_url": "",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/LP4FM",
@@ -8298,7 +9193,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_GEM_Bio",
@@ -8310,7 +9214,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-06 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://www.gembio.ai/",
     "cfp_url": "https://www.gembio.ai/#callforpapers",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/GEM_Bio",
@@ -8365,7 +9269,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_MATH-AI",
@@ -8377,7 +9290,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-06 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://mathai-2026.github.io/",
     "cfp_url": "https://mathai-2026.github.io/cfp/",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/MATH-AI",
@@ -8430,7 +9343,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_SLM-Agents",
@@ -8442,7 +9364,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-07 01:00:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://slmw2026.github.io/",
     "cfp_url": "https://slmw2026.github.io/#call-for-papers",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/SLM-Agents",
@@ -8509,7 +9431,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_GlobalSouthAI",
@@ -8521,7 +9452,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-07 09:29:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://sites.google.com/view/globalsouthai-neurips26/home",
     "cfp_url": "",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/GlobalSouthAI",
@@ -8581,7 +9512,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_AIM",
@@ -8593,7 +9533,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-07 14:00:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://aim-neurips26.github.io/",
     "cfp_url": "https://aim-neurips26.github.io/#call-for-papers",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/AIM",
@@ -8660,7 +9600,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_Med-Reasoner",
@@ -8672,7 +9621,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-07 16:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://med-reasoner.github.io/neurips2026/",
     "cfp_url": "https://med-reasoner.github.io/neurips2026/call_for_paper.html",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/Med-Reasoner",
@@ -8740,7 +9689,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_Meta-Agents",
@@ -8752,7 +9710,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-07 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://meta-agents-workshop.github.io/",
     "cfp_url": "https://meta-agents-workshop.github.io/#cfp",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/Meta-Agents",
@@ -8831,7 +9789,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_CL4FMAgents",
@@ -8843,7 +9810,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-07 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://neurips26-cl4fmagents.github.io",
     "cfp_url": "https://neurips26-cl4fmagents.github.io#cfp",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/CL4FMAgents",
@@ -8929,7 +9896,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_NeurReps_Findings",
@@ -8941,7 +9917,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-07 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://neurreps.org/",
     "cfp_url": "https://neurreps.org/#cfp",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/NeurReps_Findings",
@@ -8994,7 +9970,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_InfPriv",
@@ -9006,7 +9991,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-08 00:00:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://beyond-private-training.ai.studio/",
     "cfp_url": "",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/InfPriv",
@@ -9066,7 +10051,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_AISciK",
@@ -9078,7 +10072,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-08 07:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://aiscik.github.io/",
     "cfp_url": "https://aiscik.github.io/call-for-papers/",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/AISciK",
@@ -9131,7 +10125,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_WRL",
@@ -9143,7 +10146,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-08 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://www.robot-learning.ml/2026/",
     "cfp_url": "https://www.robot-learning.ml/2026/submissions/",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/WRL",
@@ -9210,7 +10213,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_NeuralArtifacts",
@@ -9222,7 +10234,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-08 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://artifactsasdata.org",
     "cfp_url": "https://artifactsasdata.org/cfp/",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/NeuralArtifacts",
@@ -9301,7 +10313,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_AI_and_the_Self",
@@ -9313,7 +10334,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-09 01:15:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://aintheself.github.io/",
     "cfp_url": "https://aintheself.github.io/call-for-papers.html",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/AI_and_the_Self",
@@ -9373,7 +10394,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_BabyVLM",
@@ -9385,7 +10415,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-09 03:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://babyvlm.github.io/#cfp",
     "cfp_url": "https://babyvlm.github.io/#cfp",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/BabyVLM",
@@ -9464,7 +10494,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_ASCI",
@@ -9476,7 +10515,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "full paper",
     "deadline_aoe": "2026-09-09 12:00:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://asci.artificialintelligencepathology.org/",
     "cfp_url": "",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/ASCI",
@@ -9537,7 +10576,17 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    },
+    "abstract_deadline_id": "neurips2026_ws_ASCI_abstract"
   },
   {
     "id": "neurips2026_ws_PriGM",
@@ -9549,7 +10598,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-10 00:00:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://sites.google.com/view/prigmneurips2026/home",
     "cfp_url": "https://sites.google.com/view/prigmneurips2026/call-for-papers",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/PriGM",
@@ -9616,7 +10665,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_DevAI",
@@ -9628,7 +10686,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-10 00:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://sites.google.com/view/devai-workshop-2026/",
     "cfp_url": "https://sites.google.com/view/devai-workshop-2026/call-for-papers",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/DevAI",
@@ -9688,7 +10746,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_GenAI4Health",
@@ -9700,7 +10767,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-10 01:00:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://genai4health.github.io/",
     "cfp_url": "",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/GenAI4Health",
@@ -9760,7 +10827,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_GenAI4Health_Position_Paper_Track",
@@ -9772,7 +10848,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-10 01:00:11",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://genai4health.github.io/",
     "cfp_url": "",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/GenAI4Health_Position_Paper_Track",
@@ -9832,7 +10908,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_GenAI4Health_Demonstration_Paper_Track",
@@ -9844,7 +10929,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-10 03:55:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://genai4health.github.io/",
     "cfp_url": "",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/GenAI4Health_Demonstration_Paper_Track",
@@ -9904,7 +10989,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_ESR_Demo_Track",
@@ -9916,7 +11010,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-10 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://embodiedsr.github.io/",
     "cfp_url": "https://embodiedsr.github.io/call-for-papers.html",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/ESR_Demo_Track",
@@ -9976,7 +11070,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_ESR_Paper_Track",
@@ -9988,7 +11091,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-10 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://embodiedsr.github.io/",
     "cfp_url": "https://embodiedsr.github.io/call-for-papers.html",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/ESR_Paper_Track",
@@ -10048,7 +11151,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_RTCA",
@@ -10060,7 +11172,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-10 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://rtcaneurips26.github.io/",
     "cfp_url": "",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/RTCA",
@@ -10120,7 +11232,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_Africa_in_AI",
@@ -10132,7 +11253,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-11 12:00:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://africainai.mailab.io/",
     "cfp_url": "",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/Africa_in_AI",
@@ -10192,7 +11313,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "emnlp2026_ws_Insights_ARR_Commitment",
@@ -10276,7 +11406,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "abstract registration",
     "deadline_aoe": "2026-09-11 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://vericodegen.github.io/",
     "cfp_url": "https://vericodegen.github.io/#cfp",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/VERICODEGEN",
@@ -10330,7 +11460,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_FLLMPT",
@@ -10342,7 +11481,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "full paper",
     "deadline_aoe": "2026-09-12 11:00:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://www.fllmpt-work.shop/",
     "cfp_url": "https://www.fllmpt-work.shop/call/",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/FLLMPT",
@@ -10415,7 +11554,17 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    },
+    "abstract_deadline_id": "neurips2026_ws_FLLMPT_abstract"
   },
   {
     "id": "neurips2026_ws_PhysWorldAI",
@@ -10427,7 +11576,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-12 11:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://physworld-org.github.io/physworld.github.io/",
     "cfp_url": "https://physworld-org.github.io/physworld.github.io/cfp/",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/PhysWorldAI",
@@ -10487,7 +11636,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_RoboPAD",
@@ -10499,7 +11657,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-12 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://robotpad2026.github.io/",
     "cfp_url": "https://robotpad2026.github.io/#call-for-papers",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/RoboPAD",
@@ -10559,7 +11717,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_QueerInAI",
@@ -10571,7 +11738,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-13 00:00:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://www.queerinai.com/neurips-2026",
     "cfp_url": "https://www.queerinai.com/neurips-2026#cfp",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/QueerInAI",
@@ -10631,7 +11798,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_EvoRobust",
@@ -10643,7 +11819,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-13 00:29:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://neurips.cc/Conferences/2026",
     "cfp_url": "",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/EvoRobust",
@@ -10696,7 +11872,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_VERICODEGEN",
@@ -10708,7 +11893,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "full paper",
     "deadline_aoe": "2026-09-13 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://vericodegen.github.io/",
     "cfp_url": "https://vericodegen.github.io/#cfp",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/VERICODEGEN",
@@ -10762,7 +11947,17 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    },
+    "abstract_deadline_id": "neurips2026_ws_VERICODEGEN_abstract"
   },
   {
     "id": "neurips2026_ws_LCFM",
@@ -10774,7 +11969,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-13 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://longcontextfm.github.io/",
     "cfp_url": "https://longcontextfm.github.io/#call-for-papers",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/LCFM",
@@ -10834,7 +12029,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_MusIML",
@@ -10846,7 +12050,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-14 08:00:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://www.musiml.org/",
     "cfp_url": "",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/MusIML",
@@ -10906,7 +12110,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_NEmo",
@@ -10918,7 +12131,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-14 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://nemo.semantic.review/",
     "cfp_url": "https://nemo.semantic.review/#cfp",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/NEmo",
@@ -10985,7 +12198,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_RoCo-Spring",
@@ -10997,7 +12219,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-15 10:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://roco-spring.github.io/",
     "cfp_url": "",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/RoCo-Spring",
@@ -11050,7 +12272,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "neurips2026_ws_WMHS",
@@ -11062,7 +12293,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-15 10:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://wmhs-neurips.github.io/WMHS/",
     "cfp_url": "https://wmhs-neurips.github.io/WMHS/#cfp",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/WMHS",
@@ -11136,7 +12367,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "emnlp2026_ws_DocInsights_Shared_Task",
@@ -11229,7 +12469,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-15 23:59:32",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://fmts-workshop.github.io/",
     "cfp_url": "https://fmts-workshop.github.io/cfp.html",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/FMTS",
@@ -11301,7 +12541,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "iclr2027_abstract",
@@ -11392,7 +12641,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-19 19:00:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://agenticls.github.io",
     "cfp_url": "https://agenticls.github.io/cfp.html",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/AgenticLS",
@@ -11445,7 +12694,82 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
+  },
+  {
+    "id": "arr_2026_august_rebuttal",
+    "name": "ARR — August 2026 cycle (author response)",
+    "venue_type": "rebuttal",
+    "venue_group": "ARR August 2026",
+    "track": "rebuttal",
+    "deadline_label": "initial author response",
+    "deadline_aoe": "2026-09-19 23:59:59",
+    "notification_aoe": "",
+    "link": "https://aclrollingreview.org/dates",
+    "venue_family": "ARR",
+    "submission_type": "",
+    "entry_type": "rebuttal",
+    "archival_status": "unknown",
+    "venue_priority": "standard",
+    "archival": false,
+    "source_url": "https://aclrollingreview.org/dates",
+    "source_checked_at": "2026-09-20T00:00:00Z",
+    "deadline_source_kind": "official_cfp",
+    "deadline_source_status": "portal_unverified",
+    "deadline_source_precision": "date_only",
+    "deadline_source_evidence": "September 14-September 24 | the initial author response is due on September 19",
+    "deadline_official_url": "https://aclrollingreview.org/dates",
+    "deadline_official_evidence": "September 14-September 24 | the initial author response is due on September 19",
+    "deadline_extended": false,
+    "deadline_history_status": "not_extended",
+    "milestone": "rebuttal",
+    "deadline_id": "arr_2026_august_rebuttal",
+    "venue_id": "arr_2026_august_rebuttal",
+    "venue_aliases": [
+      "arr_2026_august_rebuttal"
+    ],
+    "revisions": [
+      {
+        "observed_at": "2026-09-20T00:00:00Z",
+        "deadline_aoe": "2026-09-19 23:59:59",
+        "notification_aoe": "",
+        "deadline_label": "initial author response",
+        "link": "https://aclrollingreview.org/dates"
+      }
+    ],
+    "stale": false,
+    "schedule": [
+      {
+        "milestone": "rebuttal",
+        "label": "Author response period",
+        "starts": "2026-09-14",
+        "ends": "2026-09-24",
+        "kind": "period"
+      },
+      {
+        "milestone": "notification",
+        "label": "Meta-reviews released",
+        "date": "2026-10-08",
+        "kind": "date"
+      },
+      {
+        "milestone": "cycle_end",
+        "label": "Cycle ends",
+        "date": "2026-10-11",
+        "kind": "date"
+      }
+    ],
+    "conference_location": "",
+    "workshop_location": ""
   },
   {
     "id": "eacl2027_demo",
@@ -11530,7 +12854,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-09-25 23:59:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://beyond-private-training.ai.studio/",
     "cfp_url": "",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/InfPriv_Fast_Track",
@@ -11579,7 +12903,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "iclr2027_paper",
@@ -11653,7 +12986,8 @@ export const DEADLINE_VENUES = [
       }
     ],
     "conference_location": "",
-    "workshop_location": ""
+    "workshop_location": "",
+    "abstract_deadline_id": "iclr2027_abstract"
   },
   {
     "id": "eacl2027_commitment",
@@ -11841,7 +13175,7 @@ export const DEADLINE_VENUES = [
     "submission_type": "",
     "deadline_label": "submission",
     "deadline_aoe": "2026-11-08 23:00:00",
-    "notification_aoe": "2026-09-29 23:59:59",
+    "notification_aoe": "",
     "homepage_url": "https://vericodegen.github.io/index.html#challenge",
     "cfp_url": "https://vericodegen.github.io/index.html#cfp",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/VERICODEGEN_Competition",
@@ -11894,7 +13228,16 @@ export const DEADLINE_VENUES = [
       }
     ],
     "stale": false,
-    "schedule": []
+    "schedule": [],
+    "notification_previous_aoe": "2026-09-29 23:59:59",
+    "notification_status": "unverified",
+    "notification_policy": {
+      "milestone": "notification_by",
+      "label": "Workshops must notify authors by",
+      "kind": "date",
+      "date": "2026-09-29",
+      "status": "unverified"
+    }
   },
   {
     "id": "naacl2027_commitment",

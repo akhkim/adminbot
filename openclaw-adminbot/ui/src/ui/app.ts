@@ -1,8 +1,29 @@
-// Control UI module implements app behavior.
 import { LitElement } from "lit";
 import { state } from "lit/decorators.js";
 import { i18n, I18nController, isSupportedLocale, t } from "../i18n/index.ts";
 import type { ActivityEntry, ActivityStatus } from "./activity-model.ts";
+import type { CalendarEvent, CalendarEventDraft, LabCalendar } from "./adminbot/api/calendar.ts";
+import type { LabBroadcast } from "./adminbot/api/lab-sharing.ts";
+import type {
+  MeetingAttendanceNudgePreview,
+  MeetingAttendanceNudgeResult,
+  MeetingSeries,
+  MeetingSeriesPages,
+} from "./adminbot/api/meetings.ts";
+import type { MemberAdoptionSummary, MemberProfileOverviewRow } from "./adminbot/api/members.ts";
+import type { EscalatedNudgeRow } from "./adminbot/api/nudges.ts";
+import type {
+  PublicationDigestPreview,
+  PublicationDigestVenue,
+} from "./adminbot/api/paper-admin.ts";
+import type {
+  PiReviewRow,
+  PaperNudgeBatch,
+  PaperSlotOverviewRow,
+} from "./adminbot/api/paper-admin.ts";
+import type { PaperCycle } from "./adminbot/api/papers.ts";
+import type { LocationDrift } from "./adminbot/api/profile.ts";
+import type { MemberNotification, TabVisitReport } from "./adminbot/api/workspace.ts";
 import {
   type LoginMode,
   type MemberAuthFailure,
@@ -17,45 +38,30 @@ import {
   submitMemberAuth as submitMemberAuthInternal,
 } from "./adminbot/auth/flow.ts";
 import type {
-  MemberAdoptionSummary,
   MemberImpersonator,
-  PublicationDigestPreview,
-  PublicationDigestVenue,
   MemberOnboarding,
   MemberRegistration,
   RosterMember,
-  CalendarEvent,
-  LocationDrift,
-  MeetingAttendanceNudgePreview,
-  MeetingAttendanceNudgeResult,
-  MeetingRecord,
-  MemberNotification,
-  CalendarEventDraft,
-  LabBroadcast,
-  LabCalendar,
 } from "./adminbot/auth/session.ts";
-import type {
-  EscalatedNudgeRow,
-  PiReviewRow,
-  MemberProfileOverviewRow,
-  PaperCycle,
-  PaperNudgeBatch,
-  PaperSlotOverviewRow,
-  TabVisitReport,
-} from "./adminbot/auth/session.ts";
-import type { AudienceFilter } from "./adminbot/calendar-audience.ts";
+import type { AudienceFilter, InviteMode } from "./adminbot/calendar-audience.ts";
+import type { AdminBotLabMember } from "./adminbot/controllers/admin.ts";
 import {
   createEmptyAdminBotDashboardData,
-  createEmptyAdminBotMemberNudgeState,
+  createEmptyAdminBotMemberList,
+  createEmptyAdminBotStandingMeetings,
   createEmptyAdminBotReimbursementState,
+  createEmptyLabPapersState,
   createEmptyVenuePapersState,
   createEmptyWorkshopNudgeReviewState,
   type AdminBotCvDigestJobState,
   EMPTY_SLACK_CHANNEL_CHECK,
   type SlackChannelCheck,
+  type AdminBotLabPapersState,
   type AdminBotVenuePapersState,
   type WorkshopNudgeReviewState,
   type AdminBotDashboardData,
+  type AdminBotMemberListState,
+  type AdminBotStandingMeetingsState,
   type AdminBotMemberNudgeState,
   type AdminBotReimbursementState,
 } from "./adminbot/controllers/admin.ts";
@@ -65,20 +71,30 @@ import {
   requestAdminBotCalendarDraft,
   saveAdminBotCalendarEvent,
 } from "./adminbot/controllers/calendar.ts";
+import type { EventsNotice } from "./adminbot/controllers/events.ts";
+import type { LabTravelNotice, LookupDraft } from "./adminbot/controllers/lab-travel.ts";
 import {
   answerAdminBotLocationPrompt,
   loadAdminBotLocationDrifts,
   loadAdminBotLocationPrompt,
 } from "./adminbot/controllers/location-prompt.ts";
+import type { LocationTrackerSnapshot } from "./adminbot/controllers/location-tracker.ts";
+import type { DeskLettersState } from "./adminbot/controllers/logistics.ts";
 import { defaultMailingListRange } from "./adminbot/controllers/mailing-list.ts";
 import {
   fileAdminBotMeeting,
   loadAdminBotMeetingNudges,
   loadAdminBotMeetings,
+  loadAdminBotMeetingSeriesPage,
   sendAdminBotMeetingNudges,
   setAdminBotMeetingAttendance,
 } from "./adminbot/controllers/meetings.ts";
 import {
+  createEmptyAdminBotMemberRequests,
+  type AdminBotMemberRequestsState,
+} from "./adminbot/controllers/member-requests.ts";
+import {
+  addMemberSheetRow as addMemberSheetRowController,
   editMemberSheetCell as editMemberSheetCellController,
   loadMemberSheet as loadMemberSheetController,
   onboardSelectedMemberRows as onboardSelectedMemberRowsController,
@@ -92,13 +108,18 @@ import {
   markAdminBotNotificationsRead,
   resetNotificationPopups,
 } from "./adminbot/controllers/notifications.ts";
+import { createEmptyAdminBotMemberNudgeState } from "./adminbot/controllers/nudges.ts";
+import type { PreciseLocationState } from "./adminbot/controllers/precise-location.ts";
+import { EMPTY_PROFILE_OVERVIEW_PAGE } from "./adminbot/controllers/profile-overview.ts";
+import { createRecLetterEligibilityState } from "./adminbot/controllers/rec-letter-eligibility.ts";
 import type { RecentEditsState } from "./adminbot/controllers/recent-edits.ts";
 import {
   recordAdminBotTabVisit,
   type AdminBotTabVisitHost,
 } from "./adminbot/controllers/tab-visits.ts";
-import { EMPTY_TRAVEL, type TravelState } from "./adminbot/controllers/travel.ts";
 import type { BadgeLoadError } from "./adminbot/data/badges.ts";
+import type { EventsOverview } from "./adminbot/data/events.ts";
+import type { TravelLookup, TravelOverview, TravelSharing } from "./adminbot/data/lab-travel.ts";
 import {
   createFactRow,
   createSchoolRow,
@@ -106,13 +127,25 @@ import {
   type MeetingRequestRow,
   type RecommendationSchool,
 } from "./adminbot/data/logistics-draft.ts";
+import {
+  DEFAULT_LOGISTICS_QUEUE_OPTIONS,
+  type LogisticsQueueOptions,
+} from "./adminbot/data/logistics-queue.ts";
 import type { LogisticsRequest } from "./adminbot/data/logistics-requests.ts";
 import type { MemberMap } from "./adminbot/data/member-map.ts";
 import type { RegistrationsLoadError } from "./adminbot/data/registrations.ts";
-import type { BlockerSort } from "./adminbot/views/admin.ts";
+import { EMPTY_PAGED_LIST, type PagedListState } from "./adminbot/load-more.ts";
+import type { ProjectSummary } from "./adminbot/projects/model.ts";
+import { resetProjectsSessionState } from "./adminbot/projects/view.ts";
+import type {
+  BlockerDraft,
+  ProjectDetailsDraft,
+  ProjectVenueDraft,
+} from "./adminbot/projects/workspace.ts";
+import { resetViewSessions } from "./adminbot/view-session-reset.ts";
+import type { BlockerSort, PreregSort } from "./adminbot/views/admin.ts";
+import type { ConferencePapersTab } from "./adminbot/views/conference-papers.ts";
 import type { LogisticsMode } from "./adminbot/views/logistics.ts";
-import type { Blocker, BlockerDraft } from "./adminbot/views/my-work.ts";
-import type { PaperTripDraft } from "./adminbot/views/paper-cycle.ts";
 import {
   EMPTY_PAPER_OVERVIEW_FILTER,
   type PaperOverviewFilter,
@@ -123,13 +156,18 @@ import {
   type ProfileOverviewFilter,
 } from "./adminbot/views/profile-overview.ts";
 import type { TimeChartWindow } from "./adminbot/views/time-allocation-chart.ts";
-import { EMPTY_TRIP_DRAFT, type TripDraft } from "./adminbot/views/time-availability.trips.ts";
 import {
   EMPTY_MILESTONE_DRAFT,
   EMPTY_TIME_AVAILABILITY_DRAFT,
-  type MilestoneDraft,
-  type TimeAvailabilityDraft,
-  type TimeAvailabilityRange,
+} from "./adminbot/views/time-availability.drafts.ts";
+import {
+  EMPTY_TRIP_DRAFT,
+  type TripDraft,
+} from "./adminbot/views/time-availability.trip-editor.ts";
+import type {
+  MilestoneDraft,
+  TimeAvailabilityDraft,
+  TimeAvailabilityRange,
 } from "./adminbot/views/time-availability.ts";
 import {
   handleChannelConfigReload as handleChannelConfigReloadInternal,
@@ -334,7 +372,7 @@ export class OpenClawApp extends LitElement {
   @state() loginPendingNotice = false;
   @state() guestReimbursements = false;
   @state() authGateVisible = false;
-  @state() memberSheet: import("./adminbot/auth/session.ts").MemberSheetView | null = null;
+  @state() memberSheet: import("./adminbot/api/onboarding.ts").MemberSheetView | null = null;
   @state() memberSheetLoadedAt: number | null = null;
   @state() memberSheetBusy = false;
   @state() memberSheetError: string | null = null;
@@ -342,10 +380,13 @@ export class OpenClawApp extends LitElement {
   @state() memberSheetBaseline: Record<string, string> = {};
   @state() memberSheetSelection: number[] = [];
   @state() memberSheetSaveResult:
-    | import("./adminbot/auth/session.ts").MemberSheetEditResult
+    | import("./adminbot/api/onboarding.ts").MemberSheetEditResult
     | null = null;
   @state() memberSheetOnboardResult:
-    | import("./adminbot/auth/session.ts").MemberSheetOnboardResult
+    | import("./adminbot/api/onboarding.ts").MemberSheetOnboardResult
+    | null = null;
+  @state() memberSheetAddRowResult:
+    | import("./adminbot/api/onboarding.ts").MemberSheetAddRowResult
     | null = null;
   // Calendar tab. Declared here, not merely typed on AppViewState: an undeclared field is not a
   // reactive property, so writing one from a controller changes nothing on screen. That is what
@@ -353,12 +394,36 @@ export class OpenClawApp extends LitElement {
   // not re-render. The view tests could not catch it because they render with a plain object.
   // Declared here for the same reason as the calendar block above: a controller writing a plain
   // class field would change nothing on screen.
-  @state() adminBotTripDraft: TripDraft = EMPTY_TRIP_DRAFT;
+  // The /travel overview behind Events' nearby card, and location sharing
+  // (controllers/lab-travel.ts). Declared as state for the same reason: its controller writes after
+  // awaits, and a plain field would change nothing on screen.
+  @state() labTravel?: TravelOverview;
+  @state() labTravelLoadedFor: string | null = null;
+  @state() labTravelLoading = false;
+  @state() labTravelError: string | null = null;
+  @state() labTravelNotice: LabTravelNotice | null = null;
+  @state() labTravelBusy: string | null = null;
+  @state() labTravelLookupDraft: LookupDraft = { place: "", from: "", to: "" };
+  @state() labTravelLookup: TravelLookup | null = null;
+  @state() labTravelLookupError: string | null = null;
+  @state() labTravelCityDraft = "";
+  @state() labTravelSharing: TravelSharing | null = null;
+  @state() labTravelSharingCheckedFor: string | null = null;
+  @state() labTravelDevice: LocationTrackerSnapshot = { status: "idle" };
+  // The Events tab (controllers/events.ts), state for the same reason.
+  @state() events?: EventsOverview;
+  @state() eventsLoadedFor: string | null = null;
+  @state() eventsLoading = false;
+  @state() eventsError: string | null = null;
+  @state() eventsNotice: EventsNotice | null = null;
+  @state() eventsBusy: string | null = null;
   @state() adminBotLocationDrift?: LocationDrift | null;
   @state() adminBotLocationDrifts?: LocationDrift[];
+  @state() adminBotPreciseLocation?: PreciseLocationState;
   @state() adminBotLocationSaving = false;
   @state() adminBotLocationError: string | null = null;
-  @state() adminBotMeetings?: MeetingRecord[];
+  @state() adminBotMeetingSeries?: MeetingSeries[];
+  @state() adminBotMeetingSeriesPages: MeetingSeriesPages = {};
   // Attendance nudge, admin-only. Null rather than undefined once read, so "opened the panel and
   // nobody qualified" is distinguishable from "never opened it".
   @state() adminBotMeetingNudgePreview: MeetingAttendanceNudgePreview | null = null;
@@ -372,6 +437,7 @@ export class OpenClawApp extends LitElement {
   @state() adminBotBroadcastDraft?: string;
   @state() adminBotBroadcastExpiry?: string;
   @state() adminBotBroadcastAvailability?: string;
+  @state() adminBotBroadcastTimezone?: string;
   @state() adminBotBroadcastBusy = false;
   @state() adminBotBroadcastNotice: { kind: "success" | "error"; text: string } | null = null;
   // Which My Desk lists she has opened. Not persisted: it is where she is on the page, not a
@@ -379,6 +445,7 @@ export class OpenClawApp extends LitElement {
   @state() professorExpandedLists = new Set<string>();
   @state() adminBotNotificationsError: string | null = null;
   @state() adminBotMeetingsLoading = false;
+  adminBotMeetingsRequestVersion = 0;
   @state() adminBotMeetingsSaving = false;
   @state() adminBotMeetingsError: string | null = null;
   @state() calendarEvents?: CalendarEvent[];
@@ -397,6 +464,7 @@ export class OpenClawApp extends LitElement {
   @state() calendarEditingEventId: string | null = null;
   @state() calendarAudience: AudienceFilter = {};
   @state() calendarExcludedMemberIds: string[] = [];
+  @state() calendarInviteMode: InviteMode = "add";
   @state() calendarBusy = false;
   @state() calendarConfirming: "save" | "invite" | null = null;
   @state() rosterMembers: RosterMember[] = [];
@@ -404,6 +472,7 @@ export class OpenClawApp extends LitElement {
   @state() rosterError: RosterError = null;
   @state() rosterFilter = "";
   @state() selectedMemberId: string | null = null;
+  private rosterSearchTimer?: ReturnType<typeof setTimeout>;
   @state() memberName = "";
   @state() memberSlackUserId = "";
   @state() memberRole = "";
@@ -427,7 +496,6 @@ export class OpenClawApp extends LitElement {
   // Reactive: the whole app re-renders around these -- the banner appears, the Lab Members button
   // disappears, and the swap in flight disables both.
   @state() adminBotRecentEdits: Record<string, RecentEditsState> = {};
-  @state() adminBotTravel: TravelState = EMPTY_TRAVEL;
   @state() adminBotMailingListPreview: PublicationDigestPreview | null = null;
   @state() adminBotMailingListLoading = false;
   @state() adminBotMailingListSending = false;
@@ -457,7 +525,7 @@ export class OpenClawApp extends LitElement {
   @state() onboarding = resolveOnboardingMode();
   @state() connected = false;
   @state() theme: ThemeName = this.settings.theme ?? "claw";
-  @state() themeMode: ThemeMode = this.settings.themeMode ?? "system";
+  @state() themeMode: ThemeMode = this.settings.themeMode ?? "dark";
   @state() themeResolved: ResolvedTheme = "dark";
   @state() themeOrder: ThemeName[] = this.buildThemeOrder(this.theme);
   @state() customThemeImportUrl = "";
@@ -654,11 +722,29 @@ export class OpenClawApp extends LitElement {
   @state() agentsSelectedId: string | null = null;
   @state() adminBotLoading = false;
   @state() adminBotError: string | null = null;
+  @state() adminBotUsingCachedReads = false;
+  @state() adminBotOfflinePendingWrites = 0;
   @state() adminBotData: AdminBotDashboardData = createEmptyAdminBotDashboardData();
+  @state() adminBotRosterLoadedAt: number | null = null;
+  @state() adminBotRosterLoading = false;
+  @state() adminBotRosterError: string | null = null;
+  adminBotRosterRequestId = 0;
+  @state() adminBotMemberList: AdminBotMemberListState = createEmptyAdminBotMemberList();
+  @state() adminBotStandingMeetings: AdminBotStandingMeetingsState =
+    createEmptyAdminBotStandingMeetings();
+  @state() adminBotMemberRequests: AdminBotMemberRequestsState =
+    createEmptyAdminBotMemberRequests();
   // Empty selection means "nobody picked yet"; app-render defaults it to the viewer's own row once
   // the roster arrives, since your own schedule is the one you came to look at.
-  @state() adminBotMemberMap: MemberMap | null = null;
+  @state() adminBotMemberMap: MemberMap | null | undefined = undefined;
   @state() adminBotMemberMapLoading = false;
+  adminBotMemberMapRequestId = 0;
+  adminBotMemberMapCheckedAt: number | undefined = undefined;
+  adminBotMemberMapTab: string | undefined = undefined;
+  @state() adminBotCollaboratorSchedules: AdminBotLabMember[] = [];
+  @state() adminBotCollaboratorSchedulesLoading = false;
+  @state() adminBotCollaboratorSchedulesError: string | null = null;
+  @state() adminBotCollaboratorSchedulesSession = "";
   @state() adminBotTimeAvailabilityMemberId = "";
   @state() adminBotLogisticsSignatureFiles: File[] = [];
   @state() adminBotLogisticsDescription = "";
@@ -667,11 +753,14 @@ export class OpenClawApp extends LitElement {
   @state() adminBotLogisticsSavedAt: number | null = null;
   @state() adminBotLogisticsSaveError: string | null = null;
   // Admins land on the same page members do; reading everyone's requests is a deliberate step.
+  @state() adminBotLogisticsQueueOptions: LogisticsQueueOptions = DEFAULT_LOGISTICS_QUEUE_OPTIONS;
   @state() adminBotLogisticsMode: LogisticsMode = "make";
   @state() adminBotLogisticsRequests: LogisticsRequest[] = [];
   @state() adminBotLogisticsRequestsLoading = false;
   @state() adminBotLogisticsRequestsError: string | null = null;
   @state() adminBotLogisticsRequestsLoadedAt: number | null = null;
+  @state() adminBotLogisticsPage: PagedListState = EMPTY_PAGED_LIST;
+  @state() adminBotDeskLetters: DeskLettersState = { requests: [], loading: false, loadedAt: null };
   @state() adminBotLogisticsOpenRequestId: string | null = null;
   // The open request is held apart from the list because it is a different read: the list carries
   // no file bytes and this one does.
@@ -692,6 +781,7 @@ export class OpenClawApp extends LitElement {
   @state() adminBotSignatureSubmitted = false;
   @state() adminBotLogisticsEditingId: string | null = null;
   @state() adminBotLogisticsSigningId: string | null = null;
+  @state() adminBotRecLetter = createRecLetterEligibilityState();
   @state() adminBotLogisticsDownloadingId: string | null = null;
   @state() adminBotLogisticsSignedNote = "";
   @state() adminBotLogisticsShowSettled = false;
@@ -699,8 +789,10 @@ export class OpenClawApp extends LitElement {
   // signed-in member to be loaded. See the scope effect in app-render.
   @state() adminBotLogisticsDraftScope: string | null = null;
   @state() adminBotProfileOverview: MemberProfileOverviewRow[] = [];
+  @state() adminBotProfileOverviewPage = EMPTY_PROFILE_OVERVIEW_PAGE;
   @state() adminBotEscalatedNudges: EscalatedNudgeRow[] = [];
   @state() adminBotPiReview: PiReviewRow[] = [];
+  @state() adminBotPiReviewError: string | null = null;
   @state() adminBotProfileOverviewFieldCount = 0;
   // The lab-wide adoption roll-up that heads the same page. Null until the first read answers, so
   // "not loaded" and "nothing adopted" are distinguishable.
@@ -710,12 +802,9 @@ export class OpenClawApp extends LitElement {
   @state() adminBotProfileOverviewLoadedAt: number | null = null;
   @state() adminBotProfileOverviewReminding = false;
   @state() adminBotProfileOverviewNotice: string | null = null;
-  // Defaults to the people with something outstanding, which is what a sweep is looking for.
   @state() myWorkCoauthorDraft: Record<string, { email: string; name: string; twitter: string }> =
     {};
-  @state() adminBotProfileOverviewFilter: ProfileOverviewFilter = {
-    ...EMPTY_PROFILE_OVERVIEW_FILTER,
-  };
+  @state() adminBotProfileOverviewFilter: ProfileOverviewFilter = EMPTY_PROFILE_OVERVIEW_FILTER;
   // Active Papers opens on the sweep rather than the inventory: the page is read to find what needs
   // moving, and "every paper" is one click away for the times it is not.
   // Which paper's card is open over Active Papers, or null. An id and not the record: the papers
@@ -726,8 +815,6 @@ export class OpenClawApp extends LitElement {
     state: "attention",
   };
   @state() adminBotPaperSlotOverview: PaperSlotOverviewRow[] = [];
-  @state() adminBotTripDrafts: Record<string, PaperTripDraft> = {};
-  @state() adminBotTripSavingKey: string | null = null;
   @state() adminBotPaperSlots: Record<string, PaperCycle> = {};
   // Nothing expanded on arrival: the page opens as a scannable list of papers, and the form is
   // what you go into rather than what you land in.
@@ -771,6 +858,7 @@ export class OpenClawApp extends LitElement {
     ...EMPTY_TIME_AVAILABILITY_DRAFT,
   };
   @state() adminBotMilestoneDraft: MilestoneDraft = { ...EMPTY_MILESTONE_DRAFT };
+  @state() adminBotTripDraft: TripDraft = EMPTY_TRIP_DRAFT;
   // The overall availability note while it is being edited. `null` means "not touched since the
   // last load", which is what makes the textarea show the stored note again after a save or after
   // switching members, rather than holding onto a copy of someone else's text.
@@ -778,6 +866,8 @@ export class OpenClawApp extends LitElement {
   @state() adminBotActiveCommitmentType: string | null = null;
   @state() adminBotTimeAvailabilitySaving = false;
   @state() adminBotBusyActionId: string | null = null;
+  @state() adminBotSelectedActionIds: string[] = [];
+  @state() adminBotBulkActionBusy = false;
   @state() adminBotNotice: { kind: "success" | "error"; text: string } | null = null;
   @state() adminBotPhotoPolishBusy = false;
   @state() adminBotPhotoApplyBusy = false;
@@ -787,23 +877,37 @@ export class OpenClawApp extends LitElement {
   @state() adminBotBlockerSort: BlockerSort = "stage";
   /** Which venue the pre-registration table is filtered to. Empty means every upcoming venue. */
   @state() adminBotVenueFilter = "";
+  /**
+   * How the pre-registration board is sorted and narrowed.
+   *
+   * On app state rather than inside the board for the same reason the venue filter is: the board
+   * is redrawn by every unrelated change on this page -- a saved paper, an arriving nudge -- and a
+   * view somebody chose has to survive that.
+   */
+  @state() adminBotPreregSort: PreregSort = "readiness";
+  @state() adminBotPreregSortReversed = false;
+  @state() adminBotPreregMinConfidence = 0;
+  @state() adminBotPreregMissingEdit = false;
   @state() nudgeBellOpen = false;
   @state() adminBotCvDigestJob: AdminBotCvDigestJobState = { status: "idle" };
   @state() adminBotVenuePapers: AdminBotVenuePapersState = createEmptyVenuePapersState();
+  @state() adminBotLabPapers: AdminBotLabPapersState = createEmptyLabPapersState();
+  /** Which half of Find Interesting Papers is open. */
+  @state() adminBotPapersTab: ConferencePapersTab = "conference";
   @state() adminBotWorkshopNudges: WorkshopNudgeReviewState = createEmptyWorkshopNudgeReviewState();
   @state() adminBotVenueIndexJob: AdminBotCvDigestJobState = { status: "idle" };
   @state() adminBotChannelNamingJob: AdminBotCvDigestJobState = { status: "idle" };
+  @state() myProjects: ProjectSummary[] | null = null;
+  @state() myProjectsLoading = false;
+  @state() myProjectsError: string | null = null;
+  @state() myProjectsChoosing = false;
   @state() myWorkBlockerDraft: BlockerDraft | null = null;
-  @state() myWorkBlockers: Blocker[] = [];
   @state() myWorkProjectDraft: string | null = null;
   @state() myWorkProjectAlias = "";
   @state() myWorkProjectError: string | null = null;
-  @state() myWorkProjectEdits: Record<
-    string,
-    { title: string; alias: string; startedOn: string; error: string | null }
-  > = {};
+  @state() myWorkProjectEdits: Record<string, ProjectDetailsDraft> = {};
+  @state() myWorkProjectVenues: ProjectVenueDraft[] = [];
   @state() myWorkChannelCheck: SlackChannelCheck = { ...EMPTY_SLACK_CHANNEL_CHECK };
-  @state() myWorkProjectVenues: Array<{ venueId: string; year: number; confidence: number }> = [];
   @state() profileEditingSection: "basics" | null = null;
   @state() profileAccountChecks: Record<string, ProfileAccountCheck> = {};
   @state() registrations: MemberRegistration[] = [];
@@ -811,7 +915,7 @@ export class OpenClawApp extends LitElement {
   @state() registrationsError: RegistrationsLoadError | null = null;
   @state() registrationsBusyId: string | null = null;
   @state() registrationsNotice: { kind: "success" | "error"; text: string } | null = null;
-  @state() adminBotBadgeDefinitions: import("./adminbot/auth/session.ts").BadgeDefinition[] = [];
+  @state() adminBotBadgeDefinitions: import("./adminbot/api/badges.ts").BadgeDefinition[] = [];
   @state() adminBotBadgeDefinitionsLoading = false;
   @state() adminBotBadgeDefinitionsLoadedAt: number | null = null;
   @state() adminBotBadgeDefinitionsError: BadgeLoadError | null = null;
@@ -1275,49 +1379,33 @@ export class OpenClawApp extends LitElement {
     );
   }
 
+  resetMemberViewSessionState() {
+    resetProjectsSessionState();
+    // Profile, Lab Sharing and the admin panels register their resets when they load.
+    resetViewSessions();
+  }
+
   async beginViewAs(memberId: string) {
+    dismissAllToasts();
+    resetNotificationPopups();
     await beginViewAsInternal(
       this as unknown as Parameters<typeof beginViewAsInternal>[0],
       memberId,
     );
-    // The admin's own toasts and notifications belong to the session being parked, not to the
-    // member whose view is opening. Carried across, they read as that member's -- which is the one
-    // thing a view meant to show what somebody else sees must not do.
-    dismissAllToasts();
-    resetNotificationPopups();
-    this.adminBotNotifications = undefined;
-    this.adminBotBroadcast = undefined;
-    this.adminBotBroadcastHistory = undefined;
-    this.adminBotBroadcastDraft = undefined;
-    this.adminBotBroadcastNotice = null;
   }
 
   async endViewAs() {
-    await endViewAsInternal(this as unknown as Parameters<typeof endViewAsInternal>[0]);
-    // Same reasoning as signOutMember: the toasts, the popped-ids set and the notification list
-    // all belong to the session that just ended. Left in place, the admin lands back on their own
-    // dashboard reading the member's unread notifications.
     dismissAllToasts();
     resetNotificationPopups();
-    this.adminBotNotifications = undefined;
-    this.adminBotBroadcast = undefined;
-    this.adminBotBroadcastHistory = undefined;
-    this.adminBotBroadcastDraft = undefined;
-    this.adminBotBroadcastNotice = null;
+    await endViewAsInternal(this as unknown as Parameters<typeof endViewAsInternal>[0]);
   }
 
   async signOutMember() {
-    await signOutMemberInternal(this as unknown as Parameters<typeof signOutMemberInternal>[0]);
-    // Everything in the corner and everything in the list belonged to the session that just ended.
-    // The popped-ids set has to go too, or the next member to sign in on this browser gets a
-    // dashboard card with no popup because somebody else's session already "saw" it.
+    // Toast and notification dedupe state belong to the departing session. The auth flow clears
+    // member data synchronously, before network logout can overlap a fresh sign-in.
     dismissAllToasts();
     resetNotificationPopups();
-    this.adminBotNotifications = undefined;
-    this.adminBotBroadcast = undefined;
-    this.adminBotBroadcastHistory = undefined;
-    this.adminBotBroadcastDraft = undefined;
-    this.adminBotBroadcastNotice = null;
+    await signOutMemberInternal(this as unknown as Parameters<typeof signOutMemberInternal>[0]);
   }
 
   openChangePassword() {
@@ -1338,6 +1426,13 @@ export class OpenClawApp extends LitElement {
 
   async loadRoster() {
     await loadRosterInternal(this as unknown as Parameters<typeof loadRosterInternal>[0]);
+  }
+
+  scheduleRosterSearch() {
+    clearTimeout(this.rosterSearchTimer);
+    this.rosterSearchTimer = setTimeout(() => {
+      void this.loadRoster();
+    }, 200);
   }
 
   handleChatScroll(event: Event) {
@@ -1755,6 +1850,15 @@ export class OpenClawApp extends LitElement {
     );
   }
 
+  addMemberSheetRow(
+    input: import("./adminbot/api/onboarding.ts").MemberSheetAddRowInput,
+  ): Promise<boolean> {
+    return addMemberSheetRowController(
+      this as unknown as Parameters<typeof addMemberSheetRowController>[0],
+      input,
+    );
+  }
+
   editMemberSheetCell(sheetRow: number, column: number, value: string): void {
     editMemberSheetCellController(
       this as unknown as Parameters<typeof editMemberSheetCellController>[0],
@@ -1791,6 +1895,14 @@ export class OpenClawApp extends LitElement {
     return loadAdminBotMeetings(this as unknown as Parameters<typeof loadAdminBotMeetings>[0]);
   }
 
+  loadMeetingSeriesPage(key: string, options?: { more?: boolean }): Promise<void> {
+    return loadAdminBotMeetingSeriesPage(
+      this as unknown as Parameters<typeof loadAdminBotMeetingSeriesPage>[0],
+      key,
+      options,
+    );
+  }
+
   loadMeetingNudges(): Promise<void> {
     return loadAdminBotMeetingNudges(
       this as unknown as Parameters<typeof loadAdminBotMeetingNudges>[0],
@@ -1808,7 +1920,7 @@ export class OpenClawApp extends LitElement {
   }
 
   publishBroadcast(
-    draft: { message: string; availability: string; expiresOn: string } | null,
+    draft: { message: string; availability: string; expiresOn: string; timezone?: string } | null,
   ): Promise<void> {
     return publishAdminBotBroadcast(
       this as unknown as Parameters<typeof publishAdminBotBroadcast>[0],

@@ -6,7 +6,10 @@
 // link that is already set -- the database is the record of what the lab decided, and a spreadsheet
 // export is one person's snapshot of it. It can only fill blanks.
 //
-// Source is a CSV export of the "Formatted Papers" tab of the Quick-Start Survey workbook, which is
+// --paper-submissions reads only URL text in columns E/F of Paper Submissions;
+// it fills missing artifacts on unambiguous exact-title or existing artifact URL matches,
+// without requiring a Year. Shared artifacts and duplicate source rows never establish identity.
+// Source otherwise is a CSV export of the "Formatted Papers" tab of the Quick-Start Survey workbook, which is
 // where the lab actually keeps arXiv and Overleaf URLs. Export it as CSV rather than teaching this
 // script to read xlsx: the repo has no spreadsheet dependency and this does not justify adding one.
 //
@@ -19,11 +22,15 @@
 import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline/promises";
+import { isAdminBotOverleafHost } from "../extensions/adminbot/src/contracts/overleaf.js";
+import { isMainModule } from "./lib/is-main-module.mjs";
 
 type Options = {
   csv: string;
+  sheetJson: string;
   database: string;
   write: boolean;
+  paperSubmissions: boolean;
   /** Report every unmatched sheet row, not just the count. */
   verbose: boolean;
   /**
@@ -73,8 +80,10 @@ const FIELD_GUARDS: Readonly<Record<string, RegExp>> = {
 function parseArgs(argv: readonly string[]): Options {
   const options: Options = {
     csv: "",
+    sheetJson: "",
     database: "state/adminbot.sqlite",
     write: false,
+    paperSubmissions: false,
     verbose: false,
     sinceYear: 2025,
     yes: false,
@@ -84,6 +93,9 @@ function parseArgs(argv: readonly string[]): Options {
     const arg = argv[i];
     if (arg === "--csv") {
       options.csv = argv[++i] ?? "";
+    } else if (arg === "--sheet-json") {
+      options.sheetJson = argv[++i] ?? "";
+      options.paperSubmissions = true;
     } else if (arg === "--database") {
       options.database = argv[++i] ?? options.database;
     } else if (arg === "--since-year") {
@@ -92,6 +104,8 @@ function parseArgs(argv: readonly string[]): Options {
         throw new Error("--since-year needs a year, e.g. --since-year 2025");
       }
       options.sinceYear = value;
+    } else if (arg === "--paper-submissions") {
+      options.paperSubmissions = true;
     } else if (arg === "--write") {
       options.write = true;
     } else if (arg === "--yes" || arg === "-y") {
@@ -105,9 +119,11 @@ function parseArgs(argv: readonly string[]): Options {
         [
           "Backfill arXiv/Overleaf/code links onto existing AdminBot papers.",
           "",
-          "  --csv <file>       CSV export of the survey's 'Formatted Papers' tab (required)",
+          "  --csv <file>       CSV input (Formatted Papers, or --paper-submissions)",
+          "  --sheet-json <file> Sheets API grid data for Paper Submissions (preserves smart chips)",
           "  --database <file>  SQLite path (default: state/adminbot.sqlite)",
           "  --since-year <y>   Ignore sheet rows older than this (default: 2025)",
+          "  --paper-submissions  Read E/F links from Paper Submissions (exact matches only)",
           "  --write            Apply the changes. Without it, nothing is written.",
           "  --yes, -y          Approve every placeholder merge without asking",
           "  --no-merge         Only match on exact titles; never merge placeholders",
@@ -119,8 +135,11 @@ function parseArgs(argv: readonly string[]): Options {
       process.exit(0);
     }
   }
-  if (!options.csv) {
-    throw new Error("--csv is required (export the 'Formatted Papers' tab as CSV)");
+  if (Boolean(options.csv) === Boolean(options.sheetJson)) {
+    throw new Error("Supply exactly one --csv or --sheet-json input");
+  }
+  if (options.paperSubmissions) {
+    options.noMerge = true;
   }
   return options;
 }
@@ -224,7 +243,11 @@ function pendingLinks(
   payload: PaperPayload,
   row: SheetRow,
   columnIndex: ReadonlyMap<string, number>,
+  paperSubmissions = false,
 ): { field: string; value: string }[] {
+  if (paperSubmissions) {
+    return pendingSubmissionLinks(payload.artifacts ?? {}, row.cells);
+  }
   const artifacts = { ...payload.artifacts };
   const found: { field: string; value: string }[] = [];
   for (const [column, field] of LINK_COLUMNS) {
@@ -250,6 +273,142 @@ function pendingLinks(
   return found;
 }
 
+type SheetCell = {
+  formattedValue?: string;
+  hyperlink?: string;
+  textFormatRuns?: { format?: { link?: { uri?: string } } }[];
+  chipRuns?: { chip?: { richLinkProperties?: { uri?: string } } }[];
+};
+
+/** Read only the named tab's A:F grid; preserve blank cells so E/F cannot drift. */
+export function paperSubmissionGridRows(input: unknown): string[][] {
+  if (!input || typeof input !== "object" || !("sheets" in input) || !Array.isArray(input.sheets)) {
+    throw new Error("Expected a Sheets API response with grid data");
+  }
+  const sheets = input.sheets.filter(
+    (sheet) =>
+      typeof sheet?.properties?.title === "string" &&
+      sheet.properties.title.toLowerCase() === "paper submissions",
+  );
+  if (sheets.length !== 1 || !Array.isArray(sheets[0].data) || sheets[0].data.length !== 1) {
+    throw new Error("Expected one Paper Submissions A1:F grid");
+  }
+  const grid = sheets[0].data[0];
+  if ((grid.startRow ?? 0) !== 0 || (grid.startColumn ?? 0) !== 0 || !Array.isArray(grid.rowData)) {
+    throw new Error("Grid must begin at A1 and include header and rows");
+  }
+  return grid.rowData.map((row: { values?: SheetCell[] }) => {
+    if (row.values !== undefined && !Array.isArray(row.values)) {
+      throw new Error("Invalid grid row");
+    }
+    return Array.from({ length: 6 }, (_, index) => {
+      const cell = row.values?.[index];
+      if (!cell) {
+        return "";
+      }
+      const text = typeof cell.formattedValue === "string" ? cell.formattedValue : "";
+      if (index < 4) {
+        return text;
+      }
+      return [
+        text,
+        cell.hyperlink,
+        ...(cell.textFormatRuns ?? []).map((run) => run.format?.link?.uri),
+        ...(cell.chipRuns ?? []).map((run) => run.chip?.richLinkProperties?.uri),
+      ]
+        .filter((value) => typeof value === "string")
+        .join(" ");
+    });
+  });
+}
+
+/** Paper Submissions E/F cells are mixed notes and links; never reinterpret dates as URLs. */
+export function pendingSubmissionLinks(
+  artifacts: Readonly<Record<string, string | undefined>>,
+  cells: readonly string[],
+): { field: string; value: string }[] {
+  const found = new Map<string, string>();
+  for (const cell of cells.slice(4, 6)) {
+    for (const raw of cell.match(/https?:\/\/[^\s<>"']+/giu) ?? []) {
+      const value = raw.replace(/[),.;]+$/u, "");
+      let url: URL;
+      try {
+        url = new URL(value);
+      } catch {
+        continue;
+      }
+      if (url.protocol !== "https:" || url.username || url.password) {
+        continue;
+      }
+      let field: string | undefined;
+      if (isAdminBotOverleafHost(url.hostname)) {
+        if (/^\/read\/[A-Za-z0-9]+\/?$/u.test(url.pathname)) {
+          field = "overleaf_view_url";
+        } else if (/^\/[A-Za-z0-9]{12,64}\/?$/u.test(url.pathname)) {
+          field = "overleaf_share_url";
+        } else if (/^\/project\/[A-Za-z0-9]{1,64}\/?$/u.test(url.pathname)) {
+          field = "overleaf_edit_url";
+        }
+      } else if (url.hostname === "docs.google.com") {
+        if (/^\/document\/d\/[A-Za-z0-9_-]+(?:\/|$)/u.test(url.pathname)) {
+          field = "brainstorming_doc_url";
+        } else if (/^\/presentation\/d\/[A-Za-z0-9_-]+(?:\/|$)/u.test(url.pathname)) {
+          field = "google_slides_url";
+        }
+      }
+      if (
+        field &&
+        !artifacts[field] &&
+        !Object.values(artifacts).includes(value) &&
+        !found.has(field)
+      ) {
+        found.set(field, value);
+      }
+    }
+  }
+  return [...found].map(([field, value]) => ({ field, value }));
+}
+
+/** Renamed papers need identity evidence: exact URLs, unique in both records and source rows. */
+export function submissionArtifactMatches(
+  rows: readonly SheetRow[],
+  papers: readonly { id: string; payload: PaperPayload }[],
+): Map<string, SheetRow> {
+  const owners = new Map<string, Set<string>>();
+  const titles = new Set(papers.map((paper) => titleKey(paper.payload.title ?? "")));
+  const sourceTitles = new Map<string, number>();
+  for (const row of rows) {
+    const key = titleKey(row.title);
+    sourceTitles.set(key, (sourceTitles.get(key) ?? 0) + 1);
+  }
+  for (const paper of papers) {
+    for (const value of Object.values(paper.payload.artifacts ?? {})) {
+      if (!value) {
+        continue;
+      }
+      const ids = owners.get(value) ?? new Set<string>();
+      ids.add(paper.id);
+      owners.set(value, ids);
+    }
+  }
+  const candidates = new Map<string, SheetRow | null>();
+  for (const row of rows) {
+    const ids = new Set<string>();
+    for (const link of pendingSubmissionLinks({}, row.cells)) {
+      for (const id of owners.get(link.value) ?? []) {
+        ids.add(id);
+      }
+    }
+    // Count every candidate row, even a duplicate title, so it cannot silently win by filtering.
+    for (const id of ids) {
+      const key = titleKey(row.title);
+      const usable = ids.size === 1 && sourceTitles.get(key) === 1 && !titles.has(key);
+      candidates.set(id, candidates.has(id) || !usable ? null : row);
+    }
+  }
+  return new Map([...candidates].filter((entry): entry is [string, SheetRow] => entry[1] !== null));
+}
+
 /**
  * Ask about one merge. Anything but y/yes is a no, and a closed stdin is a no.
  *
@@ -270,7 +429,9 @@ async function main(): Promise<void> {
     throw new Error(`Database not found: ${options.database}`);
   }
 
-  const rows = parseCsv(fs.readFileSync(options.csv, "utf8"));
+  const rows = options.sheetJson
+    ? paperSubmissionGridRows(JSON.parse(fs.readFileSync(options.sheetJson, "utf8")))
+    : parseCsv(fs.readFileSync(options.csv, "utf8"));
   if (rows.length < 2) {
     throw new Error(`No rows in ${options.csv}`);
   }
@@ -291,11 +452,11 @@ async function main(): Promise<void> {
       continue;
     }
     const year = yearColumn === undefined ? Number.NaN : parseYear(cells[yearColumn] ?? "");
-    if (Number.isNaN(year)) {
+    if (!options.paperSubmissions && Number.isNaN(year)) {
       skippedUndated++;
       continue;
     }
-    if (year < options.sinceYear) {
+    if (!options.paperSubmissions && year < options.sinceYear) {
       skippedOld++;
       continue;
     }
@@ -305,11 +466,13 @@ async function main(): Promise<void> {
   // Sheet rows keyed by exact title, and separately by pre-colon head for the placeholder merge.
   // A head shared by two rows is not usable -- a guess between two papers is worse than leaving the
   // placeholder alone -- so those heads are dropped rather than resolved.
-  const byTitle = new Map<string, SheetRow>();
+  const byTitle = new Map<string, SheetRow | null>();
   const byHead = new Map<string, SheetRow | null>();
   for (const row of kept) {
     const key = titleKey(row.title);
-    if (!byTitle.has(key)) {
+    if (options.paperSubmissions && byTitle.has(key)) {
+      byTitle.set(key, null);
+    } else if (!byTitle.has(key)) {
       byTitle.set(key, row);
     }
     const head = titleHead(row.title);
@@ -331,6 +494,21 @@ async function main(): Promise<void> {
   const usedKeys = new Set<string>();
   const mergeCandidates: Candidate[] = [];
   let matchedExact = 0;
+  let matchedArtifact = 0;
+  const artifactMatches = options.paperSubmissions
+    ? submissionArtifactMatches(
+        kept,
+        papers.map((paper) => ({
+          id: paper.id,
+          payload: JSON.parse(paper.payload_json) as PaperPayload,
+        })),
+      )
+    : new Map<string, SheetRow>();
+  const titleCounts = new Map<string, number>();
+  for (const paper of papers) {
+    const key = titleKey((JSON.parse(paper.payload_json) as PaperPayload).title ?? "");
+    titleCounts.set(key, (titleCounts.get(key) ?? 0) + 1);
+  }
 
   for (const paper of papers) {
     const payload = JSON.parse(paper.payload_json) as PaperPayload;
@@ -339,7 +517,11 @@ async function main(): Promise<void> {
       continue;
     }
     const key = titleKey(title);
-    const row = byTitle.get(key);
+    if (options.paperSubmissions && titleCounts.get(key) !== 1) {
+      continue;
+    }
+    const exactRow = byTitle.get(key);
+    const row = exactRow ?? (byTitle.has(key) ? undefined : artifactMatches.get(paper.id));
     if (!row) {
       // The paper's whole title is a sheet title's pre-colon half: a placeholder and its finished
       // version. `null` means the head was ambiguous and was deliberately dropped above. These are
@@ -350,10 +532,14 @@ async function main(): Promise<void> {
       }
       continue;
     }
-    matchedExact++;
+    if (exactRow) {
+      matchedExact++;
+    } else {
+      matchedArtifact++;
+    }
     usedKeys.add(titleKey(row.title));
 
-    const links = pendingLinks(payload, row, columnIndex);
+    const links = pendingLinks(payload, row, columnIndex, options.paperSubmissions);
     if (links.length === 0) {
       continue;
     }
@@ -366,17 +552,27 @@ async function main(): Promise<void> {
   }
 
   console.log(`papers in database:        ${papers.length}`);
-  console.log(`sheet rows from ${options.sinceYear} on:   ${kept.length}`);
+  console.log(
+    options.paperSubmissions
+      ? `Paper Submissions rows:    ${kept.length}`
+      : `sheet rows from ${options.sinceYear} on:   ${kept.length}`,
+  );
   console.log(`  skipped, older:          ${skippedOld}`);
   console.log(`  skipped, no year:        ${skippedUndated}`);
   console.log(`matched by exact title:    ${matchedExact}`);
+  console.log(`matched by exact artifact: ${matchedArtifact}`);
   console.log(`placeholder merges to ask: ${mergeCandidates.length}`);
   console.log(`links from exact matches:  ${changes.length}`);
 
   if (mergeCandidates.length > 0) {
     console.log("\nproposed placeholder merges:");
     for (const candidate of mergeCandidates) {
-      const links = pendingLinks(candidate.payload, candidate.row, columnIndex);
+      const links = pendingLinks(
+        candidate.payload,
+        candidate.row,
+        columnIndex,
+        options.paperSubmissions,
+      );
       console.log(`  "${candidate.title}"  ->  "${candidate.row.title}" (${candidate.row.year})`);
       console.log(
         `    ${links.length} link${links.length === 1 ? "" : "s"} would follow${
@@ -414,7 +610,12 @@ async function main(): Promise<void> {
           }
           approved++;
           usedKeys.add(titleKey(candidate.row.title));
-          const links = pendingLinks(candidate.payload, candidate.row, columnIndex);
+          const links = pendingLinks(
+            candidate.payload,
+            candidate.row,
+            columnIndex,
+            options.paperSubmissions,
+          );
           const artifacts = { ...candidate.payload.artifacts };
           for (const link of links) {
             artifacts[link.field] = link.value;
@@ -448,14 +649,21 @@ async function main(): Promise<void> {
 
   // Back up before the first write, not after: a backup taken later is a backup of the damage.
   const backup = backupPath(options.database);
-  fs.copyFileSync(options.database, backup);
+  db.exec(`VACUUM INTO '${backup.replaceAll("'", "''")}'`);
   console.log(`\nBacked up to ${path.resolve(backup)}`);
 
-  const update = db.prepare("UPDATE adminbot_papers SET payload_json = ? WHERE id = ?");
-  db.exec("BEGIN");
+  const originals = new Map(papers.map((paper) => [paper.id, paper.payload_json]));
+  const update = db.prepare(
+    "UPDATE adminbot_papers SET payload_json = ? WHERE id = ? AND payload_json = ?",
+  );
+  db.exec("BEGIN IMMEDIATE");
   try {
     for (const [id, payload] of updates) {
-      update.run(payload, id);
+      if (update.run(payload, id, originals.get(id)).changes !== 1) {
+        throw new Error(
+          "Paper changed during backfill; no updates committed. Run a fresh dry run.",
+        );
+      }
     }
     db.exec("COMMIT");
   } catch (error) {
@@ -469,7 +677,9 @@ async function main(): Promise<void> {
   db.close();
 }
 
-main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : error);
-  process.exitCode = 1;
-});
+if (isMainModule(import.meta.url)) {
+  main().catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : error);
+    process.exitCode = 1;
+  });
+}

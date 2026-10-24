@@ -34,6 +34,7 @@ describe("adminbot plugin metadata", () => {
       "adminbot-reimbursements",
       "adminbot-slack-management",
       "adminbot-social-posts",
+      "adminbot-twitter-paper-thread",
       "adminbot-workflows",
     ]);
     expect(orchestrator).toContain("name: adminbot-workflows");
@@ -83,6 +84,17 @@ describe("adminbot plugin metadata", () => {
       await expect(target?.execute("rpc-dashboard-1", params)).rejects.toThrow(/Control UI/u);
     },
   );
+
+  it("registers the Slack stop hook alongside the tools", () => {
+    const captured = createCapturedPluginRegistration({ id: "adminbot" });
+    const on = vi.fn();
+    captured.api.on = on as typeof captured.api.on;
+
+    adminbotPlugin.register(captured.api);
+
+    expect(on.mock.calls.map((call) => call[0])).toContain("before_dispatch");
+    expect(captured.tools.length).toBeGreaterThan(0);
+  });
 
   it("still asks the user before removing a pending action from chat", async () => {
     const captured = createCapturedPluginRegistration({ id: "adminbot" });

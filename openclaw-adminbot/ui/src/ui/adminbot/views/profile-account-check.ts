@@ -11,7 +11,12 @@
 // (bot detection, login walls), so a "does this account exist" fetch against them from a browser
 // is unreliable in exactly the way that makes false "account not found" errors worse than no
 // check at all. Those fields get the format check only; this module never touches them.
-export type ProfileAccountCheckStatus = "checking" | "verified" | "not-found" | "unknown";
+export type ProfileAccountCheckStatus =
+  | "checking"
+  | "verified"
+  | "not-found"
+  | "warning"
+  | "unknown";
 
 export type ProfileAccountCheck = {
   status: ProfileAccountCheckStatus;

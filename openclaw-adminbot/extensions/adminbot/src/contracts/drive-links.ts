@@ -43,14 +43,13 @@ export function adminBotDriveFileId(raw: string): string | undefined {
 /**
  * What a probe can say about a file.
  *
- * Three answers rather than two, and the third is load-bearing. `missing` is Google saying the
- * file is not there, which is a contradiction of the evidence and should be acted on. `unreadable`
- * is everything else -- no account configured, a network that blinked, a file shared with a person
- * but not with the lab's own account -- and must never be treated as "the artifact does not
- * exist", because the commonest cause is a sharing setting rather than a wrong link.
+ * Three answers rather than two, and the third is load-bearing. Google uses 404 both for a
+ * missing file and for one this account cannot read. `missing` means only that ambiguous 404;
+ * callers must ask the owner to check the link and sharing, never claim the file was deleted.
+ * `unreadable` is a probe failure such as absent credentials or a network error.
  */
 export type AdminBotDriveProbeResult =
-  | { status: "found"; name?: string; trashed?: boolean }
+  | { status: "found"; name?: string; trashed?: boolean; canEdit?: boolean }
   | { status: "missing" }
   | { status: "unreadable"; reason: string };
 

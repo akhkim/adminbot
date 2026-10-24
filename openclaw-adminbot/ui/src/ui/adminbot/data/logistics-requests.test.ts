@@ -174,7 +174,7 @@ describe("request builders", () => {
       cvOverleafUrl: "https://overleaf.com/read/abc",
       driveFolderUrl: "",
     });
-    expect(input.schools).toEqual([{ school: "MIT" }]);
+    expect(input.schools).toEqual([{ school: "MIT", deadline_timezone: "AoE" }]);
     expect(input.facts).toEqual([{ project: "AdminBot", contribution: "the gate" }]);
     expect(input.cv_overleaf_url).toBe("https://overleaf.com/read/abc");
     expect(input).not.toHaveProperty("drive_folder_url");
@@ -403,5 +403,24 @@ describe("requestToFormState", () => {
     });
     const ids = form.letters?.schools.map((row) => row.id) ?? [];
     expect(new Set(ids).size).toBe(2);
+  });
+});
+
+it("requires a valid letter deadline even if the application date is present", () => {
+  const form = {
+    schools: [createSchoolRow({ school: "Example", applicationDeadline: "2026-12-01" })],
+    facts: [],
+    cvOverleafUrl: "",
+    driveFolderUrl: "",
+  };
+  expect(describeSubmitBlock("recommendation_letters", form)).toEqual({
+    reason: "letter-deadline",
+  });
+  form.schools[0].letterDeadline = "2026-12-15";
+  expect(describeSubmitBlock("recommendation_letters", form)).toBeNull();
+  expect(schoolToWire(form.schools[0]).deadline_timezone).toBe("AoE");
+  form.schools[0].deadlineTimezone = "invalid/zone";
+  expect(describeSubmitBlock("recommendation_letters", form)).toEqual({
+    reason: "letter-deadline",
   });
 });

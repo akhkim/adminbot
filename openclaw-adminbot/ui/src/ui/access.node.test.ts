@@ -24,12 +24,28 @@ describe("General Tools", () => {
   const generalTools = TAB_GROUPS.find((group) => group.label === "generalTools")
     ?.tabs as readonly Tab[];
 
-  it("is open to visitors, every tab of it", () => {
+  it("opens public tools to visitors while protecting account-only tools", () => {
     expect(generalTools.length).toBeGreaterThan(0);
-    expect(visibleTabsForRole(generalTools, "anonymous")).toEqual(generalTools);
-    for (const tab of generalTools) {
-      expect(canAccessTab(tab, "anonymous")).toBe(true);
-    }
+    expect(visibleTabsForRole(generalTools, "anonymous")).toEqual([
+      "adminbotReimbursements",
+      "adminbotDeadlines",
+      "adminbotOpportunities",
+      "adminbotConferencePapers",
+    ]);
+    expect(canAccessTab("adminbotReferenceChecker", "anonymous")).toBe(false);
+    expect(canAccessTab("events", "anonymous")).toBe(false);
+  });
+
+  // Events names who is going where; the service refuses everyone below a full member on every
+  // /events and /travel route, and the sidebar matches it rather than offering a tab that only
+  // says no.
+  it("offers Events to full members and admins only", () => {
+    expect(canAccessTab("events", "member", "member")).toBe(true);
+    expect(canAccessTab("events", "admin", "admin")).toBe(true);
+    expect(canAccessTab("events", "member", "trial")).toBe(false);
+    expect(canAccessTab("events", "member", "external_collaborator")).toBe(false);
+    expect(canAccessTab("events", "anonymous")).toBe(false);
+    expect(canAccessTab("adminbotNotificationDrafts", "anonymous")).toBe(false);
   });
 });
 
@@ -95,8 +111,8 @@ describe("resolveAccessRole", () => {
 
 describe("visibleTabsForRole", () => {
   it("shows a visitor the shared tools, and nothing else", () => {
-    // The whole General Tools group and no more: the reachable set is the group, so a tool added
-    // to it is published and a tool added anywhere else is not.
+    // Only the anonymous-level tools of the General Tools group: the group also holds member- and
+    // admin-level tools, and the access table, not the group, decides who sees them.
     expect(visibleTabsForRole(ALL_TABS, "anonymous")).toEqual([
       "adminbotReimbursements",
       "adminbotDeadlines",
@@ -116,6 +132,8 @@ describe("visibleTabsForRole", () => {
       "profile",
       // Your own schedule, next to your own record.
       "adminbotTimeAvailability",
+      // Conference RSVPs, who is nearby and opt-in location sharing.
+      "events",
       "myWork",
       "labSharing",
       // Recordings of the lab's own meetings sit with Lab Sharing, above the roster.
@@ -132,6 +150,10 @@ describe("visibleTabsForRole", () => {
       // Reads a public conference programme against the viewer's own interests, and writes
       // nothing.
       "adminbotConferencePapers",
+      "adminbotReferenceChecker",
+      // The ARR eligible-reviewer list is member-level: it reads the lab's own roster, like Lab
+      // Members, and changes nothing.
+      "adminbotArrReviewers",
     ]);
   });
 

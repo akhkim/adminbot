@@ -2,7 +2,7 @@
 // group the lab's papers into.
 import { render } from "lit";
 import { describe, expect, it } from "vitest";
-import type { PaperSlotOverviewRow } from "../auth/session.ts";
+import type { PaperSlotOverviewRow } from "../api/paper-admin.ts";
 import type { AdminBotPaperRecord } from "../controllers/admin.ts";
 import {
   EMPTY_PAPER_OVERVIEW_FILTER,
@@ -31,8 +31,6 @@ function paper(fields: Partial<AdminBotPaperRecord> = {}): AdminBotPaperRecord {
 function slots(fields: Partial<PaperSlotOverviewRow> = {}): PaperSlotOverviewRow {
   return {
     paper_id: "p-1",
-    title: "Meta agents for reliable science",
-    current_step: "overleaf_writing",
     provided_count: 3,
     required_count: 3,
     dormant: false,
@@ -70,12 +68,15 @@ function draw(options: {
   render(
     renderPaperOverviewTable({
       rows: options.rows,
-      filter: { ...EMPTY_PAPER_OVERVIEW_FILTER, ...options.filter },
+      filter: { ...EMPTY_PAPER_OVERVIEW_FILTER, collapsed: [], ...options.filter },
       onFilterChange: (next) => filters.push(next),
       onOpenPaper: (id) => opened.push(id),
       stages: [{ value: "overleaf_writing", label: "Overleaf writing" }],
       ...(options.memberTypes
-        ? { memberTypeOf: (memberId?: string) => (memberId ? options.memberTypes?.[memberId] : undefined) }
+        ? {
+            memberTypeOf: (memberId?: string) =>
+              memberId ? options.memberTypes?.[memberId] : undefined,
+          }
         : {}),
     }),
     container,
@@ -301,7 +302,7 @@ describe("the member type filter", () => {
       .querySelector<HTMLInputElement>('[data-testid="paper-overview-type-alumni"]')
       ?.dispatchEvent(new Event("change", { bubbles: true }));
     expect(drawn.filters).toEqual([
-      { ...EMPTY_PAPER_OVERVIEW_FILTER, memberTypes: ["alumni"] },
+      { ...EMPTY_PAPER_OVERVIEW_FILTER, collapsed: [], memberTypes: ["alumni"] },
     ]);
   });
 
@@ -430,7 +431,7 @@ describe("renderPaperOverviewTable", () => {
   it("puts the lab on one scannable line per person, with their papers inside it", () => {
     const { container } = draw({
       rows: build({
-        papers: [paper({ timeline: { current_step_index: 2, items: [] } as never })],
+        papers: [paper({ current_step: "submission" })],
         slots: [
           slots({
             provided_count: 1,
@@ -475,11 +476,11 @@ describe("renderPaperOverviewTable", () => {
       papers: [
         paper({
           id: "early",
-          timeline: { current_step_index: 1, items: [] } as never,
+          current_step: "overleaf_writing",
         }),
         paper({
           id: "late",
-          timeline: { current_step_index: 6, items: [] } as never,
+          current_step: "slide_making",
         }),
       ],
       slots: [slots({ paper_id: "early" }), slots({ paper_id: "late" })],
@@ -487,6 +488,12 @@ describe("renderPaperOverviewTable", () => {
     expect(early?.stepIndex).toBe(1);
     expect(late?.stepIndex).toBe(6);
     expect(early?.stepCount).toBe(8);
+    // Labels come from `current_step` too, so a paper saved onto a new step reads as that step
+    // straight away -- there is no server-computed timeline left on the row to go stale.
+    expect(early?.currentLabel).toBe("Overleaf writing");
+    expect(early?.nextLabel).toBe("Submission");
+    expect(late?.currentLabel).toBe("Slides");
+    expect(late?.nextLabel).toBe("Poster");
   });
 
   it("lets the roll-up figure be the filter, so a count is read and acted on once", () => {
@@ -497,7 +504,9 @@ describe("renderPaperOverviewTable", () => {
     container
       .querySelector<HTMLButtonElement>('[data-testid="paper-overview-figure-attention"]')
       ?.click();
-    expect(filters).toEqual([{ ...EMPTY_PAPER_OVERVIEW_FILTER, state: "attention" }]);
+    expect(filters).toEqual([
+      { ...EMPTY_PAPER_OVERVIEW_FILTER, collapsed: [], state: "attention" },
+    ]);
   });
 
   it("says a filter matched nothing rather than that the lab has no papers", () => {
@@ -552,6 +561,21 @@ describe("folding a person's papers away", () => {
     build({
       papers: [paper(), paper({ id: "p-2", title: "Second paper" })],
     });
+
+  it("starts folded and lets the reader open a person", () => {
+    const { container, filters } = draw({
+      rows: two(),
+      filter: { state: "all", collapsed: undefined },
+    });
+    const toggle = container.querySelector<HTMLButtonElement>(
+      '[data-testid^="paper-overview-person-toggle-"]',
+    );
+    expect(toggle?.getAttribute("aria-expanded")).toBe("false");
+    expect(container.textContent).not.toContain("Second paper");
+    toggle?.click();
+    const reopened = draw({ rows: two(), filter: filters.at(-1) });
+    expect(reopened.container.textContent).toContain("Second paper");
+  });
 
   it("asks the page to fold, keyed by person", () => {
     const { container, filters } = draw({ rows: two(), filter: { state: "all" } });

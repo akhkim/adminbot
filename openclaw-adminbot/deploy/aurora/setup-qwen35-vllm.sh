@@ -112,6 +112,8 @@ done
   die "/mfs1/u/$USER is missing; ask Aurora administrators to provision the model filesystem"
 [[ -f "$ROOT/deploy/aurora/configure-openclaw-qwen35.mjs" ]] ||
   die "OpenClaw Qwen configuration helper is missing from $ROOT"
+[[ -x "$ROOT/deploy/aurora/restart-adminbot-after-vllm.sh" ]] ||
+  die "AdminBot restart helper is missing from $ROOT"
 [[ "$GPU" =~ ^[A-Za-z0-9._,:-]+$ ]] || die "GPU selector contains unsupported characters"
 [[ "$PORT" =~ ^[0-9]+$ ]] || die "port must be numeric"
 [[ "$MAX_MODEL_LEN" =~ ^[0-9]+$ ]] || die "max model length must be numeric"
@@ -143,10 +145,45 @@ UNIT_DIR="$HOME/.config/systemd/user"
 ENV_DIR="$HOME/.config/jinesis-adminbot"
 ENV_FILE="$ENV_DIR/adminbot.env"
 OPENCLAW_CONFIG="$HOME/.openclaw/openclaw.json"
-VLLM_API_KEY="${VLLM_API_KEY:-vllm-local}"
+# vLLM reads its key from this file alone, not from adminbot.env: that file also sets
+# LD_LIBRARY_PATH, and systemd lets an EnvironmentFile override the unit's own CUDA library path.
+VLLM_ENV_FILE="$ENV_DIR/vllm.env"
+# Caches go next to the model on /mfs1, not under the quota-limited home volume, which filled up.
+CACHE_BASE="$(dirname -- "$MODEL_HOME")"
+
+# The model is reachable through Cloudflare, so its key must never be a well-known default, and a
+# re-run must never silently replace a working key. Keep an explicit key, else the one already
+# deployed, else generate one.
+env_value() {
+  [[ -f "$2" ]] && sed -n "s/^$1=//p" "$2" | tail -1 | tr -d '"'
+  return 0
+}
+if [[ -z "${VLLM_API_KEY:-}" ]]; then
+  VLLM_API_KEY="$(env_value VLLM_API_KEY "$VLLM_ENV_FILE")"
+  [[ -n "$VLLM_API_KEY" ]] || VLLM_API_KEY="$(env_value VLLM_API_KEY "$ENV_FILE")"
+  if [[ -z "$VLLM_API_KEY" || "$VLLM_API_KEY" == vllm-local ]]; then
+    VLLM_API_KEY="$(openssl rand -hex 32)"
+    printf 'generated a new VLLM_API_KEY; AdminBot and the Gateway pick it up when restarted below\n'
+  fi
+fi
+[[ "$VLLM_API_KEY" != vllm-local ]] || die "VLLM_API_KEY must not be the well-known vllm-local default"
+# Also keeps the key safe inside the sed replacements and header files below.
+[[ "$VLLM_API_KEY" =~ ^[A-Za-z0-9._~-]{32,}$ ]] ||
+  die "VLLM_API_KEY must be at least 32 characters of [A-Za-z0-9._~-] (openssl rand -hex 32)"
 
 mkdir -p "$MODEL_HOME" "$HF_HOME" "$UNIT_DIR" "$ENV_DIR"
 chmod 700 "$MODEL_HOME" "$ENV_DIR"
+(
+  umask 077
+  printf '# Only the vLLM API key. Kept in step with VLLM_API_KEY in adminbot.env.\nVLLM_API_KEY=%s\n' \
+    "$VLLM_API_KEY" >"$VLLM_ENV_FILE.tmp"
+)
+mv -f -- "$VLLM_ENV_FILE.tmp" "$VLLM_ENV_FILE"
+# The smoke tests below read the key from this file, not from curl's argv, where any Aurora user's
+# `ps` would show it.
+AUTH_HEADER_FILE="$(mktemp)"
+trap 'rm -f -- "$AUTH_HEADER_FILE"' EXIT
+printf 'Authorization: Bearer %s\n' "$VLLM_API_KEY" >"$AUTH_HEADER_FILE"
 
 if [[ "$SKIP_DOWNLOAD" == "no" ]]; then
   available_kb="$(df -Pk "$MODEL_HOME" | awk 'NR == 2 { print $4 }')"
@@ -222,8 +259,13 @@ Environment=CUDA_VISIBLE_DEVICES=$GPU
 Environment=HF_HOME=$HF_HOME
 Environment=HUGGINGFACE_HUB_CACHE=$HUGGINGFACE_HUB_CACHE
 Environment=HF_HUB_DOWNLOAD_TIMEOUT=120
-Environment=VLLM_API_KEY=$VLLM_API_KEY
-ExecStart=$VENV/bin/vllm serve $MODEL_ID --host 127.0.0.1 --port $PORT --api-key $VLLM_API_KEY --trust-remote-code --quantization modelopt_fp4 --kv-cache-dtype fp8 --tensor-parallel-size 1 --max-model-len $MAX_MODEL_LEN --gpu-memory-utilization $GPU_MEMORY_UTILIZATION --reasoning-parser qwen3 --enable-auto-tool-choice --tool-call-parser qwen3_coder --generation-config vllm --enable-chunked-prefill --enable-prefix-caching --max-num-seqs 2 --max-num-batched-tokens 8192
+Environment=VLLM_CACHE_ROOT=$CACHE_BASE/.cache/vllm
+Environment=FLASHINFER_WORKSPACE_BASE=$CACHE_BASE
+Environment=VLLM_NO_USAGE_STATS=1
+# The key comes from this file (vLLM reads VLLM_API_KEY), never --api-key: argv is visible to
+# every user on Aurora.
+EnvironmentFile=$VLLM_ENV_FILE
+ExecStart=$VENV/bin/vllm serve $MODEL_ID --host 127.0.0.1 --port $PORT --trust-remote-code --quantization modelopt_fp4 --kv-cache-dtype fp8 --tensor-parallel-size 1 --max-model-len $MAX_MODEL_LEN --gpu-memory-utilization $GPU_MEMORY_UTILIZATION --reasoning-parser qwen3 --enable-auto-tool-choice --tool-call-parser qwen3_coder --generation-config vllm --enable-chunked-prefill --enable-prefix-caching --max-num-seqs 2 --max-num-batched-tokens 8192
 Restart=on-failure
 RestartSec=10
 TimeoutStartSec=20min
@@ -254,7 +296,7 @@ printf 'Waiting up to %s for vLLM' "$STARTUP_TIMEOUT"
 while ((SECONDS < deadline)); do
   models_response="$(
     curl --fail --silent --show-error --max-time 5 \
-      -H "Authorization: Bearer $VLLM_API_KEY" \
+      -H @"$AUTH_HEADER_FILE" \
       "http://127.0.0.1:$PORT/v1/models" 2>/dev/null || true
   )"
   if [[ -n "$models_response" ]] && \
@@ -271,7 +313,7 @@ done
 
 privacy_payload='{"model":"'"$MODEL_ID"'","chat_template_kwargs":{"enable_thinking":false},"messages":[{"role":"system","content":"Classify locally. Return JSON only."},{"role":"user","content":"Return a generic classification."}],"temperature":0,"max_tokens":128,"response_format":{"type":"json_schema","json_schema":{"name":"privacy_classification","strict":true,"schema":{"type":"object","properties":{"classification":{"type":"string","enum":["generic","private","uncertain"]}},"required":["classification"],"additionalProperties":false}}}}'
 curl --fail-with-body --silent --show-error --max-time 300 \
-  -H "Authorization: Bearer $VLLM_API_KEY" \
+  -H @"$AUTH_HEADER_FILE" \
   -H "Content-Type: application/json" \
   --data "$privacy_payload" \
   "http://127.0.0.1:$PORT/v1/chat/completions" >/dev/null ||
@@ -279,7 +321,7 @@ curl --fail-with-body --silent --show-error --max-time 300 \
 
 tool_payload='{"model":"'"$MODEL_ID"'","messages":[{"role":"user","content":"Call adminbot_probe exactly once with item alpha."}],"tools":[{"type":"function","function":{"name":"adminbot_probe","description":"Return a test item status.","parameters":{"type":"object","properties":{"item":{"type":"string"}},"required":["item"],"additionalProperties":false}}}],"tool_choice":"required","temperature":0.6,"top_p":0.95,"max_tokens":8192}'
 tool_response="$(curl --fail-with-body --silent --show-error --max-time 300 \
-  -H "Authorization: Bearer $VLLM_API_KEY" \
+  -H @"$AUTH_HEADER_FILE" \
   -H "Content-Type: application/json" \
   --data "$tool_payload" \
   "http://127.0.0.1:$PORT/v1/chat/completions")" ||
@@ -309,7 +351,7 @@ if [[ "$DELETE_OLD_CHECKPOINT" == "yes" && "$OLD_MODEL_ID" != "$MODEL_ID" ]]; th
     --yes
 fi
 
-systemctl --user try-restart jinesis-adminbot.service jinesis-openclaw-gateway.service || true
+"$ROOT/deploy/aurora/restart-adminbot-after-vllm.sh"
 
 printf 'vllm_url=http://127.0.0.1:%s/v1\n' "$PORT"
 printf 'model=%s\n' "$MODEL_ID"

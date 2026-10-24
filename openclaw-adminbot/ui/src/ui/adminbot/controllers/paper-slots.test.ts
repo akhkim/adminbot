@@ -5,9 +5,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createStorageMock } from "../../../test-helpers/storage.ts";
 import type { UiSettings } from "../../storage.ts";
-import { saveStoredMemberSession, type PaperNudgeBatch } from "../auth/session.ts";
+import type { PaperNudgeBatch } from "../api/paper-admin.ts";
+import { saveStoredMemberSession } from "../auth/session.ts";
 import {
   loadAdminBotNudgeBatches,
+  loadAdminBotPaperSlotOverview,
   nudgeAdminBotPaperAuthors,
   nudgeableBatches,
   type AdminBotPaperSlotsHost,
@@ -19,7 +21,7 @@ function batch(memberId: string, name = memberId): PaperNudgeBatch {
     member_name: name,
     deliverable: true,
     item_count: 1,
-    paper_titles: ["A paper"],
+    paper_count: 1,
     message: "still needs: slides",
   };
 }
@@ -129,6 +131,37 @@ describe("nudge pass", () => {
     await loadAdminBotNudgeBatches(host);
     expect(host.adminBotPaperNudgeBatches?.map((entry) => entry.member_id)).toEqual(["ada"]);
     expect(host.adminBotPaperNudgeSelected).toEqual(["ada"]);
+  });
+
+  it("counts the papers from an older service's title list", async () => {
+    const { paper_count: _count, ...old } = batch("ada");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      json({ batches: [{ ...old, paper_titles: ["One", "Two"] }] }),
+    );
+    const host = createHost();
+    await loadAdminBotNudgeBatches(host);
+    expect(host.adminBotPaperNudgeBatches?.[0]).toMatchObject({ paper_count: 2 });
+    expect(host.adminBotPaperNudgeBatches?.[0]).not.toHaveProperty("paper_titles");
+  });
+
+  it("does not repopulate another member's slots after a session switch", async () => {
+    let finish: ((response: Response) => void) | undefined;
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const host = createHost();
+    const loading = loadAdminBotPaperSlotOverview(host);
+    expect(host.adminBotPaperSlotsLoading).toBe(true);
+    saveStoredMemberSession({ sessionToken: "next", memberId: "ada" } as never);
+    host.adminBotPaperSlotOverview = [];
+    host.adminBotPaperSlotsLoading = false;
+    finish?.(json({ papers: [{ paper_id: "private-paper" }] }));
+    await loading;
+    expect(host.adminBotPaperSlotOverview).toEqual([]);
+    expect(host.adminBotPaperSlotsLoading).toBe(false);
   });
 
   it("sends one request per recipient instead of one long one", async () => {

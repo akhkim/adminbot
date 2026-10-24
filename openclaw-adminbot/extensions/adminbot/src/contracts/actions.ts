@@ -1,8 +1,11 @@
+import { adminBotOwnerOnlyMemberFields } from "./member-owner-fields.js";
+
 export const adminBotRiskTiers = ["T0", "T1", "T2", "T3", "T4"] as const;
 
 export type AdminBotRiskTier = (typeof adminBotRiskTiers)[number];
 
 export const adminBotActionTypes = [
+  "reference.scan",
   "slack.send_message",
   "slack.profile_photo_update",
   "slack.channel_naming_notify_owner",
@@ -25,6 +28,13 @@ export const adminBotActionTypes = [
   // approval card show what the event will look like afterwards, which is the thing worth reading
   // before saying yes to uninviting somebody.
   "calendar.remove_attendees",
+  // Read-only access to the lab's shared calendar for one member. Its own type because it is not an
+  // event write: it adds an ACL entry to the calendar itself, silently (Google's "shared a calendar
+  // with you" mail is suppressed). Typed so an onboarding that no admin is present for -- the
+  // weekly sheet sweep -- can queue the grant for approval like every other step, instead of either
+  // skipping it or granting access with nobody having said yes.
+  "calendar.grant_lab_calendar",
+  "calendar.revoke_lab_calendar",
   "calendar.reschedule",
   "calendar.cancel",
   "email.draft",
@@ -39,6 +49,25 @@ export const adminBotActionTypes = [
   // recipient and lets the sender compose, rather than carrying a body an approver could edit into
   // something the provisioning no longer matches.
   "onboarding.send_guide",
+  // Sets a sheet joiner's access level from their Member Type and enrolls them in what that level
+  // grants (api/server.member-onboarding.ts). Its own action because the weekly sweep that creates
+  // them runs unattended, and a spreadsheet row is not an authorization: the member is created at
+  // the least-privileged level and an admin approving this is what raises it.
+  "lab_member.enroll",
+  // One person's row on the DCS roster sheet the department's sysadmin works from, filed when they
+  // become a full member or a major coauthor (workflows/onboarding/dcs-roster-entry.ts). Its own
+  // type rather than `sheet.append_rows` because the row is laid out against the sheet's header
+  // when it is written, not when it is proposed: a proposal the unattended roster sync files may
+  // be approved days later, and a column moved in between must not shift a person's address into
+  // somebody's permission cell. The payload carries the values by column name, so the approval
+  // card is the row.
+  "dcs_roster.add_row",
+  // Removes one roster record that the Slack roster sync judged a placeholder or test account
+  // ("Test User", an @example address -- never a do-not-contact opt-out). Its own type so the sync
+  // never deletes anything itself: it files this, an admin approves it, and the delete runs through
+  // the same guarded path as the Members tab (no self-delete, no head professor, no credentialed
+  // account).
+  "lab_member.remove",
   // The finished reimbursement package, mailed to the funder's office with the forms attached.
   //
   // Its own type rather than `email.send` for two reasons. The recipient is resolved from settings
@@ -90,6 +119,26 @@ export const adminBotActionTypes = [
   // answer "when did we last pull the professor in", and a shape that opens a group conversation
   // is a different external effect from one that DMs a person.
   "member_nudge.escalate",
+  // The Slack group DM -- the head professor and a paper's first two full / coauthor-major lab
+  // authors -- raised when an ICLR submission's AI-text score or citation check trips before the
+  // deadline. Its own type because "when did AdminBot tell a PI a paper read as AI-written, and on
+  // what evidence" is a question the audit log has to answer on its own row.
+  "paper_integrity.alert",
+  // A Slack DM, after every hourly integrity sweep, listing each ICLR submission's current AI-text
+  // score and citation status -- to the operators named in ADMINBOT_ICLR_INTEGRITY_REPORT_SLACK_USERS,
+  // never to authors. Its own type so a routine digest and a warning about one paper are never the
+  // same row in the audit log.
+  "paper_integrity.report",
+  // The three-person Slack group DM that introduces a lab member who just confirmed Going to a
+  // conference to the two co-attendees whose research is closest to theirs (or a seeded sample when
+  // nobody overlaps), with the dates, location and event page. Its own type so "who did AdminBot
+  // introduce to whom, and when" is one row per introduction in the audit log.
+  "slack.conference_intro",
+  // Writes each ICLR submission's AI-text score into one column of the lab's paper sheet
+  // (ADMINBOT_ICLR_INTEGRITY_SHEET_ID). Its own type, rather than sheet.update_cells, because it is
+  // auto-approved -- and the executor enforces what makes that safe: single cells, in the one
+  // column the payload names, nothing else.
+  "paper_integrity.sheet_scores",
   // Adds one member to one public channel. Its own type rather than a generic Slack call because
   // the audit log has to be able to answer "who did AdminBot put where, and when" -- which is the
   // question somebody asks after finding themselves in a room they did not join.
@@ -100,6 +149,11 @@ export const adminBotActionTypes = [
   // because the two carry different risk: an unwanted invite is noise, an unwanted removal is
   // somebody losing a conversation they were part of.
   "slack.remove_from_channel",
+  // A Slack Connect invitation to the lab's #friends-and-collaborators channel for somebody who is
+  // not in the workspace, so has no user id `slack.invite_to_channel` could name. Slack mails them
+  // the invitation. The onboarding guide mints the same invite for the Member Types it mails; this
+  // is for the types the access design onboards without a mail but still gives the channel.
+  "slack.connect_invite",
   // Opens one project channel. Its own type because creating a room is a decision about the shape
   // of the workspace, not a membership change, and the audit log has to be able to answer "who
   // opened this, and why" -- which for a `proj-` channel is "a project was created with that alias".
@@ -107,6 +161,7 @@ export const adminBotActionTypes = [
   "openreview.nudge",
   "openreview.warning",
   "deadline.publish",
+  "deadline.recommend",
   // Writing cells back to the lab's member spreadsheet from the Membership tab's grid. A typed
   // action rather than a call out of the service for the usual reason -- it reaches Google and
   // changes a document several people read -- and for one specific to this sheet: the roster is
@@ -114,6 +169,16 @@ export const adminBotActionTypes = [
   // payload carries the exact ranges that will be written, so the approval card shows the cells
   // rather than a diff the approver has to reconstruct.
   "sheet.update_cells",
+  // A new row at the bottom of the member roster, from the Onboarding tab's Add row. Separate from
+  // `sheet.update_cells` because an append names no cells -- Sheets finds the first empty row -- so
+  // it cannot overwrite anything, and the approval card reads as "adds Ada" rather than as a range
+  // the approver has to locate.
+  "sheet.append_rows",
+  // Rearranging the member photos on the lab's "Scaling to 50-100 Technical Members" slide: adds,
+  // removes, and moves/resizes faces in the working-group boxes. Typed rather than a call out of a
+  // sweep because it writes to a deck other people present from, and the payload carries the exact
+  // Slides requests so the approval card is the change, not a description of one.
+  "slides.sync_working_groups",
 ] as const;
 
 export type AdminBotActionType = (typeof adminBotActionTypes)[number];
@@ -166,6 +231,8 @@ export const adminBotMemberTypes = [
   "acquaintance",
   "coauthor-discussant-or-designer",
   "external-prof",
+  "benefit-partner",
+  "benefit-direct-relative",
   // Operational tags rather than collaboration shapes.
   "adminbot-admin",
   "adminbot-developer",
@@ -188,6 +255,10 @@ export const adminBotExternalCollaboratorSubgroups = [
   "coauthor_discussant_designer",
   "disappearing_coauthor",
   "external_prof",
+  // Not collaborators on the work: a partner organisation (office access, e.g. Vector) and a
+  // member's direct relative. The access design gives both follows and Slack Connect, no portal.
+  "benefit_partner",
+  "benefit_direct_relative",
 ] as const;
 
 export type AdminBotExternalCollaboratorSubgroup =
@@ -207,6 +278,7 @@ export type AdminBotAccessGrant = {
 export const adminBotMemberRoles = [
   "Undergraduate Student",
   "Master's Student",
+  "Predoctoral gap-year researcher",
   "PhD Student",
   "Postdoc",
   "Research Assistant",
@@ -352,6 +424,34 @@ export function adminBotIsAlumniMember(member: { status?: string; member_type?: 
 }
 
 /**
+ * Somebody the head professor works with directly: a full member or a major coauthor.
+ *
+ * The audience of My Desk's "needs a word from you" list, which asks her to go and write to a
+ * person herself. That is worth her time for the people carrying the lab's work and not for the
+ * rest of the roster -- acquaintances, minor coauthors, visiting professors, mailing-list rows --
+ * who get the same automatic nudges but whom she would not chase in person.
+ *
+ * Narrower than `adminBotNudgeableMemberTypes` on purpose: own-pace advisees are chased by the lab
+ * but not by her. A blank type is out too: "unknown" is not "works with me", and filling the
+ * column in is what puts somebody back on the list.
+ *
+ * Alumni lose even when they are also coauthor-major, the same rule as everywhere else. Tokens are
+ * read through `adminBotMemberTypeTokens`, with `_` taken as `-` so a hand-typed "coauthor_major"
+ * is not silently dropped from the one list that asks her to act.
+ */
+export function adminBotIsDirectCollaborator(member: {
+  status?: string;
+  member_type?: string;
+}): boolean {
+  if (adminBotIsAlumniMember(member)) {
+    return false;
+  }
+  return adminBotMemberTypeTokens(member.member_type)
+    .map((token) => token.replaceAll("_", "-"))
+    .some((token) => token === "full" || token === "coauthor-major");
+}
+
+/**
  * Member types the lab has decided may sign in to the Control UI.
  *
  * Transcribed from "Have AdminBot portal access" -- row 7 of the External Collab Access Design
@@ -386,6 +486,8 @@ export const adminBotNoPortalAccessMemberTypes = [
   "disappearing-coauthor",
   "external-prof",
   "coauthor-discussant-or-designer",
+  "benefit-partner",
+  "benefit-direct-relative",
 ] as const;
 
 /**
@@ -475,6 +577,9 @@ export function isAdminBotFullMember(member: { privilege_level?: string }): bool
 }
 
 export const adminBotMandatoryProfileFields = [
+  // Required only when arr_reviewer_qualified is true.
+  "arr_review_capacity",
+  "arr_reviewer_qualified",
   "name",
   "calendar_email",
   "location",
@@ -484,6 +589,9 @@ export const adminBotMandatoryProfileFields = [
   "github_url",
   "linkedin_url",
   "linkedin_urn",
+  "twitter_url",
+  "personal_website",
+  "intake_form_url",
   "cv_url",
   // Where the member's one-on-one notes live. Required of the record because the folder is what
   // every later one-on-one is filed into: a blank here is not "this person has no meetings", it is
@@ -491,6 +599,9 @@ export const adminBotMandatoryProfileFields = [
   // an answer the member can give (see SELF_PROFILE_EDITABLE_FIELDS).
   "one_on_one_folder_url",
   "openreview_id",
+  "affiliation",
+  "hours_per_week",
+  "joined_month",
 ] as const;
 
 export type AdminBotMandatoryProfileField = (typeof adminBotMandatoryProfileFields)[number];
@@ -750,6 +861,8 @@ export type AdminBotMemberActivityCounts = {
  * once rather than composed per person.
  */
 export const adminBotMandatoryProfileFieldLabels: Record<AdminBotMandatoryProfileField, string> = {
+  arr_reviewer_qualified: "ARR reviewer qualification",
+  arr_review_capacity: "ARR review capacity",
   name: "Name",
   calendar_email: "Calendar email",
   location: "Location",
@@ -759,9 +872,15 @@ export const adminBotMandatoryProfileFieldLabels: Record<AdminBotMandatoryProfil
   github_url: "GitHub",
   linkedin_url: "LinkedIn",
   linkedin_urn: "LinkedIn URN",
+  twitter_url: "X / Twitter",
+  personal_website: "Website",
+  intake_form_url: "Application form response link (or mark that you cannot find it)",
   cv_url: "CV",
   one_on_one_folder_url: "Link to 1:1 Folder",
   openreview_id: "OpenReview",
+  affiliation: "Main affiliation",
+  hours_per_week: "Hours per week on Jinesis projects",
+  joined_month: "Joined month",
 };
 
 /**
@@ -892,8 +1011,32 @@ export const adminBotScheduleMemberFields = [
  */
 export const adminBotInferredLocationMemberFields = [
   "last_login_city",
+  "last_login_region",
   "last_login_timezone",
+  "last_ip_observed_at",
+  "last_ip_suspected_vpn",
+  "last_device_tz",
+  "last_device_tz_at",
+  "device_city",
+  "device_region",
+  "device_country",
+  "device_located_at",
 ] as const;
+
+/** What a browser said about the location permission. See `AdminBotLabMember.location_permission`. */
+export const adminBotLocationPermissions = ["granted", "denied", "dismissed"] as const;
+export type AdminBotLocationPermission = (typeof adminBotLocationPermissions)[number];
+
+/**
+ * Member fields that never leave the service on a member record, to anyone, the member included.
+ * The browser's answer to the location prompt is for admins, who read it only through
+ * `GET /member-map/coverage` (as `state` and `at`); a member is never shown that it was noted.
+ * Dropped by `sendJson` itself, so no route can forget to.
+ */
+export const adminBotNeverServedMemberFields: ReadonlySet<string> = new Set([
+  "location_permission",
+  "location_permission_at",
+]);
 
 /**
  * A member record with the confidential fields removed unless the viewer is entitled to them.
@@ -913,7 +1056,7 @@ export function redactConfidentialMemberFields<T extends { id?: string }>(
     return member;
   }
   const copy = { ...member } as Record<string, unknown>;
-  for (const field of adminBotConfidentialMemberFields) {
+  for (const field of [...adminBotConfidentialMemberFields, ...adminBotOwnerOnlyMemberFields]) {
     delete copy[field];
   }
   if (viewer.isMemberSession) {
@@ -1030,9 +1173,6 @@ export type AdminBotMemberOnboardingStep = {
 export type AdminBotOnboardingCycleReason = "registration" | "status_change" | "privilege_change";
 
 export type AdminBotMemberOnboarding = {
-  current_step?: AdminBotMemberOnboardingStep;
-  completed: AdminBotMemberOnboardingStep[];
-  remaining: AdminBotMemberOnboardingStep[];
   steps: AdminBotMemberOnboardingStep[];
   /**
    * When the current cycle opened: at registration, or when the member's standing last changed.
@@ -1370,6 +1510,25 @@ export type AdminBotLabMemberInput = {
    * the lab adds to, not a property of the record that some import can set.
    */
   receives_nudges?: boolean;
+  /**
+   * The member's own answer to "introduce me to lab members nearby / at events".
+   *
+   * Absent means the defaults in workflows/members/meetups.ts (both on: zero setup). Self-owned
+   * and set from the Events tab or the profile toggle; `snoozed_until` (YYYY-MM-DD) pauses both
+   * kinds through that day.
+   */
+  meetup_intros?: { events?: boolean; city?: boolean; snoozed_until?: string };
+  /**
+   * Admin-owned: never message, introduce or name this person in a meetup intro or a Say hi, and
+   * never list them as nearby. Not self-editable (a member turns intros off instead).
+   */
+  do_not_contact?: boolean;
+  /**
+   * When the member last DMed AdminBot "stop" (workflows/members/slack-stop.ts). While set, no
+   * intro names them and optional nudges skip them; "start", or turning an intro back on in the
+   * portal, clears it. Self-owned: the member's own word, so neither an admin nor an import sets it.
+   */
+  slack_stop_at?: string;
   // Governance-owned: the department directory address, required to be @cs.toronto.edu for
   // everyone except external_collaborator (see validateCsEmail in kernel/service.ts).
   email?: string;
@@ -1401,6 +1560,11 @@ export type AdminBotLabMemberInput = {
   slack_messages_7d?: number;
   /** When that count was last measured. Absent means never, which reads as unknown, not zero. */
   slack_activity_checked_at?: string;
+  /**
+   * When the Slack roster sync first saw this member's Slack account deactivated. A flag, never a
+   * removal: leaving Slack is not leaving the lab record. Cleared ("") when the account comes back.
+   */
+  slack_deactivated_at?: string;
   privilege_level?: AdminBotPrivilegeLevel;
   // Which kind of external collaborator this person is, which decides the access items they get.
   // Only meaningful while `privilege_level` is "external_collaborator"; governance-owned like
@@ -1462,6 +1626,9 @@ export type AdminBotLabMemberInput = {
   // rather than a link the profile can render for them.
   intake_form_url?: string;
   intake_form_unavailable?: boolean;
+  /** Self-reported ARR eligibility; not verified or a reviewing assignment. */
+  arr_reviewer_qualified?: boolean | null;
+  arr_review_capacity?: number | null;
   /**
    * The Google Drive folder holding this member's one-on-one notes.
    *
@@ -1483,8 +1650,12 @@ export type AdminBotLabMemberInput = {
   // Members read theirs off https://linkedin-urn-collector.vercel.app and paste it here.
   linkedin_urn?: string;
   twitter_url?: string;
+  /** Self-reported; used only for the Media Impact audience badge. */
+  twitter_followers?: number;
+  linkedin_followers?: number;
   github_url?: string;
   scholar_url?: string;
+  acl_anthology_url?: string;
   // Never propose or assign this person as an emergency reviewer, whatever their topic
   // match. Governance-owned: it encodes a standing commitment about someone's time, so
   // it is deliberately absent from the fields a member may edit on their own profile.
@@ -1581,7 +1752,18 @@ export type AdminBotLabMemberInput = {
    * moment, and a month-old one says nothing about today. See ADMINBOT_LOGIN_CITY_FRESH_DAYS.
    */
   last_login_city?: string;
+  /**
+   * The subdivision `last_login_city` is in ("Ontario", "England"), only ever written with it, so
+   * "London, Ontario" and "London, England" place differently. Same audience as the city.
+   */
+  last_login_region?: string;
   last_login_timezone?: string;
+  /**
+   * How the member wants to appear on the lab map, set by them in Profile. "auto" (the default when
+   * absent) places them at the city of a recent sign-in, else what they stated; "stated" uses only
+   * what they wrote (`current_city`, `location`, Slack); "hidden" leaves them off the map.
+   */
+  map_visibility?: "auto" | "stated" | "hidden";
   /**
    * When the member last answered the "you seem to have moved" question, either way.
    *
@@ -1592,6 +1774,76 @@ export type AdminBotLabMemberInput = {
   location_prompt_answered_at?: string;
   /** The country the member was asked about when they last answered, so a new country re-asks. */
   location_prompt_answered_country?: string;
+  /**
+   * Answers to the retired "Where are you based right now?" check-in. Nothing asks it any more --
+   * location is automatic -- but answers already given stay readable until they age out.
+   *
+   * `location_checkin_at` is when the member last *answered* it, and `location_checkin_city` the
+   * answer as they gave it (also written to `current_city`). The map reads the pair as its second
+   * source, behind only a fresh sign-in city. A snooze and a decline are stamped separately so each
+   * keeps its own clock: a snooze ends, a decline stands until the member changes their mind.
+   * Never self-editable, and nothing writes them now.
+   */
+  location_checkin_at?: string;
+  location_checkin_city?: string;
+  location_checkin_snoozed_until?: string;
+  location_checkin_declined_at?: string;
+  /**
+   * The IANA zone Slack reports for the member (`users.info` `tz`), and when the sync last saw it.
+   *
+   * Kept apart from `timezone` even though the Slack sync also writes that one: `timezone` can be
+   * typed by the member, and the timezone cross-check needs the zone the member's *device* reports,
+   * dated, to compare a placed city against. Written by the Slack directory sync only.
+   */
+  slack_tz?: string;
+  slack_tz_observed_at?: string;
+  /**
+   * When the account's IP was last geolocated, and whether that reading looked like a VPN.
+   *
+   * Written by the daily observation on any authenticated request (auth.ts `noteAccountUse`) and by
+   * the sign-in itself, at most once per member per UTC day for an unchanged address. A trusted
+   * reading also rewrites the `last_login_*` place fields above; a reading whose city keeps a clock
+   * more than two hours from the member's device (or Slack) zone writes only these two, so a VPN
+   * exit city never reaches anything that places the member. The map dates the IP city by this
+   * stamp ("IP today"), not by `last_login_at`, which only moves when somebody signs in.
+   */
+  last_ip_observed_at?: string;
+  last_ip_suspected_vpn?: boolean;
+  /**
+   * The IANA zone the member's browser reported (`Intl.DateTimeFormat().resolvedOptions().timeZone`),
+   * and when. A setting on the device in front of them, so it does not move when a VPN does --
+   * which is what lets it vouch for, or veto, an IP city. Only a zone name: no coordinates, no
+   * permission prompt. Written by the daily observation only, never self-editable.
+   */
+  last_device_tz?: string;
+  last_device_tz_at?: string;
+  /**
+   * The city the member's own browser last put them in, from the passive "Use my precise location"
+   * control or its silent refresh (which runs only where that permission is already granted). The
+   * position is reduced to the nearest GeoNames city on the server and discarded there: no
+   * coordinate is ever stored, logged or audited. `device_country` is ISO alpha-2. Written by
+   * `POST /profile/device-location` only, never self-editable, and only for members whose map
+   * visibility is "auto".
+   */
+  device_city?: string;
+  device_region?: string;
+  device_country?: string;
+  device_located_at?: string;
+  /**
+   * What the member's browser last said about the location permission, and when: "granted",
+   * "denied" (blocked for the site) or "dismissed" (the prompt was closed or ignored without an
+   * answer). Reported by the page through `POST /profile/location-permission`, only when it
+   * changes; never self-editable. Absent means the browser has not been asked since this shipped.
+   * Admin-only and never on a served record: see `adminBotNeverServedMemberFields`.
+   */
+  location_permission?: AdminBotLocationPermission;
+  location_permission_at?: string;
+  /**
+   * The last UTC day this member used AdminBot with their own session (any authenticated request;
+   * never an admin "view as"). Stamped at most once a day by auth.ts `noteAccountUse`, whatever the
+   * member's map visibility, so the admin coverage panel can say when a stale entry was last here.
+   */
+  last_seen_at?: string;
   availability?: AdminBotAvailabilityRow[];
   time_off?: AdminBotTimeOffRow[];
   // Dated milestones the member is planning back from. Self-editable like the two lists above.
@@ -1866,39 +2118,9 @@ export type AdminBotPaperStep = (typeof adminBotPaperSteps)[number];
 
 export type AdminBotPaperProgressUpdate = { current_step: AdminBotPaperStep };
 
-export const adminBotPaperTimelineDependencyGroups = [
-  "ideation",
-  "writing",
-  "submission",
-  "release",
-  "outreach",
-  "materials",
-] as const;
-
-export type AdminBotPaperTimelineDependencyGroup =
-  (typeof adminBotPaperTimelineDependencyGroups)[number];
-
-export type AdminBotPaperTimelineStatus = "complete" | "current" | "upcoming" | "blocked";
-
-export type AdminBotPaperTimelineItem = {
-  step: AdminBotPaperStep;
-  label: string;
-  dependency_group: AdminBotPaperTimelineDependencyGroup;
-  depends_on: AdminBotPaperStep[];
-  status: AdminBotPaperTimelineStatus;
-  offset_start_business_day: number;
-  offset_end_business_day: number;
-  duration_business_days: number;
-  color: string;
-};
-
-export type AdminBotPaperTimeline = {
-  progress_percent: number;
-  current_step_index: number;
-  total_estimated_business_days: number;
-  items: AdminBotPaperTimelineItem[];
-};
 export type AdminBotPaperArtifactLinks = {
+  /** Human confirmation that the paper has been presented; blank reopens it. */
+  completed_at?: string;
   /** Publication track is independent of presentation_type; blank explicitly clears it. */
   publication_track?: string;
   conference?: string;
@@ -1923,15 +2145,6 @@ export type AdminBotPaperArtifactLinks = {
   linkedin_draft_url?: string;
   google_slides_url?: string;
   poster_url?: string;
-  /**
-   * arXiv's own per-paper password, which a coauthor needs to claim ownership of a submission.
-   *
-   * Stored beside the links because that is what it is used with, and with the same protection:
-   * none beyond the record's own access rules. Every coauthor of the paper can read it, as they
-   * can its Overleaf edit link. It lived as a disabled column in the bulk grid for a while,
-   * accepting text it then dropped, which is worse than either storing it or not offering it.
-   */
-  arxiv_paper_password?: string;
 };
 
 export type AdminBotPaperReminderState = {
@@ -2054,6 +2267,19 @@ export function adminBotProjectChannelName(alias: string): string {
   return `proj-${alias}`;
 }
 
+/** What the OpenReview sync applied to a paper; see `openreview_sync` on the record. */
+export type AdminBotPaperOpenReviewSync = {
+  /** Submission, status, venue, track and presentation, joined: changes when OpenReview does. */
+  fingerprint: string;
+  status: "accepted" | "under_review" | "rejected" | "desk_rejected" | "withdrawn";
+  source: "author_results" | "notifications" | "citation_checks";
+  venue: string;
+  submission_id?: string;
+  observed_at?: string;
+  reference?: string;
+  applied_at: string;
+};
+
 export type AdminBotPaperRecordInput = {
   id: string;
   title: string;
@@ -2155,6 +2381,14 @@ export type AdminBotPaperRecordInput = {
   };
   reminder?: AdminBotPaperReminderState;
   notes?: string;
+  /**
+   * The OpenReview observation last applied to this record by the OpenReview sync.
+   *
+   * Set only by the sync (upsertPaper ignores it on input). The sync re-applies a submission's
+   * status only when this fingerprint changes, so a field a person corrects afterwards stays
+   * corrected until OpenReview itself reports something new.
+   */
+  openreview_sync?: AdminBotPaperOpenReviewSync;
   // Member who filed this paper themselves. Set by the service on a member-authored create, never
   // accepted from request input, and it is one of the two ways a member is recognized as an owner
   // allowed to edit the record (the other is being named in `authors`).
@@ -2162,7 +2396,6 @@ export type AdminBotPaperRecordInput = {
 };
 
 export type AdminBotPaperRecord = AdminBotPaperRecordInput & {
-  timeline?: AdminBotPaperTimeline;
   created_at: string;
   updated_at: string;
 };
@@ -2175,7 +2408,6 @@ export type AdminBotPaperNudge = {
   recipients: string[];
   message: string;
   business_days_since_author_dm?: number;
-  timeline?: AdminBotPaperTimeline;
 };
 
 // Member nudge: an admin-composed message (paper-flow reminder or general announcement) sent to a
@@ -2208,6 +2440,11 @@ export type AdminBotMemberNudgeRequest = {
    * that matter, which is the failure this flag exists to avoid.
    */
   important?: boolean;
+  /**
+   * A nice-to-have rather than lab work (a photo campaign, a channel welcome). A member who DMed
+   * "stop" is skipped; reminders about papers, reviews and onboarding still reach them.
+   */
+  optional?: boolean;
 };
 
 export type AdminBotMemberNudgeSkip = {
@@ -2371,6 +2608,8 @@ export type AdminBotExecutionResult = {
   dry_run: boolean;
   idempotency_key?: string;
   executed_at: string;
+  /** What the connector reported creating (see AdminBotExecutorOutcome.artifacts). */
+  artifacts?: Record<string, string>;
 };
 
 export type AdminBotAuditEvent = {
@@ -2383,6 +2622,14 @@ export type AdminBotAuditEvent = {
     | "lab_status.cleared"
     | "lab_interest.saved"
     | "lab_interest.withdrawn"
+    // The Travel tab's location opt-in switched on or off. Never a position: an audit line per fix
+    // would turn the trail into the location history the opt-in promises not to keep.
+    | "location_sharing.enabled"
+    | "location_sharing.disabled"
+    // The working-groups slide sync ran and either proposed a change or found nothing to do. Its
+    // own pair so "why did the slide not update this week" has an answer that is not a log file.
+    | "slides.working_groups_planned"
+    | "slides.working_groups_failed"
     | "proposal.created"
     | "proposal.auto_approved"
     | "proposal.removed"
@@ -2395,6 +2642,8 @@ export type AdminBotAuditEvent = {
     | "deadline_proposal.revised"
     | "deadline_proposal.published"
     | "lab_member.upserted"
+    // A Lab Members type change applied on the spot: access level, sheet, Slack, meeting, mail.
+    | "lab_member.member_type_applied"
     | "lab_member.notes_migrated"
     | "nudge_list.seeded"
     // One pass of a standing local event's guest list against where people actually are.
@@ -2405,11 +2654,23 @@ export type AdminBotAuditEvent = {
     | "lab_member.merged"
     | "lab_member.deleted"
     | "lab_members.purged_without_email"
+    | "lab_member_request.submitted"
+    | "lab_member_request.edited"
+    | "lab_member_request.approved"
+    | "lab_member_request.rejected"
+    | "lab_member_request.withdrawn"
     | "paper.upserted"
+    // A paper record brought in line with the PI's OpenReview submissions, field by field.
+    | "paper.openreview_synced"
     | "paper_slot.updated"
     | "paper_slot.waived"
     | "paper_slots.nudged"
     | "paperflow_stages.nudged"
+    // One cron run, reported by scripts/lib/adminbot-cron-run.sh: job name, schedule, ok, and the
+    // last line of a failure. The automation health check reads staleness and failure from these.
+    | "automation_health.heartbeat"
+    // The health check told the admins about these issue keys (deduped by the ledger).
+    | "automation_health.alerted"
     | "paperflow_stage.evidenced"
     | "email_review.resolved"
     | "paper_social_draft.saved"
@@ -2425,6 +2686,9 @@ export type AdminBotAuditEvent = {
     | "paper_weekly_updates.nudged"
     | "alumni_slack_invites.swept"
     | "rec_letter_channel.swept"
+    // One PDF sent from the Reference Checker page to references-validation or GPTZero: checker,
+    // hash, admin and outcome only. The PDF and its findings are deliberately never stored.
+    | "reference_check.pdf_checked"
     // The three-day letter warning to the head professor's inbox. One row per pass that actually
     // sent, naming the address it went to: this is the one mail AdminBot sends that desk, so "did
     // she hear about this letter, and when" has an answer that does not depend on her mailbox.
@@ -2451,6 +2715,8 @@ export type AdminBotAuditEvent = {
     | "roster_sync.member_type_changed"
     | "roster_sync.access_revocations_proposed"
     | "roster_sync.completed"
+    // One pass of the Slack users.list roster sync: counts, refusal reason, dry-run flag.
+    | "slack_roster_sync.completed"
     | "project_channels.swept"
     | "topic_channels.swept"
     | "themed_meeting_invites.swept"
@@ -2510,11 +2776,13 @@ export type AdminBotAuditEvent = {
     | "opportunity.deadline_dismissed"
     | "opportunity.rejected"
     | "opportunity.deleted"
-    | "auth.dcs_form_submitted"
-    | "auth.dcs_form_failed"
+    | "auth.dcs_roster_row_added"
+    | "auth.dcs_roster_row_failed"
     | "auth.location_updated"
     | "auth.location_update_failed"
     | "member_nudge.sent"
+    // One recipient of a nudge campaign (workflows/nudges/campaign.ts), on top of member_nudge.sent.
+    | "nudge_campaign.sent"
     | "member_nudge.escalated"
     | "mandatory_fields.reminded"
     | "onboarding.step_updated"
@@ -2533,6 +2801,10 @@ export type AdminBotAuditEvent = {
     // once it has.
     | "logistics_request.signed_document_sent"
     | "logistics_request.files_cleared"
+    | "rec_letter_freeze.recorded"
+    | "rec_letter_freeze.deleted"
+    | "rec_letter_attestation.recorded"
+    | "rec_letter_attestation.deleted"
     | "openreview.cycle_run"
     | "openreview.milestone_sent"
     | "openreview.milestone_blocked"
@@ -2544,6 +2816,7 @@ export type AdminBotAuditEvent = {
     | "profile_photo.polished"
     | "profile_photo.applied"
     | "auth.login_location_updated"
+    | "auth.login_location_suspected_vpn"
     // An admin opening, and dropping, a session that sees the lab as another member. Both halves
     // are recorded on the admin: "who looked at my account" is a question a member is entitled to
     // an answer to, and an unclosed start is itself worth being able to see.
@@ -2551,8 +2824,13 @@ export type AdminBotAuditEvent = {
     | "auth.impersonation_ended"
     // Where members are. An observation is a fact about a person's whereabouts, and the answer to
     // the prompt is the only thing that turns one into a profile change, so both are recorded.
+    | "member.slack_stopped"
+    | "member.slack_started"
     | "member.location_observed"
     | "member.location_prompt_answered"
+    | "member.location_checkin_answered"
+    | "member.location_checkin_snoozed"
+    | "member.location_checkin_declined"
     // Recorded meetings. Filing one is not an external effect, but attendance is personal data
     // and a summary is machine-written, so who filed or corrected what stays answerable.
     | "meeting.recorded"
@@ -2683,6 +2961,14 @@ export const adminBotLocationSources = [
   // compares against the latest entry *per source*, so alternating a zone and a city under one
   // name would make every write look new.
   "slack_timezone",
+  // The zone the member's browser reports, sent with their own requests. Like `slack_timezone` a
+  // zone their device sets, kept apart because it arrives on a different schedule (each day they
+  // use AdminBot) and is the signal the VPN check compares an IP city against.
+  "device_timezone",
+  // The city the member's browser reported (Auto visibility, reverse-geocoded on the server). The
+  // coordinates never reach this table: only the city, region and country GeoNames answered with.
+  // Logged on a change of city and otherwise once per UTC day, like `login_ip`.
+  "device",
   "admin",
 ] as const;
 
@@ -2720,7 +3006,25 @@ export type AdminBotMemberLocationEntry = {
    * be the exact guess the `timezone` note above refuses.
    */
   observed_at_local?: string;
+  /**
+   * Set only on rows written by the explicit check-in. "answered" rows are ordinary
+   * `self_reported` observations; "snoozed" and "declined" rows place nothing (no place, no
+   * country) and exist so the log shows every time the member was asked and what they did.
+   * Readers that want "where is this member" skip the two non-answers (see `latestBySource`).
+   */
+  checkin?: AdminBotLocationCheckinOutcome;
+  /** How an answer was given: picked from the city list, typed, or resolved from this device. */
+  checkin_via?: AdminBotLocationCheckinVia;
+  /**
+   * Set on a `login_ip` row whose city keeps a clock more than two hours from the member's device
+   * zone (or their Slack zone, when the device sent none): most likely a VPN exit. Still logged, so
+   * the history shows what the address said, but it places nobody and drift detection skips it.
+   */
+  suspected_vpn?: boolean;
 };
+
+export type AdminBotLocationCheckinOutcome = "answered" | "snoozed" | "declined";
+export type AdminBotLocationCheckinVia = "picker" | "text" | "device";
 
 /** What the member is being asked to confirm, and the evidence for asking. */
 export type AdminBotLocationDrift = {
@@ -2753,8 +3057,18 @@ export type AdminBotLocationDrift = {
 // one was processed, not what it said.
 // ---------------------------------------------------------------------------
 
-/** Where an attendance line came from. Ranked in `mergeAttendance`: manual beats every import. */
-export type AdminBotMeetingAttendanceSource = "participant_report" | "transcript" | "manual";
+/**
+ * Where an attendance line came from. Ranked in `mergeAttendance`: manual beats every import.
+ *
+ * `video_snapshot` is a name the local vision model read off a gallery-view frame of the
+ * recording. It sits above the transcript (it sees the people who never unmuted) and below the
+ * participant report (it reads a rendered label, not an account, and a tile can be mislabeled).
+ */
+export type AdminBotMeetingAttendanceSource =
+  | "participant_report"
+  | "video_snapshot"
+  | "transcript"
+  | "manual";
 
 export type AdminBotMeetingAttendee = {
   /** Set when the row resolved to someone on the roster. Absent means a guest, or an unmatched name. */
@@ -2800,6 +3114,25 @@ export type AdminBotMeetingTranscriptState = {
   duration_seconds?: number;
 };
 
+/**
+ * That a gallery-view recording was sampled for attendance, and how.
+ *
+ * Like `transcript`, this keeps the fact of processing and never the frames: a frame is every
+ * attendee's face, and it exists on disk only for the length of one model call.
+ */
+export type AdminBotMeetingSnapshotState = {
+  processed_at: string;
+  /** Offsets into the recording that were sampled, in seconds (1800, 3600, ...). */
+  checkpoints_seconds: number[];
+  /**
+   * How many of those frames showed participant tiles (a gallery grid, or a shared screen with a
+   * tile strip) and so had their names read. Zero says the file was not really a gallery view.
+   */
+  gallery_frames: number;
+  /** Which local vision model read the frames. */
+  model: string;
+};
+
 export type AdminBotMeetingRecordInput = {
   id: string;
   topic: string;
@@ -2820,10 +3153,33 @@ export type AdminBotMeetingRecordInput = {
   recording: AdminBotMeetingRecordingLinks;
   transcript?: AdminBotMeetingTranscriptState;
   summary?: AdminBotMeetingSummary;
+  snapshots?: AdminBotMeetingSnapshotState;
   attendees?: AdminBotMeetingAttendee[];
   /** How the record got here: parsed from a forwarded notice, or filed by hand in the Control UI. */
   source: "zoom_email" | "manual";
   notes?: string;
+};
+
+/**
+ * The few fields of a meeting that place it in a series and decide whether it is listed. What the
+ * store hands back for the series index, so building that index never parses a roster.
+ */
+export type AdminBotMeetingHead = Pick<
+  AdminBotMeetingRecordInput,
+  "id" | "topic" | "started_at" | "duration_minutes" | "duration_seconds"
+> & { transcript?: { duration_seconds?: number } };
+
+/**
+ * One recurring meeting on the Meetings tab: every recording sharing a title (case and spacing
+ * ignored), counted. Names no person, so a member is sent the same index an admin is.
+ */
+export type AdminBotMeetingSeries = {
+  /** `meetingSeriesKey(topic)`; what `GET /meetings?series=` takes back. */
+  key: string;
+  /** The newest recording's title, as written. */
+  topic: string;
+  count: number;
+  latest_started_at: string;
 };
 
 export type AdminBotMeetingRecord = AdminBotMeetingRecordInput & {
@@ -2832,7 +3188,8 @@ export type AdminBotMeetingRecord = AdminBotMeetingRecordInput & {
   /**
    * How many people were present. Derived on read, never stored: a member is not shown the roster,
    * and a headcount is the part of it that is useful to whoever missed the meeting without naming
-   * anybody. Absent on the admin view, which has the roster itself.
+   * anybody. An admin's list row carries it in place of the roster; the admin roster read
+   * (GET /meetings/:id) leaves it out, having the roster itself.
    */
   attendee_count?: number;
 };
@@ -2865,7 +3222,9 @@ export type AdminBotMemberNotificationKind =
    * profile retraction would have marked an outstanding photo nudge as dealt with.
    */
   | "profile_photo"
-  | "workshop";
+  | "workshop"
+  /** An automation health issue, for the admins: a job stopped or failing, or an invite paused. */
+  | "automation";
 
 export type AdminBotMemberNotification = {
   id: string;
@@ -2956,20 +3315,11 @@ export const adminBotLogisticsSettledStatuses = [
   "withdrawn",
 ] as const satisfies readonly AdminBotLogisticsRequestStatus[];
 
-/**
- * How long somebody stays in the recommendation-letter help channel after their last letter is
- * settled.
- *
- * Three months, measured from the most recent settled request rather than the first. An application
- * season runs roughly two months across different school deadlines, so a member routinely has one
- * request closed while another is still open; a shorter window, or one measured from the earliest
- * close, would take them out of the channel in the middle of their own season. The extra month past
- * a two-month season is the margin for a late deadline or a school that comes back with questions.
- */
-export const adminBotRecLetterChannelRetentionDays = 90;
+/** Calendar months on either side of a letter deadline. */
+export const adminBotRecLetterChannelWindowMonths = 3;
 
-/** The channel the letter-request sweep manages. A name, because that is what the connector takes. */
-export const ADMINBOT_REC_LETTER_CHANNEL = "help-rec-letter-request";
+/** The existing Slack channel managed by the letter-request sweep. */
+export const ADMINBOT_REC_LETTER_CHANNEL = "help-rec-letters";
 
 /**
  * A file travelling with a request, bytes and all.
@@ -2994,13 +3344,14 @@ export type AdminBotLogisticsAttachment = {
 /** One school on a recommendation letters request, as the member filled the row in. */
 export type AdminBotLogisticsSchool = {
   school: string;
-  /** yyyy-mm-dd. Both deadlines are optional: a member often knows one before the other. */
+  /** yyyy-mm-dd. Application deadlines are informational and do not determine the letter deadline. */
   application_deadline?: string;
   /** HH:mm, in `deadline_timezone`. A date with no time is treated as end of that day. */
   application_deadline_time?: string;
+  /** Required for new submissions/edits; optional here to allow reading legacy records. */
   letter_deadline?: string;
   letter_deadline_time?: string;
-  /** IANA zone both times on this row are read in. Blank means the dates are whole-day. */
+  /** IANA zone or AoE. Letter deadlines default to AoE (UTC−12), with a blank time due at 23:59. */
   deadline_timezone?: string;
   application_status?: string;
   letter_status?: string;
@@ -3084,8 +3435,9 @@ export type AdminBotLogisticsRequest = AdminBotLogisticsRequestInput & {
   updated_at: string;
   /**
    * RFC3339 instant of the soonest thing this request is working towards, or absent when it names
-   * none. Derived on write from the dates, times and zones the member gave, so every reader sorts
-   * the same way and no client has to re-implement "which of these is soonest".
+   * none. Letters use only the earliest letter deadline. This comparison instant never replaces
+   * the entered wall-clock date, time, or timezone shown to the user. Recomputed on letter reads
+   * so legacy records cannot retain an application-based deadline.
    */
   deadline_at?: string;
   /**

@@ -1,8 +1,8 @@
 // Mints one Slack Connect invite, out-of-process.
 //
 // Reads one JSON object from stdin: { email, channelId }. Writes exactly one JSON line to stdout
-// -- { ok: true, url } or { ok: false, error } -- and exits 0/1 to match, the same contract as
-// scripts/adminbot-dcs-form-submit.ts.
+// -- { ok: true, url } or { ok: false, error } -- and exits 0/1 to match, the same contract
+// scripts/adminbot-openreview.py answers on.
 //
 // This exists because the production launcher cannot import it directly. start-adminbot.mjs runs
 // under plain node and resolves everything else from dist/, but extensions/slack is deliberately
@@ -12,8 +12,8 @@
 // ever appeared to work under `pnpm adminbot:dev`, which runs through tsx and maps .js to .ts.
 //
 // Spawning a tsx script is how this repo already reaches TypeScript from the built launcher --
-// see runEmailAutomation in start-adminbot.mjs, and the injected dcsFormScriptPath and
-// openReviewScriptPath -- so this follows that seam rather than inventing another.
+// see runEmailAutomation in start-adminbot.mjs, and the injected openReviewScriptPath -- so this
+// follows that seam rather than inventing another.
 type Request = { email?: unknown; channelId?: unknown };
 
 type SlackClient = {

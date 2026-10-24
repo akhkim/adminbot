@@ -39,6 +39,7 @@ export type AdminBotSocialDraftRecord = {
   paper_id: string;
   platform: AdminBotSocialPlatform;
   body: string;
+  x_thread?: import("../workflows/papers/x-draft.js").XThreadDraft;
   /** Which model wrote it, or empty when a person did. */
   model?: string;
   generated_at: string;
@@ -185,6 +186,15 @@ export const adminBotNudgeDomains = [
   // the time the pass last touched it, so a message the pass re-examines and holds again asks
   // again, while one sitting untouched stays asked exactly once.
   "email_review",
+  // One automation health issue told to the admins. Not say-once: a problem still there a week
+  // later is said again, because the alert is the only thing standing between it and silence. The
+  // `subject_id` is the issue key, which changes when the problem does.
+  "automation_health",
+  // Nudge campaigns (workflows/nudges/campaign.ts): one domain per campaign, so "have we asked this
+  // person already" is a ledger lookup and the campaigns listing can count sends per campaign.
+  // `profile_photo` keeps its original no-cooldown behaviour and stamps only so the listing can
+  // show when it last went out.
+  "profile_photo",
 ] as const;
 
 /**

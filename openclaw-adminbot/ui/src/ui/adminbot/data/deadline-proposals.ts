@@ -6,6 +6,7 @@ import {
   type DeadlineProposalView,
 } from "../../../../../extensions/adminbot/src/contracts/deadline-proposals.js";
 import type { UiSettings } from "../../storage.ts";
+import { memberAuthHeaders } from "../api/device-clock.ts";
 import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 import type { DeadlineVenue } from "./deadlines.ts";
 
@@ -29,6 +30,13 @@ export interface DeadlineProposalStore {
   ): Promise<void>;
   revise(proposalId: string, input: DeadlineProposalInput): Promise<DeadlineProposal>;
   decide(proposal: DeadlineProposal, decision: "published" | "rejected"): Promise<DeadlineProposal>;
+}
+
+function publishedItems(body: unknown): DeadlineVenue[] | undefined {
+  if (body && typeof body === "object" && "items" in body && Array.isArray(body.items)) {
+    return body.items as DeadlineVenue[];
+  }
+  return undefined;
 }
 
 type FetchLike = typeof fetch;
@@ -61,8 +69,11 @@ export class AdminBotDeadlineProposalStore implements DeadlineProposalStore {
   }
 
   async listPublished(): Promise<DeadlineVenue[]> {
-    const body = await this.request("/deadlines/venues.json", { method: "GET" });
-    return (body as { items?: DeadlineVenue[] }).items ?? [];
+    const items = publishedItems(await this.request("/deadlines", { method: "GET" }));
+    if (!items) {
+      throw new Error("Deadline service returned an invalid dataset.");
+    }
+    return items;
   }
 
   async submit(
@@ -130,7 +141,7 @@ export class AdminBotDeadlineProposalStore implements DeadlineProposalStore {
       headers: {
         Accept: "application/json",
         ...(options.body === undefined ? {} : { "Content-Type": "application/json" }),
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...memberAuthHeaders(token),
         ...options.headers,
       },
       ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),

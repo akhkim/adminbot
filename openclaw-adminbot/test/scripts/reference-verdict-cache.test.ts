@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  defaultReferenceCachePath,
   ReferenceVerdictCache,
   verifyEntriesWithCache,
 } from "../../scripts/lib/reference-verdict-cache.mjs";
@@ -39,12 +40,23 @@ function paper(title: string, doi = "") {
 }
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   for (const directory of temporaryDirectories.splice(0)) {
     fs.rmSync(directory, { recursive: true, force: true });
   }
 });
 
 describe("ReferenceVerdictCache", () => {
+  it("keeps its disposable database separate from the AdminBot ledger", () => {
+    vi.stubEnv("ADMINBOT_DB_PATH", "/private/adminbot/state/adminbot.sqlite");
+    vi.stubEnv("ADMINBOT_REFERENCE_CACHE_PATH", "");
+    expect(defaultReferenceCachePath()).toBe(
+      "/private/adminbot/state/adminbot-reference-verdict-cache.sqlite",
+    );
+    vi.stubEnv("ADMINBOT_REFERENCE_CACHE_PATH", "/private/cache/reference.sqlite");
+    expect(defaultReferenceCachePath()).toBe("/private/cache/reference.sqlite");
+  });
+
   it("persists verdicts and skips every provider call on an unchanged second pass", async () => {
     const dbPath = databasePath();
     const entries = [entry("DOI-backed paper", "10.1000/example"), entry("Title-only paper")];

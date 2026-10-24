@@ -1,0 +1,688 @@
+/**
+ * A Member Type changed on the Lab Members tab, applied on the spot.
+ *
+ * Changing somebody's type is re-onboarding them: their access level moves with it, and the rooms
+ * and meetings that follow from the new type are joined or left. The admin's save is the approval,
+ * the same rule Add row uses (see `approveAndExecute`), so every external step is still a typed
+ * proposal, approved by that admin, executed and audited -- just not left waiting in Pending
+ * Actions.
+ *
+ * One mail is sent: the onboarding guide for the new type, when that type calls for a different
+ * guide than the old one did. Every other step is silent -- Slack channel moves notify inside Slack
+ * only, calendar writes pass `--send-updates none`, and the lab-calendar share suppresses Google's
+ * notification.
+ *
+ * Each step is reported on its own and none stops the others: the database write has already
+ * happened, and a Slack outage should not also leave the Monday meeting unreconciled.
+ */
+import { type AdminBotAuditEvent, type AdminBotLabMember } from "../contracts/actions.js";
+import {
+  adminBotCalendarEmail,
+  adminBotCalendarShareEmail,
+} from "../contracts/member-outreach-email.js";
+import type { AdminBotService } from "../kernel/service.js";
+import {
+  type AdminBotStandingMeeting,
+  memberAddresses,
+  planMeetingMembership,
+} from "../workflows/calendar/standing-meetings.js";
+import { ADMINBOT_FRIENDS_CHANNELS } from "../workflows/members/access-audit.js";
+import {
+  hasAccessConsequences,
+  memberAccessDelta,
+} from "../workflows/members/member-type-access.js";
+import {
+  type DcsRosterRole,
+  dcsRosterEntryValues,
+  dcsRosterRoleGained,
+  dcsRosterRoleOf,
+  dcsRosterRowForHeader,
+  dcsRosterUsernameCandidates,
+  findDcsRosterRowForPerson,
+} from "../workflows/onboarding/dcs-roster-entry.js";
+import { templateForMemberType } from "../workflows/onboarding/member-type-template.js";
+import {
+  approveAndExecute,
+  type MemberSheetApprover,
+  type MemberSheetSource,
+  writeMemberTypeToSheet,
+} from "./server.member-sheet.js";
+
+export type MemberTypeChangeStep = {
+  step: "sheet" | "slack" | "group_meeting" | "lab_calendar" | "dcs_roster" | "guide" | "meeting";
+  /** The channel, series or address the step was about. */
+  target?: string;
+  /** `queued`: filed for an admin to approve in Pending Actions, because nobody approved it here. */
+  status: "done" | "queued" | "skipped" | "failed";
+  detail?: string;
+  proposal_id?: string;
+};
+
+export type MemberTypeChangeResult = {
+  from?: string;
+  to?: string;
+  privilege_level: { from: string; to: string };
+  collaborator_subgroup: { from?: string; to?: string };
+  steps: MemberTypeChangeStep[];
+};
+
+/**
+ * The DCS roster sheet, as the step reads it before filing a row. Absent when the deployment has
+ * not named one (ADMINBOT_DCS_ROSTER_SHEET_ID), which the step reports rather than skips silently.
+ */
+export type DcsRosterSheetSource = {
+  spreadsheetId: string;
+  /** Reads the sheet, header row included. */
+  read: (spreadsheetId: string) => Promise<string[][]>;
+};
+
+export type MemberTypeChangeDeps = {
+  service: AdminBotService;
+  /**
+   * The admin whose click approves every step. Absent when nobody is present to approve -- the
+   * weekly sheet sweep -- and then each step is filed as a proposal and left pending instead.
+   */
+  approver?: MemberSheetApprover;
+  actor: string;
+  memberSheet?: MemberSheetSource;
+  dcsRoster?: DcsRosterSheetSource;
+  /** The live Monday series, or why it could not be read. */
+  readGroupMeeting?: () => Promise<
+    | { calendarId: string; seriesId: string; targets: string[] }
+    | { error: { status: number; message: string } }
+  >;
+  /**
+   * Leave the Monday meeting to the Meetings checkboxes: the admin ticked or unticked it in the
+   * same save, and that explicit answer outranks what the type would have implied.
+   */
+  skipGroupMeeting?: boolean;
+  /** Why the sheet step does not apply, e.g. the row was just written or was read from the sheet. */
+  skipSheet?: string;
+  /** New members get their guide from the onboarding step, so the guide here would repeat it. */
+  skipGuide?: boolean;
+  /**
+   * The onboarding guide this person is about to be sent mints their Slack Connect invite, so this
+   * change must not file a second one.
+   */
+  guideSendsSlackConnect?: boolean;
+  /** Writes one audit row; the id and timestamp are the caller's to stamp. */
+  recordAudit: (event: Pick<AdminBotAuditEvent, "type" | "actor" | "details">) => void;
+};
+
+/** The Google identity to invite: an ACL or a guest slot is granted to a Google account. */
+function calendarAddress(member: AdminBotLabMember): string | undefined {
+  return adminBotCalendarEmail(member) || undefined;
+}
+
+async function runAction(
+  deps: Pick<MemberTypeChangeDeps, "service" | "approver">,
+  step: MemberTypeChangeStep["step"],
+  target: string,
+  proposal: Parameters<AdminBotService["createProposal"]>[0],
+): Promise<MemberTypeChangeStep> {
+  const created = deps.service.createProposal(proposal);
+  if (!created.ok) {
+    return { step, target, status: "failed", detail: created.error.message };
+  }
+  if (!deps.approver) {
+    return { step, target, status: "queued", proposal_id: created.payload.id };
+  }
+  const ran = await approveAndExecute(deps.service, created.payload, deps.approver);
+  return ran.ok
+    ? { step, target, status: "done", proposal_id: created.payload.id }
+    : { step, target, status: "failed", detail: ran.reason, proposal_id: created.payload.id };
+}
+
+/**
+ * Carry out what moving `before` to `after` means for this person, outside the database.
+ *
+ * `after` is the record as saved, so the access level, subgroup and type it reflects are the ones
+ * that were actually stored -- including an admin's explicit Privilege choice in the same save.
+ */
+export async function applyMemberTypeChange(
+  deps: MemberTypeChangeDeps,
+  before: AdminBotLabMember,
+  after: AdminBotLabMember,
+): Promise<MemberTypeChangeResult> {
+  const delta = memberAccessDelta(before, after);
+  const steps: MemberTypeChangeStep[] = [];
+  const label = after.name || after.id;
+  // Decided up front because the guide, when one is due, carries this person's Slack Connect invite
+  // and step 2 must then not file a second.
+  const previousGuide = templateForMemberType(before.member_type);
+  const nextGuide = templateForMemberType(after.member_type);
+  const guideDue =
+    !deps.skipGuide &&
+    nextGuide.ok &&
+    (!previousGuide.ok || previousGuide.templateId !== nextGuide.templateId);
+  const typeNote = `member type ${before.member_type?.trim() || "unset"} -> ${
+    after.member_type?.trim() || "unset"
+  }`;
+
+  // 1. The sheet, first: until it agrees, the nightly roster sync would put the old type back.
+  if (deps.skipSheet) {
+    steps.push({ step: "sheet", status: "skipped", detail: deps.skipSheet });
+  } else if (!deps.memberSheet) {
+    steps.push({ step: "sheet", status: "skipped", detail: "no member spreadsheet configured" });
+  } else if (!deps.approver) {
+    steps.push({
+      step: "sheet",
+      status: "skipped",
+      detail: "a sheet write needs an admin to approve it",
+    });
+  } else {
+    try {
+      const written = await writeMemberTypeToSheet(
+        deps.service,
+        deps.memberSheet,
+        after,
+        deps.approver,
+        deps.actor,
+      );
+      steps.push(
+        written.status === "done"
+          ? {
+              step: "sheet",
+              target: `row ${written.sheet_row}`,
+              status: "done",
+              proposal_id: written.proposal_id,
+            }
+          : {
+              step: "sheet",
+              status: written.status,
+              detail: written.reason,
+              ...(written.status === "failed" && written.proposal_id
+                ? { proposal_id: written.proposal_id }
+                : {}),
+            },
+      );
+    } catch (error) {
+      steps.push({
+        step: "sheet",
+        status: "failed",
+        detail: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  // 2. Slack rooms the access matrix names. Invites and removals both notify inside Slack only.
+  const channelMoves = [
+    ...delta.slack_channels_to_remove.map((channel) => ({ channel, remove: true })),
+    ...delta.slack_channels_to_add.map((channel) => ({ channel, remove: false })),
+  ];
+  const slackUserId = after.slack_user_id?.trim();
+  // Somebody outside the workspace has no user id to add, but the #friends-and-collaborators row
+  // is reached through Slack Connect, which needs only their address.
+  const gainsFriendsChannel = delta.slack_channels_to_add.some((channel) =>
+    ADMINBOT_FRIENDS_CHANNELS.includes(channel),
+  );
+  const connectAddress = calendarAddress(after);
+  if (!slackUserId && gainsFriendsChannel && !deps.guideSendsSlackConnect && !guideDue) {
+    steps.push(
+      connectAddress
+        ? await runAction(deps, "slack", "#friends-and-collaborators", {
+            type: "slack.connect_invite",
+            summary: `Invite ${label} to #friends-and-collaborators through Slack Connect (${typeNote})`,
+            target: { service: "slack", channel: "slack", target: connectAddress },
+            proposed_payload: { email: connectAddress, member_id: after.id },
+            undo_plan: "Revoke the invitation in the channel's Slack Connect settings.",
+          })
+        : {
+            step: "slack",
+            status: "skipped",
+            detail: "no address to send a Slack Connect invite to",
+          },
+    );
+  }
+  if (channelMoves.length > 0 && !slackUserId) {
+    steps.push({
+      step: "slack",
+      status: "skipped",
+      detail: "no linked Slack account, so there is no one to add or remove",
+    });
+  }
+  for (const move of slackUserId ? channelMoves : []) {
+    steps.push(
+      await runAction(deps, "slack", `#${move.channel}`, {
+        type: move.remove ? "slack.remove_from_channel" : "slack.invite_to_channel",
+        summary: `${move.remove ? "Remove" : "Add"} ${label} ${move.remove ? "from" : "to"} #${
+          move.channel
+        } (${typeNote})`,
+        target: {
+          service: "slack",
+          channel: "slack",
+          target: move.channel,
+          recipientMemberId: after.id,
+        },
+        proposed_payload: { channel: move.channel, user_id: slackUserId },
+        undo_plan: move.remove
+          ? "Invite the member back to the channel."
+          : "Remove the member from the channel.",
+      }),
+    );
+  }
+
+  // 3. The Monday group meeting, unless the same save set it explicitly.
+  if (delta.group_meeting !== "unchanged" && !deps.skipGroupMeeting) {
+    const meeting = deps.readGroupMeeting
+      ? await deps.readGroupMeeting()
+      : { error: { status: 503, message: "calendar reading is not configured" } };
+    if ("error" in meeting) {
+      steps.push({ step: "group_meeting", status: "failed", detail: meeting.error.message });
+    } else if (delta.group_meeting === "lost") {
+      steps.push(
+        await runAction(deps, "group_meeting", meeting.seriesId, {
+          type: "calendar.remove_attendees",
+          summary: `Remove ${label} from the Monday group meeting (${typeNote})`,
+          target: { service: "calendar", channel: "calendar", target: meeting.targets[0] ?? "" },
+          proposed_payload: {
+            calendar_id: meeting.calendarId,
+            event_id: meeting.targets[0],
+            event_ids: meeting.targets,
+            meeting_series: meeting.seriesId,
+            // Every address on file: the executor subtracts whichever the live guest list carries.
+            removed_attendees: memberAddresses(before),
+          },
+          undo_plan: "Re-invite the member with calendar.add_attendees.",
+        }),
+      );
+    } else {
+      const address = calendarAddress(after);
+      if (!address) {
+        steps.push({ step: "group_meeting", status: "skipped", detail: "no address on file" });
+      }
+      for (const eventId of address ? meeting.targets : []) {
+        steps.push(
+          await runAction(deps, "group_meeting", eventId, {
+            type: "calendar.add_attendees",
+            summary: `Add ${label} to the Monday group meeting (${typeNote})`,
+            target: { service: "calendar", channel: "calendar", target: eventId },
+            proposed_payload: {
+              calendar_id: meeting.calendarId,
+              event_id: eventId,
+              attendees: [address],
+            },
+            undo_plan: "Remove the member with calendar.remove_attendees.",
+          }),
+        );
+      }
+    }
+  }
+
+  // 4. Read access to the lab calendar, as a typed action like every other step. There is no typed
+  //    action that revokes a calendar share, so a loss is reported for somebody to act on.
+  if (delta.lab_calendar === "gained") {
+    // A share only works for a Google account, so it never falls back to the departmental login.
+    const address = adminBotCalendarShareEmail(after);
+    if (!address) {
+      steps.push({
+        step: "lab_calendar",
+        status: "skipped",
+        detail: "no Gmail or Google Calendar email on file",
+      });
+    } else {
+      steps.push(
+        await runAction(deps, "lab_calendar", address, {
+          type: "calendar.grant_lab_calendar",
+          summary: `Give ${label} view access to the lab calendar (${typeNote})`,
+          target: { service: "calendar", channel: "calendar", target: address },
+          proposed_payload: { email: address, member_id: after.id },
+          undo_plan: "Remove the address in the lab calendar's sharing settings.",
+        }),
+      );
+    }
+  } else if (delta.lab_calendar === "lost") {
+    steps.push({
+      step: "lab_calendar",
+      status: "skipped",
+      detail:
+        "known ineligible members' direct calendar shares are removed by the Sunday cleanup; remove them in calendar sharing settings for immediate revocation",
+    });
+  }
+
+  // 5. The DCS roster sheet, when this save made somebody a full member or a major coauthor.
+  const dcsRoster = await proposeDcsRosterRow(deps, before, after);
+  if (dcsRoster) {
+    steps.push(dcsRoster);
+  }
+
+  // 6. The one mail: the onboarding guide for the new type, when it differs from the old type's.
+  //    The template decides, not the raw type: `full` -> `full, alumni` still onboards as a full
+  //    member and is owed nothing new.
+  if (guideDue) {
+    const queued = deps.service.queueOnboardingGuideForMember({
+      memberId: after.id,
+      actor: deps.actor,
+    });
+    if (!queued.ok) {
+      // 409 is a guide already sent or waiting, 422 is nobody to mail: answers, not faults.
+      steps.push({
+        step: "guide",
+        status: queued.status === 409 || queued.status === 422 ? "skipped" : "failed",
+        detail: queued.error.message,
+      });
+    } else {
+      const { proposal_id: proposalId, email, template_id: templateId } = queued.payload;
+      // The split Add member makes: the standard full-member guide -- and the alumni guide, which
+      // this step always sent -- go out on the saving admin's approval. Every other template
+      // carries per-person copy an approver should read first, so it waits in Pending Actions.
+      const approver =
+        templateId === "member" || templateId === "alumni" ? deps.approver : undefined;
+      const guide = deps.service.getProposal(proposalId);
+      const sent = !approver
+        ? ({ ok: "queued" } as const)
+        : guide
+          ? await approveAndExecute(deps.service, guide, approver)
+          : { ok: false as const, reason: `proposal ${proposalId} vanished` };
+      steps.push(
+        sent.ok === "queued"
+          ? { step: "guide", target: email, status: "queued", proposal_id: proposalId }
+          : sent.ok
+            ? { step: "guide", target: email, status: "done", proposal_id: proposalId }
+            : {
+                step: "guide",
+                target: email,
+                status: "failed",
+                detail: sent.reason,
+                proposal_id: proposalId,
+              },
+      );
+    }
+  }
+
+  deps.recordAudit({
+    type: "lab_member.member_type_applied",
+    actor: deps.actor,
+    details: {
+      member_id: after.id,
+      from: before.member_type ?? "",
+      to: after.member_type ?? "",
+      privilege_from: before.privilege_level,
+      privilege_to: after.privilege_level,
+      consequential: hasAccessConsequences(delta),
+      steps: steps.map((entry) => `${entry.step}:${entry.status}`),
+    },
+  });
+
+  return {
+    ...(before.member_type === undefined ? {} : { from: before.member_type }),
+    ...(after.member_type === undefined ? {} : { to: after.member_type }),
+    privilege_level: { from: before.privilege_level, to: after.privilege_level },
+    collaborator_subgroup: {
+      ...(before.collaborator_subgroup ? { from: before.collaborator_subgroup } : {}),
+      ...(after.collaborator_subgroup ? { to: after.collaborator_subgroup } : {}),
+    },
+    steps,
+  };
+}
+
+/**
+ * The DCS roster row, when moving `before` to `after` made somebody a full member or a major
+ * coauthor. `undefined` when it did not, so a save that changes nothing here reports nothing here.
+ *
+ * Every door onto the roster and every Member Type change reaches this: new members through
+ * `enrollNewMember` (the move from nobody), Lab Members tab saves through `applyMemberTypeChange`,
+ * and the spreadsheet's own edits through the roster-sync route. Approved by the saving admin when
+ * there is one and left in Pending Actions when there is not.
+ *
+ * The sheet is read first, and somebody already on it is skipped rather than proposed: it is one
+ * row per person, and a second row is a second account request. The executor checks again, since
+ * a queued proposal can be approved after somebody typed the row in by hand.
+ */
+export async function proposeDcsRosterRow(
+  deps: Pick<MemberTypeChangeDeps, "service" | "approver" | "dcsRoster">,
+  before: AdminBotLabMember,
+  after: AdminBotLabMember,
+  now: Date = new Date(),
+): Promise<MemberTypeChangeStep | undefined> {
+  const role = dcsRosterRoleGained(before, after);
+  if (!role) {
+    return undefined;
+  }
+  if (!deps.dcsRoster) {
+    return {
+      step: "dcs_roster",
+      status: "skipped",
+      detail: "no DCS roster sheet configured (ADMINBOT_DCS_ROSTER_SHEET_ID)",
+    };
+  }
+  let rows: string[][];
+  try {
+    rows = await deps.dcsRoster.read(deps.dcsRoster.spreadsheetId);
+  } catch (error) {
+    return {
+      step: "dcs_roster",
+      status: "failed",
+      detail: error instanceof Error ? error.message : String(error),
+    };
+  }
+  return fileDcsRosterRow(
+    { ...deps, dcsRoster: deps.dcsRoster },
+    rows,
+    after,
+    role,
+    `member type ${before.member_type?.trim() || "unset"} -> ${after.member_type?.trim() || "unset"}`,
+    now,
+  );
+}
+
+function memberEmails(member: AdminBotLabMember): (string | undefined)[] {
+  return [member.email, member.correspondence_email, member.calendar_email];
+}
+
+/** A `dcs_roster.add_row` card for this member still waiting for an approver, if any. */
+function pendingDcsRosterCard(service: AdminBotService, memberId: string): string | undefined {
+  const pending = service.listPending();
+  return pending.ok
+    ? pending.payload.proposals.find(
+        (proposal) =>
+          proposal.type === "dcs_roster.add_row" &&
+          (proposal.proposed_payload as { member_id?: unknown } | undefined)?.member_id ===
+            memberId,
+      )?.id
+    : undefined;
+}
+
+/**
+ * One member's card, against a sheet already read: skipped when they are on it or a card for them
+ * is already waiting, refused when the sheet is not the DCS roster, otherwise filed.
+ */
+async function fileDcsRosterRow(
+  deps: Pick<MemberTypeChangeDeps, "service" | "approver"> & { dcsRoster: DcsRosterSheetSource },
+  rows: readonly (readonly string[])[],
+  member: AdminBotLabMember,
+  role: DcsRosterRole,
+  reason: string,
+  now: Date,
+): Promise<MemberTypeChangeStep> {
+  const label = member.name || member.id;
+  const existing = findDcsRosterRowForPerson(rows, {
+    id: member.id,
+    name: member.name,
+    emails: memberEmails(member),
+  });
+  if (existing !== undefined) {
+    return {
+      step: "dcs_roster",
+      target: `row ${existing}`,
+      status: "skipped",
+      detail: "already on the DCS roster sheet",
+    };
+  }
+  const waiting = pendingDcsRosterCard(deps.service, member.id);
+  if (waiting) {
+    return {
+      step: "dcs_roster",
+      target: label,
+      status: "skipped",
+      detail: "a DCS roster card for them is already waiting in Pending Actions",
+      proposal_id: waiting,
+    };
+  }
+  const values = dcsRosterEntryValues(member, now);
+  try {
+    // Refuses a sheet that is not the DCS roster now, rather than filing a card that can only fail.
+    dcsRosterRowForHeader(rows, values);
+  } catch (error) {
+    return {
+      step: "dcs_roster",
+      status: "failed",
+      detail: error instanceof Error ? error.message : String(error),
+    };
+  }
+  const { spreadsheetId } = deps.dcsRoster;
+  const candidates = dcsRosterUsernameCandidates(member);
+  return runAction(deps, "dcs_roster", label, {
+    type: "dcs_roster.add_row",
+    summary: `Add ${label} to the DCS roster sheet as ${
+      role === "full" ? "a full member" : "a major coauthor"
+    } (${reason})`,
+    target: { service: "google", channel: "sheets", target: spreadsheetId },
+    proposed_payload: {
+      spreadsheet_id: spreadsheetId,
+      member_id: member.id,
+      role,
+      values,
+      ...(candidates.length > 0 ? { dcs_username_candidates: candidates } : {}),
+    },
+    undo_plan: "Delete the row from the DCS roster sheet before the department acts on it.",
+  });
+}
+
+export type DcsRosterBackfillResult = {
+  dry_run: boolean;
+  /** Full members and major coauthors on the roster, alumni excluded. */
+  owed: number;
+  already_on_sheet: { member_id: string; sheet_row: number }[];
+  /** Who a real run files a card for (a dry run files nothing). */
+  missing: { member_id: string; name: string; role: DcsRosterRole }[];
+  steps: MemberTypeChangeStep[];
+};
+
+/**
+ * File a card for every full member and major coauthor the DCS roster sheet does not have yet.
+ *
+ * The one-off catch-up for everyone who became one before role changes filed the row themselves.
+ * The sheet is read once and every member is matched against it the wide way (id, address, name),
+ * since the rows that predate this were typed by hand. Re-runnable: a member with a card already
+ * waiting is skipped, so a second run files only what the first did not.
+ *
+ * Cards are left for an admin to approve unless `deps.approver` is given -- the route passes one
+ * only when an admin who has read the dry run asks for it.
+ */
+export async function backfillDcsRoster(
+  deps: Pick<MemberTypeChangeDeps, "service" | "approver" | "dcsRoster">,
+  members: readonly AdminBotLabMember[],
+  options: { dryRun: boolean; now?: Date },
+): Promise<DcsRosterBackfillResult | { error: string }> {
+  if (!deps.dcsRoster) {
+    return { error: "no DCS roster sheet configured (ADMINBOT_DCS_ROSTER_SHEET_ID)" };
+  }
+  let rows: string[][];
+  try {
+    rows = await deps.dcsRoster.read(deps.dcsRoster.spreadsheetId);
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
+  const now = options.now ?? new Date();
+  const result: DcsRosterBackfillResult = {
+    dry_run: options.dryRun,
+    owed: 0,
+    already_on_sheet: [],
+    missing: [],
+    steps: [],
+  };
+  const owed = members
+    .map((member) => ({ member, role: dcsRosterRoleOf(member) }))
+    .filter((entry): entry is { member: AdminBotLabMember; role: DcsRosterRole } =>
+      Boolean(entry.role),
+    )
+    .toSorted((left, right) => (left.member.name || "").localeCompare(right.member.name || ""));
+  result.owed = owed.length;
+  for (const { member, role } of owed) {
+    const row = findDcsRosterRowForPerson(rows, {
+      id: member.id,
+      name: member.name,
+      emails: memberEmails(member),
+    });
+    if (row !== undefined) {
+      result.already_on_sheet.push({ member_id: member.id, sheet_row: row });
+      continue;
+    }
+    result.missing.push({ member_id: member.id, name: member.name, role });
+    if (!options.dryRun) {
+      result.steps.push(
+        await fileDcsRosterRow(
+          { ...deps, dcsRoster: deps.dcsRoster },
+          rows,
+          member,
+          role,
+          "catch-up for members who predate role-change filing",
+          now,
+        ),
+      );
+    }
+  }
+  return result;
+}
+
+/**
+ * Put a member on exactly the standing meetings the admin ticked, and take them off the rest.
+ *
+ * Like the type change above, the save is the approval: each add or removal is a typed calendar
+ * proposal approved by this admin and executed now. Both are silent (`--send-updates none`). An
+ * add goes to every live series of the meeting, so a meeting split "this and following" is joined
+ * on the split that actually has Mondays ahead.
+ */
+export async function applyMeetingSelection(
+  deps: Pick<MemberTypeChangeDeps, "service" | "approver">,
+  member: AdminBotLabMember,
+  calendarId: string,
+  meetings: readonly AdminBotStandingMeeting[],
+  selected: readonly string[],
+): Promise<MemberTypeChangeStep[]> {
+  const plan = planMeetingMembership(meetings, member, selected);
+  const steps: MemberTypeChangeStep[] = [];
+  const label = member.name || member.id;
+  const address = calendarAddress(member);
+  for (const meeting of plan.add) {
+    if (!address) {
+      steps.push({
+        step: "meeting",
+        target: meeting.title,
+        status: "skipped",
+        detail: "no address on file",
+      });
+      continue;
+    }
+    for (const eventId of meeting.event_ids) {
+      steps.push(
+        await runAction(deps, "meeting", meeting.title, {
+          type: "calendar.add_attendees",
+          summary: `Add ${label} to ${meeting.title}`,
+          target: { service: "calendar", channel: "calendar", target: eventId },
+          proposed_payload: { calendar_id: calendarId, event_id: eventId, attendees: [address] },
+          undo_plan: "Remove the member with calendar.remove_attendees.",
+        }),
+      );
+    }
+  }
+  for (const meeting of plan.remove) {
+    steps.push(
+      await runAction(deps, "meeting", meeting.title, {
+        type: "calendar.remove_attendees",
+        summary: `Remove ${label} from ${meeting.title}`,
+        target: { service: "calendar", channel: "calendar", target: meeting.event_ids[0] ?? "" },
+        proposed_payload: {
+          calendar_id: calendarId,
+          event_id: meeting.event_ids[0],
+          event_ids: meeting.event_ids,
+          meeting_series: meeting.id,
+          removed_attendees: memberAddresses(member),
+        },
+        undo_plan: "Re-invite the member with calendar.add_attendees.",
+      }),
+    );
+  }
+  return steps;
+}

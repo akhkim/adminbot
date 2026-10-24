@@ -92,6 +92,70 @@ describe("findDuplicateMembers", () => {
       ]),
     ).toEqual([]);
   });
+
+  it("matches the original all-pairs result, including pair order and asymmetric author names", () => {
+    const spellings = [
+      "Terry Zhang",
+      "Terry Jingchen Zhang",
+      "Alice Yuchen Zhang",
+      "Yuchen Zhang",
+      "John Smith",
+      "Smith, John",
+      "John John Smith",
+      "John John A Smith",
+      "Zoë Müller",
+      "Zoe Muller",
+      "Proof Plain Member",
+      "Proof Admin Member",
+      "!!!",
+      "???",
+    ];
+    const roster = Array.from({ length: 91 }, (_, i) => ({
+      id: `member-${i}`,
+      name: spellings[(i * 11) % spellings.length],
+      email: i % 13 === 0 ? `SHARED-${i % 3}@lab.test` : `member-${i}@lab.test`,
+      correspondence_email: i % 17 === 0 ? `shared-${i % 3}@lab.test` : undefined,
+      slack_user_id: i % 19 === 0 ? `U${i % 4}` : undefined,
+    }));
+    const original = [];
+    for (let i = 0; i < roster.length; i += 1) {
+      for (let j = i + 1; j < roster.length; j += 1) {
+        const reasons = memberDuplicateReasons(roster[i]!, roster[j]!);
+        if (reasons.length) {
+          original.push({
+            left: roster[i],
+            right: roster[j],
+            reasons,
+            confidence:
+              reasons.includes("same_email") || reasons.includes("same_slack_user_id")
+                ? ("high" as const)
+                : ("likely" as const),
+          });
+        }
+      }
+    }
+    original.sort((a, b) => (a.confidence === b.confidence ? 0 : a.confidence === "high" ? -1 : 1));
+    expect(findDuplicateMembers(roster)).toEqual(original);
+  });
+
+  it("handles a thousand distinct names without comparing every pair", () => {
+    const letters = (number: number): string => {
+      let value = number + 1;
+      let result = "";
+      while (value > 0) {
+        value -= 1;
+        result = String.fromCharCode(97 + (value % 26)) + result;
+        value = Math.floor(value / 26);
+      }
+      return result;
+    };
+    const roster = Array.from({ length: 1005 }, (_, i) => ({
+      id: `member-${i}`,
+      name: `Member${letters(i)} Unique`,
+      email: `member-${i}@lab.test`,
+    }));
+    expect(findDuplicateMembers(roster)).toEqual([]);
+  });
 });
 
 describe("planMemberMerge", () => {

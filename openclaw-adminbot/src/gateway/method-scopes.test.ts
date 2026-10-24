@@ -44,7 +44,7 @@ describe("method scope resolution", () => {
     ["tasks.list", ["operator.read"]],
     ["tasks.get", ["operator.read"]],
     ["config.schema.lookup", ["operator.read"]],
-    ["sessions.create", ["operator.write"]],
+    ["sessions.create", ["operator.chat"]],
     ["sessions.send", ["operator.write"]],
     ["sessions.abort", ["operator.write"]],
     ["tasks.cancel", ["operator.write"]],
@@ -243,6 +243,26 @@ describe("operator scope authorization", () => {
       allowed: false,
       missingScope: "operator.write",
     });
+  });
+
+  it("allows chat-only devices to send and stop chat without privileged writes", () => {
+    for (const method of ["chat.send", "chat.abort", "sessions.create"]) {
+      expect(authorizeOperatorScopesForMethod(method, ["operator.read", "operator.chat"])).toEqual({
+        allowed: true,
+      });
+      expect(authorizeOperatorScopesForMethod(method, ["operator.write"])).toEqual({
+        allowed: true,
+      });
+      expect(authorizeOperatorScopesForMethod(method, ["operator.read"])).toEqual({
+        allowed: false,
+        missingScope: "operator.chat",
+      });
+    }
+    for (const method of ["tools.invoke", "agent", "send", "chat.inject", "sessions.patch"]) {
+      expect(
+        authorizeOperatorScopesForMethod(method, ["operator.read", "operator.chat"]).allowed,
+      ).toBe(false);
+    }
   });
 
   it("allows operator.write clients to use unified Talk sessions", () => {

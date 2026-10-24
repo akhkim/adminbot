@@ -1,4 +1,11 @@
-import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
+import {
+  createHash,
+  randomBytes,
+  randomUUID,
+  scrypt,
+  scryptSync,
+  timingSafeEqual,
+} from "node:crypto";
 import type {
   AdminBotAccountRegistration,
   AdminBotAuditEvent,
@@ -9,12 +16,27 @@ import type {
   AdminBotRegistrationStatus,
 } from "../../contracts/actions.js";
 import { adminBotMemberRoles } from "../../contracts/actions.js";
+import { adminBotCalendarShareEmail } from "../../contracts/member-outreach-email.js";
 import {
   formatAdminBotMemberRoles,
   parseAdminBotMemberRoles,
 } from "../../contracts/member-roles.js";
 import type { AdminBotServiceStore } from "../../kernel/service.js";
-import { isNewObservation, latestBySource, observationFor } from "../members/location-history.js";
+import {
+  isNewDailyObservation,
+  latestBySource,
+  observationFor,
+  utcDay,
+} from "../members/location-history.js";
+import {
+  freshDeviceTz,
+  freshSlackTz,
+  ipReadingVerdict,
+  liveIpObservedAt,
+  liveIpPlace,
+  memberMapVisibility,
+  usableDeviceZone,
+} from "../members/member-map.js";
 import { belongsOnSurface } from "../members/surface-membership.js";
 import { isTravelHistorySubject } from "../members/travel-history.js";
 import type { CalendarInviteRunner } from "../onboarding/calendar-invite.js";
@@ -22,11 +44,35 @@ import type { CalendarInviteRunner } from "../onboarding/calendar-invite.js";
 // scrypt cost parameters. Serialized alongside every hash so a future cost bump can be
 // detected per-credential without a migration; verify re-derives with the stored params.
 const SCRYPT_N = 16384;
+// How many of a member's addresses today the live IP check remembers (see lastCheckByMember).
+const RECENT_IPS_PER_MEMBER = 4;
+// An unchanged device zone is re-stamped at most this often, so `last_device_tz_at` stays fresh.
+const DEVICE_TZ_RESTAMP_MS = 86_400_000;
 const SCRYPT_R = 8;
 const SCRYPT_P = 1;
 const SCRYPT_KEYLEN = 64;
 const SCRYPT_SALT_BYTES = 32;
 const SCRYPT_MAXMEM = 64 * 1024 * 1024;
+// A non-account hash with the normal cost. It keeps unknown-email checks comparable without
+// doing a blocking derivation in the constructor or starting an unhandled background promise.
+const DUMMY_PASSWORD_SCRYPT =
+  "scrypt$16384$8$1$QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI$g_p5klroWlIELhg-ChTBOswpM1wy-RniabiDwRQxnYujj6YqPJA6iHQvFRjmSrDF7-r7xeW3El2NslxZDQUSwg";
+function derivePassword(
+  password: string,
+  salt: Buffer,
+  keyLength: number,
+  options: { N: number; r: number; p: number; maxmem: number },
+): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    scrypt(password, salt, keyLength, options, (error, derived) => {
+      if (error) {
+        reject(error);
+      } else {
+        resolve(derived);
+      }
+    });
+  });
+}
 
 /**
  * The temporary password every seeded portal account starts with.
@@ -41,6 +87,7 @@ export const ADMINBOT_SEEDED_PORTAL_PASSWORD = "jinesis";
 const MIN_PASSWORD_LENGTH = 10;
 const DEFAULT_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const SESSION_TOKEN_BYTES = 32;
+const SESSION_TOUCH_INTERVAL_MS = 5 * 60 * 1000;
 
 // Reset links are mailed, so they live long enough to survive a slow inbox but not long enough to
 // sit in one as a standing credential.
@@ -49,6 +96,7 @@ const PASSWORD_RESET_TOKEN_BYTES = 32;
 
 // Sliding-window brute-force guard: at most this many failures per key inside the window.
 const RATE_LIMIT_MAX_FAILURES = 10;
+const RATE_LIMIT_MAX_IN_FLIGHT = 10;
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
 const APPROVAL_EMAIL_MAX_ATTEMPTS = 3;
 
@@ -119,9 +167,60 @@ export type AdminBotRegistrationView = {
   profile?: Record<string, unknown>;
 };
 
+type Awaitable<T> = T | Promise<T>;
+
+type AuthStoreMethod =
+  | "appendLoginEvent"
+  | "appendMemberLocation"
+  | "attachLoginEventLocation"
+  | "changeMemberLoginEmail"
+  | "changePasswordAndRevokeSessions"
+  | "consumePasswordResetAndRevokeSessions"
+  | "getAccountRegistration"
+  | "getCredentialByEmail"
+  | "getCredentialByMemberId"
+  | "getLabMember"
+  | "getPasswordResetByTokenHash"
+  | "getPendingRegistrationByEmail"
+  | "getPendingRegistrationByMemberId"
+  | "getSession"
+  | "getSettings"
+  | "listAccountRegistrations"
+  | "listAuditEvents"
+  | "listCredentialMemberIds"
+  | "listLabMembers"
+  | "listMemberLocations"
+  | "markPasswordResetsUsedForMember"
+  | "patchLabMemberAuthFields"
+  | "pruneSessionsBefore"
+  | "recordAudit"
+  | "revokeSession"
+  | "revokeSessionsForMember"
+  | "saveAccountRegistration"
+  | "saveCredential"
+  | "saveLabMember"
+  | "savePasswordReset"
+  | "saveSession"
+  | "saveSessionIfCredentialCurrent"
+  | "searchUnclaimedRoster"
+  | "touchSession"
+  | "tryApproveRegistration"
+  | "trySavePendingRegistration"
+  | "updateAccountRegistrationDecision"
+  | "updateCredentialEmail";
+
+export type AdminBotAuthStore = {
+  [K in AuthStoreMethod]: AdminBotServiceStore[K] extends (...args: infer Args) => infer Result
+    ? (...args: Args) => Awaitable<Result>
+    : never;
+};
+
 export type AdminBotAuthServiceOptions = {
-  store: AdminBotServiceStore;
-  createMember: (input: AdminBotLabMemberInput) => AdminBotLabMember;
+  store: AdminBotAuthStore;
+  // Preparing a signup member must not write: only the store can commit member, credential and
+  // approval together, after the pending decision has been claimed across processes.
+  prepareMember: (input: AdminBotLabMemberInput) => Awaitable<AdminBotLabMember>;
+  afterMemberCreated?: (member: AdminBotLabMember) => Awaitable<void>;
   // Best-effort side effect fired (not awaited) when a registration is approved, granting the
   // new member's account email view access to the lab calendar. A rejection is audited but never
   // fails or delays the approval response — see approveRegistration.
@@ -146,8 +245,14 @@ export type AdminBotAuthServiceOptions = {
   geolocateIp?: (
     ip: string,
   ) => Promise<
-    { country?: string; continent?: string; city?: string; timezone?: string } | undefined
+    | { country?: string; continent?: string; city?: string; region?: string; timezone?: string }
+    | undefined
   >;
+  // Fired (not awaited) after a sign-in stamped a city on the member: the meetup intros read it.
+  // Gets only the member id, never the address or the place.
+  afterLoginLocated?: (memberId: string) => void;
+  /** Where a best-effort side effect reports its failure. Never given an address. Default console. */
+  warn?: (message: string) => void;
   gatewayUrl?: string;
   sessionTtlMs?: number;
   now?: () => Date;
@@ -157,7 +262,16 @@ type LoginCredentials = {
   email: string;
   password: string;
   remoteIp?: string;
+  /** The zone the browser reported with the request, see `AdminBotDeviceClock`. */
+  device?: AdminBotDeviceClock;
 };
+
+/**
+ * What the member's browser said about its own clock, sent as request headers by the Control UI:
+ * the IANA zone name from `Intl.DateTimeFormat().resolvedOptions().timeZone` and the UTC offset in
+ * minutes east. A name only, never coordinates, and nothing the member is asked for.
+ */
+export type AdminBotDeviceClock = { tz?: string; offsetMinutes?: number };
 
 type ClaimRequest = LoginCredentials & { member_id: string };
 
@@ -190,6 +304,13 @@ const SIGNUP_PROFILE_FIELDS = [
 // A signup may name several roles, comma-joined. All of them have to match, because a half-matched
 // answer stored as one role would silently drop the other half -- the unmatched string goes to
 // notes instead, where an admin can see what the person actually wrote.
+/** Same place name, ignoring case and spacing; two blanks are the same nothing. */
+function sameWords(a: string | undefined, b: string | undefined): boolean {
+  const norm = (value: string | undefined) =>
+    (value ?? "").trim().toLowerCase().replace(/\s+/gu, " ");
+  return norm(a) === norm(b);
+}
+
 function normalizeMemberRole(value: string): string | undefined {
   const submitted = parseAdminBotMemberRoles(value);
   if (!submitted.length) {
@@ -211,8 +332,9 @@ const SIGNUP_STRING_ARRAY_FIELDS = new Set<string>(["research_topics", "projects
 const SIGNUP_NUMBER_FIELDS = new Set<string>(["hours_per_week"]);
 
 export class AdminBotAuthService {
-  private readonly store: AdminBotServiceStore;
-  private readonly createMember: (input: AdminBotLabMemberInput) => AdminBotLabMember;
+  private readonly store: AdminBotAuthStore;
+  private readonly prepareMember: (input: AdminBotLabMemberInput) => Awaitable<AdminBotLabMember>;
+  private readonly afterMemberCreated?: (member: AdminBotLabMember) => Awaitable<void>;
   private readonly inviteToLabCalendar?: CalendarInviteRunner;
   private readonly sendAccountApprovedEmail?: (params: {
     email: string;
@@ -227,143 +349,195 @@ export class AdminBotAuthService {
   private readonly geolocateIp?: (
     ip: string,
   ) => Promise<
-    { country?: string; continent?: string; city?: string; timezone?: string } | undefined
+    | { country?: string; continent?: string; city?: string; region?: string; timezone?: string }
+    | undefined
   >;
+  private readonly afterLoginLocated?: (memberId: string) => void;
+  private readonly warn: (message: string) => void;
   private readonly gatewayUrl?: string;
   private readonly sessionTtlMs: number;
   private readonly now: () => Date;
   // Fixed dummy hash so verify against an unknown email costs the same scrypt work as a real
   // one; otherwise response timing would leak whether an email is on the roster.
-  private readonly dummyPasswordScrypt: string;
   private readonly failuresByKey = new Map<string, number[]>();
-  // The last address each member's account was seen from, so noteAccountUse can skip the
-  // geolocation call for the overwhelming majority of requests that came from where the last one
-  // did. In memory on purpose: a restart costs one extra lookup per active member, which is a
-  // better trade than keeping a table of everybody's current IP on disk.
-  private readonly lastSeenIpByMember = new Map<string, string>();
+  private readonly inFlightByKey = new Map<string, number>();
+  private readonly registrationDecisionsInFlight = new Set<string>();
+  // What noteAccountUse last looked up for each member: the UTC day, the addresses seen today and
+  // the device zone. A request from a remembered address with the same (or no) zone is skipped, so
+  // it is one lookup per member per day plus one per new network or clock. In memory on purpose: after a restart each member costs one
+  // local lookup and, unless the city changed, no write (see recordLoginLocation's `live`), which
+  // is a better trade than keeping a table of everybody's current IP on disk.
+  private readonly lastCheckByMember = new Map<
+    string,
+    { day: string; ips: string[]; tz: string }
+  >();
+  // The UTC day `last_seen_at` was last written for each member, so a busy day costs one write.
+  private readonly lastSeenDayByMember = new Map<string, string>();
 
   constructor(options: AdminBotAuthServiceOptions) {
     this.store = options.store;
-    this.createMember = options.createMember;
+    this.prepareMember = options.prepareMember;
+    this.afterMemberCreated = options.afterMemberCreated;
     this.inviteToLabCalendar = options.inviteToLabCalendar;
     this.sendAccountApprovedEmail = options.sendAccountApprovedEmail;
     this.sendPasswordResetEmail = options.sendPasswordResetEmail;
     this.geolocateIp = options.geolocateIp;
+    this.afterLoginLocated = options.afterLoginLocated;
+    this.warn = options.warn ?? ((message: string) => console.warn(message));
     this.gatewayUrl = options.gatewayUrl?.trim() || undefined;
     this.sessionTtlMs = options.sessionTtlMs ?? DEFAULT_SESSION_TTL_MS;
     this.now = options.now ?? (() => new Date());
-    this.dummyPasswordScrypt = hashPassword(randomBytes(16).toString("hex"));
   }
 
   // Register interest in an existing roster profile. Never issues a session; success only queues a
   // pending registration that an admin must approve. Every uniqueness failure returns the same
   // generic 403 so a caller cannot probe which member/email exists or is already taken.
-  claim(request: ClaimRequest): AdminBotAuthResponse<{ status: "pending" }> {
+  async claim(request: ClaimRequest): Promise<AdminBotAuthResponse<{ status: "pending" }>> {
     const email = request.email.trim().toLowerCase();
     const memberId = request.member_id.trim();
     const keys = rateLimitKeys(email, request.remoteIp);
-    const limited = this.checkRateLimit(keys, email, request.remoteIp);
+    const limited = await this.checkRateLimit(keys, email, request.remoteIp);
     if (limited) {
       return limited;
     }
-    if (request.password.length < MIN_PASSWORD_LENGTH) {
-      return authError(400, `password must be at least ${MIN_PASSWORD_LENGTH} characters`);
+    try {
+      if (request.password.length < MIN_PASSWORD_LENGTH) {
+        return authError(400, `password must be at least ${MIN_PASSWORD_LENGTH} characters`);
+      }
+      const memberTaken =
+        !(await this.store.getLabMember(memberId)) ||
+        (await this.store.getCredentialByMemberId(memberId)) ||
+        (await this.store.getPendingRegistrationByMemberId(memberId));
+      const emailTaken =
+        (await this.store.getCredentialByEmail(email)) ||
+        (await this.store.getPendingRegistrationByEmail(email));
+      if (memberTaken || emailTaken) {
+        this.recordFailure(keys);
+        return authError(403, "unable to claim this profile");
+      }
+      const registration = await this.newRegistration("claim", email, request.password, {
+        member_id: memberId,
+      });
+      if (!(await this.store.trySavePendingRegistration(registration))) {
+        this.recordFailure(keys);
+        return authError(403, "unable to claim this profile");
+      }
+      await this.audit("auth.registration_submitted", memberId, { kind: "claim", email });
+      return { ok: true, status: 200, payload: { status: "pending" } };
+    } finally {
+      this.releaseRateLimit(keys);
     }
-    const memberTaken =
-      !this.store.getLabMember(memberId) ||
-      this.store.getCredentialByMemberId(memberId) ||
-      this.store.getPendingRegistrationByMemberId(memberId);
-    const emailTaken =
-      this.store.getCredentialByEmail(email) || this.store.getPendingRegistrationByEmail(email);
-    if (memberTaken || emailTaken) {
-      this.recordFailure(keys);
-      return authError(403, "unable to claim this profile");
-    }
-    const registration = this.newRegistration("claim", email, request.password, {
-      member_id: memberId,
-    });
-    this.store.saveAccountRegistration(registration);
-    this.audit("auth.registration_submitted", memberId, { kind: "claim", email });
-    return { ok: true, status: 200, payload: { status: "pending" } };
   }
 
   // Self-service application from someone not yet on the roster. Approval later mints the member.
-  signup(request: SignupRequest): AdminBotAuthResponse<{ status: "pending" }> {
+  async signup(request: SignupRequest): Promise<AdminBotAuthResponse<{ status: "pending" }>> {
     const email = request.email.trim().toLowerCase();
     const keys = rateLimitKeys(email, request.remoteIp);
-    const limited = this.checkRateLimit(keys, email, request.remoteIp);
+    const limited = await this.checkRateLimit(keys, email, request.remoteIp);
     if (limited) {
       return limited;
     }
-    if (request.password.length < MIN_PASSWORD_LENGTH) {
-      return authError(400, `password must be at least ${MIN_PASSWORD_LENGTH} characters`);
+    try {
+      if (request.password.length < MIN_PASSWORD_LENGTH) {
+        return authError(400, `password must be at least ${MIN_PASSWORD_LENGTH} characters`);
+      }
+      const profile = sanitizeSignupProfile(request.profile);
+      if (!profile) {
+        return authError(400, "invalid profile");
+      }
+      if (
+        (await this.store.getCredentialByEmail(email)) ||
+        (await this.store.getPendingRegistrationByEmail(email))
+      ) {
+        this.recordFailure(keys);
+        return authError(403, "unable to register");
+      }
+      const registration = await this.newRegistration("signup", email, request.password, {
+        profile_json: JSON.stringify(profile),
+      });
+      if (!(await this.store.trySavePendingRegistration(registration))) {
+        this.recordFailure(keys);
+        return authError(403, "unable to register");
+      }
+      await this.audit("auth.registration_submitted", undefined, { kind: "signup", email });
+      return { ok: true, status: 200, payload: { status: "pending" } };
+    } finally {
+      this.releaseRateLimit(keys);
     }
-    const profile = sanitizeSignupProfile(request.profile);
-    if (!profile) {
-      return authError(400, "invalid profile");
-    }
-    if (this.store.getCredentialByEmail(email) || this.store.getPendingRegistrationByEmail(email)) {
-      this.recordFailure(keys);
-      return authError(403, "unable to register");
-    }
-    const registration = this.newRegistration("signup", email, request.password, {
-      profile_json: JSON.stringify(profile),
-    });
-    this.store.saveAccountRegistration(registration);
-    this.audit("auth.registration_submitted", undefined, { kind: "signup", email });
-    return { ok: true, status: 200, payload: { status: "pending" } };
   }
 
-  login(request: LoginCredentials): AdminBotAuthResponse<AdminBotAuthSessionPayload> {
+  async login(
+    request: LoginCredentials,
+  ): Promise<AdminBotAuthResponse<AdminBotAuthSessionPayload>> {
     const email = request.email.trim().toLowerCase();
     const keys = rateLimitKeys(email, request.remoteIp);
-    const limited = this.checkRateLimit(keys, email, request.remoteIp);
+    const limited = await this.checkRateLimit(keys, email, request.remoteIp);
     if (limited) {
       return limited;
     }
-    const credential = this.store.getCredentialByEmail(email);
-    if (!credential) {
-      // A pending registration with the right password is a real account awaiting approval; tell
-      // the caller so, but only after verifying the password against its hash.
-      const pending = this.store.getPendingRegistrationByEmail(email);
-      if (pending && verifyPassword(pending.password_scrypt, request.password)) {
-        this.audit("auth.login_failed", email, { reason: "pending_approval" });
-        return {
-          ok: false,
-          status: 403,
-          error: { message: "account pending approval" },
-          code: "pending_approval",
-        };
+    try {
+      const credential = await this.store.getCredentialByEmail(email);
+      if (!credential) {
+        // A pending registration with the right password is a real account awaiting approval; tell
+        // the caller so, but only after verifying the password against its hash.
+        const pending = await this.store.getPendingRegistrationByEmail(email);
+        if (pending && (await verifyPasswordAsync(pending.password_scrypt, request.password))) {
+          await this.audit("auth.login_failed", email, { reason: "pending_approval" });
+          return {
+            ok: false,
+            status: 403,
+            error: { message: "account pending approval" },
+            code: "pending_approval",
+          };
+        }
+        // No credential and no matching pending account: consume equivalent scrypt time (unless a
+        // pending row already absorbed it above) so unknown emails stay indistinguishable.
+        if (!pending) {
+          await verifyPasswordAsync(DUMMY_PASSWORD_SCRYPT, request.password);
+        }
+        this.recordFailure(keys);
+        await this.audit("auth.login_failed", email, { reason: "unknown_email" });
+        return authError(401, "invalid email or password");
       }
-      // No credential and no matching pending account: consume equivalent scrypt time (unless a
-      // pending row already absorbed it above) so unknown emails stay indistinguishable.
-      if (!pending) {
-        verifyPassword(this.dummyPasswordScrypt, request.password);
+      if (!(await verifyPasswordAsync(credential.password_scrypt, request.password))) {
+        this.recordFailure(keys);
+        await this.audit("auth.login_failed", email, { reason: "bad_password" });
+        return authError(401, "invalid email or password");
       }
-      this.recordFailure(keys);
-      this.audit("auth.login_failed", email, { reason: "unknown_email" });
-      return authError(401, "invalid email or password");
+      const member = await this.store.getLabMember(credential.member_id);
+      if (!member) {
+        this.recordFailure(keys);
+        await this.audit("auth.login_failed", email, { reason: "member_missing" });
+        return authError(401, "invalid email or password");
+      }
+      const started = await this.startSession(member, {
+        kind: "login",
+        expectedPasswordHash: credential.password_scrypt,
+      });
+      if (!started) {
+        await this.audit("auth.login_failed", email, { reason: "credential_changed" });
+        return authError(401, "invalid email or password");
+      }
+      const { payload } = started;
+      await this.audit("auth.login_succeeded", member.id, { email });
+      const loginEventId = await this.recordLoginTime(member.id);
+      if (this.geolocateIp && request.remoteIp) {
+        // Not awaited: geolocation is a courtesy stamp on the member record, not part of the
+        // sign-in itself, and must never make login wait on a third-party API.
+        void this.recordLoginLocation(member.id, request.remoteIp, {
+          loginEventId,
+          ...(request.device ? { device: request.device } : {}),
+        });
+        this.lastCheckByMember.set(member.id, {
+          day: utcDay(this.now().toISOString()),
+          ips: [request.remoteIp],
+          tz: request.device?.tz?.trim() ?? "",
+        });
+      }
+      return { ok: true, status: 200, payload, sessionToken: payload.session_token };
+    } finally {
+      this.releaseRateLimit(keys);
     }
-    if (!verifyPassword(credential.password_scrypt, request.password)) {
-      this.recordFailure(keys);
-      this.audit("auth.login_failed", email, { reason: "bad_password" });
-      return authError(401, "invalid email or password");
-    }
-    const member = this.store.getLabMember(credential.member_id);
-    if (!member) {
-      this.recordFailure(keys);
-      this.audit("auth.login_failed", email, { reason: "member_missing" });
-      return authError(401, "invalid email or password");
-    }
-    const { payload } = this.startSession(member);
-    this.audit("auth.login_succeeded", member.id, { email });
-    const loginEventId = this.recordLoginTime(member.id);
-    if (this.geolocateIp && request.remoteIp) {
-      // Not awaited: geolocation is a courtesy stamp on the member record, not part of the
-      // sign-in itself, and must never make login wait on a third-party API.
-      void this.recordLoginLocation(member.id, request.remoteIp, loginEventId);
-    }
-    return { ok: true, status: 200, payload, sessionToken: payload.session_token };
   }
 
   /**
@@ -376,20 +550,26 @@ export class AdminBotAuthService {
    * "never signed in", the adoption line read 0/N, and the page whose entire thesis is "complete on
    * paper, adopted by nobody" could not tell the two apart.
    *
-   * Synchronous and unconditional, unlike the geolocation below: this is one local write with
-   * nothing to wait on, and a stamp that is sometimes skipped is worse than no stamp at all --
+   * Awaited and unconditional, unlike the geolocation below: a stamp that is sometimes skipped is
+   * worse than no stamp at all --
    * absent means "never signed in" to five different readers.
    *
-   * Re-reads rather than reusing the `member` from login() for the same reason the location writer
-   * does: logins race, and this must touch one field and never clobber a concurrent profile edit.
+   * A single store-side patch avoids overwriting a profile edit made while a login is in flight.
    */
-  private recordLoginTime(memberId: string): string | undefined {
-    const current = this.store.getLabMember(memberId);
-    if (!current) {
+  private async recordLoginTime(memberId: string): Promise<string | undefined> {
+    const now = this.now().toISOString();
+    if (
+      !(await this.store.patchLabMemberAuthFields(memberId, {
+        last_login_at: now,
+        // Signing in is being here; stamping it in the same write means the requests that follow
+        // today need none of their own (see noteSeenToday).
+        last_seen_at: now,
+        updated_at: now,
+      }))
+    ) {
       return undefined;
     }
-    const now = this.now().toISOString();
-    this.store.saveLabMember({ ...current, last_login_at: now, updated_at: now });
+    this.lastSeenDayByMember.set(memberId, utcDay(now));
     // The field above is overwritten by the next sign-in and by any bulk write that touches the
     // member; this row is not. It is the difference between "is this person alive" and "how often
     // do they actually come back", and only the second one can be read after an importer has run.
@@ -402,24 +582,112 @@ export class AdminBotAuthService {
     // the same second are two rows, and the travel timeline is only as good as the row the
     // location lands on.
     const loginEventId = randomUUID();
-    this.store.appendLoginEvent({ id: loginEventId, member_id: memberId, at: now });
+    await this.store.appendLoginEvent({ id: loginEventId, member_id: memberId, at: now });
     return loginEventId;
   }
 
   // Fire-and-forget, same contract as the calendar invite and the approval email: the login has
   // already succeeded, so a slow or unreachable geolocation provider must never delay or fail it.
+  // Called at sign-in and by the daily check in noteAccountUse; the two differ only in whether
+  // there is a sign-in row to attach the place to.
   //
-  // Only the three inferred last_login_* fields are written. `location` and `slack_location` are
-  // self-reported and are deliberately never touched here -- an inferred country must not silently
-  // overwrite what a member told us about themselves.
+  // Only the inferred last_login_* / last_ip_* / last_device_* fields are written. `location` and
+  // `slack_location` are self-reported and are deliberately never touched here -- an inferred
+  // country must not silently overwrite what a member told us about themselves.
+  //
+  // Every reading is checked against the member's clock first (see `ipReadingVerdict`): an IP city
+  // whose UTC offset is more than two hours from the zone the request's browser reported (else the
+  // member's Slack zone) is almost always a VPN exit. That reading is still logged -- the timeline
+  // is a record of what was observed, flagged `suspected_vpn` -- but it does not replace the
+  // member's place, is not attached to the sign-in row, and wakes no meetup hook.
   private async recordLoginLocation(
     memberId: string,
     remoteIp: string,
-    loginEventId?: string,
+    context: { loginEventId?: string; device?: AdminBotDeviceClock; live?: boolean } = {},
   ): Promise<void> {
+    const { loginEventId } = context;
+    const live = context.live === true;
     try {
+      const now = this.now();
+      const nowIso = now.toISOString();
+      const sentTz = context.device?.tz?.trim();
+      const deviceTz = usableDeviceZone(sentTz);
+      // A zone that was sent but is unusable (UTC, Etc/*, GMT: Firefox resistFingerprinting, Tor,
+      // Brave) takes its offset with it. That offset is the same lie as the zone -- 0 whatever the
+      // real clock says -- and would flag every member outside UTC as a VPN user.
+      const offset = sentTz && !deviceTz ? undefined : context.device?.offsetMinutes;
+      const deviceOffset =
+        typeof offset === "number" && Number.isInteger(offset) && Math.abs(offset) <= 14 * 60
+          ? offset
+          : undefined;
+      if (deviceTz) {
+        await this.recordDeviceTimezone(memberId, deviceTz, nowIso);
+      }
       const location = await this.geolocateIp?.(remoteIp);
       if (!location || (!location.country && !location.continent && !location.city)) {
+        return;
+      }
+      const member = await this.store.getLabMember(memberId);
+      if (!member) {
+        return;
+      }
+      const verdict = ipReadingVerdict({
+        location,
+        ...(deviceTz ? { deviceTz } : {}),
+        ...(deviceOffset !== undefined ? { deviceOffsetMinutes: deviceOffset } : {}),
+        // A request without device headers is still checked, against the zone the member's
+        // browser reported most recently; otherwise one header-less request could plant a VPN exit.
+        ...(freshDeviceTz(member, now) ? { storedDeviceTz: freshDeviceTz(member, now) } : {}),
+        ...(freshSlackTz(member, now) ? { slackTz: freshSlackTz(member, now) } : {}),
+        at: now,
+      });
+      // Where the live IP put them before this reading: the one helper the map and the intros read.
+      const previous = liveIpPlace(member, now);
+      if (verdict.suspected_vpn) {
+        if (liveIpObservedAt(member, now)) {
+          // A trusted reading inside the map's window stands. A VPN exit never moves anybody: not
+          // their pin, not their intros, not even into "IP ignored" -- it is logged and that is all.
+          await this.audit("auth.login_location_suspected_vpn", memberId, {
+            ...(location.country ? { country: location.country } : {}),
+            ...(location.city ? { city: location.city } : {}),
+            hours: verdict.hours,
+            against: verdict.against,
+            kept: "previous_reading",
+          });
+          await this.appendIpObservation(memberId, location, nowIso, true);
+          return;
+        }
+        // The time and the flag only: the member's place stays whatever the last trusted reading
+        // said, and the map knows today's reading was set aside rather than missing.
+        const patched = await this.store.patchLabMemberAuthFields(memberId, {
+          last_ip_observed_at: nowIso,
+          last_ip_suspected_vpn: true,
+          updated_at: nowIso,
+        });
+        if (!patched) {
+          return;
+        }
+        await this.audit("auth.login_location_suspected_vpn", memberId, {
+          ...(location.country ? { country: location.country } : {}),
+          ...(location.city ? { city: location.city } : {}),
+          hours: verdict.hours,
+          against: verdict.against,
+        });
+        await this.appendIpObservation(memberId, location, nowIso, true);
+        return;
+      }
+      const cityChanged =
+        !previous ||
+        !sameWords(previous.city, location.city) ||
+        !sameWords(previous.country, location.country);
+      if (
+        live &&
+        !cityChanged &&
+        !member.last_ip_suspected_vpn &&
+        utcDay(member.last_ip_observed_at) === utcDay(nowIso)
+      ) {
+        // The live check on a request: same city as the reading already taken today, so nothing
+        // to write. A new city writes at once; the same city writes once per UTC day.
         return;
       }
       // The sign-in row first, before the member row: it is the only one of the two that is a
@@ -446,114 +714,256 @@ export class AdminBotAuthService {
       // for everybody else are read only by the audience sweep, which reports a city and never a
       // history. That asymmetry is exactly what the old comment warned about, and it is now a
       // choice the lab has made rather than an oversight -- see docs/tools/adminbot-local-event.md.
-      const settings = this.store.getSettings();
+      const settings = await this.store.getSettings();
       const stampEveryone = Boolean(settings?.location_audience_city?.trim());
       if (loginEventId && (stampEveryone || isTravelHistorySubject(memberId, settings))) {
-        this.store.attachLoginEventLocation(loginEventId, location);
+        await this.store.attachLoginEventLocation(loginEventId, location);
       }
-      // Re-read rather than reuse the `member` from login(): logins can race, and this must
-      // only ever touch the three last_login_* fields, never clobber a concurrent profile edit.
-      const current = this.store.getLabMember(memberId);
-      if (!current) {
-        return;
-      }
-      this.store.saveLabMember({
-        ...current,
-        // `last_login_at` is not written here any more. It is a fact about signing in, not about
-        // geolocation succeeding, and recordLoginTime owns it -- one writer for one fact.
+      // Patch only the inferred fields atomically so a concurrent profile edit survives.
+      const patched = await this.store.patchLabMemberAuthFields(memberId, {
+        // `last_login_at` is not written here. It is a fact about signing in, not about
+        // geolocation succeeding, and recordLoginTime owns it -- one writer for one fact. The time
+        // of this reading is `last_ip_observed_at`, which is what the map ages the city by.
         ...(location.country ? { last_login_country: location.country } : {}),
         ...(location.continent ? { last_login_continent: location.continent } : {}),
-        // Written alongside the country and read only with `last_login_at`, which is what keeps a
-        // stale city out of a scheduling decision. Still never touches `location`/`current_city`.
-        ...(location.city ? { last_login_city: location.city } : {}),
-        ...(location.timezone ? { last_login_timezone: location.timezone } : {}),
-        updated_at: this.now().toISOString(),
+        // City and region are written together, and cleared together when this reading located
+        // only a country: the merge patch keeps any key it is not given, so leaving them out would
+        // let last month's city ride along with today's `last_ip_observed_at` and look fresh.
+        ...(location.city
+          ? { last_login_city: location.city, last_login_region: location.region ?? "" }
+          : location.country
+            ? { last_login_city: "", last_login_region: "" }
+            : {}),
+        // The zone belongs to this reading too: one that came without a zone clears the last one,
+        // or an unlisted city would be checked against the clock of wherever the member was before.
+        ...(location.timezone || location.country
+          ? { last_login_timezone: location.timezone ?? "" }
+          : {}),
+        last_ip_observed_at: nowIso,
+        last_ip_suspected_vpn: false,
+        updated_at: nowIso,
       });
-      this.audit("auth.login_location_updated", memberId, { ...location });
-      // The stamp above is where they are *now* and overwrites itself; this is the timeline, which
-      // is what makes "when did they move" answerable and what the drift prompt reads. Appended
-      // only when the country changed, so a member signing in twice a day adds no rows.
-      if (location.country) {
-        const entry = observationFor({
-          memberId,
-          source: "login_ip",
-          raw: location.country,
-          observedAt: this.now().toISOString(),
-          // The zone IPinfo returned for this IP, used only to stamp the collection time in local
-          // wall-clock -- it is never written to the entry's `timezone`, which stays reserved for a
-          // stated zone. Absent on the Lite tier, which leaves `observed_at_local` unset.
-          zone: location.timezone,
-        });
-        const latest = latestBySource(this.store.listMemberLocations(memberId, 20)).get("login_ip");
-        if (entry && isNewObservation(latest, entry)) {
-          this.store.appendMemberLocation(entry);
+      if (!patched) {
+        return;
+      }
+      await this.audit("auth.login_location_updated", memberId, { ...location });
+      // Intros wake on a sign-in that located a city, and on a live reading only when the city
+      // changed -- somebody browsing all day from the same café is not news ten times over. A
+      // reading no clock could check (`against` absent) wakes nothing: it may be a VPN exit.
+      if (location.city && verdict.against && (!live || cityChanged)) {
+        try {
+          this.afterLoginLocated?.(memberId);
+        } catch (error) {
+          // A meetup hook failing must not cost the location timeline below.
+          this.warn(`adminbot: meetup hook after IP location failed: ${errorText(error)}`);
         }
       }
-    } catch {
-      // Best-effort, per the option's own contract — nothing left to do with a failure here.
+      await this.appendIpObservation(memberId, location, nowIso, false);
+    } catch (error) {
+      // Best-effort, per the option's own contract: logged, never thrown into a request. The
+      // address is not in the message on purpose.
+      this.warn(`adminbot: IP location for member ${memberId} failed: ${errorText(error)}`);
     }
   }
 
-  resolveSession(rawToken: string): AdminBotMemberPrincipal | undefined {
+  // The stamp is where they are *now* and overwrites itself; this is the timeline, which is what
+  // makes "when did they move" answerable and what the drift prompt reads. Appended when the
+  // country or the VPN verdict changed, and otherwise once per UTC day, so the history shows the
+  // member was still there today without a row per request.
+  private async appendIpObservation(
+    memberId: string,
+    location: { country?: string; timezone?: string },
+    observedAt: string,
+    suspectedVpn: boolean,
+  ): Promise<void> {
+    if (!location.country) {
+      return;
+    }
+    const entry = observationFor({
+      memberId,
+      source: "login_ip",
+      raw: location.country,
+      observedAt,
+      // The zone the provider returned for this IP, used only to stamp the collection time in
+      // local wall-clock -- it is never written to the entry's `timezone`, which stays reserved
+      // for a stated zone.
+      zone: location.timezone,
+    });
+    if (!entry) {
+      return;
+    }
+    const candidate = suspectedVpn ? { ...entry, suspected_vpn: true } : entry;
+    const latest = latestBySource(await this.store.listMemberLocations(memberId, 20)).get(
+      "login_ip",
+    );
+    if (isNewDailyObservation(latest, candidate)) {
+      await this.store.appendMemberLocation(candidate);
+    }
+  }
+
+  // The browser's zone: stamped on the member (the map's device-zone fallback and the VPN check's
+  // witness) and appended to the timeline as its own source when it changed. Name only. Written
+  // only when the zone changed or the stamp is over a day old, and never bumps `updated_at`: a
+  // clock reading is not an edit, and each member write invalidates the cached roster.
+  private async recordDeviceTimezone(memberId: string, zone: string, at: string): Promise<void> {
+    const member = await this.store.getLabMember(memberId);
+    if (!member) {
+      return;
+    }
+    const stampedAt = Date.parse(member.last_device_tz_at ?? "");
+    if (
+      member.last_device_tz === zone &&
+      Number.isFinite(stampedAt) &&
+      Date.parse(at) - stampedAt < DEVICE_TZ_RESTAMP_MS
+    ) {
+      return;
+    }
+    await this.store.patchLabMemberAuthFields(memberId, {
+      last_device_tz: zone,
+      last_device_tz_at: at,
+    });
+    const entry = observationFor({
+      memberId,
+      source: "device_timezone",
+      raw: zone,
+      observedAt: at,
+      zone,
+    });
+    if (!entry) {
+      return;
+    }
+    const latest = latestBySource(await this.store.listMemberLocations(memberId, 20)).get(
+      "device_timezone",
+    );
+    if (latest?.raw !== entry.raw) {
+      await this.store.appendMemberLocation(entry);
+    }
+  }
+
+  async resolveSession(rawToken: string): Promise<AdminBotMemberPrincipal | undefined> {
     const tokenHash = hashToken(rawToken);
-    const session = this.store.getSession(tokenHash);
+    const session = await this.store.getSession(tokenHash);
     if (!session || session.revoked_at) {
       return undefined;
     }
-    const nowIso = this.now().toISOString();
+    const now = this.now();
+    const nowIso = now.toISOString();
     if (session.expires_at <= nowIso) {
       return undefined;
     }
-    const member = this.store.getLabMember(session.member_id);
+    const member = await this.store.getLabMember(session.member_id);
     if (!member) {
       return undefined;
     }
-    this.store.touchSession(tokenHash, nowIso);
-    // Opportunistic cleanup of expired rows on the read path so sessions do not accumulate.
-    this.store.pruneSessionsBefore(nowIso);
+    // A fixed-expiry session needs no activity write on every authenticated request.
+    if (session.last_seen_at <= new Date(now.getTime() - SESSION_TOUCH_INTERVAL_MS).toISOString()) {
+      await this.store.touchSession(tokenHash, nowIso);
+    }
     if (!session.impersonated_by) {
       return { kind: "member", member, session };
     }
     // A "view as" session is only as good as the admin behind it. Resolving them on every request
     // rather than trusting the row means demoting or deleting an admin ends their impersonated
     // sessions at once, instead of leaving a token that outlives their own access.
-    const impersonator = this.store.getLabMember(session.impersonated_by);
+    const impersonator = await this.store.getLabMember(session.impersonated_by);
     if (!impersonator || impersonator.privilege_level !== "admin") {
-      this.store.revokeSession(tokenHash, nowIso);
+      await this.store.revokeSession(tokenHash, nowIso);
       return undefined;
     }
     return { kind: "member", member, session, impersonator };
   }
 
   /**
-   * Sample where an account is being used from, on session use rather than only at sign-in.
+   * Sample where an account is being used from, on any authenticated request: the live IP.
    *
    * A session outlives the login that opened it -- weeks, for somebody who never signs out -- so
-   * `login()` on its own samples a member's location roughly never, which is why the roster shows
-   * 7 sign-ins across 199 people. Every authenticated request already passes through
-   * `resolveSession`, so this is the one place that can notice the account still in use from
-   * somewhere new.
+   * `login()` on its own samples a member's location roughly never, which is why the map placed 80
+   * of 90 members from their profile with the IP database switched on. Every authenticated member
+   * request passes through here (service tokens never do: they resolve to a service principal
+   * before any session is looked at), so this is the one place that can notice the account still
+   * in use, and from where.
    *
-   * Cheap by construction: the geolocation call fires only when the address differs from the last
-   * one seen for that member, because an unchanged IP cannot produce a changed location. Without
-   * that guard this would spend an API budget per request to re-learn one answer.
+   * The lookup is the local database (no network), and it runs once per member per UTC day plus
+   * whenever a new address or a different browser zone shows up -- the day, a few recent addresses
+   * and the last zone are remembered in memory per member, and a request with no zone header
+   * counts as the same zone. The member record is rewritten only when the resolved city or country differs from
+   * the latest trusted reading, else at most once per UTC day as a "still here" stamp; a restart
+   * costs one lookup per member and no write. So somebody who signed in in Toronto and then works
+   * from Zürich is placed in Zürich on their first request from there, not at their next sign-in.
    *
-   * Impersonated sessions are skipped. An admin viewing the lab as somebody else is sitting at
-   * their own desk, and writing that address into the member's timeline would record a movement
-   * that nobody involved ever made -- the same failure as letting an inference pose as a fact,
-   * arriving through a different door.
+   * Fire-and-forget: the request never waits on it and never sees its failure, which is logged.
+   *
+   * Skipped for members whose map visibility is "stated" or "hidden" -- they said not to place
+   * them by their network, so there is no reason to look it up -- and for impersonated sessions.
+   * An admin viewing the lab as somebody else is sitting at their own desk, and writing that
+   * address into the member's timeline would record a movement that nobody involved ever made.
    */
-  noteAccountUse(principal: AdminBotMemberPrincipal, remoteIp: string | undefined): void {
-    if (!this.geolocateIp || !remoteIp || principal.impersonator) {
+  noteAccountUse(
+    principal: AdminBotMemberPrincipal,
+    remoteIp: string | undefined,
+    device?: AdminBotDeviceClock,
+  ): void {
+    try {
+      const { member } = principal;
+      if (principal.impersonator) {
+        return;
+      }
+      this.noteSeenToday(member);
+      if (!this.geolocateIp || !remoteIp) {
+        return;
+      }
+      if (memberMapVisibility(member) !== "auto") {
+        return;
+      }
+      const day = utcDay(this.now().toISOString());
+      // Many requests carry no device headers. An empty (or unusable, e.g. UTC) zone says nothing,
+      // so it counts as "unchanged" rather than as a change from the zone the last request sent.
+      const sentTz = usableDeviceZone(device?.tz) ?? "";
+      const last = this.lastCheckByMember.get(member.id);
+      const sameDay = last?.day === day;
+      const tz = sentTz || (sameDay ? last.tz : "");
+      if (sameDay && last.ips.includes(remoteIp) && tz === last.tz) {
+        return;
+      }
+      // A few recent addresses rather than one, so a dual-stack client or a NAT pool that
+      // alternates between two exits costs one lookup per address per day, not one per request.
+      const ips = [remoteIp, ...(sameDay ? last.ips.filter((ip) => ip !== remoteIp) : [])].slice(
+        0,
+        RECENT_IPS_PER_MEMBER,
+      );
+      this.lastCheckByMember.set(member.id, { day, ips, tz });
+      // Same fire-and-forget contract as the login path. recordLoginLocation catches its own
+      // errors; the catch here is for anything that throws before it returns its promise. `live`
+      // makes it write only when the city changed or today's reading is not yet taken.
+      void this.recordLoginLocation(member.id, remoteIp, {
+        ...(device ? { device } : {}),
+        live: true,
+      }).catch((error: unknown) => {
+        this.warn(`adminbot: daily IP check failed: ${errorText(error)}`);
+      });
+    } catch (error) {
+      this.warn(`adminbot: daily IP check failed: ${errorText(error)}`);
+    }
+  }
+
+  // Stamps `last_seen_at` once per member per UTC day, for every member whatever their map
+  // visibility: it says when someone was last here, not where. Fire-and-forget like the IP check.
+  private noteSeenToday(member: AdminBotLabMember): void {
+    const now = this.now().toISOString();
+    const day = utcDay(now);
+    const remembered = this.lastSeenDayByMember.get(member.id);
+    if (remembered === day || (!remembered && utcDay(member.last_seen_at) === day)) {
+      this.lastSeenDayByMember.set(member.id, day);
       return;
     }
-    if (this.lastSeenIpByMember.get(principal.member.id) === remoteIp) {
-      return;
-    }
-    this.lastSeenIpByMember.set(principal.member.id, remoteIp);
-    // Same fire-and-forget contract as the login path: a slow provider must never make a member's
-    // request wait on it.
-    void this.recordLoginLocation(principal.member.id, remoteIp);
+    this.lastSeenDayByMember.set(member.id, day);
+    // Only `last_seen_at`: a visit is not an edit, so `updated_at` is left as the store has it.
+    // (Patching it from this session's copy of the member could move it backwards.)
+    void Promise.resolve()
+      .then(() => this.store.patchLabMemberAuthFields(member.id, { last_seen_at: now }))
+      .catch((error: unknown) => {
+        this.warn(`adminbot: last-seen stamp failed: ${errorText(error)}`);
+      });
   }
 
   /**
@@ -581,10 +991,10 @@ export class AdminBotAuthService {
    * Impersonating another admin is allowed: it grants nothing the caller does not already hold,
    * and refusing it would block the case this is most often needed for.
    */
-  startImpersonation(params: {
+  async startImpersonation(params: {
     admin: AdminBotMemberPrincipal;
     memberId: string;
-  }): AdminBotAuthResponse<AdminBotAuthSessionPayload> {
+  }): Promise<AdminBotAuthResponse<AdminBotAuthSessionPayload>> {
     const { admin, memberId } = params;
     if (admin.member.privilege_level !== "admin") {
       return authError(403, "admin privileges required");
@@ -595,17 +1005,22 @@ export class AdminBotAuthService {
     if (admin.member.id === memberId) {
       return authError(400, "cannot impersonate yourself");
     }
-    const member = this.store.getLabMember(memberId);
+    const member = await this.store.getLabMember(memberId);
     if (!member) {
       return authError(404, "member not found");
     }
-    const { payload } = this.startSession(member, {
+    const started = await this.startSession(member, {
+      kind: "impersonation",
       by: admin.member.id,
       ttlMs: IMPERSONATION_TTL_MS,
     });
+    if (!started) {
+      throw new Error("impersonation session could not be saved");
+    }
+    const { payload } = started;
     // Audited on the admin, like every other governance action, and carrying the subject -- so
     // "who was looking at my account, and when" is answerable from the trail alone.
-    this.audit("auth.impersonation_started", admin.member.id, {
+    await this.audit("auth.impersonation_started", admin.member.id, {
       member_id: member.id,
       member_name: member.name,
       expires_at: payload.expires_at,
@@ -623,53 +1038,56 @@ export class AdminBotAuthService {
    * Distinct from `logout` so the audit trail says which of the two happened, and so a stray call
    * on a normal session cannot sign a member out of their own account by accident.
    */
-  endImpersonation(rawToken: string): AdminBotAuthResponse<{ ended: true }> {
+  async endImpersonation(rawToken: string): Promise<AdminBotAuthResponse<{ ended: true }>> {
     const tokenHash = hashToken(rawToken);
-    const session = this.store.getSession(tokenHash);
+    const session = await this.store.getSession(tokenHash);
     if (!session?.impersonated_by) {
       return authError(400, "not an impersonated session");
     }
     if (!session.revoked_at) {
-      this.store.revokeSession(tokenHash, this.now().toISOString());
-      this.audit("auth.impersonation_ended", session.impersonated_by, {
+      await this.store.revokeSession(tokenHash, this.now().toISOString());
+      await this.audit("auth.impersonation_ended", session.impersonated_by, {
         member_id: session.member_id,
       });
     }
     return { ok: true, status: 200, payload: { ended: true } };
   }
 
-  logout(rawToken: string): AdminBotAuthResponse<{ logged_out: true }> {
+  async logout(rawToken: string): Promise<AdminBotAuthResponse<{ logged_out: true }>> {
     const tokenHash = hashToken(rawToken);
-    const session = this.store.getSession(tokenHash);
+    const session = await this.store.getSession(tokenHash);
     if (session && !session.revoked_at) {
-      this.store.revokeSession(tokenHash, this.now().toISOString());
-      this.audit("auth.logged_out", session.member_id, {});
+      await this.store.revokeSession(tokenHash, this.now().toISOString());
+      await this.audit("auth.logged_out", session.member_id, {});
     }
     return { ok: true, status: 200, payload: { logged_out: true } };
   }
 
-  changePassword(
+  async changePassword(
     memberId: string,
     currentPassword: string,
     newPassword: string,
-  ): AdminBotAuthResponse<{ changed: true }> {
-    const credential = this.store.getCredentialByMemberId(memberId);
-    if (!credential || !verifyPassword(credential.password_scrypt, currentPassword)) {
+  ): Promise<AdminBotAuthResponse<{ changed: true }>> {
+    const credential = await this.store.getCredentialByMemberId(memberId);
+    if (!credential || !(await verifyPasswordAsync(credential.password_scrypt, currentPassword))) {
       return authError(401, "invalid email or password");
     }
     if (newPassword.length < MIN_PASSWORD_LENGTH) {
       return authError(400, `password must be at least ${MIN_PASSWORD_LENGTH} characters`);
     }
     const nowIso = this.now().toISOString();
-    this.store.saveCredential({
-      ...credential,
-      password_scrypt: hashPassword(newPassword),
-      updated_at: nowIso,
-    });
+    const changed = await this.store.changePasswordAndRevokeSessions(
+      memberId,
+      credential.password_scrypt,
+      await hashPasswordAsync(newPassword),
+      nowIso,
+    );
+    if (!changed) {
+      return authError(401, "invalid email or password");
+    }
     // A password change is a containment action as well as a credential update. Keeping an older
     // session alive lets whoever stole it ignore the new password entirely.
-    this.store.revokeSessionsForMember(memberId, nowIso);
-    this.audit("auth.password_changed", memberId, {});
+    await this.audit("auth.password_changed", memberId, {});
     return { ok: true, status: 200, payload: { changed: true } };
   }
 
@@ -679,36 +1097,42 @@ export class AdminBotAuthService {
    * it into a membership oracle for the whole roster. Rate-limited on the same keys as login so it
    * cannot be used to spray mail at an address either.
    */
-  requestPasswordReset(request: {
+  async requestPasswordReset(request: {
     email: string;
     remoteIp?: string;
-  }): AdminBotAuthResponse<{ requested: true }> {
+  }): Promise<AdminBotAuthResponse<{ requested: true }>> {
     const email = request.email.trim().toLowerCase();
     const keys = rateLimitKeys(email, request.remoteIp);
-    const limited = this.checkRateLimit(keys, email, request.remoteIp);
+    const limited = await this.checkRateLimit(keys, email, request.remoteIp);
     if (limited) {
       return limited;
     }
-    this.recordFailure(keys);
-    const credential = this.store.getCredentialByEmail(email);
-    if (credential) {
-      const nowMs = this.now().getTime();
-      const token = randomBytes(PASSWORD_RESET_TOKEN_BYTES).toString("base64url");
-      this.store.savePasswordReset({
-        token_hash: hashToken(token),
-        member_id: credential.member_id,
-        created_at: new Date(nowMs).toISOString(),
-        expires_at: new Date(nowMs + PASSWORD_RESET_TTL_MINUTES * 60_000).toISOString(),
-        used_at: null,
-      });
-      this.audit("auth.password_reset_requested", credential.member_id, { email });
-      this.notifyPasswordReset(credential.email, credential.member_id, token);
-    } else {
-      // Audited so a burst against unknown addresses is still visible, keyed by the attempted
-      // address because there is no member to attribute it to.
-      this.audit("auth.password_reset_requested", email, { email, unknown: true });
+    try {
+      this.recordFailure(keys);
+      const credential = await this.store.getCredentialByEmail(email);
+      if (credential) {
+        const nowMs = this.now().getTime();
+        const token = randomBytes(PASSWORD_RESET_TOKEN_BYTES).toString("base64url");
+        await this.store.savePasswordReset({
+          token_hash: hashToken(token),
+          member_id: credential.member_id,
+          created_at: new Date(nowMs).toISOString(),
+          expires_at: new Date(nowMs + PASSWORD_RESET_TTL_MINUTES * 60_000).toISOString(),
+          used_at: null,
+        });
+        await this.audit("auth.password_reset_requested", credential.member_id, { email });
+        void this.notifyPasswordReset(credential.email, credential.member_id, token).catch(
+          () => {},
+        );
+      } else {
+        // Audited so a burst against unknown addresses is still visible, keyed by the attempted
+        // address because there is no member to attribute it to.
+        await this.audit("auth.password_reset_requested", email, { email, unknown: true });
+      }
+      return { ok: true, status: 200, payload: { requested: true } };
+    } finally {
+      this.releaseRateLimit(keys);
     }
-    return { ok: true, status: 200, payload: { requested: true } };
   }
 
   /**
@@ -716,15 +1140,15 @@ export class AdminBotAuthService {
    * burned on success, and so is every live session: a password reset is exactly the moment where
    * "somebody else may be signed in as me" has to stop being true.
    */
-  resetPassword(request: {
+  async resetPassword(request: {
     token: string;
     newPassword: string;
-  }): AdminBotAuthResponse<{ reset: true }> {
+  }): Promise<AdminBotAuthResponse<{ reset: true }>> {
     const token = request.token.trim();
     if (!token) {
       return authError(400, "reset link is invalid or has expired");
     }
-    const reset = this.store.getPasswordResetByTokenHash(hashToken(token));
+    const reset = await this.store.getPasswordResetByTokenHash(hashToken(token));
     const nowIso = this.now().toISOString();
     // One message for missing/used/expired alike: which of the three it is tells an attacker
     // whether a guessed token ever existed.
@@ -734,18 +1158,15 @@ export class AdminBotAuthService {
     if (request.newPassword.length < MIN_PASSWORD_LENGTH) {
       return authError(400, `password must be at least ${MIN_PASSWORD_LENGTH} characters`);
     }
-    const credential = this.store.getCredentialByMemberId(reset.member_id);
-    if (!credential) {
+    const changed = await this.store.consumePasswordResetAndRevokeSessions(
+      hashToken(token),
+      await hashPasswordAsync(request.newPassword),
+      this.now().toISOString(),
+    );
+    if (!changed) {
       return authError(400, "reset link is invalid or has expired");
     }
-    this.store.saveCredential({
-      ...credential,
-      password_scrypt: hashPassword(request.newPassword),
-      updated_at: nowIso,
-    });
-    this.store.markPasswordResetsUsedForMember(reset.member_id, nowIso);
-    this.store.revokeSessionsForMember(reset.member_id, nowIso);
-    this.audit("auth.password_reset_completed", reset.member_id, {});
+    await this.audit("auth.password_reset_completed", reset.member_id, {});
     return { ok: true, status: 200, payload: { reset: true } };
   }
 
@@ -771,144 +1192,203 @@ export class AdminBotAuthService {
    * is that the token is guarded like an admin password, and that a member with no departmental
    * mailbox being locked out permanently is the worse failure.
    */
-  private passwordResetRecipient(loginEmail: string, memberId: string): string {
-    const member = this.store.getLabMember(memberId);
+  private passwordResetRecipient(
+    loginEmail: string,
+    member: AdminBotLabMember | undefined,
+  ): string {
     const correspondence =
       typeof member?.correspondence_email === "string" ? member.correspondence_email.trim() : "";
     return correspondence || loginEmail;
   }
 
-  private notifyPasswordReset(loginEmail: string, memberId: string, token: string): void {
+  private async notifyPasswordReset(
+    loginEmail: string,
+    memberId: string,
+    token: string,
+  ): Promise<void> {
     if (!this.sendPasswordResetEmail) {
       return;
     }
-    const member = this.store.getLabMember(memberId);
+    const member = await this.store.getLabMember(memberId);
     const name = typeof member?.name === "string" ? member.name : undefined;
-    const email = this.passwordResetRecipient(loginEmail, memberId);
+    const email = this.passwordResetRecipient(loginEmail, member);
     void this.sendPasswordResetEmail({
       email,
       ...(name ? { name } : {}),
       token,
       expiresInMinutes: PASSWORD_RESET_TTL_MINUTES,
     })
-      .then(() => {
-        this.audit("auth.password_reset_email_sent", memberId, { email });
-      })
-      .catch((error: unknown) => {
-        this.audit("auth.password_reset_email_failed", memberId, {
-          email,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      });
+      .then(
+        () => this.audit("auth.password_reset_email_sent", memberId, { email }),
+        (error: unknown) =>
+          this.audit("auth.password_reset_email_failed", memberId, {
+            email,
+            error: error instanceof Error ? error.message : String(error),
+          }),
+      )
+      .catch(() => {});
   }
 
   // Self-service change of the member's login email. Reverifies the current password (rate-limited
   // like login), then updates both the credential row (the login identifier) and the member record
   // so they never drift. Existing sessions are keyed by token hash, not email, so they stay valid.
-  changeEmail(
+  async changeEmail(
     memberId: string,
     newEmail: string,
     currentPassword: string,
     remoteIp?: string,
-  ): AdminBotAuthResponse<{ email: string }> {
-    const credential = this.store.getCredentialByMemberId(memberId);
+  ): Promise<AdminBotAuthResponse<{ email: string }>> {
+    const credential = await this.store.getCredentialByMemberId(memberId);
     // No credential means this principal cannot own a login email; caller gates non-members too.
     if (!credential) {
       return authError(401, "invalid password");
     }
     const keys = rateLimitKeys(credential.email, remoteIp);
-    const limited = this.checkRateLimit(keys, credential.email, remoteIp);
+    const limited = await this.checkRateLimit(keys, credential.email, remoteIp);
     if (limited) {
       return limited;
     }
-    if (!verifyPassword(credential.password_scrypt, currentPassword)) {
-      this.recordFailure(keys);
-      return authError(401, "invalid password");
+    try {
+      if (!(await verifyPasswordAsync(credential.password_scrypt, currentPassword))) {
+        this.recordFailure(keys);
+        return authError(401, "invalid password");
+      }
+      const email = newEmail.trim().toLowerCase();
+      if (!isValidEmail(email)) {
+        return authError(400, "invalid email");
+      }
+      // No domain rule here on purpose: a cs.toronto.edu address is preferred, not required, and
+      // `validateMemberEmail` on the roster side was loosened to match. Format is the whole check.
+      // Generic 409 for any other credential or pending registration holding the email so a caller
+      // cannot probe which addresses exist. Re-using the member's own current email is a no-op.
+      const existing = await this.store.getCredentialByEmail(email);
+      const takenByOther = existing && existing.member_id !== memberId;
+      if (takenByOther || (await this.store.getPendingRegistrationByEmail(email))) {
+        return authError(409, "email unavailable");
+      }
+      const nowIso = this.now().toISOString();
+      const changed = await this.store.changeMemberLoginEmail(
+        memberId,
+        email,
+        credential.password_scrypt,
+        nowIso,
+      );
+      if (changed === "stale") {
+        return authError(401, "invalid password");
+      }
+      if (changed === "taken") {
+        return authError(409, "email unavailable");
+      }
+      await this.audit("auth.email_changed", memberId, { email });
+      return { ok: true, status: 200, payload: { email } };
+    } finally {
+      this.releaseRateLimit(keys);
     }
-    const email = newEmail.trim().toLowerCase();
-    if (!isValidEmail(email)) {
-      return authError(400, "invalid email");
-    }
-    // No domain rule here on purpose: a cs.toronto.edu address is preferred, not required, and
-    // `validateMemberEmail` on the roster side was loosened to match. Format is the whole check.
-    const member = this.store.getLabMember(memberId);
-    // Generic 409 for any other credential or pending registration holding the email so a caller
-    // cannot probe which addresses exist. Re-using the member's own current email is a no-op.
-    const existing = this.store.getCredentialByEmail(email);
-    const takenByOther = existing && existing.member_id !== memberId;
-    if (takenByOther || this.store.getPendingRegistrationByEmail(email)) {
-      return authError(409, "email unavailable");
-    }
-    const nowIso = this.now().toISOString();
-    this.store.updateCredentialEmail(memberId, email, nowIso);
-    if (member) {
-      // Keep the member record's email in sync with the login identifier.
-      this.store.saveLabMember({ ...member, email, updated_at: nowIso });
-    }
-    this.audit("auth.email_changed", memberId, { email });
-    return { ok: true, status: 200, payload: { email } };
   }
 
-  // Approve a pending request: `claim` binds a credential to the named roster member; `signup`
-  // first mints a plain member from the stored profile, then binds the credential to it.
-  approveRegistration(
+  // The store commits the decision, credential and any new roster member as one transaction.
+  async approveRegistration(
     id: string,
     decidedBy: string,
-  ): AdminBotAuthResponse<{ status: "approved"; member_id: string }> {
-    const registration = this.store.getAccountRegistration(id);
-    if (!registration || registration.status !== "pending") {
-      return authError(404, "registration not found");
+  ): Promise<
+    AdminBotAuthResponse<{
+      status: "approved";
+      member_id: string;
+      member_created: boolean;
+      /** The account's address, which a signed-up member's roster record may not carry. */
+      email: string;
+    }>
+  > {
+    if (this.registrationDecisionsInFlight.has(id)) {
+      return authError(409, "registration decision in progress");
     }
-    const nowIso = this.now().toISOString();
-    const memberId =
-      registration.kind === "claim"
-        ? registration.member_id
-        : this.createMember(signupMemberInput(registration)).id;
-    if (!memberId) {
-      return authError(409, "registration is missing a member");
+    this.registrationDecisionsInFlight.add(id);
+    try {
+      const registration = await this.store.getAccountRegistration(id);
+      if (!registration || registration.status !== "pending") {
+        return authError(404, "registration not found");
+      }
+      const nowIso = this.now().toISOString();
+      const preparedMember =
+        registration.kind === "signup"
+          ? await this.prepareMember(signupMemberInput(registration))
+          : undefined;
+      const approved = await this.store.tryApproveRegistration(
+        id,
+        decidedBy,
+        nowIso,
+        preparedMember,
+      );
+      if (!approved.ok) {
+        return authError(
+          approved.reason === "not_pending" ? 404 : 409,
+          approved.reason === "not_pending" ? "registration not found" : "registration conflict",
+        );
+      }
+      const memberId = approved.member_id;
+      let memberHookError: string | undefined;
+      if (preparedMember && this.afterMemberCreated) {
+        try {
+          await this.afterMemberCreated(preparedMember);
+        } catch (error) {
+          memberHookError = error instanceof Error ? error.message : String(error);
+        }
+      }
+      await this.audit("auth.registration_approved", decidedBy, {
+        registration_id: id,
+        kind: registration.kind,
+        member_id: memberId,
+        ...(memberHookError ? { member_hook_error: memberHookError } : {}),
+      });
+      // Lab calendar access, the Monday meeting and the rest of onboarding are no longer granted
+      // here: the route runs the shared onboarding for a member this approval created
+      // (api/server.member-onboarding.ts), so a sign-up gets exactly what its access level gives
+      // and nothing a person added any other way would not.
+      void this.notifyAccountApproved(registration.email, memberId, decidedBy).catch(() => {});
+      return {
+        ok: true,
+        status: 200,
+        payload: {
+          status: "approved",
+          member_id: memberId,
+          member_created: Boolean(preparedMember),
+          email: registration.email,
+        },
+      };
+    } finally {
+      this.registrationDecisionsInFlight.delete(id);
     }
-    this.store.saveCredential({
-      member_id: memberId,
-      email: registration.email,
-      password_scrypt: registration.password_scrypt,
-      claimed_at: nowIso,
-      updated_at: nowIso,
-    });
-    this.store.updateAccountRegistrationDecision(id, "approved", decidedBy, nowIso);
-    this.audit("auth.registration_approved", decidedBy, {
-      registration_id: id,
-      kind: registration.kind,
-      member_id: memberId,
-    });
-    this.inviteNewMemberToLabCalendar(registration.email, memberId, decidedBy);
-    this.notifyAccountApproved(registration.email, memberId, decidedBy);
-    return { ok: true, status: 200, payload: { status: "approved", member_id: memberId } };
   }
 
   // Fire-and-forget, same reasoning as the calendar invite: the approval is already recorded, so a
   // failed mail is audited for follow-up rather than rolled back. Short transient failures are
   // retried because this message is the member's only guaranteed delivery of the dashboard URL.
-  private notifyAccountApproved(email: string, memberId: string, decidedBy: string): void {
+  private async notifyAccountApproved(
+    email: string,
+    memberId: string,
+    decidedBy: string,
+  ): Promise<void> {
     if (!this.sendAccountApprovedEmail) {
       return;
     }
-    const name = this.store.getLabMember(memberId)?.name;
+    const name = (await this.store.getLabMember(memberId))?.name;
     void this.sendAccountApprovedWithRetry({ email, ...(name ? { name } : {}) })
-      .then((attempts) => {
-        this.audit("auth.approval_email_sent", decidedBy, {
-          member_id: memberId,
-          email,
-          attempts,
-        });
-      })
-      .catch((error: unknown) => {
-        this.audit("auth.approval_email_failed", decidedBy, {
-          member_id: memberId,
-          email,
-          attempts: APPROVAL_EMAIL_MAX_ATTEMPTS,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      });
+      .then(
+        (attempts) =>
+          this.audit("auth.approval_email_sent", decidedBy, {
+            member_id: memberId,
+            email,
+            attempts,
+          }),
+        (error: unknown) =>
+          this.audit("auth.approval_email_failed", decidedBy, {
+            member_id: memberId,
+            email,
+            attempts: APPROVAL_EMAIL_MAX_ATTEMPTS,
+            error: error instanceof Error ? error.message : String(error),
+          }),
+      )
+      .catch(() => {});
   }
 
   private async sendAccountApprovedWithRetry(params: {
@@ -970,31 +1450,32 @@ export class AdminBotAuthService {
     const dryRun = params.dryRun !== false;
     const limit = Math.max(1, Math.min(params.limit ?? DEFAULT_CALENDAR_BACKFILL_LIMIT, 200));
     const invited = new Set<string>();
-    for (const event of this.store.listAuditEvents()) {
+    for (const event of await this.store.listAuditEvents()) {
       if (event.type !== "auth.calendar_invite_sent") {
         continue;
       }
+      // Keyed by member *and* address: a share to an old non-Google login does not count as
+      // access, so a member whose Gmail changed is invited again at the new address.
       const memberId = event.details?.member_id;
-      if (typeof memberId === "string") {
-        invited.add(memberId);
+      const email = event.details?.email;
+      if (typeof memberId === "string" && typeof email === "string") {
+        invited.add(`${memberId}:${email.trim().toLowerCase()}`);
       }
     }
     const noAddress: Array<{ id: string; name: string }> = [];
     const candidates: Array<{ id: string; name: string; email: string }> = [];
-    for (const member of this.store.listLabMembers()) {
-      if (!belongsOnSurface(member, "lab_calendar") || invited.has(member.id)) {
+    for (const member of await this.store.listLabMembers()) {
+      if (!belongsOnSurface(member, "lab_calendar")) {
         continue;
       }
-      // The Google account first: an ACL is granted to a Google identity, and the professional
-      // address on file is often a departmental alias that is not one.
-      const email = (
-        member.calendar_email ??
-        member.email ??
-        member.correspondence_email ??
-        ""
-      ).trim();
+      // Only a Google account: an ACL to a departmental alias is accepted by Google but cannot
+      // open the calendar. No Calendar email and no Gmail is reported, never guessed.
+      const email = adminBotCalendarShareEmail(member);
       if (!email) {
         noAddress.push({ id: member.id, name: member.name });
+        continue;
+      }
+      if (invited.has(`${member.id}:${email.toLowerCase()}`)) {
         continue;
       }
       candidates.push({ id: member.id, name: member.name, email });
@@ -1008,12 +1489,9 @@ export class AdminBotAuthService {
           // Awaited, unlike the approval-time invite: this call *is* the request, so a failure
           // belongs in its response rather than in a log the caller never sees. Sequential for the
           // same reason -- a hundred parallel ACL writes is how a quota gets spent.
-          // Silently, unlike the onboarding invite. This grants access somebody should already
-          // have had, so Google's share notification would announce a months-old oversight to a
-          // roster that includes people who left the lab a year ago. The access lands the same
-          // way; only the mail is suppressed. See CalendarInviteOptions.
-          await this.inviteToLabCalendar(candidate.email, { sendNotifications: false });
-          this.audit("auth.calendar_invite_sent", params.actorId, {
+          // Silent, like every calendar grant (see CalendarInviteRunner).
+          await this.inviteToLabCalendar(candidate.email);
+          await this.audit("auth.calendar_invite_sent", params.actorId, {
             member_id: candidate.id,
             email: candidate.email,
             backfill: true,
@@ -1021,7 +1499,7 @@ export class AdminBotAuthService {
           granted.push(candidate);
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
-          this.audit("auth.calendar_invite_failed", params.actorId, {
+          await this.audit("auth.calendar_invite_failed", params.actorId, {
             member_id: candidate.id,
             email: candidate.email,
             error: message,
@@ -1050,98 +1528,80 @@ export class AdminBotAuthService {
     };
   }
 
-  // Fire-and-forget: never blocks or fails approval on an external Google Calendar call. Success
-  // and failure are both audited so a failed invite can be retried/investigated later.
-  private inviteNewMemberToLabCalendar(email: string, memberId: string, decidedBy: string): void {
-    if (!this.inviteToLabCalendar) {
-      return;
+  async rejectRegistration(
+    id: string,
+    decidedBy: string,
+  ): Promise<AdminBotAuthResponse<{ status: "rejected" }>> {
+    if (this.registrationDecisionsInFlight.has(id)) {
+      return authError(409, "registration decision in progress");
     }
-    void this.inviteToLabCalendar(email)
-      .then(() => {
-        this.audit("auth.calendar_invite_sent", decidedBy, { member_id: memberId, email });
-      })
-      .catch((error: unknown) => {
-        this.audit("auth.calendar_invite_failed", decidedBy, {
-          member_id: memberId,
-          email,
-          error: error instanceof Error ? error.message : String(error),
-        });
+    this.registrationDecisionsInFlight.add(id);
+    try {
+      const registration = await this.store.getAccountRegistration(id);
+      if (!registration || registration.status !== "pending") {
+        return authError(404, "registration not found");
+      }
+      const rejected = await this.store.updateAccountRegistrationDecision(
+        id,
+        "rejected",
+        decidedBy,
+        this.now().toISOString(),
+      );
+      if (!rejected) {
+        return authError(404, "registration not found");
+      }
+      await this.audit("auth.registration_rejected", decidedBy, {
+        registration_id: id,
+        kind: registration.kind,
       });
-  }
-
-  // Fire-and-forget, same contract as the calendar invite and approval email: the approval is
-  // already recorded, so a failed form submission is audited for a human to file by hand rather
-  // than rolled back. The roster only ever records one free-text `name`, so it is split on the
-  // last run of whitespace (see splitDisplayName) to fill the form's separate First/Last Name
-  // questions -- the same shape the actual form asks a person to fill in by hand. A name with no
-  // family name in it is not filed at all: the splitter returns nothing and the attempt is
-  // recorded as failed, because the alternative was a DCS account requested for "Eric Eric".
-
-  rejectRegistration(id: string, decidedBy: string): AdminBotAuthResponse<{ status: "rejected" }> {
-    const registration = this.store.getAccountRegistration(id);
-    if (!registration || registration.status !== "pending") {
-      return authError(404, "registration not found");
+      return { ok: true, status: 200, payload: { status: "rejected" } };
+    } finally {
+      this.registrationDecisionsInFlight.delete(id);
     }
-    this.store.updateAccountRegistrationDecision(
-      id,
-      "rejected",
-      decidedBy,
-      this.now().toISOString(),
-    );
-    this.audit("auth.registration_rejected", decidedBy, {
-      registration_id: id,
-      kind: registration.kind,
-    });
-    return { ok: true, status: 200, payload: { status: "rejected" } };
   }
 
-  // Public picker: roster members that are still unclaimed and have no pending claim. Exposes only
-  // id + name so an anonymous caller cannot harvest emails or other member fields.
-  listRoster(): AdminBotRosterEntry[] {
-    const pendingClaimMemberIds = new Set(
-      this.store
-        .listAccountRegistrations("pending")
-        .flatMap((entry) => (entry.kind === "claim" && entry.member_id ? [entry.member_id] : [])),
-    );
-    return this.store
-      .listLabMembers()
-      .filter(
-        (member) =>
-          !this.store.getCredentialByMemberId(member.id) && !pendingClaimMemberIds.has(member.id),
-      )
-      .map((member) => ({ id: member.id, name: member.name }));
+  // Anonymous results stay bounded even when the lab roster grows; the store filters claimed and
+  // pending profiles before LIMIT so a busy first page cannot hide eligible members.
+  async listRoster(query = ""): Promise<AdminBotRosterEntry[]> {
+    return await this.store.searchUnclaimedRoster(query.trim(), 20);
   }
 
   // Admin review list. Adds member name for claims and the proposed profile for signups; never
   // includes the password hash.
-  listRegistrations(status: AdminBotRegistrationStatus = "pending"): AdminBotRegistrationView[] {
-    return this.store.listAccountRegistrations(status).map((registration) => ({
-      id: registration.id,
-      kind: registration.kind,
-      email: registration.email,
-      status: registration.status,
-      created_at: registration.created_at,
-      ...(registration.member_id ? { member_id: registration.member_id } : {}),
-      ...(registration.kind === "claim" && registration.member_id
-        ? { member_name: this.store.getLabMember(registration.member_id)?.name }
-        : {}),
-      ...(registration.kind === "signup" && registration.profile_json
-        ? { profile: JSON.parse(registration.profile_json) as Record<string, unknown> }
-        : {}),
-    }));
+  async listRegistrations(
+    status: AdminBotRegistrationStatus = "pending",
+  ): Promise<AdminBotRegistrationView[]> {
+    const registrations: AdminBotRegistrationView[] = [];
+    for (const registration of await this.store.listAccountRegistrations(status)) {
+      registrations.push({
+        id: registration.id,
+        kind: registration.kind,
+        email: registration.email,
+        status: registration.status,
+        created_at: registration.created_at,
+        ...(registration.member_id ? { member_id: registration.member_id } : {}),
+        ...(registration.kind === "claim" && registration.member_id
+          ? { member_name: (await this.store.getLabMember(registration.member_id))?.name }
+          : {}),
+        ...(registration.kind === "signup" && registration.profile_json
+          ? { profile: JSON.parse(registration.profile_json) as Record<string, unknown> }
+          : {}),
+      });
+    }
+    return registrations;
   }
 
-  private newRegistration(
+  private async newRegistration(
     kind: AdminBotRegistrationKind,
     email: string,
     password: string,
     extra: { member_id?: string; profile_json?: string },
-  ): AdminBotAccountRegistration {
+  ): Promise<AdminBotAccountRegistration> {
     return {
       id: `reg_${randomUUID()}`,
       kind,
       email,
-      password_scrypt: hashPassword(password),
+      password_scrypt: await hashPasswordAsync(password),
       status: "pending",
       created_at: this.now().toISOString(),
       ...(extra.member_id ? { member_id: extra.member_id } : {}),
@@ -1169,22 +1629,37 @@ export class AdminBotAuthService {
     };
   }
 
-  private startSession(
+  private async startSession(
     member: AdminBotLabMember,
-    impersonation?: { by: string; ttlMs: number },
-  ): { payload: AdminBotAuthSessionPayload } {
+    request:
+      | { kind: "login"; expectedPasswordHash: string }
+      | { kind: "impersonation"; by: string; ttlMs: number },
+  ): Promise<{ payload: AdminBotAuthSessionPayload } | undefined> {
     const rawToken = randomBytes(SESSION_TOKEN_BYTES).toString("base64url");
     const nowMs = this.now().getTime();
     const createdIso = new Date(nowMs).toISOString();
-    const expiresIso = new Date(nowMs + (impersonation?.ttlMs ?? this.sessionTtlMs)).toISOString();
-    this.store.saveSession({
+    const expiresIso = new Date(
+      nowMs + (request.kind === "impersonation" ? request.ttlMs : this.sessionTtlMs),
+    ).toISOString();
+    // New sessions are much rarer than authenticated requests; prune expired rows here.
+    await this.store.pruneSessionsBefore(createdIso);
+    const session: AdminBotAuthSession = {
       token_hash: hashToken(rawToken),
       member_id: member.id,
       created_at: createdIso,
       expires_at: expiresIso,
       last_seen_at: createdIso,
-      ...(impersonation ? { impersonated_by: impersonation.by } : {}),
-    });
+      ...(request.kind === "impersonation" ? { impersonated_by: request.by } : {}),
+    };
+    if (request.kind === "login") {
+      if (
+        !(await this.store.saveSessionIfCredentialCurrent(session, request.expectedPasswordHash))
+      ) {
+        return undefined;
+      }
+    } else {
+      await this.store.saveSession(session);
+    }
     return {
       payload: {
         session_token: rawToken,
@@ -1195,18 +1670,21 @@ export class AdminBotAuthService {
     };
   }
 
-  private checkRateLimit(
+  private async checkRateLimit(
     keys: string[],
     email: string,
     remoteIp: string | undefined,
-  ): (AdminBotAuthResponse<never> & { ok: false }) | undefined {
+  ): Promise<(AdminBotAuthResponse<never> & { ok: false }) | undefined> {
     const nowMs = this.now().getTime();
     for (const key of keys) {
       const failures = this.recentFailures(key, nowMs);
-      if (failures.length >= RATE_LIMIT_MAX_FAILURES) {
-        const retryAfterMs = failures[0] + RATE_LIMIT_WINDOW_MS - nowMs;
+      if (
+        failures.length >= RATE_LIMIT_MAX_FAILURES ||
+        (this.inFlightByKey.get(key) ?? 0) >= RATE_LIMIT_MAX_IN_FLIGHT
+      ) {
+        const retryAfterMs = failures[0] ? failures[0] + RATE_LIMIT_WINDOW_MS - nowMs : 1000;
         const retryAfterSeconds = Math.max(1, Math.ceil(retryAfterMs / 1000));
-        this.audit("auth.rate_limited", email, {
+        await this.audit("auth.rate_limited", email, {
           email,
           ...(remoteIp ? { remote_ip: remoteIp } : {}),
         });
@@ -1218,7 +1696,21 @@ export class AdminBotAuthService {
         };
       }
     }
+    for (const key of keys) {
+      this.inFlightByKey.set(key, (this.inFlightByKey.get(key) ?? 0) + 1);
+    }
     return undefined;
+  }
+
+  private releaseRateLimit(keys: string[]): void {
+    for (const key of keys) {
+      const remaining = (this.inFlightByKey.get(key) ?? 1) - 1;
+      if (remaining > 0) {
+        this.inFlightByKey.set(key, remaining);
+      } else {
+        this.inFlightByKey.delete(key);
+      }
+    }
   }
 
   private recordFailure(keys: string[]): void {
@@ -1235,12 +1727,12 @@ export class AdminBotAuthService {
     return (this.failuresByKey.get(key) ?? []).filter((at) => at > cutoff);
   }
 
-  private audit(
+  private async audit(
     type: AdminBotAuditEvent["type"],
     actor: string | undefined,
     details: Record<string, unknown>,
-  ): void {
-    this.store.recordAudit({
+  ): Promise<void> {
+    await this.store.recordAudit({
       id: `aud_${randomUUID()}`,
       timestamp: this.now().toISOString(),
       type,
@@ -1269,31 +1761,81 @@ export function hashPassword(password: string): string {
   ].join("$");
 }
 
+// Request handlers use libuv's worker pool for scrypt so password checks do not stall unrelated
+// page requests on the Node event loop. One-off CLI scripts can keep the synchronous helper above.
+export async function hashPasswordAsync(password: string): Promise<string> {
+  const salt = randomBytes(SCRYPT_SALT_BYTES);
+  const hash = await derivePassword(password, salt, SCRYPT_KEYLEN, {
+    N: SCRYPT_N,
+    r: SCRYPT_R,
+    p: SCRYPT_P,
+    maxmem: SCRYPT_MAXMEM,
+  });
+  return [
+    "scrypt",
+    SCRYPT_N,
+    SCRYPT_R,
+    SCRYPT_P,
+    salt.toString("base64url"),
+    hash.toString("base64url"),
+  ].join("$");
+}
+
 export function verifyPassword(serialized: string, password: string): boolean {
+  const parsed = parsePasswordHash(serialized);
+  if (!parsed) {
+    return false;
+  }
+  const derived = scryptSync(password, parsed.salt, parsed.expected.length, {
+    N: parsed.n,
+    r: parsed.r,
+    p: parsed.p,
+    maxmem: SCRYPT_MAXMEM,
+  });
+  return timingSafeEqual(parsed.expected, derived);
+}
+
+export async function verifyPasswordAsync(serialized: string, password: string): Promise<boolean> {
+  const parsed = parsePasswordHash(serialized);
+  if (!parsed) {
+    return false;
+  }
+  try {
+    const derived = await derivePassword(password, parsed.salt, parsed.expected.length, {
+      N: parsed.n,
+      r: parsed.r,
+      p: parsed.p,
+      maxmem: SCRYPT_MAXMEM,
+    });
+    return timingSafeEqual(parsed.expected, derived);
+  } catch {
+    return false;
+  }
+}
+
+function parsePasswordHash(serialized: string): {
+  n: number;
+  r: number;
+  p: number;
+  salt: Buffer;
+  expected: Buffer;
+} | null {
   const parts = serialized.split("$");
   if (parts.length !== 6 || parts[0] !== "scrypt") {
-    return false;
+    return null;
   }
   const n = Number(parts[1]);
   const r = Number(parts[2]);
   const p = Number(parts[3]);
   if (!Number.isInteger(n) || !Number.isInteger(r) || !Number.isInteger(p)) {
-    return false;
+    return null;
   }
-  let expected: Buffer;
-  try {
-    expected = Buffer.from(parts[5], "base64url");
-  } catch {
-    return false;
-  }
+  const expected = Buffer.from(parts[5], "base64url");
   const salt = Buffer.from(parts[4], "base64url");
-  const derived = scryptSync(password, salt, expected.length, {
-    N: n,
-    r,
-    p,
-    maxmem: SCRYPT_MAXMEM,
-  });
-  return expected.length === derived.length && timingSafeEqual(expected, derived);
+  if (!salt.length || !expected.length) {
+    return null;
+  }
+  return { n, r, p, salt, expected };
 }
 
 export function createSessionToken(): string {
@@ -1400,4 +1942,8 @@ function signupMemberInput(registration: AdminBotAccountRegistration): AdminBotL
     id: `mem_${randomUUID()}`,
     privilege_level: "member",
   };
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

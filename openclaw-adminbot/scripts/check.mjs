@@ -114,6 +114,9 @@ export function buildCheckPlan(args) {
         // Hard lane for the same reason: today's offenders are grandfathered
         // at their current counts, so only growth can fail it.
         { name: "directory size", args: ["check:dir-size"] },
+        // Hard lane: oversize files are grandfathered at their current line
+        // counts, so only growth or a new monolith can fail it.
+        { name: "file size", args: ["check:file-size"] },
       ],
     },
   ];

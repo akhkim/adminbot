@@ -19,6 +19,7 @@ import type {
   AdminBotSensitiveInfoRecord,
   AdminBotSettingsInput,
 } from "../../contracts/actions.js";
+import { paperStepProgress } from "../../contracts/paper-progress.js";
 import { resolveCalendarSource } from "../../workflows/calendar/source.js";
 import { selectUnreviewedApplicants } from "../../workflows/members/applicant-sheet.js";
 import {
@@ -80,6 +81,7 @@ type PaperSocialPostParams = EvidenceParams & {
   paperId?: string;
   title?: string;
   summary: string;
+  xThread?: import("../../workflows/papers/x-draft.js").XThreadDraft;
   url?: string;
   authors?: string[];
   tone?: string;
@@ -177,6 +179,7 @@ type LabMemberParams = {
 };
 
 type PaperParams = {
+  venue?: string;
   id: string;
   title: string;
   authors: string[];
@@ -208,6 +211,8 @@ export function createAdminBotToolHandlers(
   const signal = options.signal;
   return {
     runEmailAutomation: () => client.runEmailAutomation(signal),
+    applySlackStop: (params: { slackUserId: string; command: "stop" | "start" }) =>
+      client.applySlackStop({ slack_user_id: params.slackUserId, command: params.command }, signal),
     converseReimbursement: (params: ReimbursementConversationParams) =>
       client.converseReimbursement(params, signal),
     generateReimbursement: (params: { draft: Record<string, unknown> }) =>
@@ -295,6 +300,7 @@ export function createAdminBotToolHandlers(
         hashtags: params.hashtags,
         platforms: params.platforms,
         linkedinVisibility: params.linkedinVisibility,
+        xThread: params.xThread,
         members,
       });
       const missing = payload.tags.missing.length
@@ -580,6 +586,7 @@ function paperRecord(params: PaperParams): AdminBotPaperRecordInput {
     title: params.title,
     authors: params.authors,
     current_step: params.currentStep,
+    ...(params.venue === undefined ? {} : { venue: params.venue }),
     ...(params.venueDecision ? { venue_decision: params.venueDecision } : {}),
     ...(params.acceptedVenue === undefined ? {} : { accepted_venue: params.acceptedVenue }),
     ...(params.acceptedYear === undefined ? {} : { accepted_year: params.acceptedYear }),
@@ -932,7 +939,6 @@ function paperNudgeProposal(params: PaperNudgeProposalParams): AdminBotActionPro
         current_step: params.paper.current_step,
         authors: params.paper.authors,
       },
-      ...(params.paper.timeline ? { timeline: params.paper.timeline } : {}),
     },
     ...(params.idempotencyKey ? { idempotency_key: params.idempotencyKey } : {}),
     undo_plan:
@@ -941,16 +947,13 @@ function paperNudgeProposal(params: PaperNudgeProposalParams): AdminBotActionPro
 }
 
 function paperNudgeMessage(paper: AdminBotPaperRecord, recipientLabel: string): string {
-  const current = paper.timeline?.items.find(
-    (item) => item.status === "current" || item.status === "blocked",
-  );
-  const next = paper.timeline?.items.find((item) => item.status === "upcoming");
-  const currentLabel = current?.label ?? paper.current_step;
-  const nextLabel = next ? ` Next dependency: ${next.label}.` : "";
-  const progress = paper.timeline ? ` Timeline progress: ${paper.timeline.progress_percent}%.` : "";
+  const progress = paperStepProgress(paper);
+  const currentLabel = progress.currentLabel ?? paper.current_step;
+  const nextLabel = progress.nextLabel ? ` Next dependency: ${progress.nextLabel}.` : "";
   return (
     `Hi ${recipientLabel}, please nudge ${paper.authors.join(", ")} about ` +
-    `\"${paper.title}\". Current step: ${currentLabel}.${progress}${nextLabel}`
+    `\"${paper.title}\". Current step: ${currentLabel}.` +
+    ` Timeline progress: ${progress.progressPercent}%.${nextLabel}`
   );
 }
 function slackMessageProposal(params: SlackMessageParams): AdminBotActionProposal {

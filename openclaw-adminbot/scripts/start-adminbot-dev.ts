@@ -4,15 +4,27 @@
  * Brought across from the lab branch `luke/time-allocation` (commit a4c560bd), where it was added
  * alongside the time-availability tab so that surface could be driven without the real service.
  * The mock service moved to `extensions/adminbot/src/api/server.ts` in the restructuring; that
- * import is the only change from the original.
+ * launcher now shares the normal host’s device authentication helpers.
  *
  * Distinct from `start-adminbot.mjs`, which runs the real service against the real database. This
- * one deliberately stubs the calendar and email connectors, so nothing it does leaves the machine.
+ * one stubs calendar and email invitations. Explicit PDF checks can still use GPTZero when configured.
  */
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  createDeviceTokenIssuer,
+  createDevicePairingApprover,
+} from "../extensions/adminbot/host/main.ts";
 import { createAdminBotMockService } from "../extensions/adminbot/src/api/server.ts";
+import { resolveGroupMeetingEventId } from "../extensions/adminbot/src/contracts/group-meeting.js";
+import { getRuntimeConfig } from "../src/config/io/io.js";
+import {
+  approveDevicePairing,
+  ensureDeviceToken,
+  requestDevicePairing,
+  resolveSharedGatewayAuthIssuer,
+} from "../src/plugin-sdk/device-bootstrap.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const email = requireEnv("ADMINBOT_DEV_EMAIL").toLowerCase();
@@ -29,17 +41,56 @@ if (password.length < 10) {
 
 fs.mkdirSync(path.dirname(databasePath), { recursive: true });
 
+const devicePairing = {
+  approveDevicePairing,
+  ensureDeviceToken,
+  requestDevicePairing,
+  resolveSharedGatewayAuthIssuer,
+};
+const gatewayConfig = getRuntimeConfig({ pin: false }).gateway;
+
 const app = createAdminBotMockService({
+  deviceTokenIssuer: createDeviceTokenIssuer({ devicePairing }),
+  devicePairingApprover: createDevicePairingApprover({ devicePairing }),
+  gatewayUrl:
+    process.env.ADMINBOT_GATEWAY_WS_URL || `ws://127.0.0.1:${gatewayConfig?.port ?? 18789}`,
+  notificationDraftScriptPath: path.join(
+    repoRoot,
+    "scripts/openreview-notifications/adminbot_bridge.py",
+  ),
   databasePath,
   auditRetentionDays: 7,
   // Keep this local bootstrap isolated from real calendar/email connectors.
+  // Synthetic read data only: dev must not fetch real calendar attendees.
+  calendarEventsReader: async () => [
+    {
+      id: resolveGroupMeetingEventId(),
+      summary: "[Dev] Monday group meeting",
+      start: "2026-10-19T09:30:00-04:00",
+      attendees: ["alice@example.test", "bob@example.test", "erin@example.test"],
+    },
+    {
+      id: "dev-causal-meeting",
+      recurring_event_id: "dev-causal-meeting",
+      summary: "Theme: [Dev] Causal inference",
+      start: "2026-10-21T10:00:00-04:00",
+      attendees: ["bob@example.test", "dan@example.test"],
+    },
+    {
+      id: "dev-interpretability-meeting",
+      recurring_event_id: "dev-interpretability-meeting",
+      summary: "Theme: [Dev] Interpretability",
+      start: "2026-10-21T11:00:00-04:00",
+      attendees: ["alice@example.test", "carol@example.test"],
+    },
+  ],
   calendarInviteRunner: async () => {},
   accountApprovedEmailRunner: async () => {},
 });
 
-let login = app.auth.login({ email, password });
+let login = await app.auth.login({ email, password });
 if (!login.ok) {
-  const signup = app.auth.signup({
+  const signup = await app.auth.signup({
     email,
     password,
     profile: { name, role: "Lab Manager" },
@@ -51,19 +102,19 @@ if (!login.ok) {
     );
   }
 
-  const registration = app.auth
-    .listRegistrations("pending")
-    .find((candidate) => candidate.email === email);
+  const registration = (await app.auth.listRegistrations("pending")).find(
+    (candidate) => candidate.email === email,
+  );
   if (!registration) {
     throw new Error("Local account registration was not persisted");
   }
 
-  const approval = app.auth.approveRegistration(registration.id, "local-dev-bootstrap");
+  const approval = await app.auth.approveRegistration(registration.id, "local-dev-bootstrap");
   if (!approval.ok) {
     throw new Error(`Could not approve the local account: ${approval.error.message}`);
   }
 
-  login = app.auth.login({ email, password });
+  login = await app.auth.login({ email, password });
 }
 
 if (!login.ok) {

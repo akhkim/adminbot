@@ -9,8 +9,7 @@ import {
 
 const ROLES = ["Undergraduate Student", "PhD Student", "Lab Manager"];
 
-function draw(held: readonly string[]) {
-  const container = document.createElement("div");
+function draw(held: readonly string[], container = document.createElement("div")) {
   render(
     renderMultiSelectField({
       name: "role",
@@ -33,6 +32,16 @@ function summaryText(container: HTMLElement): string {
 }
 
 describe("the closed control", () => {
+  it("can rerender after the user changes the summary", () => {
+    const container = draw(["PhD Student", "Lab Manager"]);
+    const input = container.querySelector<HTMLInputElement>('input[value="PhD Student"]')!;
+    input.checked = false;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(summaryText(container)).toBe("Lab Manager");
+    expect(() => draw(["Lab Manager"], container)).not.toThrow();
+    expect(summaryText(container)).toBe("Lab Manager");
+  });
+
   it("starts closed, so the options are not a column standing open on the page", () => {
     const details = draw(["PhD Student"]).querySelector("details");
     expect(details?.open).toBe(false);

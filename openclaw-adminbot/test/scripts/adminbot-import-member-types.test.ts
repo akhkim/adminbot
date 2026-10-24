@@ -60,6 +60,12 @@ describe("classify", () => {
     });
   });
 
+  it("reads the sheet's shorter `admin` spelling as the admin privilege too", () => {
+    // The column carries both spellings. Honouring only `adminbot-admin` quietly filed the other
+    // row as a plain member rather than refusing it, so the mistake was invisible.
+    expect(classify("full, admin")).toEqual({ kind: "full", privilege_level: "admin" });
+  });
+
   it("lets full win over a subgroup named beside it", () => {
     // "full, coauthor-minor" is a full member who also coauthors, not an external collaborator.
     // The whole string still reaches member_type; only the privilege is decided here.
@@ -86,6 +92,21 @@ describe("classify", () => {
     expect(classify("alumni, coauthor-discussant-or-designer")).toMatchObject({
       collaborator_subgroup: "coauthor_discussant_designer",
     });
+  });
+
+  it("grades an interview without inventing a subgroup for each grade", () => {
+    // The sheet records the state of an interview in the same column: 18 rows on the current
+    // export read "interviewee-probing" and one reads "interviewee-reject". Both are the same
+    // access shape as a plain interviewee -- talked to, granted nothing further -- and before they
+    // were mapped, every one of those people was dropped as unmappable and kept whatever privilege
+    // the roster already had, which for most of them was a full member's.
+    for (const token of ["interviewee-probing", "interviewee-reject"] as const) {
+      expect(classify(token)).toMatchObject({
+        kind: "collaborator",
+        privilege_level: "external_collaborator",
+        collaborator_subgroup: "interviewee",
+      });
+    }
   });
 
   it("reports nothing to import rather than guessing", () => {

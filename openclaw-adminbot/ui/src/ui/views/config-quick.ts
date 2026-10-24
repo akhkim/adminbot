@@ -130,10 +130,9 @@ export type QuickSettingsProps = {
 type ThemeOption = { id: ThemeName; label: string };
 const BUILTIN_THEME_OPTIONS: ThemeOption[] = [{ id: "claw", label: "Claw" }];
 
-// System first: it is the answer for anyone who has already told their machine which way they
-// like it, which is most people, and it is the only option that keeps being right after sunset.
+// Just light and dark. A "System" option used to sit here; people did not know what it meant, so
+// it was dropped and a stored "system" now reads as dark (see theme.ts).
 const THEME_MODE_OPTIONS: Array<{ value: ThemeMode; label: string }> = [
-  { value: "system", label: "System" },
   { value: "light", label: "Light" },
   { value: "dark", label: "Dark" },
 ];

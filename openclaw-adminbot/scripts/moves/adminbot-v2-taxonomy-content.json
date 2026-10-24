@@ -8,10 +8,6 @@
     "to": "extensions/adminbot/content/deadlines/README.md"
   },
   {
-    "from": "extensions/adminbot/deadlines/deadlines-board.html",
-    "to": "extensions/adminbot/content/deadlines/deadlines-board.html"
-  },
-  {
     "from": "extensions/adminbot/deadlines/dm-templates.json",
     "to": "extensions/adminbot/content/deadlines/dm-templates.json"
   },

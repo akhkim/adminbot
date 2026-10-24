@@ -117,8 +117,7 @@ const config = {
         "@openclaw/*",
         "file-type",
         // `scripts/**` is in `ignoreFiles`, so Knip cannot see the only root
-        // consumers: `scripts/adminbot-dcs-form-submit.ts` drives the DCS form
-        // through it, and `scripts/ui.js` resolves it to gate the browser lane.
+        // consumer: `scripts/ui.js` resolves it to gate the browser lane.
         "playwright",
         "playwright-core",
         "sqlite-vec",

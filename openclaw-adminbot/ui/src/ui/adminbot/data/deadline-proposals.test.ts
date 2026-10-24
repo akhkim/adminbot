@@ -66,6 +66,57 @@ describe("deadline proposal validation", () => {
 });
 
 describe("AdminBot deadline proposal store", () => {
+  it("keeps an empty current dataset without falling back", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({ items: [] })));
+    const store = new AdminBotDeadlineProposalStore(
+      () => "https://admin.example",
+      () => undefined,
+      fetchImpl,
+    );
+    await expect(store.listPublished()).resolves.toEqual([]);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports a malformed dataset instead of silently clearing the board", async () => {
+    const fetchImpl = vi.fn().mockImplementation(async () => new Response("null"));
+    const store = new AdminBotDeadlineProposalStore(
+      () => "https://admin.example",
+      () => undefined,
+      fetchImpl,
+    );
+    await expect(store.listPublished()).rejects.toThrow("invalid dataset");
+  });
+
+  it.each([401, 403, 404, 500])("does not hide HTTP %s with a legacy fallback", async (status) => {
+    const fetchImpl = vi.fn().mockResolvedValue(new Response("{}", { status }));
+    const store = new AdminBotDeadlineProposalStore(
+      () => "https://admin.example",
+      () => undefined,
+      fetchImpl,
+    );
+    await expect(store.listPublished()).rejects.toThrow(`Deadline service returned ${status}`);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("loads public deadline data without a session", async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ items: [{ id: "example" }] }), {
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
+    const store = new AdminBotDeadlineProposalStore(
+      () => "https://admin.example",
+      () => undefined,
+      fetchImpl as typeof fetch,
+    );
+    await expect(store.listPublished()).resolves.toEqual([{ id: "example" }]);
+    expect(fetchImpl).toHaveBeenCalledWith("https://admin.example/deadlines", {
+      method: "GET",
+      headers: { Accept: "application/json" },
+    });
+  });
+
   it("submits through the authenticated API with a stable idempotency key", async () => {
     const fetchImpl = vi.fn(
       async () =>

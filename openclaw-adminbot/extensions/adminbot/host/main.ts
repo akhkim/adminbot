@@ -19,19 +19,28 @@ import {
 } from "../src/api/server.js";
 import { createCompositeAdminBotExecutor } from "../src/connectors/composite.js";
 import {
+  createGogCalendarMembershipReader,
+  createGogCalendarAccessReader,
   createGogDriveProbe,
   readDriveFileBase64,
   createGogAdminBotExecutor,
   writeGogDocMarkdown,
 } from "../src/connectors/gog.js";
+import { slidesWorkingGroupsFromEnv } from "../src/connectors/google-slides.js";
+import { selectIpGeolocator } from "../src/connectors/ip-geolocation.js";
 import { createAdminBotMessageExecutor } from "../src/connectors/message.js";
 import { createAdminBotOpenReviewExecutor } from "../src/connectors/openreview.js";
 import { createAdminBotOverleafExecutor } from "../src/connectors/overleaf.js";
+import { createActiveChannelReader } from "../src/connectors/slack-active-channels.js";
 import {
   adminBotSlackBotToken,
   createAdminBotSlackAdminExecutor,
   listSlackChannelNames,
 } from "../src/connectors/slack-admin.js";
+import {
+  createSlackUserDirectoryReader,
+  slackPlaceholderUserIds,
+} from "../src/connectors/slack-users.js";
 import { createAdminBotSocialExecutor } from "../src/connectors/social.js";
 import { adminBotSlackActivityWindowDays } from "../src/contracts/actions.js";
 import { createAdminBotCvScanDeps } from "../src/cv-scan.js";
@@ -65,13 +74,15 @@ export type AdminBotHostDeps = {
       deviceId: string;
       role: string;
       scopes: string[];
-      issuer: string;
+      issuer: { kind: "shared-gateway-auth"; generation: string };
       ownerMemberId?: string;
     }) => Promise<{ token: string; scopes: string[] } | null>;
     requestDevicePairing: (params: Record<string, unknown>) => Promise<{
       request: { requestId: string };
     }>;
-    resolveSharedGatewayAuthIssuer: () => string | undefined;
+    resolveSharedGatewayAuthIssuer: () =>
+      | { kind: "shared-gateway-auth"; generation: string }
+      | undefined;
   };
   /** Mints a Slack Connect invite. Slack lives in another plugin, so the launcher supplies it. */
   inviteToSlackConnect?: (params: { email: string; channelId: string }) => Promise<{ url: string }>;
@@ -122,7 +133,7 @@ export function loadOpenClawEnv(): void {
  * to the shared gateway secret it deliberately no longer holds, and the member's connect frame
  * reaches the Gateway with no auth at all.
  */
-function createDeviceTokenIssuer(deps: AdminBotHostDeps) {
+export function createDeviceTokenIssuer(deps: Pick<AdminBotHostDeps, "devicePairing">) {
   return async function issueMemberDeviceToken(params: {
     deviceId: string;
     publicKey: string;
@@ -203,7 +214,7 @@ function createDeviceTokenIssuer(deps: AdminBotHostDeps) {
  * of the member's login session and capped at `allowedScopes`. The replacement token is minted by
  * the Gateway on the next connect, so nothing is stamped here.
  */
-function createDevicePairingApprover(deps: AdminBotHostDeps) {
+export function createDevicePairingApprover(deps: Pick<AdminBotHostDeps, "devicePairing">) {
   return async function approveMemberDevicePairing(params: {
     requestId: string;
     allowedScopes: readonly string[];
@@ -672,7 +683,8 @@ const SLACK_HISTORY_LIMIT = 400;
 
 /**
  * Resolves Slack user ids for members the roster has never linked to Slack, by email against the
- * workspace directory -- the seam a member self-editing `slack_user_id` normally fills in by hand.
+ * workspace directory. The read-only helper resolves SecretRefs through the launcher seam;
+ * members never need to enter a Slack id.
  * One directory listing covers the whole workspace, so this never scales with roster size the way
  * a per-member CLI call would.
  */
@@ -689,15 +701,12 @@ export function createSlackDirectoryEmailResolver(repoRoot: string) {
       const { stdout } = await execFileAsync(
         process.execPath,
         [
-          path.join(repoRoot, "openclaw.mjs"),
-          "directory",
-          "peers",
-          "list",
-          "--channel",
-          "slack",
-          "--json",
+          "--import",
+          "tsx",
+          path.join(repoRoot, "scripts/adminbot-slack-email-lookup.ts"),
+          JSON.stringify([...wanted]),
         ],
-        { timeout: 60_000, maxBuffer: 16 * 1024 * 1024 },
+        { cwd: repoRoot, timeout: 5 * 60_000, maxBuffer: 16 * 1024 * 1024 },
       );
       const entries = JSON.parse(stdout.trim().split("\n").at(-1) ?? "[]") as Array<{
         id?: string;
@@ -715,9 +724,10 @@ export function createSlackDirectoryEmailResolver(repoRoot: string) {
           resolved.set(email, bareId);
         }
       }
-    } catch (error) {
-      console.warn(
-        `slack directory lookup failed: ${error instanceof Error ? error.message : String(error)}`,
+    } catch {
+      // Do not print child stderr or config details: credential resolution errors can be sensitive.
+      throw new Error(
+        "Slack directory lookup failed; check the configured account and users:read.email permission",
       );
     }
     return resolved;
@@ -807,6 +817,9 @@ export function createAdminBotHost(deps: AdminBotHostDeps) {
   const { repoRoot } = deps;
   const profilePhotoUpdateExecutor = createSlackProfilePhotoUpdateExecutor();
   const cvDigestPublisher = createCvDigestPublisher();
+  // The working-groups slide (docs/operations/slides-working-groups.md). Absent unless a deck is
+  // named; ADMINBOT_SLIDES_WRITE=1 is the separate switch that lets approved plans reach it.
+  const slidesWorkingGroups = slidesWorkingGroupsFromEnv(process.env);
   return createAdminBotMockService({
     databasePath: path.join(repoRoot, "state/adminbot.sqlite"),
     auditRetentionDays: AUDIT_RETENTION_DAYS,
@@ -827,7 +840,9 @@ export function createAdminBotHost(deps: AdminBotHostDeps) {
         scriptPath: path.join(repoRoot, "scripts/adminbot-openreview.py"),
         send: process.env.ADMINBOT_OPENREVIEW_SEND === "1",
       }),
+      ...(slidesWorkingGroups ? [slidesWorkingGroups.executor] : []),
     ]),
+    ...(slidesWorkingGroups ? { slidesWorkingGroups: slidesWorkingGroups.source } : {}),
     // Lets a LinkedIn draft use the Drive copy the paper already names instead of demanding the
     // author upload the same PDF again. Same gog binary, same account, as every other Google read.
     readDrivePdfBase64: (fileId: string) => readDriveFileBase64(fileId),
@@ -846,8 +861,20 @@ export function createAdminBotHost(deps: AdminBotHostDeps) {
       extractScriptPath: path.join(repoRoot, "scripts/adminbot-cv-extract.py"),
     }),
     ...(cvDigestPublisher ? { cvDigestPublisher } : {}),
+    notificationDraftScriptPath: path.join(
+      repoRoot,
+      "scripts/openreview-notifications/adminbot_bridge.py",
+    ),
     openReviewScriptPath: path.join(repoRoot, "scripts/adminbot-openreview.py"),
-    dcsFormScriptPath: path.join(repoRoot, "scripts/adminbot-dcs-form-submit.ts"),
+    // The paper OpenReview sync. The sync cron posts the snapshot it finds at the results cron's
+    // path; this path is read only when a caller (the UI, a manual run) posts none.
+    openReviewResultsPath:
+      process.env.ADMINBOT_OPENREVIEW_RESULTS_JSON ||
+      path.join(repoRoot, "state/openreview-author-results.json"),
+    notificationDecisionsScriptPath: path.join(
+      repoRoot,
+      "scripts/openreview-notifications/adminbot_decisions.py",
+    ),
     fetchSlackLocations: createSlackLocationReader(repoRoot),
     fetchSlackTimezones: createSlackTimezoneReader(repoRoot),
     fetchSlackMessageCounts: createSlackMessageCounter(repoRoot),
@@ -858,6 +885,11 @@ export function createAdminBotHost(deps: AdminBotHostDeps) {
     // The token is read per call, so a deployment that adds SLACK_BOT_TOKEN later starts working
     // without a restart -- and one without it fails the call, which the route turns into a 503
     // the form can explain rather than a silent pass.
+    readCalendarMembership: createGogCalendarMembershipReader(),
+    readCalendarAccess: createGogCalendarAccessReader(),
+    readActiveChannels: createActiveChannelReader(),
+    readSlackDirectory: createSlackUserDirectoryReader(),
+    slackPlaceholderUserIds: slackPlaceholderUserIds(),
     fetchSlackChannelNames: () =>
       listSlackChannelNames(
         adminBotSlackBotToken(process.env),
@@ -866,12 +898,13 @@ export function createAdminBotHost(deps: AdminBotHostDeps) {
     reviewSlackProfilePhoto: createSlackProfilePhotoReviewer(repoRoot),
     polishSlackProfilePhoto: createSlackProfilePhotoPolisher(repoRoot),
     // No `geolocateIp` here on purpose. PR #17 replaced the city-level ipapi.co lookup below with
-    // the country/continent IPinfo Lite one, which api/server.ts builds itself from IPINFO_TOKEN.
+    // the provider api/server.ts selects itself (ADMINBOT_GEOIP_MMDB_PATH, then IPINFO_TOKEN).
     // The old resolver wrote "City, Region, Country" straight into the member's `location` field —
     // the self-reported one — which the new contract explicitly forbids inferred data from
     // touching. createIpLocationResolver is now unwired; it and its tests can go once nothing
     // else wants a city-level lookup.
     slackChannelNamingSweepIntervalMs: 60 * 60 * 1000,
+    meetupSweepIntervalMs: 60 * 60 * 1000,
     deviceTokenIssuer: createDeviceTokenIssuer(deps),
     devicePairingApprover: createDevicePairingApprover(deps),
   });
@@ -881,6 +914,16 @@ export function createAdminBotHost(deps: AdminBotHostDeps) {
 export async function startAdminBotHost(deps: AdminBotHostDeps): Promise<void> {
   loadOpenClawEnv();
   console.log(`AdminBot NVIDIA NIM configured: ${process.env.NVIDIA_API_KEY ? "yes" : "no"}`);
+  // Said once here rather than per sign-in: with no provider configured, sign-ins are simply not
+  // located, and the only place anyone would notice is a member map with no login-placed pins.
+  console.log(
+    `AdminBot IP geolocation: ${
+      selectIpGeolocator({
+        mmdbPath: process.env.ADMINBOT_GEOIP_MMDB_PATH,
+        ipinfoToken: process.env.IPINFO_TOKEN,
+      }).summary
+    }`,
+  );
   const port = resolveServicePort();
   const service = createAdminBotHost(deps);
   await service.listen(port, SERVICE_HOST);

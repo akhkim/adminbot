@@ -46,8 +46,10 @@ describeLayout("mounted deadline layout", () => {
         await page.route("**/*", (route) =>
           route.request().url().startsWith(server.baseUrl) ? route.continue() : route.abort(),
         );
-        await page.route("**/deadlines/venues.json", (route) =>
-          route.fulfill({ json: { items: layoutVenues } }),
+        await page.route("**/deadlines", (route) =>
+          route.request().isNavigationRequest()
+            ? route.fallback()
+            : route.fulfill({ json: { items: layoutVenues } }),
         );
         await page.goto(`${server.baseUrl}adminbot/deadlines`);
         await page.locator(".deadline-group__summary").first().waitFor();

@@ -8,6 +8,75 @@
   gap: var(--space-4);
 }
 
+.meetings__more {
+  align-self: flex-start;
+}
+
+/* One recurring meeting. The header is the whole hit target: a title on the left, the count and
+   last date on the right, wrapping under the title on a phone rather than truncating it. */
+.meetings__series > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-3);
+  cursor: pointer;
+}
+
+.meetings__series > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.meetings__series-title {
+  font-weight: 600;
+  font-size: 1.05em;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.meetings__series-meta {
+  font-size: 0.9em;
+}
+
+.meetings__series .meetings__more {
+  margin-top: var(--space-3);
+}
+
+/* The recordings inside a series: a ruled list rather than cards in a card, so forty weeks of a
+   standing meeting read as one history. */
+.meetings__recordings {
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.meetings__recording {
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--border);
+}
+
+.meetings__recording-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+}
+
+.meetings__recording-when {
+  font-weight: 600;
+}
+
+.meetings__recording .meetings__links {
+  margin: var(--space-2) 0;
+}
+
+.meetings__recording-details > summary {
+  cursor: pointer;
+  font-size: 0.9em;
+}
+
 /* Link row: the recording button, a Drive copy when there is one, and the passcode beside them.
    Wrapping rather than truncating, because a passcode that is cut off is worse than a second line. */
 .meetings__links {

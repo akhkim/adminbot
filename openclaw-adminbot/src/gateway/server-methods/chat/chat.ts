@@ -51,7 +51,10 @@ import type { PromptImageOrderEntry } from "../../../media/prompt-image-order.js
 import type { SavedMedia } from "../../../media/store.js";
 import { createChannelMessageReplyPipeline } from "../../../plugin-sdk/channel-outbound.js";
 import { normalizeAgentId } from "../../../routing/session-key.js";
-import { normalizeInputProvenance, type InputProvenance } from "../../../sessions/input-provenance.js";
+import {
+  normalizeInputProvenance,
+  type InputProvenance,
+} from "../../../sessions/input-provenance.js";
 import { resolveSendPolicy } from "../../../sessions/send-policy.js";
 import { parseAgentSessionKey } from "../../../sessions/session-key-utils.js";
 import {
@@ -99,6 +102,9 @@ import {
 import { formatForLog } from "../../ws-log.js";
 import { setGatewayDedupeEntry } from "../agent-wait-dedupe.js";
 import { normalizeRpcAttachmentsToChatAttachments } from "../attachment-normalize.js";
+import { emitSessionsChanged } from "../session-change-event.js";
+import { canRequesterAccessSession, resolveSessionAccessRequester } from "../session-ownership.js";
+import type { GatewayRequestHandlers } from "../types.js";
 import { normalizeWebchatReplyMediaPathsForDisplay } from "./chat-reply-media.js";
 import type { GatewayInjectedTtsSupplementMarker } from "./chat-transcript-inject.js";
 import { resolveRequestedChatAgentId, validateChatSelectedAgent } from "./chat.agent-selection.js";
@@ -188,8 +194,6 @@ import {
   resolveWebchatPromptCacheKey,
   stripVisibleTextFromTtsSupplement,
 } from "./chat.tts-supplement.js";
-import { emitSessionsChanged } from "../session-change-event.js";
-import type { GatewayRequestHandlers } from "../types.js";
 
 export {
   augmentChatHistoryWithCanvasBlocks,
@@ -369,6 +373,27 @@ export const chatHandlers: GatewayRequestHandlers = {
     const canonicalAbortSessionKey =
       abortAgentId && abortSessionResolvesGlobal ? "global" : rawSessionKey;
 
+    const scopes = client?.connect?.scopes ?? [];
+    if (
+      scopes.includes("operator.chat") &&
+      !scopes.includes("operator.write") &&
+      !scopes.includes("operator.admin")
+    ) {
+      const { entry, canonicalKey } = loadSessionEntry(
+        canonicalAbortSessionKey,
+        abortAgentId ? { agentId: abortAgentId } : undefined,
+      );
+      if (
+        !canRequesterAccessSession(entry ?? {}, resolveSessionAccessRequester(client), canonicalKey)
+      ) {
+        respond(
+          false,
+          undefined,
+          errorShape(ErrorCodes.INVALID_REQUEST, "Chat is limited to your own member session"),
+        );
+        return;
+      }
+    }
     const ops = createChatAbortOps(context);
     const requester = resolveChatAbortRequester(client);
 
@@ -533,7 +558,12 @@ export const chatHandlers: GatewayRequestHandlers = {
       suppressCommandInterpretation?: boolean;
       idempotencyKey: string;
     };
-    const suppressCommandInterpretation = p.suppressCommandInterpretation === true;
+    const scopes = client?.connect?.scopes ?? [];
+    const chatOnly =
+      scopes.includes("operator.chat") &&
+      !scopes.includes("operator.write") &&
+      !scopes.includes("operator.admin");
+    const suppressCommandInterpretation = p.suppressCommandInterpretation === true || chatOnly;
     const explicitOriginResult = normalizeExplicitChatSendOrigin({
       originatingChannel: p.originatingChannel,
       originatingTo: p.originatingTo,
@@ -547,7 +577,7 @@ export const chatHandlers: GatewayRequestHandlers = {
     if (
       (p.systemInputProvenance ||
         p.systemProvenanceReceipt ||
-        suppressCommandInterpretation ||
+        p.suppressCommandInterpretation ||
         explicitOriginResult.value) &&
       !canInjectSystemProvenance(client)
     ) {
@@ -619,6 +649,17 @@ export const chatHandlers: GatewayRequestHandlers = {
     );
     const sessionLoadMs = roundedChatSendTimingMs(performance.now() - sessionLoadStartedAtMs);
     const { cfg, entry, canonicalKey: sessionKey, legacyKey } = sessionLoadResult;
+    if (
+      chatOnly &&
+      !canRequesterAccessSession(entry ?? {}, resolveSessionAccessRequester(client), sessionKey)
+    ) {
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.INVALID_REQUEST, "Chat is limited to your own member session"),
+      );
+      return;
+    }
     const selectedAgent = validateChatSelectedAgent({
       cfg,
       requestedSessionKey: rawSessionKey,
@@ -628,7 +669,29 @@ export const chatHandlers: GatewayRequestHandlers = {
       respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, selectedAgent.error));
       return;
     }
+    if (
+      chatOnly &&
+      (entry?.acp ||
+        cfg.agents?.list?.find(
+          (agent) => agent.id === (selectedAgent.agentId ?? resolveDefaultAgentId(cfg)),
+        )?.runtime?.type === "acp")
+    ) {
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.INVALID_REQUEST, "Member chat cannot use an ACP tool runtime"),
+      );
+      return;
+    }
     const requestedSessionId = normalizeOptionalText(p.sessionId);
+    if (chatOnly && requestedSessionId && requestedSessionId !== entry?.sessionId) {
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.INVALID_REQUEST, "Member chat cannot select another transcript"),
+      );
+      return;
+    }
     const backingSessionId = entry?.sessionId ?? requestedSessionId;
     const deletedAgentId = resolveDeletedAgentIdFromSessionKey(cfg, sessionKey, entry, {
       acpMetadataSessionKey: legacyKey ?? sessionKey,
@@ -764,7 +827,7 @@ export const chatHandlers: GatewayRequestHandlers = {
     };
     const originatingRoute = resolveChatSendOriginatingRoute({
       client: clientInfo,
-      deliver: p.deliver,
+      deliver: chatOnly ? false : p.deliver,
       entry,
       explicitOrigin: explicitOriginResult.value,
       hasConnectedClient: client?.connect !== undefined,
@@ -1324,7 +1387,8 @@ export const chatHandlers: GatewayRequestHandlers = {
           applyChatSendManagedMediaFields(ctx, await pluginBoundMediaFieldsPromise);
           const dispatchResult = await dispatchInboundMessage({
             ctx,
-            cfg,
+            // Chat-only devices must not gain tool execution through the model.
+            cfg: chatOnly ? { ...cfg, tools: { ...cfg.tools, deny: ["*"] } } : cfg,
             dispatcher,
             onSessionMetadataChanges: (changes) => {
               for (const change of changes) {

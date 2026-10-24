@@ -32,6 +32,26 @@ The installer:
   request and a native structured tool call; and
 - keeps the Qwen3-Next checkpoint by default for rollback.
 
+## API key
+
+vLLM is reachable through Cloudflare (behind Access) for the AWS standby, so its key is a real
+secret. The script never uses the old `vllm-local` default and never replaces a working key on a
+re-run: it keeps `VLLM_API_KEY` if you pass one, else the key already in
+`~/.config/jinesis-adminbot/vllm.env`, else the one in `adminbot.env`, and only generates a new
+one (`openssl rand -hex 32`) when none of those is a real key. It refuses `vllm-local` and anything
+shorter than 32 characters.
+
+The key lives in two files, kept in step: `vllm.env` (only the key, read by `jinesis-vllm` through
+`EnvironmentFile=`) and `adminbot.env` (read by AdminBot and the Gateway). It is never on a
+command line, where any Aurora user's `ps` would show it. To rotate it, rerun the script with a new
+`VLLM_API_KEY`; it rewrites both files, restarts vLLM (about 25 minutes, most of it loading 78 GB
+of weights from `/mfs1`), then restarts AdminBot and the Gateway. Update `/adminbot/VLLM_API_KEY`
+in AWS Parameter Store to match.
+
+vLLM's compile cache and FlashInfer's JIT cache are kept next to the model under `/mfs1/u/<user>`
+(`VLLM_CACHE_ROOT`, `FLASHINFER_WORKSPACE_BASE`), and usage statistics are off
+(`VLLM_NO_USAGE_STATS=1`): the home volume is quota-limited and filled up.
+
 The download is resumable. Use `--skip-install` or `--skip-download` when
 re-running completed phases. Use `--skip-start` to prepare everything without
 allocating the GPU.
@@ -41,8 +61,9 @@ Inspect progress or failures:
 ```bash
 systemctl --user status jinesis-vllm.service --no-pager -l
 journalctl --user -u jinesis-vllm.service -f
-set -a; . ~/.config/jinesis-adminbot/adminbot.env; set +a
-curl -H "Authorization: Bearer $VLLM_API_KEY" http://127.0.0.1:8000/v1/models
+# Header from a file, not argv, so the key never shows in `ps`.
+curl -H @<(sed -n 's/^VLLM_API_KEY=/Authorization: Bearer /p' ~/.config/jinesis-adminbot/vllm.env) \
+  http://127.0.0.1:8000/v1/models
 ```
 
 Start with 64K context. Raising it to 128K on a 96 GiB RTX PRO 6000 must be

@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { COMPLETE_PROFILE } from "../../../extensions/adminbot/src/contracts/profile-completion.test-helpers.js";
 
 type CronRunsLoadStatus = "ok" | "error" | "skipped";
 
@@ -26,6 +27,9 @@ async function raceWithNextMacrotask(promise: Promise<unknown>): Promise<"resolv
 }
 
 const mocks = vi.hoisted(() => ({
+  loadAdminBotMock: vi.fn(async () => {}),
+  pendingAdminBotLoadMock: vi.fn<() => Promise<void> | undefined>(),
+  loadVenueSourcesMock: vi.fn(async () => {}),
   refreshChatMock: vi.fn(async () => {}),
   scheduleChatScrollMock: vi.fn(),
   scheduleLogsScrollMock: vi.fn(),
@@ -66,6 +70,14 @@ const mocks = vi.hoisted(() => ({
   stopNodesPollingMock: vi.fn(),
 }));
 
+vi.mock("./adminbot/controllers/admin.ts", () => ({
+  loadAdminBot: mocks.loadAdminBotMock,
+  loadAdminBotSensitiveInfo: vi.fn(async () => {}),
+  pendingAdminBotLoad: mocks.pendingAdminBotLoadMock,
+}));
+vi.mock("./adminbot/controllers/conference-papers.ts", () => ({
+  loadAdminBotVenueSources: mocks.loadVenueSourcesMock,
+}));
 vi.mock("./app-chat.ts", () => ({
   refreshChat: mocks.refreshChatMock,
 }));
@@ -155,6 +167,7 @@ import { loadChannelsTab, refreshActiveTab, setTab } from "./app-settings.ts";
 function createHost() {
   return {
     tab: "agents",
+    memberPrivilegeLevel: "admin",
     connected: true,
     client: {},
     agentsPanel: "overview",
@@ -223,6 +236,114 @@ describe("refreshActiveTab", () => {
     vi.useRealTimers();
   });
 
+  function coldMember(tab = "adminbotConferencePapers") {
+    return Object.assign(createHost(), {
+      tab,
+      memberId: COMPLETE_PROFILE.id as string | null,
+      memberPrivilegeLevel: "member",
+      adminBotError: null as string | null,
+      adminBotData: { members: [] as object[], loadedAt: null as number | null },
+    });
+  }
+  function finishProfile(host: ReturnType<typeof coldMember>, complete = true) {
+    host.adminBotData.members = [{ ...COMPLETE_PROFILE, location: complete ? "Toronto" : "" }];
+    host.adminBotData.loadedAt = Date.now();
+  }
+
+  it("loads the profile once and resumes Conference Papers for concurrent refresh requests", async () => {
+    const host = coldMember();
+    const loading = createDeferred();
+    mocks.loadAdminBotMock.mockImplementationOnce(async () => {
+      await loading.promise;
+      finishProfile(host);
+    });
+    const first = refreshActiveTab(host as never);
+    const second = refreshActiveTab(host as never);
+    expect(mocks.loadAdminBotMock).toHaveBeenCalledTimes(1);
+    expect(mocks.loadVenueSourcesMock).not.toHaveBeenCalled();
+    loading.resolve();
+    await Promise.all([first, second]);
+    expect(host.tab).toBe("adminbotConferencePapers");
+    expect(mocks.loadVenueSourcesMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("joins an existing profile request and refreshes the latest requested tab", async () => {
+    const host = coldMember("chat");
+    const loading = createDeferred();
+    mocks.pendingAdminBotLoadMock.mockReturnValueOnce(loading.promise);
+    const pending = refreshActiveTab(host as never, { chatStartup: true });
+    host.tab = "adminbotConferencePapers";
+    const again = refreshActiveTab(host as never);
+    finishProfile(host);
+    loading.resolve();
+    await Promise.all([pending, again]);
+    expect(mocks.loadAdminBotMock).not.toHaveBeenCalled();
+    expect(mocks.refreshChatMock).not.toHaveBeenCalled();
+    expect(mocks.loadVenueSourcesMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not swallow navigation once the profile check has finished", async () => {
+    const host = coldMember();
+    const venues = createDeferred();
+    mocks.loadAdminBotMock.mockImplementationOnce(async () => {
+      finishProfile(host);
+    });
+    mocks.loadVenueSourcesMock.mockReturnValueOnce(venues.promise);
+    const first = refreshActiveTab(host as never);
+    await vi.waitFor(() => expect(mocks.loadVenueSourcesMock).toHaveBeenCalledOnce());
+    host.tab = "chat";
+    await refreshActiveTab(host as never);
+    expect(mocks.refreshChatMock).toHaveBeenCalledOnce();
+    venues.resolve();
+    await first;
+  });
+
+  it("continues normal chat startup after the profile read", async () => {
+    const host = coldMember("chat");
+    mocks.loadAdminBotMock.mockImplementationOnce(async () => {
+      finishProfile(host);
+    });
+    await refreshActiveTab(host as never, { chatStartup: true });
+    expect(mocks.refreshChatMock).toHaveBeenCalledWith(host, { awaitHistory: true, startup: true });
+  });
+
+  it("redirects confirmed incomplete profiles without loading the requested feature", async () => {
+    const host = coldMember();
+    mocks.loadAdminBotMock.mockImplementationOnce(async () => {
+      finishProfile(host, false);
+    });
+    await refreshActiveTab(host as never);
+    expect(host.tab).toBe("profile");
+    expect(mocks.loadVenueSourcesMock).not.toHaveBeenCalled();
+  });
+
+  it("stops on failure and resumes the original page on retry", async () => {
+    const host = coldMember();
+    mocks.loadAdminBotMock.mockImplementationOnce(async () => {
+      host.adminBotError = "unreachable";
+    });
+    await refreshActiveTab(host as never);
+    expect(host.tab).toBe("adminbotConferencePapers");
+    expect(mocks.loadVenueSourcesMock).not.toHaveBeenCalled();
+    host.adminBotError = null;
+    mocks.loadAdminBotMock.mockImplementationOnce(async () => {
+      finishProfile(host);
+    });
+    await refreshActiveTab(host as never);
+    expect(mocks.loadVenueSourcesMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not resume a feature after the member signs out during loading", async () => {
+    const host = coldMember();
+    const loading = createDeferred();
+    mocks.loadAdminBotMock.mockReturnValueOnce(loading.promise);
+    const pending = refreshActiveTab(host as never);
+    host.memberId = null;
+    loading.resolve();
+    await pending;
+    expect(mocks.loadVenueSourcesMock).not.toHaveBeenCalled();
+  });
+
   const expectCommonAgentsTabRefresh = (host: ReturnType<typeof createHost>) => {
     expect(mocks.loadAgentsMock).toHaveBeenCalledOnce();
     expect(mocks.loadConfigMock).toHaveBeenCalledOnce();
@@ -240,6 +361,118 @@ describe("refreshActiveTab", () => {
     channels: [mocks.loadChannelsMock, false],
     tools: null,
   } as const;
+
+  it("reuses cached Time Availability data on revisit; the view has its own Refresh", async () => {
+    const host = createHost();
+    host.tab = "adminbotTimeAvailability";
+    const app = host as typeof host & { adminBotData: { loadedAt: number } };
+    app.adminBotData = { loadedAt: Date.now() };
+
+    await refreshActiveTab(app as never);
+
+    expect(mocks.loadAdminBotMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    "adminbot",
+    "adminbotSettings",
+    "adminbotMembers",
+    "adminbotPapers",
+    "adminbotAnnouncements",
+    "adminbotTimeAvailability",
+    "adminbotConferencePapers",
+    "adminbotCalendar",
+  ])("uses member loading on %s while viewing as a member", async (tab) => {
+    const host = createHost();
+    host.tab = tab as typeof host.tab;
+    host.memberPrivilegeLevel = "member";
+    await refreshActiveTab(host as never);
+    expect(mocks.loadAdminBotMock).toHaveBeenCalledWith(
+      host,
+      "general",
+      expect.any(Boolean),
+      false,
+    );
+  });
+
+  it("asks for the admin queues only when the viewer is an admin", async () => {
+    const host = createHost();
+    host.tab = "adminbotTimeAvailability";
+    const app = host as typeof host & { memberPrivilegeLevel: string };
+    app.memberPrivilegeLevel = "admin";
+
+    await refreshActiveTab(app as never);
+
+    expect(mocks.loadAdminBotMock).toHaveBeenCalledWith(app, "admin", false, false);
+  });
+
+  it("does not request the paper list when Time Availability first opens", async () => {
+    const host = createHost();
+    host.tab = "adminbotTimeAvailability";
+
+    await refreshActiveTab(host as never);
+
+    expect(mocks.loadAdminBotMock).toHaveBeenCalledWith(host, "admin", false, false);
+  });
+
+  it("loads papers after navigating from a non-paper page to Active Papers", async () => {
+    const host = createHost();
+    host.tab = "adminbotPapers";
+    const app = host as typeof host & {
+      adminBotData: { loadedAt: number; papersLoadedAt: null };
+    };
+    app.adminBotData = { loadedAt: Date.now(), papersLoadedAt: null };
+
+    await refreshActiveTab(app as never);
+
+    expect(mocks.loadAdminBotMock).toHaveBeenCalledWith(app, "admin", true, true);
+  });
+
+  it("waits for an in-flight non-paper load before requesting the missing papers", async () => {
+    const host = createHost();
+    host.tab = "adminbotPapers";
+    const app = host as typeof host & {
+      adminBotLoading: boolean;
+      adminBotData: { loadedAt: number; papersLoadedAt: null };
+    };
+    app.adminBotData = { loadedAt: Date.now(), papersLoadedAt: null };
+    app.adminBotLoading = true;
+
+    await refreshActiveTab(app as never);
+    expect(mocks.loadAdminBotMock).not.toHaveBeenCalled();
+
+    app.adminBotLoading = false;
+    await refreshActiveTab(app as never);
+    expect(mocks.loadAdminBotMock).toHaveBeenCalledWith(app, "admin", true, true);
+  });
+
+  it("does not start a second roster read while the dashboard is loading", async () => {
+    const host = createHost();
+    host.tab = "adminbotMembers";
+    const app = host as typeof host & { adminBotLoading: boolean };
+    app.adminBotLoading = true;
+
+    await refreshActiveTab(app as never);
+
+    expect(mocks.loadAdminBotMock).not.toHaveBeenCalled();
+  });
+
+  it("calls the Calendar loader with its app receiver", async () => {
+    const host = createHost();
+    host.tab = "adminbotCalendar";
+    let receiver: unknown;
+    const loadCalendarEvents = vi.fn(function (this: unknown) {
+      receiver = this;
+      return Promise.resolve();
+    });
+    (host as typeof host & { loadCalendarEvents: typeof loadCalendarEvents }).loadCalendarEvents =
+      loadCalendarEvents;
+
+    await refreshActiveTab(host as never);
+
+    expect(loadCalendarEvents).toHaveBeenCalledOnce();
+    expect(receiver).toBe(host);
+  });
 
   it("routes agents cron panel refresh through cron loaders", async () => {
     const host = createHost();

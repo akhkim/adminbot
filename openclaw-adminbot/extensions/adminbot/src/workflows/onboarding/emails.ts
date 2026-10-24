@@ -123,7 +123,7 @@ Jinesis Lab by Prof. Zhijing Jin`,
     id: "rejection",
     kind: "candidate",
     subject: `Interview Result: Jinesis Lab`,
-    required: ["first_name"],
+    required: [],
     body: `Dear {first_name},
 
 Thank you for taking the time to interview with the Jinesis Lab and for sharing your experience, projects, and research interests with us.
@@ -142,7 +142,7 @@ Jinesis Lab by Prof. Zhijing Jin`,
     id: "trial_phase",
     kind: "candidate",
     subject: `Next Steps: Trial Phase with the Jinesis Lab`,
-    required: ["drive_folder_link", "first_name"],
+    required: ["drive_folder_link"],
     body: `Hi {first_name},
 
 Thank you for taking the time to try out research projects with the Jinesis Lab. As per our lab tradition, before fully committing to a project collaboration, we try matching researchers with various projects to find the perfect way to make use of your talents and maximize our synergy.
@@ -167,7 +167,7 @@ Jinesis Lab by Prof. Zhijing Jin`,
     id: "outreach_reply",
     kind: "candidate",
     subject: `Thank You for Reaching Out`,
-    required: ["application_form_link", "first_name"],
+    required: ["application_form_link"],
     body: `Hi {first_name},
 
 Thanks so much for getting in touch! To help us review your information and make sure nothing gets missed, please fill out our application form here: {application_form_link}
@@ -182,7 +182,7 @@ Jinesis Lab by Prof. Zhijing Jin`,
     id: "collaboration_rhythm_reminder",
     kind: "supplement",
     subject: `Where we are on {project_or_context}`,
-    required: ["first_name", "project_or_context", "update_due_date"],
+    required: ["project_or_context", "update_due_date"],
     body: `Dear {first_name},
 
 A quick note on rhythm, since email can make quiet periods look like disinterest when the opposite is true. On our side, work on {project_or_context} is ongoing; our next substantive update will reach you by {update_due_date}. Between updates, please read silence as work in progress. Naturally, if anything urgent comes up on your side, write any time and we will respond.
@@ -201,7 +201,7 @@ Best regards,`,
     id: "alumni",
     kind: "subgroup",
     subject: `Staying Connected with the Jinesis Lab`,
-    required: ["first_name"],
+    required: [],
     body: `Hi {first_name},
 
 This is Professor Zhijing Jin's research lab, now known as Jinesis Lab at the University of Toronto, Department of Computer Science.
@@ -248,7 +248,7 @@ University of Toronto`,
     // Names no tier, per rule 2 -- "alumni channel" in a subject line tells the reader which
     // internal bucket they are in. The body may say it; the header a mail client previews may not.
     subject: `Your Slack invitation from the Jinesis Lab`,
-    required: ["first_name", "slack_connect_link"],
+    required: ["slack_connect_link"],
     body: `Hi {first_name},
 
 As mentioned, here is your Slack Connect invitation to our Jinesis friends and alumni channel: {slack_connect_link}
@@ -278,7 +278,7 @@ Jinesis Lab by Prof. Zhijing Jin`,
     subject: `Welcome to the Jinesis Lab: your onboarding steps`,
     // `portal_password` is absent on purpose: it is the same seeded string for every account, so
     // it is a configured deployment token (guide.ts) rather than something an operator retypes.
-    required: ["first_name", "member_email"],
+    required: ["member_email"],
     body: `Hi {first_name},
 
 A very warm welcome to the Jinesis Lab! Here's how to get set up with the lab. Since you have major roles in Jinesis projects, if possible, we would appreciate it if you could do the following items in the upcoming 5 days or so:
@@ -316,7 +316,7 @@ Jinesis Lab by Prof. Zhijing Jin`,
     id: "coauthor_minor",
     kind: "subgroup",
     subject: `Welcome to the Jinesis Lab: your onboarding steps`,
-    required: ["first_name"],
+    required: [],
     body: `Hi {first_name},
 
 A very warm welcome to the Jinesis Lab! To facilitate our project collaboration, we recommend the following onboarding setup with us:
@@ -345,7 +345,7 @@ Jinesis Lab by Prof. Zhijing Jin`,
     id: "disappearing_coauthor",
     kind: "subgroup",
     subject: `Checking in about your Jinesis involvement`,
-    required: ["first_name", "project_or_context"],
+    required: ["project_or_context"],
     body: `Hi {first_name},
 
 We hope things are going well on your side. We have not heard from you for a while regarding {project_or_context} and wanted to check what level of involvement currently works for you.
@@ -364,13 +364,7 @@ Jinesis Lab by Prof. Zhijing Jin`,
     id: "interviewee",
     kind: "subgroup",
     subject: `Following up after our conversation`,
-    required: [
-      "drive_folder_link",
-      "first_name",
-      "project_or_context",
-      "sender_name",
-      "slack_connect_link",
-    ],
+    required: ["drive_folder_link", "project_or_context", "sender_name", "slack_connect_link"],
     body: `Hi {first_name},
 
 Thanks for taking the time to talk with us about {project_or_context}. So the conversation can keep going, we have set a few things up for you:
@@ -393,7 +387,6 @@ Best,
     required: [
       "contact_name",
       "deliverable",
-      "first_name",
       "project_channel_or_meeting",
       "project_or_context",
       "slack_connect_link",
@@ -414,7 +407,7 @@ AdminBot`,
     id: "member_rejection",
     kind: "privilege",
     subject: `Update on your Jinesis AI Research Lab application`,
-    required: ["first_name"],
+    required: [],
     body: `Dear {first_name},
 
 Thank you for your interest in joining the Jinesis Lab and for taking the time to share your experience with us.
@@ -447,8 +440,8 @@ If the call time doesn't work, just decline the call and the suggestion and an a
     id: "member",
     kind: "privilege",
     subject: `Welcome to the Jinesis Lab – Onboarding Steps`,
-    // `first_name` is deliberately absent: it is an optional value token, so an unnamed recipient
-    // gets "Hi," rather than a refusal. See OPTIONAL_VALUE_TOKENS in guide.ts.
+    // No template lists `first_name`: it is an optional value token, so an unnamed recipient gets
+    // "Hi!" rather than a refusal. See OPTIONAL_VALUE_TOKENS in guide.ts.
     required: [],
     // Interim wording: accounts were bulk-created for the roster with one shared temporary
     // password, so this tells people to sign in and change it rather than to sign up. It goes back
@@ -480,7 +473,7 @@ Jinesis Lab`,
     // No `drive_folder_link` any more: rev (3) drops the Google Drive step from this mail. That
     // token was also what made the send provision a folder, so own-pace advisees no longer get one
     // created at send time -- the same trade coauthor-major already made.
-    required: ["first_name", "member_email"],
+    required: ["member_email"],
     body: `Hi {first_name},
 
 A very warm welcome to the Jinesis Lab! Here's how to get set up with the lab. Since you have major roles in Jinesis projects, if possible, we would appreciate it if you could do the following items in the upcoming 5 days or so:
@@ -509,7 +502,7 @@ Jinesis Lab by Prof. Zhijing Jin`,
     id: "own_pace_advisee_norms",
     kind: "supplement",
     subject: `How we work at Jinesis: communication and meetings`,
-    required: ["drive_folder_link", "first_name"],
+    required: ["drive_folder_link"],
     body: `Hi {first_name},
 
 We would like to share a few habits that help research collaborations run smoothly at Jinesis.
@@ -538,7 +531,7 @@ Jinesis Lab by Prof. Zhijing Jin`,
     id: "coauthor_major_norms",
     kind: "supplement",
     subject: `Your project team at the Jinesis Lab`,
-    required: ["contact_name", "first_name", "project_or_context", "team_lead_role"],
+    required: ["contact_name", "project_or_context", "team_lead_role"],
     body: `Hi {first_name},
 
 We are delighted to have you on {project_or_context}. Here's how the team around you works.
@@ -567,7 +560,6 @@ Jinesis Lab by Prof. Zhijing Jin`,
     subject: `Your project team at the Jinesis Lab`,
     required: [
       "contact_name",
-      "first_name",
       "guidance_coauthors",
       "main_doers",
       "project_or_context",
@@ -599,7 +591,7 @@ Jinesis Lab by Prof. Zhijing Jin`,
     id: "disappearing_coauthor_paper",
     kind: "supplement",
     subject: `Next steps for {paper_short_title}`,
-    required: ["delegate_name", "first_name", "paper_short_title", "paper_title", "reply_by_date"],
+    required: ["delegate_name", "paper_short_title", "paper_title", "reply_by_date"],
     body: `Hi {first_name},
 
 We hope things are going well on your side. We would like to agree on how to move "{paper_title}" forward. Please choose one of the following arrangements:
@@ -622,7 +614,7 @@ Jinesis Lab by Prof. Zhijing Jin`,
     id: "disappearing_coauthor_rec_letter",
     kind: "supplement",
     subject: `Re: your recommendation letter request`,
-    required: ["first_name"],
+    required: [],
     body: `Hi {first_name},
 
 Thank you for reaching out, and for the work you have done with Jinesis.
@@ -644,7 +636,7 @@ Jinesis Lab by Prof. Zhijing Jin`,
     id: "external_prof_slack_connect",
     kind: "supplement",
     subject: `Slack invitation from the Jinesis Lab`,
-    required: ["collaborator_names", "first_name", "project_channel", "project_or_context"],
+    required: ["collaborator_names", "project_channel", "project_or_context"],
     body: `Dear {first_name},
 
 To make day-to-day coordination on {project_or_context} easier, we would like to connect on Slack. You should shortly receive a Slack Connect invitation to the Jinesis workspace, which will add you to two channels:
@@ -664,7 +656,7 @@ Jinesis Lab by Prof. Zhijing Jin`,
     subject: `Shared folder for {project_or_context}`,
     // `project_folder_link`, not `drive_folder_link`: that token makes the send path provision a
     // new 1:1 workspace folder, and this mail shares a project folder that already exists.
-    required: ["first_name", "folder_contents", "project_folder_link", "project_or_context"],
+    required: ["folder_contents", "project_folder_link", "project_or_context"],
     body: `Dear {first_name},
 
 We have shared the project folder for {project_or_context} with this email address: {project_folder_link}
@@ -684,7 +676,7 @@ Jinesis Lab by Prof. Zhijing Jin`,
     id: "external_prof_records_check",
     kind: "supplement",
     subject: `One-minute check: our contact record for you`,
-    required: ["first_name", "record_email", "record_name", "record_projects", "record_role"],
+    required: ["record_email", "record_name", "record_projects", "record_role"],
     body: `Dear {first_name},
 
 As part of our collaboration records, we currently have you as:

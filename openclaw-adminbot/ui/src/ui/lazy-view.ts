@@ -1,5 +1,5 @@
 // Control UI module implements lazy view behavior.
-import { html } from "lit";
+import { html, type TemplateResult } from "lit";
 import { t } from "../i18n/index.ts";
 
 type LazyState<T> = {
@@ -16,6 +16,16 @@ export type LazyView<T> = {
   hasError: () => boolean;
   pending: () => boolean;
 };
+
+let hostUpdate: (() => void) | undefined;
+
+// Views created outside app-render.ts (the AdminBot surfaces) repaint through the app shell's
+// update, which it registers here on every render.
+export function setLazyViewHost(update: (() => void) | undefined): void {
+  hostUpdate = update;
+}
+
+export const notifyLazyViewHost = (): void => hostUpdate?.();
 
 export function createLazyView<T>(loader: () => Promise<T>, onChange?: () => void): LazyView<T> {
   const state: LazyState<T> = { mod: null, promise: null, error: undefined, hasError: false };
@@ -75,7 +85,7 @@ function formatLazyViewError(error: unknown): string {
   return t("lazyView.unknownError");
 }
 
-export function renderLazyView<M>(view: LazyView<M>, render: (mod: M) => unknown) {
+export function renderLazyView<M, R>(view: LazyView<M>, render: (mod: M) => R): R | TemplateResult {
   const mod = view.read();
   if (mod !== null) {
     return render(mod);

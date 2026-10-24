@@ -59,7 +59,11 @@ describe("the time allocation chart element", () => {
     // recharts needs layout to draw bars, which jsdom does not do -- but the surrounding chrome
     // React renders unconditionally is proof the root mounted and the component ran.
     expect(chart.querySelector(".adminbot-time-chart__pager")).not.toBeNull();
+    expect(chart.querySelector(".adminbot-time-chart__phone-hint")?.textContent).toBe(
+      "Swipe sideways to see more dates. Tap a bar for details.",
+    );
     expect(chart.querySelectorAll(".adminbot-time-chart__page-button").length).toBe(2);
+    expect(chart.querySelector(".adminbot-time-chart__plot")?.getAttribute("tabindex")).toBe("0");
   });
 
   it("reads back the properties the view set on it", () => {
@@ -104,6 +108,22 @@ describe("the time allocation chart element", () => {
 });
 
 describe("whole-day availability in chart intervals", () => {
+  it("does not extend a commitment past October 12 in any chart interval", () => {
+    const task = { ...TASKS[0], start: "2026-09-21", end: "2026-10-12", effort: 50 };
+    for (const interval of ["day", "week", "month"] as const) {
+      const segments = allocationSegments([task], [], "2026-10-01", interval);
+      for (const segment of segments.filter((row) => row.start > task.end)) {
+        expect(segment.total).toBe(0);
+        expect(segment.allocations).toEqual([]);
+      }
+    }
+    const [lastWeek, nextWeek] = allocationSegments([task], [], "2026-10-12", "week");
+    expect(lastWeek.activeDays).toBe(1);
+    expect(lastWeek.total).toBeCloseTo(50 / 7);
+    expect(nextWeek.total).toBe(0);
+    expect(task.end).toBe("2026-10-12");
+  });
+
   it("clears allocations on away days before averaging the interval", () => {
     const fullWeek: TimeAllocationTask = {
       ...TASKS[0],

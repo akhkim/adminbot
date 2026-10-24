@@ -1,8 +1,10 @@
 """Exact OpenReview invitation observations and configured conference milestone refresh."""
 import urllib.parse
+import re
 
 from adminbot_deadlines import is_sweep_due
-from adminbot_workshop_deadlines import deadline_candidates_from_html, reconcile_deadline_candidates, _candidate_is_abstract
+from adminbot_deadline_time import TIME_FIELDS, timing_fields
+from adminbot_workshop_deadlines import deadline_candidates_from_html, reconcile_deadline_candidates, _candidate_is_abstract, _global_aoe_time
 
 
 def fetch_invitation_observations(invitation_ids, fetch, to_aoe, batch_size=40):
@@ -44,6 +46,7 @@ def refresh_configured_conferences(items, previous_by_id, clock, force_refresh=F
         if previous:
             item.update(previous)
         if force_refresh or is_sweep_due(clock, "conference", item["deadline_aoe"], item.get("source_checked_at")):
+            item["_primary_attempted"] = True
             due.append(item)
     observations = read_invitations([CONFERENCE_INVITATIONS[item["id"]] for item in due])
     pages = {}
@@ -54,21 +57,21 @@ def refresh_configured_conferences(items, previous_by_id, clock, force_refresh=F
         if cfp_url not in pages:
             try:
                 final_url, html = fetch_html(cfp_url)
-                pages[cfp_url] = deadline_candidates_from_html(html, final_url, int(item["deadline_aoe"][:4]))[0]
+                pages[cfp_url] = deadline_candidates_from_html(html, final_url, int(item["deadline_aoe"][:4] or str(clock.today.year)))[0]
             except Exception:
                 pages[cfp_url] = []
         abstract = "abstract" in item.get("deadline_label", "")
         candidates = [candidate for candidate in pages[cfp_url] if _candidate_is_abstract(candidate) == abstract]
         result = reconcile_deadline_candidates(candidates, observation["duedate_aoe"] if observation else "",
                     "https://openreview.net/invitation?id=" + urllib.parse.quote(CONFERENCE_INVITATIONS[item["id"]], safe="/"),
-                    int(item["deadline_aoe"][:4]), target_hint=item.get("deadline_label", ""))
+                    int(item["deadline_aoe"][:4] or str(clock.today.year)), target_hint=item.get("deadline_label", ""))
         item["_source_observed"] = bool(result["deadline_aoe"])
         if not result["deadline_aoe"]:
             item["deadline_source_status"] = "source_unavailable"
             continue
         for key in ("deadline_aoe", "source_url", "deadline_source_kind", "deadline_source_status",
                     "deadline_source_precision", "deadline_source_evidence", "deadline_official_url",
-                    "deadline_official_evidence"):
+                    "deadline_official_evidence", *TIME_FIELDS):
             item[key] = result[key]
         item["source_checked_at"] = checked_at()
         if observation:
@@ -138,19 +141,28 @@ def refresh_conference_tables(items, previous_by_id, clock, force_refresh, fetch
             item.update(previous)
         if not force_refresh and not is_sweep_due(clock, 'conference', item['deadline_aoe'], item.get('source_checked_at')):
             continue
+        item['_primary_attempted'] = True
         url, label = CONFERENCE_TABLE_ROWS[item['id']]
         if url not in pages:
             try:
                 pages[url] = fetch_html(url)[1]
             except Exception:
                 pages[url] = ''
-        observed = conference_table_deadline(pages[url], label, int(item['deadline_aoe'][:4]))
+        observed = conference_table_deadline(pages[url], label, int(item['deadline_aoe'][:4] or str(clock.today.year)))
         item['_source_observed'] = bool(observed)
         if not observed:
             item['deadline_source_status'] = 'source_unavailable'
             continue
         date, evidence = observed
-        item.update(deadline_aoe=date + ' 23:59:00', source_url=url,
+        page = re.sub(r"<[^>]*>", " ", pages[url])
+        global_time = _global_aoe_time(page)
+        if global_time:
+            hour, minute = global_time
+            item.update(timing_fields(f"{date} {hour:02d}:{minute:02d}:00", timezone="AoE"))
+        else:
+            zone = "AoE" if re.search(r"(?i)all\s+deadlines.{0,100}(?:AoE|Anywhere\s+on\s+Earth)", page) else ""
+            item.update(timing_fields(date, date_only=True, timezone=zone))
+        item.update(source_url=url,
                     deadline_source_kind='official_cfp', deadline_source_status='portal_unverified',
                     deadline_source_precision='date_only', deadline_source_evidence=evidence,
                     deadline_official_url=url, deadline_official_evidence=evidence,

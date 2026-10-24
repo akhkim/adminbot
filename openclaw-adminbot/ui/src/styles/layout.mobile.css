@@ -1195,3 +1195,55 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* On a phone the map card sits inside the page's own gutter, and the two paddings together took
+   ~100px of a 390px screen from a plot whose whole point is width. The card keeps its border; it
+   just stops insetting the plot a second time. */
+@media (max-width: 480px) {
+  .member-map--card,
+  .member-map__panel {
+    padding: var(--space-4);
+  }
+
+  /* The list wraps under the plot here and is the easier way to pick a city: pins on a 358px map
+     are smaller than a fingertip. */
+  .member-map__body {
+    gap: var(--space-4);
+  }
+
+  /* Full screen scrolls as one page here: a map tall enough to pan with a thumb, then the list
+     under it, rather than both squeezed into one screen. */
+  .member-map__dialog-panel {
+    height: auto;
+    min-height: 100%;
+    padding: var(--space-4);
+  }
+
+  .member-map__figure--dialog {
+    flex: 0 0 auto;
+  }
+
+  /* Close to the map's own 2.4:1 shape, so a portrait screen is not mostly empty ocean; a little
+     taller than that so there is room to pinch, and the list follows right under it. */
+  .member-map__stage--dialog {
+    flex: 0 0 auto;
+    height: max(13rem, calc((100vw - 2 * var(--space-4)) * 0.5));
+  }
+
+  /* A row along the bottom edge, not a column eating a third of a short map. */
+  .member-map__controls {
+    right: var(--space-2);
+    bottom: var(--space-2);
+    flex-direction: row;
+  }
+
+  .member-map__control + .member-map__control {
+    border-top: 0;
+    border-left: 1px solid var(--border);
+  }
+
+  .member-map__dialog .member-map__list {
+    max-height: none;
+    overflow: visible;
+  }
+}

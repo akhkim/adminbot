@@ -1,12 +1,49 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 
-/** Read on each request: collection must not require rebuilding or restarting the service. */
-export function readDeadlineDataset(
-  file = process.env.ADMINBOT_DEADLINE_DATASET_PATH ??
-    resolve("extensions/adminbot/content/deadlines/venues.json"),
-): readonly unknown[] {
-  const document = JSON.parse(readFileSync(file, "utf8")) as { items?: unknown[] };
+let cached: { file: string; version: string; items: readonly unknown[] } | undefined;
+
+/**
+ * Checked on each request: collection must not require rebuilding or restarting the service.
+ *
+ * Only a stat is paid per call. The parse and validation re-run when the file's inode, size or
+ * nanosecond mtime moves -- an atomic rename-replace always changes the inode -- and an invalid file
+ * is never cached, so it keeps throwing until it is fixed.
+ */
+function defaultDatasetFile(): string {
+  return (
+    process.env.ADMINBOT_DEADLINE_DATASET_PATH ??
+    resolve("extensions/adminbot/content/deadlines/deadlines.json")
+  );
+}
+
+/**
+ * The stat token readDeadlineDataset keys its cache on, for ETags that depend on the dataset. A
+ * missing file reads as one fixed token: the service then serves the compiled snapshot, which does
+ * not change while the process runs.
+ */
+export function deadlineDatasetVersion(file = defaultDatasetFile()): string {
+  try {
+    const stat = statSync(file, { bigint: true });
+    return `${stat.ino}:${stat.size}:${stat.mtimeNs}`;
+  } catch {
+    return "unreadable";
+  }
+}
+
+export function readDeadlineDataset(file = defaultDatasetFile()): readonly unknown[] {
+  const stat = statSync(file, { bigint: true });
+  const version = `${stat.ino}:${stat.size}:${stat.mtimeNs}`;
+  if (cached?.file === file && cached.version === version) {
+    return cached.items;
+  }
+  const items = parseDeadlineDataset(readFileSync(file, "utf8"));
+  cached = { file, version, items };
+  return items;
+}
+
+function parseDeadlineDataset(text: string): readonly unknown[] {
+  const document = JSON.parse(text) as { items?: unknown[] };
   if (!Array.isArray(document.items) || !document.items.length) {
     throw new Error("Deadline dataset is empty or invalid");
   }
@@ -23,9 +60,14 @@ export function readDeadlineDataset(
       typeof row.name !== "string" ||
       !row.name.trim() ||
       typeof row.deadline_aoe !== "string" ||
-      !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/u.test(row.deadline_aoe)
+      (!(row.deadline_aoe === "" && row.venue_type === "workshop") &&
+        !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/u.test(row.deadline_aoe))
     ) {
       throw new Error("Invalid or duplicate deadline record");
+    }
+    if (row.deadline_aoe === "") {
+      ids.add(row.id);
+      continue;
     }
     const instant = new Date(row.deadline_aoe.replace(" ", "T") + "Z");
     if (

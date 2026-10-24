@@ -29,6 +29,13 @@ export const icons = {
       <polyline points="12 6 12 12 16 14" />
     </svg>
   `,
+  clockPlus: html`
+    <svg viewBox="0 0 24 24">
+      <polyline points="11 6 11 12 15 14" />
+      <path d="M19 6a10 10 0 1 0 1.165 10" />
+      <path d="M19 8v6m-3-3h6" />
+    </svg>
+  `,
   history: html`
     <svg viewBox="0 0 24 24">
       <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />

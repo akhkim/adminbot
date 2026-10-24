@@ -9,6 +9,8 @@ import {
   normalizeLogisticsRequestInput,
   prepareLogisticsRequest,
   requestDeadline,
+  requestDeadlineDetails,
+  withCurrentLogisticsDeadline,
   validateLogisticsRequest,
   withoutAttachmentBytes,
 } from "./requests.js";
@@ -47,8 +49,8 @@ describe("deadlineInstant", () => {
     );
   });
 
-  it("falls back to UTC when the row names no zone", () => {
-    expect(deadlineInstant("2026-12-01", "09:00")).toBe("2026-12-01T09:00:00.000Z");
+  it("falls back to AoE when the row names no zone", () => {
+    expect(deadlineInstant("2026-12-01", "09:00")).toBe("2026-12-01T21:00:00.000Z");
   });
 
   it("has no instant for something that is not a date", () => {
@@ -74,7 +76,7 @@ describe("meetingInstant", () => {
 });
 
 describe("requestDeadline", () => {
-  it("takes the soonest of every date on every school -- either one passing makes a letter late", () => {
+  it("uses only letter deadlines, even when an application is due sooner", () => {
     expect(
       requestDeadline({
         kind: "recommendation_letters",
@@ -87,7 +89,7 @@ describe("requestDeadline", () => {
           { school: "B", application_deadline: "2026-10-01" },
         ],
       }),
-    ).toBe("2026-10-01T23:59:00.000Z");
+    ).toBe("2026-11-16T11:59:00.000Z");
   });
 
   it("sorts two same-day deadlines by the time and zone they were given in", () => {
@@ -166,7 +168,7 @@ describe("normalizeLogisticsRequestInput", () => {
       schools: [{ school: "MIT" }, { school: "   " }],
       facts: [{ project: "", contribution: "" }],
     });
-    expect(normalized.schools).toEqual([{ school: "MIT" }]);
+    expect(normalized.schools).toEqual([{ school: "MIT", deadline_timezone: "AoE" }]);
     expect(normalized.facts).toEqual([]);
   });
 
@@ -329,5 +331,90 @@ describe("byUrgency", () => {
       submitted_at: "2026-08-18T00:00:00.000Z",
     });
     expect([older, newer].toSorted(byUrgency).map((entry) => entry.id)).toEqual(["newer", "older"]);
+  });
+});
+
+describe("letter deadline rules", () => {
+  it("preserves the original clock and zone while comparing across zones", () => {
+    const input = {
+      kind: "recommendation_letters" as const,
+      schools: [
+        {
+          school: "A",
+          application_deadline: "2026-01-01",
+          letter_deadline: "2026-12-01",
+          letter_deadline_time: "23:59",
+          deadline_timezone: "AoE",
+        },
+        {
+          school: "B",
+          letter_deadline: "2026-12-02",
+          letter_deadline_time: "09:00",
+          deadline_timezone: "Asia/Tokyo",
+        },
+      ],
+    };
+    expect(requestDeadlineDetails(input)).toEqual({
+      at: "2026-12-02T00:00:00.000Z",
+      date: "2026-12-02",
+      time: "09:00",
+      timezone: "Asia/Tokyo",
+    });
+    expect(input.schools[0].deadline_timezone).toBe("AoE");
+  });
+
+  it.each([
+    { school: "A", application_deadline: "2026-12-01" },
+    { school: "A", letter_deadline: "2026-02-30" },
+    { school: "A", letter_deadline: "2026-12-01extra" },
+    { school: "A", letter_deadline: "2026-12-01", letter_deadline_time: "17:00extra" },
+    { school: "A", letter_deadline: "2026-12-01", letter_deadline_time: "25:00" },
+    { school: "A", letter_deadline: "2026-12-01", deadline_timezone: "Made/Up" },
+  ])("rejects an incomplete or invalid letter deadline: %j", (school) => {
+    expect(
+      prepareLogisticsRequest({ kind: "recommendation_letters", schools: [school] }, identity, NOW)
+        .ok,
+    ).toBe(false);
+  });
+
+  it("defaults to end-of-day AoE and ignores the empty trailing row", () => {
+    const result = prepareLogisticsRequest(
+      {
+        kind: "recommendation_letters",
+        schools: [
+          { school: "A", letter_deadline: "2026-12-01" },
+          { school: "", deadline_timezone: "AoE" },
+        ],
+      },
+      identity,
+      NOW,
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      request: {
+        deadline_at: "2026-12-02T11:59:00.000Z",
+        schools: [{ school: "A", letter_deadline: "2026-12-01", deadline_timezone: "AoE" }],
+      },
+    });
+  });
+
+  it("does not reuse an application deadline cached by an older version", () => {
+    const legacy = {
+      ...identity,
+      kind: "recommendation_letters" as const,
+      status: "submitted" as const,
+      submitted_at: NOW,
+      updated_at: NOW,
+      deadline_at: "2026-01-01T23:59:00Z",
+      schools: [{ school: "A", application_deadline: "2026-01-01", letter_deadline: "2026-12-01" }],
+    };
+    expect(withCurrentLogisticsDeadline(legacy).deadline_at).toBe("2026-12-02T11:59:00.000Z");
+    expect(
+      withCurrentLogisticsDeadline({
+        ...legacy,
+        schools: [{ school: "A", application_deadline: "2026-01-01" }],
+      }).deadline_at,
+    ).toBeUndefined();
+    expect(legacy.deadline_at).toBe("2026-01-01T23:59:00Z");
   });
 });

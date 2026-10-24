@@ -73,4 +73,36 @@ describe("signed-out view routing", () => {
     expect(host.authGateVisible).toBe(true);
     expect(window.history.length).toBe(before);
   });
+
+  it("opens the sign-in form directly for a protected deep link", () => {
+    const host = createHost();
+    const before = window.history.length;
+    for (const path of ["/meetings", "/adminbot/meetings", "/chat"]) {
+      window.history.replaceState({}, "", path);
+      syncSignedOutViewWithLocation(host);
+      expect(host.authGateVisible).toBe(true);
+      expect(window.location.pathname).toBe(path);
+      expect(currentSearch()).toBe("");
+      expect(window.history.length).toBe(before);
+    }
+  });
+
+  it("keeps the landing on the root and direct public pages open", () => {
+    const host = createHost();
+    for (const path of ["/", "/deadlines", "/opportunities"]) {
+      window.history.replaceState({}, "", path);
+      syncSignedOutViewWithLocation(host);
+      expect(host.authGateVisible).toBe(false);
+    }
+  });
+
+  it("respects an explicit guest-tool link even on a protected path", () => {
+    const host = createHost();
+    window.history.replaceState({}, "", "/meetings?signedOut=reimbursements");
+
+    syncSignedOutViewWithLocation(host);
+
+    expect(host.guestReimbursements).toBe(true);
+    expect(host.authGateVisible).toBe(false);
+  });
 });

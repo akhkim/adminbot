@@ -96,6 +96,9 @@ for job in manifest["jobs"]:
     # Paths are absolute in the store: cron runs from the gateway's cwd, not the repo's.
     argv = [part.replace("scripts/", f"{repo_root}/scripts/", 1) if part.startswith("scripts/") else part
             for part in job["argv"]]
+    # Every job reports its run to the automation health check through one wrapper, so a job that
+    # stops or keeps failing is noticed without each script having to remember to say so.
+    argv = ["bash", f"{repo_root}/scripts/lib/adminbot-cron-run.sh", name, job["cron"], "--", *argv]
     verb = "edit" if name in known else "add"
     if verb == "edit":
         # The id first, as the positional the command wants. `--name` is not repeated: it is what

@@ -20,9 +20,13 @@ export const TAB_GROUPS = [
   // need it -- the ones who just arrived -- it is the first thing to do. It used to be the last two
   // sections of My Profile, which put a checklist somebody walks once at the bottom of a page they
   // edit every week.
+  //
+  // Events follows Time Availability: where the viewer is going sits next to when they are free.
+  // There used to be a Travel tab between them; Events took over its conferences and nearby
+  // lab-mates, and the trip editor went back to Time Availability beside the where-strip it feeds.
   {
     label: "myInfo",
-    tabs: ["gettingStarted", "profile", "adminbotTimeAvailability", "myWork"],
+    tabs: ["gettingStarted", "profile", "adminbotTimeAvailability", "events", "myWork"],
   },
   // Lab Members sits with Lab Sharing, not in the shared tools: the roster is who the lab is,
   // which is what someone browsing the lab's shared surface came to look at.
@@ -45,7 +49,10 @@ export const TAB_GROUPS = [
       "adminbotReimbursements",
       "adminbotDeadlines",
       "adminbotOpportunities",
+      "adminbotNotificationDrafts",
       "adminbotConferencePapers",
+      "adminbotReferenceChecker",
+      "adminbotArrReviewers",
     ],
   },
   // Only the landing tab of each multi-tab page is listed (see TAB_PAGES): the sidebar names the
@@ -125,12 +132,8 @@ export const TAB_PAGES = [
     ],
   },
   { page: "nudges", tabs: ["adminbotAnnouncements", "adminbotWorkshopNudges"] },
-  // My Desk and Travel are one page because they are the same reader asking about themselves --
-  // what is waiting on me, and where have I been. Travel does not belong in the Admin group beside
-  // the lab-wide boards: it is nobody's queue, it names one person, and a sidebar entry of its own
-  // would read as a surveillance tool sitting next to the roster rather than as the professor's own
-  // record of their own year.
-  { page: "myDesk", tabs: ["adminbotProfessor", "adminbotTravel"] },
+  // My Desk used to be a page here too, with Travel History as its second tab. That tab was taken
+  // off, and My Desk now stands alone in the sidebar: a page of one tab would draw no bar anyway.
   // Who is in the lab, from the outside in: who is asking to join, who is being brought up to
   // speed, and what the people already here have earned. Badges were a sidebar entry of their own,
   // which put "award Ada a badge" a page away from the roster that says who Ada is.
@@ -201,6 +204,7 @@ export type Tab =
   | "gettingStarted"
   | "myWork"
   | "labSharing"
+  | "events"
   | "activity"
   | "adminbot"
   | "adminbotRegistrations"
@@ -209,11 +213,11 @@ export type Tab =
   | "adminbotReimbursements"
   | "adminbotSettings"
   | "adminbotMembers"
+  | "adminbotNotificationDrafts"
   | "adminbotOpportunities"
   | "adminbotProfileOverview"
   | "adminbotTabUsage"
   | "adminbotProfessor"
-  | "adminbotTravel"
   | "adminbotTimeAvailability"
   | "adminbotMeetings"
   | "adminbotSignatures"
@@ -223,6 +227,8 @@ export type Tab =
   | "adminbotWorkshopNudges"
   | "adminbotAnnouncements"
   | "adminbotConferencePapers"
+  | "adminbotReferenceChecker"
+  | "adminbotArrReviewers"
   | "adminbotCalendar"
   | "adminbotGrantReport"
   | "adminbotMailingList"
@@ -290,6 +296,7 @@ const TAB_PATHS: Record<Tab, string> = {
   gettingStarted: "/getting-started",
   myWork: "/my-work",
   labSharing: "/lab-sharing",
+  events: "/events",
   activity: "/activity",
   adminbot: "/pending-actions",
   adminbotRegistrations: "/registrations",
@@ -298,11 +305,11 @@ const TAB_PATHS: Record<Tab, string> = {
   adminbotReimbursements: "/reimbursements",
   adminbotSettings: "/settings",
   adminbotMembers: "/members",
+  adminbotNotificationDrafts: "/notification-drafts",
   adminbotOpportunities: "/opportunities",
   adminbotProfileOverview: "/profile-overview",
   adminbotTabUsage: "/tab-usage",
   adminbotProfessor: "/professor",
-  adminbotTravel: "/travel",
   adminbotTimeAvailability: "/time-availability",
   adminbotMeetings: "/meetings",
   adminbotSignatures: "/signatures",
@@ -312,6 +319,8 @@ const TAB_PATHS: Record<Tab, string> = {
   adminbotWorkshopNudges: "/workshop-nudges",
   adminbotAnnouncements: "/announcements",
   adminbotConferencePapers: "/conference-papers",
+  adminbotReferenceChecker: "/reference-checker",
+  adminbotArrReviewers: "/arr-eligible-reviewers",
   adminbotCalendar: "/calendar",
   adminbotGrantReport: "/grant-report",
   adminbotMailingList: "/mailing-list",
@@ -344,6 +353,8 @@ const TAB_PATHS: Record<Tab, string> = {
 // here rather than left to 404. These are permanent, not a migration window.
 const PATH_ALIASES: Record<string, Tab> = {
   "/adminbot/logistics": "adminbotSignatures",
+  // The member Travel tab, folded into Events. Its RSVP links went out in paper cards and Slack.
+  "/lab-travel": "events",
   "/adminbot": "adminbot",
   "/adminbot/announcements": "adminbotAnnouncements",
   "/adminbot/calendar": "adminbotCalendar",
@@ -358,7 +369,10 @@ const PATH_ALIASES: Record<string, Tab> = {
   "/adminbot/opportunities": "adminbotOpportunities",
   "/adminbot/papers": "adminbotPapers",
   "/adminbot/professor": "adminbotProfessor",
-  "/adminbot/travel": "adminbotTravel",
+  // The head professor's Travel History, which was the second tab of My Desk. Its links land on
+  // My Desk rather than a 404; the sign-in data behind it is still served, just not drawn.
+  "/travel": "adminbotProfessor",
+  "/adminbot/travel": "adminbotProfessor",
   "/adminbot/profile-overview": "adminbotProfileOverview",
   "/adminbot/tab-usage": "adminbotTabUsage",
   "/adminbot/rec-letters": "adminbotRecLetters",
@@ -375,6 +389,24 @@ const PATH_TO_TAB = new Map<string, Tab>([
   ...Object.entries(TAB_PATHS).map(([tab, path]) => [path, tab as Tab] as const),
   ...Object.entries(PATH_ALIASES),
 ]);
+
+/**
+ * Tabs whose path also owns everything under it. `/my-work/<paper>/<lane>` is still My Projects &
+ * Papers: the rest of the path says which project and tab the page shows, which the page reads.
+ */
+const TABS_WITH_SUBPATHS: readonly Tab[] = ["myWork"];
+
+function tabOwningSubpath(path: string): Tab | null {
+  return TABS_WITH_SUBPATHS.find((tab) => path.startsWith(`${TAB_PATHS[tab]}/`)) ?? null;
+}
+
+/** Whether `pathname` is below `tab`'s own path, which the tab keeps rather than resetting. */
+export function isSubpathOfTab(tab: Tab, pathname: string, basePath = ""): boolean {
+  return (
+    TABS_WITH_SUBPATHS.includes(tab) &&
+    tabOwningSubpath(normalizedTabPath(pathname, basePath)) === tab
+  );
+}
 
 export function normalizeBasePath(basePath: string): string {
   if (!basePath) {
@@ -466,7 +498,7 @@ export function tabFromPath(pathname: string, basePath = ""): Tab | null {
   if (normalized === "/") {
     return "dashboard";
   }
-  return PATH_TO_TAB.get(normalized) ?? null;
+  return PATH_TO_TAB.get(normalized) ?? tabOwningSubpath(normalized);
 }
 
 /**
@@ -496,7 +528,7 @@ export function inferBasePathFromPathname(pathname: string): string {
   }
   for (let i = 0; i < segments.length; i++) {
     const candidate = normalizeLowercaseStringOrEmpty(`/${segments.slice(i).join("/")}`);
-    if (PATH_TO_TAB.has(candidate)) {
+    if (PATH_TO_TAB.has(candidate) || tabOwningSubpath(candidate)) {
       const prefix = segments.slice(0, i);
       return prefix.length ? `/${prefix.join("/")}` : "";
     }
@@ -518,6 +550,8 @@ export function iconForTab(tab: Tab): IconName {
       return "book";
     case "labSharing":
       return "link";
+    case "events":
+      return "users";
     case "chat":
       return "messageSquare";
     case "overview":
@@ -537,14 +571,13 @@ export function iconForTab(tab: Tab): IconName {
       return "fileText";
     case "adminbotSettings":
       return "settings";
+    case "adminbotArrReviewers":
     case "adminbotProfileOverview":
       return "check";
     case "adminbotTabUsage":
       return "barChart";
     case "adminbotProfessor":
       return "lobster";
-    case "adminbotTravel":
-      return "globe";
     // A document assembled out of the lab's own record, not a live board.
     case "adminbotGrantReport":
       return "scrollText";
@@ -572,11 +605,14 @@ export function iconForTab(tab: Tab): IconName {
     case "adminbotAnnouncements":
       return "send";
     case "adminbotConferencePapers":
+    case "adminbotReferenceChecker":
       return "fileText";
     case "adminbotCalendar":
       return "clock";
     case "adminbotDeadlines":
       return "loader";
+    case "adminbotNotificationDrafts":
+      return "send";
     case "adminbotOpportunities":
       return "zap";
     case "channels":

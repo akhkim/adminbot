@@ -3,6 +3,13 @@
 //
 //   node --import tsx scripts/adminbot-seed-member-passwords.ts [db] [--write] [--password <pw>]
 //
+// Each member gets their *own* randomly generated starting password, printed in the report so it
+// can be handed to them. It used to be one shared constant for the whole roster, which meant any
+// seeded member could sign in as any other seeded member who had not yet changed theirs -- and the
+// constant was committed here, in a public repository, so the value was not even a secret. Distinct
+// salts were never the point: scrypt salts per call, so 150 rows already held 150 distinct hashes
+// of the same one password.
+//
 // Dry run by default: it prints exactly what it would write and touches nothing. `--write` is the
 // only thing that commits.
 //
@@ -15,11 +22,33 @@
 // address is already on file -- for most of the roster that value came from the Slack directory
 // import, which is what makes it "their Slack email". A member with no usable address is skipped
 // and named in the report: `email` is the login identity, so there is nothing to log in as.
+import { randomInt } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { hashPassword } from "../extensions/adminbot/src/workflows/identity/auth.ts";
+import { isMainModule } from "./lib/is-main-module.mjs";
 
-const DEFAULT_PASSWORD = "jinesis";
 const CS_DOMAIN = "@cs.toronto.edu";
+
+// Omits the character pairs that get misread when a password is copied out of an email or read
+// aloud: 0/O, 1/l/I. 56 characters over 16 positions is ~92 bits, which is far past anything that
+// matters here -- these are starting passwords meant to be changed, and the length costs nothing.
+const PASSWORD_ALPHABET = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const PASSWORD_LENGTH = 16;
+
+/**
+ * A starting password for one member.
+ *
+ * `randomInt` rather than `randomBytes()[i] % alphabet.length`: 256 is not a multiple of 56, so the
+ * modulo would quietly favour the first characters of the alphabet. `randomInt` rejects the biased
+ * tail for us.
+ */
+export function generatePassword(): string {
+  let out = "";
+  for (let index = 0; index < PASSWORD_LENGTH; index += 1) {
+    out += PASSWORD_ALPHABET[randomInt(PASSWORD_ALPHABET.length)];
+  }
+  return out;
+}
 
 // Deliberately loose: this rejects the junk the roster actually contains (a "Mon, Thu, Fri" in an
 // email column, empty strings, stray labels) rather than trying to adjudicate RFC 5322. A wrong
@@ -125,7 +154,8 @@ function usableEmails(payload: Record<string, unknown>): Array<{ email: string; 
 
 function planFor(row: MemberRow): Plan | Skip {
   const payload = JSON.parse(row.payload_json) as Record<string, unknown>;
-  const name = typeof payload.name === "string" && payload.name.trim() ? payload.name.trim() : row.id;
+  const name =
+    typeof payload.name === "string" && payload.name.trim() ? payload.name.trim() : row.id;
   const candidates = usableEmails(payload);
   if (!candidates.length) {
     return { memberId: row.id, name, reason: "no usable email on the record" };
@@ -139,8 +169,10 @@ function main(): void {
   const args = process.argv.slice(2);
   const write = args.includes("--write");
   const passwordAt = args.indexOf("--password");
-  const password = passwordAt >= 0 ? args[passwordAt + 1] : DEFAULT_PASSWORD;
-  if (!password) {
+  // Undefined unless asked for. A caller who passes --password gets the old behaviour -- one
+  // password shared by everyone seeded in this run -- and is told what that means below.
+  const sharedPassword = passwordAt >= 0 ? args[passwordAt + 1] : undefined;
+  if (passwordAt >= 0 && !sharedPassword) {
     throw new Error("--password needs a value");
   }
   // `passwordAt + 1` is only a value slot when the flag is actually present; with no --password
@@ -149,8 +181,7 @@ function main(): void {
   const positional = args.filter(
     (arg, index) => !arg.startsWith("--") && index !== passwordValueAt,
   );
-  const databasePath =
-    positional[0] ?? `${process.env.HOME ?? ""}/.openclaw/state/adminbot.sqlite`;
+  const databasePath = positional[0] ?? `${process.env.HOME ?? ""}/.openclaw/state/adminbot.sqlite`;
 
   const db = new DatabaseSync(databasePath);
   const rows = db
@@ -251,15 +282,31 @@ function main(): void {
     }
   }
 
+  // After the pruning above, so a plan dropped as a duplicate does not consume a password and the
+  // report lists exactly the passwords that will be written.
+  const passwords = new Map<string, string>();
+  for (const plan of plans) {
+    passwords.set(plan.memberId, sharedPassword ?? generatePassword());
+  }
+
   console.log(`database: ${databasePath}`);
   console.log(`members without a credential: ${rows.length}`);
   console.log(`would set a password for: ${plans.length}`);
   console.log(`skipped: ${skips.length}`);
   console.log("");
+  if (sharedPassword) {
+    console.log(
+      "!! --password gives every member below the SAME password: any one of them can then sign in\n" +
+        "!! as any other until it is changed. Omit the flag to generate one password per member.\n",
+    );
+  }
+  console.log("These are credentials. Hand each one to its owner and do not keep the list.\n");
   for (const plan of plans) {
     const via = plan.source === "email" ? "" : ` (from ${plan.source})`;
     const note = plan.duplicateNote ? `  !! ${plan.duplicateNote}` : "";
-    console.log(`  ${plan.email}${via}  <-  ${plan.name}${note}`);
+    console.log(
+      `  ${plan.email}${via}  <-  ${plan.name}  password: ${passwords.get(plan.memberId)}${note}`,
+    );
   }
   if (skips.length) {
     console.log("\nskipped:");
@@ -285,9 +332,14 @@ function main(): void {
   db.exec("BEGIN");
   try {
     for (const plan of plans) {
-      // Hashed per member rather than once and reused: scryptSync salts each call, so 150 rows
-      // holding one password still hold 150 distinct hashes.
-      insert.run(plan.memberId, plan.email, hashPassword(password), now, now);
+      // The member's own password, not a roster-wide one. `hashPassword` salts per call too, but
+      // that only stops one cracked hash revealing the rest -- it never stopped a seeded member
+      // signing in as another, because they were handed the same secret.
+      const plaintext = passwords.get(plan.memberId);
+      if (!plaintext) {
+        throw new Error(`no password generated for ${plan.memberId}`);
+      }
+      insert.run(plan.memberId, plan.email, hashPassword(plaintext), now, now);
     }
     db.exec("COMMIT");
   } catch (error) {
@@ -298,4 +350,8 @@ function main(): void {
   db.close();
 }
 
-main();
+// Guarded so the password generator can be imported and asserted on without the import opening a
+// database -- the same guard adminbot-email-automation.ts uses for the same reason.
+if (isMainModule(import.meta.url)) {
+  main();
+}

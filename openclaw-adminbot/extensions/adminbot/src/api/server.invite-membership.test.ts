@@ -3,6 +3,7 @@ import { rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { withCompleteProfile } from "../contracts/profile-completion.test-helpers.js";
 import type { AdminBotCalendarEvent } from "../workflows/calendar/events.js";
 import { createAdminBotMockService } from "./server.js";
 
@@ -42,7 +43,11 @@ async function startService(
     sensitiveInfoPath,
     calendarInviteRunner: async () => {},
     accountApprovedEmailRunner: async () => {},
-    dcsFormRunner: async () => {},
+    dcsRosterRecorder: async () => ({
+      username: "stub@cs.toronto.edu",
+      password: "stub",
+      candidates: ["stub@cs.toronto.edu"],
+    }),
     calendarEventsReader: reader,
   });
   await new Promise<void>((resolve, reject) => {
@@ -59,7 +64,13 @@ async function startService(
   running.push({ mock, cleanupPaths: [sensitiveInfoPath] });
   const baseUrl = `http://127.0.0.1:${address.port}`;
   for (const row of [
-    { id: "full", privilege_level: "member", status: "active", email: "full@cs.toronto.edu" },
+    {
+      id: "full",
+      member_type: "full",
+      privilege_level: "member",
+      status: "active",
+      email: "full@cs.toronto.edu",
+    },
     { id: "trial", privilege_level: "trial", status: "active", email: "trial@cs.toronto.edu" },
     {
       id: "major",
@@ -69,7 +80,9 @@ async function startService(
       email: "major@other.test",
     },
   ]) {
-    const created = mock.service.upsertLabMember({ name: `Name ${row.id}`, ...row } as never);
+    const created = mock.service.upsertLabMember(
+      withCompleteProfile({ name: `Name ${row.id}`, ...row } as never),
+    );
     if (!created.ok) {
       throw new Error(created.error.message);
     }
@@ -112,13 +125,71 @@ describe("POST /meetings/invite-membership/run", () => {
     expect(body.proposal_id).toBeTruthy();
   });
 
-  it("drops the major coauthor when the surface is the lab calendar", async () => {
+  // Once the meeting is edited "this and following", the configured id names a series that has
+  // ended. The removal has to land on the series that still have Mondays ahead.
+  it("targets every live series a split meeting lives on", async () => {
+    const baseUrl = await startService(async () => [
+      {
+        ...occurrence(["full@cs.toronto.edu", "trial@cs.toronto.edu"]),
+        id: `${SERIES}_20260928T133000Z`,
+        recurring_event_id: `${SERIES}_R20260928T133000`,
+      },
+      {
+        ...occurrence(["full@cs.toronto.edu", "trial@cs.toronto.edu"]),
+        id: `${SERIES}_20261005T133000Z`,
+        recurring_event_id: `${SERIES}_R20261005T133000`,
+      },
+      {
+        ...occurrence(["full@cs.toronto.edu", "trial@cs.toronto.edu"]),
+        id: `${SERIES}_20261012T133000Z`,
+        recurring_event_id: `${SERIES}_R20261005T133000`,
+      },
+    ]);
+
+    const body = (await (await post(baseUrl)).json()) as { proposal_id: string };
+    const pending = await fetch(`${baseUrl}/proposals/pending`, {
+      headers: { Authorization: `Bearer ${SERVICE_TOKEN}` },
+    });
+    const { proposals } = (await pending.json()) as {
+      proposals: Array<{ id: string; proposed_payload: Record<string, unknown> }>;
+    };
+    const proposal = proposals.find((entry) => entry.id === body.proposal_id);
+    expect(proposal?.proposed_payload.event_ids).toEqual([
+      `${SERIES}_R20260928T133000`,
+      `${SERIES}_R20261005T133000`,
+    ]);
+    expect(proposal?.proposed_payload.event_id).not.toBe(SERIES);
+
+    // The queue's summary view drops the payload but keeps what the row draws and approval needs.
+    const summary = await fetch(`${baseUrl}/proposals/pending?view=summary`, {
+      headers: { Authorization: `Bearer ${SERVICE_TOKEN}` },
+    });
+    const row = (
+      (await summary.json()) as { proposals: Array<Record<string, unknown>> }
+    ).proposals.find((entry) => entry.id === body.proposal_id);
+    expect(row).not.toHaveProperty("proposed_payload");
+    expect(Object.keys(row ?? {}).sort()).toEqual([
+      "approval_requirement",
+      "approvals",
+      "created_at",
+      "id",
+      "payload_hash",
+      "risk_tier",
+      "status",
+      "summary",
+      "type",
+      "updated_at",
+    ]);
+  });
+
+  // The access design seats major coauthors on the lab calendar as well as the Monday meeting.
+  it("keeps the major coauthor when the surface is the lab calendar", async () => {
     const baseUrl = await startService(async () => [
       occurrence(["full@cs.toronto.edu", "major@other.test"]),
     ]);
     const response = await post(baseUrl, { surface: "lab_calendar" });
     const body = (await response.json()) as { remove: Array<{ member_id: string }> };
-    expect(body.remove.map((entry) => entry.member_id)).toEqual(["major"]);
+    expect(body.remove).toEqual([]);
   });
 
   it("reports a calendar it cannot read rather than planning an empty invite", async () => {
@@ -127,7 +198,7 @@ describe("POST /meetings/invite-membership/run", () => {
     });
     const response = await post(baseUrl);
     // The whole plan is computed from this read; a failure must never become "no attendees".
-    expect(response.status).toBe(502);
+    expect(response.status).toBe(500);
     expect(JSON.stringify(await response.json())).toContain("token expired");
   });
 

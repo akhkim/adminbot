@@ -65,7 +65,10 @@ const SHEET_ROW_TO_ITEM: ReadonlyArray<[string, AdminBotCollaboratorAccessItemId
   ],
   ["Add them to #jinesis-active and #random-active both channels", "active_channels"],
   ["Slack-guest-chat with Zhijing & interviewer", "slack_guest_chat_zhijing"],
-  ["Add to #discussion-xxx for joining the discussions on this broad topic", "discussion_channel"],
+  [
+    "Add to #discussion-xxx for joining the discussions on any related broad topic",
+    "discussion_channel",
+  ],
   [
     "Add to #proj-xxx channel so we can chat with this person on this specific project",
     "project_channel",
@@ -74,12 +77,9 @@ const SHEET_ROW_TO_ITEM: ReadonlyArray<[string, AdminBotCollaboratorAccessItemId
     "Has access to our project-related google drive folder (Or create it if not exist)",
     "project_drive_folder",
   ],
-  // New in the (2)/(3) revision of the sheet, and deliberately unmapped. This row is the two
-  // standing invites -- the lab calendar and the Monday group meeting -- which are reconciled by
-  // workflows/members/surface-membership.ts against `privilege_level` and the `coauthor_major`
-  // subgroup, not by the collaborator access matrix. Adding a matrix row for it would give the
-  // same decision two owners; `belongsOnSurface` is the one that already sends the invites.
-  ["View access to lab calendar + invite to Monday Group Meeting", null],
+  // Subscription and Monday meeting access. The newer full/major policy overrides one cell
+  // in the captured sheet; see DOCUMENTED_SHEET_DIFFERENCES below.
+  ["View access to lab calendar + invite to Monday Group Meeting", "lab_calendar_group_meeting"],
   [
     "Add to slack channel #meeting-xxx for the weekly themed meeting, and also Wed themed meeting’s calendar invite. (Slack + calendar)\n\nWhoever that is on our calendar invite will be repeatedly reminded to use the Google Calendar app interface with alert, and ignore calendar related emails, due to all the complex time zones and spontaneous move of meetings.",
     "weekly_meeting",
@@ -104,35 +104,36 @@ const SHEET_ROW_TO_ITEM: ReadonlyArray<[string, AdminBotCollaboratorAccessItemId
     "auto share with Daniel the list of our “coauthor-major” and “full members” as a constantly updating spreadsheet with only each person’s name and UToronto email (or professional email address).\n\nIn this way, we suggest Daniel to look up the users in our spreadsheet whenever he needs to decide whether to extend or to remove our user.",
     "vector_roster_share",
   ],
-  ["city-based dinner or team building invite", "city_dinner_invite"],
+  ["city-based meal or team building invite", "city_dinner_invite"],
   [
     "Rec letter button on their profile (allowed only for those with a major-coauthor status or own-pace-advisee for over 3 months at any historical point)",
     "rec_letter_button",
   ],
+  [
+    "Access to our physical office locations (e.g., Vector Member onboarding and fob access; ETH OAT building access if the person has an ETH card; MPI guest contract)",
+    "physical_office_access",
+  ],
 ];
 
 /**
- * Cells where the code and the sheet disagree, and nobody has decided which is right yet.
- *
- * Empty, and worth keeping empty. It is not a suppression list: the test asserts this set is
- * *exactly* the current disagreement, so a cell that drifts fails immediately, and a drift that
- * gets resolved without its line being removed fails just as loudly. An entry here is a live
- * question for the lab, written down in the repo rather than living only in whoever last read the
- * spreadsheet.
- *
- * The three entries this started with were fixed by moving the code to the sheet: the
- * `active_channels` and `project_drive_folder` over-grants were removed, and the
- * `vector_roster_share` cell was transcribed. That last one leaves a question the matrix cannot
- * express -- see the comment on that item in collaborator-subgroups.ts, where the sheet's own row
- * text and its cell disagree with each other.
+ * Exact differences between the captured sheet and current policy. The test still fails on
+ * every other difference, and when the sheet catches up this entry must be removed.
  */
-const UNRESOLVED_DRIFT: ReadonlyArray<{
+const DOCUMENTED_SHEET_DIFFERENCES: ReadonlyArray<{
   item: AdminBotCollaboratorAccessItemId;
   subgroup: string;
   sheet: string;
   code: string;
   note: string;
-}> = [];
+}> = [
+  {
+    item: "lab_calendar_group_meeting",
+    subgroup: "own_pace_advisee",
+    sheet: "yes",
+    code: "no",
+    note: "The clarified policy limits calendar subscriptions and Monday meetings to full members and major coauthors; the captured sheet predates that decision (PR #453).",
+  },
+];
 
 /** The code matrix as a flat lookup, including rows that grant nothing. */
 function codeMatrix(): Map<string, Map<string, string>> {
@@ -150,7 +151,7 @@ function codeMatrix(): Map<string, Map<string, string>> {
 
 describe("collaborator access matrix vs the lab's spreadsheet", () => {
   it("reads the same subgroup vocabulary as the contract", () => {
-    // The sheet's ten columns and the contract's ten subgroups are the same ten, or every cell
+    // The sheet's columns and the contract's subgroups are the same set, or every cell
     // comparison below is comparing the wrong pairs.
     expect([...CONTACT_SHEET_SUBGROUPS].toSorted()).toEqual(
       [...adminBotExternalCollaboratorSubgroups].toSorted(),
@@ -211,7 +212,7 @@ describe("collaborator access matrix vs the lab's spreadsheet", () => {
       }
     }
     expect(drift.toSorted((a, b) => a.item.localeCompare(b.item))).toEqual(
-      UNRESOLVED_DRIFT.map(({ item, subgroup, sheet, code: codeCell }) => ({
+      DOCUMENTED_SHEET_DIFFERENCES.map(({ item, subgroup, sheet, code: codeCell }) => ({
         item,
         subgroup,
         sheet,

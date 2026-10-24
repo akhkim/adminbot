@@ -15,6 +15,7 @@ import {
   attendanceFromSpeakers,
   parseParticipantCsv,
 } from "./attendance.js";
+import { isGalleryRecording } from "./gallery-snapshots.js";
 import { parseVtt } from "./vtt.js";
 import { meetingRecordId, parseZoomRecordingNotice } from "./zoom-email.js";
 
@@ -65,15 +66,21 @@ export type DroppedFile = {
   id: string;
 };
 
-export type ArtifactKind = "transcript" | "participants";
+export type ArtifactKind = "transcript" | "participants" | "gallery_video";
 
-/** What a dropped file is, by extension. Anything else in the folder is left alone. */
+/**
+ * What a dropped file is, by name. Anything else in the folder is left alone -- including an
+ * active-speaker recording, which shows one person at a time and is no evidence of attendance.
+ */
 export function artifactKind(fileName: string): ArtifactKind | undefined {
   if (/\.vtt$/iu.test(fileName)) {
     return "transcript";
   }
   if (/\.csv$/iu.test(fileName)) {
     return "participants";
+  }
+  if (isGalleryRecording(fileName)) {
+    return "gallery_video";
   }
   return undefined;
 }

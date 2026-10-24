@@ -13,6 +13,7 @@ import {
   type AdminBotSocialConsentRecord,
   type AdminBotSocialDraftRecord,
 } from "../../contracts/paper-cycle.js";
+import { parsePaperFeedback } from "../../contracts/paper-feedback.js";
 import {
   adminBotPaperSlotBranchPriority,
   adminBotPaperSlotEscalateAfterNudges,
@@ -107,7 +108,7 @@ export function redactPaperSlots(
     return rows;
   }
   return rows.map((row) => {
-    if (!isConfidentialPaperSlot(row.slot)) {
+    if (!isConfidentialPaperSlot(row.slot) && !row.slot.startsWith("feedback_")) {
       return row;
     }
     const { value_text: _dropped, ...rest } = row;
@@ -173,6 +174,21 @@ export function applyPaperSlotWrite(params: {
         ? { ok: true, record: provided({ value_text: value }) }
         : { ok: true, record: clearedSlot(existing) };
     }
+    case "feedback": {
+      const value = (input.value_text ?? "").trim();
+      if (!value) {
+        return { ok: true, record: clearedSlot(existing) };
+      }
+      const feedback = parsePaperFeedback(value);
+      if (!feedback) {
+        return {
+          ok: false,
+          error:
+            "Feedback needs a reason, an HTTPS manuscript link and valid deadline times; feedback-by cannot follow submission cutoff.",
+        };
+      }
+      return { ok: true, record: provided({ value_text: JSON.stringify(feedback) }) };
+    }
     case "secret6": {
       const value = (input.value_text ?? "").trim();
       if (!value) {
@@ -206,6 +222,17 @@ export function applyPaperSlotWrite(params: {
     }
     case "link": {
       const value = (input.url ?? "").trim();
+      // Verification belongs to the URL, not to the field that happens to hold it.
+      const verification =
+        value === existing.url
+          ? {}
+          : {
+              verified_by: undefined,
+              verified_at: undefined,
+              verified_title: undefined,
+              previous_submission_id: undefined,
+              identity_review: undefined,
+            };
       if (!value) {
         return { ok: true, record: clearedSlot(existing) };
       }
@@ -215,6 +242,7 @@ export function applyPaperSlotWrite(params: {
           ok: true,
           record: {
             ...existing,
+            ...verification,
             status: "invalid",
             url: value,
             provided_by_member_id: memberId,
@@ -224,7 +252,7 @@ export function applyPaperSlotWrite(params: {
           },
         };
       }
-      return { ok: true, record: provided({ url: value, validated_at: nowIso }) };
+      return { ok: true, record: provided({ ...verification, url: value, validated_at: nowIso }) };
     }
   }
 }
@@ -269,9 +297,13 @@ export function isPaperDormant(paper: AdminBotPaperRecord, now: Date): boolean {
   return (now.getTime() - started) / MONTH_MS > DORMANT_MONTHS;
 }
 
-/** A rejected paper that has not been re-aimed has no frontier: the next move is a venue decision. */
+/** Rejected attempts and papers explicitly marked presented have no outstanding workflow. */
 export function isPaperClosed(paper: AdminBotPaperRecord): boolean {
-  return paper.venue_decision === "reject";
+  const completedAt = paper.artifacts?.completed_at;
+  return (
+    paper.venue_decision === "reject" ||
+    (typeof completedAt === "string" && completedAt.trim().length > 0)
+  );
 }
 
 /**

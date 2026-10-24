@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AdminBotLabMemberInput } from "../contracts/actions.js";
+import { withCompleteProfile } from "../contracts/profile-completion.test-helpers.js";
 import { createAdminBotMockService } from "./server.js";
 
 const SERVICE_TOKEN = "test-service-token";
@@ -41,7 +42,11 @@ async function startService() {
     sensitiveInfoPath,
     calendarInviteRunner: async () => {},
     accountApprovedEmailRunner: async () => {},
-    dcsFormRunner: async () => {},
+    dcsRosterRecorder: async () => ({
+      username: "stub@cs.toronto.edu",
+      password: "stub",
+      candidates: ["stub@cs.toronto.edu"],
+    }),
   });
   await new Promise<void>((resolve, reject) => {
     mock.server.once("error", reject);
@@ -67,7 +72,7 @@ function seedMember(
   mock: ReturnType<typeof createAdminBotMockService>,
   input: AdminBotLabMemberInput,
 ): void {
-  const result = mock.service.upsertLabMember(input);
+  const result = mock.service.upsertLabMember(withCompleteProfile(input));
   if (!result.ok) {
     throw new Error(result.error.message);
   }
@@ -93,7 +98,7 @@ async function approveClaim(
   if (!registration) {
     throw new Error(`no pending registration for ${memberId}`);
   }
-  const approved = mock.auth.approveRegistration(registration.id, "seed-admin");
+  const approved = await mock.auth.approveRegistration(registration.id, "seed-admin");
   if (!approved.ok) {
     throw new Error(approved.error.message);
   }
@@ -223,12 +228,30 @@ describe("AdminBot badge routes", () => {
     const assign = await fetch(`${baseUrl}/badges/assignments`, {
       method: "POST",
       headers: jsonHeaders({ Authorization: `Bearer ${adminToken}` }),
-      body: JSON.stringify({ member_id: "pat", badge_id: badge.id, evidence: "Shipped the guide." }),
+      body: JSON.stringify({
+        member_id: "pat",
+        badge_id: badge.id,
+        evidence: "Shipped the guide.",
+        count: 2,
+      }),
     });
     expect(assign.status).toBe(200);
     await expect(assign.json()).resolves.toMatchObject({
-      assignment: expect.objectContaining({ evidence: "Shipped the guide." }),
+      assignment: expect.objectContaining({ evidence: "Shipped the guide.", count: 2 }),
     });
+
+    for (const [token, count, status] of [
+      [memberToken, 2, 403],
+      [adminToken, "2", 400],
+      [adminToken, 0, 400],
+    ] as const) {
+      const invalid = await fetch(`${baseUrl}/badges/assignments`, {
+        method: "POST",
+        headers: jsonHeaders({ Authorization: `Bearer ${token}` }),
+        body: JSON.stringify({ member_id: "pat", badge_id: badge.id, count }),
+      });
+      expect(invalid.status).toBe(status);
+    }
 
     const noEvidence = await fetch(`${baseUrl}/badges/nominations`, {
       method: "POST",

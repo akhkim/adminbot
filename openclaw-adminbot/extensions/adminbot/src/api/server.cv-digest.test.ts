@@ -2,6 +2,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AdminBotCvEntry, AdminBotLabMemberInput } from "../contracts/actions.js";
+import { withCompleteProfile } from "../contracts/profile-completion.test-helpers.js";
 import type { AdminBotCvScanDeps } from "../cv-scan.js";
 import { createAdminBotMockService } from "./server.js";
 
@@ -83,7 +84,7 @@ function seedMember(
   mock: ReturnType<typeof createAdminBotMockService>,
   member: AdminBotLabMemberInput = MEMBER,
 ) {
-  const result = mock.service.upsertLabMember(member);
+  const result = mock.service.upsertLabMember(withCompleteProfile(member));
   expect(result.ok).toBe(true);
 }
 
@@ -159,7 +160,7 @@ describe("POST /cv/publish-digest", () => {
     expect(publish.mock.calls[1]?.[0] as unknown as string).toContain("NVIDIA");
   });
 
-  it("reports a failed write as 502 and does not claim the document changed", async () => {
+  it("reports a failed write as a 500 and does not claim the document changed", async () => {
     const publish = vi.fn(async () => {
       throw new Error("gog exited with code 1");
     });
@@ -173,7 +174,7 @@ describe("POST /cv/publish-digest", () => {
       method: "POST",
       headers: headers(),
     });
-    expect(response.status).toBe(502);
+    expect(response.status).toBe(500);
     const body = (await response.json()) as { error: { message: string } };
     expect(body.error.message).toContain("gog exited with code 1");
 

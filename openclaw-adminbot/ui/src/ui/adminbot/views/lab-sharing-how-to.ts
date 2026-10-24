@@ -1,5 +1,6 @@
 import { html, LitElement, nothing, type PropertyValues } from "lit";
 import { property, state } from "lit/decorators.js";
+import { memberAuthHeaders } from "../api/device-clock.ts";
 
 export class LabSharingHowTo extends LitElement {
   @property() baseUrl = "";
@@ -45,7 +46,7 @@ export class LabSharingHowTo extends LitElement {
       const response = await fetch(`${this.baseUrl.replace(/\/$/u, "")}/lab-sharing/ask`, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${this.sessionToken}`,
+          ...memberAuthHeaders(this.sessionToken),
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ question: this.question.trim() }),
@@ -77,23 +78,26 @@ export class LabSharingHowTo extends LitElement {
     if (!this.sessionToken) {
       return nothing;
     }
-    return html`<section class="lab-sharing-directory" aria-label="Lab how-to">
-      <h2 class="lab-sharing-seek__title">Lab how-to</h2>
-      <p>
+    return html`<section
+      class="card adminbot-card adminbot-card--wide lab-sharing-howto"
+      aria-label="Lab how-to"
+    >
+      <h2 class="card-title">Lab how-to</h2>
+      <p class="card-sub">
         Ask where to find something or how a lab process works. Answers use the member guidebook.
         Check the cited sections before acting.
       </p>
       <form
-        class="lab-sharing-directory__form"
+        class="adminbot-form lab-sharing-howto__form"
         @submit=${(event: Event) => {
           event.preventDefault();
           void this.ask();
         }}
       >
-        <label class="lab-sharing-ask__field"
+        <label class="adminbot-form__field"
           ><span>Your question</span
           ><textarea
-            class="lab-sharing-ask__input"
+            class="lab-sharing-howto__input"
             required
             maxlength="1000"
             .value=${this.question}
@@ -103,20 +107,32 @@ export class LabSharingHowTo extends LitElement {
             }}
           ></textarea>
         </label>
-        <button class="btn primary" ?disabled=${this.busy} type="submit">
-          ${this.busy ? "Looking up…" : "Ask guidebook"}
-        </button>
+        <div class="lab-sharing-howto__actions">
+          <button class="btn primary" ?disabled=${this.busy} type="submit">
+            ${this.busy ? "Looking up…" : "Ask guidebook"}
+          </button>
+        </div>
       </form>
-      ${this.busy ? html`<p role="status">Looking up the member guidebook…</p>` : nothing}
-      ${this.error ? html`<p role="alert">${this.error}</p>` : nothing}
+      ${this.busy
+        ? html`<p class="muted lab-sharing-howto__status" role="status">
+            Looking up the member guidebook…
+          </p>`
+        : nothing}
+      ${this.error
+        ? html`<div class="callout danger lab-sharing-howto__error" role="alert">
+            ${this.error}
+          </div>`
+        : nothing}
       ${this.answer
-        ? html`<article class="lab-sharing-request">
-            <h3 class="lab-sharing-request__project">Guidebook answer</h3>
-            <p class="lab-sharing-request__note">${this.answer}</p>
-            <h4 class="lab-sharing-ask__label">Source sections</h4>
-            <ul>
-              ${this.sources.map((source) => html`<li>${source}</li>`)}
-            </ul>
+        ? html`<article class="lab-sharing-howto__answer">
+            <h3 class="lab-sharing-howto__answer-title">Guidebook answer</h3>
+            <p class="lab-sharing-howto__answer-body">${this.answer}</p>
+            ${this.sources.length
+              ? html`<h4 class="lab-sharing-howto__sources-title">Source sections</h4>
+                  <ul class="lab-sharing-howto__sources">
+                    ${this.sources.map((source) => html`<li>${source}</li>`)}
+                  </ul>`
+              : nothing}
           </article>`
         : nothing}
     </section>`;

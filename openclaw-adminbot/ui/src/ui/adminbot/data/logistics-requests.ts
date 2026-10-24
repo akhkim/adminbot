@@ -9,6 +9,7 @@
 //
 // Nothing here talks to the network. The calls live in controllers/logistics.ts, for the same
 // reason every other tab's do.
+import { deadlineInstant } from "../../../../../extensions/adminbot/logistics-api.js";
 import type {
   LogisticsAttachment,
   LogisticsFact,
@@ -17,7 +18,7 @@ import type {
   LogisticsRequestInput,
   LogisticsRequestKind,
   LogisticsSchool,
-} from "../auth/session.ts";
+} from "../api/logistics.ts";
 import type { LetterFact, MeetingRequestRow, RecommendationSchool } from "./logistics-draft.ts";
 import {
   createFactRow,
@@ -34,7 +35,7 @@ export type {
   LogisticsRequestInput,
   LogisticsRequestKind,
   LogisticsRequestStatus,
-} from "../auth/session.ts";
+} from "../api/logistics.ts";
 
 /**
  * The per-file ceiling, mirrored from the service.
@@ -167,7 +168,7 @@ export function schoolToWire(row: RecommendationSchool): LogisticsSchool {
       application_deadline_time: row.applicationDeadlineTime,
       letter_deadline: row.letterDeadline,
       letter_deadline_time: row.letterDeadlineTime,
-      deadline_timezone: row.deadlineTimezone,
+      deadline_timezone: row.deadlineTimezone.trim() || "AoE",
       application_status: row.applicationStatus,
       letter_status: row.letterStatus,
       program: row.program,
@@ -272,7 +273,14 @@ export function describeSubmitBlock(
   kind: LogisticsRequestKind,
   form: SignatureFormState | LettersFormState | MeetingFormState,
 ): {
-  reason: "empty" | "no-name" | "no-purpose" | "no-doc-prep" | "file-too-big" | "request-too-big";
+  reason:
+    | "empty"
+    | "no-name"
+    | "letter-deadline"
+    | "no-purpose"
+    | "no-doc-prep"
+    | "file-too-big"
+    | "request-too-big";
   file?: string;
 } | null {
   if (kind === "document_signature") {
@@ -296,7 +304,14 @@ export function describeSubmitBlock(
     if (!schools.length) {
       return { reason: "empty" };
     }
-    return schools.some((row) => !row.school.trim()) ? { reason: "no-name" } : null;
+    if (schools.some((row) => !row.school.trim())) {
+      return { reason: "no-name" };
+    }
+    return schools.some(
+      (row) => !deadlineInstant(row.letterDeadline, row.letterDeadlineTime, row.deadlineTimezone),
+    )
+      ? { reason: "letter-deadline" }
+      : null;
   }
   const meetings = filledMeetings((form as MeetingFormState).rows);
   if (!meetings.length) {
@@ -338,7 +353,7 @@ export function schoolFromWire(school: LogisticsSchool): RecommendationSchool {
     applicationDeadlineTime: school.application_deadline_time ?? "",
     letterDeadline: school.letter_deadline ?? "",
     letterDeadlineTime: school.letter_deadline_time ?? "",
-    deadlineTimezone: school.deadline_timezone ?? "",
+    deadlineTimezone: school.deadline_timezone?.trim() || "AoE",
     applicationStatus: school.application_status ?? "",
     letterStatus: school.letter_status ?? "",
     program: school.program ?? "",

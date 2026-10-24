@@ -178,7 +178,47 @@ describe("chat header controls (browser)", () => {
     expect(container.querySelector('[data-chat-provider-usage="true"]')).toBeNull();
   });
 
-  it("cycles the appearance from one button in the chrome", async () => {
+  it("offers light mode from the dark theme, with a sun", async () => {
+    const setThemeMode = vi.fn();
+    const container = document.createElement("div");
+    render(
+      renderTopbarThemeModeToggle(
+        createState({ themeMode: "dark", theme: "claw", setThemeMode } as never),
+      ),
+      container,
+    );
+    await Promise.resolve();
+
+    const button = container.querySelector<HTMLButtonElement>('[data-testid="topbar-theme-mode"]');
+    expect(button?.dataset.mode).toBe("dark");
+    // The glyph is the theme a click switches to, and the label says the same thing.
+    expect(button?.getAttribute("aria-label")).toBe("Switch to light mode");
+    expect(button?.getAttribute("title")).toBe("Switch to light mode");
+    expect(button?.innerHTML).toContain('<circle cx="12" cy="12" r="4"');
+    button?.click();
+    expect(setThemeMode).toHaveBeenCalledWith("light", expect.anything());
+  });
+
+  it("offers dark mode from the light theme, with a moon", async () => {
+    const setThemeMode = vi.fn();
+    const container = document.createElement("div");
+    render(
+      renderTopbarThemeModeToggle(
+        createState({ themeMode: "light", theme: "claw", setThemeMode } as never),
+      ),
+      container,
+    );
+    await Promise.resolve();
+
+    const button = container.querySelector<HTMLButtonElement>('[data-testid="topbar-theme-mode"]');
+    expect(button?.dataset.mode).toBe("light");
+    expect(button?.getAttribute("aria-label")).toBe("Switch to dark mode");
+    expect(button?.innerHTML).not.toContain('<circle cx="12" cy="12" r="4"');
+    button?.click();
+    expect(setThemeMode).toHaveBeenCalledWith("dark", expect.anything());
+  });
+
+  it("treats a leftover system mode as dark", async () => {
     const setThemeMode = vi.fn();
     const container = document.createElement("div");
     render(
@@ -190,10 +230,7 @@ describe("chat header controls (browser)", () => {
     await Promise.resolve();
 
     const button = container.querySelector<HTMLButtonElement>('[data-testid="topbar-theme-mode"]');
-    // It shows the mode that is set, not the palette being painted: a viewer on "System" whose
-    // machine is dark needs it to say System, or pressing it appears to do nothing.
-    expect(button?.dataset.mode).toBe("system");
-    expect(button?.getAttribute("aria-label")).toContain("System");
+    expect(button?.dataset.mode).toBe("dark");
     button?.click();
     expect(setThemeMode).toHaveBeenCalledWith("light", expect.anything());
   });

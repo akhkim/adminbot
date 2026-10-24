@@ -11,12 +11,16 @@ class AdminbotDeadlineParentConferenceSelect extends LitElement {
     value: { type: String },
     open: { state: true },
     active: { state: true },
+    fieldName: { type: String },
+    fieldLabel: { type: String },
   };
 
   declare options: readonly string[];
   declare value: string;
   declare open: boolean;
   declare active: number;
+  declare fieldName: string;
+  declare fieldLabel: string;
 
   constructor() {
     super();
@@ -24,6 +28,8 @@ class AdminbotDeadlineParentConferenceSelect extends LitElement {
     this.value = "";
     this.open = false;
     this.active = 0;
+    this.fieldName = "parentConference";
+    this.fieldLabel = "Parent conference";
   }
 
   protected override createRenderRoot(): HTMLElement {
@@ -46,6 +52,7 @@ class AdminbotDeadlineParentConferenceSelect extends LitElement {
   private commit(option: string): void {
     this.value = option;
     this.open = false;
+    this.dispatchEvent(new CustomEvent("selection-change", { detail: option, bubbles: true }));
   }
 
   private onKeyDown(event: KeyboardEvent): void {
@@ -73,18 +80,18 @@ class AdminbotDeadlineParentConferenceSelect extends LitElement {
 
   protected override render() {
     const options = this.filtered;
-    const listId = "deadline-parent-conference-list";
+    const listId = `deadline-${this.fieldName}-list`;
     return html`
       <div class="country-select deadline-parent-conference-select">
         <input
-          name="parentConference"
+          name=${this.fieldName}
           type="text"
           autocomplete="off"
           role="combobox"
           aria-expanded=${this.open ? "true" : "false"}
           aria-controls=${listId}
           aria-autocomplete="list"
-          aria-label="Parent conference"
+          aria-label=${this.fieldLabel}
           placeholder="Choose or enter a conference"
           .value=${this.value}
           @focus=${() => {

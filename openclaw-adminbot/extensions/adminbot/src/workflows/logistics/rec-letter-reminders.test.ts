@@ -13,6 +13,7 @@ const NOW = new Date("2026-11-28T09:00:00Z");
 function letters(
   overrides: Partial<AdminBotLogisticsRequest> & { id: string },
 ): AdminBotLogisticsRequest {
+  const at = overrides.deadline_at ?? "2026-12-01T23:59:00Z";
   return {
     kind: "recommendation_letters",
     member_id: "ada",
@@ -20,7 +21,14 @@ function letters(
     status: "submitted",
     submitted_at: "2026-11-01T09:00:00Z",
     updated_at: "2026-11-01T09:00:00Z",
-    schools: [{ school: "MIT", letter_deadline: "2026-12-01" }],
+    schools: [
+      {
+        school: "MIT",
+        letter_deadline: at.slice(0, 10),
+        letter_deadline_time: at.slice(11, 16),
+        deadline_timezone: "UTC",
+      },
+    ],
     deadline_at: "2026-12-01T23:59:00Z",
     ...overrides,
   };
@@ -38,6 +46,23 @@ describe("recLetterRemindersDue", () => {
 
     expect(due.map((entry) => entry.request_id)).toEqual(["soon"]);
     expect(due[0]?.days_until).toBe(3);
+  });
+
+  it("opens Thursday for a Monday deadline and respects the deadline timezone", () => {
+    const request = letters({
+      id: "monday",
+      schools: [
+        {
+          school: "Example",
+          letter_deadline: "2026-11-30",
+          letter_deadline_time: "12:00",
+          deadline_timezone: "America/Toronto",
+        },
+      ],
+    });
+    expect(recLetterRemindersDue([request], new Date("2026-11-26T04:59:00Z"))).toEqual([]);
+    expect(recLetterRemindersDue([request], new Date("2026-11-26T05:00:00Z"))).toHaveLength(1);
+    expect(recLetterRemindersDue([request], new Date("2026-11-30T17:00:01Z"))).toEqual([]);
   });
 
   it("still fires on a letter due tomorrow, so a pass that did not run yesterday is not a miss", () => {
@@ -97,12 +122,12 @@ describe("recLetterReminderLedgerSubject", () => {
   it("carries the deadline, so a date that moves re-arms the reminder", () => {
     const [first] = recLetterRemindersDue([letters({ id: "req_1" })], NOW);
     const [moved] = recLetterRemindersDue(
-      [letters({ id: "req_1", deadline_at: "2026-11-30T23:59:00Z" })],
+      [letters({ id: "req_1", deadline_at: "2026-11-30T23:59:00.000Z" })],
       NOW,
     );
 
     expect(first && recLetterReminderLedgerSubject(first)).toBe(
-      "rec_letter|req_1|2026-12-01T23:59:00Z",
+      "rec_letter|req_1|2026-12-01T23:59:00.000Z",
     );
     expect(moved && recLetterReminderLedgerSubject(moved)).not.toBe(
       first && recLetterReminderLedgerSubject(first),
@@ -121,7 +146,9 @@ describe("the mail", () => {
     expect(recLetterReminderSubject(one)).toBe(
       "Recommendation letter for Ada Lovelace is due in 3 days",
     );
-    expect(recLetterReminderSubject(two)).toBe("2 recommendation letters due within 3 days");
+    expect(recLetterReminderSubject(two)).toBe(
+      "2 recommendation letters due within 2 business days",
+    );
   });
 
   it("lists each letter with its date, its schools and where to read the request", () => {
@@ -129,14 +156,17 @@ describe("the mail", () => {
       [
         letters({
           id: "one",
-          schools: [{ school: "MIT" }, { school: "Stanford" }],
+          schools: [
+            { school: "MIT", letter_deadline: "2026-12-01", deadline_timezone: "UTC" },
+            { school: "Stanford", letter_deadline: "2026-12-01", deadline_timezone: "UTC" },
+          ],
         }),
       ],
       NOW,
     );
 
     const body = recLetterReminderBody(due, "https://portal.example");
-    expect(body).toContain("• Ada Lovelace — due 2026-12-01 (in 3 days) — MIT, Stanford");
+    expect(body).toContain("• Ada Lovelace — due 2026-12-01 23:59 UTC (in 3 days) — MIT, Stanford");
     expect(body).toContain("https://portal.example");
   });
 
@@ -146,7 +176,7 @@ describe("the mail", () => {
         letters({
           id: "many",
           schools: ["MIT", "Stanford", "CMU", "Berkeley", "ETH", "Oxford", "UofT"].map(
-            (school) => ({ school }),
+            (school) => ({ school, letter_deadline: "2026-12-01", deadline_timezone: "UTC" }),
           ),
         }),
       ],

@@ -84,6 +84,7 @@ export async function handlePublicDeadlineProposal(
     return;
   }
   const input: DeadlineProposalInput = {
+    ...(body.stage !== undefined ? { stage: body.stage as DeadlineProposalInput["stage"] } : {}),
     name: asString(body.name),
     parentConference: asString(body.parentConference),
     parentYear: asString(body.parentYear),

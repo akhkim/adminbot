@@ -2,7 +2,7 @@
 
 import { render } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { MeetingRecord } from "../auth/session.ts";
+import type { MeetingRecord, MeetingSeries } from "../api/meetings.ts";
 import { renderAdminBotMeetings, type AdminBotMeetingsProps } from "./meetings.ts";
 
 afterEach(() => {
@@ -25,12 +25,31 @@ const MEETING: MeetingRecord = {
   source: "zoom_email",
 };
 
-function renderView(overrides: Partial<AdminBotMeetingsProps> = {}): HTMLElement {
+const WEEKLY: MeetingSeries = {
+  key: "weekly lab meeting",
+  topic: "Weekly Lab Meeting",
+  count: 1,
+  latest_started_at: MEETING.started_at,
+};
+
+/**
+ * Renders the tab. `meetings`, when given, is shorthand for one series holding exactly those
+ * recordings, already read -- what most per-recording tests need.
+ */
+function renderView(
+  overrides: Partial<AdminBotMeetingsProps> & { meetings?: MeetingRecord[] } = {},
+): HTMLElement {
+  const { meetings = [MEETING], ...props } = overrides;
   const container = document.createElement("div");
   document.body.append(container);
   render(
     renderAdminBotMeetings({
-      meetings: [MEETING],
+      series: meetings.length ? [{ ...WEEKLY, count: meetings.length }] : [],
+      seriesPages: meetings.length
+        ? { [WEEKLY.key]: { meetings, next_cursor: null, loading: false, error: null } }
+        : {},
+      onOpenSeries: vi.fn(),
+      onShowOlder: vi.fn(),
       loading: false,
       saving: false,
       error: null,
@@ -39,7 +58,7 @@ function renderView(overrides: Partial<AdminBotMeetingsProps> = {}): HTMLElement
       members: [],
       onToggleAttendance: vi.fn(),
       onFileMeeting: vi.fn(),
-      ...overrides,
+      ...props,
     }),
     container,
   );
@@ -119,11 +138,43 @@ describe("renderAdminBotMeetings", () => {
     expect(view.textContent).toContain("spoke on the transcript");
   });
 
+  it("says which names came off the gallery recording, and which model read them", () => {
+    const view = renderView({
+      viewerIsAdmin: true,
+      members: [{ id: "m-bo", name: "Bo Quiet" }],
+      meetings: [
+        {
+          ...MEETING,
+          attendees: [
+            {
+              member_id: "m-bo",
+              display_name: "Bo Quiet",
+              source: "video_snapshot",
+              present: true,
+            },
+          ],
+          snapshots: {
+            processed_at: "2026-10-19T16:20:00.000Z",
+            checkpoints_seconds: [1800, 3600, 5400],
+            gallery_frames: 2,
+            model: "Qwen/Qwen3.5-27B",
+          },
+        },
+      ],
+    });
+    expect(view.querySelector<HTMLInputElement>("input[type=checkbox]")?.checked).toBe(true);
+    expect(view.textContent).toContain("seen on the gallery recording");
+    expect(view.textContent).toContain(
+      "Attendance read from the gallery recording by Qwen/Qwen3.5-27B: 2 of 3 sampled frames showed participant tiles.",
+    );
+  });
+
   it("sends a correction for the member whose box was clicked", () => {
     const onToggleAttendance = vi.fn();
     const view = renderView({
       viewerIsAdmin: true,
       members: [{ id: "m-bo", name: "Bo Quiet" }],
+      rosters: { "zoom-812-2026-08-12": { attendees: [] } },
       onToggleAttendance,
     });
     view.querySelector<HTMLInputElement>("input[type=checkbox]")?.click();
@@ -135,11 +186,166 @@ describe("renderAdminBotMeetings", () => {
     });
   });
 
+  // An admin's rows arrive without a roster. Drawing every member unticked until it lands would
+  // read as "nobody came", and a tick on that would save a roster built from nothing.
+  it("draws the admin editor from the roster read for that meeting, and nothing before it", () => {
+    const members = [
+      { id: "m-ada", name: "Ada Attendee" },
+      { id: "m-bo", name: "Bo Quiet" },
+    ];
+    const before = renderView({ viewerIsAdmin: true, members, rosters: {} });
+    expect(before.querySelectorAll("input[type=checkbox]")).toHaveLength(0);
+    document.body.innerHTML = "";
+    const after = renderView({
+      viewerIsAdmin: true,
+      members,
+      rosters: {
+        "zoom-812-2026-08-12": {
+          attendees: [{ member_id: "m-ada", display_name: "Ada", source: "manual", present: true }],
+        },
+      },
+    });
+    const ticks = after.querySelectorAll<HTMLInputElement>("input[type=checkbox]");
+    expect([...ticks].map((tick) => tick.checked)).toEqual([true, false]);
+  });
+
+  it("asks for an admin's roster on hover, focus and open", () => {
+    const onRosterIntent = vi.fn();
+    const view = renderView({ viewerIsAdmin: true, rosters: {}, onRosterIntent });
+    const fold = view.querySelector<HTMLDetailsElement>("details.meetings__attendance");
+    fold?.dispatchEvent(new Event("pointerenter"));
+    fold?.querySelector("summary")?.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    if (fold) {
+      fold.open = true;
+    }
+    fold?.dispatchEvent(new Event("toggle"));
+    expect(onRosterIntent.mock.calls).toEqual([
+      ["zoom-812-2026-08-12", false],
+      ["zoom-812-2026-08-12", false],
+      ["zoom-812-2026-08-12", true],
+    ]);
+  });
+
+  it("asks for nothing on a member's fold", () => {
+    const onRosterIntent = vi.fn();
+    const view = renderView({ onRosterIntent });
+    const fold = view.querySelector<HTMLDetailsElement>("details.meetings__attendance");
+    fold?.dispatchEvent(new Event("pointerenter"));
+    if (fold) {
+      fold.open = true;
+    }
+    fold?.dispatchEvent(new Event("toggle"));
+    expect(onRosterIntent).not.toHaveBeenCalled();
+  });
+
   it("distinguishes an empty lab from one that is still loading", () => {
     expect(renderView({ meetings: [], loading: true }).textContent).toContain("Loading meetings");
     expect(renderView({ meetings: [], loading: false }).textContent).toContain(
       "No meeting recordings yet",
     );
+  });
+
+  it("groups recordings into one dropdown per recurring meeting, the newest open", () => {
+    const reading: MeetingSeries = {
+      key: "reading group",
+      topic: "Reading Group",
+      count: 1,
+      latest_started_at: "2026-08-05T15:00:00.000Z",
+    };
+    const older = { ...MEETING, id: "weekly-older", started_at: "2026-08-05T14:00:00.000Z" };
+    const view = renderView({
+      series: [{ ...WEEKLY, count: 2 }, reading],
+      seriesPages: {
+        [WEEKLY.key]: {
+          meetings: [MEETING, older],
+          next_cursor: null,
+          loading: false,
+          error: null,
+        },
+      },
+    });
+    const dropdowns = view.querySelectorAll<HTMLDetailsElement>("[data-testid='meetings-series']");
+    expect(dropdowns).toHaveLength(2);
+    // The newest series opens on arrival; every other one waits for its reader.
+    expect([...dropdowns].map((dropdown) => dropdown.open)).toEqual([true, false]);
+    expect(dropdowns[0]?.querySelector("summary")?.textContent).toContain("Weekly Lab Meeting");
+    expect(dropdowns[0]?.querySelector("summary")?.textContent).toContain("2 recordings");
+    expect(dropdowns[1]?.querySelector("summary")?.textContent).toContain("1 recording");
+    // Every recording of the series, newest first, with only the newest one unfolded.
+    const recordings = dropdowns[0]?.querySelectorAll("[data-testid='meetings-recording']");
+    expect(recordings).toHaveLength(2);
+    const folds = [...(recordings ?? [])].map(
+      (recording) =>
+        recording.querySelector<HTMLDetailsElement>(".meetings__recording-details")?.open,
+    );
+    expect(folds).toEqual([true, false]);
+    // A closed, unread series says it is loading rather than claiming to be empty.
+    expect(dropdowns[1]?.textContent).toContain("Loading recordings");
+  });
+
+  it("reads a series when its dropdown is opened", () => {
+    const onOpenSeries = vi.fn();
+    const view = renderView({
+      series: [WEEKLY, { ...WEEKLY, key: "reading group", topic: "Reading Group" }],
+      seriesPages: {},
+      onOpenSeries,
+    });
+    const closed = view.querySelectorAll<HTMLDetailsElement>("[data-testid='meetings-series']")[1];
+    if (closed) {
+      closed.open = true;
+    }
+    closed?.dispatchEvent(new Event("toggle"));
+    expect(onOpenSeries).toHaveBeenLastCalledWith("reading group");
+  });
+
+  it("offers a series' older recordings and disables the button while they load", () => {
+    const onShowOlder = vi.fn();
+    const page = {
+      meetings: [MEETING],
+      next_cursor: { started_at: MEETING.started_at, id: MEETING.id },
+      loading: false,
+      error: null,
+    };
+    const view = renderView({
+      series: [{ ...WEEKLY, count: 14 }],
+      seriesPages: { [WEEKLY.key]: page },
+      onShowOlder,
+    });
+    const button = view.querySelector<HTMLButtonElement>("[data-testid='meetings-show-older']");
+    expect(button?.textContent).toContain("13 more");
+    button?.click();
+    expect(onShowOlder).toHaveBeenCalledWith(WEEKLY.key);
+    const loading = renderView({
+      series: [{ ...WEEKLY, count: 14 }],
+      seriesPages: { [WEEKLY.key]: { ...page, loading: true } },
+    });
+    expect(
+      loading.querySelector<HTMLButtonElement>("[data-testid='meetings-show-older']")?.disabled,
+    ).toBe(true);
+    const complete = renderView({ meetings: [MEETING] });
+    expect(complete.querySelector("[data-testid='meetings-show-older']")).toBeNull();
+  });
+
+  it("shows a series that failed to load inside its own dropdown", () => {
+    const view = renderView({
+      series: [WEEKLY],
+      seriesPages: {
+        [WEEKLY.key]: {
+          meetings: [],
+          next_cursor: null,
+          loading: false,
+          error: "Synthetic outage",
+        },
+      },
+    });
+    const dropdown = view.querySelector("[data-testid='meetings-series']");
+    expect(dropdown?.querySelector(".notice--error")?.textContent).toContain("Synthetic outage");
+  });
+
+  it("shows the request error instead of claiming that no recordings exist", () => {
+    const view = renderView({ meetings: [], error: "Service unavailable" });
+    expect(view.textContent).toContain("Service unavailable");
+    expect(view.textContent).not.toContain("No meeting recordings yet");
   });
 
   it("explains a meeting with no transcript rather than showing an empty summary", () => {

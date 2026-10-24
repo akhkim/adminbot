@@ -111,16 +111,18 @@ describe("collaboratorSubgroupAccess", () => {
     }
   });
 
-  it("invites everyone on the social follow welcome to city dinners, and one subgroup more", () => {
+  it("invites every collaborator on the social follow welcome to city dinners", () => {
     // These two rows tracked each other while the matrix had eight columns. They no longer do:
     // coauthor_discussant_designer is on the dinner row but not the LinkedIn/Twitter welcome row,
-    // so the relation is containment rather than equality.
+    // and the two benefit columns are welcomed but not invited to dinners -- they are not
+    // collaborators on the work.
     for (const subgroup of adminBotExternalCollaboratorSubgroups) {
       const items = grantedItems(subgroup);
-      if (items.includes("welcome_linkedin_twitter")) {
+      if (items.includes("welcome_linkedin_twitter") && !subgroup.startsWith("benefit_")) {
         expect(items).toContain("city_dinner_invite");
       }
     }
+    expect(grantedItems("benefit_partner")).not.toContain("city_dinner_invite");
     expect(grantedItems("coauthor_discussant_designer")).toContain("city_dinner_invite");
     expect(grantedItems("coauthor_discussant_designer")).not.toContain("welcome_linkedin_twitter");
   });

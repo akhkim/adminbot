@@ -44,7 +44,7 @@ const deadlineDataPath = path.join(
   "adminbot",
   "content",
   "deadlines",
-  "venues.json",
+  "deadlines.json",
 );
 
 const BASE_TAG = '    <base href="/" />';

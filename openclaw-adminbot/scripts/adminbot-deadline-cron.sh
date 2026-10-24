@@ -22,7 +22,7 @@ Tasks:
   calendar-conferences   Publish conference deadlines to the lab calendar (writes)
   calendar-all           Publish every tracked deadline, workshops included (writes)
   calendar-preview       Show what a full sync would change; writes nothing
-  refresh-venues         Re-collect venues.json from OpenReview and regenerate the datasets
+  refresh-venues         Re-collect deadlines.json from OpenReview and regenerate the datasets
   refresh-matches        Map lab papers onto upcoming deadlines (writes matches.json)
   reminders              DM each author the deadlines their confirmed matches are due at
   reminders-preview      Show which deadline reminders are due today; sends nothing
@@ -41,7 +41,7 @@ task="${1:-}"
 
 adminbot_load_cron_env "deadline $task" || exit 1
 
-export ADMINBOT_DEADLINE_READ_URL="${ADMINBOT_DEADLINE_READ_URL:-http://127.0.0.1:8765/deadlines/venues.json}"
+export ADMINBOT_DEADLINE_READ_URL="${ADMINBOT_DEADLINE_READ_URL:-http://127.0.0.1:8765/deadlines}"
 
 case "$task" in
   calendar-conferences)

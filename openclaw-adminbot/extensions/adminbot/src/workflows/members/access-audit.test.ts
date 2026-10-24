@@ -42,7 +42,7 @@ function evidence(overrides: Partial<AccessAuditEvidence> = {}): AccessAuditEvid
     slack_account_known: true,
     portal_credential: true,
     calendar_invite: "succeeded",
-    dcs_form: "succeeded",
+    dcs_roster_row: "succeeded",
     approval_email: "succeeded",
     onboarding_guide: "succeeded",
     audit_trail_available: true,
@@ -281,7 +281,7 @@ describe("summarizeAccessAudit", () => {
       auditMemberAccess(member({ id: "a", member_type: "full" }), evidence()),
       auditMemberAccess(
         member({ id: "b", member_type: "full" }),
-        evidence({ calendar_invite: "failed", dcs_form: "failed" }),
+        evidence({ calendar_invite: "failed", dcs_roster_row: "failed" }),
       ),
     ];
     const summary = summarizeAccessAudit(rows);
@@ -323,23 +323,35 @@ describe("auditMemberAccess — onboarding side effects apply to who gets them",
     ).toBe("fail");
   });
 
-  it("grades the group-meeting-only subgroups off the calendar, not on it", () => {
-    // A major coauthor is seated at the group meeting but is not on the lab calendar. The audit
-    // has to agree with `belongsOnSurface`, which is what the invite sweep itself asks.
-    const row = auditMemberAccess(member({ member_type: "coauthor-major" }), evidence());
-    expect(finding(row, "baseline_calendar_invite").verdict).toBe("not_applicable");
+  it("grades the calendar invite by the access design's standing-invites row", () => {
+    // The audit follows the full/major policy used by subscription and Monday invitations.
+    for (const type of ["full", "coauthor-major"]) {
+      const row = auditMemberAccess(member({ member_type: type }), evidence());
+      expect(finding(row, "baseline_calendar_invite").verdict, type).not.toBe("not_applicable");
+    }
+    for (const type of ["coauthor-minor", "own-pace-advisee"]) {
+      const row = auditMemberAccess(member({ member_type: type }), evidence());
+      expect(finding(row, "baseline_calendar_invite").verdict).toBe("not_applicable");
+    }
   });
 
-  it("asks the DCS form only of the template that files it", () => {
-    expect(
-      finding(auditMemberAccess(member({ member_type: "full" }), evidence()), "baseline_dcs_form")
-        .verdict,
-    ).toBe("pass");
-    // Every other template's onboarding never files the form.
-    for (const type of ["coauthor-major", "coauthor-minor", "alumni", "interviewee"]) {
+  it("asks the DCS roster row of full members and major coauthors only", () => {
+    for (const type of ["full", "coauthor-major", "full, coauthor-major"]) {
       expect(
-        finding(auditMemberAccess(member({ member_type: type }), evidence()), "baseline_dcs_form")
-          .verdict,
+        finding(
+          auditMemberAccess(member({ member_type: type }), evidence()),
+          "baseline_dcs_roster_row",
+        ).verdict,
+        type,
+      ).toBe("pass");
+    }
+    // Nobody else's role files it -- and alumni are owed none even while the type says full.
+    for (const type of ["coauthor-minor", "alumni", "full, alumni", "interviewee"]) {
+      expect(
+        finding(
+          auditMemberAccess(member({ member_type: type }), evidence()),
+          "baseline_dcs_roster_row",
+        ).verdict,
         type,
       ).toBe("not_applicable");
     }
@@ -365,7 +377,11 @@ describe("auditMemberAccess — onboarding side effects apply to who gets them",
     // A blank Member Type cannot say whether onboarding owed this person these. Grading them
     // would turn a gap in the spreadsheet into a fault against the person.
     const row = auditMemberAccess(member({ member_type: "" }), evidence());
-    for (const item of ["baseline_approval_email", "baseline_dcs_form", "baseline_portal_login"]) {
+    for (const item of [
+      "baseline_approval_email",
+      "baseline_dcs_roster_row",
+      "baseline_portal_login",
+    ]) {
       const entry = finding(row, item);
       expect(entry.verdict, item).toBe("unverifiable");
       expect(entry.detail.length).toBeGreaterThan(0);

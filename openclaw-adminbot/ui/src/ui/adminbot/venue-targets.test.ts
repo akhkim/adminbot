@@ -6,9 +6,11 @@ import {
   daysUntil,
   formatVenueTargets,
   nextDeadlineVenue,
+  openPreRegistrationVenues,
   papersNeedingRegistration,
   readVenueTargets,
   serializeVenueTargets,
+  venueOpenUntilMs,
 } from "./venue-targets.ts";
 
 function paper(id: string, targets?: unknown): AdminBotPaperRecord {
@@ -222,5 +224,98 @@ describe("a declared venue counts as a registration", () => {
 
   it("does not let one year answer for another", () => {
     expect(papersNeedingRegistration([declared("ICLR 2026")], "iclr2027_paper")).toHaveLength(1);
+  });
+});
+
+describe("which venues the pre-registration board still offers", () => {
+  // The dataset's own dates for the two venues the board exists for. ICLR 2027 publishes no
+  // `notification_aoe` at all -- its decisions live in `schedule` as "Final decisions", and ARR's
+  // equivalent is its cycle end -- which is exactly why reading the top-level field alone was not
+  // enough. See decisionInstantMs.
+  const beforeIclr = new Date("2026-09-22T12:00:00Z");
+  const afterIclrClosed = new Date("2026-09-26T12:00:00Z");
+  const afterIclrDecided = new Date("2026-12-18T12:00:00Z");
+  const afterEverything = new Date("2027-01-05T12:00:00Z");
+
+  function declaring(id: string, conference: string): AdminBotPaperRecord {
+    return {
+      id,
+      title: `Paper ${id}`,
+      authors: [],
+      current_step: "overleaf_writing",
+      artifacts: { conference },
+    } as never;
+  }
+
+  it("keeps a venue through the wait for decisions, not just to its deadline", () => {
+    // 25 Sep is ICLR 2027's paper deadline; decisions are 16 Dec. Between those the venue is the
+    // most interesting thing on the board, because nobody knows yet how it went.
+    const open = openPreRegistrationVenues([], afterIclrClosed);
+    const iclr = open.find((venue) => venue.label === "ICLR 2027");
+    expect(iclr).toBeDefined();
+    expect(iclr?.awaiting_results).toBe(true);
+  });
+
+  it("drops it once the decisions are out", () => {
+    expect(
+      openPreRegistrationVenues([], afterIclrDecided).map((venue) => venue.label),
+    ).not.toContain("ICLR 2027");
+    expect(openPreRegistrationVenues([], afterEverything)).toEqual([]);
+  });
+
+  it("reads decisions out of the schedule, since these venues carry no notification_aoe", () => {
+    // Guards the specific regression: falling back to the submission deadline would put both of
+    // these in September and October rather than December.
+    expect(venueOpenUntilMs("iclr2027_paper")).toBeGreaterThan(Date.parse("2026-12-16T00:00:00Z"));
+    expect(venueOpenUntilMs("arr_2026_october")).toBeGreaterThan(
+      Date.parse("2026-12-20T00:00:00Z"),
+    );
+  });
+
+  it("puts venues still open for submission ahead of ones being waited on", () => {
+    // ARR October closes 12 Oct, so on the 26th it is still actionable and ICLR is not.
+    expect(openPreRegistrationVenues([], afterIclrClosed).map((venue) => venue.label)).toEqual([
+      "ARR October",
+      "ICLR 2027",
+    ]);
+    // Before anything closes they simply run soonest-first.
+    expect(openPreRegistrationVenues([], beforeIclr).map((venue) => venue.label)).toEqual([
+      "ICLR 2027",
+      "ARR October",
+    ]);
+  });
+
+  it("includes a venue a paper is aimed at even when the picker does not offer it", () => {
+    // The gap this closes: a paper aimed outside the curated three matched no chip, so it was
+    // absent from the board while its own card showed the target.
+    const labels = openPreRegistrationVenues([declaring("a", "NeurIPS 2026")], beforeIclr).map(
+      (venue) => venue.label,
+    );
+    expect(labels).toContain("NeurIPS 2026");
+    // The curated two are still there; this adds to the board rather than replacing it.
+    expect(labels).toEqual(expect.arrayContaining(["ICLR 2027", "ARR October"]));
+  });
+
+  it("does not add a second chip for a venue the matcher cannot tell from a curated one", () => {
+    // "ARR August 2026" shares ARR October's family and year, so `venueTargetMatches` treats them
+    // as one venue. Two chips would each select the other's rows.
+    const labels = openPreRegistrationVenues([declaring("a", "ARR August 2026")], beforeIclr).map(
+      (venue) => venue.label,
+    );
+    expect(labels).not.toContain("ARR August 2026");
+    expect(labels.filter((label) => label.startsWith("ARR"))).toEqual(["ARR October"]);
+  });
+
+  it("ignores a venue whose cycle is entirely over", () => {
+    expect(openPreRegistrationVenues([declaring("a", "ARR August 2026")], afterEverything)).toEqual(
+      [],
+    );
+  });
+
+  it("has nothing to say about a venue the deadline board does not know", () => {
+    expect(venueOpenUntilMs("other")).toBeUndefined();
+    expect(openPreRegistrationVenues([], beforeIclr).map((venue) => venue.label)).not.toContain(
+      "Other",
+    );
   });
 });

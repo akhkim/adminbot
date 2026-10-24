@@ -1,20 +1,36 @@
 // Control UI AdminBot controller tests cover explicit data-loading modes.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { COMPLETE_PROFILE } from "../../../../../extensions/adminbot/src/contracts/profile-completion.test-helpers.js";
 import { createStorageMock } from "../../../test-helpers/storage.ts";
 import type { UiSettings } from "../../storage.ts";
-import { saveStoredMemberSession } from "../auth/session.ts";
+import { clearStoredMemberSession, saveStoredMemberSession } from "../auth/session.ts";
+import { papersMissingFor } from "../papers-required.ts";
+import { ensureAdminQueuesForTab } from "./admin-queues.ts";
 import {
-  approveAdminBotAction,
+  ADMINBOT_SERVICE_UNREACHABLE_MESSAGE,
   createEmptyAdminBotDashboardData,
-  createEmptyAdminBotMemberNudgeState,
+  createEmptyAdminBotMemberList,
   createEmptyAdminBotReimbursementState,
   loadAdminBot,
-  removePendingAdminBotAction,
-  saveAdminBotMember,
+  pendingAdminBotLoad,
+  loadAdminBotMemberList,
+  loadAdminBotRoster,
+  loadAdminBotSensitiveInfo,
   saveAdminBotPaper,
-  saveAdminBotOwnProfile,
   type AdminBotHost,
 } from "./admin.js";
+import {
+  approveAdminBotAction,
+  removePendingAdminBotAction,
+  removeSelectedPendingAdminBotActions,
+} from "./governance.js";
+import { saveAdminBotMember, saveAdminBotOwnProfile } from "./members.js";
+import { createEmptyAdminBotMemberNudgeState, sendAdminBotMemberNudge } from "./nudges.js";
+import {
+  sendAdminBotReimbursementMessage,
+  generateAdminBotReimbursement,
+  submitAdminBotReimbursement,
+} from "./reimbursements.js";
 
 function createHost(outputs: Record<string, unknown>) {
   const calls: string[] = [];
@@ -31,6 +47,8 @@ function createHost(outputs: Record<string, unknown>) {
     adminBotError: null,
     adminBotData: createEmptyAdminBotDashboardData(),
     adminBotBusyActionId: null,
+    adminBotSelectedActionIds: [],
+    adminBotBulkActionBusy: false,
     adminBotNotice: null,
     adminBotPhotoPolishBusy: false,
     adminBotPhotoApplyBusy: false,
@@ -70,6 +88,8 @@ describe("loadAdminBot", () => {
       adminBotError: null,
       adminBotData: createEmptyAdminBotDashboardData(),
       adminBotBusyActionId: null,
+      adminBotSelectedActionIds: [],
+      adminBotBulkActionBusy: false,
       adminBotNotice: null,
       adminBotPhotoPolishBusy: false,
       adminBotPhotoApplyBusy: false,
@@ -78,7 +98,7 @@ describe("loadAdminBot", () => {
       settings: { adminBotUrl: "http://127.0.0.1:8765" } as UiSettings,
     };
 
-    await loadAdminBot(host, "admin");
+    await loadAdminBot(host, "admin", true);
 
     expect(calls).toContain("adminbot_get_sensitive_info");
     expect(host.adminBotError).toBeNull();
@@ -86,6 +106,26 @@ describe("loadAdminBot", () => {
     expect(host.adminBotData.papers).toHaveLength(1);
     expect(host.adminBotData.sensitiveInfo).toBeNull();
   });
+
+  it.each(["admin", "general"] as const)(
+    "skips the paper tool on non-paper pages in %s mode, then loads it on demand",
+    async (mode) => {
+      const { host, calls } = createHost({
+        adminbot_list_lab_members: { members: [{ id: "member-1" }] },
+        adminbot_list_papers: { papers: [{ id: "paper-1" }] },
+      });
+      await loadAdminBot(host, mode, false);
+      expect(calls).not.toContain("adminbot_list_papers");
+      expect(host.adminBotData.papers).toEqual([]);
+      expect(host.adminBotData.papersLoadedAt).toBeNull();
+      expect(host.adminBotData.members).toHaveLength(1);
+      expect(host.adminBotLoading).toBe(false);
+      await loadAdminBot(host, mode, true);
+      expect(calls.filter((name) => name === "adminbot_list_papers")).toHaveLength(1);
+      expect(host.adminBotData.papers).toHaveLength(1);
+      expect(host.adminBotData.papersLoadedAt).not.toBeNull();
+    },
+  );
 
   it("loads only member and paper records in general mode", async () => {
     const { host, calls } = createHost({
@@ -115,7 +155,7 @@ describe("loadAdminBot", () => {
       },
     });
 
-    await loadAdminBot(host, "general");
+    await loadAdminBot(host, "general", true);
 
     expect(calls).toEqual(["adminbot_list_lab_members", "adminbot_list_papers"]);
     expect(host.adminBotData.members).toHaveLength(1);
@@ -123,8 +163,62 @@ describe("loadAdminBot", () => {
     expect(host.adminBotData.proposals).toEqual([]);
     expect(host.adminBotData.nudges).toEqual([]);
     expect(host.adminBotData.settings).toBeNull();
-    expect(host.adminBotData.sensitiveInfo).toBeNull();
+    expect(host.adminBotData.sensitiveInfo).toBeUndefined();
   });
+});
+
+describe("loadAdminBot gateway-only session boundary", () => {
+  beforeEach(() => {
+    vi.stubGlobal("localStorage", createStorageMock());
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it.each(["admin", "general"] as const)(
+    "does not overwrite B after a delayed gateway-only %s load",
+    async (mode) => {
+      const { host } = createHost({});
+      let finishMembers: ((response: unknown) => void) | undefined;
+      host.client = {
+        request: async (_method: string, params: { name?: string }) => {
+          const name = params.name ?? "";
+          if (name === "adminbot_list_lab_members") {
+            return new Promise((resolve) => {
+              finishMembers = resolve;
+            });
+          }
+          return {
+            ok: true,
+            toolName: name,
+            output: name === "adminbot_list_papers" ? { papers: [{ id: "a-paper" }] } : {},
+          };
+        },
+      } as never;
+      const loading = loadAdminBot(host, mode);
+      if (mode === "admin") {
+        saveStoredMemberSession({ sessionToken: "member-b", expiresAt: "later" });
+      } else {
+        host.client = { request: vi.fn() } as never;
+      }
+      host.adminBotData = {
+        ...createEmptyAdminBotDashboardData(),
+        members: [{ id: "b-member" } as never],
+      };
+      host.adminBotLoading = true;
+      finishMembers?.({
+        ok: true,
+        toolName: "adminbot_list_lab_members",
+        output: { members: [{ id: "a-member" }] },
+      });
+      await loading;
+      expect(host.adminBotData.members.map((member) => member.id)).toEqual(["b-member"]);
+      expect(host.adminBotLoading).toBe(true);
+      expect(host.adminBotError).toBeNull();
+    },
+  );
 });
 
 // A signed-in member reads the dashboard over their own session. The gateway tool path needs
@@ -157,15 +251,100 @@ describe("loadAdminBot over the member session", () => {
       headers: { "Content-Type": "application/json" },
     });
 
+  it("loads the entire roster without pagination or server search", async () => {
+    saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    host.adminBotMemberList = createEmptyAdminBotMemberList();
+    const members = Array.from({ length: 125 }, (_, i) => ({ id: `person-${i}` }));
+    const fetchMock = routedFetch({ "/lab/members": () => json({ members }) });
+    await loadAdminBotMemberList(host);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toMatch(/\/lab\/members$/);
+    expect(host.adminBotMemberList.rows).toEqual(members);
+    expect(host.adminBotMemberList.loading).toBe(false);
+  });
+
+  it("discards a roster response after the session changes", async () => {
+    saveStoredMemberSession({ sessionToken: "old-session", expiresAt: "later" });
+    const { host } = createHost({});
+    let resolveResponse: (response: Response) => void = () => {};
+    vi.spyOn(globalThis, "fetch").mockReturnValue(
+      new Promise<Response>((resolve) => {
+        resolveResponse = resolve;
+      }),
+    );
+    const pending = loadAdminBotMemberList(host);
+    clearStoredMemberSession();
+    host.adminBotMemberList = createEmptyAdminBotMemberList();
+    resolveResponse(json({ members: [{ id: "old-private" }], total: 1 }));
+    await pending;
+    expect(host.adminBotMemberList.rows).toEqual([]);
+  });
+
+  it("discards dashboard responses after the session changes", async () => {
+    saveStoredMemberSession({ sessionToken: "old-session", expiresAt: "later" });
+    const { host } = createHost({});
+    let resolveMembers: ((response: Response) => void) | undefined;
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) =>
+      String(input).includes("/lab/members")
+        ? new Promise<Response>((resolve) => {
+            resolveMembers = resolve;
+          })
+        : Promise.resolve(json({ papers: [] })),
+    );
+    const pending = loadAdminBot(host, "general", true);
+    expect(pendingAdminBotLoad(host)).toBe(pending);
+    // The read is on the wire only once the session has resolved its offline scope.
+    await vi.waitFor(() => expect(resolveMembers).toBeDefined());
+    clearStoredMemberSession();
+    expect(pendingAdminBotLoad(host)).toBeUndefined();
+    host.adminBotData = createEmptyAdminBotDashboardData();
+    resolveMembers?.(json({ member: { id: "old-private" } }));
+    await pending;
+    expect(host.adminBotData.members).toEqual([]);
+  });
+
+  it("keeps a failed roster page retryable with a useful error", async () => {
+    saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    routedFetch({ "/lab/members": () => json({ error: { message: "temporary" } }, 503) });
+
+    await loadAdminBotMemberList(host);
+
+    expect(host.adminBotMemberList).toMatchObject({
+      loading: false,
+      loadedAt: null,
+      error: "Could not load lab members. Please try again.",
+    });
+  });
+
+  it("only reads the own profile while incomplete, then loads papers after completion", async () => {
+    saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    let complete = false;
+    const fetchMock = routedFetch({
+      "/lab/members/self": () =>
+        json({ member: complete ? COMPLETE_PROFILE : { id: "ada", privilege_level: "member" } }),
+      "/papers": () => json({ papers: [{ id: "paper-1" }] }),
+    });
+    await loadAdminBot(host, "admin", true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(host.adminBotError).toBeNull();
+    expect(host.adminBotData.papersLoadedAt).toBeNull();
+    complete = true;
+    await loadAdminBot(host, "general", true);
+    expect(host.adminBotData.papers).toHaveLength(1);
+    expect(host.adminBotError).toBeNull();
+  });
+
   it("reads members and papers over HTTP instead of the gateway tool", async () => {
     saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
     const { host, calls } = createHost({});
     const fetchMock = routedFetch({
-      "/lab/members": () => json({ members: [{ id: "pat" }] }),
+      "/lab/members/self": () => json({ member: { ...COMPLETE_PROFILE, id: "pat" } }),
       "/papers": () => json({ papers: [{ id: "paper-1" }] }),
     });
 
-    await loadAdminBot(host, "general");
+    await loadAdminBot(host, "general", true);
 
     expect(calls).toEqual([]);
     expect(host.adminBotData.members).toHaveLength(1);
@@ -176,13 +355,244 @@ describe("loadAdminBot over the member session", () => {
         headers: expect.objectContaining({ Authorization: "Bearer member-sess-tok" }),
       });
     }
+    expect(
+      fetchMock.mock.calls.some(([url]) => String(url).includes("/lab/members?view=summary")),
+    ).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/lab/members/self"))).toBe(
+      true,
+    );
+  });
+
+  it("opens a non-paper page without fetching papers, then loads them when requested", async () => {
+    saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    const fetchMock = routedFetch({
+      "/lab/members/self": () => json({ member: { ...COMPLETE_PROFILE, id: "pat" } }),
+      "/papers": () => json({ papers: [{ id: "paper-1" }] }),
+    });
+
+    await loadAdminBot(host, "general", false);
+    expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
+      "http://127.0.0.1:8765/lab/members/self",
+    ]);
+    expect(host.adminBotData.loadedAt).not.toBeNull();
+    expect(host.adminBotData.papersLoadedAt).toBeNull();
+    expect(host.adminBotError).toBeNull();
+
+    host.adminBotRosterLoadedAt = 123;
+    host.adminBotData.members = [{ id: "pat" }, { id: "lee" }] as never;
+    host.adminBotMemberList = { ...createEmptyAdminBotMemberList(), loadedAt: 456 };
+    await loadAdminBot(host, "general", true, true);
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/papers"))).toHaveLength(1);
+    expect(host.adminBotData.papers.map((paper) => paper.id)).toEqual(["paper-1"]);
+    expect(host.adminBotData.papersLoadedAt).not.toBeNull();
+    expect(host.adminBotData.members.map((member) => member.id).toSorted()).toEqual(["lee", "pat"]);
+    expect(host.adminBotRosterLoadedAt).toBe(123);
+    expect(host.adminBotMemberList?.loadedAt).toBe(456);
+  });
+
+  it("makes the own profile available before a slow paper read completes", async () => {
+    saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    host.memberId = "pat";
+    host.requestUpdate = vi.fn();
+    let resolvePapers: (response: Response) => void = () => {};
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = String(input);
+      if (url.includes("/lab/members/self")) {
+        return Promise.resolve(json({ member: { ...COMPLETE_PROFILE, id: "pat", name: "Pat" } }));
+      }
+      if (url.includes("/papers")) {
+        return new Promise<Response>((resolve) => {
+          resolvePapers = resolve;
+        });
+      }
+      return Promise.resolve(json({}));
+    });
+
+    const pending = loadAdminBot(host, "general", true);
+    await vi.waitFor(() => expect(host.adminBotData.members[0]?.id).toBe("pat"));
+    expect(host.adminBotData.loadedAt).toBeNull();
+    expect(host.adminBotLoading).toBe(true);
+    expect(host.requestUpdate).toHaveBeenCalled();
+
+    resolvePapers(json({ papers: [{ id: "paper-1" }] }));
+    await pending;
+    expect(host.adminBotData.papers[0]?.id).toBe("paper-1");
+    expect(host.adminBotData.loadedAt).not.toBeNull();
+  });
+
+  it("starts the page's admin queues while papers are still pending", async () => {
+    saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    host.memberId = "pat";
+    Object.assign(host, { tab: "adminbotPapers" });
+    let resolvePapers: (response: Response) => void = () => {};
+    const fetched: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const path = new URL(String(input)).pathname;
+      fetched.push(path);
+      if (path === "/lab/members/self") {
+        return Promise.resolve(json({ member: { id: "pat" } }));
+      }
+      if (path === "/papers") {
+        return new Promise<Response>((resolve) => {
+          resolvePapers = resolve;
+        });
+      }
+      return Promise.resolve(json({}));
+    });
+    const pending = loadAdminBot(host, "admin", true);
+    try {
+      await vi.waitFor(() => expect(fetched).toContain("/papers"));
+      // The Papers page's queues and the session's settings (admin-queues.ts), not every queue.
+      await vi.waitFor(() =>
+        expect(fetched).toEqual(
+          expect.arrayContaining([
+            "/proposals/pending",
+            "/papers/nudges",
+            "/papers/conference-rosters",
+            "/settings",
+          ]),
+        ),
+      );
+      expect(fetched).not.toContain("/sensitive-info");
+      expect(host.adminBotData.members[0]?.id).toBe("pat");
+      expect(host.adminBotLoading).toBe(true);
+    } finally {
+      resolvePapers(json({ papers: [{ id: "paper-1" }] }));
+      await pending;
+    }
+    expect(host.adminBotData.papers[0]?.id).toBe("paper-1");
+    expect(host.adminBotLoading).toBe(false);
+  });
+
+  it("preserves a roster that arrives while papers are still loading", async () => {
+    saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    host.memberId = "pat";
+    let resolvePapers: (response: Response) => void = () => {};
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = String(input);
+      if (url.includes("/lab/members/self")) {
+        return Promise.resolve(json({ member: { ...COMPLETE_PROFILE, id: "pat", name: "Pat" } }));
+      }
+      if (url.includes("/lab/members?view=summary")) {
+        return Promise.resolve(
+          json({
+            self: { id: "pat", name: "Pat" },
+            members: [
+              { id: "pat", name: "Pat" },
+              { id: "lee", name: "Lee" },
+            ],
+          }),
+        );
+      }
+      if (url.includes("/papers")) {
+        return new Promise<Response>((resolve) => {
+          resolvePapers = resolve;
+        });
+      }
+      return Promise.resolve(json({}));
+    });
+
+    const pending = loadAdminBot(host, "general", true);
+    await vi.waitFor(() => expect(host.adminBotData.members[0]?.id).toBe("pat"));
+    await loadAdminBotRoster(host);
+    expect(host.adminBotData.members).toHaveLength(2);
+    resolvePapers(json({ papers: [] }));
+    await pending;
+    expect(host.adminBotData.members).toHaveLength(2);
+  });
+
+  it("uses the legacy roster only when the self route is absent during rollout", async () => {
+    saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    host.memberId = "pat";
+    const fetchMock = routedFetch({
+      "/lab/members/self": () => json({ error: { message: "not found" } }, 404),
+      "/lab/members": () =>
+        json({
+          members: [
+            { id: "pat", name: "Pat" },
+            { id: "lee", name: "Lee" },
+          ],
+        }),
+      "/papers": () => json({ papers: [] }),
+    });
+    await loadAdminBot(host, "general", true);
+    expect(host.adminBotData.members).toEqual([{ id: "pat", name: "Pat" }]);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/lab/members"))).toBe(true);
+  });
+
+  it("loads the full signed-in profile first, then compact peers only on demand", async () => {
+    saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    routedFetch({
+      "/lab/members/self": () =>
+        json({
+          member: {
+            ...COMPLETE_PROFILE,
+            id: "pat",
+            name: "Pat",
+            milestones: [{ id: "deadline-1" }],
+          },
+        }),
+      "/lab/members?view=summary": () =>
+        json({
+          members: [
+            { id: "pat", name: "Pat", onboarding: { steps: [] } },
+            {
+              id: "lee",
+              name: "Lee",
+              onboarding: { steps: [{ id: "intro", status: "complete" }] },
+            },
+          ],
+          self: { id: "pat", name: "Pat", milestones: [{ id: "deadline-1" }] },
+        }),
+      "/papers": () => json({ papers: [] }),
+    });
+
+    await loadAdminBot(host, "general", true);
+    expect(host.adminBotData.members).toEqual([
+      expect.objectContaining({ id: "pat", milestones: [{ id: "deadline-1" }] }),
+    ]);
+    await loadAdminBotRoster(host);
+
+    expect(host.adminBotData.members).toEqual([
+      expect.objectContaining({ id: "pat", milestones: [{ id: "deadline-1" }] }),
+      expect.objectContaining({
+        id: "lee",
+        onboarding: { steps: [{ id: "intro", status: "complete" }] },
+      }),
+    ]);
+  });
+
+  it("discards a late full roster after a different member signs in", async () => {
+    saveStoredMemberSession({ sessionToken: "old-token", expiresAt: "later" });
+    const { host } = createHost({});
+    host.adminBotData.members = [{ id: "old-self" } as never];
+    let finish!: (response: Response) => void;
+    vi.spyOn(globalThis, "fetch").mockReturnValue(
+      new Promise<Response>((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const loading = loadAdminBotRoster(host);
+    saveStoredMemberSession({ sessionToken: "new-token", expiresAt: "later" });
+    host.adminBotData.members = [{ id: "new-self" } as never];
+    host.adminBotRosterLoading = false;
+    finish(json({ members: [{ id: "old-self" }, { id: "old-peer" }], self: { id: "old-self" } }));
+    await loading;
+    expect(host.adminBotData.members).toEqual([{ id: "new-self" }]);
+    expect(host.adminBotRosterLoadedAt).toBeUndefined();
   });
 
   it("still shows the roster when the privileged extras are refused", async () => {
     saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
     const { host } = createHost({});
     routedFetch({
-      "/lab/members": () => json({ members: [{ id: "pat" }] }),
+      "/lab/members/self": () => json({ member: { ...COMPLETE_PROFILE, id: "pat" } }),
       "/papers/nudges": () => json({ error: { message: "nope" } }, 403),
       "/papers": () => json({ papers: [{ id: "paper-1" }] }),
       "/proposals/pending": () => json({ error: { message: "nope" } }, 403),
@@ -190,25 +600,239 @@ describe("loadAdminBot over the member session", () => {
       "/sensitive-info": () => json({ error: { message: "nope" } }, 403),
     });
 
-    await loadAdminBot(host, "admin");
+    await loadAdminBot(host, "admin", true);
 
     expect(host.adminBotError).toBeNull();
     expect(host.adminBotData.members).toHaveLength(1);
     expect(host.adminBotData.papers).toHaveLength(1);
     expect(host.adminBotData.proposals).toEqual([]);
     expect(host.adminBotData.settings).toBeNull();
-    expect(host.adminBotData.sensitiveInfo).toBeNull();
+    expect(host.adminBotData.sensitiveInfo).toBeUndefined();
   });
 
-  it("reports an error when the roster itself cannot be read", async () => {
+  it("leaves the sensitive-info notes to the Settings tab", async () => {
+    saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    const fetchMock = routedFetch({
+      "/lab/members/self": () => json({ member: { id: "pat" } }),
+      "/papers": () => json({ papers: [] }),
+      "/sensitive-info": () => json({ markdown: "secret\n", path: "notes.md" }),
+    });
+
+    await loadAdminBot(host, "admin", true);
+    const sensitiveReads = () =>
+      fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/sensitive-info")).length;
+    expect(sensitiveReads()).toBe(0);
+
+    await Promise.all([loadAdminBotSensitiveInfo(host), loadAdminBotSensitiveInfo(host)]);
+    expect(sensitiveReads()).toBe(1);
+    expect(host.adminBotData.sensitiveInfo).toEqual({ markdown: "secret\n", path: "notes.md" });
+  });
+
+  it("keeps the loaded page on screen while a reload runs", async () => {
+    saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    // The pending queue is read only for a page that draws it (admin-queues.ts).
+    Object.assign(host, { tab: "adminbot" });
+    routedFetch({
+      "/lab/members/self": () => json({ member: { id: "pat" } }),
+      "/papers": () => json({ papers: [{ id: "paper-1" }] }),
+      "/proposals/pending": () => json({ proposals: [{ id: "proposal-1" }] }),
+    });
+    await loadAdminBot(host, "admin", true);
+    expect(host.adminBotData.proposals).toHaveLength(1);
+
+    const reloading = loadAdminBot(host, "admin", true);
+    await Promise.resolve();
+    expect(host.adminBotData.proposals).toHaveLength(1);
+    expect(host.adminBotData.papers).toHaveLength(1);
+    expect(host.adminBotData.loadedAt).not.toBeNull();
+    await reloading;
+  });
+
+  describe("admin queues per page", () => {
+    const queuePaths = [
+      "/proposals/pending",
+      "/automation/email/review",
+      "/papers/nudges",
+      "/papers/conference-rosters",
+      "/admin/queue-counts",
+      "/settings",
+    ];
+    function queueFetch() {
+      const fetchMock = routedFetch({
+        "/lab/members/self": () => json({ member: { id: "pat" } }),
+        "/proposals/pending": () => json({ proposals: [{ id: "proposal-1" }] }),
+        "/automation/email/review": () => json({ reviews: [{ message_id: "m1" }] }),
+        "/papers/nudges": () => json({ nudges: [{ paper_id: "p1" }] }),
+        "/papers/conference-rosters": () => json({ conferences: [] }),
+        "/admin/queue-counts": () => json({ pending_proposals: 4, email_reviews: 2 }),
+        "/settings": () => json({ head_professor_member_id: "prof" }),
+        "/papers": () => json({ papers: [] }),
+      });
+      const reads = () => {
+        const counts: Record<string, number> = {};
+        for (const [url] of fetchMock.mock.calls) {
+          const path = queuePaths.find((candidate) => String(url).includes(candidate));
+          if (path) counts[path] = (counts[path] ?? 0) + 1;
+        }
+        return counts;
+      };
+      return reads;
+    }
+
+    it("reads no queue on a page that draws none, and the settings once", async () => {
+      saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+      const { host } = createHost({});
+      Object.assign(host, { tab: "adminbotMembers", memberPrivilegeLevel: "admin" });
+      const reads = queueFetch();
+
+      await loadAdminBot(host, "admin", false);
+      await loadAdminBot(host, "admin", false);
+
+      expect(reads()).toEqual({ "/settings": 1 });
+      expect(host.adminBotData.settings?.head_professor_member_id).toBe("prof");
+      expect(host.adminBotData.loadedAt).not.toBeNull();
+    });
+
+    it("gives the dashboard counts instead of the full queues", async () => {
+      saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+      const { host } = createHost({});
+      Object.assign(host, { tab: "dashboard", memberPrivilegeLevel: "admin" });
+      const reads = queueFetch();
+
+      await loadAdminBot(host, "admin", false);
+
+      expect(reads()).toEqual({ "/admin/queue-counts": 1, "/settings": 1 });
+      expect(host.adminBotData.queueCounts).toEqual({ pendingProposals: 4, emailReviews: 2 });
+      expect(host.adminBotData.proposals).toEqual([]);
+    });
+
+    it("loads a page's queues on first visit only, and again after a write made them stale", async () => {
+      saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+      const { host } = createHost({});
+      Object.assign(host, { tab: "adminbot", memberPrivilegeLevel: "admin" });
+      const reads = queueFetch();
+      await loadAdminBot(host, "admin", false);
+      expect(host.adminBotData.proposals).toHaveLength(1);
+      expect(host.adminBotData.emailReviews).toHaveLength(1);
+
+      // Navigating to the papers page reads its own queues; returning to Actions reads nothing.
+      Object.assign(host, { tab: "adminbotPapers" });
+      await Promise.all([
+        ensureAdminQueuesForTab(host, "adminbotPapers"),
+        ensureAdminQueuesForTab(host, "adminbotPapers"),
+      ]);
+      await ensureAdminQueuesForTab(host, "adminbot");
+      expect(reads()).toEqual({
+        "/proposals/pending": 1,
+        "/automation/email/review": 1,
+        "/papers/nudges": 1,
+        "/papers/conference-rosters": 1,
+        "/settings": 1,
+      });
+
+      // A write on the papers page reloads that page's queues and leaves the email queue stale;
+      // the next visit to Actions reads it again.
+      await loadAdminBot(host);
+      expect(reads()["/automation/email/review"]).toBe(1);
+      expect(reads()["/proposals/pending"]).toBe(2);
+      expect(reads()["/papers/nudges"]).toBe(2);
+      await ensureAdminQueuesForTab(host, "adminbot");
+      expect(reads()["/automation/email/review"]).toBe(2);
+      expect(reads()["/settings"]).toBe(1);
+    });
+
+    it("keeps a queue's rows when its reload fails", async () => {
+      saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+      const { host } = createHost({});
+      Object.assign(host, { tab: "adminbot", memberPrivilegeLevel: "admin" });
+      queueFetch();
+      await loadAdminBot(host, "admin", false);
+      vi.restoreAllMocks();
+      routedFetch({
+        "/lab/members/self": () => json({ member: { id: "pat" } }),
+        "/proposals/pending": () => json({ error: { message: "down" } }, 500),
+        "/automation/email/review": () => json({ error: { message: "down" } }, 500),
+      });
+
+      await loadAdminBot(host);
+
+      expect(host.adminBotData.proposals).toHaveLength(1);
+      expect(host.adminBotData.emailReviews).toHaveLength(1);
+    });
+  });
+
+  describe("paper scope per page", () => {
+    function paperFetch() {
+      const fetchMock = routedFetch({
+        "/lab/members/self": () => json({ member: { id: "ada", name: "Ada Author" } }),
+        "/papers?scope=mine": () => json({ papers: [{ id: "mine" }] }),
+        "/papers": () => json({ papers: [{ id: "mine" }, { id: "theirs" }] }),
+      });
+      return () =>
+        fetchMock.mock.calls
+          .map(([url]) => new URL(String(url)))
+          .filter((url) => url.pathname === "/papers")
+          .map((url) => url.search);
+    }
+
+    it("reads only a plain member's own papers for the dashboard, and the lab list later", async () => {
+      saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+      const { host } = createHost({});
+      Object.assign(host, { tab: "dashboard", memberPrivilegeLevel: "member" });
+      const paperReads = paperFetch();
+
+      await loadAdminBot(host, "general", true);
+      expect(paperReads()).toEqual(["?scope=mine"]);
+      expect(host.adminBotData.papers.map((paper) => paper.id)).toEqual(["mine"]);
+      // The scoped read is not mistaken for the whole list...
+      expect(host.adminBotData.papersLoadedAt).toBeNull();
+      expect(papersMissingFor(host)).toBe(false);
+      // ...so a page that needs every paper still reads it, and a write there keeps it whole.
+      Object.assign(host, { tab: "adminbotMembers" });
+      expect(papersMissingFor(host)).toBe(true);
+      await loadAdminBot(host, "general", true, true);
+      Object.assign(host, { tab: "dashboard" });
+      await loadAdminBot(host);
+      expect(paperReads()).toEqual(["?scope=mine", "", ""]);
+      expect(host.adminBotData.papers).toHaveLength(2);
+    });
+
+    it("re-reads the own papers after a write on the profile", async () => {
+      saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+      const { host } = createHost({});
+      Object.assign(host, { tab: "profile", memberPrivilegeLevel: "member" });
+      const paperReads = paperFetch();
+
+      await loadAdminBot(host, "general", true);
+      await loadAdminBot(host);
+
+      expect(paperReads()).toEqual(["?scope=mine", "?scope=mine"]);
+    });
+
+    it("keeps the admin dashboard on the lab-wide list", async () => {
+      saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+      const { host } = createHost({});
+      Object.assign(host, { tab: "dashboard", memberPrivilegeLevel: "admin" });
+      const paperReads = paperFetch();
+
+      await loadAdminBot(host, "general", true);
+
+      expect(paperReads()).toEqual([""]);
+      expect(host.adminBotData.papersLoadedAt).not.toBeNull();
+    });
+  });
+
+  it("reports an error when the member's own profile cannot be read", async () => {
     saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
     const { host } = createHost({});
     routedFetch({
-      "/lab/members": () => json({ error: { message: "nope" } }, 401),
+      "/lab/members/self": () => json({ error: { message: "nope" } }, 401),
       "/papers": () => json({ papers: [] }),
     });
 
-    await loadAdminBot(host, "general");
+    await loadAdminBot(host, "general", true);
 
     expect(host.adminBotError).not.toBeNull();
     expect(host.adminBotLoading).toBe(false);
@@ -292,6 +916,60 @@ describe("approveAdminBotAction", () => {
     expect(host.adminBotNotice).toMatchObject({ kind: "success" });
   });
 
+  it("says the approval stuck and shows the connector's reason when the execute is refused", async () => {
+    saveStoredMemberSession({ sessionToken: "admin-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("/approve")) {
+        return new Response(
+          JSON.stringify({
+            ...proposal,
+            status: "approved",
+            approvals: [{ approver_role: "admin", approver_id: "zj" }],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.includes("/execute")) {
+        return new Response(
+          JSON.stringify({ error: { message: "You are trying to edit a protected cell" } }),
+          { status: 500, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response(JSON.stringify({}), { status: 200 });
+    });
+
+    await approveAdminBotAction(host, proposal);
+
+    expect(host.adminBotNotice).toEqual({
+      kind: "error",
+      text: "Approved act_1, but it did not run: You are trying to edit a protected cell",
+    });
+  });
+
+  it("keeps the unreachable message when the execute request never lands", async () => {
+    saveStoredMemberSession({ sessionToken: "admin-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      if (String(input).includes("/execute")) {
+        throw new TypeError("Failed to fetch");
+      }
+      return new Response(
+        JSON.stringify({
+          ...proposal,
+          status: "approved",
+          approvals: [{ approver_role: "admin", approver_id: "zj" }],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    await approveAdminBotAction(host, proposal);
+
+    expect(host.adminBotNotice?.text).toBe(ADMINBOT_SERVICE_UNREACHABLE_MESSAGE);
+  });
+
   it("reports a permission error instead of approving when the server refuses (403)", async () => {
     saveStoredMemberSession({ sessionToken: "plain-member-tok", expiresAt: "later" });
     const { host } = createHost({});
@@ -373,6 +1051,28 @@ describe("saveAdminBotMember", () => {
     vi.unstubAllGlobals();
   });
 
+  it("does not show A's late save notice after B signs in", async () => {
+    saveStoredMemberSession({ sessionToken: "admin-a", expiresAt: "later" });
+    const { host } = createHost({});
+    let finish: ((response: Response) => void) | undefined;
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const pending = saveAdminBotMember(host, baseInput);
+    saveStoredMemberSession({ sessionToken: "member-b", expiresAt: "later" });
+    finish?.(
+      new Response(JSON.stringify({ id: baseInput.id }), {
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    await pending;
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(host.adminBotNotice).toBeNull();
+  });
+
   it("writes governance fields directly via the member session, bypassing the gateway tool", async () => {
     saveStoredMemberSession({ sessionToken: "admin-sess-tok", expiresAt: "later" });
     const toolInvocations: string[] = [];
@@ -445,6 +1145,213 @@ describe("saveAdminBotMember", () => {
   });
 });
 
+describe("saveAdminBotMember — onboarding the person just added", () => {
+  const baseInput = {
+    id: "grace",
+    name: "Grace Hopper",
+    email: "grace@lab.co",
+    memberType: "full",
+  };
+
+  beforeEach(() => {
+    vi.stubGlobal("localStorage", createStorageMock());
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  /** Answers the guide route with `guide` and everything else (the save, the reload) with {}. */
+  function routes(guide: Response) {
+    return vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async (input) =>
+        String(input).includes("/onboarding/guide")
+          ? guide.clone()
+          : new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } }),
+      );
+  }
+
+  const guideCalls = (fetchMock: ReturnType<typeof routes>) =>
+    fetchMock.mock.calls.filter((call) => String(call[0]).includes("/onboarding/guide"));
+
+  it("queues the guide over the admin session once the record exists", async () => {
+    saveStoredMemberSession({ sessionToken: "admin-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    const fetchMock = routes(
+      new Response(
+        JSON.stringify({ proposal_id: "act_7", template_id: "member", email: "grace@lab.co" }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    await saveAdminBotMember(host, baseInput, { onboard: true });
+
+    const queued = guideCalls(fetchMock);
+    expect(queued).toHaveLength(1);
+    expect(String(queued[0]![0])).toContain("/lab/members/grace/onboarding/guide");
+    expect(queued[0]![1]).toMatchObject({
+      method: "POST",
+      headers: expect.objectContaining({ Authorization: "Bearer admin-sess-tok" }),
+    });
+    // The save goes first: onboarding is about a member who is on the roster by then.
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/lab/members/grace");
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ method: "PUT" });
+    expect(host.adminBotNotice?.kind).toBe("success");
+    expect(host.adminBotNotice?.text).toMatch(/queued in Pending Actions/i);
+  });
+
+  it("reports a confirmed immediate send without directing the admin to Pending Actions", async () => {
+    saveStoredMemberSession({ sessionToken: "admin-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    routes(
+      new Response(
+        JSON.stringify({
+          proposal_id: "act_7",
+          template_id: "member",
+          email: "grace@lab.co",
+          status: "done",
+        }),
+        { status: 200 },
+      ),
+    );
+    await saveAdminBotMember(host, baseInput, { onboard: true });
+    expect(host.adminBotNotice?.text).toContain("standard onboarding email has been sent");
+    expect(host.adminBotNotice?.text).not.toContain("Pending Actions");
+  });
+
+  it("carries the member type, which is what decides the template", async () => {
+    saveStoredMemberSession({ sessionToken: "admin-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    const fetchMock = routes(new Response("{}", { status: 200 }));
+
+    await saveAdminBotMember(host, baseInput, { onboard: true });
+
+    const [, init] = fetchMock.mock.calls[0]!;
+    expect(JSON.parse(init!.body as string)).toMatchObject({ member_type: "full" });
+  });
+
+  // The member is on the roster either way, so the save is not undone -- but the admin ticked a
+  // box for something that did not happen, and the service's sentence is what they can act on.
+  it("keeps the save and reports why the guide was refused", async () => {
+    saveStoredMemberSession({ sessionToken: "admin-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    routes(
+      new Response(
+        JSON.stringify({
+          error: { message: "acquaintance sends no onboarding mail" },
+        }),
+        { status: 422, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    await saveAdminBotMember(host, baseInput, { onboard: true });
+
+    expect(host.adminBotNotice?.kind).toBe("error");
+    expect(host.adminBotNotice?.text).toContain("Saved member grace");
+    expect(host.adminBotNotice?.text).toContain("acquaintance sends no onboarding mail");
+  });
+
+  it("leaves onboarding alone when the form did not ask for it", async () => {
+    saveStoredMemberSession({ sessionToken: "admin-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    const fetchMock = routes(new Response("{}", { status: 200 }));
+
+    await saveAdminBotMember(host, baseInput);
+
+    expect(guideCalls(fetchMock)).toHaveLength(0);
+    expect(host.adminBotNotice).toMatchObject({ kind: "success" });
+  });
+
+  // Break-glass access authenticates as the shared service principal, which the guide route
+  // refuses. Saying so beats a tick that silently did nothing.
+  it("says onboarding needs an admin sign-in on the break-glass path", async () => {
+    const { host } = createHost({});
+    host.client = {
+      request: async (_method: string, params: { name?: string }) => ({
+        ok: true,
+        toolName: params.name,
+        output: {},
+      }),
+    } as never;
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+
+    await saveAdminBotMember(host, baseInput, { onboard: true });
+
+    expect(guideCalls(fetchMock as never)).toHaveLength(0);
+    expect(host.adminBotNotice?.kind).toBe("error");
+    expect(host.adminBotNotice?.text).toMatch(/admin sign-in/i);
+  });
+});
+
+describe("reimbursement session privacy", () => {
+  it("returns the generated package proof and shows regeneration guidance after refusal", async () => {
+    vi.stubGlobal("localStorage", createStorageMock());
+    saveStoredMemberSession({ sessionToken: "member-token", expiresAt: "later" });
+    const artifacts = [
+      { filename: "form.pdf", media_type: "application/pdf", data_base64: "JVBERi0=" },
+    ];
+    const { host } = createHost({
+      adminbot_reimbursement_generate: { artifacts, submission_proof: "checked-package" },
+    });
+    host.adminBotReimbursement = {
+      ...createEmptyAdminBotReimbursementState(),
+      ready: true,
+      funder: "MPI-IS",
+    };
+    await generateAdminBotReimbursement(host);
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: {
+            message: "Generate and review the reimbursement forms again before sending them.",
+          },
+        }),
+        { status: 422, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    await submitAdminBotReimbursement(host);
+    expect(JSON.parse(fetchMock.mock.calls[0]![1]!.body as string)).toMatchObject({
+      submission_proof: "checked-package",
+      funder: "MPI-IS",
+    });
+    expect(host.adminBotReimbursement.error).toContain("Generate and review");
+    expect(host.adminBotReimbursement.submission).toBeUndefined();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("does not restore a previous member's receipt conversation after the cache is cleared", async () => {
+    const { host } = createHost({});
+    let finish!: (result: unknown) => void;
+    const request = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    host.client = {
+      request,
+    } as never;
+    const pending = sendAdminBotReimbursementMessage(host, "Old receipt", []);
+    await vi.waitFor(() => expect(request).toHaveBeenCalledOnce());
+    host.adminBotReimbursement = createEmptyAdminBotReimbursementState();
+    finish({
+      ok: true,
+      toolName: "adminbot_reimbursement_converse",
+      output: {
+        assistant_message: "Old response",
+        draft: { amount: "200" },
+        ready: true,
+      },
+    });
+    await pending;
+    expect(host.adminBotReimbursement.messages).toEqual([]);
+    expect(host.adminBotReimbursement.draft).toEqual({});
+  });
+});
+
 describe("saveAdminBotOwnProfile", () => {
   beforeEach(() => {
     vi.stubGlobal("localStorage", createStorageMock());
@@ -459,6 +1366,14 @@ describe("saveAdminBotOwnProfile", () => {
     saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
     const toolInvocations: string[] = [];
     const { host } = createHost({});
+    host.adminBotData.members = [
+      { id: "pat", name: "Pat", assigned_badges: [{ id: "badge-1" }] } as never,
+    ];
+    host.adminBotMemberList = {
+      ...createEmptyAdminBotMemberList(),
+      rows: [{ id: "pat", name: "Pat" } as never, { id: "lee", name: "Lee" } as never],
+      loadedAt: 12,
+    };
     host.client = {
       request: async (_method: string, params: { name?: string }) => {
         toolInvocations.push(params.name ?? "");
@@ -487,6 +1402,68 @@ describe("saveAdminBotOwnProfile", () => {
       role: "Industry Researcher",
     });
     expect(host.adminBotNotice).toMatchObject({ kind: "success" });
+    expect(host.adminBotData.members[0]).toMatchObject({
+      id: "pat",
+      name: "Pat Doe",
+      assigned_badges: [{ id: "badge-1" }],
+    });
+    expect(host.adminBotMemberList.rows.map((member) => member.name)).toEqual(["Pat Doe", "Lee"]);
+    expect(host.adminBotMemberList.loadedAt).toBe(12);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(host.adminBotLoading).toBe(false);
+  });
+
+  it("shows correspondence validation errors without replacing saved profile or roster values", async () => {
+    saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    const member = { id: "pat", name: "Pat", correspondence_email: "pat@institute.example" };
+    host.adminBotData.members = [member as never];
+    host.adminBotMemberList = {
+      ...createEmptyAdminBotMemberList(),
+      rows: [member as never],
+      loadedAt: 12,
+    };
+    const message =
+      "Use an institutional or company email for correspondence, rather than a personal email address.";
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify({ error: { message } }), { status: 400 }));
+
+    await saveAdminBotOwnProfile(host, "pat", { correspondence_email: "pat@gmail.com" });
+
+    expect(host.adminBotNotice).toEqual({ kind: "error", text: message });
+    expect(host.adminBotData.members[0]).toEqual(member);
+    expect(host.adminBotMemberList.rows[0]).toEqual(member);
+    expect(host.adminBotMemberList.loadedAt).toBe(12);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(fetchMock.mock.calls[0]![1]!.body as string)).toEqual({
+      correspondence_email: "pat@gmail.com",
+    });
+  });
+
+  it("serializes autosaves so an older slow profile write cannot win", async () => {
+    saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    host.adminBotData.members = [{ id: "pat", name: "Pat" } as never];
+    let finishFirst!: (response: Response) => void;
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            finishFirst = resolve;
+          }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ id: "pat", name: "Pat Latest" }), { status: 200 }),
+      );
+    const first = saveAdminBotOwnProfile(host, "pat", { name: "Pat Older" });
+    const second = saveAdminBotOwnProfile(host, "pat", { name: "Pat Latest" });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    finishFirst(new Response(JSON.stringify({ id: "pat", name: "Pat Older" }), { status: 200 }));
+    await Promise.all([first, second]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(host.adminBotData.members[0]?.name).toBe("Pat Latest");
   });
 
   it("refuses without a member session instead of falling back to the gateway tool", async () => {
@@ -536,6 +1513,21 @@ describe("saveAdminBotPaper", () => {
     saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
     const toolInvocations: string[] = [];
     const { host } = createHost({});
+    host.adminBotData.papers = [
+      {
+        id: "paper-1",
+        title: "Old title",
+        authors: ["Pat Doe"],
+        current_step: "overleaf_writing",
+      } as never,
+      {
+        id: "paper-2",
+        title: "Another paper",
+        authors: [],
+        current_step: "overleaf_writing",
+      } as never,
+    ];
+    host.adminBotData.loadedAt = 42;
     host.client = {
       request: async (_method: string, params: { name?: string }) => {
         toolInvocations.push(params.name ?? "");
@@ -543,10 +1535,18 @@ describe("saveAdminBotPaper", () => {
       },
     } as never;
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ id: "paper-1" }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
+      new Response(
+        JSON.stringify({
+          id: "paper-1",
+          title: "World Models Survey",
+          authors: ["Pat Doe"],
+          current_step: "overleaf_writing",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
     );
 
     await saveAdminBotPaper(host, {
@@ -586,6 +1586,62 @@ describe("saveAdminBotPaper", () => {
       presentation_type: "spotlight",
     });
     expect(host.adminBotNotice).toMatchObject({ kind: "success" });
+    expect(host.adminBotData.papers.map((row) => row.id)).toEqual(["paper-1", "paper-2"]);
+    expect(host.adminBotData.papers[0]?.title).toBe("World Models Survey");
+    expect(host.adminBotData.loadedAt).toBe(42);
+    expect(host.adminBotLoading).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("serializes overlapping paper autosaves and keeps the last edit", async () => {
+    saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    host.adminBotData.papers = [
+      {
+        id: "paper-1",
+        title: "Initial",
+        authors: ["Pat Doe"],
+        current_step: "overleaf_writing",
+      } as never,
+    ];
+    let finishFirst!: (response: Response) => void;
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            finishFirst = resolve;
+          }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            id: "paper-1",
+            title: "Latest",
+            authors: ["Pat Doe"],
+            current_step: "overleaf_writing",
+          }),
+          { status: 200 },
+        ),
+      );
+    const first = saveAdminBotPaper(host, { ...baseInput, title: "Older" });
+    const second = saveAdminBotPaper(host, { ...baseInput, title: "Latest" });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    finishFirst(
+      new Response(
+        JSON.stringify({
+          id: "paper-1",
+          title: "Older",
+          authors: ["Pat Doe"],
+          current_step: "overleaf_writing",
+        }),
+        { status: 200 },
+      ),
+    );
+    await Promise.all([first, second]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(host.adminBotData.papers[0]?.title).toBe("Latest");
+    expect(host.adminBotLoading).toBe(false);
   });
 
   it("forwards Not said as an explicit clear instead of silently omitting it", async () => {
@@ -625,7 +1681,7 @@ describe("saveAdminBotPaper", () => {
       }),
     );
 
-    await saveAdminBotPaper(host, baseInput);
+    expect(await saveAdminBotPaper(host, baseInput)).toBe(false);
 
     expect(host.adminBotNotice).toMatchObject({
       kind: "error",
@@ -653,6 +1709,7 @@ describe("saveAdminBotPaper", () => {
 
     await saveAdminBotPaper(host, {
       ...baseInput,
+      venue: "ICML 2026",
       venueDecision: "reject",
       acceptedVenue: "ACL 2026",
       acceptedYear: "2026",
@@ -662,6 +1719,7 @@ describe("saveAdminBotPaper", () => {
 
     expect(toolInvocations).toContain("adminbot_upsert_paper");
     expect(toolArgs).toMatchObject({
+      venue: "ICML 2026",
       venueDecision: "reject",
       acceptedVenue: "ACL 2026",
       acceptedYear: 2026,
@@ -777,5 +1835,222 @@ describe("approveAdminBotAction", () => {
       kind: "success",
       text: expect.stringContaining("1 of 2 approvals"),
     });
+  });
+
+  it("does not continue A's approval after B signs in", async () => {
+    saveStoredMemberSession({ sessionToken: "admin-a", expiresAt: "later" });
+    const { host } = createHost({});
+    let finish: ((response: Response) => void) | undefined;
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const pending = approveAdminBotAction(host, pendingProposal);
+    saveStoredMemberSession({ sessionToken: "member-b", expiresAt: "later" });
+    host.adminBotBusyActionId = null;
+    finish?.(jsonResponse({ status: "approved" }));
+    await pending;
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(host.adminBotNotice).toBeNull();
+    expect(host.adminBotBusyActionId).toBeNull();
+  });
+});
+
+describe("removeSelectedPendingAdminBotActions", () => {
+  function proposal(id: string) {
+    return {
+      id,
+      type: "slack.send_message",
+      risk_tier: "T3" as const,
+      summary: `Proposal ${id}`,
+      status: "pending" as const,
+      payload_hash: `hash_${id}`,
+      approval_requirement: { requires_approval: true, approver_roles: ["pi"], min_approvals: 1 },
+      approvals: [],
+      created_at: "2026-07-14T19:00:00.000Z",
+      updated_at: "2026-07-14T19:00:00.000Z",
+    };
+  }
+
+  function seed(ids: string[], selected: string[]) {
+    const { host } = createHost({});
+    host.adminBotData = {
+      ...createEmptyAdminBotDashboardData(),
+      proposals: ids.map(proposal),
+    };
+    host.adminBotSelectedActionIds = selected;
+    return host;
+  }
+
+  const ok = () =>
+    new Response(JSON.stringify({ status: "removed" }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+
+  beforeEach(() => {
+    vi.stubGlobal("localStorage", createStorageMock());
+    saveStoredMemberSession({ sessionToken: "admin-sess-tok", expiresAt: "later" });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("removes every ticked proposal and clears the selection", async () => {
+    const host = seed(["act_one", "act_two"], ["act_one", "act_two"]);
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(ok());
+
+    await removeSelectedPendingAdminBotActions(host);
+
+    const urls = fetchMock.mock.calls.map((call) => String(call[0]));
+    expect(urls.some((url) => url.includes("/proposals/act_one/remove"))).toBe(true);
+    expect(urls.some((url) => url.includes("/proposals/act_two/remove"))).toBe(true);
+    expect(host.adminBotNotice).toMatchObject({
+      kind: "success",
+      text: "Removed 2 pending actions.",
+    });
+    expect(host.adminBotSelectedActionIds).toEqual([]);
+    expect(host.adminBotBulkActionBusy).toBe(false);
+  });
+
+  // A bulk clear must never reach the execute route: removing discards a suggestion, executing
+  // sends the mail.
+  it("never executes anything", async () => {
+    const host = seed(["act_one", "act_two"], ["act_one", "act_two"]);
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(ok());
+
+    await removeSelectedPendingAdminBotActions(host);
+
+    for (const call of fetchMock.mock.calls) {
+      expect(String(call[0])).not.toContain("/execute");
+      expect(String(call[0])).not.toContain("/approve");
+    }
+  });
+
+  it("keeps the ones that refused ticked, and says how many went", async () => {
+    const host = seed(["act_one", "act_two"], ["act_one", "act_two"]);
+    // The two removes, then the reload: that one must not fall through to the real network.
+    vi.spyOn(globalThis, "fetch")
+      .mockImplementation(async () => ok())
+      .mockResolvedValueOnce(ok())
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: { message: "nope" } }), {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+
+    await removeSelectedPendingAdminBotActions(host);
+
+    expect(host.adminBotSelectedActionIds).toEqual(["act_two"]);
+    expect(host.adminBotNotice?.kind).toBe("error");
+    expect(host.adminBotNotice?.text).toContain("Removed 1 of 2");
+  });
+
+  // A tick can outlive its row -- somebody else cleared it first. Asking the service to remove a
+  // proposal that is already gone would report a failure for work that is in fact done.
+  it("does not call the service for a selection whose rows are already gone", async () => {
+    const host = seed(["act_live"], ["act_stale"]);
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(ok());
+
+    await removeSelectedPendingAdminBotActions(host);
+
+    const removeCalls = fetchMock.mock.calls.filter((call) => String(call[0]).includes("/remove"));
+    expect(removeCalls).toHaveLength(0);
+    expect(host.adminBotSelectedActionIds).toEqual([]);
+    expect(host.adminBotNotice).toMatchObject({ kind: "success" });
+  });
+
+  it("does nothing at all when nothing is ticked", async () => {
+    const host = seed(["act_one"], []);
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(ok());
+
+    await removeSelectedPendingAdminBotActions(host);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("does not restore A's selected actions after a late removal response under B", async () => {
+    const host = seed(["a-action"], ["a-action"]);
+    let finish: ((response: Response) => void) | undefined;
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const pending = removeSelectedPendingAdminBotActions(host);
+    saveStoredMemberSession({ sessionToken: "member-b", expiresAt: "later" });
+    host.adminBotSelectedActionIds = [];
+    host.adminBotBulkActionBusy = false;
+    finish?.(ok());
+    await pending;
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(host.adminBotSelectedActionIds).toEqual([]);
+    expect(host.adminBotNotice).toBeNull();
+    expect(host.adminBotBulkActionBusy).toBe(false);
+  });
+
+  it("does not restore A's announcement draft after a late send response under B", async () => {
+    const host = seed([], []);
+    host.adminBotMemberNudge = {
+      channel: "slack",
+      subject: "",
+      message: "A's private message",
+      selectedMemberIds: ["a-peer"],
+      busy: false,
+    };
+    let finish: ((response: Response) => void) | undefined;
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const pending = sendAdminBotMemberNudge(host);
+    saveStoredMemberSession({ sessionToken: "member-b", expiresAt: "later" });
+    host.adminBotMemberNudge = createEmptyAdminBotMemberNudgeState();
+    finish?.(
+      new Response(
+        JSON.stringify({ created: [{ id: "a-nudge", status: "pending" }], skipped: [] }),
+        {
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    await pending;
+    expect(host.adminBotMemberNudge).toEqual(createEmptyAdminBotMemberNudgeState());
+    expect(host.adminBotNotice).toBeNull();
+  });
+});
+
+describe("member editor background saves", () => {
+  it("writes once without refreshing the roster or clearing the current notice", async () => {
+    vi.stubGlobal("localStorage", createStorageMock());
+    saveStoredMemberSession({ sessionToken: "admin-background", expiresAt: "later" });
+    const { host } = createHost({});
+    host.adminBotNotice = { kind: "success", text: "Previous action" };
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ id: "ada", name: "Ada" }), {
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    try {
+      await saveAdminBotMember(
+        host,
+        { id: "ada", profile: { location: "Zurich" } },
+        { background: true },
+      );
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(host.adminBotNotice?.text).toBe("Previous action");
+      expect(host.adminBotLoading).toBe(false);
+    } finally {
+      vi.restoreAllMocks();
+      vi.unstubAllGlobals();
+    }
   });
 });

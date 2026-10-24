@@ -17,6 +17,8 @@ import { html, type TemplateResult } from "lit";
 
 export type MultiSelectOption = {
   value: string;
+  /** What the box and the summary show, when the submitted value is an id rather than a name. */
+  label?: string;
   /** Options the vocabulary no longer offers but the record still holds -- kept, and marked. */
   legacy?: boolean;
 };
@@ -49,7 +51,9 @@ export function multiSelectSummaryText(
   placeholder: string,
 ): string {
   const held = options.filter((option) => selected.has(option.value.toLowerCase()));
-  return held.length === 0 ? placeholder : held.map((option) => option.value).join(", ");
+  return held.length === 0
+    ? placeholder
+    : held.map((option) => option.label ?? option.value).join(", ");
 }
 
 /**
@@ -72,7 +76,7 @@ export function syncMultiSelectSummary(event: Event): void {
   }
   const checked = [...root.querySelectorAll<HTMLInputElement>("input[type='checkbox']")]
     .filter((input) => input.checked)
-    .map((input) => input.value);
+    .map((input) => input.dataset.label ?? input.value);
   const placeholder = root.dataset.multiSelectPlaceholder ?? "";
   value.textContent = checked.length === 0 ? placeholder : checked.join(", ");
 }
@@ -88,7 +92,11 @@ export function renderMultiSelectField(config: MultiSelectFieldConfig): Template
       @change=${syncMultiSelectSummary}
     >
       <summary class="adminbot-multiselect__summary" aria-label=${config.label}>
-        <span class="adminbot-multiselect__value" data-multi-select-value>${summary}</span>
+        <span
+          class="adminbot-multiselect__value"
+          data-multi-select-value
+          .textContent=${summary}
+        ></span>
         <span class="adminbot-multiselect__caret" aria-hidden="true"></span>
       </summary>
       <div class="adminbot-multiselect__menu" role="group" aria-label=${config.label}>
@@ -103,9 +111,10 @@ export function renderMultiSelectField(config: MultiSelectFieldConfig): Template
                 type="checkbox"
                 name=${config.name}
                 value=${option.value}
+                data-label=${option.label ?? option.value}
                 .checked=${config.selected.has(option.value.toLowerCase())}
               />
-              <span>${option.value}</span>
+              <span>${option.label ?? option.value}</span>
             </label>
           `,
         )}

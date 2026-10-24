@@ -6,8 +6,10 @@
 import { rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AdminBotLogisticsRequestInput } from "../contracts/actions.js";
+import type { AdminBotDriveProbe } from "../contracts/drive-links.js";
+import { withCompleteProfile } from "../contracts/profile-completion.test-helpers.js";
 import type { CallSheetSource } from "./call-sheet-config.js";
 import { createAdminBotMockService } from "./server.js";
 
@@ -44,7 +46,10 @@ type Lab = {
  * push is off: it probes a doc-prep link over the network and reads a real spreadsheet, and these
  * tests are about who the wire lets in.
  */
-async function startLab(callSheet?: CallSheetSource): Promise<Lab> {
+async function startLab(
+  callSheet?: CallSheetSource,
+  driveProbe?: AdminBotDriveProbe,
+): Promise<Lab> {
   const sensitiveInfoPath = path.join(
     os.tmpdir(),
     `adminbot-logistics-${Date.now()}-${Math.random().toString(16).slice(2)}.md`,
@@ -54,8 +59,13 @@ async function startLab(callSheet?: CallSheetSource): Promise<Lab> {
     sensitiveInfoPath,
     calendarInviteRunner: async () => {},
     accountApprovedEmailRunner: async () => {},
-    dcsFormRunner: async () => {},
+    dcsRosterRecorder: async () => ({
+      username: "stub@cs.toronto.edu",
+      password: "stub",
+      candidates: ["stub@cs.toronto.edu"],
+    }),
     autoQueueMeetingRequests: Boolean(callSheet),
+    ...(driveProbe ? { driveProbe } : {}),
     ...(callSheet ? { callSheet } : {}),
   });
   await new Promise<void>((resolve, reject) => {
@@ -78,12 +88,14 @@ async function startLab(callSheet?: CallSheetSource): Promise<Lab> {
     ["grace", "member"],
     ["zhijing", "admin"],
   ] as const) {
-    const seeded = mock.service.upsertLabMember({
-      id,
-      name: id,
-      email: `${id}@cs.toronto.edu`,
-      privilege_level: privilege,
-    });
+    const seeded = mock.service.upsertLabMember(
+      withCompleteProfile({
+        id,
+        name: id,
+        email: `${id}@cs.toronto.edu`,
+        privilege_level: privilege,
+      }),
+    );
     if (!seeded.ok) {
       throw new Error(seeded.error.message);
     }
@@ -108,7 +120,7 @@ async function startLab(callSheet?: CallSheetSource): Promise<Lab> {
     if (!claim) {
       throw new Error(`no pending claim for ${id}`);
     }
-    const approved = mock.auth.approveRegistration(claim.id, "test-admin");
+    const approved = await mock.auth.approveRegistration(claim.id, "test-admin");
     if (!approved.ok) {
       throw new Error(approved.error.message);
     }
@@ -124,6 +136,54 @@ async function startLab(callSheet?: CallSheetSource): Promise<Lab> {
   }
   return { baseUrl, tokens };
 }
+
+describe("Drive links in letter documents", () => {
+  it("refuses a recommendation-letter folder AdminBot cannot open", async () => {
+    const probe = vi.fn<AdminBotDriveProbe>(async () => ({ status: "missing" }));
+    const lab = await startLab(undefined, probe);
+    const url = "https://drive.google.com/file/d/1PdF9xAbCdEfGhIjKlMnOpQrStUv/view";
+    const unauthenticated = await fetch(`${lab.baseUrl}/drive/check-edit-access`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
+    expect(unauthenticated.status).toBe(401);
+    const checked = await fetch(`${lab.baseUrl}/drive/check-edit-access`, {
+      method: "POST",
+      headers: asMember(lab, "ada", { "Content-Type": "application/json" }),
+      body: JSON.stringify({ url }),
+    });
+    expect(checked.status).toBe(200);
+    expect(await checked.json()).toMatchObject({ status: "inaccessible" });
+    const letter = await submit(lab, "ada", {
+      ...LETTERS,
+      drive_folder_url: "https://drive.google.com/drive/folders/1PdF9xAbCdEfGhIjKlMnOpQrStUv",
+    });
+    expect(letter.status).toBe(422);
+    expect(probe).toHaveBeenCalledTimes(2);
+  });
+
+  it("accepts a recommendation-letter folder AdminBot can only view", async () => {
+    const lab = await startLab(undefined, async () => ({ status: "found", canEdit: false }));
+    const letter = await submit(lab, "ada", {
+      ...LETTERS,
+      drive_folder_url: "https://drive.google.com/drive/folders/1PdF9xAbCdEfGhIjKlMnOpQrStUv",
+    });
+    expect(letter.status).toBe(201);
+  });
+
+  it("keeps letter submission available when the Drive checker is offline", async () => {
+    const lab = await startLab(undefined, async () => ({
+      status: "unreadable",
+      reason: "offline",
+    }));
+    const letter = await submit(lab, "ada", {
+      ...LETTERS,
+      drive_folder_url: "https://drive.google.com/drive/folders/1PdF9xAbCdEfGhIjKlMnOpQrStUv",
+    });
+    expect(letter.status).toBe(201);
+  });
+});
 
 function asMember(lab: Lab, memberId: string, extra: Record<string, string> = {}) {
   return { Authorization: `Bearer ${lab.tokens[memberId]}`, ...extra };
@@ -187,6 +247,37 @@ describe("logistics request routes", () => {
     };
     expect(body.requests.map((entry) => entry.id)).toEqual([submitted.request.id]);
     expect(body.requests[0]?.member_id).toBe("ada");
+  });
+
+  it("lists the queue's columns and leaves the rest to opening the request", async () => {
+    const lab = await startLab();
+    const submitted = await submit(lab, "ada", {
+      kind: "recommendation_letters",
+      schools: [
+        {
+          school: "MIT",
+          program: "PhD CS",
+          letter_deadline: "2026-12-01",
+          deadline_timezone: "UTC",
+        },
+      ],
+      facts: [{ project: "Paper A", contribution: "Ran every experiment." }],
+    });
+    const listed = (await (
+      await fetch(`${lab.baseUrl}/logistics/requests`, { headers: asMember(lab, "zhijing") })
+    ).json()) as { requests: Record<string, unknown>[] };
+    expect(listed.requests[0]).not.toHaveProperty("facts");
+    expect(listed.requests[0]?.schools).toEqual([
+      { school: "MIT", letter_deadline: "2026-12-01", deadline_timezone: "UTC" },
+    ]);
+
+    const opened = (await (
+      await fetch(`${lab.baseUrl}/logistics/requests/${submitted.request.id}`, {
+        headers: asMember(lab, "zhijing"),
+      })
+    ).json()) as { facts?: unknown[]; schools?: { program?: string }[] };
+    expect(opened.facts).toHaveLength(1);
+    expect(opened.schools?.[0]?.program).toBe("PhD CS");
   });
 
   it("shows an admin the lab's queue and a member only their own", async () => {
@@ -311,10 +402,11 @@ describe("logistics request routes", () => {
     });
     const listed = (
       (await list.json()) as {
-        requests: { documents: { data_base64?: string }[] }[];
+        requests: { documents?: { data_base64?: string }[] }[];
       }
     ).requests;
-    expect(listed[0]?.documents[0]?.data_base64).toBeUndefined();
+    // The list row does not name the files at all: they are drawn only on the opened request.
+    expect(listed[0]).not.toHaveProperty("documents");
 
     const opened = await fetch(`${lab.baseUrl}/logistics/requests/${submitted.request.id}`, {
       headers: asMember(lab, "ada"),
@@ -501,5 +593,125 @@ describe("POST /logistics/rec-letter-reminders/run", () => {
     // professor: the recipient is only resolved on a morning with something to say.
     expect(byCron.status).toBe(200);
     expect((await byCron.json()) as { reminded: unknown[] }).toEqual({ reminded: [] });
+  });
+});
+
+describe("GET /logistics/requests paging", () => {
+  type Page = {
+    requests: { id: string; status: string; member_name: string; schools?: { school: string }[] }[];
+    total: number;
+    next_cursor?: string;
+  };
+  const list = async (
+    lab: Lab,
+    who: string,
+    query = "",
+  ): Promise<{ status: number; body: Page }> => {
+    const res = await fetch(`${lab.baseUrl}/logistics/requests${query}`, {
+      headers: asMember(lab, who),
+    });
+    return { status: res.status, body: (await res.json()) as Page };
+  };
+  const letterFor = (school: string): AdminBotLogisticsRequestInput => ({
+    kind: "recommendation_letters",
+    schools: [{ school, letter_deadline: "2026-12-01", deadline_timezone: "UTC" }],
+  });
+
+  it("sends one page of twenty, open first, with the total and a cursor for the rest", async () => {
+    const lab = await startLab();
+    const ids: string[] = [];
+    for (let index = 0; index < 24; index += 1) {
+      ids.push(
+        (await submit(lab, index % 2 ? "ada" : "grace", letterFor(`School ${index}`))).request.id,
+      );
+    }
+    // The three oldest are finished; with everything included they still sort after every open one.
+    for (const id of ids.slice(0, 3)) {
+      await fetch(`${lab.baseUrl}/logistics/requests/${id}/status`, {
+        method: "PUT",
+        headers: asMember(lab, "zhijing", { "Content-Type": "application/json" }),
+        body: JSON.stringify({ status: "completed" }),
+      });
+    }
+
+    const first = await list(lab, "zhijing");
+    expect(first.status).toBe(200);
+    expect(first.body.requests).toHaveLength(20);
+    expect(first.body.total).toBe(24);
+    expect(first.body.next_cursor).toMatch(/^20~/u);
+    expect(first.body.requests.every((row) => row.status === "submitted")).toBe(true);
+
+    const rest = await list(
+      lab,
+      "zhijing",
+      `?cursor=${encodeURIComponent(first.body.next_cursor ?? "")}`,
+    );
+    expect(rest.body.requests.map((row) => row.status)).toEqual([
+      "submitted",
+      "completed",
+      "completed",
+      "completed",
+    ]);
+    expect(rest.body.next_cursor).toBeUndefined();
+    const seen = new Set([...first.body.requests, ...rest.body.requests].map((row) => row.id));
+    expect(seen.size).toBe(24);
+
+    // The open filter's total is the open count, whatever page is drawn.
+    const open = await list(lab, "zhijing", "?status=open&limit=5");
+    expect(open.body.total).toBe(21);
+    expect(open.body.requests).toHaveLength(5);
+
+    // A member still reads only their own, paged the same way.
+    const mine = await list(lab, "ada");
+    expect(mine.body.total).toBe(12);
+    expect(new Set(mine.body.requests.map((row) => row.member_name))).toEqual(new Set(["ada"]));
+  });
+
+  it("does not skip a request when one on the page already shown is settled", async () => {
+    const lab = await startLab();
+    for (let index = 0; index < 6; index += 1) {
+      await submit(lab, "ada", letterFor(`School ${index}`));
+    }
+    const first = await list(lab, "zhijing", "?status=open&limit=3");
+    // The admin finishes one of the three on screen; it leaves the open queue.
+    await fetch(`${lab.baseUrl}/logistics/requests/${first.body.requests[0]!.id}/status`, {
+      method: "PUT",
+      headers: asMember(lab, "zhijing", { "Content-Type": "application/json" }),
+      body: JSON.stringify({ status: "completed" }),
+    });
+    const cursor = encodeURIComponent(first.body.next_cursor ?? "");
+    const rest = await list(lab, "zhijing", `?status=open&limit=3&cursor=${cursor}`);
+    const shown = new Set([...first.body.requests, ...rest.body.requests].map((row) => row.id));
+    expect(shown.size).toBe(6);
+    expect(rest.body.next_cursor).toBeUndefined();
+  });
+
+  it("searches the whole queue before cutting the page", async () => {
+    const lab = await startLab();
+    await submit(lab, "ada", letterFor("Oldest University"));
+    for (let index = 0; index < 22; index += 1) {
+      await submit(lab, "grace", letterFor(`School ${index}`));
+    }
+    const found = await list(lab, "zhijing", "?q=oldest");
+    expect(found.body.total).toBe(1);
+    expect(found.body.requests[0]?.schools?.[0]?.school).toBe("Oldest University");
+    const byUser = await list(lab, "zhijing", "?sort=user&dir=asc&limit=1");
+    expect(byUser.body.requests[0]?.member_name).toBe("ada");
+  });
+
+  it("refuses a page past the ceiling or a filter it does not know", async () => {
+    const lab = await startLab();
+    for (const query of [
+      "?limit=51",
+      "?limit=0",
+      "?cursor=abc",
+      "?status=lost",
+      "?sort=size",
+      "?kind=x",
+    ]) {
+      const res = await list(lab, "zhijing", query);
+      expect(res.status, query).toBe(400);
+    }
+    expect((await list(lab, "zhijing", "?limit=50")).status).toBe(200);
   });
 });

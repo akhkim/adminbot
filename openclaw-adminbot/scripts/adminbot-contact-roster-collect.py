@@ -29,11 +29,18 @@ scripts/adminbot-deadline-collect.py. The repo keeps no spreadsheet dependency o
 
   python3 scripts/adminbot-contact-roster-collect.py \
       --workbook "/mnt/c/Users/Andrew/Downloads/Jinesis Contact_Paper list with Zhijing (4).xlsx"
+
+When only the access-design tab has changed, its CSV export is enough: the matrix is rebuilt from
+it and the contact list already in the fixture is kept as it is.
+
+  python3 scripts/adminbot-contact-roster-collect.py \
+      --access-csv "/mnt/c/Users/Andrew/Downloads/Jinesis Contact_Paper list with Zhijing - External Collab Access Design.csv"
 """
 
 from __future__ import annotations
 
 import argparse
+import csv
 import datetime as dt
 import json
 import pathlib
@@ -44,7 +51,7 @@ import unicodedata
 try:
     import openpyxl
 except ImportError:  # pragma: no cover - operator-facing
-    sys.exit("openpyxl is required: pip install openpyxl")
+    openpyxl = None  # only the --workbook path needs it
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 OUT_PATH = REPO_ROOT / "extensions/adminbot/src/workflows/members/generated/contact-roster.ts"
@@ -67,6 +74,8 @@ SUBGROUP_COLUMNS = {
     8: "disappearing_coauthor",
     9: "external_prof",
     10: "coauthor_discussant_designer",
+    11: "benefit_partner",
+    12: "benefit_direct_relative",
 }
 
 # The people sheets, by header position. Column 0 is the name and has no header. `location`
@@ -224,6 +233,8 @@ def locate_access_header(rows: list[list[str]]) -> tuple[int, int, dict[int, str
         "disappearing-coauthor": "disappearing_coauthor",
         "external-prof": "external_prof",
         "coauthor-discussant-or-designer": "coauthor_discussant_designer",
+        "benefit-partner": "benefit_partner",
+        "benefit-direct-relative": "benefit_direct_relative",
     }
     if set(wanted.values()) != set(SUBGROUP_COLUMNS.values()):
         raise SystemExit("the header alias table and SUBGROUP_COLUMNS disagree about the subgroups")
@@ -247,7 +258,18 @@ def locate_access_header(rows: list[list[str]]) -> tuple[int, int, dict[int, str
 
 
 def collect_access_matrix(worksheet) -> list[dict]:
-    rows = rows_of(worksheet)
+    return access_matrix_from_rows(rows_of(worksheet))
+
+
+def collect_access_matrix_csv(path: pathlib.Path) -> list[dict]:
+    """The same matrix from the tab's CSV export, which Sheets writes as UTF-8 with the prose
+    headers' line breaks kept inside quoted cells -- exactly what `rows_of` yields from the .xlsx."""
+    with path.open(encoding="utf-8-sig", newline="") as handle:
+        rows = [[cell.strip() for cell in row] for row in csv.reader(handle)]
+    return access_matrix_from_rows([row for row in rows if any(row)])
+
+
+def access_matrix_from_rows(rows: list[list[str]]) -> list[dict]:
     header_index, label_column, columns = locate_access_header(rows)
     items = []
     for row in rows[header_index + 1 :]:
@@ -337,21 +359,52 @@ export const CONTACT_MEMBERS: readonly ContactSheetMember[] = {payload_members};
 """
 
 
+def members_from_fixture(out: pathlib.Path) -> tuple[str, list[dict]]:
+    """The contact list and its source name from the fixture already committed.
+
+    Read back rather than regenerated because it comes from the people tabs, which carry phone
+    numbers and private addresses and are not what a CSV of the access tab contains. The fixture is
+    oxfmt-formatted TypeScript, so the literal is re-read as JSON after its trailing commas go.
+    """
+    text = out.read_text(encoding="utf-8")
+    source = re.search(r"^// Generated from '([^']*)'", text, re.MULTILINE)
+    marker = "export const CONTACT_MEMBERS: readonly ContactSheetMember[] = "
+    body = text[text.index(marker) + len(marker) :].rstrip().rstrip(";")
+    body = re.sub(r",(\s*[\]}])", r"\1", body)
+    body = re.sub(r"^(\s*)([A-Za-z_][A-Za-z0-9_]*):", r'\1"\2":', body, flags=re.MULTILINE)
+    # A CSV refresh appends its own name; keep only the workbook the contact list came from.
+    workbook = source.group(1).split(" + ")[0] if source else "the committed fixture"
+    return workbook, json.loads(body)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--workbook", required=True, help="path to the .xlsx")
+    parser.add_argument("--workbook", help="path to the .xlsx")
+    parser.add_argument("--access-csv", help="the access-design tab exported as CSV")
     parser.add_argument("--out", default=str(OUT_PATH))
     args = parser.parse_args()
-
-    path = pathlib.Path(args.workbook)
-    workbook = openpyxl.load_workbook(path, read_only=True, data_only=True)
-    members = collect_members(workbook)
-    access = collect_access_matrix(workbook["External Collab Access Design"])
-    workbook.close()
+    if not args.workbook and not args.access_csv:
+        parser.error("pass --workbook, --access-csv, or both")
 
     out = pathlib.Path(args.out)
+    if args.workbook:
+        if openpyxl is None:
+            sys.exit("openpyxl is required for --workbook: pip install openpyxl")
+        path = pathlib.Path(args.workbook)
+        workbook = openpyxl.load_workbook(path, read_only=True, data_only=True)
+        members = collect_members(workbook)
+        access = collect_access_matrix(workbook["External Collab Access Design"])
+        workbook.close()
+        source = path.name
+    else:
+        source, members = members_from_fixture(out)
+    if args.access_csv:
+        csv_path = pathlib.Path(args.access_csv)
+        access = collect_access_matrix_csv(csv_path)
+        source = f"{source} + {csv_path.name}"
+
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(render(path.name, members, access), encoding="utf-8")
+    out.write_text(render(source, members, access), encoding="utf-8")
     print(f"{len(members)} contacts, {len(access)} access items -> {out}")
 
 

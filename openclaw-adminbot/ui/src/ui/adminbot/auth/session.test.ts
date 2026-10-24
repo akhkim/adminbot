@@ -4,24 +4,36 @@ import { createStorageMock } from "../../../test-helpers/storage.ts";
 import {
   changeMemberEmail,
   claimMember,
-  clearStoredMemberSession,
-  fetchMemberSession,
-  fetchMemberSheet,
-  fetchRelevantPapers,
-  fetchRoster,
-  hasAcknowledgedOnboardingChecklist,
-  loadStoredMemberSession,
   loginMember,
-  markOnboardingChecklistAcknowledged,
   issueDeviceToken,
   pairDevice,
-  resolveAdminBotBaseUrl,
-  resolveEmailReviewAsAdmin,
-  saveStoredMemberSession,
   signupMember,
-  nudgeOnboardingStep,
-  setOnboardingStep,
-  updateOwnProfile,
+} from "../api/auth.ts";
+import { resolveEmailReviewAsAdmin } from "../api/email-review.ts";
+import { updateOwnProfile } from "../api/members.ts";
+import { fetchMemberSheet, nudgeOnboardingStep, setOnboardingStep } from "../api/onboarding.ts";
+import { enqueueAdminBotMutation, resetAdminBotOfflineMemory } from "../offline/outbox.ts";
+import {
+  flushOfflineReads,
+  offlineReadStoreStats,
+  readOfflineRead,
+} from "../offline/read-store.ts";
+import { resolveOfflineScope } from "./offline-reads.ts";
+import { forgetSessionReads } from "./read-cache.ts";
+import {
+  clearStoredMemberSession,
+  fetchMemberSession,
+  fetchMemberResource,
+  fetchRelevantPapers,
+  fetchRoster,
+  flushQueuedAdminBotWrites,
+  hasAcknowledgedOnboardingChecklist,
+  loadStoredMemberSession,
+  logoutMember,
+  markOnboardingChecklistAcknowledged,
+  pendingQueuedAdminBotWriteCount,
+  resolveAdminBotBaseUrl,
+  saveStoredMemberSession,
 } from "./session.ts";
 
 const BASE_URL = "http://127.0.0.1:8765";
@@ -197,6 +209,13 @@ describe("fetchRoster", () => {
     expect(result).toEqual({ ok: true, value: members });
   });
 
+  it("sends a search query without credentials", async () => {
+    const spy = vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(200, { members: [] }));
+    await fetchRoster(BASE_URL, "Ada Δ");
+    expect(spy.mock.calls[0]?.[0]).toBe(`${BASE_URL}/auth/roster?q=Ada%20%CE%94`);
+    expect(spy.mock.calls[0]?.[1]?.credentials).toBe("omit");
+  });
+
   it("defaults to an empty list when members are absent", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(200, {}));
     const result = await fetchRoster(BASE_URL);
@@ -343,6 +362,27 @@ describe("fetchRelevantPapers", () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(401, {}));
     const result = await fetchRelevantPapers("sess", BASE_URL);
     expect(result).toEqual({ ok: false, kind: "auth-failed" });
+  });
+
+  it("shares a read in flight and revalidates the next one by ETag", async () => {
+    const papers = [{ id: "p1", title: "Causal Systems", current_step: "submission" }];
+    const spy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse(200, { papers }, { ETag: '"papers-1"' }))
+      .mockResolvedValueOnce(new Response(null, { status: 304 }));
+    const [first, second] = await Promise.all([
+      fetchRelevantPapers("sess-shared", BASE_URL),
+      fetchRelevantPapers("sess-shared", BASE_URL),
+    ]);
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(first).toEqual({ ok: true, value: papers });
+    expect(second).toEqual({ ok: true, value: papers });
+
+    const third = await fetchRelevantPapers("sess-shared", BASE_URL);
+    expect(spy).toHaveBeenCalledTimes(2);
+    const headers = (spy.mock.calls[1]?.[1]?.headers ?? {}) as Record<string, string>;
+    expect(headers["If-None-Match"]).toBe('"papers-1"');
+    expect(third).toEqual({ ok: true, value: papers });
   });
 });
 
@@ -496,6 +536,292 @@ describe("onboarding step nudge", () => {
       channel: "email",
       message: "Please join us.",
     });
+  });
+});
+
+describe("offline GET cache and mutation outbox", () => {
+  // Disk writes and wipes are fire-and-forget; let them land before looking.
+  async function settle(): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flushOfflineReads();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  async function stored(token: string, path: string) {
+    const scope = await resolveOfflineScope(BASE_URL, token);
+    return scope ? await readOfflineRead(scope, path) : undefined;
+  }
+
+  it("returns the member's own last profile only to the same session", async () => {
+    await resetAdminBotOfflineMemory();
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse(200, { member: { id: "ada" } }));
+    await fetchMemberResource("/lab/members/self", "ada-session", BASE_URL);
+    fetchMock.mockRejectedValue(new Error("offline"));
+
+    await expect(
+      fetchMemberResource("/lab/members/self", "ada-session", BASE_URL),
+    ).resolves.toEqual({ ok: true, value: { member: { id: "ada" } }, cached: true });
+    await expect(
+      fetchMemberResource("/lab/members/self", "mei-session", BASE_URL),
+    ).resolves.toEqual({ ok: false, kind: "unreachable" });
+  });
+
+  it("never writes the roster or admin-only reads to disk", async () => {
+    await resetAdminBotOfflineMemory();
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async () => jsonResponse(200, { secret: "admin-only" }, { ETag: 'W/"a"' }));
+    for (const path of ["/lab/members", "/sensitive-info", "/logistics/requests", "/papers"]) {
+      await fetchMemberResource(path, "admin-session", BASE_URL);
+    }
+    await settle();
+    for (const path of ["/lab/members", "/sensitive-info", "/logistics/requests", "/papers"]) {
+      await expect(stored("admin-session", path)).resolves.toBeUndefined();
+    }
+    expect(offlineReadStoreStats().puts).toBe(0);
+    fetchMock.mockRejectedValue(new Error("offline"));
+    await expect(fetchMemberResource("/lab/members", "admin-session", BASE_URL)).resolves.toEqual({
+      ok: false,
+      kind: "unreachable",
+    });
+  });
+
+  it("uses cached reads during a service outage but never for authorization failures", async () => {
+    await resetAdminBotOfflineMemory();
+    const fetcher = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(200, { member: {} }));
+    await fetchMemberResource("/lab/members/self", "synthetic", BASE_URL);
+    fetcher.mockImplementation(async () => jsonResponse(503, {}));
+    await expect(
+      fetchMemberResource("/lab/members/self", "synthetic", BASE_URL),
+    ).resolves.toMatchObject({ ok: true, cached: true });
+    for (const code of [401, 403]) {
+      fetcher.mockImplementation(async () => jsonResponse(code, {}));
+      await expect(
+        fetchMemberResource("/lab/members/self", "synthetic", BASE_URL),
+      ).resolves.toMatchObject({ ok: false });
+    }
+  });
+
+  it("wipes the stored copy on a 401", async () => {
+    await resetAdminBotOfflineMemory();
+    const fetcher = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(200, { member: {} }));
+    await fetchMemberResource("/lab/members/self", "synthetic", BASE_URL);
+    await settle();
+    await expect(stored("synthetic", "/lab/members/self")).resolves.toBeDefined();
+    fetcher.mockResolvedValue(jsonResponse(401, {}));
+    await fetchMemberResource("/papers", "synthetic", BASE_URL);
+    await settle();
+    await expect(stored("synthetic", "/lab/members/self")).resolves.toBeUndefined();
+  });
+
+  it("wipes the stored copies at sign-out", async () => {
+    await resetAdminBotOfflineMemory();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(200, { member: {} }));
+    saveStoredMemberSession({ sessionToken: "ada-session", expiresAt: "" });
+    await fetchMemberResource("/lab/members/self", "ada-session", BASE_URL);
+    await settle();
+    await expect(stored("ada-session", "/lab/members/self")).resolves.toBeDefined();
+    clearStoredMemberSession();
+    await settle();
+    await expect(stored("ada-session", "/lab/members/self")).resolves.toBeUndefined();
+  });
+
+  it("wipes at View-as start and keeps nothing of the viewed member", async () => {
+    await resetAdminBotOfflineMemory();
+    const fetcher = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(200, { member: {} }, { ETag: 'W/"v"' }));
+    saveStoredMemberSession({ sessionToken: "admin-session", expiresAt: "" });
+    await fetchMemberResource("/lab/members/self", "admin-session", BASE_URL);
+    await settle();
+    await expect(stored("admin-session", "/lab/members/self")).resolves.toBeDefined();
+    const impersonator = { sessionToken: "admin-session", expiresAt: "" };
+    saveStoredMemberSession({ sessionToken: "viewed-session", expiresAt: "", impersonator });
+    await fetchMemberResource("/lab/members/self", "viewed-session", BASE_URL);
+    await settle();
+    await expect(stored("admin-session", "/lab/members/self")).resolves.toBeUndefined();
+    await expect(stored("viewed-session", "/lab/members/self")).resolves.toBeUndefined();
+    // And at View-as stop: back on the admin's token, nothing of the viewed member survives.
+    saveStoredMemberSession({ sessionToken: "admin-session", expiresAt: "" });
+    fetcher.mockRejectedValue(new Error("offline"));
+    await expect(
+      fetchMemberResource("/lab/members/self", "viewed-session", BASE_URL),
+    ).resolves.toEqual({ ok: false, kind: "unreachable" });
+  });
+
+  it("keeps nothing of the viewed member when the browser refuses to save the session", async () => {
+    await resetAdminBotOfflineMemory();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(200, { member: {} }));
+    saveStoredMemberSession({ sessionToken: "admin-session", expiresAt: "" });
+    // Quota full, or storage blocked: the View-as session cannot be written to localStorage.
+    vi.spyOn(localStorage, "setItem").mockImplementation(() => {
+      throw new DOMException("quota", "QuotaExceededError");
+    });
+    const impersonator = { sessionToken: "admin-session", expiresAt: "" };
+    saveStoredMemberSession({ sessionToken: "viewed-session", expiresAt: "", impersonator });
+    await fetchMemberResource("/lab/members/self", "viewed-session", BASE_URL);
+    await settle();
+    await expect(stored("viewed-session", "/lab/members/self")).resolves.toBeUndefined();
+  });
+
+  it("revalidates against the disk copy after a page refresh and writes nothing on a 304", async () => {
+    await resetAdminBotOfflineMemory();
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse(200, { papers: ["mine"] }, { ETag: 'W/"m1"' }))
+      .mockResolvedValueOnce(new Response(null, { status: 304, headers: { ETag: 'W/"m1"' } }));
+    await fetchMemberResource("/papers?scope=mine", "ada-session", BASE_URL);
+    await settle();
+    const writesAfterFirst = offlineReadStoreStats();
+    forgetSessionReads(); // what a page refresh does to the in-memory copies
+    const second = await fetchMemberResource("/papers?scope=mine", "ada-session", BASE_URL);
+    const headers = fetchMock.mock.calls[1]?.[1]?.headers as Record<string, string>;
+    expect(headers["If-None-Match"]).toBe('W/"m1"');
+    expect(second).toEqual({ ok: true, value: { papers: ["mine"] } });
+    await settle();
+    expect(offlineReadStoreStats()).toEqual(writesAfterFirst);
+  });
+
+  it("does not queue or replay failed profile writes after reconnect", async () => {
+    await resetAdminBotOfflineMemory();
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(new Error("offline"));
+    await updateOwnProfile("ada", { name: "Ada" }, "ada-session", BASE_URL);
+    await expect(pendingQueuedAdminBotWriteCount("ada-session", BASE_URL)).resolves.toBe(0);
+    fetchMock.mockResolvedValue(jsonResponse(200, { ok: true }));
+    await fetchMemberResource("/prime", "ada-session", BASE_URL);
+    fetchMock.mockClear();
+    await expect(flushQueuedAdminBotWrites()).resolves.toEqual({ flushed: 0, remaining: 0 });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("retains legacy approval entries without replaying them", async () => {
+    await resetAdminBotOfflineMemory();
+    const token = "synthetic-legacy-session";
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+    const principalKey = [...new Uint8Array(digest)]
+      .map((v) => v.toString(16).padStart(2, "0"))
+      .join("");
+    await enqueueAdminBotMutation(
+      { baseUrl: BASE_URL, principalKey },
+      {
+        method: "POST",
+        path: "/proposals/synthetic/approve",
+        payload: { hash: "synthetic" },
+      },
+    );
+    const fetcher = vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(200, {}));
+    await fetchMemberResource("/prime", token, BASE_URL);
+    fetcher.mockClear();
+    await expect(flushQueuedAdminBotWrites()).resolves.toEqual({ flushed: 0, remaining: 1 });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("clears replay credentials when the member logs out", async () => {
+    await resetAdminBotOfflineMemory();
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(new Error("offline"));
+    await updateOwnProfile("ada", { name: "Ada" }, "ada-session", BASE_URL);
+    fetchMock.mockResolvedValue(jsonResponse(200, { logged_out: true }));
+
+    await logoutMember("ada-session", BASE_URL);
+    fetchMock.mockClear();
+
+    await expect(flushQueuedAdminBotWrites()).resolves.toEqual({ flushed: 0, remaining: 0 });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("revalidated GET reads", () => {
+  function ifNoneMatch(call: unknown[] | undefined): string | undefined {
+    const headers = (call?.[1] as RequestInit | undefined)?.headers as
+      | Record<string, string>
+      | undefined;
+    return headers?.["If-None-Match"];
+  }
+
+  it("sends the last tag back and reuses the kept body on a 304", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse(200, { papers: [{ id: "p1" }] }, { ETag: 'W/"v1"' }))
+      .mockResolvedValueOnce(new Response(null, { status: 304, headers: { ETag: 'W/"v1"' } }));
+
+    const first = await fetchMemberResource("/papers", "ada-session", BASE_URL);
+    expect(ifNoneMatch(fetchMock.mock.calls[0])).toBeUndefined();
+    const second = await fetchMemberResource("/papers", "ada-session", BASE_URL);
+    expect(ifNoneMatch(fetchMock.mock.calls[1])).toBe('W/"v1"');
+    expect(second).toEqual({ ok: true, value: { papers: [{ id: "p1" }] } });
+    // A fresh parse: an in-place edit of the first copy must not come back on the next read.
+    expect((second as { value: unknown }).value).not.toBe((first as { value: unknown }).value);
+  });
+
+  it("never offers one session's tag to another session", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse(200, { settings: "admin" }, { ETag: 'W/"admin"' }))
+      .mockResolvedValueOnce(jsonResponse(403, {}));
+    await fetchMemberResource("/settings", "admin-session", BASE_URL);
+    await fetchMemberResource("/settings", "member-session", BASE_URL);
+    expect(ifNoneMatch(fetchMock.mock.calls[1])).toBeUndefined();
+  });
+
+  it("forgets kept bodies when the stored session changes or is cleared", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async () => jsonResponse(200, { ok: true }, { ETag: 'W/"t"' }));
+    saveStoredMemberSession({ sessionToken: "ada-session", expiresAt: "" });
+    await fetchMemberResource("/lab/members/self", "ada-session", BASE_URL);
+    // View-as swaps the token and parks the admin's; back again is a second swap.
+    saveStoredMemberSession({ sessionToken: "viewed-session", expiresAt: "" });
+    saveStoredMemberSession({ sessionToken: "ada-session", expiresAt: "" });
+    await fetchMemberResource("/lab/members/self", "ada-session", BASE_URL);
+    expect(ifNoneMatch(fetchMock.mock.calls[1])).toBeUndefined();
+
+    await fetchMemberResource("/lab/members/self", "ada-session", BASE_URL);
+    expect(ifNoneMatch(fetchMock.mock.calls[2])).toBe('W/"t"');
+    clearStoredMemberSession();
+    await fetchMemberResource("/lab/members/self", "ada-session", BASE_URL);
+    expect(ifNoneMatch(fetchMock.mock.calls[3])).toBeUndefined();
+  });
+
+  it("shares one request between concurrent reads of the same URL and session", async () => {
+    let release: (response: Response) => void = () => {};
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const a = fetchMemberResource("/papers", "ada-session", BASE_URL);
+    const b = fetchMemberResource("/papers", "ada-session", BASE_URL);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    release(jsonResponse(200, { papers: [] }));
+    await expect(a).resolves.toEqual({ ok: true, value: { papers: [] } });
+    await expect(b).resolves.toEqual({ ok: true, value: { papers: [] } });
+  });
+
+  it("does not let a read after a write join a read from before it", async () => {
+    const pending: Array<(response: Response) => void> = [];
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation((_url, init) =>
+        init?.method === "GET"
+          ? new Promise<Response>((resolve) => pending.push(resolve))
+          : Promise.resolve(jsonResponse(200, { ok: true })),
+      );
+    const before = fetchMemberResource("/lab/members/self", "ada-session", BASE_URL);
+    await updateOwnProfile("ada", { name: "Ada" }, "ada-session", BASE_URL);
+    const after = fetchMemberResource("/lab/members/self", "ada-session", BASE_URL);
+    // An own read on a cold memory cache looks at its disk copy before going out.
+    await vi.waitFor(() =>
+      expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "GET")).toHaveLength(2),
+    );
+    pending.forEach((resolve, index) => resolve(jsonResponse(200, { n: index })));
+    await expect(before).resolves.toEqual({ ok: true, value: { n: 0 } });
+    await expect(after).resolves.toEqual({ ok: true, value: { n: 1 } });
   });
 });
 

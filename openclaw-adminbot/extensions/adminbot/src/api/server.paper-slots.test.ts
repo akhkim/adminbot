@@ -13,6 +13,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createAdminBotMessageExecutor } from "../connectors/message.js";
 import type { AdminBotLabMemberInput } from "../contracts/actions.js";
 import { ADMINBOT_LAB_OVERLEAF_HOST } from "../contracts/overleaf.js";
+import { withCompleteProfile } from "../contracts/profile-completion.test-helpers.js";
 import { createAdminBotMockService } from "./server.js";
 
 const SERVICE_TOKEN = "test-service-token";
@@ -135,14 +136,16 @@ async function call(
  */
 async function adminHeaders(baseUrl: string): Promise<Record<string, string>> {
   const mock = mockFor(baseUrl);
-  const seeded = mock.service.upsertLabMember({
-    receives_nudges: true,
-    id: "zhijing",
-    name: "Zhijing Jin",
-    email: "zhijing@cs.toronto.edu",
-    privilege_level: "admin",
-    slack_user_id: "U-ZJ",
-  } as AdminBotLabMemberInput);
+  const seeded = mock.service.upsertLabMember(
+    withCompleteProfile({
+      receives_nudges: true,
+      id: "zhijing",
+      name: "Zhijing Jin",
+      email: "zhijing@cs.toronto.edu",
+      privilege_level: "admin",
+      slack_user_id: "U-ZJ",
+    } as AdminBotLabMemberInput),
+  );
   if (!seeded.ok) {
     throw new Error(seeded.error.message);
   }
@@ -165,7 +168,7 @@ async function adminHeaders(baseUrl: string): Promise<Record<string, string>> {
   if (!pending) {
     throw new Error("no pending claim for zhijing");
   }
-  const approved = mock.auth.approveRegistration(pending.id, "test-admin");
+  const approved = await mock.auth.approveRegistration(pending.id, "test-admin");
   if (!approved.ok) {
     throw new Error(approved.error.message);
   }
@@ -206,23 +209,58 @@ describe("the paper-evidence reads", () => {
     const { baseUrl } = await startLab();
     const result = await call(baseUrl, "GET", "/papers/slot-overview");
     expect(result.status).toBe(200);
-    expect(result.body.papers[0]).toMatchObject({
+    expect(result.body.papers[0]).toEqual({
       paper_id: "p1",
-      venue: "ICLR 2027",
       provided_count: 0,
+      required_count: expect.any(Number),
       // Only the one thing that is actually askable: everything else is behind it.
       missing_slots: ["project_folder"],
-      first_author_member_id: "ada",
       dormant: false,
       closed: false,
+      cycle_closed: false,
+      escalating: false,
     });
+    // The paper's own fields stay on the paper: the page already holds them from GET /papers,
+    // and repeating them here cost every row of a 1000-paper lab another 330 bytes.
+    expect(result.body.papers[0]).not.toHaveProperty("title");
+    expect(result.body.papers[0]).not.toHaveProperty("attendance");
   });
 
-  it("returns all 25 slots for one paper, blanks included", async () => {
+  it("returns all 28 slots for one paper, blanks included", async () => {
     const { baseUrl } = await startLab();
     const result = await call(baseUrl, "GET", "/papers/p1/slots");
     expect(result.status).toBe(200);
-    expect(result.body.slots).toHaveLength(25);
+    expect(result.body.slots).toHaveLength(28);
+  });
+});
+
+describe("reading one paper", () => {
+  it("returns the paper in the list's projection, and 404 for one that does not exist", async () => {
+    const { baseUrl } = await startLab();
+    const one = await call(baseUrl, "GET", "/papers/p1");
+    expect(one.status).toBe(200);
+    expect(one.body).toMatchObject({ id: "p1", current_step: "overleaf_writing" });
+    expect(one.body).not.toHaveProperty("timeline");
+    const listed = await call(baseUrl, "GET", "/papers");
+    expect(listed.body.papers.find((paper: { id: string }) => paper.id === "p1")).toEqual(one.body);
+    expect((await call(baseUrl, "GET", "/papers/nope")).status).toBe(404);
+    // The literal reads beside it are still theirs, not swallowed as a paper id.
+    expect((await call(baseUrl, "GET", "/papers/nudges")).body).toHaveProperty("nudges");
+    expect((await call(baseUrl, "GET", "/papers/slot-overview")).body).toHaveProperty("papers");
+  });
+
+  it("refuses the arXiv password as an artifact and takes it on its slot instead", async () => {
+    const { baseUrl } = await startLab();
+    const put = await call(baseUrl, "PUT", "/papers/p1", {
+      title: "Causal abstraction",
+      authors: ["Ada Lovelace"],
+      current_step: "arxiv_polish",
+      artifacts: { arxiv_paper_password: "ab12cd" },
+    });
+    expect(put.status).toBe(400);
+    expect((await call(baseUrl, "GET", "/papers/p1")).body.artifacts ?? {}).not.toHaveProperty(
+      "arxiv_paper_password",
+    );
   });
 });
 
@@ -486,8 +524,10 @@ describe("the global nudge, end to end", () => {
       member_id: "ada",
       member_name: "Ada Lovelace",
       deliverable: true,
-      paper_titles: ["Causal abstraction"],
+      // A count: the titles are already in the message the preview quotes in full.
+      paper_count: 1,
     });
+    expect(preview.body.batches[0]).not.toHaveProperty("paper_titles");
     // The composed message, verbatim -- the preview is the send, looked at rather than performed.
     expect(preview.body.batches[0].message).toContain("Project folder or brainstorm doc");
     expect(sent).toHaveLength(0);
@@ -495,25 +535,43 @@ describe("the global nudge, end to end", () => {
 
   it("says up front that somebody cannot be reached", async () => {
     const { baseUrl } = await startLab();
-    mockFor(baseUrl).service.upsertLabMember({
-      receives_nudges: true,
-      id: "ada",
-      name: "Ada Lovelace",
-      privilege_level: "member",
-      slack_user_id: "",
-    } as never);
+    mockFor(baseUrl).service.upsertLabMember(
+      withCompleteProfile({
+        receives_nudges: true,
+        id: "ada",
+        name: "Ada Lovelace",
+        privilege_level: "member",
+        slack_user_id: "",
+      } as never),
+    );
     const preview = await call(baseUrl, "GET", "/papers/nudge-batches");
     // Reported before the send rather than afterwards in a list of failures.
     expect(preview.body.batches[0]).toMatchObject({ member_id: "ada", deliverable: false });
   });
 
-  it("refuses the send from the service principal -- this one needs a person", async () => {
+  it("refuses the button route from the service principal -- that one needs a person", async () => {
     const { baseUrl, sent } = await startLab();
-    // Unlike the mandatory-fields reminder, nothing schedules this. It messages the lab under the
-    // presser's authority, so an agent tool call must not be able to trigger it.
+    // The button messages the lab under the presser's authority; the cron has its own route.
     const result = await call(baseUrl, "POST", "/papers/slot-reminder/run");
     expect(result.status).toBe(403);
     expect(sent).toHaveLength(0);
+  });
+
+  it("sends on the weekday schedule with the button's cadence and ledger", async () => {
+    const { baseUrl, sent } = await startLab();
+    const scheduled = await call(baseUrl, "POST", "/papers/slot-reminder/scheduled-run");
+    expect(scheduled.status).toBe(200);
+    expect(scheduled.body.created[0]).toMatchObject({ type: "member_nudge.send", status: "executed" });
+    expect(sent).toHaveLength(1);
+    // Same ledger: an admin pressing the button the same morning does not send it twice.
+    const pressed = await callAs(
+      await adminHeaders(baseUrl),
+      baseUrl,
+      "POST",
+      "/papers/slot-reminder/run",
+    );
+    expect(pressed.body.created).toHaveLength(0);
+    expect(sent).toHaveLength(1);
   });
 
   it("sends one Slack message to the first author naming exactly what is outstanding", async () => {
@@ -590,7 +648,7 @@ describe("the global nudge, end to end", () => {
     });
     expect(ledger[0]?.last_nudged_at).toBeTruthy();
     // Nothing was stamped for the slot that is already in, or for anything still gated.
-    expect(slots.length).toBe(25);
+    expect(slots.length).toBe(28);
   });
 
   it("keeps its cadence, so a doubled cron cannot nag", async () => {
@@ -606,6 +664,53 @@ describe("the global nudge, end to end", () => {
     const { baseUrl, sent } = await startLab();
     const res = await fetch(`${baseUrl}/papers/slot-reminder/run`, { method: "POST" });
     expect(res.status).toBe(401);
+    expect(sent).toHaveLength(0);
+  });
+});
+
+describe("conference travel export", () => {
+  it("keeps lab travel private and exposes an authenticated read without sending anything", async () => {
+    const { baseUrl, sent } = await startLab();
+    const route = "/papers/conference-travel-export";
+    expect((await fetch(`${baseUrl}${route}`)).status).toBe(401);
+    const headers = await adminHeaders(baseUrl);
+    const result = await callAs(headers, baseUrl, "GET", route);
+    expect(result.status).toBe(200);
+    expect(result.body.rows).toEqual([]);
+    mockFor(baseUrl).service.upsertLabMember(
+      withCompleteProfile({
+        id: "zhijing",
+        name: "Zhijing Jin",
+        privilege_level: "member",
+      } as AdminBotLabMemberInput),
+    );
+    expect((await callAs(headers, baseUrl, "GET", route)).status).toBe(403);
+    expect(sent).toHaveLength(0);
+  });
+});
+
+describe("conference channel invites", () => {
+  it("requires a real admin session before an external action and rejects unknown conferences", async () => {
+    const { baseUrl } = await startLab();
+    const route = "/papers/conference-rosters/emnlp%3A2026/channel-invites";
+    expect((await fetch(`${baseUrl}${route}`, { method: "POST" })).status).toBe(401);
+    expect((await call(baseUrl, "POST", route, {})).status).toBe(403);
+    expect((await callAs(await adminHeaders(baseUrl), baseUrl, "POST", route, {})).status).toBe(
+      404,
+    );
+  });
+});
+
+describe("conference intros", () => {
+  it("requires a real admin session before sending a group DM and rejects unknown conferences", async () => {
+    const { baseUrl, sent } = await startLab();
+    // No accepted paper and no dataset event: nothing to introduce anybody at.
+    const route = "/papers/conference-rosters/nowhere-conf%3A2026/intros";
+    expect((await fetch(`${baseUrl}${route}`, { method: "POST" })).status).toBe(401);
+    expect((await call(baseUrl, "POST", route, {})).status).toBe(403);
+    expect((await callAs(await adminHeaders(baseUrl), baseUrl, "POST", route, {})).status).toBe(
+      404,
+    );
     expect(sent).toHaveLength(0);
   });
 });

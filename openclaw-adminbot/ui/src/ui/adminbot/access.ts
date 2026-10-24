@@ -43,7 +43,7 @@ export function resolveAccessRole(params: {
 // Minimum role each tab needs. Every tab is listed: a new tab has to state its audience here or
 // the type check fails, so adding a surface can never silently expose it to visitors.
 const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
-  // Open to visitors: the whole General Tools group. None of the four is about the lab's own
+  // Open to visitors: four of the General Tools group. None of the four is about the lab's own
   // people. The reimbursement assistant is self-scoped -- it only ever sees what the person in
   // front of it typed -- the deadline board and the opportunities board are bundled public
   // snapshots that need no gateway at all, and the conference-paper search ranks a published
@@ -51,12 +51,15 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   // the test for whether a surface needs an account.
   adminbotReimbursements: "anonymous",
   adminbotDeadlines: "anonymous",
+  adminbotNotificationDrafts: "admin",
   adminbotOpportunities: "anonymous",
   adminbotConferencePapers: "anonymous",
+  adminbotReferenceChecker: "member",
 
   // Members. The roster is lab-internal but not a governance surface, and chat is how members talk
   // to AdminBot at all.
   adminbotMembers: "member",
+  adminbotArrReviewers: "member",
   // Every member has a schedule page, but it is only ever their own: holidays, courses, other jobs
   // and the note they wrote for the admins are planning data for the people who plan, so reading
   // someone else's is an admin act. The tab is member-level because your own schedule is yours; the
@@ -66,7 +69,7 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   // Recordings of the lab's own meetings, for the lab's own members. The tab is member-level
   // because the recording and the summary are what someone who missed the meeting came for; the
   // attendance roster inside it is not, and the service hands a member only their own line and a
-  // headcount (listMeetingsForMember). Reading who else was there is an admin act.
+  // headcount (listMeetingsPageForMember). Reading who else was there is an admin act.
   adminbotMeetings: "member",
   // Each of the three request forms starts a request made in the viewer's own name, so each needs
   // an account behind it -- a visitor has no identity for AdminBot to route the signature, the
@@ -89,6 +92,11 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   // Lab Sharing is the collaboration surface for every member -- ask for help, answer invites,
   // browse open projects. No data on it requires operator privilege.
   labSharing: "member",
+  // Upcoming events, who is going and who is nearby, and opt-in location sharing between members.
+  // Full members only (see canAccessTab below): it shows who is going where, and the service
+  // refuses trial members and external collaborators on every /events and /travel route regardless
+  // of this entry.
+  events: "member",
 
   // Everything else is an operator or governance surface.
   // Active Papers is the lab-wide pipeline across every author, not the viewer's own work -- that
@@ -107,13 +115,6 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   // Everything on it is an admin read already -- the letter queue, the roster's adoption, everyone's
   // timelines. It is the same data with the "what is waiting on me" question asked of it.
   adminbotProfessor: "admin",
-  // A location history, and the narrowest read in the service: GET /lab/members/:id/travel serves
-  // the head professor her own record and 404s everybody else, admins included, because hers is the
-  // only travel history the lab keeps. This entry is visibility only and is deliberately looser
-  // than the route -- another admin can reach the tab and will find nothing behind it, which is the
-  // honest outcome and not a leak. Tightening it here would need the session to carry who the head
-  // professor is, which is a wider change than a tab label is worth.
-  adminbotTravel: "admin",
   adminbotOnboarding: "admin",
   adminbotSettings: "admin",
   adminbotAnnouncements: "admin",
@@ -149,12 +150,24 @@ export function minimumRoleForTab(tab: Tab): AccessRole {
   return TAB_MINIMUM_ROLE[tab];
 }
 
-export function canAccessTab(tab: Tab, role: AccessRole): boolean {
+export function canAccessTab(
+  tab: Tab,
+  role: AccessRole,
+  privilegeLevel: string | null = role,
+): boolean {
+  // The broad UI member role also includes trial members and external collaborators.
+  if (tab === "adminbotReferenceChecker" || tab === "events") {
+    return role !== "anonymous" && (privilegeLevel === "member" || privilegeLevel === "admin");
+  }
   return rank(role) >= rank(TAB_MINIMUM_ROLE[tab]);
 }
 
-export function visibleTabsForRole(tabs: readonly Tab[], role: AccessRole): Tab[] {
-  return tabs.filter((tab) => canAccessTab(tab, role));
+export function visibleTabsForRole(
+  tabs: readonly Tab[],
+  role: AccessRole,
+  privilegeLevel: string | null = role,
+): Tab[] {
+  return tabs.filter((tab) => canAccessTab(tab, role, privilegeLevel));
 }
 
 /**
@@ -186,9 +199,12 @@ export function visibleTabsForMember(
   tabs: readonly Tab[],
   role: AccessRole,
   onboardingSteps: readonly { status: string }[] | undefined | null,
+  privilegeLevel: string | null = role,
 ): Tab[] {
   const finished = isOnboardingComplete(onboardingSteps);
-  return visibleTabsForRole(tabs, role).filter((tab) => tab !== "gettingStarted" || !finished);
+  return visibleTabsForRole(tabs, role, privilegeLevel).filter(
+    (tab) => tab !== "gettingStarted" || !finished,
+  );
 }
 
 // Where a role lands when it has no tab of its own choosing — a fresh visit, or a tab that is no
@@ -199,8 +215,12 @@ export function defaultTabForRole(role: AccessRole): Tab {
 
 // The tab to actually render: the requested one when the role may see it, otherwise that role's
 // default. Signing out mid-session lands on a permitted surface rather than an empty panel.
-export function resolveAccessibleTab(tab: Tab, role: AccessRole): Tab {
-  return canAccessTab(tab, role) ? tab : defaultTabForRole(role);
+export function resolveAccessibleTab(
+  tab: Tab,
+  role: AccessRole,
+  privilegeLevel: string | null = role,
+): Tab {
+  return canAccessTab(tab, role, privilegeLevel) ? tab : defaultTabForRole(role);
 }
 
 /**

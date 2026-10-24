@@ -92,6 +92,11 @@ function friendlyZoneLabel(zone: string): string {
   return last.replaceAll("_", " ");
 }
 
+/** Shared label for display and proposal timezone controls. */
+export function timezoneOptionLabel(zone: string): string {
+  return COMMON_ZONES.find((option) => option.zone === zone)?.label ?? zone;
+}
+
 /**
  * The options a single zone `<select>` should offer, with the value always present.
  *
@@ -110,10 +115,7 @@ export function timezoneOptions(value: string): readonly TimezoneGroup[] {
   };
   const own = localTimezone();
   push(own, `Local timezone (${friendlyZoneLabel(own)})`);
-  push(
-    value,
-    COMMON_ZONES.find((option) => option.zone === value)?.label ?? friendlyZoneLabel(value),
-  );
+  push(value, timezoneOptionLabel(value));
   for (const option of COMMON_ZONES) {
     push(option.zone, option.label);
   }

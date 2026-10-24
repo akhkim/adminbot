@@ -1,3 +1,4 @@
+import { memberAuthHeaders } from "../api/device-clock.ts";
 // What the Collaborate tab reads and writes, as the service actually shapes it.
 //
 // The tab's panels are the design from #23; these are the routes that grew under them afterwards
@@ -41,6 +42,7 @@ export type LabSharingMemberMatch = {
  * drawn around both, and neither exists.
  */
 export type LabSharingSharedStatus = {
+  timezone?: string;
   availability: string;
   message: string;
   updated_at: string;
@@ -97,7 +99,7 @@ async function call(
     const response = await fetch(`${baseUrl.replace(/\/$/u, "")}/lab-sharing${path}`, {
       method: init.method ?? "GET",
       headers: {
-        Authorization: `Bearer ${session.sessionToken}`,
+        ...memberAuthHeaders(session.sessionToken),
         ...(init.body === undefined ? {} : { "Content-Type": "application/json" }),
       },
       ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),

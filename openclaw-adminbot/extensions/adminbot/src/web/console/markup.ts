@@ -1,5 +1,6 @@
 /** Admin console body markup: the auth gate, the shell, and one section per panel. */
 import { ADMINBOT_BOT_EMAIL_ENV, resolveAdminBotDriveAccount } from "../../contracts/actions.js";
+import { resolveAdminBotControlUiUrl } from "../../contracts/control-ui.js";
 import { resolveAdminBotLabOverleafHost } from "../../contracts/overleaf.js";
 
 // The importer account the callout tells members to share their planning doc with. Resolved here
@@ -13,6 +14,10 @@ function driveShareCallout(): string {
 }
 
 export function adminBotConsoleMarkup(): string {
+  const deadlineBoardUrl = `${resolveAdminBotControlUiUrl()}/deadlines`
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;");
   return `<body>
   <div class="auth-gate" id="auth-gate" hidden>
     <div class="auth-card">
@@ -407,9 +412,8 @@ export function adminBotConsoleMarkup(): string {
       </section>
       <section class="section" id="deadlines">
         <div class="panel">
-          <h2>Upcoming deadlines</h2>
-          <p class="subtle">Times are AoE (UTC-12). The same board the lab channel digest reads.</p>
-          <iframe class="public-frame" id="deadlines-frame" title="Deadline board" src="/deadlines"></iframe>
+          <h2>Deadlines</h2>
+          <a href="${deadlineBoardUrl}">Open deadline board</a>
         </div>
       </section>
 

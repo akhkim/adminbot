@@ -100,7 +100,7 @@ ADMINBOT_PORT=8801 node start-adminbot.mjs
 ### What you get with zero credentials
 
 Open **http://127.0.0.1:8765/adminbot** — the server-rendered operator console. It renders, and
-the deadline board at `/deadlines` serves the bundled conference dataset. Every privileged route
+the public `/deadlines` endpoint returns the deadline dataset as JSON. The console links to the Control UI board. Every privileged route
 (`/lab/members`, `/settings`, `/audit`, …) answers **401**, because no one is signed in yet. The
 propose → approve → execute → audit pipeline is fully live against the local SQLite ledger; what a
 credential buys is the ability to _execute_ an approved action against the outside world.
@@ -119,6 +119,9 @@ credential buys is the ability to _execute_ an approved action against the outsi
 without each.
 
 ### Other entry points
+
+For a separate development database with five fictional people and usable logins, see
+[Local development fixtures](dev/README.md). The seed script preserves existing passwords on reruns.
 
 ```bash
 pnpm adminbot              # same as `node start-adminbot.mjs`

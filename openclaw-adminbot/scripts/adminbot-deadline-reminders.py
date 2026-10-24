@@ -4,7 +4,7 @@ AdminBot deadline reminders (Output 2, runner). Mirror of
 scripts/adminbot-paper-nudge-reminders.mjs, for submission deadlines.
 
 Each run (schedule it ~daily via OpenClaw cron):
-  1. Load venues.json, matches.json, dm-templates.json.
+  1. Load deadlines.json, matches.json, dm-templates.json.
   2. For every matched paper on live cadence, compute its 30/15/7/3/2/1-day
      reminder dates from the deadline and fire the one that is DUE today.
   3. Stop-condition: if the paper already shows in Zhijing's OpenReview
@@ -34,6 +34,7 @@ import urllib.request
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from adminbot_deadlines import AoEClock, DeadlineDataset, SlackNotifier
+from adminbot_deadline_time import TIME_FIELDS, deadline_label
 
 CADENCE = [30, 15, 7, 3, 2, 1]
 SVC = os.environ.get("ADMINBOT_SERVICE_BASE_URL", "http://127.0.0.1:8765")
@@ -123,7 +124,8 @@ def render(step, paper, tmpl, workshop=None):
     deadline_date = AoEClock.calendar_date(paper["deadline_aoe"])
     return tmpl["steps"][str(step)].format(
         paper=paper["title"], noun=act["noun"],
-        date=deadline_date.strftime("%b %d, %Y") + " AoE",
+        date=(deadline_label(paper) if paper.get("deadline_time_precision") == "date_only"
+              else deadline_date.strftime("%b %d, %Y") + " AoE"),
         action=action, link=paper.get("overleaf", "(no Overleaf link on file)"),
     ) + tmpl["footer"]
 
@@ -169,11 +171,14 @@ def main():
         if current is None:
             print("WARN: confirmed match has no current deadline id; rerun matching before reminders", file=sys.stderr)
             continue
-        paper = dict(paper, deadline_aoe=current["deadline_aoe"])
+        if not current.get("deadline_aoe"):
+            continue
+        paper = dict(paper, deadline_aoe=current["deadline_aoe"], **{key: current.get(key, "") for key in TIME_FIELDS})
         if submitted is not None and norm(paper["title"]) in submitted:
             continue                           # already submitted -> silent
         if clock.has_passed(paper["deadline_aoe"]):
-            escalations.append(paper)
+            if paper.get("deadline_time_precision") != "date_only":
+                escalations.append(paper)
             continue
         step = due_cadence_step(paper, clock)
         if step is None:

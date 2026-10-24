@@ -1,0 +1,187 @@
+// A member's own record: profile drafts, location, travel, photo, and the self read.
+//
+// Cut from server.ts's handleAuthenticatedRoute. Each route states its audience with a guard
+// decorator from guards.ts; the order below is the order the old if-chain tried them in.
+import { redactConfidentialMemberFields } from "../../contracts/actions.js";
+import { campaignModeFromBody } from "../../workflows/nudges/campaign.js";
+import {
+  asString,
+  readJson,
+  readJsonOrEmpty,
+  readRecord,
+  sendJson,
+  sendServiceResult,
+} from "../server.http.js";
+import { handleMemberDraft } from "../server.member-drafts.js";
+import { memberOnly, principalActor, privilegedOnly } from "./guards.js";
+import { memberViewEtag } from "./members-etag.js";
+import { get, post, route, type Route, startingWith } from "./router.js";
+import { sendNotModified } from "./version-etag.js";
+
+export const profileRoutes: readonly Route[] = [
+  route(
+    "*",
+    startingWith("/member-drafts/"),
+    memberOnly(
+      async ({ req, res, url, ctx, principal }) => {
+        await handleMemberDraft(
+          req,
+          res,
+          ctx.memberDrafts,
+          principal.member.id,
+          url.pathname.slice("/member-drafts/".length),
+        );
+      },
+      { status: 403, message: "Member session required" },
+    ),
+  ),
+  // The passive "Use my precise location" control and its silent refresh. The body's coordinates
+  // go straight to the service, which reduces them to a city and drops them; nothing on this path
+  // logs a body. Never on an admin "view as": the position would be the admin's, stamped on
+  // somebody else.
+  post(
+    "/profile/device-location",
+    memberOnly(async ({ req, res, ctx, principal }) => {
+      if (principal.impersonator) {
+        sendJson(res, 403, { error: { message: "not while viewing as another member" } });
+        return;
+      }
+      const body = readRecord(await readJson(req));
+      sendServiceResult(res, await ctx.service.recordDeviceLocation(principal.member.id, body));
+    }),
+  ),
+  // What the browser said to the location prompt (allowed, blocked, or closed without an answer),
+  // so admins can tell "said no" from "has not been here". A state only, never a position.
+  post(
+    "/profile/location-permission",
+    memberOnly(async ({ req, res, ctx, principal }) => {
+      if (principal.impersonator) {
+        sendJson(res, 403, { error: { message: "not while viewing as another member" } });
+        return;
+      }
+      const body = readRecord(await readJson(req));
+      const result = ctx.service.recordLocationPermission(principal.member.id, body);
+      // An empty reply: the member's own browser is told nothing about what was noted.
+      sendServiceResult(res, result.ok ? { ...result, payload: {} } : result);
+    }),
+  ),
+  post(
+    "/drive/check-edit-access",
+    memberOnly(async ({ req, res, ctx }) => {
+      const { service } = ctx;
+      const body = readRecord(await readJson(req));
+      sendServiceResult(res, await service.checkDriveAccess(asString(body.url)));
+    }),
+  ),
+  get(
+    "/lab/members/self",
+    memberOnly(
+      ({ res, principal, ctx }) => {
+        const { service } = ctx;
+        const etag = memberViewEtag(ctx.store, principal, "lab-members.self");
+        if (etag && sendNotModified(res, etag)) {
+          return;
+        }
+        const result = service.getLabMemberView(principal.member.id);
+        sendServiceResult(
+          res,
+          result.ok
+            ? {
+                ...result,
+                payload: {
+                  member: redactConfidentialMemberFields(result.payload.member, {
+                    memberId: principal.member.id,
+                    isAdmin: principal.member.privilege_level === "admin",
+                    isMemberSession: true,
+                  }),
+                },
+              }
+            : result,
+          { etag },
+        );
+      },
+      { status: 403, message: "member session required" },
+    ),
+  ),
+  post(
+    "/onboarding/ack",
+    memberOnly(async ({ req, res, principal, ctx }) => {
+      const { service } = ctx;
+      const body = readRecord(await readJson(req));
+      const stepId = asString(body.step_id);
+      if (!stepId) {
+        sendJson(res, 400, { error: { message: "step_id is required" } });
+        return;
+      }
+      sendServiceResult(res, service.acknowledgeOwnOnboardingStep(principal.member.id, stepId));
+    }),
+  ),
+  // The drift question ("you seem to have moved"). There is no check-in question: location comes
+  // only from automatic sources, so nothing asks members where they are.
+  get(
+    "/profile/location-prompt",
+    memberOnly(({ res, principal, ctx }) => {
+      const { service } = ctx;
+      sendServiceResult(res, service.memberLocationPrompt(principal.member.id));
+    }),
+  ),
+  post(
+    "/profile/location-prompt",
+    memberOnly(async ({ req, res, principal, ctx }) => {
+      const { service } = ctx;
+      const body = readRecord(await readJson(req));
+      sendServiceResult(
+        res,
+        service.answerLocationPrompt(principal.member.id, {
+          ...(asString(body.current_city) ? { current_city: asString(body.current_city) } : {}),
+          ...(asString(body.timezone) ? { timezone: asString(body.timezone) } : {}),
+        }),
+      );
+    }),
+  ),
+  get(
+    "/lab/location-drifts",
+    privilegedOnly(({ res, ctx }) => {
+      const { service } = ctx;
+      sendServiceResult(res, service.listLocationDrifts());
+    }),
+  ),
+  post(
+    "/profile-photo/review/run",
+    privilegedOnly(async ({ req, res, principal, ctx }) => {
+      const { service } = ctx;
+      // `{dry_run, confirm}` like every campaign route: a body-less POST previews, never sends.
+      const body = readRecord(await readJsonOrEmpty(req));
+      sendServiceResult(
+        res,
+        await service.runProfilePhotoReviewAndReminders(
+          principalActor(principal),
+          campaignModeFromBody(body),
+        ),
+      );
+    }),
+  ),
+  post(
+    "/profile-photo/polish",
+    memberOnly(async ({ res, principal, ctx }) => {
+      const { service } = ctx;
+      sendServiceResult(res, await service.polishOwnProfilePhoto(principal.member.id));
+    }),
+  ),
+  post(
+    "/profile-photo/apply",
+    memberOnly(async ({ req, res, principal, ctx }) => {
+      const { service } = ctx;
+      const body = readRecord(await readJson(req));
+      const variantId = asString(body.variant_id);
+      if (!variantId) {
+        sendJson(res, 400, { error: { message: "variant_id is required" } });
+        return;
+      }
+      sendServiceResult(
+        res,
+        await service.applyOwnPolishedProfilePhoto(principal.member.id, variantId),
+      );
+    }),
+  ),
+];
