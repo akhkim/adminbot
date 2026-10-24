@@ -607,7 +607,6 @@ export const en: TranslationMap = {
     labOverview: "Lab Overview",
     nudges: "Nudges",
     membership: "Membership",
-    myDesk: "My Desk",
   },
 
   tabs: {
@@ -629,7 +628,6 @@ export const en: TranslationMap = {
     adminbotProfileOverview: "Profile Completeness",
     adminbotTabUsage: "Tab Usage",
     adminbotProfessor: "My Desk",
-    adminbotTravel: "Travel History",
     adminbotTimeAvailability: "Time Availability",
     adminbotMeetings: "Meeting Recordings",
     adminbotSignatures: "Signatures for You",
@@ -688,7 +686,6 @@ export const en: TranslationMap = {
     adminbotProfileOverview: "Who has filled in their profile and planned their term.",
     adminbotTabUsage: "Which parts of AdminBot the lab actually opens.",
     adminbotProfessor: "What is waiting on you, across every queue.",
-    adminbotTravel: "Where you have been, from your own sign-ins.",
     adminbotTimeAvailability: "Who is committed to what, and when.",
     adminbotMeetings: "Recordings, attendance and summaries of lab meetings.",
     adminbotSignatures: "Send a document over for signing, and follow where it got to.",
@@ -1949,16 +1946,6 @@ export const en: TranslationMap = {
       undecided: "You said maybe for this conference.",
       rsvp: "RSVP on Events",
       change: "Change on Events",
-    },
-  },
-  adminbotTravel: {
-    error: {
-      signIn: "Sign in to read your travel history.",
-      forbidden: "You can only read your own travel history.",
-      unreachable: "Could not reach the AdminBot service at {url}.",
-      notDeployed:
-        "This service build has no travel history yet — the Control UI ships on merge and the service is deployed separately.",
-      failed: "Could not read your travel history.",
     },
   },
   recentEdits: {

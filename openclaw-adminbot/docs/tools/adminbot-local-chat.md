@@ -1,6 +1,11 @@
 # Local chat for the head professor
 
-My Desk includes a separate **Local chat** workspace for the configured head professor.
+> **The Control UI no longer shows this workspace.** It was taken off My Desk, and the component
+> that drew it was removed with it. The service's `/local-chat` route, its access checks and its
+> limits below are unchanged, so a future surface can call it again. The Interface and
+> Verification sections describe the removed UI.
+
+My Desk used to include a separate **Local chat** workspace for the configured head professor.
 The server checks `head_professor_member_id`, admin privilege, and a non-impersonated member
 session on every request. Other members, other admins, service tokens, and impersonated sessions
 cannot use it. Missing configuration denies access.
@@ -57,7 +62,6 @@ remote call. No gateway default-model change is needed.
 
 ```sh
 node scripts/run-vitest.mjs run extensions/adminbot/src/api/server.local-chat.test.ts extensions/adminbot/src/privacy/local-chat.test.ts extensions/adminbot/src/guidebook/guidebook.test.ts
-node scripts/run-vitest.mjs run ui/src/ui/adminbot/views/local-chat.test.ts ui/src/ui/adminbot/views/professor.test.ts ui/src/ui/adminbot/auth/local-chat-client.test.ts
 OPENCLAW_BUILD_ALL_NO_PNPM=1 node scripts/build-all.mjs
 ```
 

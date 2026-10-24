@@ -187,6 +187,14 @@ describe("list routes page their rows", () => {
   it("caps the escalation list and sends each item as its title", async () => {
     const { mock, baseUrl } = await startLab();
     const admin = await adminSession(mock, baseUrl);
+    // My Desk lists full members and major coauthors only, so the fixture member needs a type.
+    mock.service.upsertLabMember({
+      id: "member",
+      name: "Mina Member",
+      email: "member@lab.test",
+      privilege_level: "member",
+      member_type: "full",
+    } as AdminBotLabMemberInput);
     mock.store.saveMemberNotification({
       id: "n-1",
       member_id: "member",

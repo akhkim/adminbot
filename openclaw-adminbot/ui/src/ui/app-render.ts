@@ -68,7 +68,6 @@ import {
 } from "./adminbot/controllers/precise-location.ts";
 import { readAdminBotProfileOverview } from "./adminbot/controllers/profile-overview-paging.ts";
 import { exportAdminBotTabUsage, loadAdminBotTabUsage } from "./adminbot/controllers/tab-usage.ts";
-import { loadAdminBotTravel } from "./adminbot/controllers/travel.ts";
 import { milestoneRows } from "./adminbot/data/availability.ts";
 import {
   assignAdminBadge,
@@ -625,7 +624,6 @@ const lazyOpportunities = createLazyView(
   () => import("./adminbot/views/opportunities.ts"),
   notifyLazyViewHost,
 );
-const lazyTravel = createLazyView(() => import("./adminbot/views/travel.ts"), notifyLazyViewHost);
 const lazyGrantReport = createLazyView(
   () => import("./adminbot/views/grant-report.ts"),
   notifyLazyViewHost,
@@ -2683,18 +2681,6 @@ export function renderApp(state: AppViewState) {
     void loadAdminBotTabUsage(state).finally(() => requestHostUpdate?.());
   }
   readAdminBotProfileOverview(state, hasMemberSession, requestHostUpdate);
-  // The travel timeline, read when the tab is opened and not again. A sign-in log does not change
-  // while somebody is reading their own year off it, and the only thing that re-reads it is the
-  // range buttons, which pass their own range through.
-  if (
-    state.tab === "adminbotTravel" &&
-    hasMemberSession &&
-    !state.adminBotTravel.loading &&
-    !state.adminBotTravel.error &&
-    state.adminBotTravel.history === null
-  ) {
-    void loadAdminBotTravel(state).finally(() => requestHostUpdate?.());
-  }
   // The sidebar lists the member's active projects on every tab, so the list is read once a member
   // session exists, and again whenever a write clears it.
   if (
@@ -3300,17 +3286,6 @@ export function renderApp(state: AppViewState) {
         ${renderProfileSurface(state, adminBotSurfaces)}
         ${state.tab === "gettingStarted" ? renderGettingStarted(state) : nothing}
         ${renderProfessorSurface(state, adminBotSurfaces)}
-        ${state.tab === "adminbotTravel" && adminBotMode === "admin"
-          ? renderLazyView(lazyTravel, (m) =>
-              m.renderTravel({
-                history: state.adminBotTravel.history,
-                range: state.adminBotTravel.range,
-                loading: state.adminBotTravel.loading,
-                error: state.adminBotTravel.error,
-                onRangeChange: (range) => void loadAdminBotTravel(state, { range }),
-              }),
-            )
-          : nothing}
         ${renderCollaborateSurface(state, adminBotSurfaces)}
         ${renderEventsSurface(state, adminBotSurfaces)}
         ${state.tab === "adminbotTabUsage"

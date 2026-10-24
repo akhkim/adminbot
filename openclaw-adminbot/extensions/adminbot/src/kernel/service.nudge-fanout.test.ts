@@ -51,6 +51,8 @@ function serviceWith(
       id: "mei",
       name: "Mei Chen",
       privilege_level: "member",
+      // A full member, so her escalations reach My Desk; see the member-type tests below.
+      member_type: "full",
       ...(options.slackForMei === false ? {} : { slack_user_id: "U-MEI" }),
     } as never),
   );
@@ -457,6 +459,85 @@ describe("the escalation queue", () => {
     expect(unwrap(service.listEscalatedNudges()).members).toEqual([]);
   });
 
+  // The list asks the professor to write to somebody herself, which she does for the people she
+  // works with directly and nobody else. Everyone else's nudges are still escalated and still
+  // stored; this read just does not list them.
+  describe("only lists full members and major coauthors", () => {
+    async function escalatedAs(memberType: string | undefined, status?: string) {
+      const { service } = serviceWith();
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "mei",
+          name: "Mei Chen",
+          privilege_level: "member",
+          slack_user_id: "U-MEI",
+          member_type: memberType,
+          ...(status ? { status } : {}),
+        } as never),
+      );
+      await nudgeMember(service, "mei", "Submission ID missing");
+      age(service, "mei", 6);
+      unwrap(await service.escalateStaleNudges("test"));
+      return { service, queue: unwrap(service.listEscalatedNudges()).members };
+    }
+
+    it.each([
+      "full",
+      "full, coauthor-major",
+      "coauthor-major",
+      "full, nonresearch",
+      " Coauthor-Major ",
+      // An underscore spelling, read as the hyphen.
+      "coauthor_major",
+    ])("lists %j", async (memberType) => {
+      expect((await escalatedAs(memberType)).queue.map((row) => row.member_id)).toEqual(["mei"]);
+    });
+
+    it.each([
+      "acquaintance",
+      "coauthor-minor",
+      "external-prof",
+      "mailing-list",
+      "own-pace-advisee",
+      // Token-wise, not substring: neither of these is a full member.
+      "fullish",
+      "coauthor-major-candidate",
+      "",
+      undefined,
+    ])("leaves out %j", async (memberType) => {
+      expect((await escalatedAs(memberType)).queue).toEqual([]);
+    });
+
+    it("still leaves out an alumnus who is also a major coauthor", async () => {
+      expect((await escalatedAs("alumni, coauthor-major")).queue).toEqual([]);
+      expect((await escalatedAs("coauthor-major", "alumni")).queue).toEqual([]);
+    });
+
+    // A read filter only: the notification is still there, still escalated and still unread, so
+    // filling in the member type puts the person straight back on the list.
+    it("leaves the hidden notifications untouched", async () => {
+      const { service } = await escalatedAs("acquaintance");
+      const stored = unwrap(service.listMemberNotifications("mei")).notifications;
+      expect(stored).toHaveLength(1);
+      expect(stored[0]).toMatchObject({ title: "Submission ID missing" });
+      expect(stored[0]?.escalated_at).toBeTruthy();
+      expect(stored[0]?.read_at).toBeFalsy();
+
+      unwrap(
+        service.upsertLabMember({
+          receives_nudges: true,
+          id: "mei",
+          name: "Mei Chen",
+          member_type: "full",
+        } as never),
+      );
+      expect(unwrap(service.listEscalatedNudges()).members.map((row) => row.member_id)).toEqual([
+        "mei",
+      ]);
+    });
+  });
+
   // Oldest first: the queue is worked from the top, and the top should be whoever has been waiting
   // longest rather than whoever was escalated most recently.
   it("orders members by their oldest escalation", async () => {
@@ -467,6 +548,7 @@ describe("the escalation queue", () => {
         id: "ada",
         name: "Ada Ng",
         privilege_level: "member",
+        member_type: "coauthor-major",
         slack_user_id: "U-ADA",
       } as never),
     );

@@ -765,6 +765,16 @@ describe("the broadcast box", () => {
     expect(first?.getAttribute("data-testid")).toBe("professor-broadcast");
   });
 
+  // The local chat workspace used to sit above it. It was taken off My Desk, so the box is the
+  // page's first element, not merely its first section.
+  it("has no chat above it", () => {
+    const { container } = draw();
+    expect(container.querySelector("adminbot-local-chat")).toBeNull();
+    expect(
+      container.querySelector(".professor")?.firstElementChild?.getAttribute("data-testid"),
+    ).toBe("professor-broadcast");
+  });
+
   it("starts holding whatever is live, so an edit is a correction not a retype", () => {
     const { container } = draw({ broadcast: live });
     const box = container.querySelector<HTMLTextAreaElement>(

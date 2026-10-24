@@ -125,6 +125,16 @@ describe("TAB_GROUPS", () => {
     }
   });
 
+  // Travel History was My Desk's second tab. With it gone My Desk is a tab of its own, with no
+  // bar inside it and nothing else lighting its sidebar entry.
+  it("keeps My Desk a page of its own", () => {
+    expect(pageTabsFor("adminbotProfessor")).toEqual([]);
+    expect(sidebarTabFor("adminbotProfessor")).toBe("adminbotProfessor");
+    expect(TAB_PAGES.flatMap((page) => page.tabs as readonly string[])).not.toContain(
+      "adminbotProfessor",
+    );
+  });
+
   it("lights the page's sidebar entry when a sub-tab is open", () => {
     const admin = TAB_GROUPS.find((group) => group.label === "admin");
     if (!admin) {

@@ -117,7 +117,6 @@ import {
   recordAdminBotTabVisit,
   type AdminBotTabVisitHost,
 } from "./adminbot/controllers/tab-visits.ts";
-import { EMPTY_TRAVEL, type TravelState } from "./adminbot/controllers/travel.ts";
 import type { BadgeLoadError } from "./adminbot/data/badges.ts";
 import type { EventsOverview } from "./adminbot/data/events.ts";
 import type { TravelLookup, TravelOverview, TravelSharing } from "./adminbot/data/lab-travel.ts";
@@ -497,7 +496,6 @@ export class OpenClawApp extends LitElement {
   // Reactive: the whole app re-renders around these -- the banner appears, the Lab Members button
   // disappears, and the swap in flight disables both.
   @state() adminBotRecentEdits: Record<string, RecentEditsState> = {};
-  @state() adminBotTravel: TravelState = EMPTY_TRAVEL;
   @state() adminBotMailingListPreview: PublicationDigestPreview | null = null;
   @state() adminBotMailingListLoading = false;
   @state() adminBotMailingListSending = false;
