@@ -35,7 +35,7 @@ row = exporter.paper_row({'id': 'p', 'title': 'T', 'lead_owner_member_id': 'pers
         'submission_url': 'https://example.test/paper?id=12', 'arxiv_url': 'https://arxiv.org/abs/1234.5678',
         'blocker_title': 'Awaiting data', 'blocker_note': 'Need updated dataset'}},
     {'person': {'name': 'Ada'}}, [], [], NOW)
-assert row['Lead'] == 'Ada' and row['Last updated'] == 'Wed Sep 30, 2026'  # 8 PM Toronto the previous day
+assert row['Lead'] == 'Ada' and row['Last updated'] == '2026-09-30 (Wed)'  # 8 PM Toronto the previous day
 assert row['Blocker / next step'] == 'Awaiting data\nNeed updated dataset\nReview draft'
 assert row['Review link'] == [('Overleaf edit 🔒', 'https://www.overleaf.com/project/123'),
     ('arXiv', 'https://arxiv.org/abs/1234.5678'), ('Submission', 'https://example.test/paper?id=12')]
@@ -165,7 +165,7 @@ assert {r['range']['sheetId'] for r in clears} == {1, 2}
 assert len([r for r in requests if 'addTable' in r]) == 2
 assert [r['range']['startRowIndex'] for r in clears] == [1, 0]
 assert clears[1]['fields'] == 'userEnteredValue,userEnteredFormat'
-assert len([r for r in requests if 'addFilterView' in r]) == 12
+assert len([r for r in requests if 'addFilterView' in r]) == 13
 incomplete_view = next(r['addFilterView']['filter'] for r in requests
                        if r.get('addFilterView', {}).get('filter', {}).get('title') == 'Incomplete')
 assert incomplete_view['criteria'] == {str(exporter.PAPERS.index('Incomplete')): {'condition': {'type': 'NOT_BLANK'}}}
@@ -198,7 +198,7 @@ assert updated_table['range']['endRowIndex'] == len(direct['data'][1]['values'])
 assert updated_table['columnProperties'][exporter.PAPERS.index('Stage')]['columnType'] == 'TEXT'  # No stage supplied in this synthetic row.
 assert not any('deleteBanding' in r for r in converted)
 paper_views = [r['addFilterView']['filter'] for r in converted if 'tableId' in r.get('addFilterView', {}).get('filter', {})]
-assert [v['title'] for v in paper_views] == ['PaperList sort and filter', 'PI review queue', 'Incomplete', 'By PI review status', 'By review type', 'By venue', 'By stage']
+assert [v['title'] for v in paper_views] == ['PaperList sort and filter', 'PI review queue', 'Incomplete', 'By PI review status', 'By review type', 'By conference', 'By venue', 'By stage']
 assert all(v['tableId'] == 'paper-table' and 'range' not in v for v in paper_views)
 properties['PaperList']['filterViews'] = [{'title': 'By stage', 'filterViewId': 43, 'tableId': 'paper-table'},
                                          {'title': 'Awaiting PI approval', 'filterViewId': 44, 'tableId': 'paper-table'}]
@@ -237,7 +237,7 @@ arr = exporter.paper_row({'id': 'a', 'title': 'A', 'venue': 'ACL 2027', 'current
     [slot('feedback_arr', url='https://www.overleaf.com/read/xyz', reason='Please check the intro',
           hard_deadline='2026-10-13T12:00:00Z')], [], NOW)
 assert arr['PI review'] == 'Needs PI review' and arr['Review for'] == 'ARR feedback'
-assert arr['Urgency'] == '🔴 Due in 2 days' and arr['Due (Toronto)'] == 'Tue Oct 13, 2026, 8:00 AM'
+assert arr['Urgency'] == '🔴 Due in 2 days' and arr['Due (Toronto)'] == '2026-10-13 08:00 (Tue)'
 assert arr['Review link'] == [('Sent for review', 'https://www.overleaf.com/read/xyz')] and arr['Requested by'] == 'Ada'
 assert arr['Request note'] == '[ARR feedback] Please check the intro', arr['Request note']
 # The request's link is a known link: it keeps its real name, and edit + share + view all show once each.
@@ -270,7 +270,7 @@ deadline = []
 pre = exporter.paper_row({'id': 'f', 'title': 'F', 'venue': 'NAACL 2027', 'current_step': 'overleaf_writing'},
                          members, [], deadline, NOW)
 assert pre['Urgency'] == '🔴 Venue deadline in 2 days'
-assert pre['Venue deadline (Toronto)'] == 'ARR Oct 2026: Tue Oct 13, 2026, 7:59 AM'
+assert pre['Venue deadline (Toronto)'] == '2026-10-13 07:59 (Tue) · ARR Oct 2026'
 post = exporter.paper_row({'id': 'g', 'title': 'G', 'venue': 'NAACL 2027', 'current_step': 'poster_making'},
                           members, [], deadline, NOW)
 assert post['Urgency'] == '' and post['Venue deadline (Toronto)'] == ''
@@ -292,13 +292,13 @@ hard_late = exporter.paper_row({'id': 'k', 'title': 'K'}, members, [slot('feedba
                                                                          hard_deadline='2026-10-09T16:00:00Z')], [], NOW)
 assert hard_late['Urgency'] == '⛔ Hard deadline overdue by 2 days', hard_late['Urgency']
 soft_only = exporter.paper_row({'id': 'l', 'title': 'L'}, members, [slot('feedback_other', soft_deadline='2026-10-13T16:00:00Z')], [], NOW)
-assert soft_only['Urgency'] == '◌ Soft target in 2 days' and soft_only['Due (Toronto)'] == 'Soft target Tue Oct 13, 2026, 12:00 PM'
+assert soft_only['Urgency'] == '◌ Soft target in 2 days' and soft_only['Due (Toronto)'] == 'Soft target 2026-10-13 12:00 (Tue)'
 soft_late = exporter.paper_row({'id': 'm', 'title': 'M'}, members, [slot('feedback_other', soft_deadline='2026-10-09T16:00:00Z')], [], NOW)
 assert soft_late['Urgency'] == '◌ Soft target passed 2 days ago'
 two = exporter.paper_row({'id': 'n', 'title': 'N'}, members, [slot('feedback_arxiv', soft_deadline='2026-10-12T16:00:00Z',
                                                                    hard_deadline='2026-10-20T16:00:00Z')], [], NOW)
 assert two['Urgency'] == '🟡 Due in 9 days · soft target tomorrow', two['Urgency']
-assert two['Due (Toronto)'] == 'Tue Oct 20, 2026, 12:00 PM (soft target Mon Oct 12, 2026, 12:00 PM)'
+assert two['Due (Toronto)'] == '2026-10-20 12:00 (Tue) (soft target 2026-10-12 12:00 (Mon))'
 ranked = sorted([soft_only, hard_late, two, soft_late], key=lambda r: r['_sort'])
 assert [r['ID'] for r in ranked] == ['k', 'n', 'l', 'm'], [r['ID'] for r in ranked]
 # arXiv feedback with no dates gets a review window before it counts as waiting.
@@ -313,8 +313,8 @@ iclr = [venue_d('2026-10-13', 'abstract', 'Abstract'), venue_d('2026-10-20', 'su
         venue_d('2026-10-12', 'notification_by', 'Notify authors by'), venue_d('2027-03-01', 'camera_ready', 'Camera-ready')]
 early = exporter.paper_row({'id': 'q', 'title': 'Q', 'venue': 'ICLR 2027', 'current_step': 'overleaf_writing'}, members, [], iclr, NOW)
 assert early['Urgency'] == '🟡 Venue deadline in 10 days · abstract in 3 days', early['Urgency']
-assert early['Venue deadline (Toronto)'] == ('ICLR 2027 (Abstract): Wed Oct 14, 2026, 7:59 AM\n'
-                                              'ICLR 2027: Wed Oct 21, 2026, 7:59 AM'), early['Venue deadline (Toronto)']
+assert early['Venue deadline (Toronto)'] == ('2026-10-14 07:59 (Wed) · ICLR 2027 (Abstract)\n'
+                                              '2026-10-21 07:59 (Wed) · ICLR 2027'), early['Venue deadline (Toronto)']
 missed = exporter.paper_row({'id': 'r', 'title': 'R', 'venue': 'ICLR 2027', 'current_step': 'submission'}, members, [],
                             [venue_d('2026-10-05', 'submission', 'Paper submission')], NOW)
 assert missed['Urgency'] == '⛔ Venue deadline overdue by 5 days', missed['Urgency']
@@ -322,7 +322,7 @@ camera = exporter.paper_row({'id': 's', 'title': 'S', 'venue': 'ICLR 2027', 'cur
                              'accepted_venue': 'ICLR', 'accepted_year': 2027}, members,
                             [slot('feedback_camera_ready', at='2026-10-10T00:00:00Z')], iclr, NOW)
 assert camera['Urgency'] == '🟢 Camera-ready in 142 days', camera['Urgency']
-assert camera['Venue deadline (Toronto)'] == 'ICLR 2027 (Camera-ready): Tue Mar 2, 2027, 6:59 AM'
+assert camera['Venue deadline (Toronto)'] == '2027-03-02 06:59 (Tue) · ICLR 2027 (Camera-ready)'
 for r in (hard_late, soft_only, soft_late, two, arxiv_new, early, missed, camera):
     r.pop('_sort')
 # Restricted Overleaf links: a read link that no longer opens is flagged and locked; an open one is not.
@@ -612,3 +612,23 @@ with tempfile.TemporaryDirectory() as directory:
     assert json.loads(target.read_text()) == {'generated_at': '2026-10-24T12:00:00Z', 'papers': snap['linkProblems']}
     assert oct(os.stat(target).st_mode & 0o777) == '0o640'
 print('PASS: closed PI review statuses from OpenReview and deadlines, Other counted, Incomplete reasons, link problems for nudges')
+
+wanted = ['a@x.com', 'b@x.com']
+tabs = [{'properties': {'title': 'Mine'}, 'protectedRanges': [
+            {'protectedRangeId': 1, 'editors': {'users': ['bot@x.com', 'a@x.com']}},
+            {'protectedRangeId': 2, 'warningOnly': True}]},
+        {'properties': {'title': 'Owner only'}, 'protectedRanges': [{'protectedRangeId': 3, 'editors': {}}]},
+        {'properties': {'title': 'Done'}, 'protectedRanges': [
+            {'protectedRangeId': 4, 'editors': {'users': ['bot@x.com', 'A@x.com', 'b@x.com']}}]}]
+granted, locked = refresh.editor_requests(tabs, 'bot@x.com', wanted)
+assert [r['updateProtectedRange']['protectedRange']['protectedRangeId'] for r in granted] == [1]
+assert granted[0]['updateProtectedRange']['protectedRange']['editors']['users'] == ['bot@x.com', 'a@x.com', 'b@x.com']
+assert locked == ['Owner only']
+print('PASS: approved editors are added to every protection the bot can edit; owner-only tabs are reported')
+
+for typed, expected in [('ARR · May 2026 → EMNLP 2026 Findings', 'EMNLP'), ('ARR · cycle not recorded', 'ARR (conference not set)'),
+                        ('NeurIPS', 'NeurIPS'), ('Child Safety in AI Workshop @ NeurIPS 2026', 'Workshop'), ('', 'Not set'),
+                        ('ICML 2027, ACL 2027', 'ACL'), ('JMLR (end of September)', 'Journal'), ('EU AI Act', 'Other')]:
+    assert exporter.conference(typed) == expected, (typed, exporter.conference(typed))
+assert exporter.stamp(exporter.parse_time('2026-10-01T00:30:00Z'), False) == '2026-09-30 (Wed)'
+print('PASS: one standard conference per paper and year-first dates that sort as text')

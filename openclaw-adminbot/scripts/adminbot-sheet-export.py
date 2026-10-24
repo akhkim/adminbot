@@ -44,7 +44,7 @@ VENUE_NOTES = {
 }
 # Plain-language layout: what the PI acts on first, links next, record-keeping detail last.
 PAPERS = ('Paper', 'Urgency', 'PI review', 'Review for', 'Review link', 'Due (Toronto)', 'Authors',
-          'Requested by', 'Requested on', 'Request note', 'Venue', 'Venue deadline (Toronto)',
+          'Requested by', 'Requested on', 'Request note', 'Conference', 'Venue', 'Venue deadline (Toronto)',
           'OpenReview', 'Stage', 'Lead', 'Incomplete', 'Blocker / next step', 'Link problems', 'Still missing', 'Mentor review', 'Co-author feedback', 'Accepted',
           'Going to conference', 'Started', 'Last updated', 'Feedback givers', 'Checks',
           'Venue (as entered)', 'All artifact statuses', PAPER_ID)
@@ -90,6 +90,34 @@ def toronto(moment, with_time=True):
     local = moment.astimezone(TORONTO)
     text = local.strftime('%a %b %-d, %Y')
     return text + local.strftime(', %-I:%M %p') if with_time else text
+
+
+def stamp(moment, with_time=True):
+    """Toronto time written year-first, so a column of them sorts by date as plain text:
+    '2026-10-13 08:00 (Tue)', or '2026-10-13 (Tue)' without the time."""
+    if not moment:
+        return ''
+    local = moment.astimezone(TORONTO)
+    return local.strftime('%Y-%m-%d %H:%M (%a)' if with_time else '%Y-%m-%d (%a)')
+
+
+# One standard conference name per paper, so the sheet filters and sorts by conference however the
+# venue was typed. Checked in order: a paper going through ARR is filed under the conference it
+# commits to when one is named. Anything unmatched is 'Other' and should get a rule here.
+CONFERENCES = (('Workshop', r'workshop|\bAI4GOOD\b'), ('EMNLP', r'\bEMNLP\b'), ('NAACL', r'\bNAACL\b'),
+               ('EACL', r'\bEACL\b'), ('AACL', r'\bAACL\b'), ('ACL', r'\bACL\b'), ('ICLR', r'\bICLR\b'),
+               ('NeurIPS', r'\bNeurIPS\b'), ('ICML', r'\bICML\b'), ('COLM', r'\bCOLM\b'), ('AAAI', r'\bAAAI\b'),
+               ('KDD', r'\bKDD\b'), ('AISTATS', r'\bAISTATS\b'), ('CogSci', r'\bCogSci\b'), ('IASEAI', r'\bIASEAI\b'), ('CLeaR', r'\bCLeaR\b'), ('ICSSI', r'\bICSSI\b'), ('DevAI', r'\bDevAI\b'),
+               ('Journal', r'\bJMLR\b|\bTMLR\b|journal'), ('ARR (conference not set)', r'\bARR\b'),
+               ('Preprint', r'preprint|arxiv'))
+
+
+def conference(*venues):
+    """'ARR · May 2026 → EMNLP 2026 Findings' -> 'EMNLP'; '' -> 'Not set'; unmatched -> 'Other'."""
+    text = ' '.join(v for v in venues if v)
+    if not text.strip():
+        return 'Not set'
+    return next((name for name, pattern in CONFERENCES if re.search(pattern, text, re.I)), 'Other')
 
 
 # ACL Rolling Review calendar (aclrollingreview.org/dates, checked 2026-10-11). Deadlines are 23:59 AoE.
@@ -566,8 +594,8 @@ def status_kind(status):
 def due_text(request):
     hard, soft = request.get('hard'), request.get('soft')
     if hard and soft and soft < hard:
-        return f'{toronto(hard)} (soft target {toronto(soft)})'
-    return toronto(hard) if hard else ('Soft target ' + toronto(soft)) if soft else ''
+        return f'{stamp(hard)} (soft target {stamp(soft)})'
+    return stamp(hard) if hard else ('Soft target ' + stamp(soft)) if soft else ''
 
 
 # --------------------------------------------------------------------------
@@ -963,10 +991,11 @@ def paper_row(record, members, slots, deadlines, now, access=None, openreview=()
         'Review link': review_links,
         'Due (Toronto)': due_text(top) if top else '',
         'Requested by': name(top['by']) if top else '',
-        'Requested on': toronto(top['at'], False) if top else '',
+        'Requested on': stamp(top['at'], False) if top else '',
         'Request note': '\n\n'.join(f"[{r['type']}] {r['note']}" for r in pending if r['note']),
         'Venue': venue,
-        'Venue deadline (Toronto)': '\n'.join(f"{deadline_name(d)}: {toronto(d['at'])}" for d in (
+        'Conference': conference(venue, record.get('venue') or artifacts.get('conference') or ''),
+        'Venue deadline (Toronto)': '\n'.join(f"{stamp(d['at'])} · {deadline_name(d)}" for d in (
             deadline.get('soft'), deadline) if d) if deadline else '',
         'Venue (as entered)': ' '.join(str(record.get('venue') or artifacts.get('conference') or '').split()),
         'OpenReview': openreview_text(review),
@@ -982,7 +1011,7 @@ def paper_row(record, members, slots, deadlines, now, access=None, openreview=()
         'Accepted': accepted_text(record, review),
         'Going to conference': record.get('going_attendees', ''),
         'Started': record.get('started_on', ''),
-        'Last updated': toronto(parse_time(record.get('updated_at') or ''), False),
+        'Last updated': stamp(parse_time(record.get('updated_at') or ''), False),
         'Feedback givers': record.get('feedback_givers', ''),
         'Checks': ', '.join(f'{k}: {v}' for k, v in sorted((record.get('checks') or {}).items())),
         'Authors': record.get('authors', ''),

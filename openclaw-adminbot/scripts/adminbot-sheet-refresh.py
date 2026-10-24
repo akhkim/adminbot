@@ -26,7 +26,7 @@ PAPER_WIDTHS = {'Paper': 380, 'Urgency': 190, 'PI review': 150, 'Review for': 17
                 'Due (Toronto)': 170, 'Requested by': 150, 'Requested on': 130, 'Request note': 320,
                 'Venue deadline (Toronto)': 260, 'OpenReview': 300, 'Stage': 170, 'Lead': 150,
                 'Incomplete': 260, 'Blocker / next step': 280, 'Link problems': 240, 'Still missing': 260, 'Authors': 360,
-                'All artifact statuses': 300, 'Venue (as entered)': 220, 'Venue': 230, 'Checks': 240, exporter.PAPER_ID: 160}
+                'All artifact statuses': 300, 'Venue (as entered)': 220, 'Venue': 230, 'Conference': 150, 'Checks': 240, exporter.PAPER_ID: 160}
 
 
 # PI review values drawn in bold red: the PI acts, or somebody must fix the link or the category.
@@ -200,7 +200,7 @@ def refresh_requests(batch, properties):
             # The export is already ordered by urgency, so the queue view only filters.
             views += [('PI review queue', None, ('PI review', 'Needs PI review')), ('Incomplete', None, ('Incomplete', None)),
                       ('By PI review status', 'PI review', None), ('By review type', 'Review for', None),
-                      ('By venue', 'Venue', None), ('By stage', 'Stage', None)]
+                      ('By conference', 'Conference', None), ('By venue', 'Venue', None), ('By stage', 'Stage', None)]
         else:
             views += [('By joined date', 'join_date', None),
                       ('Review inactive members', 'membership_review', ('membership_review', 'Review inactive')),
@@ -230,6 +230,32 @@ def refresh_requests(batch, properties):
         if title == 'PaperList':
             requests.extend(paper_style_requests(p, values, batch['paperLinks'], batch.get('statusCounts')))
     return requests
+
+
+
+def editor_requests(sheets, writer, wanted):
+    """Add the approved editors to every protection the bot itself may edit, on every tab.
+
+    A protection the bot is not an editor of (owner-only) cannot be changed by it; those are
+    returned by title so the run can report them instead of failing.
+    """
+    requests, locked = [], []
+    for sheet in sheets:
+        for protection in sheet.get('protectedRanges', []):
+            if protection.get('warningOnly'):
+                continue
+            users = protection.get('editors', {}).get('users', [])
+            present = {email.lower() for email in users}
+            missing = [email for email in wanted if email.lower() not in present]
+            if not missing:
+                continue
+            if writer not in present:
+                locked.append(sheet['properties']['title'])
+                continue
+            requests.append({'updateProtectedRange': {'protectedRange': {
+                'protectedRangeId': protection['protectedRangeId'],
+                'editors': {**protection.get('editors', {}), 'users': users + missing}}, 'fields': 'editors'}})
+    return requests, sorted(set(locked))
 
 
 def main():
@@ -286,6 +312,28 @@ def main():
             raise ValueError('Whole-tab export protection missing or changed')
         properties[title] = {**sheet['properties'], 'filterViews': sheet.get('filterViews', []),
                              'bandedRanges': sheet.get('bandedRanges', []), 'tables': sheet.get('tables', [])}
+    # Keep the approved editors on the file and on every protected tab, so access never drifts and
+    # nobody has to re-share by hand. Sharing is sent without notification emails.
+    wanted = [email.lower() for email in config.get('extra_protection_editors', [])]
+    editor_sync = {'locked_tabs': [], 'failed': False}
+    try:
+        shared = gog(['--readonly', 'api', 'call', 'drive', 'v3', 'drive.permissions.list',
+            '--params', json.dumps({'fileId': spreadsheet, 'fields': 'permissions(emailAddress,role)'})])
+        roles = {(p.get('emailAddress') or '').lower(): p.get('role') for p in shared.get('permissions', [])}
+        for email in wanted:
+            if roles.get(email) not in ('writer', 'owner'):
+                gog(['api', 'call', 'drive', 'v3', 'drive.permissions.create', '--params',
+                     json.dumps({'fileId': spreadsheet, 'sendNotificationEmail': False}), '--body',
+                     json.dumps({'type': 'user', 'role': 'writer', 'emailAddress': email}), '--allow-write', '--force'])
+        protections, editor_sync['locked_tabs'] = editor_requests(metadata['sheets'], writer, wanted)
+        if protections:
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json') as body:
+                json.dump({'requests': protections}, body)
+                body.flush()
+                gog(['api', 'call', 'sheets', 'v4', 'sheets.spreadsheets.batchUpdate', '--params',
+                     json.dumps({'spreadsheetId': spreadsheet}), '--body', '@' + body.name, '--allow-write', '--force'])
+    except (RuntimeError, ValueError, subprocess.TimeoutExpired):
+        editor_sync['failed'] = True
     timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
     with sqlite3.connect(Path(args.database).resolve().as_uri() + '?mode=ro', uri=True, timeout=15) as connection:
         connection.execute('PRAGMA query_only=ON')
@@ -338,7 +386,7 @@ def main():
     temporary = status.with_suffix('.tmp')
     temporary.write_text(json.dumps({'last_success_utc': timestamp,
         'member_rows': counts[0], 'paper_rows': counts[1], 'spreadsheet_id': spreadsheet,
-        'pi_review_counts': batch['statusCounts']}))
+        'pi_review_counts': batch['statusCounts'], 'editor_sync': editor_sync}))
     temporary.replace(status)
     print(timestamp, 'PASS database export:', counts[0], 'people,', counts[1], 'papers', flush=True)
 
