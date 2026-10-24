@@ -52,6 +52,7 @@ You need a local AdminBot service listening on loopback, for example
 | `GET /settings`                       | Return service defaults such as member privilege and escalation.   |
 | `PUT /settings`                       | Update AdminBot service defaults.                                  |
 | `GET /lab/members`                    | Return lab members and computed access profiles.                   |
+| `GET /lab/members/roster`             | Return a filtered member page and roster-wide filter options.      |
 | `PUT /lab/members/{member_id}`        | Create or update one lab member.                                   |
 | `GET /papers`                         | Return paper pipeline records with computed timeline estimates.    |
 | `GET /papers?scope=mine`              | Return only the papers the signed-in member is involved in.        |
@@ -61,6 +62,13 @@ You need a local AdminBot service listening on loopback, for example
 | `POST /approvals/{action_id}/approve` | Approve one immutable payload by hash.                             |
 | `POST /actions/{action_id}/execute`   | Execute or simulate an approved action.                            |
 | `GET /audit`                          | Return service audit events for local development and inspection.  |
+
+The Lab Members table uses `/lab/members/roster?limit=50&offset=0`. Filters (`q`,
+`status`, `project`, `paper`, `conference`, `location`, `career`, `membership`, and
+`meeting`) apply to the entire roster before join-date sorting (oldest first,
+missing dates last) and pagination. `total` counts matching members; `options`
+contains roster-wide choices. Meeting filtering requires an admin member session.
+Deploy the service endpoint with the updated UI; no SQLite migration is needed.
 
 Keep external connector credentials in the AdminBot service. Do not place Slack,
 Google, email, calendar, reimbursement, or social media write tokens in OpenClaw

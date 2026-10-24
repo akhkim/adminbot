@@ -1,4 +1,8 @@
 import { adminBotExternalCollaboratorSubgroups } from "../../../../../extensions/adminbot/src/contracts/actions.js";
+import type {
+  MemberRosterFilters,
+  MemberRosterOptions,
+} from "../../../../../extensions/adminbot/src/contracts/member-roster.js";
 import { requiresProfileCompletion } from "../../../../../extensions/adminbot/src/contracts/profile-completion.js";
 import type {
   AdminBotReimbursementCheck,
@@ -677,6 +681,11 @@ export type AdminBotDashboardData = {
 };
 
 export type AdminBotMemberListState = {
+  total: number;
+  limit: number;
+  offset: number;
+  filters: MemberRosterFilters;
+  options: MemberRosterOptions;
   rows: AdminBotLabMember[];
   loading: boolean;
   error: string | null;
@@ -864,6 +873,19 @@ export function createEmptyAdminBotDashboardData(): AdminBotDashboardData {
 
 export function createEmptyAdminBotMemberList(): AdminBotMemberListState {
   return {
+    total: 0,
+    limit: 50,
+    offset: 0,
+    filters: {},
+    options: {
+      status: [],
+      project: [],
+      paper: [],
+      conference: [],
+      location: [],
+      career: [],
+      membership: [],
+    },
     rows: [],
     loading: false,
     error: null,
@@ -871,9 +893,16 @@ export function createEmptyAdminBotMemberList(): AdminBotMemberListState {
   };
 }
 
-export async function loadAdminBotMemberList(host: AdminBotHost): Promise<void> {
+export async function loadAdminBotMemberList(
+  host: AdminBotHost,
+  filters = host.adminBotMemberList?.filters ?? {},
+  offset = host.adminBotMemberList?.offset ?? 0,
+): Promise<void> {
   const pending = {
     ...(host.adminBotMemberList ?? createEmptyAdminBotMemberList()),
+    filters,
+    offset,
+    rows: [],
     loading: true,
     error: null,
   };
@@ -883,11 +912,18 @@ export async function loadAdminBotMemberList(host: AdminBotHost): Promise<void> 
     host.adminBotMemberList === pending &&
     loadStoredMemberSession()?.sessionToken === session?.sessionToken;
   try {
-    let members = host.adminBotData.members;
+    let resultPage: Partial<AdminBotMemberListState> = {
+      rows: host.adminBotData.members,
+      total: host.adminBotData.members.length,
+    };
     if (session) {
-      // Read the complete authorized roster so every local filter and sort is roster-wide.
+      const params = new URLSearchParams({
+        limit: String(pending.limit),
+        offset: String(offset),
+        ...filters,
+      });
       const result = await fetchMemberResource(
-        "/lab/members",
+        `/lab/members/roster?${params}`,
         session.sessionToken,
         resolveAdminBotBaseUrl(host.settings),
       );
@@ -901,10 +937,20 @@ export async function loadAdminBotMemberList(host: AdminBotHost): Promise<void> 
               : "Could not load lab members. Please try again.",
         );
       }
-      members = readArray<AdminBotLabMember>(readRecord(result.value), "members");
+      const response = readRecord(result.value);
+      // A mismatched backend must fail visibly, never silently fall back to the full roster.
+      if (
+        !Array.isArray(response.members) ||
+        typeof response.total !== "number" ||
+        !response.options
+      ) {
+        throw new Error("The roster service needs updating. Please contact an administrator.");
+      }
+      resultPage = { ...response, rows: readArray<AdminBotLabMember>(response, "members") };
     }
     host.adminBotMemberList = {
-      rows: members,
+      ...pending,
+      ...resultPage,
       loading: false,
       error: null,
       loadedAt: Date.now(),

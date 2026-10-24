@@ -27,6 +27,7 @@ import {
   formatAdminBotToolError,
   invokeAdminBotTool,
   loadAdminBot,
+  loadAdminBotMemberList,
   loadAdminBotStandingMeetings,
   onboardSavedMember,
   serializeMemberSave,
@@ -577,13 +578,9 @@ export async function saveAdminBotOwnProfile(
           member.id === memberId ? { ...member, ...updated } : member,
         ),
       };
-      if (host.adminBotMemberList) {
-        host.adminBotMemberList = {
-          ...host.adminBotMemberList,
-          rows: host.adminBotMemberList.rows.map((member) =>
-            member.id === memberId ? { ...member, ...updated } : member,
-          ),
-        };
+      // A changed profile can move between filtered pages or change their order and options.
+      if (host.adminBotMemberList?.loadedAt || host.adminBotMemberList?.loading) {
+        await loadAdminBotMemberList(host);
       }
     },
   );

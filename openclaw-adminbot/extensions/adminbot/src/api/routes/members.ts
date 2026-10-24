@@ -63,6 +63,7 @@ import {
 import { readStandingMeetings } from "./meetings.js";
 import { memberSummaryRow } from "./member-summary-row.js";
 import { memberViewEtag } from "./members-etag.js";
+import { memberRosterRoute } from "./members.roster.js";
 import { memberOnboardingDeps } from "./onboarding.js";
 import { readListPage, limitParam } from "./query-params.js";
 import { del, get, post, put, route, type Route, under } from "./router.js";
@@ -70,6 +71,7 @@ import { requestIsSecure, sendAuthResult } from "./session.js";
 import { sendNotModified } from "./version-etag.js";
 
 export const membersRoutes: readonly Route[] = [
+  memberRosterRoute,
   // Member requests: anyone signed in may propose adding somebody; admins may correct one, and only
   // the PI decides it. Ahead of every /lab/members/:id pattern so "requests" is never read as a
   // member id. A member session throughout -- the service principal speaks for whoever is
