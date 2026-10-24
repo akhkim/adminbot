@@ -86,7 +86,7 @@ assert c.total_changes == before
 print('PASS: allowlist, missing status, venue fallback, RAW formula safety, read-only snapshot')
 
 headers = ['name', 'id', 'notes', 'member_type', 'join_date', 'status', 'other']
-expected = ['name', 'id', 'join_date', 'status', 'member_type', 'notes', 'other']
+expected = ['name', 'status', 'member_type', 'join_date', 'id', 'notes', 'other']
 assert exporter.ordered_people_columns(headers) == expected
 requests = exporter.people_layout_requests(headers, 123)
 for request in requests[:-1]:
@@ -99,9 +99,9 @@ print('PASS: requested column order, remaining-column preservation, repeat-safe 
 
 full = [['name', 'id', 'status', 'calendar_group', 'extra'], ['=SUM(1)', 'p1', 'active', 'lab'], ['Person 2', 'p2']]
 ordered = exporter.order_people_values(full)
-assert ordered[0] == ['name', 'id', 'status', 'calendar_group', 'extra']
-assert ordered[1] == ['=SUM(1)', 'p1', 'active', 'lab', '']
-assert ordered[2] == ['Person 2', 'p2', '', '', '']
+assert ordered[0] == ['name', 'status', 'calendar_group', 'id', 'extra']
+assert ordered[1] == ['=SUM(1)', 'active', 'lab', 'p1', '']
+assert ordered[2] == ['Person 2', '', '', 'p2', '']
 assert exporter.order_people_values(ordered) == ordered
 assert exporter.snapshot(c, '', full)['data'][0]['values'] == ordered
 for invalid in [[], [['name']], [['id', 'id']], [['id'], ['p', 'extra']]]:
@@ -140,6 +140,8 @@ columns = direct['data'][0]['values'][0]
 rows = [dict(zip(columns, row)) for row in direct['data'][0]['values'][1:]]
 new = next(row for row in rows if row['id'] == 'new')
 assert len(columns) == len(set(columns)) == len(exporter.PEOPLE_COLUMNS)
+# 1:1 folders are private Drive links; the link-shared sheet must never carry them.
+assert not any("one_on_one" in c for c in columns)
 assert columns[:len(exporter.PEOPLE_PRIORITY)] == list(exporter.PEOPLE_PRIORITY)
 assert len(rows) == 2
 assert new['join_date'] == '2026-09' and new['join_date_basis'] == 'joined_month'
@@ -176,6 +178,21 @@ people_headers = direct['data'][0]['values'][0]
 assert full_view['criteria'] == {str(people_headers.index('member_type')): {'condition': {
     'type': 'TEXT_CONTAINS', 'values': [{'userEnteredValue': 'full'}]}}}
 assert people_headers[0] == 'name'
+# Written headers are labels; the table names its columns by them too, so every label must be unique.
+people_table = next(r['addTable']['table'] for r in requests if r.get('addTable', {}).get('table', {}).get('name') == 'PeopleList')
+written = [c['columnName'] for c in people_table['columnProperties']]
+assert written[0] == 'Name' and written[people_headers.index('whatsapp')] == 'WhatsApp'
+assert len(written) == len(set(written)) == len(people_headers)
+assert refresh.sheet_values('PeopleList', direct['data'][0]['values'])[0] == written
+assert direct['data'][0]['values'][0] == people_headers  # the batch keeps field names
+assert refresh.whatsapp_link('+1 (416) 555-0100') == 'https://wa.me/14165550100'
+assert refresh.whatsapp_link('ask me') is None and refresh.whatsapp_link('4165550100') is None
+assert refresh.people_link('email', 'a@b.org') == 'mailto:a@b.org'
+assert refresh.people_link('linkedin_url', 'https://linkedin.com/in/x') == 'https://linkedin.com/in/x'
+assert refresh.people_link('linkedin_url', 'see https://x y') is None and refresh.people_link('notes', 'https://x') is None
+assert refresh.people_link('openreview_id', '~A_B1') == 'https://openreview.net/profile?id=~A_B1'
+assert {exporter.people_section(f) for f in exporter.PEOPLE_PRIORITY} <= set(refresh.PEOPLE_SECTION_COLOURS)
+assert exporter.people_section('notes') == exporter.PEOPLE_RECORDS_SECTION
 # Search joins name, ids and authored papers; secondary columns sit behind one collapsed group per tab.
 assert 'New person' in new['search'] and 'new' in new['search'].split(' | ')
 groups = [r for r in requests if 'addDimensionGroup' in r]
@@ -193,7 +210,7 @@ stale = {**properties, 'PaperList': {**properties['PaperList'], 'columnGroups': 
     {'range': {'sheetId': 2, 'dimension': 'COLUMNS', 'startIndex': 3, 'endIndex': 9}, 'depth': 1}]}}
 regrouped = refresh.refresh_requests(direct, stale)
 assert any(r.get('deleteDimensionGroup', {}).get('range', {}).get('startIndex') == 3 for r in regrouped)
-print('PASS: name-first people, search column, Full members view, collapsible secondary columns')
+print('PASS: name-first people, labelled sections, clickable contacts, search column, Full members view, collapsible secondary columns')
 incomplete_view = next(r['addFilterView']['filter'] for r in requests
                        if r.get('addFilterView', {}).get('filter', {}).get('title') == 'Incomplete')
 assert incomplete_view['criteria'] == {str(exporter.PAPERS.index('Incomplete')): {'condition': {'type': 'NOT_BLANK'}}}
