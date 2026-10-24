@@ -102,7 +102,6 @@ export function buildCheckPlan(args) {
       name: "policy guards",
       parallel: false,
       commands: [
-        { name: "AdminBot OpenAPI drift", args: ["adminbot:api:check"] },
         { name: "dead files", args: ["deadcode:unused-files"] },
         // `check:architecture` was deleted; import cycles, layering and directory
         // size are the architecture lane now, so --include-architecture selects

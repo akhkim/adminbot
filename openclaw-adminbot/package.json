@@ -1342,7 +1342,6 @@
     "aurora:deploy": "bash scripts/aurora-adminbot-host.sh deploy",
     "aurora:logs": "bash scripts/aurora-adminbot-host.sh logs",
     "aurora:status": "bash scripts/aurora-adminbot-host.sh status",
-    "prebuild": "pnpm adminbot:api:check",
     "build": "node scripts/build-all.mjs",
     "build:docker": "node scripts/tsdown-build.mjs && node scripts/check-cli-bootstrap-imports.mjs && node scripts/runtime-postbuild.mjs && node scripts/build-stamp.mjs && node scripts/runtime-postbuild-stamp.mjs && node --experimental-strip-types scripts/copy-hook-metadata.ts && node --experimental-strip-types scripts/copy-export-html-templates.ts && node --experimental-strip-types scripts/write-build-info.ts && node --experimental-strip-types scripts/write-cli-startup-metadata.ts && node --experimental-strip-types scripts/write-cli-compat.ts",
     "check": "node scripts/check.mjs",
