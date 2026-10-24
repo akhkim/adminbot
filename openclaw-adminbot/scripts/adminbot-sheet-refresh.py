@@ -375,6 +375,10 @@ def refresh_requests(batch, properties):
             else:
                 requests.append({'addFilterView': {'filter': {**specification, 'title': view_title}}})
         if title == 'PeopleList':
+            # The header row is kept for the table; headers of columns a narrower export dropped are blanked
+            # here, once the table no longer spans them.
+            requests.append({'repeatCell': {'range': {'sheetId': sid, 'startRowIndex': 0, 'endRowIndex': 1,
+                'startColumnIndex': len(headers)}, 'cell': {}, 'fields': 'userEnteredValue,userEnteredFormat,note'}})
             requests.extend(people_style_requests(p, values, field_names))
         if title == 'PaperList':
             requests.extend(paper_style_requests(p, values, batch['paperLinks'], batch.get('statusCounts')))
