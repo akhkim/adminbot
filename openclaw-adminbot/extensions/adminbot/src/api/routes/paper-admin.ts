@@ -5,6 +5,7 @@
 
 import { randomUUID } from "node:crypto";
 import { parsePaperMentorRunInput } from "../../contracts/papermentor.js";
+import { gatherOpenReviewPaperEvidence } from "../../workflows/papers/openreview-paper-sync-sources.js";
 import {
   asString,
   readJson,
@@ -174,6 +175,37 @@ export const paperAdminRoutes: readonly Route[] = [
     privilegedOnly(async ({ res, principal, ctx }) => {
       const { service } = ctx;
       sendServiceResult(res, await service.verifyPaperEvidence(principalActor(principal)));
+    }),
+  ),
+  // Paper records follow the PI's OpenReview submissions. Dry run unless the body says
+  // `dry_run: false`, so a hand-run call reports before it writes; the daily cron passes false.
+  // The body may carry the snapshot or the CSV itself; otherwise the configured file and the
+  // Drive export are read.
+  post(
+    "/papers/openreview-sync/run",
+    privilegedOnly(async ({ req, res, ctx }) => {
+      const { service } = ctx;
+      const body = readRecord(await readJsonOrEmpty(req, 26 * 1024 * 1024));
+      if (body.notifications_csv !== undefined && typeof body.notifications_csv !== "string") {
+        sendJson(res, 400, { error: { message: "notifications_csv must be text" } });
+        return;
+      }
+      const sources = await gatherOpenReviewPaperEvidence(ctx.openReviewPaperSources ?? {}, {
+        ...(body.author_results !== undefined ? { author_results: body.author_results } : {}),
+        ...(typeof body.notifications_csv === "string"
+          ? { notifications_csv: body.notifications_csv }
+          : {}),
+      });
+      const result = service.syncPapersFromOpenReview({
+        evidence: sources.evidence,
+        dryRun: body.dry_run !== false,
+      });
+      sendServiceResult(
+        res,
+        result.ok
+          ? { ...result, payload: { ...result.payload, sources: sources.read, warnings: sources.warnings } }
+          : result,
+      );
     }),
   ),
   post(

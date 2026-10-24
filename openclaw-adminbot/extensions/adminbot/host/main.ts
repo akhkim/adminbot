@@ -866,6 +866,15 @@ export function createAdminBotHost(deps: AdminBotHostDeps) {
       "scripts/openreview-notifications/adminbot_bridge.py",
     ),
     openReviewScriptPath: path.join(repoRoot, "scripts/adminbot-openreview.py"),
+    // The paper OpenReview sync. The sync cron posts the snapshot it finds at the results cron's
+    // path; this path is read only when a caller (the UI, a manual run) posts none.
+    openReviewResultsPath:
+      process.env.ADMINBOT_OPENREVIEW_RESULTS_JSON ||
+      path.join(repoRoot, "state/openreview-author-results.json"),
+    notificationDecisionsScriptPath: path.join(
+      repoRoot,
+      "scripts/openreview-notifications/adminbot_decisions.py",
+    ),
     fetchSlackLocations: createSlackLocationReader(repoRoot),
     fetchSlackTimezones: createSlackTimezoneReader(repoRoot),
     fetchSlackMessageCounts: createSlackMessageCounter(repoRoot),
