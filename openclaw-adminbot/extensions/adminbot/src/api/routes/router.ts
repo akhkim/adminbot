@@ -8,7 +8,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { AdminBotPrincipal, AdminBotRouteContext } from "./context.js";
 
-export type RouteMethod = "GET" | "POST" | "PUT" | "DELETE";
+export type RouteMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 export type RouteRequest<P extends AdminBotPrincipal = AdminBotPrincipal> = {
   req: IncomingMessage;
@@ -58,6 +58,8 @@ export const post = (path: string | RegExp | PathMatcher, handle: RouteHandler) 
   route(["POST"], path, handle);
 export const put = (path: string | RegExp | PathMatcher, handle: RouteHandler) =>
   route(["PUT"], path, handle);
+export const patch = (path: string | RegExp | PathMatcher, handle: RouteHandler) =>
+  route(["PATCH"], path, handle);
 export const del = (path: string | RegExp | PathMatcher, handle: RouteHandler) =>
   route(["DELETE"], path, handle);
 
