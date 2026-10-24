@@ -293,6 +293,35 @@ describe("Aurora auto-deploy", () => {
     expect(lockHeld(f)).toBe(true);
   });
 
+  const holdLock = (f: Fixture, owner: string) => {
+    const dir = path.join(f.home, ".config/jinesis-adminbot/.writer.lock");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "owner"), `${owner}\n`);
+  };
+  // A pid no process has: above the kernel's pid_max ceiling.
+  const DEAD_PID = 4194305;
+
+  it("reclaims a lock left by a cancelled deploy whose process is gone", () => {
+    const f = fixture();
+    holdLock(f, `auto-deploy-20261024T155159Z-${DEAD_PID}-123`);
+    const result = deploy(f, f.next);
+    expect(result.status).toBe(0);
+    expect(result.stderr).toContain("reclaiming the writer lock");
+    expect(path.basename(current(f))).toMatch(new RegExp(`^${f.next.slice(0, 12)}-`));
+    expect(lockHeld(f)).toBe(false);
+  });
+
+  it("keeps a lock whose owner is still running, or that another machine took", () => {
+    for (const owner of [`auto-deploy-20261024T155159Z-${process.pid}-1`, `deploy-20261024T155159Z-${DEAD_PID}-1`]) {
+      const f = fixture();
+      holdLock(f, owner);
+      const result = deploy(f, f.next);
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain("holds the account lock");
+      expect(fs.readFileSync(path.join(f.home, ".config/jinesis-adminbot/.writer.lock/owner"), "utf8")).toBe(`${owner}\n`);
+    }
+  });
+
   describe("collected deadline data", () => {
     const content = "extensions/adminbot/content/deadlines";
     const read = (release: string, name: string) =>

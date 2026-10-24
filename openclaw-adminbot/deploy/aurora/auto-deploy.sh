@@ -119,7 +119,22 @@ target_sha="${target_commit:0:12}"
 lock_dir="$HOME/.config/jinesis-adminbot/.writer.lock"
 lock_token="auto-deploy-$(date -u +%Y%m%dT%H%M%SZ)-$$-$RANDOM"
 mkdir -p -- "$(dirname -- "$lock_dir")"
+# A deploy the runner cancels is killed before its exit trap runs, so its lock outlives it and
+# every later deploy refuses. Reclaim the lock only from a writer on this host whose process is
+# gone; aurora-adminbot-host.sh takes the lock over SSH with a pid from another machine, so its
+# tokens (and anything unrecognized) are never judged stale here.
+reclaim_stale_lock() {
+  local owner pid
+  owner="$(cat -- "$lock_dir/owner" 2>/dev/null)" || return 1
+  [[ "$owner" =~ ^(auto-deploy|qwen-restart)-[0-9]{8}T[0-9]{6}Z-([0-9]+)-[0-9]+$ ]] || return 1
+  pid="${BASH_REMATCH[2]}"
+  ! kill -0 "$pid" 2>/dev/null && ! ps -p "$pid" >/dev/null 2>&1 || return 1
+  echo "warning: reclaiming the writer lock left by $owner (process $pid is gone)" >&2
+  rm -f -- "$lock_dir/owner"
+  rmdir -- "$lock_dir"
+}
 mkdir -m 700 -- "$lock_dir" 2>/dev/null ||
+  { reclaim_stale_lock && mkdir -m 700 -- "$lock_dir" 2>/dev/null; } ||
   die "another AdminBot writer operation holds the account lock ($lock_dir); retry when it finishes"
 printf '%s\n' "$lock_token" >"$lock_dir/owner"
 release_lock() {
