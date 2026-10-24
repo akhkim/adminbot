@@ -1425,6 +1425,19 @@ export const en: TranslationMap = {
       legendCluster: "Nearby cities, combined",
       loading: "Loading the map…",
       empty: "No one is on the map yet. Add your city in Profile to appear here.",
+      searchLabel: "Find someone on the map",
+      searchPlaceholder: "Find a person or city",
+      // A non-admin's map carries no names, so the box can only find cities for them.
+      searchPlaceholderPlaces: "Find a city",
+      searchClear: "Clear the search and show the whole map",
+      searchResults: "Matches on the map",
+      searchCount: "{count} matches",
+      searchNone: "Nobody on the map matches “{query}”.",
+      searchUnplaced:
+        "{count} members are not on the map because their location could not be placed, so they cannot be found here.",
+      searchPersonAria: "{name}, {place}",
+      searchPlaceAria: "{place}, {count} members",
+      searchPlaceMembers: "{count} members",
     },
     workSummary: {
       title: "My projects & papers",

@@ -2635,6 +2635,194 @@
   white-space: nowrap;
 }
 
+/* --- Search --- */
+
+/* A box over the map rather than a filter on it: picking a result flies to that city and lights
+   it, and the rest of the map stays drawn, so where the person is still reads against where
+   everyone else is. The results float over whatever is below instead of pushing the map down. */
+.member-map__search {
+  position: relative;
+  width: min(22rem, 100%);
+}
+
+.member-map--card > .member-map__search,
+.member-map__panel > .member-map__search {
+  margin-top: var(--space-2);
+}
+
+.member-map__search-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.member-map__search-icon,
+.member-map__search-clear svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.member-map__search-icon {
+  position: absolute;
+  left: var(--space-2);
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.member-map__search-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 2.25rem;
+  padding: var(--space-1) 2.25rem var(--space-1) calc(var(--space-2) + 20px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--control-ui-text-sm);
+}
+
+.member-map__search-input::placeholder {
+  color: var(--muted);
+}
+
+.member-map__search-input:focus-visible {
+  outline: 2px solid var(--mm-pin);
+  outline-offset: -1px;
+}
+
+.member-map__search-clear {
+  position: absolute;
+  right: 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.member-map__search-clear:hover {
+  color: var(--text-strong);
+}
+
+.member-map__search-clear:focus-visible {
+  outline: 2px solid var(--mm-pin);
+  outline-offset: -2px;
+}
+
+@media (pointer: coarse) {
+  .member-map__search-input {
+    min-height: 2.75rem;
+  }
+
+  .member-map__search-clear {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+}
+
+.member-map__search-pop {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 4px);
+  right: 0;
+  left: 0;
+  box-sizing: border-box;
+  max-height: min(22rem, 60dvh);
+  overflow-y: auto;
+  padding: var(--space-1);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+}
+
+.member-map__search-pop[hidden] {
+  display: none;
+}
+
+.member-map__search-results {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.member-map__search-results:empty {
+  display: none;
+}
+
+.member-map__search-option {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  min-height: 2.25rem;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.member-map__search-option .member-map__avatar {
+  margin-left: 0;
+}
+
+.member-map__search-option--active {
+  background: var(--mm-pin-soft);
+  color: var(--text-strong);
+}
+
+.member-map__search-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.member-map__search-name,
+.member-map__search-where {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.member-map__search-name {
+  font-size: var(--control-ui-text-sm);
+  font-weight: 500;
+}
+
+.member-map__search-where {
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.member-map__search-note {
+  margin: 0;
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.member-map__search-note--unplaced {
+  border-top: 1px solid var(--border);
+}
+
+/* The person a search found, first in their city's tooltip. */
+.member-map__person--found .member-map__name {
+  color: var(--mm-pin);
+}
+
 /* --- City list --- */
 
 .member-map__list {
