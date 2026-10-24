@@ -465,6 +465,19 @@ describe("renderMemberMap", () => {
     expect(label).toBe("Toronto, Canada — 9 members");
   });
 
+  it("names the person on a dot of one, with the city in its tooltip", async () => {
+    const container = await draw(parseMemberMap(nearby));
+    const card = container.querySelector(".member-map__body")!;
+    const toronto = card.querySelector('.member-map__marker[data-place="toronto"]')!;
+    expect(toronto.getAttribute("title")).toBe("Ada · Toronto, Canada");
+    expect(card.querySelector('.member-map__label[data-label="toronto"]')?.textContent).toBe("Ada");
+
+    // A viewer who sees counts only gets the city, as before, and no name anywhere.
+    const anonymous = await draw(parseMemberMap(summary));
+    const counted = anonymous.querySelector('.member-map__marker[data-place="toronto"]')!;
+    expect(counted.hasAttribute("title")).toBe(false);
+  });
+
   it("merges cities that would touch into one marker with the total", async () => {
     const container = await draw(parseMemberMap(nearby));
     const card = container.querySelector(".member-map__body")!;
