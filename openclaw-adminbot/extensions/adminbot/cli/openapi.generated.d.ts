@@ -22828,7 +22828,6 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
-          notifications_csv?: string;
           author_results?: null | {
             [key: string]: unknown;
           };
@@ -22839,23 +22838,6 @@ export interface operations {
       };
     };
     responses: {
-      /** @description Server response */
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            error: {
-              message: string;
-            } & {
-              [key: string]: unknown;
-            };
-          } & {
-            [key: string]: unknown;
-          };
-        };
-      };
       /** @description Successful service result */
       "2XX": {
         headers: {

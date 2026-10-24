@@ -22111,9 +22111,6 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "notifications_csv": {
-                    "type": "string"
-                  },
                   "author_results": {
                     "anyOf": [
                       {
@@ -22134,34 +22131,6 @@
           }
         },
         "responses": {
-          "400": {
-            "description": "Server response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "object",
-                      "properties": {
-                        "message": {
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "message"
-                      ],
-                      "additionalProperties": true
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": true
-                }
-              }
-            }
-          },
           "2XX": {
             "description": "Successful service result",
             "content": {
