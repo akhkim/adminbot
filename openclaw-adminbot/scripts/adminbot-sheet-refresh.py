@@ -15,9 +15,6 @@ spec = importlib.util.spec_from_file_location('exporter', Path(__file__).with_na
 exporter = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(exporter)
 
-# openreview-notifications.csv on the AdminBot Drive (the same export notification drafts read).
-NOTIFICATIONS_FILE_ID = '1M88hLvN6WvWIthUPTnHilWbsmOz2DZg7'
-
 URGENCY_COLOURS = {'⛔': {'red': .96, 'green': .73, 'blue': .73}, '🔴': {'red': .99, 'green': .87, 'blue': .87}, '🟠': {'red': 1, 'green': .92, 'blue': .82},
                    '🟡': {'red': 1, 'green': .97, 'blue': .80}, '🟢': {'red': .89, 'green': .96, 'blue': .89}}
 # What the PI reads first; always visible even when empty.
@@ -419,22 +416,12 @@ def main():
                                           exporter.parse_time(timestamp))
     except OSError:
         access = {}
-    # The PI's OpenReview notification emails, exported to Drive daily. A failed download keeps the
-    # previous copy, so a Drive hiccup leaves yesterday's outcomes rather than none.
-    notifications = Path(args.status).with_name('openreview-notifications.csv')
-    try:
-        partial = notifications.with_suffix('.partial')
-        gog(['--readonly', 'drive', 'download', config.get('notifications_file_id', NOTIFICATIONS_FILE_ID),
-             '--out', str(partial), '--overwrite'], timeout=180)
-        partial.replace(notifications)
-    except (RuntimeError, OSError, ValueError, subprocess.TimeoutExpired):
-        pass
     with sqlite3.connect(Path(args.database).resolve().as_uri() + '?mode=ro', uri=True, timeout=15) as connection:
         connection.execute('PRAGMA query_only=ON')
-        # Written by the OpenReview results job under the account that holds the login; absent is fine.
-        # Its entries carry scores, so they come first and win ties with the notification outcomes.
+        # Written every six hours by the OpenReview results job under the account that holds the login;
+        # absent is fine (the citation-check table is the fallback). The PI's notification e-mails are
+        # not read: they froze each paper at the title and status they were sent with.
         openreview = exporter.load_openreview_results(Path(args.database).with_name('openreview-author-results.json'))
-        openreview += exporter.load_notification_results(notifications)
         batch = exporter.snapshot(connection, timestamp, full_people=True, link_access=access, openreview=openreview)
     requests = refresh_requests(batch, properties)
     with tempfile.NamedTemporaryFile(mode='w', suffix='.json') as body:

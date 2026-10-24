@@ -362,11 +362,9 @@ export type AdminBotMockServiceOptions = {
   notificationDraftScriptPath?: string;
   openReviewScriptPath?: string;
   openReviewPythonCommand?: string;
-  // The paper OpenReview sync's two sources: the author-results snapshot written by
-  // scripts/adminbot-openreview-results-cron.sh, and the notification adapter
-  // (scripts/openreview-notifications/adminbot_decisions.py) run over the Drive export.
+  // The paper OpenReview sync's source: the author-results snapshot written by
+  // scripts/adminbot-openreview-results-cron.sh from OpenReview's API.
   openReviewResultsPath?: string;
-  notificationDecisionsScriptPath?: string;
   // Reads each member's location from their Slack profile. Injected from the repo-root
   // composition layer, which owns how Slack is reached; absent here means the map falls
   // back to roster locations for everyone.

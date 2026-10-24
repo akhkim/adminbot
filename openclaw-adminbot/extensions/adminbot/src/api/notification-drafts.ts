@@ -7,12 +7,12 @@ import { readDriveFileBase64, resolveGogExecutable } from "../connectors/gog.js"
 import { adminBotNormalizeXHandle, type AdminBotLabMember } from "../contracts/actions.js";
 import { readJson, sendJson } from "./server.http.js";
 
-// The PI's OpenReview notification export, refreshed daily. Read here for announcement drafts and
-// by the paper OpenReview sync for submissions and decisions.
+// The PI's OpenReview notification export, refreshed daily. Read here for announcement drafts; the
+// paper OpenReview sync reads OpenReview's API instead.
 export const DEFAULT_NOTIFICATIONS_FILE_ID = "1M88hLvN6WvWIthUPTnHilWbsmOz2DZg7";
 
 /** The export as text, fetched afresh. Throws on a failed or empty read. */
-export async function downloadNotificationsCsv(signal?: AbortSignal): Promise<string> {
+async function downloadNotificationsCsv(signal?: AbortSignal): Promise<string> {
   const encoded = await readDriveFileBase64(DEFAULT_NOTIFICATIONS_FILE_ID, {
     command: resolveGogExecutable(),
     maxBytes: 25 * 1024 * 1024,
@@ -31,7 +31,7 @@ export async function downloadNotificationsCsv(signal?: AbortSignal): Promise<st
  * Exit 1 is the adapters' "handled error" code, which still prints a JSON answer, so it resolves
  * like a success and the caller reads the `error` field.
  */
-export function runNotificationsScript(
+function runNotificationsScript(
   scriptPath: string,
   args: string[],
   input: unknown,

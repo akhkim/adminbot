@@ -43,6 +43,8 @@ class OutcomeTests(unittest.TestCase):
             ("", "ICLR.cc/2026/Conference/Desk_Rejected_Submission", None, ("desk_rejected", None, None)),
             ("Submitted to NeurIPS 2026", "x/Submission", "Accept (spotlight)", ("accepted", "main", "spotlight")),
             ("NeurIPS 2026 Workshop LLM Agents", "NeurIPS.cc/2026/Workshop", None, ("accepted", None, None)),
+            ("MoralNLP 2026 Workshop", "EMNLP/2026/Workshop/MoralNLP", None, ("accepted", None, None)),
+            ("EMNLP 2026 Main", "EMNLP/2026/Conference", "Accept to Main Conference Oral", ("accepted", "main", "oral")),
         ]
         for label, venue_id, decision, expected in cases:
             outcome = bridge.outcome_of(label, venue_id, decision)
@@ -80,6 +82,44 @@ class AuthorResultsTests(unittest.TestCase):
         self.assertEqual(entry["reviews"], [{"overall_assessment": 3.5}, {"overall_assessment": 4.0, "soundness": 4.0}])
         self.assertEqual(entry["meta_review"], {"overall_assessment": 3.5})
         self.assertNotIn("secret words", output.getvalue())
+
+    def results(self, notes, replies, edits=None):
+        client = Mock()
+        client.profile = SimpleNamespace(id="~Synthetic_PI1")
+        client.get_all_notes.side_effect = lambda content=None, forum=None: notes if content else replies.get(forum, [])
+        client.get_note_edits.side_effect = lambda note_id: (edits or {}).get(note_id, [])
+        output = io.StringIO()
+        with patch.object(bridge, "connect", return_value=client), contextlib.redirect_stdout(output):
+            bridge.cmd_author_results(SimpleNamespace())
+        return json.loads(output.getvalue())["submissions"]
+
+    def test_folds_the_arr_submission_into_its_commitment(self):
+        arr = note("arrForum", title="Old Name", venue="ACL ARR 2026 May Submission",
+                   venueid="aclweb.org/ACL/ARR/2026/May/Submission")
+        arr.cdate = 1_746_000_000_000
+        emnlp = note("emnlpNote", title="New Name", venue="EMNLP 2026 Main", venueid="EMNLP/2026/Conference",
+                     paper_link="https://openreview.net/forum?id=arrForum")
+        decision = note("d1", ["EMNLP/2026/Conference/Submission3/-/Decision"], forum="emnlpNote",
+                        decision="Accept to Main Conference", presentation_mode="Poster")
+        [entry] = self.results([arr, emnlp], {"emnlpNote": [decision]})
+        # The ARR note alone would read "under review" for good; the commitment is what happened.
+        self.assertEqual(entry["forum"], "emnlpNote")
+        self.assertEqual((entry["status"], entry["track"], entry["presentation"]), ("accepted", "main", "poster"))
+        self.assertEqual(entry["titles"], ["New Name", "Old Name"])
+        self.assertEqual(entry["arr_venue_id"], "aclweb.org/ACL/ARR/2026/May/Submission")
+        self.assertIsNone(entry["submitted_at"])
+        [alone] = self.results([arr], {})
+        self.assertEqual((alone["status"], alone["submitted_at"]), ("under_review", "2025-04-30T08:00:00+00:00"))
+
+    def test_keeps_every_title_from_the_edit_history(self):
+        paper = note("iclr1", title="Camera Ready Title", venue="ICLR 2026 Poster", venueid="ICLR.cc/2026/Conference")
+        edits = {"iclr1": [
+            SimpleNamespace(tcdate=1, note=SimpleNamespace(content={"title": {"value": "Submitted Title"}})),
+            SimpleNamespace(tcdate=2, note=SimpleNamespace(content={"pdf": {"value": "/pdf/x.pdf"}})),
+            SimpleNamespace(tcdate=3, note=SimpleNamespace(content={"title": {"value": "Camera Ready Title"}})),
+        ]}
+        [entry] = self.results([paper], {}, edits)
+        self.assertEqual(entry["titles"], ["Camera Ready Title", "Submitted Title"])
 
     def test_unreadable_forum_keeps_the_submission(self):
         client = Mock()

@@ -7141,7 +7141,7 @@ export class AdminBotService {
     nowIso?: string;
   }): AdminBotServiceResponse<OpenReviewPaperSyncReport> {
     const nowIso = options.nowIso ?? new Date().toISOString();
-    // The citation-watch table is the fallback: the snapshot and the e-mails speak first, and
+    // The citation-watch table is the fallback: the snapshot speaks first, and
     // match() prefers the newer report anyway.
     const evidence = [
       ...options.evidence,
