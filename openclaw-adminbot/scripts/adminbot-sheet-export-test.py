@@ -486,3 +486,68 @@ waiting = exporter.paper_row(paper(venue='a NeurIPS workshop', current_step='ove
 assert waiting['Venue'] == 'ICLR 2027' and waiting['Stage'] == '2 · Writing (Overleaf)', waiting
 assert exporter.as_on_openreview(paper(), None) == paper()
 print("PASS: the PI's OpenReview sets acceptance, track and venue; a later off-OpenReview acceptance survives")
+
+# The PI's notification emails: submissions, decisions and endings become OpenReview outcomes.
+def mail(day, subject, text, domain='aclweb.org/ACL/ARR/2026/October'):
+    return {'id': subject[:20], 'cdate': int(datetime.datetime(2026, 1, 1).timestamp() * 1000) + day * 86400000,
+            'domain': domain, 'invitation': '', 'content': {'subject': subject, 'text': text}}
+
+def posted(day, venue, title, forum, domain):
+    return mail(day, f'{venue} has received your submission titled {title}',
+                f'Your submission to {venue} has been posted.\nSubmission Number: 1\nTitle: {title}\n'
+                f'https://openreview.net/forum?id={forum}', domain)
+
+mails = [
+    # Rejected at ICLR, then resubmitted to ARR: under review again.
+    posted(1, 'ICLR 2026', 'Debate Paper', 'iclrDebate', 'ICLR.cc/2026/Conference'),
+    mail(20, '[ICLR 2026] Decision notification for your submission 5: Debate Paper',
+         'We regret to inform you that your submission has been rejected.\nhttps://openreview.net/forum?id=iclrDebate',
+         'ICLR.cc/2026/Conference'),
+    posted(40, 'ARR - February 2026', 'Debate Paper', 'arrDebate', 'aclweb.org/ACL/ARR/2026/February'),
+    # Accepted as Findings; a later camera-ready revision does not undo it.
+    posted(2, 'ARR - May 2026', 'Findings Paper', 'arrFindings', 'aclweb.org/ACL/ARR/2026/May'),
+    posted(25, 'EMNLP 2026', 'Findings Paper', 'emnlpFindings', 'EMNLP/2026/Conference'),
+    mail(30, '[EMNLP 2026] Decision Notification for Submission 9',
+         'Dear Authors, your submission to EMNLP 2026, Findings Paper, has been accepted as a Findings paper.',
+         'EMNLP/2026/Conference'),
+    mail(35, 'EMNLP 2026 has received a new revision of your submission titled Findings Paper',
+         'Your new revision has been posted.\nTitle: Findings Paper\nhttps://openreview.net/forum?id=emnlpFindings',
+         'EMNLP/2026/Conference'),
+    # The same paper at a workshop afterwards does not replace the Findings acceptance.
+    mail(60, '[NLP4PI] Decision for your submission #4, titled "Findings Paper"', 'Decision: Accept',
+         'EMNLP/2026/Workshop/NLP4PI'),
+    # Desk-rejected after submission.
+    posted(50, 'ARR - October 2026', 'Tutor Paper', 'arrTutor', 'aclweb.org/ACL/ARR/2026/October'),
+    mail(53, '[ARR - October 2026]: Paper #13 desk-rejected by Program Chairs',
+         'The paper "Tutor Paper" has been desk-rejected.\nhttps://openreview.net/forum?id=arrTutor'),
+    # A paper she only reviews: its withdrawal is not hers to report.
+    mail(54, '[ARR - October 2026]: Paper #77 withdrawn by paper authors',
+         'The paper "Someone Else" has been withdrawn.\nhttps://openreview.net/forum?id=notMine'),
+]
+outcomes = {e['title']: e for e in exporter.notification_results(mails)}
+assert set(outcomes) == {'Debate Paper', 'Findings Paper', 'Tutor Paper'}, outcomes
+assert (outcomes['Debate Paper']['status'], outcomes['Debate Paper']['venue']) == ('under_review', 'ARR February 2026')
+assert (outcomes['Findings Paper']['status'], outcomes['Findings Paper']['track'], outcomes['Findings Paper']['venue']) == (
+    'accepted', 'findings', 'EMNLP 2026')
+assert outcomes['Tutor Paper']['status'] == 'desk_rejected'
+assert exporter.openreview_text(outcomes['Tutor Paper']) == '❌ Desk rejected · ARR October 2026'
+accepted = exporter.as_on_openreview({'title': 'Findings Paper', 'venue': 'ARR May 2026'}, outcomes['Findings Paper'])
+assert exporter.accepted_text(accepted, outcomes['Findings Paper']) == 'EMNLP 2026 · Findings'
+assert exporter.venue_from_id('aclweb.org/ACL/2026/Conference') == 'ACL 2026'
+assert exporter.load_notification_results('/nonexistent/notifications.csv') == []
+print('PASS: notification emails give the PI\'s submissions, decisions, desk rejections and withdrawals; reviewing mail is ignored')
+
+# An outcome elsewhere leaves an acceptance alone; the same venue's rejection clears it.
+workshop = {'title': 'W', 'venue_decision': 'pending', 'accepted_venue': 'REALM workshop @EMNLP 2026', 'accepted_year': 2026}
+kept = exporter.as_on_openreview(workshop, {'status': 'under_review', 'venue_id': 'AAAI.org/2027/Conference'})
+assert (kept['venue_decision'], kept['accepted_venue'], kept['venue']) == ('pending', 'REALM workshop @EMNLP 2026', 'AAAI 2027')
+other = {'title': 'I', 'venue_decision': 'accept', 'accepted_venue': 'IASEAI 2026', 'accepted_year': 2026}
+assert exporter.as_on_openreview(other, {'status': 'rejected', 'venue_id': 'ICLR.cc/2026/Conference'})['venue_decision'] == 'accept'
+emnlp = {'title': 'E', 'venue_decision': 'accept', 'accepted_venue': 'EMNLP', 'accepted_year': 2026}
+cleared = exporter.as_on_openreview(emnlp, {'status': 'desk_rejected', 'venue_id': 'EMNLP/2026/Conference'})
+assert (cleared['venue_decision'], cleared['accepted_venue']) == ('reject', None)
+print('PASS: OpenReview rejections clear only an acceptance at the same venue; under review elsewhere keeps it')
+stale = {'id': 'old', 'title': 'Findings Paper', 'venue_id': 'aclweb.org/ACL/ARR/2026/May/Submission',
+         'status': 'under_review', 'source': 'citation_check'}
+assert exporter.openreview_match({'title': 'Findings Paper'}, [], [stale, outcomes['Findings Paper']])['status'] == 'accepted'
+print('PASS: daily notification outcomes outrank stale citation-check rows')
