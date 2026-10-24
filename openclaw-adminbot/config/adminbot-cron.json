@@ -8,8 +8,8 @@
   "jobs": [
     {
       "name": "adminbot-active-channels",
-      "description": "Remove ineligible accounts from active Slack channels, the Monday meeting, and lab calendar subscriptions",
-      "cron": "0 8 * * 0",
+      "description": "Daily: remove ineligible accounts from active Slack channels, the Monday meeting, and lab calendar subscriptions",
+      "cron": "0 8 * * *",
       "argv": ["bash", "scripts/adminbot-active-channels-cron.sh"],
       "timeoutSeconds": 1800
     },

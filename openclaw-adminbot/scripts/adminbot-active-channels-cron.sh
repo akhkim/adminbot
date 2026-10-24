@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sunday Slack and calendar membership cleanup; the server computes all removal targets.
+# Daily Slack and calendar membership cleanup; the server computes all removal targets.
 set -euo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/lib/adminbot-cron-env.sh"
 adminbot_load_cron_env "active channel cleanup" || exit 1

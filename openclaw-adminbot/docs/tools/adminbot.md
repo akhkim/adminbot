@@ -2038,28 +2038,34 @@ reads/invites, `auth.test`, and email lookup, plus the existing Slack Connect an
 Missing permissions stop execution; preview and queueing never provision a channel. This needs
 an Aurora backend release as well as the frontend release.
 
-### Weekly active Slack channel cleanup
+### Daily active Slack channel cleanup
 
-`adminbot-active-channels` runs Sunday at 08:00 in the gateway's configured timezone
-(`0 8 * * 0` in `config/adminbot-cron.json`). After deployment, register/update it using
-`scripts/adminbot-cron-sync.sh`, as with the other scheduled jobs.
+`adminbot-active-channels` runs daily at 08:00 in the gateway's configured timezone
+(`0 8 * * *` in `config/adminbot-cron.json`). After deployment, register/update it using
+`scripts/adminbot-cron-sync.sh`, as with the other scheduled jobs -- a deploy alone does not
+change the registered schedule.
 
 The job calls `POST /members/active-channels/sync` with the service token. The route also
 accepts admin sessions; ordinary members cannot run it and callers cannot supply targets.
-It reads the complete live membership of `jinesis-active` and `random-active`, then removes
-human accounts with no matching eligible SQLite member. Eligibility uses the same resolved
-member classification as active-channel invitations: full or coauthor-major. Alumni with
-one of these classifications remain eligible. Unmatched accounts and missing membership
-types are removed, not queued for manual review. Bots/app accounts are excluded. There is
-no separate exemption for human admins. The Slack pass leaves other channels untouched;
-the calendar pass is described below.
+It reads the complete live membership of `jinesis-active` and `random-active`, including
+Slack Connect members from other organizations (`users.list` omits them, so each is looked up
+with `users.info`; a failed lookup aborts the read). Eligibility uses the same resolved member
+classification as active-channel invitations: full or coauthor-major. Alumni with one of these
+classifications remain eligible. Bots/app accounts are excluded. There is no separate exemption
+for human admins. The Slack pass leaves other channels untouched; the calendar pass is described
+below.
+
+Only an account whose SQLite member row names a non-eligible Member Type is removed. An account
+no member row claims (`no_roster_row`) and one whose row has a blank Member Type
+(`blank_member_type`) are returned in `needs_review` and left in the channel: the roster not
+knowing somebody is a gap in the roster, not a decision about them.
 
 This is a standing automatic policy: each removal is a normal T3 `slack.remove_from_channel`
-proposal, approved against its exact payload hash by `system:weekly-active-channel-policy`,
+proposal, approved against its exact payload hash by `system:daily-active-channel-policy`,
 then executed and audited. Other removal proposals still require their existing approvals.
-Repeat runs deduplicate removals within the UTC Sunday week; a later week can remove an
-account that was re-added. Failed executions are reported and can be retried. Concurrent
-requests share the same pass.
+Repeat runs deduplicate removals within the UTC day; the next day can remove an account that
+was re-added. Failed executions are reported and can be retried. Concurrent requests share the
+same pass.
 
 Slack requires the existing `SLACK_BOT_TOKEN` (directory/channel reads) and
 `SLACK_USER_TOKEN` (channel removals), with the corresponding Slack permissions.
@@ -2067,9 +2073,9 @@ An empty SQLite member roster, failed/incomplete Slack read, or unavailable conn
 closed. Run only against the intended production member database. Local tests use synthetic
 Slack responses and never contact Slack or remove live users.
 
-### Sunday lab calendar event membership
+### Daily lab calendar event membership
 
-The same Sunday 08:00 `adminbot-active-channels` job also calls
+The same daily 08:00 `adminbot-active-channels` job also calls
 `POST /members/calendar-membership/sync`. Both passes run even when one fails; any
 failure makes the combined job fail. Re-sync the cron manifest after deployment to
 apply its increased 30-minute timeout. No additional cron job is needed.
