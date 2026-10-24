@@ -1,14 +1,17 @@
 // Paper records follow the PI's OpenReview submissions.
 //
 // OpenReview is the ground truth for whether a lab paper was submitted and what the venue
-// decided. Three places report it, none complete on its own:
+// decided, and it is read from OpenReview itself:
 //
 //   - the author-results snapshot (scripts/adminbot-openreview.py author-results), which reads
-//     every submission the PI authored, with its decision, track and presentation;
-//   - the PI's notification export, which needs no OpenReview login and carries the date each
-//     confirmation or decision arrived;
+//     every submission the PI authored, with its decision, track, presentation and every title it
+//     has carried;
 //   - the citation-watch table, whose venue ids say whether a submission is active, rejected or
 //     withdrawn, and which is only a fallback.
+//
+// The PI's notification e-mails were a source too, and were dropped: an e-mail is frozen at the
+// title and status it was sent with, so a retitled paper stopped matching, a status moved on
+// without a new e-mail, and none of them said oral or poster.
 //
 // This module is pure: it turns those reports into evidence, matches evidence to one paper the
 // way the paper sheet export does, and plans the change. The service applies the plan through
@@ -35,12 +38,14 @@ export type OpenReviewOutcome =
   | "desk_rejected"
   | "withdrawn";
 
-export type OpenReviewEvidenceSource = "author_results" | "notifications" | "citation_checks";
+export type OpenReviewEvidenceSource = "author_results" | "citation_checks";
 
 export type OpenReviewEvidence = {
   source: OpenReviewEvidenceSource;
   status: OpenReviewOutcome;
   title: string;
+  /** Every title the submission has carried, current first; a retitled paper matches by any. */
+  titles?: string[];
   /** The submission note id, when the source knows it. */
   submission_id?: string;
   /** Every forum id the source ties to this submission (the note's own and its review forum). */
@@ -50,9 +55,13 @@ export type OpenReviewEvidence = {
   venue_label?: string;
   track?: "main" | "findings";
   presentation?: "oral" | "spotlight" | "poster";
-  /** When this report was true: the notification's date, or when the snapshot was taken. */
+  /** When the submission note was created: the later of two attempts in one cycle wins. */
+  submitted_at?: string;
+  /** For a venue commitment, the venue id of the ARR submission it was committed from. */
+  arr_venue_id?: string;
+  /** When this report was true: when the snapshot was taken, or the citation check ran. */
   observed_at?: string;
-  /** The notification id or snapshot id, for the audit trail. */
+  /** The submission note id, for the audit trail. */
   reference?: string;
 };
 
@@ -79,8 +88,7 @@ const MONTHS = [
 ];
 // When two sources describe the same submission at the same moment, the richer one wins.
 const SOURCE_RANK: Record<OpenReviewEvidenceSource, number> = {
-  author_results: 2,
-  notifications: 1,
+  author_results: 1,
   citation_checks: 0,
 };
 
@@ -185,17 +193,21 @@ export function evidenceFromAuthorResults(snapshot: unknown): OpenReviewEvidence
       return [];
     }
     const forums = [entry.id, entry.forum, entry.review_forum].map(asText).filter(Boolean);
+    const titles = (Array.isArray(entry.titles) ? entry.titles : []).map(asText).filter(Boolean);
     return [
       compact({
         source: "author_results",
         status,
         title,
+        titles: titles.length ? [...new Set([title, ...titles])] : undefined,
         submission_id: asText(entry.forum) || asText(entry.id) || undefined,
         forums: [...new Set(forums)],
         venue_id: asText(entry.venue_id) || undefined,
         venue_label: asText(entry.venue) || undefined,
         track: status === "accepted" ? trackOf(entry.track) : undefined,
         presentation: status === "accepted" ? presentationOf(entry.presentation) : undefined,
+        submitted_at: asText(entry.submitted_at) || undefined,
+        arr_venue_id: asText(entry.arr_venue_id) || undefined,
         observed_at: fetchedAt,
         reference: asText(entry.id) || undefined,
       }),
@@ -205,7 +217,12 @@ export function evidenceFromAuthorResults(snapshot: unknown): OpenReviewEvidence
 
 /** Rows of the citation-watch table. Its venue id is the only outcome it carries. */
 export function evidenceFromCitationChecks(
-  rows: ReadonlyArray<{ submission_id: string; title: string; venue_id: string; checked_at?: string }>,
+  rows: ReadonlyArray<{
+    submission_id: string;
+    title: string;
+    venue_id: string;
+    checked_at?: string;
+  }>,
 ): OpenReviewEvidence[] {
   return rows.flatMap((row) => {
     const venueId = row.venue_id.toLowerCase();
@@ -236,34 +253,6 @@ export function evidenceFromCitationChecks(
   });
 }
 
-/** Output of scripts/openreview-notifications/adminbot_decisions.py. */
-export function evidenceFromNotifications(result: unknown): OpenReviewEvidence[] {
-  const items = asRecord(result).evidence;
-  return (Array.isArray(items) ? items : []).flatMap((raw) => {
-    const item = asRecord(raw);
-    const status = asText(item.status) as OpenReviewOutcome;
-    const title = asText(item.title);
-    const forum = asText(item.forum);
-    if (!OUTCOMES.has(status) || (!title && !forum)) {
-      return [];
-    }
-    return [
-      compact({
-        source: "notifications",
-        status,
-        title,
-        submission_id: forum || undefined,
-        forums: forum ? [forum] : [],
-        venue_id: asText(item.venue_id) || undefined,
-        track: status === "accepted" ? trackOf(item.track) : undefined,
-        presentation: status === "accepted" ? presentationOf(item.presentation) : undefined,
-        observed_at: asText(item.observed_at) || undefined,
-        reference: asText(item.reference) || asText(item.notification_id) || undefined,
-      }),
-    ];
-  });
-}
-
 /** Every OpenReview forum id the paper already points at: its slots, then its links. */
 export function paperForumIds(
   paper: Pick<AdminBotPaperRecord, "artifacts">,
@@ -285,10 +274,10 @@ export function paperForumIds(
 /**
  * The evidence that speaks for this paper, if any.
  *
- * Forum ids the paper already holds win over a title match, the citation-watch table only speaks
- * when nothing else does, and among the candidates the newest cycle wins (a resubmission supersedes the attempt before it). Inside one cycle the newest
- * report wins, which is how a decision e-mail that arrived after last night's snapshot overrides
- * the snapshot, and how tomorrow's snapshot overrides a stale e-mail.
+ * Forum ids the paper already holds win over a title match (on any title the submission has
+ * carried), the citation-watch table only speaks when nothing else does, and among the candidates
+ * the newest cycle wins (a resubmission supersedes the attempt before it), then the later
+ * submission inside one cycle, then the newer report.
  */
 export function matchPaperEvidence(
   paper: Pick<AdminBotPaperRecord, "title" | "artifacts">,
@@ -301,7 +290,9 @@ export function matchPaperEvidence(
   const candidates = byForum.length
     ? byForum
     : title
-      ? evidence.filter((item) => normalizedTitle(item.title) === title)
+      ? evidence.filter((item) =>
+          [item.title, ...(item.titles ?? [])].some((other) => normalizedTitle(other) === title),
+        )
       : [];
   return candidates.toSorted(compareEvidence).at(-1);
 }
@@ -312,6 +303,7 @@ function compareEvidence(left: OpenReviewEvidence, right: OpenReviewEvidence): n
     // As on the sheet: the citation-watch table is a stale fallback and loses to any other report.
     fallback(left) - fallback(right) ||
     cycleKey(left) - cycleKey(right) ||
+    (left.submitted_at ?? "").localeCompare(right.submitted_at ?? "") ||
     (left.observed_at ?? "").localeCompare(right.observed_at ?? "") ||
     SOURCE_RANK[left.source] - SOURCE_RANK[right.source]
   );
@@ -405,13 +397,17 @@ function venueName(label: string): string {
 
 /**
  * The submission closes a feedback request made for it: an ARR feedback request filed before the
- * cycle's deadline month ended is about this submission, one filed later is about a revision.
+ * cycle's deadline month ended is about this submission, one filed later is about a revision. A
+ * venue commitment is judged by the ARR cycle it was committed from.
  */
-function closesFeedbackRequest(row: AdminBotPaperSlotRecord, evidence: OpenReviewEvidence): boolean {
+function closesFeedbackRequest(
+  row: AdminBotPaperSlotRecord,
+  evidence: OpenReviewEvidence,
+): boolean {
   if (!row.provided_at) {
     return true;
   }
-  const key = cycleKey(evidence);
+  const key = cycleKey(evidence.arr_venue_id ? { venue_id: evidence.arr_venue_id } : evidence);
   const cutoff =
     key % 100 > 0
       ? new Date(Date.UTC(Math.floor(key / 100), key % 100, 2)).toISOString()

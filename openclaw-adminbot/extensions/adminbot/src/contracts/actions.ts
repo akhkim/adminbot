@@ -2270,6 +2270,7 @@ export type AdminBotPaperOpenReviewSync = {
   /** Submission, status, venue, track and presentation, joined: changes when OpenReview does. */
   fingerprint: string;
   status: "accepted" | "under_review" | "rejected" | "desk_rejected" | "withdrawn";
+  /** "notifications" only on records synced before the PI's e-mails stopped being a source. */
   source: "author_results" | "notifications" | "citation_checks";
   venue: string;
   submission_id?: string;

@@ -17,7 +17,8 @@ Subcommands
   message ... [--send]     post_message through the venue's own message invitation
   load-form --venue        the open reviewing-load/registration form, prefilled
   assign --venue ...       add/remove a reviewer assignment edge (never automatic)
-  author-results           decision, review scores and meta-review on every own submission
+  author-results           decision, presentation, review scores and meta-review on every own
+                           submission, with every title it has carried
 
 Nothing about a venue is hardcoded: role group ids, anon-group naming, the
 review invitation name, assignment invitations, and the per-submission message
@@ -29,6 +30,7 @@ Env:
   OPENREVIEW_BASEURL                          default https://api2.openreview.net
 """
 import argparse
+import datetime
 import json
 import os
 import re
@@ -804,14 +806,20 @@ def outcome_of(venue_label, venue_id, decision):
         status = "accepted"
     else:
         status = "under_review"
-    presentation = next((kind for kind in ("oral", "spotlight", "poster") if kind in text), None)
+    # Whole words: a workshop named "Moral ..." is not an oral.
+    presentation = next((kind for kind in ("oral", "spotlight", "poster") if re.search(rf"\b{kind}\b", text)), None)
     track = "findings" if "findings" in text else ("main" if status == "accepted" and "workshop" not in text else None)
     return {"status": status, "track": track, "presentation": presentation}
 
 
+# Decision fields that name how an accepted paper is presented, where a venue keeps that apart from
+# the decision itself ("presentation_mode": "Oral").
+PRESENTATION_FIELD_RE = re.compile(r"presentation|format|mode", re.I)
+
+
 def summarize_forum(replies):
-    """Reviews, meta-review and decision among one forum's visible replies."""
-    reviews, meta_review, decision = [], None, None
+    """Reviews, meta-review, decision and presentation among one forum's visible replies."""
+    reviews, meta_review, decision, presentation = [], None, None, None
     for reply in replies:
         kind = reply_kind(getattr(reply, "invitations", None))
         content = getattr(reply, "content", None) or {}
@@ -823,7 +831,52 @@ def summarize_forum(replies):
             meta_review = scores_of(content)
         elif kind == "decision":
             decision = value_of(content, "decision") or value_of(content, "recommendation")
-    return reviews, meta_review, decision
+            presentation = " ".join(str(value_of(content, key)) for key in content
+                                    if PRESENTATION_FIELD_RE.search(key)
+                                    and isinstance(value_of(content, key), str)) or None
+    return reviews, meta_review, decision, presentation
+
+
+def titles_of(client, note):
+    """Every title the submission has carried, current first.
+
+    A paper is often retitled between submission and camera-ready, and the lab's record may hold
+    either name; the edit history keeps the old ones. An unreadable history leaves the current title.
+    """
+    titles = [value_of(note.content, "title")]
+    try:
+        edits = list(client.get_note_edits(note_id=note.id))
+    except Exception:
+        edits = []
+    for edit in sorted(edits, key=lambda e: getattr(e, "tcdate", None) or getattr(e, "cdate", None) or 0, reverse=True):
+        titles.append(value_of(getattr(getattr(edit, "note", None), "content", None), "title"))
+    return list(dict.fromkeys(t.strip() for t in titles if isinstance(t, str) and t.strip()))
+
+
+def iso_time(ms):
+    if not isinstance(ms, (int, float)):
+        return None
+    return datetime.datetime.fromtimestamp(ms / 1000, datetime.timezone.utc).isoformat(timespec="seconds")
+
+
+def fold_commitments(results):
+    """Fold each ARR submission into the venue commitment that links to it.
+
+    ARR does not decide anything, so an ARR note reads "under review" for good, and as the later
+    cycle by month ("ARR May 2026" after "EMNLP 2026") it would outrank the acceptance on its own
+    commitment. The commitment already carries the ARR forum (review_forum) and its reviews; it
+    takes the ARR note's titles and venue id too, and the ARR entry goes.
+    """
+    by_forum = {entry["forum"]: entry for entry in results}
+    folded = set()
+    for entry in results:
+        linked = by_forum.get(entry["review_forum"])
+        if linked is None or linked is entry:
+            continue
+        entry["titles"] = list(dict.fromkeys(entry["titles"] + linked["titles"]))
+        entry["arr_venue_id"] = linked["venue_id"]
+        folded.add(linked["forum"])
+    return [entry for entry in results if entry["forum"] not in folded]
 
 
 def cmd_author_results(args):
@@ -856,17 +909,19 @@ def cmd_author_results(args):
             error = None
         except Exception as exc:
             replies, error = [], str(exc)[:200]
-        reviews, meta_review, decision = summarize_forum(replies)
+        reviews, meta_review, decision, presentation = summarize_forum(replies)
         entry = {
             "id": note.id,
             "forum": note.forum or note.id,
             "review_forum": review_forum,
             "number": getattr(note, "number", None),
             "title": value_of(content, "title"),
+            "titles": titles_of(client, note),
+            "submitted_at": iso_time(getattr(note, "cdate", None)),
             "venue": venue_label,
             "venue_id": venue_id,
             "decision": decision,
-            **outcome_of(venue_label, venue_id, decision),
+            **outcome_of(venue_label, venue_id, " ".join(filter(None, (decision, presentation)))),
             "reviews": reviews,
             "meta_review": meta_review,
         }
@@ -874,7 +929,7 @@ def cmd_author_results(args):
             entry["error"] = error
         results.append(entry)
 
-    out({"ok": True, "profile_id": profile_id, "submissions": results})
+    out({"ok": True, "profile_id": profile_id, "submissions": fold_commitments(results)})
 
 
 def cmd_paper_authors(args):

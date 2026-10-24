@@ -871,10 +871,6 @@ export function createAdminBotHost(deps: AdminBotHostDeps) {
     openReviewResultsPath:
       process.env.ADMINBOT_OPENREVIEW_RESULTS_JSON ||
       path.join(repoRoot, "state/openreview-author-results.json"),
-    notificationDecisionsScriptPath: path.join(
-      repoRoot,
-      "scripts/openreview-notifications/adminbot_decisions.py",
-    ),
     fetchSlackLocations: createSlackLocationReader(repoRoot),
     fetchSlackTimezones: createSlackTimezoneReader(repoRoot),
     fetchSlackMessageCounts: createSlackMessageCounter(repoRoot),
