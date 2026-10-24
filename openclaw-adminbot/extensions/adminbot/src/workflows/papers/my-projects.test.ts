@@ -54,7 +54,7 @@ describe("summarizeProject", () => {
   it("clears a lane once its required slots are settled, and waits on the venue after submission", () => {
     const writing = provided(
       "project_folder",
-      "overleaf_edit",
+      "overleaf_share",
       "papermentor_review",
       "fixes_merged",
       "pdf_ready",

@@ -226,11 +226,11 @@ describe("the paper-evidence reads", () => {
     expect(result.body.papers[0]).not.toHaveProperty("attendance");
   });
 
-  it("returns all 28 slots for one paper, blanks included", async () => {
+  it("returns all 27 slots for one paper, blanks included", async () => {
     const { baseUrl } = await startLab();
     const result = await call(baseUrl, "GET", "/papers/p1/slots");
     expect(result.status).toBe(200);
-    expect(result.body.slots).toHaveLength(28);
+    expect(result.body.slots).toHaveLength(27);
   });
 });
 
@@ -280,7 +280,7 @@ describe("writing a slot over HTTP", () => {
 
   it("keeps a link that failed validation, with the reason, rather than refusing the write", async () => {
     const { baseUrl } = await startLab();
-    const result = await call(baseUrl, "PUT", "/papers/p1/slots/overleaf_edit", {
+    const result = await call(baseUrl, "PUT", "/papers/p1/slots/overleaf_share", {
       url: "https://example.com/nope",
     });
     expect(result.status).toBe(200);
@@ -293,14 +293,19 @@ describe("writing a slot over HTTP", () => {
 
   it("refuses an unauthenticated write and an unknown slot", async () => {
     const { baseUrl } = await startLab();
-    const anonymous = await fetch(`${baseUrl}/papers/p1/slots/overleaf_edit`, {
+    const anonymous = await fetch(`${baseUrl}/papers/p1/slots/overleaf_share`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url: "https://www.overleaf.com/project/1" }),
+      body: JSON.stringify({ url: "https://www.overleaf.com/1234567890abcdefghijkl" }),
     });
     expect(anonymous.status).toBe(401);
     const unknown = await call(baseUrl, "PUT", "/papers/p1/slots/make_coffee", { done: true });
     expect(unknown.status).toBe(400);
+    // The retired project link is unknown to a write, the same as a slot that never existed.
+    const retired = await call(baseUrl, "PUT", "/papers/p1/slots/overleaf_edit", {
+      url: "https://www.overleaf.com/project/65f2a1c9d4e3b7a801f6",
+    });
+    expect(retired.status).toBe(400);
   });
 
   it("takes a waiver only from a genuine admin session, never the service principal", async () => {
@@ -317,9 +322,14 @@ describe("writing a slot over HTTP", () => {
 describe("the PaperMentor collector's route", () => {
   const PROJECT = "65f2a1c9d4e3b7a801f6";
 
+  /** The project id a review is matched by, as a paper filed before the slot was retired has it. */
   async function linkProject(baseUrl: string): Promise<void> {
-    const linked = await call(baseUrl, "PUT", "/papers/p1/slots/overleaf_edit", {
-      url: `https://${ADMINBOT_LAB_OVERLEAF_HOST}/project/${PROJECT}`,
+    const linked = await call(baseUrl, "PUT", "/papers/p1", {
+      title: "Causal abstraction",
+      authors: ["Ada Lovelace", "Bob Coauthor"],
+      current_step: "overleaf_writing",
+      first_author_member_id: "ada",
+      artifacts: { overleaf_edit_url: `https://${ADMINBOT_LAB_OVERLEAF_HOST}/project/${PROJECT}` },
     });
     expect(linked.status).toBe(200);
   }
@@ -563,7 +573,7 @@ describe("the global nudge, end to end", () => {
     await call(baseUrl, "PUT", "/papers/p1/slots/project_folder", {
       url: "https://docs.google.com/document/d/x",
     });
-    await call(baseUrl, "PUT", "/papers/p1/slots/overleaf_edit", {
+    await call(baseUrl, "PUT", "/papers/p1/slots/overleaf_share", {
       url: "https://example.com/nope",
     });
 
@@ -585,7 +595,7 @@ describe("the global nudge, end to end", () => {
     expect(message).toContain("Causal abstraction");
     // The artifact by name, not the pipeline step -- "you are on overleaf_writing" is not a thing
     // anybody can act on.
-    expect(message).toContain("Overleaf project link");
+    expect(message).toContain("Overleaf share edit link");
     expect(message).toContain("ICLR 2027 deadline");
     // The refusal reason travels with the nudge, so the fix is in the message.
     expect(message).toContain("overleaf.com");
@@ -626,13 +636,13 @@ describe("the global nudge, end to end", () => {
     const ledger = mockFor(baseUrl).service.listNudgeLedgerForTest("paper_slot");
     expect(ledger).toHaveLength(1);
     expect(ledger[0]).toMatchObject({
-      subject_id: "p1:overleaf_edit",
+      subject_id: "p1:overleaf_share",
       member_id: "ada",
       nudge_count: 1,
     });
     expect(ledger[0]?.last_nudged_at).toBeTruthy();
     // Nothing was stamped for the slot that is already in, or for anything still gated.
-    expect(slots.length).toBe(28);
+    expect(slots.length).toBe(27);
   });
 
   it("keeps its cadence, so a doubled cron cannot nag", async () => {

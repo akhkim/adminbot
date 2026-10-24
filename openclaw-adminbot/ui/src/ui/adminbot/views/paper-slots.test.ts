@@ -150,7 +150,7 @@ describe("renderPaperSlots", () => {
     // parent is a label with a status pill. The invariant that matters is unchanged: every field
     // in the registry is somewhere on the card.
     expect(container.querySelectorAll(".paper-slot")).toHaveLength(20);
-    expect(container.querySelectorAll(".paper-slot__child")).toHaveLength(6);
+    expect(container.querySelectorAll(".paper-slot__child")).toHaveLength(5);
   });
 
   it("draws the two halves of a node in one row rather than two", async () => {
@@ -163,7 +163,7 @@ describe("renderPaperSlots", () => {
 
   it("titles a merged row after the node, not after whichever half is the parent", async () => {
     const { container } = await draw([]);
-    const parent = container.querySelector('[data-testid="paper-slot-row-p1-overleaf_edit"]');
+    const parent = container.querySelector('[data-testid="paper-slot-row-p1-overleaf_share"]');
     expect(parent?.querySelector(".paper-slot__label")?.textContent).toContain("Overleaf");
   });
 
@@ -382,7 +382,7 @@ describe("renderPaperSlots", () => {
   it("renders a link slot as a URL box and a bool slot as a checkbox", async () => {
     const { container } = await draw([]);
     const link = container.querySelector<HTMLInputElement>(
-      '[data-testid="paper-slot-p1-overleaf_edit"]',
+      '[data-testid="paper-slot-p1-overleaf_share"]',
     );
     const bool = container.querySelector<HTMLInputElement>(
       '[data-testid="paper-slot-p1-pdf_ready"]',
@@ -427,7 +427,7 @@ describe("renderPaperSlots", () => {
     // small grey type under every field. The dimming carries the same meaning without turning the
     // card into a dependency graph.
     const { container } = await draw([]);
-    const overleaf = container.querySelector('[data-testid="paper-slot-row-p1-overleaf_edit"]');
+    const overleaf = container.querySelector('[data-testid="paper-slot-row-p1-overleaf_share"]');
     expect(overleaf?.className).not.toContain("paper-slot--blocked");
     expect(overleaf?.querySelector<HTMLInputElement>("input")?.disabled).toBe(false);
     expect(overleaf?.textContent).not.toContain("Waiting on");
@@ -436,7 +436,7 @@ describe("renderPaperSlots", () => {
 
   it("stops asking once the upstream slot is in", async () => {
     const { container } = await draw([row({ slot: "project_folder", status: "provided" })]);
-    const overleaf = container.querySelector('[data-testid="paper-slot-row-p1-overleaf_edit"]');
+    const overleaf = container.querySelector('[data-testid="paper-slot-row-p1-overleaf_share"]');
     expect(overleaf?.className).not.toContain("paper-slot--blocked");
   });
 
@@ -513,11 +513,10 @@ describe("renderPaperSlots", () => {
 
   it("shows the accepted shape on a link slot, from the same rules the service enforces", async () => {
     const { container } = await draw([]);
-    const overleaf = container.querySelector('[data-testid="paper-slot-row-p1-overleaf_edit"]');
-    // The lab's own instance, because that is the one PaperMentor can review -- the example is
-    // steering, not just shape.
-    expect(overleaf?.textContent).toContain(ADMINBOT_LAB_OVERLEAF_HOST);
-    expect(overleaf?.textContent).toContain("/project/");
+    const overleaf = container.querySelector('[data-testid="paper-slot-row-p1-overleaf_share"]');
+    // The read-only half is shown on the lab's own instance -- the example is steering, not just
+    // shape.
+    expect(overleaf?.textContent).toContain(`${ADMINBOT_LAB_OVERLEAF_HOST}/read/`);
   });
 });
 
@@ -531,10 +530,10 @@ describe("renderPaperSlots -- only what is ready", () => {
   });
 
   it("includes what opens next, not only what is unblocked today", async () => {
-    // overleaf_edit waits on project_folder alone, so it is the next thing to open and is
+    // overleaf_share waits on project_folder alone, so it is the next thing to open and is
     // worth showing now -- it is what makes the sequence legible.
     const { container } = await draw([], false, { showAll: false });
-    expect(container.querySelector('[data-testid="paper-slot-p1-overleaf_edit"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="paper-slot-p1-overleaf_share"]')).not.toBeNull();
   });
 
   it("keeps far-off work in the deck, marked as waiting rather than removed", async () => {
@@ -558,7 +557,7 @@ describe("renderPaperSlots -- only what is ready", () => {
       false,
       { showAll: false },
     );
-    expect(container.querySelector('[data-testid="paper-slot-p1-overleaf_edit"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="paper-slot-p1-overleaf_share"]')).not.toBeNull();
   });
 
   it("keeps a wrong answer on screen so it can be corrected", async () => {
@@ -667,21 +666,32 @@ describe("field guidance", () => {
   it("marks the help badge with an info glyph, not a question mark", async () => {
     const { container } = await draw([]);
     const badge = container.querySelector<HTMLElement>(
-      '[data-testid="paper-slot-help-p1-overleaf_edit"]',
+      '[data-testid="paper-slot-help-p1-overleaf_share"]',
     );
     expect(badge?.textContent?.trim()).toBe("i");
-    expect(badge?.getAttribute("aria-label")).toContain("Overleaf project link");
+    expect(badge?.getAttribute("aria-label")).toContain("Overleaf share edit link");
   });
 
   it("explains in the popover what to put, and repeats the example", async () => {
     const { container } = await draw([]);
     const help = container.querySelector(
-      '[data-testid="paper-slot-help-p1-overleaf_edit"]',
+      '[data-testid="paper-slot-help-p1-overleaf_share"]',
     )?.parentElement;
-    expect(help?.textContent).toContain("does not grant sharing access");
-    expect(help?.textContent).toContain("enable link sharing");
-    expect(help?.textContent).toContain("copy the edit or view link");
-    expect(help?.textContent).toContain(`${ADMINBOT_LAB_OVERLEAF_HOST}/project/`);
+    expect(help?.textContent).toContain("link sharing");
+    expect(help?.textContent).toContain("Treat it as a credential");
+    expect(help?.textContent).toContain("overleaf.com/1234567890abcdefghijkl");
+  });
+
+  it("offers only the two share links for Overleaf, never the project URL", async () => {
+    const { container } = await draw([]);
+    const overleaf = container.querySelector('[data-testid="paper-slot-row-p1-overleaf_share"]');
+    expect(overleaf?.querySelector(".paper-slot__label")?.textContent).toContain("Overleaf");
+    expect(
+      overleaf?.querySelector('[data-testid="paper-slot-child-p1-overleaf_view"]'),
+    ).toBeTruthy();
+    expect(container.querySelector('[data-testid="paper-slot-p1-overleaf_edit"]')).toBeNull();
+    expect(container.textContent).not.toContain("Overleaf project link");
+    expect(container.textContent).not.toContain("/project/");
   });
   // `pi_approval` is the only slot the authors cannot act on. Before this it looked like any other
   // unfilled field -- "Missing", and the word "the PI" in grey -- so a paper that was genuinely on
@@ -786,7 +796,7 @@ describe("paper feedback requests", () => {
 });
 
 it("starts checklist branches collapsed without hiding their headings", async () => {
-  const { container } = await draw([row({ slot: "overleaf_edit", status: "missing" })]);
+  const { container } = await draw([row({ slot: "overleaf_share", status: "missing" })]);
   const branches = [...container.querySelectorAll<HTMLDetailsElement>("details.paper-slots__group")];
   expect(branches.length).toBeGreaterThan(0);
   expect(branches.every((branch) => !branch.open)).toBe(true);

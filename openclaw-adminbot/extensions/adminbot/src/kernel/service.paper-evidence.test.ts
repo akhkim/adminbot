@@ -174,8 +174,8 @@ describe("verifyPaperEvidence", () => {
           privileged: true,
         }),
       );
-    give("overleaf_edit", {
-      url: `https://${ADMINBOT_LAB_OVERLEAF_HOST}/project/65f2a1c9d4e3b7a801f6`,
+    give("overleaf_share", {
+      url: `https://${ADMINBOT_LAB_OVERLEAF_HOST}/1234567890abcdefghijkl`,
     });
     for (const slot of ["papermentor_review", "fixes_merged", "pdf_ready"]) {
       give(slot, { done: true });
@@ -216,11 +216,25 @@ describe("fixes merged, proved by a later review", () => {
 
   function reviewed() {
     const service = lab();
+    // The project id a review is matched by, as a paper filed before the project-link slot was
+    // retired still carries it.
+    unwrap(
+      service.upsertPaper({
+        id: "p1",
+        title: "Causal Garden Planning",
+        authors: ["Ada Lovelace"],
+        current_step: "brainstorming_docs",
+        first_author_member_id: "ada",
+        artifacts: {
+          overleaf_edit_url: `https://${ADMINBOT_LAB_OVERLEAF_HOST}/project/65f2a1c9d4e3b7a801f6`,
+        },
+      }),
+    );
     unwrap(
       service.setPaperSlot({
         paperId: "p1",
-        slot: "overleaf_edit",
-        input: { url: `https://${ADMINBOT_LAB_OVERLEAF_HOST}/project/65f2a1c9d4e3b7a801f6` },
+        slot: "overleaf_share",
+        input: { url: `https://${ADMINBOT_LAB_OVERLEAF_HOST}/1234567890abcdefghijkl` },
         memberId: "ada",
         privileged: true,
       }),

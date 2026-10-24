@@ -7,6 +7,8 @@ import type { AdminBotSocialDraftRecord } from "../../contracts/paper-cycle.js";
 import {
   adminBotPaperSlotRegistry,
   adminBotPaperSlots,
+  adminBotRetiredPaperSlots,
+  isAdminBotPaperAcceptanceUnblocked,
   validateAdminBotPaperSecret,
   validateAdminBotPaperSlotUrl,
   type AdminBotPaperSlot,
@@ -77,8 +79,8 @@ function upTo(last: AdminBotPaperSlot): AdminBotPaperSlotRecord[] {
 
 describe("the registry", () => {
   it("declares every slot, so a read can never meet one it has no rules for", () => {
-    expect(adminBotPaperSlots).toHaveLength(28);
-    for (const slot of adminBotPaperSlots) {
+    expect(adminBotPaperSlots).toHaveLength(27);
+    for (const slot of [...adminBotPaperSlots, ...adminBotRetiredPaperSlots]) {
       expect(adminBotPaperSlotRegistry[slot]).toBeDefined();
     }
   });
@@ -123,15 +125,27 @@ describe("the registry", () => {
   it("keeps the read-only Overleaf link advisory, so a project that only has an edit link is not stuck", () => {
     // Both Overleaf slots gate the same step. If both were required, every project that
     // circulates only the edit link would sit on an open checklist item forever.
-    expect(adminBotPaperSlotRegistry.overleaf_edit.required).toBe(true);
+    expect(adminBotPaperSlotRegistry.overleaf_share.required).toBe(true);
     expect(adminBotPaperSlotRegistry.overleaf_view.required).toBe(false);
   });
 
-  it("keeps the share link advisory and ungating, since it is a convenience, not an artifact", () => {
-    // It grants the same write access as the project link, so a paper that has one is not more
-    // finished than a paper that does not -- and an author who never minted one is not behind.
-    expect(adminBotPaperSlotRegistry.overleaf_share.required).toBe(false);
-    expect(adminBotPaperSlotRegistry.overleaf_share.gates).toBeNull();
+  it("makes the share edit link the Overleaf node's required half, with the read-only one under it", () => {
+    expect(adminBotPaperSlotRegistry.overleaf_share.gates).toBe("submission");
+    expect(adminBotPaperSlotRegistry.overleaf_share.groupLabel).toBe("Overleaf");
+    expect(adminBotPaperSlotRegistry.overleaf_view.subOf).toBe("overleaf_share");
+    expect(adminBotPaperSlotRegistry.papermentor_review.upstream).toEqual(["overleaf_share"]);
+  });
+
+  it("retires the project link: still readable, but nothing collects, gates on or draws it", () => {
+    expect(adminBotRetiredPaperSlots).toEqual(["overleaf_edit"]);
+    expect(adminBotPaperSlots as readonly string[]).not.toContain("overleaf_edit");
+    const retired = adminBotPaperSlotRegistry.overleaf_edit;
+    expect(retired.required).toBe(false);
+    expect(retired.gates).toBeNull();
+    for (const slot of adminBotPaperSlots) {
+      expect(adminBotPaperSlotRegistry[slot].upstream).not.toContain("overleaf_edit");
+      expect(adminBotPaperSlotRegistry[slot].subOf).not.toBe("overleaf_edit");
+    }
   });
 
   it("no longer carries the slots the revision removed", () => {
@@ -143,10 +157,15 @@ describe("the registry", () => {
 
 describe("paperSlotRows", () => {
   it("returns every slot, blanks included -- the card is a checklist, not a list of answers", () => {
-    const rows = paperSlotRows("p1", [provided("overleaf_edit")]);
-    expect(rows).toHaveLength(28);
-    expect(rows.find((row) => row.slot === "overleaf_edit")?.status).toBe("provided");
+    const rows = paperSlotRows("p1", [provided("overleaf_share")]);
+    expect(rows).toHaveLength(27);
+    expect(rows.find((row) => row.slot === "overleaf_share")?.status).toBe("provided");
     expect(rows.find((row) => row.slot === "arxiv")?.status).toBe("missing");
+  });
+
+  it("leaves a stored project-link row out of the card, now the slot is retired", () => {
+    const rows = paperSlotRows("p1", [provided("overleaf_edit")]);
+    expect(rows.map((row) => row.slot)).not.toContain("overleaf_edit");
   });
 
   it("reads the social gates off the drafts rather than off their own rows", () => {
@@ -268,6 +287,12 @@ describe("value validation", () => {
     const env = { [ADMINBOT_OVERLEAF_URL_ENV]: "https://tex.example.edu" };
     expect(
       validateAdminBotPaperSlotUrl("overleaf_edit", "https://tex.example.edu/project/64ab", {
+        env,
+      }),
+    ).toEqual({ ok: true });
+    // The share link is required now, so it has to be satisfiable on a moved instance too.
+    expect(
+      validateAdminBotPaperSlotUrl("overleaf_share", "https://tex.example.edu/1234567890abcdef", {
         env,
       }),
     ).toEqual({ ok: true });
@@ -401,7 +426,7 @@ describe("actionablePaperSlots", () => {
   it("skips the advisory read-only Overleaf link and goes straight to the edit one", () => {
     expect(
       actionablePaperSlots(paper(), [provided("project_folder")], NOW).map((item) => item.slot),
-    ).toEqual(["overleaf_edit"]);
+    ).toEqual(["overleaf_share"]);
   });
 
   it("counts a waiver as settled, so an override really does unblock what came after it", () => {
@@ -412,8 +437,17 @@ describe("actionablePaperSlots", () => {
       waived_reason: "predates AdminBot",
     };
     expect(actionablePaperSlots(paper(), [waived], NOW).map((item) => item.slot)).toEqual([
-      "overleaf_edit",
+      "overleaf_share",
     ]);
+  });
+
+  it("never chases the retired project link, even on a paper that still has a row for it", () => {
+    const open = actionablePaperSlots(
+      paper(),
+      [provided("project_folder"), { paper_id: "p1", slot: "overleaf_edit", status: "invalid" }],
+      NOW,
+    ).map((item) => item.slot);
+    expect(open).not.toContain("overleaf_edit");
   });
 
   it("chases an invalid link -- it is answered but unusable, which is not done", () => {
@@ -566,6 +600,29 @@ describe("acceptance details and the conference branch", () => {
 
   it("asks for nothing on a paper the venue has not answered yet", () => {
     expect(missingAcceptanceDetails(paper())).toEqual([]);
+  });
+
+  it("lets an acceptance be recorded only once either Overleaf share link is on file", () => {
+    const invalid: AdminBotPaperSlotRecord = {
+      paper_id: "p1",
+      slot: "overleaf_share",
+      status: "invalid",
+    };
+    const waived: AdminBotPaperSlotRecord = {
+      paper_id: "p1",
+      slot: "overleaf_share",
+      status: "waived",
+      waived_reason: "written in Word",
+    };
+    expect(isAdminBotPaperAcceptanceUnblocked([])).toBe(false);
+    expect(isAdminBotPaperAcceptanceUnblocked([provided("overleaf_share")])).toBe(true);
+    expect(isAdminBotPaperAcceptanceUnblocked([provided("overleaf_view")])).toBe(true);
+    // A link nobody can open is not a link on file.
+    expect(isAdminBotPaperAcceptanceUnblocked([invalid])).toBe(false);
+    // The retired project link does not count: the card no longer takes it.
+    expect(isAdminBotPaperAcceptanceUnblocked([provided("overleaf_edit")])).toBe(false);
+    // An admin waiver is the way out for a paper with no Overleaf project at all.
+    expect(isAdminBotPaperAcceptanceUnblocked([waived])).toBe(true);
   });
 
   it("treats a recorded false as answered -- non-archival is an answer", () => {

@@ -33,7 +33,7 @@ function evidenceUpTo(step: string): AdminBotPaperSlotRecord[] {
 describe("adminBotStepGatingSlots", () => {
   it("reads the registry's own gates rather than a second list", () => {
     expect(adminBotStepGatingSlots.submission).toEqual([
-      "overleaf_edit",
+      "overleaf_share",
       "papermentor_review",
       "fixes_merged",
       "pdf_ready",
@@ -64,13 +64,13 @@ describe("derivePaperStage", () => {
     expect(derivePaperStage(evidenceUpTo("submission"))).toMatchObject({
       step: "submission",
       next: "google_drive_pdf",
-      evidence: ["overleaf_edit", "papermentor_review", "fixes_merged", "pdf_ready"],
+      evidence: ["overleaf_share", "papermentor_review", "fixes_merged", "pdf_ready"],
     });
   });
 
   it("stops at the first step whose evidence is incomplete", () => {
     const almost = evidenceUpTo("overleaf_writing").concat(
-      provided("overleaf_edit"),
+      provided("overleaf_share"),
       provided("papermentor_review"),
       provided("fixes_merged"),
     );

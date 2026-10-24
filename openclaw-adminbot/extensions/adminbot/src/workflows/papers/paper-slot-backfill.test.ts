@@ -106,7 +106,7 @@ describe("pass 2: ancestors are grandfathered", () => {
       paper({ artifacts: { submission_url: "https://openreview.net/forum?id=x" } }),
     );
     // A submitted paper went through the draft and compiled a PDF, whatever the lab wrote down.
-    for (const slot of ["project_folder", "overleaf_edit", "pdf_ready"] as const) {
+    for (const slot of ["project_folder", "overleaf_share", "pdf_ready"] as const) {
       expect(bySlot.get(slot)).toMatchObject({
         status: "waived",
         waived_reason: BACKFILL_WAIVER_REASON,

@@ -39,7 +39,6 @@ export const adminBotPaperSlots = [
   "project_folder",
   "overleaf_view",
   "overleaf_share",
-  "overleaf_edit",
   "papermentor_review",
   "fixes_merged",
   "pdf_ready",
@@ -66,7 +65,21 @@ export const adminBotPaperSlots = [
   "backend_sheet",
 ] as const;
 
-export type AdminBotPaperSlot = (typeof adminBotPaperSlots)[number];
+/**
+ * Slots the lab no longer collects but still reads.
+ *
+ * `overleaf_edit` held the `/project/<id>` URL. The card now takes only Overleaf's own share
+ * links -- the read-only one and the edit one -- because those are what a coauthor can actually
+ * open. The slot stays in the type and the registry rather than being deleted because papers
+ * filed before the change still carry the row, and PaperMentor still finds a paper by the project
+ * id in it. Being out of `adminBotPaperSlots` is what retires it everywhere at once: no surface
+ * draws it, nothing chases or counts it, and a write to it is refused as an unknown slot.
+ */
+export const adminBotRetiredPaperSlots = ["overleaf_edit"] as const;
+
+export type AdminBotPaperSlot =
+  | (typeof adminBotPaperSlots)[number]
+  | (typeof adminBotRetiredPaperSlots)[number];
 
 /**
  * What a slot holds.
@@ -305,7 +318,7 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     example: "https://drive.google.com/drive/folders/1aBcD…",
   },
   overleaf_view: {
-    subOf: "overleaf_edit",
+    subOf: "overleaf_share",
     kind: "link",
     node: "OV",
     owner: "first_author",
@@ -325,52 +338,44 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     example: `https://${ADMINBOT_LAB_OVERLEAF_HOST}/read/xzqvbnmklpqr`,
   },
   overleaf_share: {
-    subOf: "overleaf_edit",
+    groupLabel: "Overleaf",
     kind: "link",
     node: "OV",
     owner: "first_author",
-    // Nothing waits on it. The project link is what the paper cannot proceed without; this is a
-    // second way to hand out the same write access, so gating a step on it would let a paper be
-    // held up by the absence of a convenience.
-    gates: null,
+    // The Overleaf node's required half since the project link was retired: it is the link a
+    // coauthor can open and work in, which the project URL never was without a separate invite.
+    gates: "submission",
     branch: "core",
     label: "Overleaf share edit link",
     upstream: ["project_folder"],
-    // Advisory, and never chased. Asking an author for this one would be asking them to mint a
-    // credential they may have had no reason to create -- see the hint.
-    required: false,
-    deadlineBearing: false,
+    required: true,
+    deadlineBearing: true,
     urlHosts: OVERLEAF_HOSTS,
     // One segment, which is the whole distinction: `/project/<id>` and `/read/<token>` both have
     // two, so the shapes cannot collide. Length is bounded rather than pinned to the 22 characters
     // Overleaf currently mints, since a fork is free to size its tokens differently.
     urlPathPattern: /^\/[A-Za-z0-9]{12,64}\/?$/u,
     hint:
-      "Overleaf's “Anyone with this link can edit” URL. This one is a credential, not an " +
-      "address: it grants write access to whoever holds it, without an invitation and without " +
-      "appearing in the project's member list. Everyone who can read this paper's record can use " +
-      "it. Prefer the project link above and invite coauthors by name where you can.",
+      "Overleaf's “Anyone with this link can edit” URL, from the Share menu with link sharing " +
+      "turned on. Treat it as a credential: it grants write access to whoever holds it, without " +
+      "an invitation and without appearing in the project's member list, and everyone who can " +
+      "read this paper's record can use it.",
     example: `https://${OVERLEAF_COM_HOST}/1234567890abcdefghijkl#a1b2c3`,
   },
   overleaf_edit: {
-    groupLabel: "Overleaf",
+    // Retired -- see `adminBotRetiredPaperSlots`. Kept so stored rows still have a definition to
+    // be read against; nothing gates on it, chases it, or draws it.
     kind: "link",
     node: "OV",
     owner: "first_author",
-    gates: "submission",
+    gates: null,
     branch: "core",
     label: "Overleaf project link",
     upstream: ["project_folder"],
-    required: true,
-    deadlineBearing: true,
+    required: false,
+    deadlineBearing: false,
     urlHosts: OVERLEAF_HOSTS,
     urlPath: ["/project/"],
-    // Both hosts are accepted and only one of them can be reviewed, which is why the hint names
-    // the lab's own: every paper is now reviewed by PaperMentor before submission, and PaperMentor
-    // only sees projects on the instance it is built into. A draft on overleaf.com is not refused
-    // -- that is a real paper, and refusing the link would only cost the lab the record of it.
-    hint: `This project URL identifies the paper for PaperMentor; it does not grant sharing access. To share, open Overleaf’s Share menu, enable link sharing, and copy the edit or view link. Papers are reviewed by PaperMentor before submission, which can only read projects on ${ADMINBOT_LAB_OVERLEAF_HOST}.`,
-    example: `https://${ADMINBOT_LAB_OVERLEAF_HOST}/project/65f2a1c9d4e3b7a801f6`,
   },
   papermentor_review: {
     kind: "bool",
@@ -379,7 +384,7 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     gates: "submission",
     branch: "core",
     label: "PaperMentor review done",
-    upstream: ["overleaf_edit"],
+    upstream: ["overleaf_share"],
     required: true,
     deadlineBearing: true,
     hint: "Tick once PaperMentor has run over the draft and you have its comments back.",
@@ -785,8 +790,12 @@ export type AdminBotPaperSlotValueCheck = { ok: true } | { ok: false; reason: st
  * is stale the moment it passes. `contracts/overleaf.ts` is where a checked link becomes a project
  * id, which is the only part of one that is safe to build a request from.
  */
-/** The two slots whose accepted hosts this deployment may have moved. */
-const OVERLEAF_SLOTS = new Set<AdminBotPaperSlot>(["overleaf_view", "overleaf_edit"]);
+/** The slots whose accepted hosts this deployment may have moved. */
+const OVERLEAF_SLOTS = new Set<AdminBotPaperSlot>([
+  "overleaf_view",
+  "overleaf_share",
+  "overleaf_edit",
+]);
 
 export function validateAdminBotPaperSlotUrl(
   slot: AdminBotPaperSlot,
@@ -863,6 +872,37 @@ export function isAdminBotPosterPhysicalState(value: string): value is AdminBotP
 /** A slot counts as done when it is provided or an admin waived it. Everything else is open. */
 export function isAdminBotPaperSlotSettled(status: AdminBotPaperSlotStatus): boolean {
   return status === "provided" || status === "waived";
+}
+
+/** The Overleaf links either of which lets an author record an acceptance. */
+export const adminBotPaperAcceptanceOverleafSlots: readonly AdminBotPaperSlot[] = [
+  "overleaf_share",
+  "overleaf_view",
+];
+
+/** Why an author's "Accepted" is refused, worded for the person choosing it. */
+export const adminBotPaperAcceptanceNeedsOverleafReason =
+  "Add the paper's Overleaf read-only or share edit link before marking it accepted.";
+
+/**
+ * Whether an author may record this paper as accepted.
+ *
+ * An accepted paper goes on to a camera-ready, and the lab has to be able to open the source it
+ * was accepted with; an acceptance recorded against no Overleaf at all is the paper the lab then
+ * cannot find. Either share link will do -- the read-only one is enough to locate the source.
+ *
+ * Settled rather than provided, so an admin waiver still clears it: a paper that genuinely has no
+ * Overleaf project would otherwise be unable to record the one fact it most needs to. An `invalid`
+ * link does not count, since it is a link nobody can open.
+ *
+ * Structural in its row type for the same reason as `isAdminBotPaperAtPiGate` below.
+ */
+export function isAdminBotPaperAcceptanceUnblocked(
+  slots: readonly { slot: string; status: AdminBotPaperSlotStatus }[],
+): boolean {
+  return adminBotPaperAcceptanceOverleafSlots.some((slot) =>
+    isAdminBotPaperSlotSettled(slots.find((row) => row.slot === slot)?.status ?? "missing"),
+  );
 }
 
 /**
