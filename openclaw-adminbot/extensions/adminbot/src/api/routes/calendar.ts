@@ -385,6 +385,27 @@ export const calendarRoutes: readonly Route[] = [
     }),
   ),
   post(
+    "/calendar/local-lunch-invites/run",
+    privilegedOnly(async ({ res, ctx }) => {
+      if (!ctx.readCalendarEvents) {
+        sendJson(res, 503, { error: { message: "calendar reading is not configured" } });
+        return;
+      }
+      // No caller-supplied events, locations or recipients can authorize an automatic invite.
+      try {
+        const result = await ctx.service.syncLocalLunchInvites(
+          ctx.labCalendar.id,
+          ctx.readCalendarEvents,
+        );
+        sendJson(res, result.failed.length ? 502 : 200, result);
+      } catch (error) {
+        sendJson(res, 502, {
+          error: { message: error instanceof Error ? error.message : String(error) },
+        });
+      }
+    }),
+  ),
+  post(
     "/calendar/local-event-audience/run",
     privilegedOnly(async ({ req, res, ctx, principal }) => {
       const { service } = ctx;
