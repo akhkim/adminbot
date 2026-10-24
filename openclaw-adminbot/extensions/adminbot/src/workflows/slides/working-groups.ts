@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isSlackDefaultAvatar } from "../members/slack-avatar.js";
 import type { AdminBotLabMember } from "../../contracts/actions.js";
 import {
   isThemeMeetingEligible,
@@ -119,8 +120,10 @@ export function workingGroupMembers(
   );
 }
 
+/** A real uploaded photo: an http(s) URL that is not Slack's default silhouette. */
 export function hasFacePhoto(member: AdminBotLabMember): boolean {
-  return /^https?:\/\//u.test(member.avatar_url?.trim() ?? "");
+  const url = member.avatar_url?.trim() ?? "";
+  return /^https?:\/\//u.test(url) && !isSlackDefaultAvatar(url);
 }
 
 export function normalizeSlideText(value: string): string {

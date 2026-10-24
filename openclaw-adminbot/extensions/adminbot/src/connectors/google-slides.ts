@@ -319,17 +319,28 @@ export function slidesWorkingGroupsFromEnv(
       }
     : undefined;
   const debounce = Number(env.ADMINBOT_SLIDES_DEBOUNCE_MS);
+  const write = env.ADMINBOT_SLIDES_WRITE === "1";
+  // Auto-apply without writes would mark plans executed that never reached the deck, and every
+  // run would then plan the same faces again: refuse the combination at startup instead.
+  const autoApply = env.ADMINBOT_SLIDES_AUTO_APPLY === "1";
+  if (autoApply && !write) {
+    throw new Error("ADMINBOT_SLIDES_AUTO_APPLY=1 needs ADMINBOT_SLIDES_WRITE=1");
+  }
+  if (autoApply && !faces) {
+    throw new Error("ADMINBOT_SLIDES_AUTO_APPLY=1 needs ADMINBOT_SLIDES_FACE_FOLDER_ID");
+  }
   return {
     source: {
       presentationId,
       slideTitle: env.ADMINBOT_SLIDES_WORKING_GROUPS_SLIDE_TITLE?.trim() || DEFAULT_WORKING_GROUPS_SLIDE_TITLE,
       client,
       ...(env.ADMINBOT_SLIDES_ALLOW_REMOVALS === "1" ? { allowRemovals: true } : {}),
+      ...(autoApply ? { autoApply: true } : {}),
       ...(Number.isFinite(debounce) && debounce > 0 ? { debounceMs: debounce } : {}),
     },
     executor: createGoogleSlidesExecutor({
       client,
-      write: env.ADMINBOT_SLIDES_WRITE === "1",
+      write,
       ...(faces ? { faces } : {}),
     }),
   };

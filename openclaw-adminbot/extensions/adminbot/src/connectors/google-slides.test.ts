@@ -279,4 +279,28 @@ describe("slidesWorkingGroupsFromEnv", () => {
       )!.source.allowRemovals,
     ).toBe(true);
   });
+
+  it("only auto-applies when writes and a face folder are on", () => {
+    const capture = vi.fn(async () => "{}");
+    const base = {
+      ADMINBOT_SLIDES_WORKING_GROUPS_PRESENTATION_ID: "deck",
+      GOG_ACCOUNT: "bot@example.com",
+      ADMINBOT_SLIDES_AUTO_APPLY: "1",
+    };
+    expect(() => slidesWorkingGroupsFromEnv(base, { capture })).toThrow(/ADMINBOT_SLIDES_WRITE=1/u);
+    expect(() =>
+      slidesWorkingGroupsFromEnv({ ...base, ADMINBOT_SLIDES_WRITE: "1" }, { capture }),
+    ).toThrow(/ADMINBOT_SLIDES_FACE_FOLDER_ID/u);
+    const configured = slidesWorkingGroupsFromEnv(
+      { ...base, ADMINBOT_SLIDES_WRITE: "1", ADMINBOT_SLIDES_FACE_FOLDER_ID: "folder" },
+      { capture },
+    )!;
+    expect(configured.source.autoApply).toBe(true);
+    expect(
+      slidesWorkingGroupsFromEnv(
+        { ADMINBOT_SLIDES_WORKING_GROUPS_PRESENTATION_ID: "deck", GOG_ACCOUNT: "bot@example.com" },
+        { capture },
+      )!.source.autoApply,
+    ).toBeUndefined();
+  });
 });
