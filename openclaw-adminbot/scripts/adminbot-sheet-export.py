@@ -253,7 +253,7 @@ def deadline_name(d):
     return d['name'] + (f' ({label})' if label and label.lower() != 'paper submission' else '')
 
 
-PEOPLE_COLUMNS = tuple('''id join_date join_date_basis slack_active membership_review preferred_name member_type
+PEOPLE_COLUMNS = tuple('''id join_date join_date_basis membership_review member_type
 test_onboard_batch receives_nudges email calendar_email slack_user_id merch_requests
 next_position personal_circumstances slack_messages_7d slack_activity_checked_at
 privilege_level collaborator_subgroup access_overrides notes role status research_branch
@@ -261,7 +261,7 @@ research_topics elevator_pitch projects hours_per_week location current_city
 city_channel_invited_at city_channels_invited affiliation timezone personal_website
 openreview_id cv_url intake_form_url intake_form_unavailable
 linkedin_url linkedin_urn twitter_url github_url scholar_url reviewer_exempt joined_month
-graduated_month birthday whatsapp correspondence_email dcs_username at_uoft compute_access
+graduated_month whatsapp correspondence_email dcs_username at_uoft compute_access
 vector_role lesswrong_url other_socials avatar_url slack_channels slack_location
 slack_location_updated_at profile_photo_review last_login_at last_login_country
 last_login_continent last_login_city last_login_timezone location_prompt_answered_at
@@ -287,10 +287,10 @@ twitter_followers search'''.split())
 # as much as on a laptop. Contact details follow, since they are what most people open the sheet for.
 # Each section gets its own header colour; columns no section lists sit behind one collapsed [+] group.
 PEOPLE_SECTIONS = (
-    ('Contact', ('name', 'preferred_name', 'calendar_email', 'whatsapp', 'email', 'correspondence_email',
-                 'birthday', 'timezone', 'current_city')),
+    ('Contact', ('name', 'calendar_email', 'whatsapp', 'email', 'correspondence_email',
+                 'timezone', 'current_city')),
     ('Lab', ('status', 'member_type', 'role', 'collaborator_subgroup', 'privilege_level', 'join_date',
-             'affiliation', 'at_uoft', 'hours_per_week', 'slack_active', 'membership_review', 'receives_nudges',
+             'affiliation', 'at_uoft', 'hours_per_week', 'membership_review', 'receives_nudges',
              'compute_access', 'calendar_group', 'next_position', 'graduated_month')),
     ('Research', ('research_branch', 'research_topics', 'elevator_pitch', 'projects', 'papers_authored_count',
                   'papers_authored', 'arr_reviewer_qualified', 'arr_review_capacity')),
@@ -305,11 +305,11 @@ PEOPLE_PRIORITY = tuple(field for _, fields in PEOPLE_SECTIONS for field in fiel
 PEOPLE_RECORDS_SECTION = 'AdminBot records'
 # Header text people read; any field not listed gets its name with underscores turned into spaces.
 PEOPLE_LABELS = {
-    'name': 'Name', 'preferred_name': 'Preferred name', 'calendar_email': 'Calendar email', 'whatsapp': 'WhatsApp',
+    'name': 'Name', 'calendar_email': 'Calendar email', 'whatsapp': 'WhatsApp',
     'email': 'Email', 'correspondence_email': 'Correspondence email',
     'timezone': 'Time zone', 'current_city': 'City', 'member_type': 'Membership', 'collaborator_subgroup': 'Subgroup',
     'privilege_level': 'Access level', 'join_date': 'Joined', 'at_uoft': 'At UofT', 'hours_per_week': 'Hours / week',
-    'slack_active': 'In #jinesis-active', 'receives_nudges': 'Gets nudges', 'compute_access': 'Compute',
+    'receives_nudges': 'Gets nudges', 'compute_access': 'Compute',
     'calendar_group': 'Calendar group', 'graduated_month': 'Graduated', 'research_topics': 'Research topics',
     'papers_authored_count': 'Papers', 'papers_authored': 'Paper titles', 'arr_reviewer_qualified': 'ARR reviewer',
     'arr_review_capacity': 'ARR capacity', 'personal_website': 'Website', 'linkedin_url': 'LinkedIn',

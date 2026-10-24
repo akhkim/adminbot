@@ -142,6 +142,7 @@ new = next(row for row in rows if row['id'] == 'new')
 assert len(columns) == len(set(columns)) == len(exporter.PEOPLE_COLUMNS)
 # 1:1 folders are private Drive links; the link-shared sheet must never carry them.
 assert not any("one_on_one" in c for c in columns)
+assert not {"preferred_name", "birthday", "slack_active"} & set(columns)
 assert columns[:len(exporter.PEOPLE_PRIORITY)] == list(exporter.PEOPLE_PRIORITY)
 assert len(rows) == 2
 assert new['join_date'] == '2026-09' and new['join_date_basis'] == 'joined_month'
@@ -163,12 +164,17 @@ properties = {title: {'sheetId': sid, 'gridProperties': {'rowCount': 1000, 'colu
               for title, sid in [('PeopleList', 1), ('PaperList', 2)]}
 requests = refresh.refresh_requests(direct, properties)
 clears = [r['repeatCell'] for r in requests if r.get('repeatCell', {}).get('fields', '').startswith('userEnteredValue')]
+# Stale headers right of a narrower PeopleList are blanked, nothing inside the table.
+stale_headers = [c for c in clears if c['range'].get('endRowIndex') == 1]
+people_width = len(next(i for i in direct['data'] if 'PeopleList' in i['range'])['values'][0])
+assert [c['range'] for c in stale_headers] == [{'sheetId': 1, 'startRowIndex': 0, 'endRowIndex': 1, 'startColumnIndex': people_width}]
+clears = [c for c in clears if c not in stale_headers]
 assert len(clears) == 2
 assert {r['range']['sheetId'] for r in clears} == {1, 2}
 assert len([r for r in requests if 'addTable' in r]) == 2
 assert [r['range']['startRowIndex'] for r in clears] == [1, 0]
 assert clears[1]['fields'] == 'userEnteredValue,userEnteredFormat'
-assert len([r for r in requests if 'addFilterView' in r]) == 18
+assert len([r for r in requests if 'addFilterView' in r]) == 17
 paper_table = [r['addTable']['table'] for r in requests if 'addTable' in r and r['addTable']['table']['name'] == 'PaperList'][0]
 dropdowns = {c['columnName'] for c in paper_table['columnProperties'] if c['columnType'] == 'DROPDOWN'}
 assert dropdowns <= set(refresh.PAPER_DROPDOWNS), dropdowns
@@ -263,7 +269,8 @@ assert any(r.get('addFilterView', {}).get('filter', {}).get('title') == 'By stag
 assert all(r.get('repeatCell', {}).get('range', {}).get('sheetId') == 2 for r in restyled
            if r.get('repeatCell', {}).get('fields', '') == 'userEnteredValue,userEnteredFormat')
 assert all(r['repeatCell']['fields'].startswith('userEnteredFormat.') for r in restyled
-           if r.get('repeatCell', {}).get('range', {}).get('sheetId') == 1 and 'userEnteredFormat' in r['repeatCell']['fields'])
+           if r.get('repeatCell', {}).get('range', {}).get('sheetId') == 1 and 'userEnteredFormat' in r['repeatCell']['fields']
+           and r['repeatCell']['range'] not in [c['range'] for c in stale_headers])
 paper_write = next(r['updateCells'] for r in requests if 'updateCells' in r and r['updateCells']['range']['sheetId'] == 2)
 assert paper_write['rows'][1]['values'][0] == {'userEnteredValue': {'stringValue': '=IMPORTXML("private")'}}
 invalid = json.loads(json.dumps(direct))

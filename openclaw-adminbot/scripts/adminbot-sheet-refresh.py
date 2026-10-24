@@ -348,7 +348,9 @@ def refresh_requests(batch, properties):
             views += [('Full members', None, ('member_type', 'full', 'TEXT_CONTAINS')),
                       ('By joined date', 'join_date', None),
                       ('Review inactive members', 'membership_review', ('membership_review', 'Review inactive')),
-                      ('By membership type', 'member_type', None), ('By Slack active channel', 'slack_active', None)]
+                      ('By membership type', 'member_type', None)]
+            requests.extend({'deleteFilterView': {'filterId': v['filterViewId']}}
+                            for v in p.get('filterViews', []) if v['title'] == 'By Slack active channel')
         for view_title, sort_column, criterion in views:
             view = next((v for v in p.get('filterViews', []) if v['title'] == view_title), None)
             if view and tables and view.get('tableId') != tables[0]['tableId']:
@@ -373,6 +375,10 @@ def refresh_requests(batch, properties):
             else:
                 requests.append({'addFilterView': {'filter': {**specification, 'title': view_title}}})
         if title == 'PeopleList':
+            # The header row is kept for the table; headers of columns a narrower export dropped are blanked
+            # here, once the table no longer spans them.
+            requests.append({'repeatCell': {'range': {'sheetId': sid, 'startRowIndex': 0, 'endRowIndex': 1,
+                'startColumnIndex': len(headers)}, 'cell': {}, 'fields': 'userEnteredValue,userEnteredFormat,note'}})
             requests.extend(people_style_requests(p, values, field_names))
         if title == 'PaperList':
             requests.extend(paper_style_requests(p, values, batch['paperLinks'], batch.get('statusCounts')))
