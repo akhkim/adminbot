@@ -377,3 +377,13 @@ if ! (
 ); then
   echo "warning: pnpm store prune failed; the store keeps unreferenced packages until next time" >&2
 fi
+
+# ---------------------------------------------------------------------------------------------
+# Register every scheduled job in config/adminbot-cron.json. Without this a job added to the
+# manifest (the OpenReview sync, the automation health check) never ran until somebody remembered
+# to sync by hand. The sync is idempotent and runs through `current`, so the stored paths survive
+# the release pruning above. The release is already live and healthy, so a failed sync does not
+# roll back; it fails the job instead, so the deploy shows red rather than leaving jobs stale.
+if ! OPENCLAW_BIN="node $CURRENT/openclaw.mjs" bash "$CURRENT/scripts/adminbot-cron-sync.sh"; then
+  die "release $new_release_name is live, but syncing cron jobs failed; rerun scripts/adminbot-cron-sync.sh from $CURRENT"
+fi
