@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { createAdminBotMockService } from "./server.js";
 
 const running: ReturnType<typeof createAdminBotMockService>[] = [];
@@ -26,20 +26,55 @@ describe("personal website reminder route", () => {
   });
   it("does not let member sessions forge a scheduled send", async () => {
     const { mock, url } = await start();
-    const admin = { id: "admin", name: "Synthetic Admin", privilege_level: "admin" as const };
-    const member = { id: "member", name: "Synthetic Member", privilege_level: "member" as const };
+    const admin = {
+      id: "admin",
+      name: "Synthetic Admin",
+      email: "admin@example.test",
+      privilege_level: "admin" as const,
+    };
+    const member = {
+      id: "member",
+      name: "Synthetic Member",
+      email: "member@example.test",
+      privilege_level: "member" as const,
+    };
     mock.service.upsertLabMember(admin);
     mock.service.upsertLabMember(member);
-    const session = vi.spyOn(mock.auth, "resolveSession");
-    session.mockResolvedValue({ kind: "member", member });
+    async function login(id: string) {
+      const base = new URL(url).origin;
+      const headers = { "Content-Type": "application/json" };
+      const email = `${id}@example.test`;
+      await fetch(`${base}/auth/claim`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ member_id: id, email, password: "correcthorse" }),
+      });
+      const pending = await (
+        await fetch(`${base}/auth/registrations?status=pending`, {
+          headers: { Authorization: "Bearer synthetic-token" },
+        })
+      ).json();
+      const registration = pending.registrations.find(
+        (entry: { member_id?: string }) => entry.member_id === id,
+      );
+      expect(registration).toBeDefined();
+      await mock.auth.approveRegistration(registration.id, "seed-admin");
+      const response = await fetch(`${base}/auth/login`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ email, password: "correcthorse" }),
+      });
+      return (await response.json()).session_token as string;
+    }
+    let token = await login("member");
     const request = () =>
       fetch(url, {
         method: "POST",
-        headers: { Authorization: "Bearer synthetic-session", "Content-Type": "application/json" },
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify({ dry_run: false, scheduled: true }),
       });
     expect((await request()).status).toBe(403);
-    session.mockResolvedValue({ kind: "member", member: admin });
+    token = await login("admin");
     const response = await request();
     expect(response.status).toBe(409);
     expect(await response.json()).toMatchObject({ refused: "confirm_required" });
