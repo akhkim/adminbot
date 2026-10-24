@@ -9,6 +9,7 @@ import { resolvePaperPdfSource } from "../../workflows/papers/paper-pdf-source.j
 import { paperForResponse } from "../../workflows/papers/paper-response.js";
 import { readXAnnouncement, readXCredits } from "../../workflows/papers/x-draft.js";
 import { asString, readJson, readRecord, sendJson, sendServiceResult } from "../server.http.js";
+import { handlePaperProgress } from "../server.paper-progress.js";
 import {
   adminSessionOnly,
   isPrivileged,
@@ -17,7 +18,6 @@ import {
   privilegedOnly,
 } from "./guards.js";
 import { readListPage, limitParam } from "./query-params.js";
-import { handlePaperProgress } from "../server.paper-progress.js";
 import { del, get, patch, post, put, type Route, type RouteHandler } from "./router.js";
 import { principalRole, sendNotModified, versionEtag } from "./version-etag.js";
 

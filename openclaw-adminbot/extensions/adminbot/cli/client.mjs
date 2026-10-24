@@ -96,7 +96,8 @@ export function createAdminBotClient(options = {}) {
 function rejectionMessage(raw) {
   let message;
   try {
-    const text = Buffer.isBuffer(raw) || raw instanceof ArrayBuffer ? Buffer.from(raw).toString("utf8") : raw;
+    const text =
+      Buffer.isBuffer(raw) || raw instanceof ArrayBuffer ? Buffer.from(raw).toString("utf8") : raw;
     const parsed = typeof text === "string" ? JSON.parse(text) : text;
     message = parsed?.error?.message ?? parsed?.message;
   } catch {

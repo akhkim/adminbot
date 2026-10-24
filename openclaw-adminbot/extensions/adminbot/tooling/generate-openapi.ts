@@ -299,8 +299,8 @@ export function buildOpenApi(root = extensionRoot) {
       const declaration = checker.getSymbolAtLocation(expression)?.valueDeclaration;
       return Boolean(
         declaration &&
-          ts.isVariableDeclaration(declaration) &&
-          declaration.initializer?.getText() === "url.searchParams",
+        ts.isVariableDeclaration(declaration) &&
+        declaration.initializer?.getText() === "url.searchParams",
       );
     };
     for (const node of nodes) {

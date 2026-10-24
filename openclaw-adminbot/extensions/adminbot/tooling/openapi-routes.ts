@@ -220,7 +220,9 @@ function candidates(branchTerms: Term[]): { method: string; path: string }[] {
     return [];
   }
   const own = (implied: boolean) =>
-    branchTerms.flatMap((term) => (term.path && Boolean(term.implied) === implied ? [term.path] : []));
+    branchTerms.flatMap((term) =>
+      term.path && Boolean(term.implied) === implied ? [term.path] : [],
+    );
   const paths = own(false);
   if (paths.length) {
     return [...new Set(paths)].map((path) => ({ method: methods[0], path }));
@@ -528,7 +530,10 @@ export function discoverRoutes(
   // 2. The dispatchers outside the table: public pages, the auth endpoints, and the sub-router
   // modules (walked on their own too, which finds the same routes the seeded walk did).
   for (const source of sources) {
-    if (/[/\\]routes[/\\]/u.test(source.fileName) && !/[/\\]routes[/\\]auth\.ts$/u.test(source.fileName)) {
+    if (
+      /[/\\]routes[/\\]/u.test(source.fileName) &&
+      !/[/\\]routes[/\\]auth\.ts$/u.test(source.fileName)
+    ) {
       continue;
     }
     walkIfChain(checker, source, [[]], routes, (node) => {
