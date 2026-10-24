@@ -39,7 +39,7 @@ function lab() {
 }
 
 const submitted: OpenReviewEvidence = {
-  source: "notifications",
+  source: "author_results",
   status: "under_review",
   title: "Causal Garden Planning",
   submission_id: "Abc123xyz",

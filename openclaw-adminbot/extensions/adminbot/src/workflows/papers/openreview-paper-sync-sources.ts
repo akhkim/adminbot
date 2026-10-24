@@ -1,32 +1,26 @@
 // Gathers the OpenReview evidence the paper sync reads, outside the (synchronous) service.
 //
-// Each source is optional and fails on its own: a missing snapshot (the author-results cron is
-// not installed yet) or an unreachable Drive leaves the other source to speak, and the report
-// says which ones were read. Nothing here writes anything.
+// The source is the author-results snapshot the results cron writes from OpenReview's API. A
+// missing or unreadable snapshot reads nothing and says so, and so does one the results cron has
+// stopped refreshing: a stale snapshot is how a paper's status quietly falls behind OpenReview.
+// Nothing here writes anything.
 
 import { readFile } from "node:fs/promises";
-import {
-  evidenceFromAuthorResults,
-  evidenceFromNotifications,
-  type OpenReviewEvidence,
-} from "./openreview-paper-sync.js";
+import { evidenceFromAuthorResults, type OpenReviewEvidence } from "./openreview-paper-sync.js";
+
+/** Older than this, the results cron (every six hours) has missed at least two passes. */
+export const STALE_SNAPSHOT_HOURS = 13;
 
 export type OpenReviewPaperSyncSourceDeps = {
   /** The author-results snapshot file; absent disables that source. */
   snapshotPath?: string;
-  /** scripts/openreview-notifications/adminbot_decisions.py; absent disables the CSV source. */
-  decisionsScriptPath?: string;
   readFile?: (path: string) => Promise<string>;
-  downloadNotificationsCsv?: (signal?: AbortSignal) => Promise<string>;
-  runDecisionsScript?: (scriptPath: string, input: unknown, signal?: AbortSignal) => Promise<string>;
+  now?: () => Date;
 };
 
 export type OpenReviewPaperSyncRequest = {
-  /** A snapshot supplied by the caller (the results cron posts the one it just wrote). */
+  /** A snapshot supplied by the caller (the sync cron posts the one the results cron wrote). */
   author_results?: unknown;
-  /** A CSV supplied by the caller instead of the Drive copy. */
-  notifications_csv?: string;
-  signal?: AbortSignal;
 };
 
 export type OpenReviewPaperSyncSources = {
@@ -56,37 +50,24 @@ export async function gatherOpenReviewPaperEvidence(
   if (snapshot !== undefined) {
     out.evidence.push(...evidenceFromAuthorResults(snapshot));
     out.read.push("author_results");
-  }
-
-  if (deps.decisionsScriptPath && deps.runDecisionsScript) {
-    try {
-      const csv =
-        request.notifications_csv ??
-        (deps.downloadNotificationsCsv
-          ? await deps.downloadNotificationsCsv(request.signal)
-          : undefined);
-      if (csv !== undefined) {
-        const result = JSON.parse(
-          await deps.runDecisionsScript(
-            deps.decisionsScriptPath,
-            { notifications_csv: csv },
-            request.signal,
-          ),
-        ) as { ok?: boolean; error?: string };
-        if (result.ok) {
-          out.evidence.push(...evidenceFromNotifications(result));
-          out.read.push("notifications");
-        } else {
-          out.warnings.push(`notification export rejected: ${result.error ?? "unknown error"}`);
-        }
-      }
-    } catch {
-      // The gog and Python failures carry account and path details; the operator reruns the
-      // drafts tool to see them.
-      out.warnings.push("notification export unavailable (Drive read or parser failed)");
+    const stale = staleness(snapshot, (deps.now ?? (() => new Date()))());
+    if (stale) {
+      out.warnings.push(stale);
     }
   }
   return out;
+}
+
+function staleness(snapshot: unknown, now: Date): string | undefined {
+  const fetchedAt = (snapshot as { fetched_at?: unknown } | null)?.fetched_at;
+  const at = typeof fetchedAt === "string" ? Date.parse(fetchedAt) : Number.NaN;
+  if (Number.isNaN(at)) {
+    return "author-results snapshot has no fetched_at; its age is unknown";
+  }
+  const hours = (now.getTime() - at) / 3_600_000;
+  return hours > STALE_SNAPSHOT_HOURS
+    ? `author-results snapshot is ${Math.floor(hours)} hours old; is the openreview results cron failing (OpenReview login)?`
+    : undefined;
 }
 
 function defaultReadFile(path: string): Promise<string> {

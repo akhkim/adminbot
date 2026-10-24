@@ -2,12 +2,14 @@
 # One pass of the paper OpenReview sync, shaped for an OpenClaw cron job.
 #
 # OpenReview is the ground truth for whether a paper was submitted, accepted or rejected. This
-# reads the author-results snapshot (when the results cron has written one) and the PI's
-# notification export in Drive, and writes what they say through the normal paper-update path:
-# the submission slot, the venue, and the decision fields. Every change is audited as made by
-# OpenReview, and a value somebody edited by hand is left alone until OpenReview itself changes.
+# reads the author-results snapshot the results cron writes from OpenReview's API, and writes what
+# it says through the normal paper-update path: the submission slot, the venue, and the decision
+# fields. Every change is audited as made by OpenReview, and a value somebody edited by hand is left
+# alone until OpenReview itself changes. The PI's notification e-mails are no longer read: they
+# froze each paper at the title and status they were sent with.
 #
-# Daily, and safe at any cadence: a pass with nothing new to say changes nothing.
+# Every six hours, 80 minutes after each results pass, and safe at any cadence: a pass with nothing
+# new to say changes nothing.
 #
 # ADMINBOT_OPENREVIEW_SYNC_DRY_RUN=1 reports what it would change without writing.
 set -euo pipefail
@@ -24,7 +26,7 @@ adminbot_load_cron_env "paper openreview sync" || exit 1
 PORT="${ADMINBOT_PORT:-8765}"
 # The snapshot the results cron writes, at the path that cron uses. It is posted with the request
 # so the service reads the same file even when its own default path differs; when it is missing
-# the service falls back to its own path and to the notification export.
+# the service falls back to its own path, and with no snapshot at all the run fails.
 SNAPSHOT="${ADMINBOT_OPENREVIEW_RESULTS_JSON:-$(dirname "${ADMINBOT_DB_PATH:-$HOME/.openclaw/state/adminbot.sqlite}")/openreview-author-results.json}"
 request_file="$(mktemp)"
 trap 'rm -f "$request_file"' EXIT
