@@ -109,3 +109,20 @@ export const MEMBER_ATTRIBUTION_COLUMNS: ReadonlyArray<[string, string]> = [
   ["adminbot_paper_slots", "waived_by_member_id"],
   ["adminbot_paper_social_drafts", "generated_by_member_id"],
 ];
+
+/**
+ * The tables a member-id rename leaves alone; it re-keys every other table it finds.
+ *
+ * All of them are history. The audit log records what happened under the id of the day, and the
+ * rename's own `lab_member.id_changed` line joins the two. The action ledger is history with a
+ * stronger claim: an approval is bound to its proposal's payload by hash, so a payload rewritten
+ * after the fact is no longer the thing anybody approved. The rename refuses outright while an
+ * action naming the member is still open (`MemberRenameBlockedError`), so what is left in these
+ * tables under the old id has already run or been removed.
+ */
+export const MEMBER_RENAME_HISTORY_TABLES: ReadonlySet<string> = new Set([
+  "adminbot_audit_events",
+  "adminbot_proposals",
+  "adminbot_executions",
+  "adminbot_execution_claims",
+]);

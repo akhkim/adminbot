@@ -1542,6 +1542,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/lab/members/{members_id}/id": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** POST /lab/members/{members_id}/id */
+    post: operations["post-lab-members-by-members-id-id"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/lab/members/{members_id}/locations": {
     parameters: {
       query?: never;
@@ -4902,6 +4919,7 @@ export interface components {
         | "calendar.local_audience_swept"
         | "paper_author_links.backfilled"
         | "lab_member.merged"
+        | "lab_member.id_changed"
         | "lab_member.deleted"
         | "lab_members.purged_without_email"
         | "lab_member_request.submitted"
@@ -10537,6 +10555,7 @@ export interface operations {
         content: {
           "application/json": {
             registrations: components["schemas"]["AdminBotRegistrationView"][];
+            can_decide: boolean;
           } & {
             [key: string]: unknown;
           };
@@ -15082,6 +15101,54 @@ export interface operations {
       };
     };
   };
+  "post-lab-members-by-members-id-id": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        members_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          new_id?: string;
+        } & {
+          [key: string]: unknown;
+        };
+      };
+    };
+    responses: {
+      /** @description Successful service result */
+      "2XX": {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            member: components["schemas"]["AdminBotLabMember"];
+            changed: {
+              [key: string]: number;
+            };
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
   "get-lab-members-by-members-id-locations": {
     parameters: {
       query?: {
@@ -15614,6 +15681,7 @@ export interface operations {
         content: {
           "application/json": {
             requests: ({
+              can_decide: boolean;
               requested_by_name: string;
               /** @enum {string} */
               access_level: "member" | "admin" | "external_collaborator" | "trial";
@@ -15773,23 +15841,6 @@ export interface operations {
           };
         };
       };
-      /** @description Server response */
-      403: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            error: {
-              message: string;
-            } & {
-              [key: string]: unknown;
-            };
-          } & {
-            [key: string]: unknown;
-          };
-        };
-      };
       /** @description Successful service result */
       "2XX": {
         headers: {
@@ -15901,23 +15952,6 @@ export interface operations {
           "application/json": {
             request: components["schemas"]["AdminBotMemberRequest"];
             member: unknown;
-          } & {
-            [key: string]: unknown;
-          };
-        };
-      };
-      /** @description Server response */
-      403: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            error: {
-              message: string;
-            } & {
-              [key: string]: unknown;
-            };
           } & {
             [key: string]: unknown;
           };
@@ -25146,6 +25180,23 @@ export interface operations {
       };
     };
     responses: {
+      /** @description Server response */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
       /** @description Successful service result */
       "2XX": {
         headers: {

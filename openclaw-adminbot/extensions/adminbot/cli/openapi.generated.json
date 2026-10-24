@@ -1515,10 +1515,14 @@
                       "items": {
                         "$ref": "#/components/schemas/AdminBotRegistrationView"
                       }
+                    },
+                    "can_decide": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
-                    "registrations"
+                    "registrations",
+                    "can_decide"
                   ],
                   "additionalProperties": true
                 }
@@ -9278,6 +9282,85 @@
         }
       }
     },
+    "/lab/members/{members_id}/id": {
+      "post": {
+        "operationId": "post-lab-members-by-members-id-id",
+        "summary": "POST /lab/members/{members_id}/id",
+        "tags": [
+          "lab"
+        ],
+        "x-source": "src/api/routes/members.ts",
+        "parameters": [
+          {
+            "name": "members_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "new_id": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true,
+                "x-schema-coverage": "inferred from property access or downstream casts; semantic validation remains server-side"
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful service result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "member": {
+                      "$ref": "#/components/schemas/AdminBotLabMember"
+                    },
+                    "changed": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "number"
+                      }
+                    }
+                  },
+                  "required": [
+                    "member",
+                    "changed"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/lab/members/{members_id}/locations": {
       "get": {
         "operationId": "get-lab-members-by-members-id-locations",
@@ -10176,6 +10259,9 @@
                       "items": {
                         "type": "object",
                         "properties": {
+                          "can_decide": {
+                            "type": "boolean"
+                          },
                           "requested_by_name": {
                             "type": "string"
                           },
@@ -10234,6 +10320,7 @@
                           }
                         },
                         "required": [
+                          "can_decide",
                           "requested_by_name",
                           "access_level",
                           "id",
@@ -10451,34 +10538,6 @@
               }
             }
           },
-          "403": {
-            "description": "Server response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "object",
-                      "properties": {
-                        "message": {
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "message"
-                      ],
-                      "additionalProperties": true
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": true
-                }
-              }
-            }
-          },
           "2XX": {
             "description": "Successful service result",
             "content": {
@@ -10654,34 +10713,6 @@
                   "required": [
                     "request",
                     "member"
-                  ],
-                  "additionalProperties": true
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Server response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "object",
-                      "properties": {
-                        "message": {
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "message"
-                      ],
-                      "additionalProperties": true
-                    }
-                  },
-                  "required": [
-                    "error"
                   ],
                   "additionalProperties": true
                 }
@@ -25926,6 +25957,34 @@
           }
         },
         "responses": {
+          "403": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
           "2XX": {
             "description": "Successful service result",
             "content": {
@@ -28296,6 +28355,7 @@
               "calendar.local_audience_swept",
               "paper_author_links.backfilled",
               "lab_member.merged",
+              "lab_member.id_changed",
               "lab_member.deleted",
               "lab_members.purged_without_email",
               "lab_member_request.submitted",

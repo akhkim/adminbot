@@ -13,7 +13,13 @@ import {
   sendJson,
   sendServiceResult,
 } from "../server.http.js";
-import { adminSessionOnly, memberOnly, principalActor, privilegedOnly } from "./guards.js";
+import {
+  adminSessionOnly,
+  isHeadProfessorAtKeyboard,
+  memberOnly,
+  principalActor,
+  privilegedOnly,
+} from "./guards.js";
 import { asDays, limitParam } from "./query-params.js";
 import { get, post, put, route, type Route } from "./router.js";
 
@@ -83,9 +89,22 @@ export const workspaceRoutes: readonly Route[] = [
   ),
   put(
     "/settings",
-    adminSessionOnly(async ({ req, res, ctx }) => {
+    adminSessionOnly(async ({ req, res, ctx, principal }) => {
       const { service } = ctx;
       const body = (await readJson(req)) as AdminBotSettingsInput;
+      // Naming the PI is naming who approves new members, so an admin who could rewrite it could
+      // hand themselves that right. Once it is set, only the PI moves it; an unset one can still be
+      // filled in by any admin, which is how a fresh deployment gets one at all.
+      const head = service.headProfessorMemberId();
+      if (
+        head !== undefined &&
+        body.head_professor_member_id !== undefined &&
+        (body.head_professor_member_id?.trim() ?? "") !== head &&
+        !isHeadProfessorAtKeyboard(ctx, principal)
+      ) {
+        sendJson(res, 403, { error: { message: "only the PI can change who the PI is" } });
+        return;
+      }
       sendServiceResult(res, service.updateSettings(body));
     }),
   ),

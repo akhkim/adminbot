@@ -139,6 +139,26 @@ describe("member requests", () => {
     expect(container.textContent).toContain("Already on the roster.");
   });
 
+  it("shows an admin who is not the PI the request, but no Approve or Decline", () => {
+    const container = draw(renderMemberRequests, {
+      requests: [request({ can_decide: false })],
+      onEdit: vi.fn(async () => true),
+      onApprove: vi.fn(),
+      onReject: vi.fn(),
+    });
+    expect(container.querySelector('[data-testid="member-request-approve"]')).toBeNull();
+    expect(container.querySelector('[data-testid="member-request-reject"]')).toBeNull();
+    expect(container.querySelector('[data-testid="member-request-edit"]')).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="member-request-pi-only"]')?.textContent,
+    ).toContain("Only the PI");
+    const pi = draw(renderMemberRequests, {
+      requests: [request({ can_decide: true })],
+      onApprove: vi.fn(),
+    });
+    expect(pi.querySelector('[data-testid="member-request-approve"]')).not.toBeNull();
+  });
+
   it("renders nothing for an admin with an empty queue", () => {
     const container = draw(renderMemberRequests, { requests: [] });
     expect(container.querySelector('[data-testid="member-requests"]')).toBeNull();

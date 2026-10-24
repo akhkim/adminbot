@@ -278,6 +278,8 @@ export type MemberRegistration = {
   member_id?: string;
   member_name?: string;
   profile?: Record<string, unknown>;
+  /** False when the viewer may read the queue but only the PI may decide it. */
+  can_decide?: boolean;
 };
 
 // Closed set of failure modes so callers render distinct guidance. `retryAfterSeconds`
@@ -583,6 +585,8 @@ export type MemberRequestView = {
   member_id?: string;
   /** The access level approving would grant, worked out from the requested Member Type. */
   access_level?: string;
+  /** False when the viewer may read the request but only the PI may decide it. */
+  can_decide?: boolean;
 };
 
 export type MemberRequestInput = MemberRequestView["profile"] & { note?: string };
@@ -773,7 +777,7 @@ export async function fetchRelevantPapers(
   return { ok: true, value: papers };
 }
 
-// Pending account requests awaiting an admin decision (GET /auth/registrations).
+// Pending account requests awaiting the PI's decision (GET /auth/registrations).
 // The service only answers this for an admin member session, so 403
 // maps to `forbidden` rather than the generic auth-failed. Read through authedJson so a revisit
 // to the Registrations tab revalidates by ETag instead of downloading the list again.
@@ -796,9 +800,22 @@ export async function fetchPendingRegistrations(
     }
     return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
   }
-  const registrations = (result.body as { registrations?: MemberRegistration[] } | null)
-    ?.registrations;
-  return { ok: true, value: registrations ?? [] };
+  const parsed = result.body as {
+    registrations?: MemberRegistration[];
+    can_decide?: boolean;
+  } | null;
+  const registrations = parsed?.registrations ?? [];
+  // The service answers once for the viewer; each card reads it off its own row. Absent is an
+  // older service, and leaving the field unset keeps the buttons the way that service had them.
+  // Copied rather than written onto the rows: the body may be the ETag cache's own object.
+  const canDecide = parsed?.can_decide;
+  return {
+    ok: true,
+    value:
+      typeof canDecide === "boolean"
+        ? registrations.map((registration) => ({ ...registration, can_decide: canDecide }))
+        : registrations,
+  };
 }
 
 async function decideRegistration(

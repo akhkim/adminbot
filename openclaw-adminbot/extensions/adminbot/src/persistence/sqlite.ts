@@ -79,6 +79,7 @@ import type { AdminBotRecLetterAttestation } from "../contracts/rec-letter-attes
 import type { AdminBotRecLetterFreezeIncident } from "../contracts/rec-letter-freezes.js";
 import type { ReferenceScan } from "../contracts/reference-scans.js";
 import type { AdminBotTabVisit } from "../contracts/tab-visits.js";
+import { MemberRenameBlockedError } from "../kernel/member-rename.js";
 import {
   AdminBotService,
   type AdminBotLabMemberSummary,
@@ -148,6 +149,7 @@ import {
   MEMBER_ATTRIBUTION_COLUMNS,
   MEMBER_OWNED_COLUMNS,
   MEMBER_REFERENCE_COLUMNS,
+  MEMBER_RENAME_HISTORY_TABLES,
 } from "./sqlite.member-columns.js";
 import { escalatedMemberNotificationsSql } from "./sqlite.member-notifications.js";
 import { migratePaperSlotColumns } from "./sqlite.paper-slot-migration.js";
@@ -2096,6 +2098,80 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       throw error;
     }
     return moved;
+  }
+
+  renameMemberId(fromMemberId: string, toMemberId: string): Record<string, number> {
+    const changed: Record<string, number> = {};
+    // Every table, discovered rather than listed: a member id lives in dedicated columns and inside
+    // payload_json (paper author links, the head-professor setting, attendee maps keyed by id), and
+    // a hand-kept list is how the merge ended up moving the column a page reads from but not the
+    // payload it renders. The exceptions are history: the audit log, whose rename line ties the
+    // old id to the new one, and the action ledger, whose payloads an approval is bound to by hash.
+    const tables = (
+      this.db
+        .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`)
+        .all() as Array<{ name: string }>
+    )
+      .map((row) => row.name)
+      .filter((name) => !MEMBER_RENAME_HISTORY_TABLES.has(name));
+    // Matched as a whole JSON string, quotes included, so renaming "pat" leaves "pat-lee" and a
+    // sentence mentioning pat alone. Covers both values and object keys.
+    const fromJson = JSON.stringify(fromMemberId);
+    const toJson = JSON.stringify(toMemberId);
+    // One transaction, and plain UPDATE rather than UPDATE OR IGNORE: a row already keyed on the
+    // new id is a collision the admin has to look at, and a rename that silently dropped the old
+    // row instead would lose that person's data. The throw rolls every table back.
+    this.db.exec("BEGIN");
+    try {
+      // An action still waiting to be approved or executed is not history yet, but its payload is
+      // hash-bound, so it can be neither rewritten nor left naming an id that no longer exists.
+      // The admin settles it first.
+      const open = this.db
+        .prepare(
+          `SELECT id FROM adminbot_proposals
+            WHERE status IN ('pending', 'approved') AND instr(payload_json, ?) > 0
+            ORDER BY created_at LIMIT 5`,
+        )
+        .all(fromJson) as Array<{ id: string }>;
+      if (open.length > 0) {
+        throw new MemberRenameBlockedError(open.map((row) => row.id));
+      }
+      for (const table of tables) {
+        const columns = (
+          this.db.prepare(`PRAGMA table_info("${table}")`).all() as Array<{
+            name: string;
+            type: string;
+          }>
+        )
+          // Untyped columns too: SQLite stores whatever was bound, and an old schema may not say.
+          .filter((column) => column.type === "" || /TEXT|CHAR|CLOB/iu.test(column.type))
+          .map((column) => column.name);
+        for (const column of columns) {
+          const exact = this.db
+            .prepare(`UPDATE "${table}" SET "${column}" = ? WHERE "${column}" = ?`)
+            .run(toMemberId, fromMemberId) as { changes?: number };
+          const embedded = this.db
+            .prepare(
+              `UPDATE "${table}" SET "${column}" = replace("${column}", ?, ?)
+                WHERE instr("${column}", ?) > 0`,
+            )
+            .run(fromJson, toJson, fromJson) as { changes?: number };
+          const changes = (exact.changes ?? 0) + (embedded.changes ?? 0);
+          if (changes > 0) {
+            changed[`${table}.${column}`] = changes;
+          }
+        }
+      }
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+    // The sweep wrote past every store method, so nothing it touched told the roster cache or the
+    // ETag counters; without this the next read serves the member under the old id.
+    this.members.invalidate();
+    this.versions.bumpAll();
+    return changed;
   }
 
   recordCvChanges(events: AdminBotCvChangeEvent[]): AdminBotCvChangeEvent[] {

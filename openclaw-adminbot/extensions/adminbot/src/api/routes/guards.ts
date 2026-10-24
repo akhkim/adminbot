@@ -10,7 +10,7 @@
 import type { ServerResponse } from "node:http";
 import type { AdminBotMemberPrincipal } from "../../workflows/identity/auth.js";
 import { sendJson } from "../server.http.js";
-import type { AdminBotPrincipal } from "./context.js";
+import type { AdminBotPrincipal, AdminBotRouteContext } from "./context.js";
 import type { RouteHandler } from "./router.js";
 
 export type GuardDenial = { status: number; message: string };
@@ -82,6 +82,39 @@ export function requireMemberPrivileged(
     return false;
   }
   return requirePrivileged(res, principal);
+}
+
+/**
+ * Whether the person at the keyboard is the lab's PI, as `head_professor_member_id` names them.
+ *
+ * Deliberately not a privilege level: every admin holds the same one, and the rule this guards is
+ * that admins do *not* get to decide who joins the lab. A "view as" session is refused even when
+ * the member being viewed is the PI -- `principal.member` is then the PI's record, but the hands on
+ * the keyboard are an admin's, which is exactly the person this keeps out. With no PI named the
+ * answer is no for everyone: an unset setting must not read as "anybody may".
+ */
+export function isHeadProfessorAtKeyboard(
+  ctx: AdminBotRouteContext,
+  principal: AdminBotPrincipal,
+): boolean {
+  if (principal.kind !== "member" || principal.impersonator) {
+    return false;
+  }
+  const head = ctx.service.headProfessorMemberId();
+  return head !== undefined && principal.member.id === head;
+}
+
+/** Approving or declining somebody new: the PI's call alone. */
+export function requireHeadProfessor(
+  res: ServerResponse,
+  ctx: AdminBotRouteContext,
+  principal: AdminBotPrincipal,
+): boolean {
+  if (isHeadProfessorAtKeyboard(ctx, principal)) {
+    return true;
+  }
+  sendJson(res, 403, { error: { message: "only the PI can approve or decline a new member" } });
+  return false;
 }
 
 export function principalActor(principal: AdminBotPrincipal): string {

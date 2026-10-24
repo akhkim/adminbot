@@ -1,5 +1,5 @@
 /**
- * A member's request to add somebody to the roster, held until an admin decides it.
+ * A member's request to add somebody to the roster, held until the PI decides it.
  *
  * Adding a member is an admin write: the record's Member Type sets its access level, and saving it
  * moves rooms, meetings and the sheet. A member who is not an admin can still know who has just

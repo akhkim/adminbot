@@ -51,10 +51,12 @@ import type { AdminBotRouteContext } from "./context.js";
 import {
   adminSessionOnly,
   approverIdentityFor,
+  isHeadProfessorAtKeyboard,
   isPrivileged,
   memberOnly,
   principalActor,
   privilegedOnly,
+  requireHeadProfessor,
   requireMemberPrivileged,
   requirePrivileged,
 } from "./guards.js";
@@ -68,10 +70,10 @@ import { requestIsSecure, sendAuthResult } from "./session.js";
 import { sendNotModified } from "./version-etag.js";
 
 export const membersRoutes: readonly Route[] = [
-  // Member requests: anyone signed in may propose adding somebody; only an admin decides. Ahead of
-  // every /lab/members/:id pattern so "requests" is never read as a member id. A member session
-  // throughout -- the service principal speaks for whoever is chatting, so it can neither file a
-  // request in a real member's name nor approve one.
+  // Member requests: anyone signed in may propose adding somebody; admins may correct one, and only
+  // the PI decides it. Ahead of every /lab/members/:id pattern so "requests" is never read as a
+  // member id. A member session throughout -- the service principal speaks for whoever is
+  // chatting, so it can neither file a request in a real member's name nor approve one.
   route(
     "*",
     under("/lab/members/requests"),
@@ -285,6 +287,22 @@ export const membersRoutes: readonly Route[] = [
         survivorId: asString(body.survivor_id),
         duplicateId: asString(body.duplicate_id),
         actorId: principal.member.id,
+      }),
+    );
+  }),
+  post(/^\/lab\/members\/([^/]+)\/id$/u, async ({ req, res, principal, ctx, params }) => {
+    // Admin session only, for the merge's reason: it re-keys a person's login, papers and
+    // settings in one go, and the caller types the new key.
+    if (!requireMemberPrivileged(res, principal) || principal.kind !== "member") {
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    sendServiceResult(
+      res,
+      ctx.service.renameLabMember({
+        memberId: decodeURIComponent(params[1]!),
+        newId: asString(body.new_id),
+        actorId: principalActor(principal),
       }),
     );
   }),
@@ -813,9 +831,12 @@ export async function handleMemberRequestRoute(
     }
     // What approving would grant, worked out the same way the save will work it out, so the admin
     // reads "this makes them an admin" on the card rather than finding out afterwards.
+    const canDecide = isHeadProfessorAtKeyboard(ctx, principal);
     sendJson(res, 200, {
       requests: result.payload.requests.map((request) => ({
         ...request,
+        // Lets the card show Approve/Decline to the PI and "waiting on the PI" to everyone else.
+        can_decide: canDecide,
         requested_by_name: ctx.store.getLabMember(request.requested_by)?.name,
         access_level:
           privilegeForMemberTypeChange(
@@ -851,8 +872,8 @@ export async function handleMemberRequestRoute(
   }
   const decision = /^\/lab\/members\/requests\/([^/]+)\/(approve|reject)$/u.exec(url.pathname);
   if (req.method === "POST" && decision?.[1] && decision[2]) {
-    if (!isAdmin) {
-      sendJson(res, 403, { error: { message: "only an admin can decide a member request" } });
+    // The PI and nobody else, admins included: who joins the lab is not an admin write.
+    if (!requireHeadProfessor(res, ctx, principal)) {
       return;
     }
     const requestId = decodeURIComponent(decision[1]);

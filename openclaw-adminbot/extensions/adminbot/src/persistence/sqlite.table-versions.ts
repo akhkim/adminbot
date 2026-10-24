@@ -28,6 +28,13 @@ export class SqliteTableVersions {
     this.counters[table] += 1;
   }
 
+  /** For a write that is not scoped to one table, such as a member id re-keyed across all of them. */
+  bumpAll(): void {
+    for (const table of Object.keys(this.counters) as VersionedTable[]) {
+      this.counters[table] += 1;
+    }
+  }
+
   version(table: VersionedTable): string {
     const { data_version: external } = this.db.prepare("PRAGMA data_version").get() as {
       data_version: number;

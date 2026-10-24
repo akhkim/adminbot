@@ -43,6 +43,7 @@ import {
   deleteAdminBotMember,
   mergeAdminBotMembers,
   purgeAdminBotMembersWithoutEmail,
+  renameAdminBotMember,
   saveAdminBotMember,
   saveAdminBotOwnProfile,
 } from "../controllers/members.ts";
@@ -264,6 +265,7 @@ export function renderAdminPanelsSurface(state: AppViewState, scope: AdminBotSur
           onSaveMember: (member, options) => saveAdminBotMember(state, member, options),
           onMergeMembers: (survivorId, duplicateId) =>
             void mergeAdminBotMembers(state, survivorId, duplicateId),
+          onRenameMember: (memberId, newId) => void renameAdminBotMember(state, memberId, newId),
           onDeleteMember: (member) => void deleteAdminBotMember(state, member.id),
           onPurgeMembersWithoutEmail: (dryRun) =>
             void purgeAdminBotMembersWithoutEmail(state, { dryRun }),

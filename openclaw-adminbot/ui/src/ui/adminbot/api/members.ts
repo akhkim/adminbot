@@ -414,6 +414,35 @@ export async function mergeLabMembersAsAdmin(
   };
 }
 
+/** Re-key one member under a new id; the service carries every record that named the old one. */
+export async function renameLabMemberAsAdmin(
+  memberId: string,
+  newId: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ member: LabMember; changed: Record<string, number> }>> {
+  const result = await authedJson(
+    baseUrl,
+    `/lab/members/${encodeURIComponent(memberId)}/id`,
+    "POST",
+    sessionToken,
+    { new_id: newId },
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return {
+    ok: true,
+    value: result.body as { member: LabMember; changed: Record<string, number> },
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Profile overview
 //
