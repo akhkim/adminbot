@@ -543,6 +543,16 @@ describe("AdminBotService paper coauthors", () => {
         current_step: "brainstorming_docs",
       }),
     );
+    // An acceptance needs an Overleaf link on file; see service.paper-slots.test.ts.
+    unwrap(
+      service.setPaperSlot({
+        paperId: "adminbot",
+        slot: "overleaf_share",
+        input: { url: "https://www.overleaf.com/1234567890abcdefghijkl" },
+        memberId: "joeun-yook",
+        privileged: false,
+      }),
+    );
     const stored = unwrap(
       service.upsertOwnPaper("joeun-yook", { id: "adminbot", venue_decision: "accept" }),
     );

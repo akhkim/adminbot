@@ -56,12 +56,27 @@ function seed(service: AdminBotService): void {
   );
 }
 
+const SHARE_URL = "https://www.overleaf.com/1234567890abcdefghijkl";
+
+/** Files an Overleaf link the way the author's card does: as the author, on their own paper. */
+function giveOverleaf(service: AdminBotService, slot: string, url: string): void {
+  unwrap(
+    service.setPaperSlot({
+      paperId: "p1",
+      slot,
+      input: { url },
+      memberId: "ada",
+      privileged: false,
+    }),
+  );
+}
+
 describe("listPaperSlots", () => {
-  it("answers with all 28 rows, so the card renders a checklist rather than a list of answers", () => {
+  it("answers with all 27 rows, so the card renders a checklist rather than a list of answers", () => {
     const service = new AdminBotService();
     seed(service);
     const { slots } = unwrap(service.listPaperSlots("p1"));
-    expect(slots).toHaveLength(28);
+    expect(slots).toHaveLength(27);
     expect(slots.every((slot) => slot.status === "missing")).toBe(true);
   });
 
@@ -125,6 +140,22 @@ describe("setPaperSlot", () => {
     ).toMatchObject({ ok: false, status: 400 });
   });
 
+  it("no longer takes the Overleaf project link, from an author or an admin", () => {
+    const service = new AdminBotService();
+    seed(service);
+    for (const privileged of [false, true]) {
+      expect(
+        service.setPaperSlot({
+          paperId: "p1",
+          slot: "overleaf_edit",
+          input: { url: "https://www.overleaf.com/project/65f2a1c9d4e3b7a801f6" },
+          memberId: "ada",
+          privileged,
+        }),
+      ).toMatchObject({ ok: false, status: 400 });
+    }
+  });
+
   it("writes an audit line, so evidence has the same paper trail as everything else", () => {
     const service = new AdminBotService();
     seed(service);
@@ -156,6 +187,7 @@ describe("the paper fields the slots hang off", () => {
   it("lets an author record every acceptance field and preserves them on later edits", () => {
     const service = new AdminBotService();
     seed(service);
+    giveOverleaf(service, "overleaf_share", SHARE_URL);
     const decided = unwrap(
       service.upsertOwnPaper("ada", {
         id: "p1",
@@ -196,6 +228,122 @@ describe("the paper fields the slots hang off", () => {
       ok: false,
       status: 403,
     });
+  });
+
+  it("refuses an author's acceptance until an Overleaf link is on file", () => {
+    const service = new AdminBotService();
+    seed(service);
+    const refused = service.upsertOwnPaper("ada", { id: "p1", venue_decision: "accept" });
+    expect(refused).toMatchObject({ ok: false, status: 400 });
+    expect(!refused.ok && refused.error.message).toContain("Overleaf");
+    // Nothing was written: the decision is still unrecorded.
+    expect(
+      unwrap(service.listPapers()).papers.find((paper) => paper.id === "p1")?.venue_decision,
+    ).toBeUndefined();
+    // Every other decision is the author's to record without one.
+    expect(
+      unwrap(service.upsertOwnPaper("ada", { id: "p1", venue_decision: "reject" })),
+    ).toMatchObject({ venue_decision: "reject" });
+  });
+
+  it("refuses it over a link that failed validation, which nobody can open", () => {
+    const service = new AdminBotService();
+    seed(service);
+    giveOverleaf(
+      service,
+      "overleaf_share",
+      "https://www.overleaf.com/project/65f2a1c9d4e3b7a801f6",
+    );
+    expect(
+      unwrap(service.listPaperSlots("p1")).slots.find((row) => row.slot === "overleaf_share")
+        ?.status,
+    ).toBe("invalid");
+    expect(service.upsertOwnPaper("ada", { id: "p1", venue_decision: "accept" })).toMatchObject({
+      ok: false,
+      status: 400,
+    });
+  });
+
+  it("does not count a project link a paper still carries from before the slot was retired", () => {
+    const store = new AdminBotMemoryStore();
+    const service = new AdminBotService(store);
+    seed(service);
+    store.savePaperSlot({
+      paper_id: "p1",
+      slot: "overleaf_edit",
+      status: "provided",
+      url: "https://www.overleaf.com/project/65f2a1c9d4e3b7a801f6",
+    });
+    expect(service.upsertOwnPaper("ada", { id: "p1", venue_decision: "accept" })).toMatchObject({
+      ok: false,
+      status: 400,
+    });
+  });
+
+  it("accepts on the read-only link alone", () => {
+    const service = new AdminBotService();
+    seed(service);
+    giveOverleaf(service, "overleaf_view", "https://www.overleaf.com/read/xzqvbnmklpqr");
+    expect(
+      unwrap(service.upsertOwnPaper("ada", { id: "p1", venue_decision: "accept" })),
+    ).toMatchObject({ venue_decision: "accept" });
+  });
+
+  it("lets an admin waiver stand in for a paper that has no Overleaf project", () => {
+    const service = new AdminBotService();
+    seed(service);
+    unwrap(service.upsertLabMember({ id: "zj", name: "Admin", privilege_level: "admin" } as never));
+    unwrap(
+      service.waivePaperSlot({
+        paperId: "p1",
+        slot: "overleaf_share",
+        reason: "written in Word",
+        memberId: "zj",
+      }),
+    );
+    expect(
+      unwrap(service.upsertOwnPaper("ada", { id: "p1", venue_decision: "accept" })),
+    ).toMatchObject({ venue_decision: "accept" });
+  });
+
+  it("still saves the other fields of a paper accepted before the rule, link or no link", () => {
+    const service = new AdminBotService();
+    seed(service);
+    unwrap(
+      service.upsertPaper({
+        id: "p1",
+        title: "Causal abstraction",
+        authors: ["Ada Lovelace", "Bob Coauthor"],
+        current_step: "overleaf_writing",
+        venue_decision: "accept",
+      }),
+    );
+    // The card re-sends the decision it already shows; that is not a move into "accept".
+    expect(
+      unwrap(
+        service.upsertOwnPaper("ada", {
+          id: "p1",
+          venue_decision: "accept",
+          accepted_venue: "ICLR 2027",
+        }),
+      ),
+    ).toMatchObject({ venue_decision: "accept", accepted_venue: "ICLR 2027" });
+  });
+
+  it("leaves an admin's write alone -- the rule is on what an author may record", () => {
+    const service = new AdminBotService();
+    seed(service);
+    expect(
+      unwrap(
+        service.upsertPaper({
+          id: "p1",
+          title: "Causal abstraction",
+          authors: ["Ada Lovelace", "Bob Coauthor"],
+          current_step: "overleaf_writing",
+          venue_decision: "accept",
+        }),
+      ),
+    ).toMatchObject({ venue_decision: "accept" });
   });
 
   it("clears optional acceptance details when the card sends Not said", () => {
@@ -277,7 +425,7 @@ describe("listPaperSlotOverview", () => {
     expect(row).toMatchObject({
       paper_id: "p1",
       provided_count: 1,
-      missing_slots: ["overleaf_edit"],
+      missing_slots: ["overleaf_share"],
       first_author_member_id: "ada",
       dormant: false,
       closed: false,

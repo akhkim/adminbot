@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { ADMINBOT_LAB_OVERLEAF_HOST } from "../contracts/overleaf.js";
 import type { AdminBotPaperMentorRunInput } from "../contracts/papermentor.js";
+import { AdminBotMemoryStore } from "../persistence/memory.js";
 import { AdminBotService } from "./service.js";
 
 function unwrap<T>(
@@ -15,6 +16,15 @@ function unwrap<T>(
 
 const PROJECT = "65f2a1c9d4e3b7a801f6";
 const PROJECT_URL = `https://${ADMINBOT_LAB_OVERLEAF_HOST}/project/${PROJECT}`;
+const SHARE_URL = `https://${ADMINBOT_LAB_OVERLEAF_HOST}/1234567890abcdefghijkl`;
+
+/**
+ * A project-link row as a paper filed before the slot was retired still carries it. Written to the
+ * store directly because the service no longer accepts the slot -- which is the point.
+ */
+function legacyProjectLink(store: AdminBotMemoryStore, url: string) {
+  store.savePaperSlot({ paper_id: "p1", slot: "overleaf_edit", status: "provided", url });
+}
 
 const RUN: AdminBotPaperMentorRunInput = {
   project_id: PROJECT,
@@ -29,7 +39,8 @@ const RUN: AdminBotPaperMentorRunInput = {
 };
 
 function lab(options: { link?: "slot" | "artifact" | "none" } = {}) {
-  const service = new AdminBotService();
+  const store = new AdminBotMemoryStore();
+  const service = new AdminBotService(store);
   unwrap(service.upsertLabMember({ id: "ada", name: "Ada Lovelace", privilege_level: "member" }));
   unwrap(service.upsertLabMember({ id: "zhijing", name: "Zhijing Jin", privilege_level: "admin" }));
   const link = options.link ?? "slot";
@@ -43,15 +54,7 @@ function lab(options: { link?: "slot" | "artifact" | "none" } = {}) {
     }),
   );
   if (link === "slot") {
-    unwrap(
-      service.setPaperSlot({
-        paperId: "p1",
-        slot: "overleaf_edit",
-        input: { url: PROJECT_URL },
-        memberId: "zhijing",
-        privileged: true,
-      }),
-    );
+    legacyProjectLink(store, PROJECT_URL);
   }
   return service;
 }
@@ -168,7 +171,8 @@ describe("what the nudge says about PaperMentor", () => {
   }
 
   function chaseable(options: { link?: "lab" | "com" } = {}) {
-    const service = new AdminBotService();
+    const store = new AdminBotMemoryStore();
+    const service = new AdminBotService(store);
     unwrap(
       service.upsertLabMember({
         receives_nudges: true,
@@ -190,14 +194,15 @@ describe("what the nudge says about PaperMentor", () => {
       }),
     );
     // Everything upstream of the review is done, so the review is the step in front of them.
+    legacyProjectLink(
+      store,
+      options.link === "com"
+        ? "https://www.overleaf.com/project/65f2a1c9d4e3b7a801f6"
+        : PROJECT_URL,
+    );
     for (const [slot, url] of [
       ["project_folder", "https://docs.google.com/document/d/xyz"],
-      [
-        "overleaf_edit",
-        options.link === "com"
-          ? "https://www.overleaf.com/project/65f2a1c9d4e3b7a801f6"
-          : PROJECT_URL,
-      ],
+      ["overleaf_share", SHARE_URL],
     ] as const) {
       unwrap(
         service.setPaperSlot({

@@ -8200,7 +8200,6 @@ export interface components {
         | "project_folder"
         | "overleaf_view"
         | "overleaf_share"
-        | "overleaf_edit"
         | "papermentor_review"
         | "fixes_merged"
         | "pdf_ready"
@@ -8219,7 +8218,8 @@ export interface components {
         | "slides"
         | "poster_physical"
         | "talk_video"
-        | "backend_sheet";
+        | "backend_sheet"
+        | "overleaf_edit";
       /** @enum {string} */
       status: "invalid" | "missing" | "provided" | "waived";
       url?: string;
@@ -8597,7 +8597,6 @@ export interface components {
         | "project_folder"
         | "overleaf_view"
         | "overleaf_share"
-        | "overleaf_edit"
         | "papermentor_review"
         | "fixes_merged"
         | "pdf_ready"
@@ -8617,6 +8616,7 @@ export interface components {
         | "poster_physical"
         | "talk_video"
         | "backend_sheet"
+        | "overleaf_edit"
       )[];
       escalating: boolean;
     } & {
@@ -22254,7 +22254,6 @@ export interface operations {
                 | "project_folder"
                 | "overleaf_view"
                 | "overleaf_share"
-                | "overleaf_edit"
                 | "papermentor_review"
                 | "fixes_merged"
                 | "pdf_ready"
@@ -22273,7 +22272,8 @@ export interface operations {
                 | "slides"
                 | "poster_physical"
                 | "talk_video"
-                | "backend_sheet";
+                | "backend_sheet"
+                | "overleaf_edit";
             } & {
               [key: string]: unknown;
             })[];
@@ -22289,7 +22289,6 @@ export interface operations {
                 | "project_folder"
                 | "overleaf_view"
                 | "overleaf_share"
-                | "overleaf_edit"
                 | "papermentor_review"
                 | "fixes_merged"
                 | "pdf_ready"
@@ -22308,7 +22307,8 @@ export interface operations {
                 | "slides"
                 | "poster_physical"
                 | "talk_video"
-                | "backend_sheet";
+                | "backend_sheet"
+                | "overleaf_edit";
             } & {
               [key: string]: unknown;
             })[];
@@ -22324,7 +22324,6 @@ export interface operations {
                 | "project_folder"
                 | "overleaf_view"
                 | "overleaf_share"
-                | "overleaf_edit"
                 | "papermentor_review"
                 | "fixes_merged"
                 | "pdf_ready"
@@ -22343,7 +22342,8 @@ export interface operations {
                 | "slides"
                 | "poster_physical"
                 | "talk_video"
-                | "backend_sheet";
+                | "backend_sheet"
+                | "overleaf_edit";
               reason: string;
             } & {
               [key: string]: unknown;
@@ -22360,7 +22360,6 @@ export interface operations {
                 | "project_folder"
                 | "overleaf_view"
                 | "overleaf_share"
-                | "overleaf_edit"
                 | "papermentor_review"
                 | "fixes_merged"
                 | "pdf_ready"
@@ -22379,7 +22378,8 @@ export interface operations {
                 | "slides"
                 | "poster_physical"
                 | "talk_video"
-                | "backend_sheet";
+                | "backend_sheet"
+                | "overleaf_edit";
               found_title: string;
             } & {
               [key: string]: unknown;

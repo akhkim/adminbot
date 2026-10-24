@@ -809,7 +809,7 @@ furthest released step. The trunk of the PaperFlow chart, in the registry's own 
 | Step               | Released by                                                               |
 | ------------------ | ------------------------------------------------------------------------- |
 | `overleaf_writing` | `project_folder`                                                          |
-| `submission`       | `overleaf_edit`, `papermentor_review`, `fixes_merged`, `pdf_ready`        |
+| `submission`       | `overleaf_share`, `papermentor_review`, `fixes_merged`, `pdf_ready`       |
 | `google_drive_pdf` | `submission`, `submission_id`                                             |
 | `arxiv_polish`     | `drive_pdf_arxiv`, `authors_ack`, `arxiv_paper_password`, `pi_approval`   |
 | `social_posts`     | `arxiv`, `x_draft`, `linkedin_draft`, `coauthor_feedback`, `social_final` |
@@ -817,6 +817,19 @@ furthest released step. The trunk of the PaperFlow chart, in the registry's own 
 Advisory slots are out of it: `overleaf_view` gates `submission` too, and a paper whose authors only
 ever circulated the edit link is not stuck before submission because of it. A **waived** slot counts
 as settled, which is what waiving is for.
+
+**The Overleaf links.** The card takes Overleaf's two share links and nothing else: the share edit
+link (`overleaf_share`, required, the "Overleaf" row) and the read-only link nested under it
+(`overleaf_view`, optional). The `/project/<id>` URL (`overleaf_edit`) is **retired**: it is out of
+`adminBotPaperSlots`, so no surface draws it, nothing chases or counts it, and a write to it is
+refused as an unknown slot. It stays in `adminBotRetiredPaperSlots` and the registry only so rows
+stored before the change still have a definition to be read against.
+
+**Recording an acceptance.** An author cannot move a paper's venue decision to "accept" until either
+Overleaf share link is settled on it -- an admin waiver of `overleaf_share` counts, an `invalid` link
+and a leftover project-link row do not. `upsertOwnPaper` refuses the move with a 400 and the card
+greys out "Accepted" with the reason. Only the move into "accept" is checked, so a paper accepted
+before the rule can still have its other fields saved, and admin writes are not gated.
 
 Three properties, and each of them is about not lying:
 
@@ -937,12 +950,14 @@ type summary or the agents' error prose. Those are unpublished paper content, th
 where they are useful, and `contracts/papermentor.ts` is the boundary that keeps them there --
 written as an allow-list, so a field the fork adds later arrives as nothing rather than as a leak.
 
-**How a review finds its paper.** By the Overleaf project id, read out of the link the author
-already keeps as evidence (`overleaf_edit`, or the older `artifacts.overleaf_edit_url`). Both sides
-go through `adminBotOverleafProjectRef`, so this is a comparison of two ids and never anything that
-follows a URL. A review of a project no paper claims is refused with a 404 and named in the run
-summary rather than stored as an orphan -- that is usually a paper nobody registered, which is the
-thing for somebody to go and fix.
+**How a review finds its paper.** By the Overleaf project id, read out of a project link the paper
+already carries (a stored `overleaf_edit` row, or the older `artifacts.overleaf_edit_url`). Both
+sides go through `adminBotOverleafProjectRef`, so this is a comparison of two ids and never anything
+that follows a URL. The card no longer collects the project link -- the share links it takes carry
+a token, not an id -- so only papers filed before that change can be matched; on any other paper an
+author ticks `papermentor_review` by hand. A review of a project no paper claims is refused with a
+404 and named in the run summary rather than stored as an orphan -- that is usually a paper nobody
+registered, which is the thing for somebody to go and fix.
 
 **What it changes on the paper.** The `papermentor_review` slot is marked provided, dated from the
 review rather than from the ingest, and with no member credited: nobody ticked a box, and crediting

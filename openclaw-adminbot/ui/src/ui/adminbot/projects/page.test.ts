@@ -260,13 +260,61 @@ describe("target venue", () => {
 
 describe("the venue decision, on the Venue tab", () => {
   it("sends the decision selected", () => {
-    const { container, saved } = drawPage({ tab: "venue", slots: { p1: emptyCycle() } });
+    const linked = {
+      ...emptyCycle(),
+      slots: [{ paper_id: "p1", slot: "overleaf_share", status: "provided" as const }],
+    };
+    const { container, saved } = drawPage({ tab: "venue", slots: { p1: linked } });
     const decision = container.querySelector<HTMLSelectElement>(
       '[data-testid="paper-decision-p1"]',
     )!;
+    expect(decision.querySelector<HTMLOptionElement>('option[value="accept"]')?.disabled).toBe(
+      false,
+    );
+    expect(container.querySelector('[data-testid="paper-decision-needs-overleaf-p1"]')).toBeNull();
     decision.value = "accept";
     decision.dispatchEvent(new Event("change", { bubbles: true }));
     expect(saved.at(-1)).toMatchObject({ id: "p1", venueDecision: "accept" });
+  });
+
+  it("shuts Accepted until an Overleaf link is on file, and says why", () => {
+    const { container } = drawPage({ tab: "venue", slots: { p1: emptyCycle() } });
+    const accept = container.querySelector<HTMLOptionElement>(
+      '[data-testid="paper-decision-p1"] option[value="accept"]',
+    );
+    expect(accept?.disabled).toBe(true);
+    // Rejected is still the author's to record without one.
+    expect(
+      container.querySelector<HTMLOptionElement>(
+        '[data-testid="paper-decision-p1"] option[value="reject"]',
+      )?.disabled,
+    ).toBe(false);
+    expect(
+      container.querySelector('[data-testid="paper-decision-needs-overleaf-p1"]')?.textContent,
+    ).toContain("Overleaf");
+  });
+
+  it("does not shut Accepted on a cycle it has not read yet -- the service still decides", () => {
+    const { container } = drawPage({ tab: "venue" });
+    expect(
+      container.querySelector<HTMLOptionElement>(
+        '[data-testid="paper-decision-p1"] option[value="accept"]',
+      )?.disabled,
+    ).toBe(false);
+  });
+
+  it("leaves an already-accepted paper's decision alone, link or no link", () => {
+    const { container } = drawPage({
+      papers: [paper({ venue_decision: "accept" })],
+      tab: "venue",
+      slots: { p1: emptyCycle() },
+    });
+    expect(
+      container.querySelector<HTMLOptionElement>(
+        '[data-testid="paper-decision-p1"] option[value="accept"]',
+      )?.disabled,
+    ).toBe(false);
+    expect(container.querySelector('[data-testid="paper-decision-needs-overleaf-p1"]')).toBeNull();
   });
 
   it("sends every acceptance detail, including explicit clears and the track", () => {

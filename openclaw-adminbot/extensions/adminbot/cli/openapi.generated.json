@@ -21166,7 +21166,6 @@
                               "project_folder",
                               "overleaf_view",
                               "overleaf_share",
-                              "overleaf_edit",
                               "papermentor_review",
                               "fixes_merged",
                               "pdf_ready",
@@ -21185,7 +21184,8 @@
                               "slides",
                               "poster_physical",
                               "talk_video",
-                              "backend_sheet"
+                              "backend_sheet",
+                              "overleaf_edit"
                             ]
                           }
                         },
@@ -21215,7 +21215,6 @@
                               "project_folder",
                               "overleaf_view",
                               "overleaf_share",
-                              "overleaf_edit",
                               "papermentor_review",
                               "fixes_merged",
                               "pdf_ready",
@@ -21234,7 +21233,8 @@
                               "slides",
                               "poster_physical",
                               "talk_video",
-                              "backend_sheet"
+                              "backend_sheet",
+                              "overleaf_edit"
                             ]
                           }
                         },
@@ -21264,7 +21264,6 @@
                               "project_folder",
                               "overleaf_view",
                               "overleaf_share",
-                              "overleaf_edit",
                               "papermentor_review",
                               "fixes_merged",
                               "pdf_ready",
@@ -21283,7 +21282,8 @@
                               "slides",
                               "poster_physical",
                               "talk_video",
-                              "backend_sheet"
+                              "backend_sheet",
+                              "overleaf_edit"
                             ]
                           },
                           "reason": {
@@ -21317,7 +21317,6 @@
                               "project_folder",
                               "overleaf_view",
                               "overleaf_share",
-                              "overleaf_edit",
                               "papermentor_review",
                               "fixes_merged",
                               "pdf_ready",
@@ -21336,7 +21335,8 @@
                               "slides",
                               "poster_physical",
                               "talk_video",
-                              "backend_sheet"
+                              "backend_sheet",
+                              "overleaf_edit"
                             ]
                           },
                           "found_title": {
@@ -38359,7 +38359,6 @@
               "project_folder",
               "overleaf_view",
               "overleaf_share",
-              "overleaf_edit",
               "papermentor_review",
               "fixes_merged",
               "pdf_ready",
@@ -38378,7 +38377,8 @@
               "slides",
               "poster_physical",
               "talk_video",
-              "backend_sheet"
+              "backend_sheet",
+              "overleaf_edit"
             ]
           },
           "status": {
@@ -39573,7 +39573,6 @@
                 "project_folder",
                 "overleaf_view",
                 "overleaf_share",
-                "overleaf_edit",
                 "papermentor_review",
                 "fixes_merged",
                 "pdf_ready",
@@ -39592,7 +39591,8 @@
                 "slides",
                 "poster_physical",
                 "talk_video",
-                "backend_sheet"
+                "backend_sheet",
+                "overleaf_edit"
               ]
             }
           },

@@ -2594,6 +2594,18 @@ describe("member-authored papers", () => {
       current_step: "submission",
     });
 
+    // Refused until the paper has an Overleaf link on file, then taken.
+    const refused = await putPaper(baseUrl, "ada-paper", memberHeaders(token), {
+      venue_decision: "accept",
+    });
+    expect(refused.status).toBe(400);
+    const linked = await fetch(`${baseUrl}/papers/ada-paper/slots/overleaf_view`, {
+      method: "PUT",
+      headers: memberHeaders(token),
+      body: JSON.stringify({ url: "https://www.overleaf.com/read/xzqvbnmklpqr" }),
+    });
+    expect(linked.status).toBe(200);
+
     const res = await putPaper(baseUrl, "ada-paper", memberHeaders(token), {
       venue_decision: "accept",
       accepted_venue: "ICLR 2027",

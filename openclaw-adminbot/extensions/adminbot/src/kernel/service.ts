@@ -237,8 +237,10 @@ import {
 } from "../contracts/paper-cycle.js";
 import type { PaperAiTextCheckStore } from "../contracts/paper-integrity-checks.js";
 import {
+  adminBotPaperAcceptanceNeedsOverleafReason,
   adminBotPaperSlotBranchPriority,
   adminBotPaperSlotVerifier,
+  isAdminBotPaperAcceptanceUnblocked,
   isAdminBotPaperSlotSettled,
   validateAdminBotPaperSlotUrl,
   type AdminBotPaperSlot,
@@ -6407,6 +6409,16 @@ export class AdminBotService {
       if (input[field] !== undefined) {
         patch[field] = input[field];
       }
+    }
+    // Checked on the move into "accept" only, so a paper accepted before this rule existed can
+    // still have its other fields saved. Read from the stored slots, never from the request: the
+    // links are evidence the author files separately, and the decision cannot vouch for itself.
+    if (
+      patch.venue_decision === "accept" &&
+      existing?.venue_decision !== "accept" &&
+      !isAdminBotPaperAcceptanceUnblocked(this.store.listPaperSlots(paperId))
+    ) {
+      return serviceError(400, adminBotPaperAcceptanceNeedsOverleafReason);
     }
     return this.upsertPaper(
       {

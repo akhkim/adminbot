@@ -45,7 +45,10 @@ export type PaperMentorContext = {
 };
 
 export type PaperMentorReviewState =
-  /** No Overleaf project on the paper yet; the link is its own slot and is chased there. */
+  /**
+   * No Overleaf project id on the paper. Every paper filed since the project-link slot was retired
+   * is here -- the share links carry a token, not an id -- so the review slot is ticked by hand.
+   */
   | { kind: "no_project" }
   /** The draft is on an Overleaf PaperMentor cannot read. Nothing else can happen until it moves. */
   | { kind: "unreachable"; host: string }
