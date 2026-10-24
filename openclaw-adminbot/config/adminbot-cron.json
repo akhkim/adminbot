@@ -443,11 +443,17 @@
     },
     {
       "name": "adminbot-local-event-audience",
-      "description": "Reconcile the Zurich lunch guest list with where members are",
-      "cron": "40 7 * * 1",
+      "description": "Check both Zurich lunch series daily and propose missing location-matched invitations",
+      "cron": "40 7 * * *",
       "argv": [
         "bash",
-        "scripts/adminbot-local-event-audience-cron.sh"
+        "scripts/adminbot-local-event-audience-cron.sh",
+        "--calendar-id",
+        "jinesis.lab@gmail.com",
+        "--event-id",
+        "aoovdbpiios5lakot40h68l92p_R20261019T100000",
+        "--event-id",
+        "1hbn0n69qq8h3e3ln48frh3313_R20261001T103000"
       ],
       "timeoutSeconds": 900
     },

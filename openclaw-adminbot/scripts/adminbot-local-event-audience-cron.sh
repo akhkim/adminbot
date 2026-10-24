@@ -16,7 +16,7 @@
 #
 # Nothing is sent. Both attendee actions are T3 admin-approval, and calendar.remove_attendees never
 # runs unattended by design, so a run files proposals for Pending Actions and stops. A settled week
-# files none at all, which is what makes this safe to schedule weekly.
+# files none at all, which is what makes this safe to schedule daily.
 #
 # The service token is enough: the route takes no message and no recipient list. The attendee list
 # it does take is the event's own current state, which can only ever be read from Google.
@@ -33,17 +33,30 @@ adminbot_load_cron_env "local event audience" || exit 1
 
 PORT="${ADMINBOT_PORT:-8765}"
 EVENT_ID="${ADMINBOT_LOCAL_EVENT_ID:-}"
+EVENT_IDS=()
 CALENDAR_ID="${ADMINBOT_LOCAL_EVENT_CALENDAR:-primary}"
 CITY="${ADMINBOT_LOCAL_EVENT_CITY:-Zurich}"
 ZONE="${ADMINBOT_LOCAL_EVENT_ZONE:-Europe/Zurich}"
 GOG="${GOG_BIN:-$HOME/.local/bin/gog}"
 [[ -x "$GOG" ]] || GOG="gog"
 
-[[ -n "$EVENT_ID" ]] || {
-  printf 'local event audience: ADMINBOT_LOCAL_EVENT_ID is not set in %s\n' "$ADMINBOT_ENV_FILE" >&2
-  exit 1
-}
+# Explicit series IDs let the same daily job cover Monday and Thursday without copying it.
+while (( $# )); do
+  case "$1" in
+    --calendar-id|--event-id)
+      [[ $# -ge 2 && -n "$2" && "$2" != --* ]] || { printf 'local event audience: missing value for %s\n' "$1" >&2; exit 1; }
+      if [[ "$1" == --calendar-id ]]; then CALENDAR_ID="$2"; else EVENT_IDS+=("$2"); fi
+      shift 2 ;;
+    *) printf 'local event audience: unknown argument %s\n' "$1" >&2; exit 1 ;;
+  esac
+done
+if (( ${#EVENT_IDS[@]} == 0 )); then
+  [[ -n "$EVENT_ID" ]] || { printf 'local event audience: no event configured\n' >&2; exit 1; }
+  EVENT_IDS+=("$EVENT_ID")
+fi
 
+sweep_event() {
+local EVENT_ID="$1"
 # The current guest list. Read first and separately: an empty or failed read must stop the run
 # rather than reach the service, because "no attendees" is indistinguishable from "read broke" and
 # the removal arm rewrites the list absolutely.
@@ -131,3 +144,8 @@ else:
 if r.get("unknown_attendees"):
     print("  (untouched, not on the roster: %s)" % ", ".join(r["unknown_attendees"]))
 '
+
+}
+for event_id in "${EVENT_IDS[@]}"; do
+  sweep_event "$event_id"
+done

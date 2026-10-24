@@ -2007,16 +2007,30 @@ export class AdminBotService {
     }
     const day = (params.day || new Date().toISOString()).slice(0, 10);
     const audience = localEventAudience({
-      members: this.store.listLabMembers().filter((member) => !adminBotIsAlumniMember(member)),
+      // Local lunches include alumni and acquaintances, unlike mandatory lab meetings.
+      members: this.store.listLabMembers(),
       historyFor: (memberId) => this.locationSignalsFor(memberId),
       city: params.city,
       zone: params.zone,
       attendees: params.attendees,
       day,
     });
+    // An invitation awaiting approval must not become a fresh card every morning.
+    const proposeOnce = (proposal: AdminBotActionProposal) => {
+      const previous = this.store
+        .listProposalsByType(proposal.type)
+        .find(
+          (stored) =>
+            (stored.status === "pending" || stored.status === "approved") &&
+            payloadHash(stored.proposed_payload) === payloadHash(proposal.proposed_payload),
+        );
+      return previous
+        ? { ok: true as const, status: 200, payload: previous }
+        : this.createProposal(proposal);
+    };
     const proposals: string[] = [];
     if (audience.add.length > 0) {
-      const created = this.createProposal({
+      const created = proposeOnce({
         type: "calendar.add_attendees",
         summary: `Add ${audience.add.length} to the ${params.city} event: ${audience.add
           .map((row) => row.name)
@@ -2044,7 +2058,7 @@ export class AdminBotService {
           "refusing to propose a removal that would empty the guest list -- check the attendee list passed in",
         );
       }
-      const created = this.createProposal({
+      const created = proposeOnce({
         type: "calendar.remove_attendees",
         summary: `Remove ${audience.remove.length} from the ${params.city} event: ${audience.remove
           .map((row) => `${row.name} (${row.reason})`)
