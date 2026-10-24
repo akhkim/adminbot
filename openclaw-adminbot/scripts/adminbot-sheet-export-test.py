@@ -25,7 +25,9 @@ assert payload['data'][0]['values'][1][exporter.ordered_people_columns(exporter.
 paper = dict(zip(payload['data'][1]['values'][0], payload['data'][1]['values'][1]))
 assert paper['Authors'] == 'Ada, Grace'
 assert paper['Venue'] == 'ARR · cycle not recorded' and paper['Venue (as entered)'] == 'AACL 2026'
-assert paper['Lead'] == paper['PI review'] == paper['Review link'] == ''
+assert paper['Lead'] == paper['Review link'] == '' and paper['PI review'] == 'Other: no stage recorded'
+assert paper['Incomplete'] == 'Status unclassified: no stage recorded'
+assert payload['statusCounts'] == {'Other': 1} and payload['linkProblems'] == {}
 NOW = exporter.parse_time('2026-10-11T12:00:00Z')
 row = exporter.paper_row({'id': 'p', 'title': 'T', 'lead_owner_member_id': 'person', 'next_action': 'Review draft',
     'updated_at': '2026-10-01T00:00:00Z', 'artifacts': {
@@ -163,7 +165,13 @@ assert {r['range']['sheetId'] for r in clears} == {1, 2}
 assert len([r for r in requests if 'addTable' in r]) == 2
 assert [r['range']['startRowIndex'] for r in clears] == [1, 0]
 assert clears[1]['fields'] == 'userEnteredValue,userEnteredFormat'
-assert len([r for r in requests if 'addFilterView' in r]) == 10
+assert len([r for r in requests if 'addFilterView' in r]) == 12
+incomplete_view = next(r['addFilterView']['filter'] for r in requests
+                       if r.get('addFilterView', {}).get('filter', {}).get('title') == 'Incomplete')
+assert incomplete_view['criteria'] == {str(exporter.PAPERS.index('Incomplete')): {'condition': {'type': 'NOT_BLANK'}}}
+note = next(r['updateCells'] for r in requests if r.get('updateCells', {}).get('fields') == 'note')
+assert note['range']['startColumnIndex'] == exporter.PAPERS.index('PI review') and note['range']['endRowIndex'] == 1
+assert note['rows'][0]['values'][0]['note'].startswith('Papers by PI review status')
 stage_view = next(r['addFilterView']['filter'] for r in requests
                   if r.get('addFilterView', {}).get('filter', {}).get('title') == 'By stage')
 assert stage_view['sortSpecs'][0]['dimensionIndex'] == exporter.PAPERS.index('Stage')
@@ -190,7 +198,7 @@ assert updated_table['range']['endRowIndex'] == len(direct['data'][1]['values'])
 assert updated_table['columnProperties'][exporter.PAPERS.index('Stage')]['columnType'] == 'TEXT'  # No stage supplied in this synthetic row.
 assert not any('deleteBanding' in r for r in converted)
 paper_views = [r['addFilterView']['filter'] for r in converted if 'tableId' in r.get('addFilterView', {}).get('filter', {})]
-assert [v['title'] for v in paper_views] == ['PaperList sort and filter', 'PI review queue', 'By review type', 'By venue', 'By stage']
+assert [v['title'] for v in paper_views] == ['PaperList sort and filter', 'PI review queue', 'Incomplete', 'By PI review status', 'By review type', 'By venue', 'By stage']
 assert all(v['tableId'] == 'paper-table' and 'range' not in v for v in paper_views)
 properties['PaperList']['filterViews'] = [{'title': 'By stage', 'filterViewId': 43, 'tableId': 'paper-table'},
                                          {'title': 'Awaiting PI approval', 'filterViewId': 44, 'tableId': 'paper-table'}]
@@ -455,11 +463,11 @@ assert resubmit['PI review'] == 'Needs PI review' and resubmit['_sort'][0] == 0
 # Not on OpenReview, own ARR date gone: listed as past, sorted after live requests.
 missed = exporter.paper_row({'id': 'm', 'title': 'M', 'venue': 'ICLR 2027', 'current_step': 'overleaf_writing'}, members,
                             [slot('feedback_arr', hard_deadline='2026-10-13T12:00:00Z')], [], LATER)
-assert missed['PI review'] == 'Past ARR deadline' and missed['Urgency'] == '⌛ ARR deadline passed Tue Oct 13, 2026'
+assert missed['PI review'] == 'Past deadline' and missed['Urgency'] == '⌛ ARR deadline passed Tue Oct 13, 2026'
 # Dateless and the cycle closed since it was asked.
 dateless = exporter.paper_row(dict(entropy, title='Other'), members, [slot('feedback_arr', at='2026-10-06T12:00:00Z')],
                               [], LATER)
-assert dateless['PI review'] == 'Past ARR deadline', dateless['Urgency']
+assert dateless['PI review'] == 'Past deadline', dateless['Urgency']
 live = exporter.paper_row({'id': 'l', 'title': 'L', 'venue': 'ICLR 2027', 'current_step': 'overleaf_writing'}, members,
                           [slot('feedback_other', at='2026-10-20T12:00:00Z')], [], LATER)
 assert sorted([missed['_sort'], live['_sort']])[0] == live['_sort']
@@ -551,3 +559,56 @@ stale = {'id': 'old', 'title': 'Findings Paper', 'venue_id': 'aclweb.org/ACL/ARR
          'status': 'under_review', 'source': 'citation_check'}
 assert exporter.openreview_match({'title': 'Findings Paper'}, [], [stale, outcomes['Findings Paper']])['status'] == 'accepted'
 print('PASS: daily notification outcomes outrank stale citation-check rows')
+
+# Every paper gets one value from the closed PI review set; anything else is 'Other' and counted.
+T = exporter.parse_time('2026-10-24T12:00:00Z')
+def status_of(record, slots=(), openreview=(), access=None):
+    record = {'id': 'x', 'title': 'Status paper', 'updated_at': '2026-10-20T00:00:00Z', **record}
+    return exporter.paper_row(record, {}, list(slots), [], T, access, list(openreview))
+ask = {'slot': 'feedback_other', 'status': 'provided', 'provided_at': '2026-10-20T00:00:00Z',
+       'value_text': json.dumps({'url': 'https://www.overleaf.com/project/abc'})}
+blocked = status_of({'current_step': 'overleaf_writing'}, [ask])
+assert blocked['PI review'] == 'Blocked: link access', blocked['PI review']
+assert blocked['Incomplete'].startswith('PI cannot open the link sent for review\nFix link: Sent for review'), blocked['Incomplete']
+readable = dict(ask, value_text=json.dumps({'url': 'https://docs.google.com/document/d/1'}))
+assert status_of({'current_step': 'overleaf_writing'}, [readable])['PI review'] == 'Needs PI review'
+for outcome, expected in (('accepted', 'Accepted'), ('rejected', 'Rejected'), ('desk_rejected', 'Rejected'),
+                          ('withdrawn', 'Withdrawn'), ('under_review', 'Submitted on OpenReview')):
+    got = status_of({'current_step': 'submission'}, [], [{'title': 'Status paper', 'status': outcome}])['PI review']
+    assert got == expected, (outcome, got)
+# AdminBot alone saying 'accepted' is its own category, never 'Accepted'.
+assert status_of({'current_step': 'arxiv_polish', 'venue_decision': 'accept', 'accepted_venue': 'IASEAI 2026'})['PI review'] == 'Accepted elsewhere'
+assert status_of({'current_step': 'arxiv_polish'})['PI review'] == 'No PI review needed'
+assert status_of({'current_step': 'overleaf_writing'})['PI review'] == 'No PI review needed'
+# Hard venue deadline within the review lead time and nothing sent to the PI: the author owes it.
+iclr = [{'name': 'ICLR 2027 paper deadline', 'at': exporter.parse_time('2026-11-05T12:00:00Z'), 'venue': 'ICLR', 'year': '2027'}]
+lead = exporter.pi_review_status(None, [], None, None, {}, 'overleaf_writing', iclr[0], False, T)
+assert lead == 'Waiting on author', lead
+far = exporter.pi_review_status(None, [], None, None, {}, 'overleaf_writing',
+                                {'at': exporter.parse_time('2027-01-05T12:00:00Z')}, False, T)
+assert far == 'No PI review needed'
+assert status_of({'current_step': 'teleport'})['PI review'] == 'Other: unknown stage teleport'
+stuck = status_of({'current_step': 'overleaf_writing', 'updated_at': '2026-08-01T00:00:00Z'})
+assert stuck['Incomplete'] == 'Stuck: no update for 84 days in 2 · Writing (Overleaf)', stuck['Incomplete']
+assert all(exporter.status_kind(v) == v for v in exporter.PI_REVIEW_VALUES)
+assert exporter.status_kind('Approved Thu Oct 1, 2026') == 'Approved' and exporter.status_kind('Who knows') == 'Other'
+# The snapshot carries the counts for the header note and the problems for the AdminBot nudge.
+c2 = sqlite3.connect(':memory:')
+for table in ['adminbot_lab_members', 'adminbot_papers']:
+    c2.execute(f'CREATE TABLE {table}(id TEXT, payload_json TEXT)')
+c2.execute('INSERT INTO adminbot_papers VALUES (?,?)', ('lk', json.dumps({'id': 'lk', 'title': 'Locked', 'current_step': 'overleaf_writing',
+    'artifacts': {'overleaf_edit_url': 'https://www.overleaf.com/project/0123456789abcdef01234567'}})))
+c2.execute('INSERT INTO adminbot_papers VALUES (?,?)', ('ok', json.dumps({'id': 'ok', 'title': 'Fine', 'current_step': 'arxiv_polish'})))
+c2.commit()
+snap = exporter.snapshot(c2, '2026-10-24T12:00:00Z')
+assert snap['statusCounts'] == {'No PI review needed': 2}, snap['statusCounts']
+assert snap['linkProblems'] == {'lk': ['Overleaf edit: project link opens only for people invited to the project']}
+assert refresh.status_note({'Needs PI review': 2, 'Other': 1}).splitlines() == [
+    'Papers by PI review status', 'Needs PI review: 2', 'Other: 1', 'Other = no standard status fits; add a rule in PI_REVIEW_RULES.']
+import os, tempfile
+with tempfile.TemporaryDirectory() as directory:
+    target = Path(directory) / refresh.LINK_PROBLEMS_FILE
+    refresh.write_link_problems(target, snap['linkProblems'], '2026-10-24T12:00:00Z')
+    assert json.loads(target.read_text()) == {'generated_at': '2026-10-24T12:00:00Z', 'papers': snap['linkProblems']}
+    assert oct(os.stat(target).st_mode & 0o777) == '0o640'
+print('PASS: closed PI review statuses from OpenReview and deadlines, Other counted, Incomplete reasons, link problems for nudges')

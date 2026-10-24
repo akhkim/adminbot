@@ -223,8 +223,43 @@ export function createAdminBotSqliteService(options: AdminBotSqliteServiceOption
  * The caller's options whole, plus env-sourced paperflow settings. An allowlist here once dropped
  * the deadline dataset, arXiv/OpenReview probes and Slack photo reviewers in production only.
  */
+const PAPER_LINK_PROBLEMS_MAX_AGE_MS = 2 * 24 * 60 * 60 * 1000;
+
+/**
+ * Reads the paper-link-problems.json the sheet refresh writes beside the database. Missing,
+ * unreadable or older than two days reads as no problems: a refresh that stopped running must not
+ * keep nudging people about links they have since fixed.
+ */
+export function readPaperLinkProblems(
+  filePath: string,
+  now: Date = new Date(),
+): Map<string, string[]> {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, "utf8")) as {
+      generated_at?: unknown;
+      papers?: unknown;
+    };
+    const generated = Date.parse(String(parsed.generated_at ?? ""));
+    if (!Number.isFinite(generated) || now.getTime() - generated > PAPER_LINK_PROBLEMS_MAX_AGE_MS) {
+      return new Map();
+    }
+    const papers =
+      parsed.papers && typeof parsed.papers === "object" ? Object.entries(parsed.papers) : [];
+    return new Map(
+      papers
+        .map(([id, problems]): [string, string[]] => [
+          id,
+          Array.isArray(problems) ? problems.filter((p): p is string => typeof p === "string") : [],
+        ])
+        .filter(([, problems]) => problems.length > 0),
+    );
+  } catch {
+    return new Map();
+  }
+}
+
 export function sqliteServiceOptions({
-  databasePath: _databasePath,
+  databasePath,
   ...options
 }: AdminBotSqliteServiceOptions): AdminBotServiceOptions {
   // Read here rather than in the kernel so the service stays free of process globals: both
@@ -233,7 +268,15 @@ export function sqliteServiceOptions({
   const botEmail = options.paperflowBotEmail ?? process.env.ADMINBOT_BOT_EMAIL?.trim();
   const priorityMemberId =
     options.paperflowPriorityMemberId ?? process.env.ADMINBOT_PAPERFLOW_PRIORITY_MEMBER_ID?.trim();
+  const linkProblemsPath =
+    process.env.ADMINBOT_PAPER_LINK_PROBLEMS_JSON?.trim() ||
+    (databasePath === ":memory:"
+      ? undefined
+      : path.join(path.dirname(databasePath), "paper-link-problems.json"));
   return {
+    ...(linkProblemsPath
+      ? { paperLinkProblems: () => readPaperLinkProblems(linkProblemsPath) }
+      : {}),
     ...options,
     ...(botEmail ? { paperflowBotEmail: botEmail } : {}),
     ...(priorityMemberId ? { paperflowPriorityMemberId: priorityMemberId } : {}),

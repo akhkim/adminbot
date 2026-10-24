@@ -25,8 +25,20 @@ PAPER_CORE = exporter.PAPERS[:exporter.PAPERS.index('Blocker / next step') + 1]
 PAPER_WIDTHS = {'Paper': 380, 'Urgency': 190, 'PI review': 150, 'Review for': 170, 'Review link': 280,
                 'Due (Toronto)': 170, 'Requested by': 150, 'Requested on': 130, 'Request note': 320,
                 'Venue deadline (Toronto)': 260, 'OpenReview': 300, 'Stage': 170, 'Lead': 150,
-                'Blocker / next step': 280, 'Link problems': 240, 'Still missing': 260, 'Authors': 360,
+                'Incomplete': 260, 'Blocker / next step': 280, 'Link problems': 240, 'Still missing': 260, 'Authors': 360,
                 'All artifact statuses': 300, 'Venue (as entered)': 220, 'Venue': 230, 'Checks': 240, exporter.PAPER_ID: 160}
+
+
+# PI review values drawn in bold red: the PI acts, or somebody must fix the link or the category.
+ATTENTION_STATUSES = ('Needs PI review', 'Blocked: link access', 'Other')
+
+
+def status_note(counts):
+    """Header note on 'PI review': how many papers carry each value; Other means a rule is missing."""
+    lines = [f'{value}: {counts[value]}' for value in exporter.PI_REVIEW_VALUES if counts.get(value)]
+    if counts.get('Other'):
+        lines.append('Other = no standard status fits; add a rule in PI_REVIEW_RULES.')
+    return 'Papers by PI review status\n' + '\n'.join(lines)
 
 
 def column_range(area, name, start_row=1):
@@ -46,7 +58,7 @@ def link_runs(pairs, style):
     return runs
 
 
-def paper_style_requests(properties, values, links):
+def paper_style_requests(properties, values, links, counts=None):
     sid = properties['sheetId']
     row_count = len(values)
     headers = list(exporter.PAPERS)
@@ -100,9 +112,27 @@ def paper_style_requests(properties, values, links):
             {'userEnteredFormat': {'backgroundColor': URGENCY_COLOURS[row[urgency][:1]], 'textFormat': {'bold': True}}}
             if row[urgency][:1] in URGENCY_COLOURS else {},
             {'userEnteredFormat': {'textFormat': {'bold': True, 'foregroundColor': {'red': .70, 'green': .11, 'blue': .11}}}}
-            if row[review] == 'Needs PI review' else {}]} for row in values[1:]],
+            if exporter.status_kind(row[review]) in ATTENTION_STATUSES else {}]} for row in values[1:]],
         'fields': 'userEnteredFormat.backgroundColor,userEnteredFormat.textFormat.bold,userEnteredFormat.textFormat.foregroundColor'}})
+    requests.append({'updateCells': {'range': {**area, 'startRowIndex': 0, 'endRowIndex': 1,
+                                               'startColumnIndex': review, 'endColumnIndex': review + 1},
+        'rows': [{'values': [{'note': status_note(counts or {})}]}], 'fields': 'note'}})
     return requests
+
+
+# Read by the AdminBot service's paper nudge: the links each paper's authors must fix so the PI can
+# open them. Next to the database, where the setgid state directory makes it group-readable.
+LINK_PROBLEMS_FILE = 'paper-link-problems.json'
+
+
+def write_link_problems(path, problems, timestamp):
+    """Replace path atomically with {generated_at, papers: {paper id: [problem, ...]}}; mode 640."""
+    temporary = path.with_name(path.name + '.tmp')
+    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o640)
+    with os.fdopen(fd, 'w') as handle:
+        json.dump({'generated_at': timestamp, 'papers': problems}, handle, sort_keys=True)
+    os.chmod(temporary, 0o640)
+    temporary.replace(path)
 
 
 def refresh_requests(batch, properties):
@@ -168,7 +198,8 @@ def refresh_requests(batch, properties):
                 requests.extend({'deleteFilterView': {'filterId': v['filterViewId']}}
                                 for v in p.get('filterViews', []) if v['title'] == obsolete)
             # The export is already ordered by urgency, so the queue view only filters.
-            views += [('PI review queue', None, ('PI review', 'Needs PI review')), ('By review type', 'Review for', None),
+            views += [('PI review queue', None, ('PI review', 'Needs PI review')), ('Incomplete', None, ('Incomplete', None)),
+                      ('By PI review status', 'PI review', None), ('By review type', 'Review for', None),
                       ('By venue', 'Venue', None), ('By stage', 'Stage', None)]
         else:
             views += [('By joined date', 'join_date', None),
@@ -188,7 +219,8 @@ def refresh_requests(batch, properties):
                 fields += ',sortSpecs'
             if criterion:
                 specification['criteria'] = {str(headers.index(criterion[0])): {'condition': {
-                    'type': 'TEXT_EQ', 'values': [{'userEnteredValue': criterion[1]}]}}}
+                    'type': 'TEXT_EQ', 'values': [{'userEnteredValue': criterion[1]}]} if criterion[1] else {
+                    'type': 'NOT_BLANK'}}}
                 fields += ',criteria'
             if view:
                 requests.append({'updateFilterView': {'filter': {**specification, 'filterViewId': view['filterViewId']},
@@ -196,7 +228,7 @@ def refresh_requests(batch, properties):
             else:
                 requests.append({'addFilterView': {'filter': {**specification, 'title': view_title}}})
         if title == 'PaperList':
-            requests.extend(paper_style_requests(p, values, batch['paperLinks']))
+            requests.extend(paper_style_requests(p, values, batch['paperLinks'], batch.get('statusCounts')))
     return requests
 
 
@@ -301,10 +333,12 @@ def main():
         if actual != values:
             raise RuntimeError('Export readback did not match database snapshot')
         counts.append(len(values) - 1)
+    write_link_problems(Path(args.database).with_name(LINK_PROBLEMS_FILE), batch['linkProblems'], timestamp)
     status = Path(args.status)
     temporary = status.with_suffix('.tmp')
     temporary.write_text(json.dumps({'last_success_utc': timestamp,
-        'member_rows': counts[0], 'paper_rows': counts[1], 'spreadsheet_id': spreadsheet}))
+        'member_rows': counts[0], 'paper_rows': counts[1], 'spreadsheet_id': spreadsheet,
+        'pi_review_counts': batch['statusCounts']}))
     temporary.replace(status)
     print(timestamp, 'PASS database export:', counts[0], 'people,', counts[1], 'papers', flush=True)
 
