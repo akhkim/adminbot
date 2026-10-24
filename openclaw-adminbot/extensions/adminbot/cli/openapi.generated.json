@@ -4005,6 +4005,90 @@
         }
       }
     },
+    "/calendar/local-lunch-invites/run": {
+      "post": {
+        "operationId": "post-calendar-local-lunch-invites-run",
+        "summary": "POST /calendar/local-lunch-invites/run",
+        "tags": [
+          "calendar"
+        ],
+        "x-source": "src/api/routes/calendar.ts",
+        "responses": {
+          "502": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "Success; response shape is validated by the server"
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/calendar/research-theme-invites/run": {
       "post": {
         "operationId": "post-calendar-research-theme-invites-run",
