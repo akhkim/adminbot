@@ -45,7 +45,6 @@ import { createEmptyAdminBotMemberNudgeState } from "../controllers/nudges.ts";
 import { stopAdminBotPreciseLocationRefresh } from "../controllers/precise-location.ts";
 import { EMPTY_PROFILE_OVERVIEW_PAGE } from "../controllers/profile-overview.ts";
 import { createRecLetterEligibilityState } from "../controllers/rec-letter-eligibility.ts";
-import { EMPTY_TRAVEL, type TravelState } from "../controllers/travel.ts";
 import { invalidateMemberMap } from "../data/member-map.ts";
 import { localTimezone } from "../data/timezones.ts";
 import { EMPTY_PAGED_LIST } from "../load-more.ts";
@@ -252,7 +251,6 @@ export type MemberAuthHost = {
   adminBotEscalatedNudges?: import("../api/nudges.ts").EscalatedNudgeRow[];
   adminBotPiReview?: import("../api/paper-admin.ts").PiReviewRow[];
   adminBotPiReviewError?: string | null;
-  adminBotTravel?: TravelState;
   adminBotLocationDrift?: import("../api/profile.ts").LocationDrift | null;
   adminBotLocationDrifts?: import("../api/profile.ts").LocationDrift[];
   adminBotPreciseLocation?: import("../controllers/precise-location.ts").PreciseLocationState;
@@ -691,7 +689,6 @@ function clearMemberScopedData(host: MemberAuthHost): void {
   host.adminBotEscalatedNudges = [];
   host.adminBotPiReview = [];
   host.adminBotPiReviewError = null;
-  host.adminBotTravel = { ...EMPTY_TRAVEL };
   host.adminBotLocationDrift = undefined;
   host.adminBotLocationDrifts = undefined;
   host.adminBotPreciseLocation = undefined;

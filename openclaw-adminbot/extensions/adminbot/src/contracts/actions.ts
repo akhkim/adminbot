@@ -424,6 +424,34 @@ export function adminBotIsAlumniMember(member: { status?: string; member_type?: 
 }
 
 /**
+ * Somebody the head professor works with directly: a full member or a major coauthor.
+ *
+ * The audience of My Desk's "needs a word from you" list, which asks her to go and write to a
+ * person herself. That is worth her time for the people carrying the lab's work and not for the
+ * rest of the roster -- acquaintances, minor coauthors, visiting professors, mailing-list rows --
+ * who get the same automatic nudges but whom she would not chase in person.
+ *
+ * Narrower than `adminBotNudgeableMemberTypes` on purpose: own-pace advisees are chased by the lab
+ * but not by her. A blank type is out too: "unknown" is not "works with me", and filling the
+ * column in is what puts somebody back on the list.
+ *
+ * Alumni lose even when they are also coauthor-major, the same rule as everywhere else. Tokens are
+ * read through `adminBotMemberTypeTokens`, with `_` taken as `-` so a hand-typed "coauthor_major"
+ * is not silently dropped from the one list that asks her to act.
+ */
+export function adminBotIsDirectCollaborator(member: {
+  status?: string;
+  member_type?: string;
+}): boolean {
+  if (adminBotIsAlumniMember(member)) {
+    return false;
+  }
+  return adminBotMemberTypeTokens(member.member_type)
+    .map((token) => token.replaceAll("_", "-"))
+    .some((token) => token === "full" || token === "coauthor-major");
+}
+
+/**
  * Member types the lab has decided may sign in to the Control UI.
  *
  * Transcribed from "Have AdminBot portal access" -- row 7 of the External Collab Access Design

@@ -132,12 +132,8 @@ export const TAB_PAGES = [
     ],
   },
   { page: "nudges", tabs: ["adminbotAnnouncements", "adminbotWorkshopNudges"] },
-  // My Desk and Travel are one page because they are the same reader asking about themselves --
-  // what is waiting on me, and where have I been. Travel does not belong in the Admin group beside
-  // the lab-wide boards: it is nobody's queue, it names one person, and a sidebar entry of its own
-  // would read as a surveillance tool sitting next to the roster rather than as the professor's own
-  // record of their own year.
-  { page: "myDesk", tabs: ["adminbotProfessor", "adminbotTravel"] },
+  // My Desk used to be a page here too, with Travel History as its second tab. That tab was taken
+  // off, and My Desk now stands alone in the sidebar: a page of one tab would draw no bar anyway.
   // Who is in the lab, from the outside in: who is asking to join, who is being brought up to
   // speed, and what the people already here have earned. Badges were a sidebar entry of their own,
   // which put "award Ada a badge" a page away from the roster that says who Ada is.
@@ -222,7 +218,6 @@ export type Tab =
   | "adminbotProfileOverview"
   | "adminbotTabUsage"
   | "adminbotProfessor"
-  | "adminbotTravel"
   | "adminbotTimeAvailability"
   | "adminbotMeetings"
   | "adminbotSignatures"
@@ -315,7 +310,6 @@ const TAB_PATHS: Record<Tab, string> = {
   adminbotProfileOverview: "/profile-overview",
   adminbotTabUsage: "/tab-usage",
   adminbotProfessor: "/professor",
-  adminbotTravel: "/travel",
   adminbotTimeAvailability: "/time-availability",
   adminbotMeetings: "/meetings",
   adminbotSignatures: "/signatures",
@@ -375,7 +369,10 @@ const PATH_ALIASES: Record<string, Tab> = {
   "/adminbot/opportunities": "adminbotOpportunities",
   "/adminbot/papers": "adminbotPapers",
   "/adminbot/professor": "adminbotProfessor",
-  "/adminbot/travel": "adminbotTravel",
+  // The head professor's Travel History, which was the second tab of My Desk. Its links land on
+  // My Desk rather than a 404; the sign-in data behind it is still served, just not drawn.
+  "/travel": "adminbotProfessor",
+  "/adminbot/travel": "adminbotProfessor",
   "/adminbot/profile-overview": "adminbotProfileOverview",
   "/adminbot/tab-usage": "adminbotTabUsage",
   "/adminbot/rec-letters": "adminbotRecLetters",
@@ -581,8 +578,6 @@ export function iconForTab(tab: Tab): IconName {
       return "barChart";
     case "adminbotProfessor":
       return "lobster";
-    case "adminbotTravel":
-      return "globe";
     // A document assembled out of the lab's own record, not a live board.
     case "adminbotGrantReport":
       return "scrollText";

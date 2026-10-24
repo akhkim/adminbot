@@ -19,7 +19,6 @@
 // controls of dead weight for everybody else.
 import { html, nothing } from "lit";
 import { live } from "lit/directives/live.js";
-import "./local-chat.ts";
 import { adminBotLogisticsSettledStatuses } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import {
   incompleteProfiles,
@@ -39,7 +38,6 @@ import type { AdminBotPaperRecord } from "../controllers/admin.ts";
 import { renderDateControl } from "../date-control.ts";
 
 export type ProfessorViewProps = {
-  localChatSessionToken?: string;
   requests: LogisticsRequest[];
   requestsLoading: boolean;
   papers: AdminBotPaperRecord[];
@@ -939,10 +937,6 @@ export function renderProfessorView(props: ProfessorViewProps) {
   // depending on how her week is going.
   return html`
     <div class="professor">
-      <adminbot-local-chat
-        style="display: block; grid-column: 1 / -1"
-        .sessionToken=${props.localChatSessionToken ?? ""}
-      ></adminbot-local-chat>
       ${broadcastBox(props)}
       ${sections
         .toSorted(

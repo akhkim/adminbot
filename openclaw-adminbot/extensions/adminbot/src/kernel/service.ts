@@ -13,6 +13,7 @@ import {
   ADMINBOT_REC_LETTER_CHANNEL,
   adminBotDormantChaseMemberTypes,
   adminBotIsAlumniMember,
+  adminBotIsDirectCollaborator,
   adminBotProjectChannelName,
   adminBotRecLetterChannelWindowMonths,
   adminBotNormalizePaperAlias,
@@ -10347,6 +10348,10 @@ export class AdminBotService {
    * Drains on its own. An entry is outstanding while it is escalated and unread, so a member
    * acknowledging the nudge takes them off this list through the path they already use -- there is
    * no second "handled" flag here to forget to set.
+   *
+   * Only full members and major coauthors are listed. The professor only chases the people she
+   * works with directly; everyone else's escalations stay stored, unread and drainable, but are
+   * not hers to follow up, so they are left off rather than crowding the list.
    */
   listEscalatedNudges(): AdminBotServiceResponse<{
     members: Array<{
@@ -10379,7 +10384,11 @@ export class AdminBotService {
         // carry no status at all. They are also the people least likely to ever answer a nudge, so
         // their escalations never drain, which put departed members permanently at the top of the
         // one queue on My Desk that asks the professor to go and chase somebody in person.
-        if (!member || adminBotIsAlumniMember(member)) {
+        //
+        // `adminBotIsDirectCollaborator` asks that and then narrows to full members and major
+        // coauthors (see the doc comment above). Everyone else's escalations are left as they are;
+        // nothing here deletes or re-stamps a notification.
+        if (!member || !adminBotIsDirectCollaborator(member)) {
           return [];
         }
         const escalatedAt = notifications
