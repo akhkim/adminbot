@@ -21,7 +21,13 @@
 import { html, LitElement, nothing, svg } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import { t } from "../../../i18n/index.ts";
-import type { MemberMap, MemberMapMember, MemberMapPlace } from "../data/member-map.ts";
+import type {
+  MemberMap,
+  MemberMapAbsenceReason,
+  MemberMapAbsentMember,
+  MemberMapMember,
+  MemberMapPlace,
+} from "../data/member-map.ts";
 import {
   clusterPoints,
   layoutLabels,
@@ -44,6 +50,12 @@ import {
   type Size,
   type Viewport,
 } from "./member-map-projection.ts";
+import {
+  foldForSearch,
+  searchMemberMap,
+  searchResultKey,
+  type MemberMapSearchResult,
+} from "./member-map-search.ts";
 
 // The coastline arrives on its own: markers and list draw at once and the land fills in under them
 // when the chunk lands. A failed fetch is forgotten so the next element to connect retries.
@@ -210,6 +222,21 @@ function placeWhere(place: MemberMapPlace): string {
     return t("dashboard.memberMap.approximatePlace", { place: place.label });
   }
   return place.country ? `${place.label}, ${place.country}` : place.label;
+}
+
+// Why a member is not on the map, as the search shows it. "IP logging blocked" is a member who
+// stated their location as none: the service then never looks their sign-in address up.
+const ABSENCE_KEYS: Record<MemberMapAbsenceReason, string> = {
+  hidden: "dashboard.memberMap.absentHidden",
+  ip_off: "dashboard.memberMap.absentIpOff",
+  suspected_vpn: "dashboard.memberMap.absentVpn",
+  browser_blocked: "dashboard.memberMap.absentBrowserBlocked",
+  unrecognised: "dashboard.memberMap.absentUnrecognised",
+  no_location: "dashboard.memberMap.absentNoLocation",
+};
+
+function absenceText(reason: MemberMapAbsenceReason): string {
+  return t(ABSENCE_KEYS[reason]);
 }
 
 function seenAt(member: MemberMapMember): string | undefined {
@@ -427,8 +454,27 @@ interface PlaceFocus {
   active?: string;
   /** The place a click or tap picked, which stays lit after the pointer or focus moves on. */
   picked?: string;
+  /** The person a search found: their place's tooltip lists them first, wherever they rank. */
+  spotlight?: { place: string; member: string };
   sources: boolean;
   now: number;
+}
+
+/**
+ * The tooltip's faces: the most recently seen, unless a search found someone here, who goes first
+ * -- otherwise searching for the fifth-most-recent person in Toronto would light Toronto and show
+ * four other people.
+ */
+function tooltipPeople(place: MemberMapPlace, focus: PlaceFocus): MemberMapMember[] {
+  const recent = recentActiveMembers(place, TOOLTIP_PEOPLE);
+  const spotlight = focus.spotlight;
+  const found =
+    spotlight?.place === place.key
+      ? place.members?.find((member) => member.member_id === spotlight.member)
+      : undefined;
+  return found
+    ? [found, ...recent.filter((member) => member !== found)].slice(0, TOOLTIP_PEOPLE)
+    : recent;
 }
 
 /**
@@ -457,7 +503,7 @@ function renderTooltip(
   const lead = only ?? marker.places[0]!;
   const cluster = !only && marker.places.length > 1;
   const count = only ? only.count : marker.count;
-  const people = cluster ? [] : recentActiveMembers(lead, TOOLTIP_PEOPLE);
+  const people = cluster ? [] : tooltipPeople(lead, focus);
   const total = lead.members?.length ?? 0;
   return html`
     <div
@@ -498,7 +544,14 @@ function renderTooltip(
         : people.length > 0
           ? html`<ul class="member-map__people member-map__people--faces">
                 ${people.map(
-                  (member) => html`<li class="member-map__person">
+                  (member) => html`<li
+                    class=${`member-map__person${
+                      focus.spotlight?.place === lead.key &&
+                      focus.spotlight.member === member.member_id
+                        ? " member-map__person--found"
+                        : ""
+                    }`}
+                  >
                     ${renderAvatar(member)}
                     <span class="member-map__person-text">
                       <span class="member-map__name">${member.name}</span>
@@ -727,6 +780,14 @@ type Gesture = {
   moved: boolean;
 };
 
+// Per element, for the search box's option ids.
+let searchInstances = 0;
+
+function nextSearchId(): string {
+  searchInstances += 1;
+  return `member-map-search-${searchInstances}`;
+}
+
 const ZOOM_STEP = 1.8;
 const ZOOM_DURATION_MS = 420;
 
@@ -764,6 +825,10 @@ class AdminbotMemberMap extends LitElement {
     pinned: { state: true },
     sources: { state: true },
     dialogView: { state: true },
+    query: { state: true },
+    searchOpen: { state: true },
+    searchActive: { state: true },
+    spotlight: { state: true },
   };
 
   public map: MemberMap | null = null;
@@ -799,6 +864,26 @@ class AdminbotMemberMap extends LitElement {
   // Which places' rows show every member. Mutated in place, so toggling calls requestUpdate().
   private expandedPlaces = new Set<string>();
 
+  // The search box. One query for the card and full screen, so a search started on the card is
+  // still there when picking a result opens full screen on it.
+  private query = "";
+  // Which box's results list is showing, if any. Closed by Escape, blur or a pick; the query stays.
+  // Per box, so typing full screen does not also open the card's list under the dialog.
+  private searchOpen: StageKind | undefined = undefined;
+  // The option the arrow keys are on, or -1 for none (Enter then takes the first).
+  private searchActive = -1;
+  // The person the last pick found, if it was a person.
+  private spotlight: PlaceFocus["spotlight"] = undefined;
+  // Whether the current pick came from the search. Clearing the search lets go of that pick and
+  // shows the whole map again, but must not undo a city somebody picked from the list instead.
+  private searchPicked = false;
+  // The member the last pick found who is not on the map. There is no city to fly to, so the box
+  // says why under it instead, until the query changes.
+  private searchAbsent: MemberMapAbsentMember | undefined = undefined;
+  // The card and full screen each render a box; their option ids must not collide, nor collide
+  // with another map element on the same page.
+  private readonly searchId = nextSearchId();
+
   private sizes: Partial<Record<StageKind, Size>> = {};
   private observer: ResizeObserver | undefined;
   private observed = new WeakSet<Element>();
@@ -807,6 +892,8 @@ class AdminbotMemberMap extends LitElement {
   private suppressClick = false;
   // Map-unit bounds to fly to once the full-screen box has a size: a cluster tapped on the card.
   private pendingBounds: { x0: number; y0: number; x1: number; y1: number } | undefined;
+  // A place to fly to once the full-screen box has a size: a search result picked on the card.
+  private pendingPlace: string | undefined;
   // After a cluster opens, keyboard focus moves to its biggest place's marker.
   private focusAfterZoom: string | undefined;
 
@@ -820,6 +907,9 @@ class AdminbotMemberMap extends LitElement {
   // nothing else would, since no mouseleave follows a tap.
   private readonly pickPlace = (key: string): void => {
     this.pinned = undefined;
+    // A pick by hand supersedes whatever the search found.
+    this.searchPicked = false;
+    this.spotlight = undefined;
     if (this.picked === key) {
       this.picked = undefined;
       this.active = undefined;
@@ -832,12 +922,16 @@ class AdminbotMemberMap extends LitElement {
   private readonly pickFromList = (key: string): void => {
     const wasPicked = this.picked === key;
     this.pickPlace(key);
-    const size = this.stageSize("dialog");
-    if (!this.opened || wasPicked || !size || !this.map) {
-      return;
+    if (this.opened && !wasPicked) {
+      this.flyToPlace(key);
     }
-    const at = projected(this.map).get(key);
-    if (!at) {
+  };
+
+  /** Centres full screen on one place, zoomed in at least far enough for it to stand on its own. */
+  private flyToPlace(key: string): void {
+    const size = this.stageSize("dialog");
+    const at = this.map ? projected(this.map).get(key) : undefined;
+    if (!size || !at) {
       return;
     }
     const current = this.dialogView ?? fitViewport(size);
@@ -846,7 +940,314 @@ class AdminbotMemberMap extends LitElement {
     this.animateTo(
       clampViewport({ k, x: size.width / 2 - at.x * k, y: size.height / 2 - at.y * k }, size),
     );
-  };
+  }
+
+  // --- Search ---
+
+  /**
+   * Lights the result's city and shows its tooltip, the same as picking its row would. The card
+   * does not zoom, so a pick there opens full screen on the city, as a cluster tapped there does.
+   */
+  private chooseResult(result: MemberMapSearchResult, kind: StageKind): void {
+    if (result.kind === "absent") {
+      // Nowhere to go: keep the map as it is and say why under the box.
+      this.query = result.member.name;
+      this.searchOpen = undefined;
+      this.searchActive = -1;
+      this.searchAbsent = result.member;
+      return;
+    }
+    this.searchAbsent = undefined;
+    const key = result.place.key;
+    this.query = result.kind === "person" ? result.member.name : result.place.label;
+    this.searchOpen = undefined;
+    this.searchActive = -1;
+    this.pinned = undefined;
+    this.active = undefined;
+    this.picked = key;
+    this.searchPicked = true;
+    this.spotlight =
+      result.kind === "person" && result.member.member_id
+        ? { place: key, member: result.member.member_id }
+        : undefined;
+    if (kind === "dialog" && this.opened) {
+      this.flyToPlace(key);
+    } else {
+      this.open(undefined, key);
+    }
+  }
+
+  /** Empties the box and, if the search had picked a city, lets it go and shows the whole map. */
+  private clearSearch(): void {
+    this.query = "";
+    this.searchAbsent = undefined;
+    this.searchOpen = undefined;
+    this.searchActive = -1;
+    if (!this.searchPicked) {
+      return;
+    }
+    this.searchPicked = false;
+    this.spotlight = undefined;
+    this.picked = undefined;
+    this.active = undefined;
+    if (this.opened) {
+      // The zoom control's own "Show the whole map".
+      this.resetZoom();
+    }
+  }
+
+  private onSearchInput(event: Event, kind: StageKind): void {
+    const value = (event.currentTarget as HTMLInputElement).value;
+    this.query = value;
+    this.searchAbsent = undefined;
+    this.searchActive = -1;
+    this.searchOpen = kind;
+    if (!foldForSearch(value)) {
+      // Deleting the last character is clearing the search, the same as the clear button.
+      this.clearSearch();
+    }
+  }
+
+  // The combobox keys: arrows move through the options (wrapping), Enter picks the one the arrows
+  // are on or else the best match, Escape closes the list and then, pressed again, clears the box.
+  // An Escape the box uses is stopped here, or full screen's dialog would close on the same press.
+  private onSearchKey(event: KeyboardEvent, kind: StageKind, results: MemberMapSearchResult[]) {
+    const count = results.length;
+    switch (event.key) {
+      case "ArrowDown":
+      case "ArrowUp": {
+        if (count === 0) {
+          return;
+        }
+        event.preventDefault();
+        const step = event.key === "ArrowDown" ? 1 : -1;
+        this.searchActive =
+          this.searchOpen !== kind || this.searchActive < 0
+            ? step > 0
+              ? 0
+              : count - 1
+            : (this.searchActive + step + count) % count;
+        this.searchOpen = kind;
+        return;
+      }
+      case "Enter": {
+        if (this.searchOpen !== kind || count === 0) {
+          return;
+        }
+        event.preventDefault();
+        this.chooseResult(results[this.searchActive >= 0 ? this.searchActive : 0]!, kind);
+        return;
+      }
+      case "Escape": {
+        if (this.searchOpen === kind && foldForSearch(this.query)) {
+          this.searchOpen = undefined;
+          this.searchActive = -1;
+        } else if (this.query) {
+          this.clearSearch();
+        } else {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    }
+  }
+
+  private renderSearch(map: MemberMap, kind: StageKind) {
+    const base = `${this.searchId}-${kind}`;
+    const listId = `${base}-list`;
+    const hasQuery = foldForSearch(this.query) !== "";
+    const search = hasQuery ? searchMemberMap(map, this.query) : { results: [], more: 0 };
+    const expanded = this.searchOpen === kind && hasQuery;
+    const activeIndex =
+      expanded && this.searchActive < search.results.length ? this.searchActive : -1;
+    // A summary map has no names in it, so offering to find a person would be a promise it cannot
+    // keep; for that viewer the box finds cities.
+    const names = map.places.some((place) => (place.members?.length ?? 0) > 0);
+    const total = search.results.length + search.more;
+    return html`
+      <div class="member-map__search" data-testid=${`member-map-search-${kind}`}>
+        <div class="member-map__search-field">
+          <svg class="member-map__search-icon" viewBox="0 0 16 16" aria-hidden="true">
+            <circle cx="7" cy="7" r="4.5"></circle>
+            <path d="M10.5 10.5 14 14"></path>
+          </svg>
+          <input
+            type="text"
+            class="member-map__search-input"
+            data-testid="member-map-search-input"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-expanded=${expanded ? "true" : "false"}
+            aria-controls=${listId}
+            aria-activedescendant=${activeIndex >= 0 ? `${base}-opt-${activeIndex}` : nothing}
+            aria-label=${t("dashboard.memberMap.searchLabel")}
+            placeholder=${t(
+              names
+                ? "dashboard.memberMap.searchPlaceholder"
+                : "dashboard.memberMap.searchPlaceholderPlaces",
+            )}
+            autocomplete="off"
+            spellcheck="false"
+            .value=${this.query}
+            @input=${(event: Event) => this.onSearchInput(event, kind)}
+            @keydown=${(event: KeyboardEvent) => this.onSearchKey(event, kind, search.results)}
+            @focus=${() => (this.searchOpen = kind)}
+            @blur=${() => {
+              if (this.searchOpen === kind) {
+                this.searchOpen = undefined;
+                this.searchActive = -1;
+              }
+            }}
+          />
+          ${this.query
+            ? html`<button
+                type="button"
+                class="member-map__search-clear"
+                data-testid="member-map-search-clear"
+                aria-label=${t("dashboard.memberMap.searchClear")}
+                title=${t("dashboard.memberMap.searchClear")}
+                @click=${() => this.clearSearch()}
+              >
+                <svg viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="M4 4l8 8M12 4l-8 8"></path>
+                </svg>
+              </button>`
+            : nothing}
+        </div>
+        <div class="member-map__search-pop" ?hidden=${!expanded}>
+          <ul
+            id=${listId}
+            class="member-map__search-results"
+            role="listbox"
+            aria-label=${t("dashboard.memberMap.searchResults")}
+          >
+            ${repeat(
+              search.results,
+              (result) => searchResultKey(result),
+              (result, index) => {
+                if (result.kind === "absent") {
+                  return this.renderAbsentOption(result.member, kind, index, base, activeIndex);
+                }
+                const person = result.kind === "person";
+                const name = person ? result.member.name : result.place.label;
+                const where = person
+                  ? placeWhere(result.place)
+                  : result.place.approximate
+                    ? t("dashboard.memberMap.searchPlaceMembers", {
+                        count: String(result.place.count),
+                      })
+                    : [
+                        result.place.country,
+                        t("dashboard.memberMap.searchPlaceMembers", {
+                          count: String(result.place.count),
+                        }),
+                      ]
+                        .filter(Boolean)
+                        .join(" · ");
+                return html`<li
+                  id=${`${base}-opt-${index}`}
+                  class=${`member-map__search-option${index === activeIndex ? " member-map__search-option--active" : ""}`}
+                  role="option"
+                  aria-selected=${index === activeIndex ? "true" : "false"}
+                  aria-label=${person
+                    ? t("dashboard.memberMap.searchPersonAria", {
+                        name,
+                        place: placeWhere(result.place),
+                      })
+                    : t("dashboard.memberMap.searchPlaceAria", {
+                        place: placeWhere(result.place),
+                        count: String(result.place.count),
+                      })}
+                  data-place=${result.place.key}
+                  data-kind=${result.kind}
+                  @mousedown=${(event: Event) => {
+                    // Keep focus in the box, so its blur does not close the list under the click.
+                    event.preventDefault();
+                  }}
+                  @mouseenter=${() => (this.searchActive = index)}
+                  @click=${() => this.chooseResult(result, kind)}
+                >
+                  ${person
+                    ? renderAvatar(result.member)
+                    : html`<span
+                        class=${`member-map__swatch${result.place.approximate ? " member-map__swatch--country" : ""}`}
+                      ></span>`}
+                  <span class="member-map__search-text">
+                    <span class="member-map__search-name">${name}</span>
+                    <span class="member-map__search-where">${where}</span>
+                  </span>
+                </li>`;
+              },
+            )}
+          </ul>
+          ${search.results.length === 0
+            ? html`<p class="member-map__search-note" data-testid="member-map-search-none">
+                ${t("dashboard.memberMap.searchNone", { query: this.query.trim() })}
+              </p>`
+            : nothing}
+          ${search.more > 0
+            ? html`<p class="member-map__search-note">
+                ${t("dashboard.more", { count: String(search.more) })}
+              </p>`
+            : nothing}
+          ${map.unplaced > 0 && !map.notOnMap
+            ? html`<p
+                class="member-map__search-note member-map__search-note--unplaced"
+                data-testid="member-map-search-unplaced"
+              >
+                ${t("dashboard.memberMap.searchUnplaced", { count: String(map.unplaced) })}
+              </p>`
+            : nothing}
+        </div>
+        ${this.searchAbsent && !expanded
+          ? html`<p
+              class="member-map__search-absent"
+              data-testid="member-map-search-absent"
+              role="status"
+            >
+              <span class="member-map__search-name">${this.searchAbsent.name}</span>
+              <span class="member-map__search-where">${absenceText(this.searchAbsent.reason)}</span>
+            </p>`
+          : nothing}
+        <span class="sr-only" role="status" aria-live="polite"
+          >${expanded
+            ? total > 0
+              ? t("dashboard.memberMap.searchCount", { count: String(total) })
+              : t("dashboard.memberMap.searchNone", { query: this.query.trim() })
+            : ""}</span
+        >
+      </div>
+    `;
+  }
+
+  // A member who is not on the map: their name and why, and no swatch, since there is no city.
+  private renderAbsentOption(
+    member: MemberMapAbsentMember,
+    kind: StageKind,
+    index: number,
+    base: string,
+    activeIndex: number,
+  ) {
+    const why = absenceText(member.reason);
+    return html`<li
+      id=${`${base}-opt-${index}`}
+      class=${`member-map__search-option member-map__search-option--absent${index === activeIndex ? " member-map__search-option--active" : ""}`}
+      role="option"
+      aria-selected=${index === activeIndex ? "true" : "false"}
+      aria-label=${t("dashboard.memberMap.searchAbsentAria", { name: member.name, reason: why })}
+      data-kind="absent"
+      data-reason=${member.reason}
+      @mousedown=${(event: Event) => event.preventDefault()}
+      @mouseenter=${() => (this.searchActive = index)}
+      @click=${() => this.chooseResult({ kind: "absent", member, index }, kind)}
+    >
+      <span class="member-map__search-text">
+        <span class="member-map__search-name">${member.name}</span>
+        <span class="member-map__search-where">${why}</span>
+      </span>
+    </li>`;
+  }
 
   private toggleExpanded(key: string): void {
     if (this.expandedPlaces.has(key)) {
@@ -937,12 +1338,18 @@ class AdminbotMemberMap extends LitElement {
 
   private flushPendingZoom(): void {
     const bounds = this.pendingBounds;
+    const place = this.pendingPlace;
     const size = this.stageSize("dialog");
-    if (!bounds || !size || !this.opened) {
+    if ((!bounds && !place) || !size || !this.opened) {
       return;
     }
     this.pendingBounds = undefined;
-    this.animateTo(this.boundsView(bounds, size));
+    this.pendingPlace = undefined;
+    if (place) {
+      this.flyToPlace(place);
+    } else if (bounds) {
+      this.animateTo(this.boundsView(bounds, size));
+    }
   }
 
   private boundsView(bounds: { x0: number; y0: number; x1: number; y1: number }, size: Size) {
@@ -1179,11 +1586,12 @@ class AdminbotMemberMap extends LitElement {
     return this.querySelector("dialog");
   }
 
-  private open(bounds?: { x0: number; y0: number; x1: number; y1: number }): void {
+  private open(bounds?: { x0: number; y0: number; x1: number; y1: number }, place?: string): void {
     this.opened = true;
     this.dialogView = null;
     this.pinned = undefined;
     this.pendingBounds = bounds;
+    this.pendingPlace = place;
     // The panel renders on the next update, so the dialog is only shown once its contents exist.
     void this.updateComplete.then(() => {
       const dialog = this.dialog();
@@ -1196,6 +1604,13 @@ class AdminbotMemberMap extends LitElement {
         dialog.showModal();
       } else {
         dialog.open = true;
+      }
+      if (place) {
+        // Opened by a search pick on the card: the search carries on in full screen's own box, so
+        // the next Escape clears it there rather than landing on the close button.
+        dialog.querySelector<HTMLInputElement>(".member-map__search-input")?.focus();
+        // Focusing opens the list, but the pick is made: show the city, not the matches again.
+        this.searchOpen = undefined;
       }
       this.flushPendingZoom();
     });
@@ -1218,8 +1633,12 @@ class AdminbotMemberMap extends LitElement {
     this.stopAnimation();
     this.gesture = undefined;
     this.pendingBounds = undefined;
+    this.pendingPlace = undefined;
     this.dialogView = null;
     this.pinned = undefined;
+    if (this.searchOpen === "dialog") {
+      this.searchOpen = undefined;
+    }
     if (this.hover?.kind === "dialog") {
       this.hover = undefined;
     }
@@ -1467,7 +1886,7 @@ class AdminbotMemberMap extends LitElement {
                   ${t("dashboard.memberMap.collapse")}
                 </button>
               </div>
-              ${this.renderStage(map, "dialog", focus)}
+              ${this.renderSearch(map, "dialog")} ${this.renderStage(map, "dialog", focus)}
               ${renderList(map, {
                 ...focus,
                 expanded: true,
@@ -1493,6 +1912,7 @@ class AdminbotMemberMap extends LitElement {
       // Pointing at a city's marker lights its row too, the same as the other way round.
       active: this.active ?? this.hover?.key,
       picked: this.picked,
+      spotlight: this.spotlight,
       sources: this.sources,
       now,
     };
@@ -1514,6 +1934,7 @@ class AdminbotMemberMap extends LitElement {
       ${t("dashboard.memberMap.expand")}
     </button>`;
     const body = html`
+      ${this.renderSearch(map, "card")}
       <div class="member-map__body">
         ${this.renderStage(map, "card", focus)}
         ${renderList(map, {

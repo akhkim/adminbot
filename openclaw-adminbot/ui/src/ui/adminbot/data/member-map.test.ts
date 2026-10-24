@@ -122,6 +122,24 @@ describe("Dashboard member map loading", () => {
 });
 
 describe("parseMemberMap", () => {
+  it("keeps who is not on the map, name and reason only, and only on the full map", () => {
+    const notOnMap = [
+      { name: "Hal", reason: "hidden", member_id: "h", city: "Berlin" },
+      { name: "Ivo", reason: "ip_off" },
+      { name: "Jo", reason: "teleported" },
+      { name: "   ", reason: "no_location" },
+      { reason: "no_location" },
+    ];
+    const full = parseMemberMap({ mode: "full", places: [], not_on_map: notOnMap });
+    expect(full?.notOnMap).toEqual([
+      { name: "Hal", reason: "hidden" },
+      { name: "Ivo", reason: "ip_off" },
+    ]);
+    const summary = parseMemberMap({ mode: "summary", places: [], not_on_map: notOnMap });
+    expect(summary?.notOnMap).toBeUndefined();
+    expect(parseMemberMap({ mode: "full", places: [] })?.notOnMap).toBeUndefined();
+  });
+
   it("marks country-level places as approximate and nothing else", () => {
     const map = parseMemberMap({
       mode: "summary",

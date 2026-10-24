@@ -1422,6 +1422,27 @@ export const en: TranslationMap = {
       legendCluster: "Nearby cities, combined",
       loading: "Loading the map…",
       empty: "No one is on the map yet. Add your city in Profile to appear here.",
+      searchLabel: "Find someone on the map",
+      searchPlaceholder: "Find a person or city",
+      // A non-admin's map carries no names, so the box can only find cities for them.
+      searchPlaceholderPlaces: "Find a city",
+      searchClear: "Clear the search and show the whole map",
+      searchResults: "Matches on the map",
+      searchCount: "{count} matches",
+      searchNone: "Nobody on the map matches “{query}”.",
+      searchUnplaced:
+        "{count} members are not on the map because their location could not be placed, so they cannot be found here.",
+      searchPersonAria: "{name}, {place}",
+      searchPlaceAria: "{place}, {count} members",
+      searchPlaceMembers: "{count} members",
+      searchAbsentAria: "{name}, not on the map: {reason}",
+      // Why an admin's search finds someone who is not on the map. Only admins see these.
+      absentHidden: "Location hidden: chose not to be on the map",
+      absentIpOff: "Location hidden: IP logging blocked and no city given",
+      absentVpn: "Not on the map: sign-in address ignored as a likely VPN",
+      absentBrowserBlocked: "Not on the map: browser location blocked",
+      absentUnrecognised: "Not on the map: their location could not be recognised",
+      absentNoLocation: "No location yet",
     },
     workSummary: {
       title: "My projects & papers",

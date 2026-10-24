@@ -55,6 +55,23 @@ export type MemberMapMember = {
   ip_observed_at?: string;
 };
 
+/**
+ * Why a member is not on the map, as the service words it (AdminBotMapAbsenceReason): they hid
+ * themselves, turned the IP lookup off ("My stated city only") with nothing placeable stated, their
+ * IP was set aside as a VPN, their browser blocked location, what they wrote is not a known place,
+ * or nothing says anything yet.
+ */
+export type MemberMapAbsenceReason =
+  | "hidden"
+  | "ip_off"
+  | "suspected_vpn"
+  | "browser_blocked"
+  | "unrecognised"
+  | "no_location";
+
+/** Admin only: somebody the map does not show, by name and why -- never where. */
+export type MemberMapAbsentMember = { name: string; reason: MemberMapAbsenceReason };
+
 /** One city the gazetteer knows, with however much of its membership the caller may see. */
 export type MemberMapPlace = {
   key: string;
@@ -87,6 +104,12 @@ export type MemberMap = {
   /** Members whose written location the gazetteer could not place. A count only — see below. */
   unplaced: number;
   counts: { placed: number; unplaced: number; unknown: number };
+  /**
+   * Admin only (`full`): everyone active who is not on the map, with why, so the search can answer
+   * "Ada: location hidden" instead of finding nobody. Absent from an older service, which the
+   * search then covers with the unplaced count.
+   */
+  notOnMap?: MemberMapAbsentMember[];
   /**
    * Admin only: whether sign-ins are geolocated at all, and by what. Lets an admin tell "nobody
    * signed in from anywhere" from "the GeoIP database never got installed".
@@ -224,6 +247,29 @@ const SOURCES: ReadonlySet<MemberMapSource> = new Set([
   "device",
 ]);
 const PRECISIONS: ReadonlySet<MemberMapPrecision> = new Set(["city", "timezone", "country"]);
+const ABSENCE_REASONS: ReadonlySet<MemberMapAbsenceReason> = new Set([
+  "hidden",
+  "ip_off",
+  "suspected_vpn",
+  "browser_blocked",
+  "unrecognised",
+  "no_location",
+]);
+
+// Only a name and a known reason survive: an unknown reason would have the card claim a cause it
+// cannot word, and anything else on an entry is not something the card was meant to receive.
+function toNotOnMap(raw: unknown): MemberMapAbsentMember[] | undefined {
+  if (!Array.isArray(raw)) {
+    return undefined;
+  }
+  return raw.flatMap((entry) => {
+    const record = entry as { name?: unknown; reason?: unknown } | null;
+    return isRenderableName(record?.name) &&
+      ABSENCE_REASONS.has(record.reason as MemberMapAbsenceReason)
+      ? [{ name: record.name, reason: record.reason as MemberMapAbsenceReason }]
+      : [];
+  });
+}
 
 function asNumber(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : Number.NaN;
@@ -345,6 +391,7 @@ export function parseMemberMap(body: unknown): MemberMap | null {
     attribution?: unknown;
     place_attribution?: unknown;
     ip_geolocation?: unknown;
+    not_on_map?: unknown;
   } | null;
   if (!raw || !Array.isArray(raw.places)) {
     return null;
@@ -358,12 +405,15 @@ export function parseMemberMap(body: unknown): MemberMap | null {
   const placeAttribution = toAttribution(raw.place_attribution);
   // Only the full (admin) shape may carry it; a summary that somehow did is ignored.
   const ipGeolocation = raw.mode === "full" ? toIpGeolocation(raw.ip_geolocation) : undefined;
+  // Names, so the same rule: never read off a summary, whatever it carried.
+  const notOnMap = raw.mode === "full" ? toNotOnMap(raw.not_on_map) : undefined;
   return {
     mode: raw.mode === "full" ? "full" : "summary",
     places,
     ...(attribution ? { attribution } : {}),
     ...(placeAttribution ? { placeAttribution } : {}),
     ...(ipGeolocation ? { ipGeolocation } : {}),
+    ...(notOnMap ? { notOnMap } : {}),
     // Only ever a number here: the card is a prompt to extend the gazetteer, not a roster. The full
     // response sends `unplaced_count`; an older server sent the list itself.
     unplaced: Array.isArray(raw.unplaced) ? raw.unplaced.length : asNumber(raw.unplaced_count) || 0,
