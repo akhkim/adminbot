@@ -2553,7 +2553,7 @@ export const en: TranslationMap = {
     whyBody:
       "Places you on the lab map by city, more accurately than your sign-in. Only the city is kept; your exact position is never stored.",
     note: {
-      denied: "Location is off for this site in your browser.",
+      denied: "Location is blocked — click 🔒 in the address bar to allow",
       unavailable: "Couldn't find a city just now.",
     },
   },

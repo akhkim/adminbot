@@ -968,8 +968,12 @@ export class MeetupService {
         return fail(400, "snoozed_until must be a YYYY-MM-DD day within a year, or null.");
       }
     }
+    // Turning an intro back on here is the same answer as "start" in Slack, so it lifts that stop;
+    // otherwise the toggle would read on while every intro was still being held back.
+    const { slack_stop_at: stoppedAt, ...member } = viewer.member;
+    const resumed = Boolean(stoppedAt) && (body.events === true || body.city === true);
     this.store.saveLabMember({
-      ...viewer.member,
+      ...(resumed ? member : viewer.member),
       meetup_intros: next,
       updated_at: this.now().toISOString(),
     });

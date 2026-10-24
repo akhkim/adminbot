@@ -187,6 +187,11 @@ export function selectCampaignRecipients(
       skip("nudges_off");
       continue;
     }
+    // They DMed AdminBot "stop" (workflows/members/slack-stop.ts); every campaign is optional.
+    if (member.slack_stop_at) {
+      skip("replied_stop");
+      continue;
+    }
     if (campaign.requireSlack !== false && !member.slack_user_id?.trim()) {
       skip("no_slack_id");
       continue;

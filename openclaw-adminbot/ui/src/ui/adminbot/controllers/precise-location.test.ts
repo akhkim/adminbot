@@ -221,6 +221,23 @@ describe("the browser's answer", () => {
     );
     expect(hidden).not.toHaveBeenCalled();
   });
+
+  it("flags a blocked site up front so the unblock hint shows without a press", async () => {
+    const onBlocked = vi.fn();
+    await refreshPreciseLocationSilently(deps({ permission: "denied" }), "auto", { onBlocked });
+    expect(onBlocked).toHaveBeenCalledTimes(1);
+
+    const notBlocked = vi.fn();
+    await refreshPreciseLocationSilently(deps(), "auto", { onBlocked: notBlocked });
+    await refreshPreciseLocationSilently(deps({ permission: "prompt" }), "auto", {
+      ask: true,
+      onBlocked: notBlocked,
+    });
+    await refreshPreciseLocationSilently(deps({ permission: "denied" }), "hidden", {
+      onBlocked: notBlocked,
+    });
+    expect(notBlocked).not.toHaveBeenCalled();
+  });
 });
 
 describe("the button", () => {

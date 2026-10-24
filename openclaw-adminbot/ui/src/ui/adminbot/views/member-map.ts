@@ -326,8 +326,21 @@ export function radiusScale(width: number, reference: number): RadiusScale {
   return { min: Math.max(3, max * 0.26), max, reference, clusterMin: Math.min(max, 9) };
 }
 
+/** The one person a lone, unclustered dot stands for, when this viewer may see names. */
+function soloMember(marker: Marker): MemberMapMember | undefined {
+  const lead = marker.places[0]!;
+  return marker.places.length === 1 && lead.count === 1 && lead.members?.length === 1
+    ? lead.members[0]
+    : undefined;
+}
+
 function markerLabel(marker: Marker): string {
   const lead = marker.places[0]!;
+  // A dot of one names the person, as a cluster names its lead city; the city is in the tooltip.
+  const solo = soloMember(marker);
+  if (solo) {
+    return solo.name;
+  }
   return marker.places.length === 1
     ? lead.label
     : t("dashboard.memberMap.clusterLabel", {
@@ -1738,6 +1751,7 @@ class AdminbotMemberMap extends LitElement {
                     const cluster = marker.places.length > 1;
                     const approximate = !cluster && marker.places[0]!.approximate;
                     const countInside = marker.r >= 8.5 && marker.count > 1;
+                    const solo = soloMember(marker);
                     return html`<button
                       type="button"
                       class=${[
@@ -1758,6 +1772,7 @@ class AdminbotMemberMap extends LitElement {
                       data-cluster=${cluster ? marker.keys.join(" ") : nothing}
                       data-count=${marker.count}
                       aria-label=${markerAria(marker)}
+                      title=${solo ? `${solo.name} · ${placeWhere(marker.places[0]!)}` : nothing}
                       aria-pressed=${cluster
                         ? nothing
                         : focus.picked === marker.key

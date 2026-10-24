@@ -1356,3 +1356,34 @@ print(json.dumps([planning_timestamp(row) for row in rows]))`),
     "2035-07-15T03:30:00Z",
   ]);
 });
+
+// COLM 2026's dates as https://colm.cc/Conferences/2026/Dates states them; COLM 2027 has none yet.
+it("tracks COLM's announced round from colm.cc, seeded so a sweep keeps it", () => {
+  expect(
+    runPython(`
+m = load('adminbot-deadline-collect')
+rows = {item['id']: item for item in json.load(open(m.OUT))['items'] if item.get('venue_family') == 'COLM'}
+seeded = {seed['id'] for seed in m.CONFERENCES}
+print(json.dumps({
+  'rows': {key: [row['deadline_aoe'], row['entry_type'], row['venue_priority'], row['archival_status'], row['source_url']] for key, row in sorted(rows.items())},
+  'seeded': sorted(set(rows) & seeded),
+  'schedule': [[s['milestone'], s.get('date') or [s['starts'], s['ends']]] for s in rows['colm2026_paper']['schedule']],
+  'abstract_of_paper': rows['colm2026_paper'].get('abstract_deadline_id'),
+  'pending_2027': any(name.startswith('COLM 2027') for name, _ in m.PENDING),
+}))
+`),
+  ).toEqual({
+    rows: {
+      colm2026_abstract: ["2026-03-26 23:59:00", "main_conference", "primary", "archival", "https://colm.cc/Conferences/2026/Dates"],
+      colm2026_paper: ["2026-03-31 23:59:00", "main_conference", "primary", "archival", "https://colm.cc/Conferences/2026/Dates"],
+    },
+    seeded: ["colm2026_abstract", "colm2026_paper"],
+    schedule: [
+      ["rebuttal", ["2026-05-22", "2026-06-08"]],
+      ["notification", "2026-07-08"],
+      ["conference", ["2026-10-06", "2026-10-08"]],
+    ],
+    abstract_of_paper: "colm2026_abstract",
+    pending_2027: true,
+  });
+});
