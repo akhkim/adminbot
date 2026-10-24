@@ -278,7 +278,9 @@ notifications_total notifications_unread notifications_last_at notification_kind
 tab_visits_count logistics_requests paper_weekly_updates conference_attendances name
 password_resets feedback_submitted active_sessions paper_slots_provided paper_slots_waived
 papers_authored_count papers_authored papers_submitted_count papers_submitted
-audit_events_as_actor update_events_as_actor update_events_as_subject calendar_group search'''.split())
+audit_events_as_actor update_events_as_actor update_events_as_subject calendar_group acl_anthology_url
+arr_reviewer_qualified arr_review_capacity map_visibility location_permission linkedin_followers
+twitter_followers search'''.split())
 
 
 # Name first and frozen: it is what the PI scans and searches for, on a phone as much as on a laptop.
