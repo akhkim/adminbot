@@ -1,8 +1,9 @@
-// /lab/members/requests -- a non-admin proposing somebody for the roster, and an admin deciding.
-// What matters here is the gate: a request never reaches the roster on its own, only an admin can
+// /lab/members/requests -- a non-admin proposing somebody for the roster, and the PI deciding.
+// What matters here is the gate: a request never reaches the roster on its own, only the PI can
 // turn one into a member, and approving it is the same save an admin's own Add member makes.
 import { afterEach, describe, expect, it } from "vitest";
 import type { AdminBotLabMember, AdminBotLabMemberInput } from "../contracts/actions.js";
+import { withCompleteProfile } from "../contracts/profile-completion.test-helpers.js";
 import { createAdminBotMockService } from "./server.js";
 
 const SERVICE_TOKEN = "test-service-token";
@@ -55,7 +56,7 @@ function seedMember(
   mock: ReturnType<typeof createAdminBotMockService>,
   input: AdminBotLabMemberInput,
 ): void {
-  const result = mock.service.upsertLabMember(input);
+  const result = mock.service.upsertLabMember(withCompleteProfile(input));
   if (!result.ok) {
     throw new Error(result.error.message);
   }
@@ -159,6 +160,7 @@ async function lab() {
 const ADA = {
   name: "Ada Lovelace",
   email: "ada@example.org",
+  calendar_email: "ada@gmail.com",
   member_type: "full",
   affiliation: "Analytical Engines",
   note: "Started with us this week.",
@@ -304,7 +306,7 @@ describe("member requests", () => {
     };
     const steps = approved.member.member_type_change?.steps ?? [];
     expect(steps.find((step) => step.step === "lab_calendar")?.status).toBe("done");
-    expect(calendarShares).toEqual(["ada@example.org"]);
+    expect(calendarShares).toEqual(["ada@gmail.com"]);
   });
 
   it("lets anyone signed in propose, and shows each requester only their own", async () => {
@@ -377,6 +379,26 @@ describe("member requests", () => {
     expect((await decide(pi, "approve")).status).toBe(200);
   });
 
+  it("lets nobody decide while no PI is named, until an admin names one", async () => {
+    const { baseUrl, mock, admin, pi, pat, call, list } = await lab();
+    expect(mock.service.updateSettings({ head_professor_member_id: "" }).ok).toBe(true);
+    expect(mock.service.headProfessorMemberId()).toBeUndefined();
+    const { request } = (await (await call(pat, "", "POST", ADA)).json()) as {
+      request: RequestView;
+    };
+    // An unset setting is not "anybody may": the queue waits rather than opening to every admin.
+    expect((await list(admin))[0]).toMatchObject({ can_decide: false });
+    expect((await call(admin, `/${request.id}/approve`, "POST", {})).status).toBe(403);
+    expect((await call(pi, `/${request.id}/approve`, "POST", {})).status).toBe(403);
+    const named = await fetch(`${baseUrl}/settings`, {
+      method: "PUT",
+      headers: jsonHeaders({ Authorization: `Bearer ${admin}` }),
+      body: JSON.stringify({ head_professor_member_id: "zhijing" }),
+    });
+    expect(named.status).toBe(200);
+    expect((await call(pi, `/${request.id}/approve`, "POST", {})).status).toBe(200);
+  });
+
   it("does not let an admin make themselves the PI", async () => {
     const { baseUrl, mock, admin, pi } = await lab();
     const put = (token: string, head: string) =>
@@ -387,6 +409,14 @@ describe("member requests", () => {
       });
     expect((await put(admin, "admin")).status).toBe(403);
     expect((await put(admin, "")).status).toBe(403);
+    // Viewing as the PI is still an admin's hands on the keyboard.
+    const viewing = await fetch(`${baseUrl}/auth/impersonate`, {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: `Bearer ${admin}` }),
+      body: JSON.stringify({ member_id: "zhijing" }),
+    });
+    const asPi = ((await viewing.json()) as { session_token: string }).session_token;
+    expect((await put(asPi, "admin")).status).toBe(403);
     // Re-sending the PI unchanged is what the Settings form does on every save.
     expect((await put(admin, "zhijing")).status).toBe(200);
     expect(mock.service.headProfessorMemberId()).toBe("zhijing");

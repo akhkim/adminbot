@@ -12,10 +12,13 @@ stderr.
 
 Subcommands
   discover                 venues this profile serves in, with the review deadline
+  paper-authors --id        read a paper's visible author names and identifiers
   status --venue --role    who still owes a review (the whole point)
   message ... [--send]     post_message through the venue's own message invitation
   load-form --venue        the open reviewing-load/registration form, prefilled
   assign --venue ...       add/remove a reviewer assignment edge (never automatic)
+  author-results           decision, presentation, review scores and meta-review on every own
+                           submission, with every title it has carried
 
 Nothing about a venue is hardcoded: role group ids, anon-group naming, the
 review invitation name, assignment invitations, and the per-submission message
@@ -27,6 +30,7 @@ Env:
   OPENREVIEW_BASEURL                          default https://api2.openreview.net
 """
 import argparse
+import datetime
 import json
 import os
 import re
@@ -736,11 +740,224 @@ def cmd_author_submissions(args):
     )
 
 
+# --------------------------------------------------------------------------
+# author-results: what came back on the PI's own submissions
+# --------------------------------------------------------------------------
+# Numeric review fields worth a glance, across the venue families the lab submits to: ARR uses
+# overall_assessment/soundness/excitement, ICLR and NeurIPS rating/soundness, workshops often
+# recommendation. Text fields are never copied out; the sheet needs the shape of the outcome,
+# not the reviewers' words.
+REVIEW_SCORE_KEYS = (
+    "overall_assessment", "rating", "recommendation", "overall_recommendation",
+    "soundness", "excitement", "confidence",
+)
+SCORE_RE = re.compile(r"^\s*(-?\d+(?:\.\d+)?)")
+
+
+def reply_kind(invitations):
+    """'review', 'meta_review' or 'decision' from a reply's invitation ids, else None."""
+    for invitation in invitations or []:
+        tail = invitation.rsplit("/-/", 1)[-1].lower().replace("-", "_")
+        if tail == "decision":
+            return "decision"
+        if tail in ("meta_review", "metareview"):
+            return "meta_review"
+        if tail in ("official_review", "review"):
+            return "review"
+    return None
+
+
+def score_of(value):
+    """6, 3.5, '6: marginally above' -> a float; anything else -> None."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    match = SCORE_RE.match(str(value or ""))
+    return float(match.group(1)) if match else None
+
+
+def scores_of(content):
+    scores = {}
+    for key in REVIEW_SCORE_KEYS:
+        score = score_of(value_of(content, key))
+        if score is not None:
+            scores[key] = score
+    return scores
+
+
+def outcome_of(venue_label, venue_id, decision):
+    """Status, track and presentation from what OpenReview says about one submission.
+
+    The decision note is the most specific source when it is visible ("Accept (Oral)"); the
+    published venue label is the one every venue sets ("ICLR 2026 Oral", "EMNLP 2026 Findings",
+    "Submitted to ICLR 2027"); the venue id still says "Rejected_Submission" or "Withdrawn" when
+    neither of the others does.
+    """
+    text = " ".join(str(part or "") for part in (decision, venue_label, venue_id)).lower()
+    if "withdraw" in text:
+        status = "withdrawn"
+    elif "desk reject" in text or "desk_reject" in text:
+        status = "desk_rejected"
+    elif "reject" in text:
+        status = "rejected"
+    elif "accept" in text or (venue_label and not str(venue_label).lower().startswith("submitted to")
+                              and "submission" not in str(venue_label).lower()):
+        status = "accepted"
+    else:
+        status = "under_review"
+    # Whole words: a workshop named "Moral ..." is not an oral.
+    presentation = next((kind for kind in ("oral", "spotlight", "poster") if re.search(rf"\b{kind}\b", text)), None)
+    track = "findings" if "findings" in text else ("main" if status == "accepted" and "workshop" not in text else None)
+    return {"status": status, "track": track, "presentation": presentation}
+
+
+# Decision fields that name how an accepted paper is presented, where a venue keeps that apart from
+# the decision itself ("presentation_mode": "Oral").
+PRESENTATION_FIELD_RE = re.compile(r"presentation|format|mode", re.I)
+
+
+def summarize_forum(replies):
+    """Reviews, meta-review, decision and presentation among one forum's visible replies."""
+    reviews, meta_review, decision, presentation = [], None, None, None
+    for reply in replies:
+        kind = reply_kind(getattr(reply, "invitations", None))
+        content = getattr(reply, "content", None) or {}
+        if kind == "review":
+            scores = scores_of(content)
+            if scores:
+                reviews.append(scores)
+        elif kind == "meta_review":
+            meta_review = scores_of(content)
+        elif kind == "decision":
+            decision = value_of(content, "decision") or value_of(content, "recommendation")
+            presentation = " ".join(str(value_of(content, key)) for key in content
+                                    if PRESENTATION_FIELD_RE.search(key)
+                                    and isinstance(value_of(content, key), str)) or None
+    return reviews, meta_review, decision, presentation
+
+
+def titles_of(client, note):
+    """Every title the submission has carried, current first.
+
+    A paper is often retitled between submission and camera-ready, and the lab's record may hold
+    either name; the edit history keeps the old ones. An unreadable history leaves the current title.
+    """
+    titles = [value_of(note.content, "title")]
+    try:
+        edits = list(client.get_note_edits(note_id=note.id))
+    except Exception:
+        edits = []
+    for edit in sorted(edits, key=lambda e: getattr(e, "tcdate", None) or getattr(e, "cdate", None) or 0, reverse=True):
+        titles.append(value_of(getattr(getattr(edit, "note", None), "content", None), "title"))
+    return list(dict.fromkeys(t.strip() for t in titles if isinstance(t, str) and t.strip()))
+
+
+def iso_time(ms):
+    if not isinstance(ms, (int, float)):
+        return None
+    return datetime.datetime.fromtimestamp(ms / 1000, datetime.timezone.utc).isoformat(timespec="seconds")
+
+
+def fold_commitments(results):
+    """Fold each ARR submission into the venue commitment that links to it.
+
+    ARR does not decide anything, so an ARR note reads "under review" for good, and as the later
+    cycle by month ("ARR May 2026" after "EMNLP 2026") it would outrank the acceptance on its own
+    commitment. The commitment already carries the ARR forum (review_forum) and its reviews; it
+    takes the ARR note's titles and venue id too, and the ARR entry goes.
+    """
+    by_forum = {entry["forum"]: entry for entry in results}
+    folded = set()
+    for entry in results:
+        linked = by_forum.get(entry["review_forum"])
+        if linked is None or linked is entry:
+            continue
+        entry["titles"] = list(dict.fromkeys(entry["titles"] + linked["titles"]))
+        entry["arr_venue_id"] = linked["venue_id"]
+        folded.add(linked["forum"])
+    return [entry for entry in results if entry["forum"] not in folded]
+
+
+def cmd_author_results(args):
+    client = connect()
+    profile_id = client.profile.id
+    try:
+        notes = client.get_all_notes(content={"authorids": profile_id})
+    except Exception as exc:
+        fail("notes_unreadable", str(exc))
+
+    results = []
+    for note in notes:
+        content = note.content or {}
+        # Only submissions: an author's notes also include their comments and rebuttals.
+        if not value_of(content, "title"):
+            continue
+        venue_label = value_of(content, "venue") or ""
+        venue_id = value_of(content, "venueid") or ""
+        # Commitment venues (EMNLP via ARR) review nothing themselves; the reviews and the
+        # meta-review sit on the ARR forum the note links to.
+        review_forum = note.forum or note.id
+        link = value_of(content, "paper_link") or ""
+        match = FORUM_ID_RE.search(link) if "openreview" in link else None
+        if match:
+            review_forum = match.group(1)
+        try:
+            replies = client.get_all_notes(forum=review_forum)
+            if review_forum != (note.forum or note.id):
+                replies += client.get_all_notes(forum=note.forum or note.id)
+            error = None
+        except Exception as exc:
+            replies, error = [], str(exc)[:200]
+        reviews, meta_review, decision, presentation = summarize_forum(replies)
+        entry = {
+            "id": note.id,
+            "forum": note.forum or note.id,
+            "review_forum": review_forum,
+            "number": getattr(note, "number", None),
+            "title": value_of(content, "title"),
+            "titles": titles_of(client, note),
+            "submitted_at": iso_time(getattr(note, "cdate", None)),
+            "venue": venue_label,
+            "venue_id": venue_id,
+            "decision": decision,
+            **outcome_of(venue_label, venue_id, " ".join(filter(None, (decision, presentation)))),
+            "reviews": reviews,
+            "meta_review": meta_review,
+        }
+        if error:
+            entry["error"] = error
+        results.append(entry)
+
+    out({"ok": True, "profile_id": profile_id, "submissions": fold_commitments(results)})
+
+
+def cmd_paper_authors(args):
+    client = connect()
+    try:
+        note = client.get_note(args.id)
+    except Exception:
+        fail("paper_unreadable", "Could not read this paper; check its ID and account access.")
+    authors = value_of(note.content, "authors")
+    authorids = value_of(note.content, "authorids")
+    out({
+        "ok": True,
+        "id": note.id,
+        "title": value_of(note.content, "title"),
+        "authors": authors,
+        "authorids": authorids,
+        "authorids_available": isinstance(authorids, list) and bool(authorids),
+    })
+
+
 def main():
     parser = argparse.ArgumentParser(description="AdminBot OpenReview bridge")
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("discover")
+
+    p = sub.add_parser("paper-authors", help="read-only author lookup; no database writes")
+    p.add_argument("--id", required=True, help="paper/forum ID from an OpenReview URL")
 
     p = sub.add_parser("status")
     p.add_argument("--venue", required=True)
@@ -773,14 +990,18 @@ def main():
         help="also fetch withdrawn/desk-rejected submissions",
     )
 
+    sub.add_parser("author-results", help="decisions, review scores and meta-reviews on own submissions")
+
     args = parser.parse_args()
     handlers = {
         "discover": cmd_discover,
+        "paper-authors": cmd_paper_authors,
         "status": cmd_status,
         "message": cmd_message,
         "load-form": cmd_load_form,
         "assign": cmd_assign,
         "author-submissions": cmd_author_submissions,
+        "author-results": cmd_author_results,
     }
     try:
         handlers[args.command](args)

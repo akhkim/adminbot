@@ -6,6 +6,7 @@ import {
   defaultAdminBotConfig,
   type AdminBotPluginConfig,
 } from "./src/adapters/openclaw/index.js";
+import { handleSlackStopDispatch } from "./src/adapters/openclaw/slack-stop-hook.js";
 import {
   accessGrantSchema,
   actionTypeSchema,
@@ -35,7 +36,7 @@ const adminBotConfigSchema = Type.Object(
 const unknownRecord = Type.Record(Type.String(), Type.Unknown());
 const evidenceArray = Type.Optional(Type.Array(evidencePointerSchema));
 
-export default defineToolPlugin({
+const adminbotPlugin = defineToolPlugin({
   id: "adminbot",
   name: "AdminBot",
   description: "Typed proposal, approval, and execution broker for sensitive admin workflows.",
@@ -110,6 +111,31 @@ export default defineToolPlugin({
         paperId: Type.Optional(Type.String()),
         title: Type.Optional(Type.String()),
         summary: Type.String({ minLength: 1 }),
+        xThread: Type.Optional(
+          Type.Object({
+            stage: Type.Union([
+              Type.Literal("arxiv"),
+              Type.Literal("acceptance"),
+              Type.Literal("attendance"),
+              Type.Literal("poster"),
+            ]),
+            posts: Type.Array(
+              Type.Object({
+                text: Type.String({ minLength: 1 }),
+                images: Type.Optional(
+                  Type.Array(
+                    Type.Object({
+                      data_uri: Type.String(),
+                      alt_text: Type.String({ minLength: 1, maxLength: 1000 }),
+                    }),
+                    { maxItems: 4 },
+                  ),
+                ),
+              }),
+              { minItems: 1, maxItems: 100 },
+            ),
+          }),
+        ),
         url: Type.Optional(Type.String()),
         authors: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
         tone: Type.Optional(Type.String()),
@@ -494,6 +520,7 @@ export default defineToolPlugin({
         title: Type.String(),
         authors: Type.Array(Type.String()),
         currentStep: paperStepSchema,
+        venue: Type.Optional(Type.String()),
         venueDecision: Type.Optional(paperVenueDecisionSchema),
         acceptedVenue: Type.Optional(Type.String()),
         // Empty string is the explicit clear emitted by the project card's "Not said" controls.
@@ -658,6 +685,22 @@ export default defineToolPlugin({
     }),
   ],
 });
+
+// "stop"/"start" DMed to the bot, answered before the agent runs. The tool plugin owns register,
+// so it is wrapped in place rather than rebuilt; the entry keeps its hidden tool metadata.
+const registerTools = adminbotPlugin.register;
+adminbotPlugin.register = (api) => {
+  registerTools(api);
+  api.on("before_dispatch", (event, ctx) =>
+    handleSlackStopDispatch(event, ctx, (params) =>
+      createAdminBotToolHandlers(
+        resolveConfig((api.pluginConfig ?? {}) as Partial<AdminBotPluginConfig>),
+      ).applySlackStop(params),
+    ),
+  );
+};
+
+export default adminbotPlugin;
 
 function resolveConfig(config: Partial<AdminBotPluginConfig>): AdminBotPluginConfig {
   return { ...defaultAdminBotConfig, ...config };

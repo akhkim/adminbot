@@ -98,6 +98,7 @@ exit 0
   write(
     path.join(bin, "corepack"),
     `#!/usr/bin/env bash
+printf '%s\\n' "$*" >>"$HOME/corepack.log"
 [[ -z "\${FAKE_BUILD_FAILS:-}" ]] || exit 1
 if [[ "$2" == install ]]; then mkdir -p node_modules/.bin && printf '#!/bin/sh\\n' >node_modules/.bin/tsx && chmod +x node_modules/.bin/tsx; fi
 if [[ "$2" == build ]]; then mkdir -p dist && : >dist/entry.js; fi
@@ -167,6 +168,26 @@ describe("Aurora auto-deploy", () => {
     const log = fs.readFileSync(path.join(f.home, "systemctl.log"), "utf8");
     expect(log).toContain("--user stop jinesis-openclaw-gateway.service jinesis-adminbot.service");
     expect(log).toContain("--user start jinesis-adminbot.service jinesis-openclaw-gateway.service");
+  });
+
+  // /w/406 is small: a third release, or a store still holding a deleted release's packages, is
+  // what made the next deploy fail its free-space check.
+  it("keeps only the new release and the one it replaced, then prunes the package store", () => {
+    const f = fixture();
+    const releases = path.join(f.root, "releases");
+    for (const name of ["aaaaaaaaaaaa-20251201T000000Z", "bbbbbbbbbbbb-20251215T000000Z"]) {
+      write(path.join(releases, name, "app.txt"), "older\n");
+      // Older than the live release, so modification order matches the names.
+      fs.utimesSync(path.join(releases, name), new Date("2025-12-01"), new Date("2025-12-01"));
+    }
+    const result = deploy(f, f.next);
+    expect(result.status).toBe(0);
+    expect(fs.readdirSync(releases).toSorted()).toEqual(
+      [path.basename(current(f)), path.basename(f.liveRelease)].toSorted(),
+    );
+    expect(result.stdout).toContain("Pruning release aaaaaaaaaaaa-20251201T000000Z");
+    const corepack = fs.readFileSync(path.join(f.home, "corepack.log"), "utf8").trim().split("\n");
+    expect(corepack.at(-1)).toBe("pnpm store prune");
   });
 
   it("rolls back to the previous release when the new one is unhealthy", () => {
@@ -272,6 +293,74 @@ describe("Aurora auto-deploy", () => {
     expect(lockHeld(f)).toBe(true);
   });
 
+  const holdLock = (f: Fixture, owner: string) => {
+    const dir = path.join(f.home, ".config/jinesis-adminbot/.writer.lock");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "owner"), `${owner}\n`);
+  };
+  // A pid no process has: above the kernel's pid_max ceiling.
+  const DEAD_PID = 4194305;
+
+  it("reclaims a lock left by a cancelled deploy whose process is gone", () => {
+    const f = fixture();
+    holdLock(f, `auto-deploy-20261024T155159Z-${DEAD_PID}-123`);
+    const result = deploy(f, f.next);
+    expect(result.status).toBe(0);
+    expect(result.stderr).toContain("reclaiming the writer lock");
+    expect(path.basename(current(f))).toMatch(new RegExp(`^${f.next.slice(0, 12)}-`));
+    expect(lockHeld(f)).toBe(false);
+  });
+
+  it("keeps a lock whose owner is still running, or that another machine took", () => {
+    for (const owner of [`auto-deploy-20261024T155159Z-${process.pid}-1`, `deploy-20261024T155159Z-${DEAD_PID}-1`]) {
+      const f = fixture();
+      holdLock(f, owner);
+      const result = deploy(f, f.next);
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain("holds the account lock");
+      expect(fs.readFileSync(path.join(f.home, ".config/jinesis-adminbot/.writer.lock/owner"), "utf8")).toBe(`${owner}\n`);
+    }
+  });
+
+  describe("collected deadline data", () => {
+    const content = "extensions/adminbot/content/deadlines";
+    const read = (release: string, name: string) =>
+      fs.readFileSync(path.join(release, content, name), "utf8");
+
+    it("carries files the cron jobs rewrote in the live release into the new one", () => {
+      const f = fixture();
+      const committed = commit(f.repo, "snapshot", {
+        [`openclaw-adminbot/${content}/deadlines.json`]: '{"items":["committed"]}\n',
+      });
+      // The cron refreshed the live release in place; matches.json is not committed at all.
+      write(path.join(f.liveRelease, content, "deadlines.json"), '{"items":["refreshed"]}\n');
+      write(path.join(f.liveRelease, content, "matches.json"), '{"matches":["refreshed"]}\n');
+      const result = deploy(f, committed);
+      expect(result.status).toBe(0);
+      expect(read(current(f), "deadlines.json")).toBe('{"items":["refreshed"]}\n');
+      expect(read(current(f), "matches.json")).toBe('{"matches":["refreshed"]}\n');
+      expect(result.stdout).toContain("Carried deadlines.json forward");
+      // The previous release keeps its own copy for a rollback.
+      expect(read(f.liveRelease, "deadlines.json")).toBe('{"items":["refreshed"]}\n');
+    });
+
+    it("ships the new commit's snapshot when the live copy was never rewritten", () => {
+      const f = fixture();
+      const v1 = commit(f.repo, "snapshot v1", {
+        [`openclaw-adminbot/${content}/deadlines.json`]: '{"items":["v1"]}\n',
+      });
+      expect(deploy(f, v1).status).toBe(0);
+      expect(read(current(f), "deadlines.json")).toBe('{"items":["v1"]}\n');
+      const v2 = commit(f.repo, "snapshot v2", {
+        [`openclaw-adminbot/${content}/deadlines.json`]: '{"items":["v2"]}\n',
+      });
+      const result = deploy(f, v2);
+      expect(result.status).toBe(0);
+      expect(read(current(f), "deadlines.json")).toBe('{"items":["v2"]}\n');
+      expect(result.stdout).not.toContain("Carried");
+    });
+  });
+
   it("has no default deployment root", () => {
     const f = fixture();
     const result = deploy(f, f.next, { AURORA_DEPLOY_ROOT: "" });
@@ -354,10 +443,17 @@ describe("Aurora deploy workflow", () => {
     expect(workflow).toContain(
       "github.event.workflow_run.head_repository.full_name == github.repository",
     );
-    expect(workflow).toContain("runs-on: [self-hosted, aurora-deploy]");
+    expect(workflow).toContain("runs-on: [aurora-deploy]");
     expect(workflow).toContain("cancel-in-progress: false");
     expect(workflow).toContain("persist-credentials: false");
     expect(workflow).not.toMatch(/\$\{\{\s*secrets\./);
     expect(workflow).not.toMatch(/pull_request/);
+  });
+
+  it("asks only for labels the installed runner has", () => {
+    const installer = fs.readFileSync(installerScript, "utf8");
+    const label = installer.match(/^RUNNER_LABEL="([^"]+)"$/m)?.[1];
+    expect(installer).toContain("--no-default-labels");
+    expect(workflow).toContain(`runs-on: [${label}]`);
   });
 });

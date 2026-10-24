@@ -1381,12 +1381,30 @@ export const sessionsHandlers: GatewayRequestHandlers = {
       return;
     }
     const p = params;
-    // No identity check here on purpose. This used to refuse any connection without a paired-device
-    // owner, so that no session could be created unowned -- but that also refused every legitimate
-    // machine caller (an agent's sessions-send-tool, cron, the CLI), which are not member chats and
-    // have no member to name. Ownership is now derived from the session key instead
-    // (memberIdFromSessionKey), so a member's session is owned by construction and a machine
-    // session is simply owned by nobody: creatable, and unreadable through the member gateway.
+    const scopes = client?.connect?.scopes ?? [];
+    const chatOnly =
+      scopes.includes("operator.chat") &&
+      !scopes.includes("operator.write") &&
+      !scopes.includes("operator.admin");
+    // Narrow chat access may create a fresh owned conversation, never reset a chosen key,
+    // inherit another session, override the model, run hooks, or launch an initial message.
+    if (
+      chatOnly &&
+      (!normalizeOptionalString(client?.ownerMemberId) ||
+        Object.keys(p).some((key) => key !== "agentId" && key !== "label"))
+    ) {
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          "Member chat creation requires a member identity and accepts only agentId and label",
+        ),
+      );
+      return;
+    }
+    // Privileged machine callers may create unowned sessions; member reads still fail closed
+    // on those sessions. Chat-only callers above must have an identity to stamp.
     const cfg = context.getRuntimeConfig();
     const requestedKey = normalizeOptionalString(p.key);
     const agentId = normalizeAgentId(
@@ -1565,8 +1583,8 @@ export const sessionsHandlers: GatewayRequestHandlers = {
           ...patched.entry,
           ...inheritedSelection,
           ...(canonicalParentSessionKey ? { parentSessionKey: canonicalParentSessionKey } : {}),
-          // Guaranteed present: the handler refuses the call above without one. Kept as a
-          // conditional only so an inherited owner on a reset parent entry is not overwritten.
+          // Fresh member conversations inherit the authenticated owner, never a caller-supplied ID.
+          // Privileged resets preserve an existing owner.
           ...(!patched.entry.ownerMemberId ? { ownerMemberId: client?.ownerMemberId } : {}),
         };
         return {

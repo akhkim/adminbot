@@ -29,12 +29,15 @@ export PATH="$HOME/.local/bin:$PATH"
 ROOT="${AURORA_DEPLOY_ROOT:-}"
 SOURCE=""
 REF=""
-KEEP_RELEASES="3"
 ADMINBOT_PORT="8765"
 GATEWAY_PORT="18789"
 HEALTH_TIMEOUT_SECONDS="${AURORA_DEPLOY_HEALTH_TIMEOUT:-180}"
 HEALTH_INTERVAL_SECONDS="${AURORA_DEPLOY_HEALTH_INTERVAL:-3}"
-MIN_FREE_MB="4096"
+# Free space a deploy must find before it builds. A release reuses the live node_modules through
+# hard links, so what it really consumes is its dist plus new store packages: the 2026-10-19 deploy
+# of 366a0393 used about 1.7 GB, and that one ran on an emptied store. /w/406 is a 12 GB volume
+# shared with other accounts, so the old 4 GB floor could not be held even with two releases kept.
+MIN_FREE_MB="2048"
 
 die() {
   printf 'error: %s\n' "$*" >&2
@@ -116,7 +119,22 @@ target_sha="${target_commit:0:12}"
 lock_dir="$HOME/.config/jinesis-adminbot/.writer.lock"
 lock_token="auto-deploy-$(date -u +%Y%m%dT%H%M%SZ)-$$-$RANDOM"
 mkdir -p -- "$(dirname -- "$lock_dir")"
+# A deploy the runner cancels is killed before its exit trap runs, so its lock outlives it and
+# every later deploy refuses. Reclaim the lock only from a writer on this host whose process is
+# gone; aurora-adminbot-host.sh takes the lock over SSH with a pid from another machine, so its
+# tokens (and anything unrecognized) are never judged stale here.
+reclaim_stale_lock() {
+  local owner pid
+  owner="$(cat -- "$lock_dir/owner" 2>/dev/null)" || return 1
+  [[ "$owner" =~ ^(auto-deploy|qwen-restart)-[0-9]{8}T[0-9]{6}Z-([0-9]+)-[0-9]+$ ]] || return 1
+  pid="${BASH_REMATCH[2]}"
+  ! kill -0 "$pid" 2>/dev/null && ! ps -p "$pid" >/dev/null 2>&1 || return 1
+  echo "warning: reclaiming the writer lock left by $owner (process $pid is gone)" >&2
+  rm -f -- "$lock_dir/owner"
+  rmdir -- "$lock_dir"
+}
 mkdir -m 700 -- "$lock_dir" 2>/dev/null ||
+  { reclaim_stale_lock && mkdir -m 700 -- "$lock_dir" 2>/dev/null; } ||
   die "another AdminBot writer operation holds the account lock ($lock_dir); retry when it finishes"
 printf '%s\n' "$lock_token" >"$lock_dir/owner"
 release_lock() {
@@ -226,6 +244,45 @@ fi
 [[ -f "$new_release/dist/entry.js" || -f "$new_release/dist/entry.mjs" ]] || die "build finished without dist/entry"
 ln -sfn -- "$STATE" "$new_release/state"
 
+# The deadline cron jobs (refresh-venues, refresh-matches) rewrite these inside the live release,
+# through `current`, while a release ships only the copy committed with it. Without carrying the
+# rewritten copy forward, every deploy puts the Deadlines board back on the committed snapshot until
+# the next daily refresh. A live copy still identical to what its commit shipped was never
+# rewritten, so the new commit's copy -- possibly a deliberately updated snapshot -- wins.
+DEADLINE_CONTENT="extensions/adminbot/content/deadlines"
+for collected in deadlines.json matches.json; do
+  live_copy="$live_release/$DEADLINE_CONTENT/$collected"
+  [[ -f "$live_copy" && ! -L "$live_copy" ]] || continue
+  if git -C "$SOURCE" show "${live_commit}:openclaw-adminbot/$DEADLINE_CONTENT/$collected" 2>/dev/null |
+    cmp -s - "$live_copy"; then
+    continue
+  fi
+  mkdir -p -- "$new_release/$DEADLINE_CONTENT"
+  cp -p -- "$live_copy" "$new_release/$DEADLINE_CONTENT/$collected"
+  printf 'Carried %s forward from %s\n' "$collected" "$live_name"
+done
+
+# ---------------------------------------------------------------------------------------------
+# Sign-in geolocation: install the DB-IP City Lite database beside the releases and make sure the
+# env file names it, before the restart below reads that file. Never fails the deploy -- a missing
+# database leaves the service as it was -- but every failure is a ::warning:: on the run. A release
+# from before this script existed simply has nothing to run.
+if [[ -f "$new_release/deploy/aurora/install-geoip.sh" ]]; then
+  bash "$new_release/deploy/aurora/install-geoip.sh" --root "$ROOT" --release "$new_release" ||
+    printf '::warning title=IP geolocation::install-geoip.sh exited %s; sign-in geolocation may be off\n' "$?"
+else
+  echo "geoip: this release has no deploy/aurora/install-geoip.sh; skipped"
+fi
+
+# "Use my precise location": the offline GeoNames city table the service turns a browser position
+# into a city with. Same contract as the database above: never fails the deploy, warns instead.
+if [[ -f "$new_release/deploy/aurora/install-geonames.sh" ]]; then
+  bash "$new_release/deploy/aurora/install-geonames.sh" --root "$ROOT" --release "$new_release" ||
+    printf '::warning title=Device location::install-geonames.sh exited %s; precise location may be off\n' "$?"
+else
+  echo "geonames: this release has no deploy/aurora/install-geonames.sh; skipped"
+fi
+
 # ---------------------------------------------------------------------------------------------
 # Swap. A cancelled job must not leave the units half-rewritten, so interrupts are ignored from
 # here until the swap (or its rollback) is complete.
@@ -309,13 +366,39 @@ new_release=""
 trap - INT TERM HUP
 
 # ---------------------------------------------------------------------------------------------
-# Prune to the newest KEEP_RELEASES releases, never touching the one now live or the one it
-# replaced (the rollback target).
+# Keep exactly two releases: the one now live and the one it replaced (the rollback target).
+#
+# /w/406 is a small shared volume, and this used to keep a KEEP_RELEASES count whose loop also
+# skipped those two, so "3" left four releases on disk and the next deploy failed its free-space
+# check. A rollback only ever goes back one release, so nothing older is worth its space.
 cd "$RELEASES"
 [[ "$PWD" == "$RELEASES" ]] || die "releases resolved to $PWD"
-kept=0
 while IFS= read -r old; do
   [[ -n "$old" && "$old" != "$new_release_name" && "$old" != "$live_name" ]] || continue
-  kept=$((kept + 1))
-  ((kept < KEEP_RELEASES)) || rm -rf -- "$old"
+  echo "Pruning release $old"
+  rm -rf -- "$old"
 done < <(ls -1t)
+
+# Releases hard-link their node_modules into the shared pnpm store, so deleting a release frees
+# only what it alone held; the packages it used stay in the store until it is pruned. Without this
+# the store grew by every release's unique packages (it had reached 2.4 GB) and swallowed what the
+# release pruning freed. The two kept releases still reference everything they need, and a file a
+# release already has hard-linked survives the store dropping its own link. A failed prune costs
+# disk, not the deploy, which has already swapped and passed its health check.
+if ! (
+  cd "$RELEASES/$new_release_name"
+  export npm_config_store_dir="$ROOT/.pnpm-store"
+  corepack pnpm store prune
+); then
+  echo "warning: pnpm store prune failed; the store keeps unreferenced packages until next time" >&2
+fi
+
+# ---------------------------------------------------------------------------------------------
+# Register every scheduled job in config/adminbot-cron.json. Without this a job added to the
+# manifest (the OpenReview sync, the automation health check) never ran until somebody remembered
+# to sync by hand. The sync is idempotent and runs through `current`, so the stored paths survive
+# the release pruning above. The release is already live and healthy, so a failed sync does not
+# roll back; it fails the job instead, so the deploy shows red rather than leaving jobs stale.
+if ! OPENCLAW_BIN="node $CURRENT/openclaw.mjs" bash "$CURRENT/scripts/adminbot-cron-sync.sh"; then
+  die "release $new_release_name is live, but syncing cron jobs failed; rerun scripts/adminbot-cron-sync.sh from $CURRENT"
+fi

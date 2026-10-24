@@ -1,4 +1,3 @@
-import "./local-chat.ts";
 // The professor's morning page: the things that are hers to do, on one screen.
 //
 // Everything here is already somewhere else -- the rec-letter queue is on Requests, the adoption
@@ -19,29 +18,35 @@ import "./local-chat.ts";
 // the page it used to live on is the one members read, where an editor only she could see was three
 // controls of dead weight for everybody else.
 import { html, nothing } from "lit";
+import { live } from "lit/directives/live.js";
+import { adminBotLogisticsSettledStatuses } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import {
-  adminBotIsAlumniMember,
-  adminBotLogisticsSettledStatuses,
-  adminBotTimelineEntryTarget,
-} from "../../../../../extensions/adminbot/src/contracts/actions.js";
+  incompleteProfiles,
+  thinTimelines,
+  unattendedProjects,
+  type DeskAdoptionCounts,
+} from "../../../../../extensions/adminbot/src/workflows/members/profile-overview-filter.js";
 import { t } from "../../../i18n/index.ts";
 import { icons } from "../../icons.ts";
 import type { Tab } from "../../navigation.ts";
-import type {
-  EscalatedNudgeRow,
-  LabBroadcast,
-  LogisticsRequest,
-  MemberProfileOverviewRow,
-  PiReviewRow,
-} from "../auth/session.ts";
+import type { LabBroadcast } from "../api/lab-sharing.ts";
+import type { LogisticsRequest } from "../api/logistics.ts";
+import type { MemberProfileOverviewRow } from "../api/members.ts";
+import { escalatedNudgeTotal, type EscalatedNudgeRow } from "../api/nudges.ts";
+import type { PiReviewRow } from "../api/paper-admin.ts";
 import type { AdminBotPaperRecord } from "../controllers/admin.ts";
+import { renderDateControl } from "../date-control.ts";
 
 export type ProfessorViewProps = {
-  localChatSessionToken?: string;
   requests: LogisticsRequest[];
   requestsLoading: boolean;
   papers: AdminBotPaperRecord[];
   profiles: MemberProfileOverviewRow[];
+  /**
+   * The adoption columns' lengths over the whole roster, from the service. `profiles` carries only
+   * each column's head, so counting it would stop at twenty. Absent, the rows are counted.
+   */
+  adoptionCounts?: DeskAdoptionCounts | null;
   /**
    * Nudges the lab already gave up on chasing automatically.
    *
@@ -60,6 +65,7 @@ export type ProfessorViewProps = {
    * is the asking, and ticking the box is still hers to do on the paper.
    */
   piReview: PiReviewRow[];
+  onOpenPaper?: (paperId: string) => void;
   piReviewLoading?: boolean;
   piReviewError?: string | null;
   onRetryPiReview?: () => void;
@@ -257,62 +263,21 @@ export function overleafReadingQueue(papers: readonly AdminBotPaperRecord[]): Ov
     );
 }
 
-/**
- * Who is still on the hook for using AdminBot themselves.
- *
- * Alumni are out of every adoption column: they have left, so a row of theirs that stays blank is
- * not a reminder anybody is going to send. Everyone else stays, external collaborators included --
- * the lab does chase them, and dropping them would quietly shrink the count this section exists to
- * show.
- *
- * Asked through `adminBotIsAlumniMember`, which reads `member_type` as well as `status`. Testing
- * `status` alone -- which this did -- let 22 of the lab's 24 alumni back into the list: the roster
- * was imported from a spreadsheet that spells it in the type, and those 22 carry no status at all.
- * They are the rows least likely to ever be filled in, so they sorted straight to the top of every
- * column, which is how a reminder list ends up led by people who have left.
- */
-export function adoptionCandidates(
-  profiles: readonly MemberProfileOverviewRow[],
-): MemberProfileOverviewRow[] {
-  return profiles.filter((row) => !adminBotIsAlumniMember(row));
-}
-
-/** Members with mandatory profile fields still blank, emptiest record first. */
-export function incompleteProfiles(
-  profiles: readonly MemberProfileOverviewRow[],
-): MemberProfileOverviewRow[] {
-  return adoptionCandidates(profiles)
-    .filter((row) => row.missing_fields.length > 0)
-    .toSorted((left, right) => right.missing_fields.length - left.missing_fields.length);
-}
-
-/** Members whose timeline is thinner than the lab asks for. The list Time Availability is for. */
-export function thinTimelines(
-  profiles: readonly MemberProfileOverviewRow[],
-): MemberProfileOverviewRow[] {
-  return adoptionCandidates(profiles)
-    .filter((row) => row.timeline.total < adminBotTimelineEntryTarget)
-    .toSorted((left, right) => left.timeline.total - right.timeline.total);
-}
-
-/**
- * Members with a paper carrying no update they wrote themselves.
- *
- * Somebody with no papers at all is not behind on anything, so they are not in this column.
- */
-export function unattendedProjects(
-  profiles: readonly MemberProfileOverviewRow[],
-): MemberProfileOverviewRow[] {
-  const behind = (row: MemberProfileOverviewRow) => row.projects.total - row.projects.self_updated;
-  return adoptionCandidates(profiles)
-    .filter((row) => row.projects.total > 0 && behind(row) > 0)
-    .toSorted((left, right) => behind(right) - behind(left));
-}
+// The adoption columns' membership and order live with the service, which sends the desk only
+// each column's head; re-exported so this page and its tests keep importing them from here.
+export {
+  adoptionCandidates,
+  incompleteProfiles,
+  thinTimelines,
+  unattendedProjects,
+} from "../../../../../extensions/adminbot/src/workflows/members/profile-overview-filter.js";
 
 type AdoptionColumn = {
   id: "profile" | "timeline" | "papers";
   label: string;
   rows: MemberProfileOverviewRow[];
+  /** The column's length over the whole roster; `rows` is its head. */
+  total: number;
   detail: (row: MemberProfileOverviewRow) => string;
 };
 
@@ -323,8 +288,11 @@ type AdoptionColumn = {
  * "nobody" rather than "not loaded yet" -- but it should not sit between two columns that do need
  * work.
  */
-export function adoptionColumns(profiles: readonly MemberProfileOverviewRow[]): AdoptionColumn[] {
-  const columns: AdoptionColumn[] = [
+export function adoptionColumns(
+  profiles: readonly MemberProfileOverviewRow[],
+  counts?: DeskAdoptionCounts | null,
+): AdoptionColumn[] {
+  const columns: Array<Omit<AdoptionColumn, "total">> = [
     {
       id: "profile",
       label: t("professor.adoption.column.profile"),
@@ -349,7 +317,10 @@ export function adoptionColumns(profiles: readonly MemberProfileOverviewRow[]): 
         }),
     },
   ];
-  return columns.toSorted((left, right) => Number(!left.rows.length) - Number(!right.rows.length));
+  // The service's counts when it sent them: the rows are only each column's head.
+  return columns
+    .map((column) => ({ ...column, total: counts?.[column.id] ?? column.rows.length }))
+    .toSorted((left, right) => Number(!left.total) - Number(!right.total));
 }
 
 function section(params: {
@@ -479,6 +450,8 @@ function moreToggle(params: {
 function rows(params: {
   id: string;
   items: unknown[];
+  /** The whole list's size when only a page of it was read; the items' count otherwise. */
+  total?: number;
   empty: string;
   expanded: ReadonlySet<string>;
   onToggleExpand: (id: string) => void;
@@ -489,17 +462,18 @@ function rows(params: {
   const open = params.expanded.has(params.id);
   const shown = params.items.slice(0, open ? EXPANDED_ROWS : PREVIEW_ROWS);
   const listId = `professor-list-${params.id}`;
+  const total = Math.max(params.total ?? 0, params.items.length);
   return html`<ul id=${listId} class="professor__list" data-open=${open ? "true" : "false"}>
       ${shown}
     </ul>
-    ${params.items.length > PREVIEW_ROWS
+    ${total > PREVIEW_ROWS
       ? moreToggle({
           id: params.id,
           controls: listId,
           open,
           shown: shown.length,
-          hidden: params.items.length - shown.length,
-          total: params.items.length,
+          hidden: total - shown.length,
+          total,
           onToggleExpand: params.onToggleExpand,
         })
       : nothing}`;
@@ -577,21 +551,22 @@ function letterBody(
 
 function adoptionBody(
   profiles: readonly MemberProfileOverviewRow[],
-  props: Pick<ProfessorViewProps, "onOpen" | "expanded" | "onToggleExpand">,
+  props: Pick<ProfessorViewProps, "onOpen" | "expanded" | "onToggleExpand" | "adoptionCounts">,
 ) {
   return html`<div class="professor__columns">
-    ${adoptionColumns(profiles).map(
+    ${adoptionColumns(profiles, props.adoptionCounts).map(
       (column) => html`<div
         class="professor__column"
         data-testid=${`professor-adoption-${column.id}`}
-        data-empty=${column.rows.length === 0 ? "true" : "false"}
+        data-empty=${column.total === 0 ? "true" : "false"}
       >
         <div class="professor__column-head">
           <span>${column.label}</span>
-          <span class="ab-num">${column.rows.length}</span>
+          <span class="ab-num">${column.total}</span>
         </div>
         ${rows({
           id: `adoption-${column.id}`,
+          total: column.total,
           items: column.rows.map((row) =>
             rowButton({
               action: t("professor.adoption.open"),
@@ -628,25 +603,28 @@ const AVAILABILITY_CHOICES = ["away", "busy", "available", "unknown"] as const;
  * -- is the kind of friction that gets routed around by not using the feature.
  */
 function broadcastBox(props: ProfessorViewProps) {
-  const live = props.broadcast;
-  const draft = props.broadcastDraft ?? live?.message ?? "";
+  const liveBroadcast = props.broadcast;
+  const draft = props.broadcastDraft ?? liveBroadcast?.message ?? "";
   const expiresOn =
-    props.broadcastExpiry ?? (live ? live.expires_at.slice(0, 10) : defaultExpiryDate());
-  const availability = props.broadcastAvailability ?? live?.availability ?? "away";
-  const timezone = props.broadcastTimezone ?? live?.timezone ?? "";
+    props.broadcastExpiry ??
+    (liveBroadcast ? liveBroadcast.expires_at.slice(0, 10) : defaultExpiryDate());
+  const availability = props.broadcastAvailability ?? liveBroadcast?.availability ?? "away";
+  const timezone = props.broadcastTimezone ?? liveBroadcast?.timezone ?? "";
   const busy = Boolean(props.broadcastBusy);
   const dirty =
-    draft.trim() !== (live?.message ?? "").trim() ||
-    availability !== live?.availability ||
-    timezone.trim() !== (live?.timezone ?? "");
+    draft.trim() !== (liveBroadcast?.message ?? "").trim() ||
+    availability !== liveBroadcast?.availability ||
+    timezone.trim() !== (liveBroadcast?.timezone ?? "");
 
   return html`
     <section class="professor__section professor__broadcast" data-testid="professor-broadcast">
       <div class="professor__head">
         <div class="card-title">${t("professor.broadcast.title")}</div>
-        ${live
+        ${liveBroadcast
           ? html`<span class="professor__when" data-testid="professor-broadcast-until"
-              >${t("professor.broadcast.until", { date: live.expires_at.slice(0, 10) })}</span
+              >${t("professor.broadcast.until", {
+                date: liveBroadcast.expires_at.slice(0, 10),
+              })}</span
             >`
           : html`<span class="professor__when muted">${t("professor.broadcast.none")}</span>`}
       </div>
@@ -668,14 +646,17 @@ function broadcastBox(props: ProfessorViewProps) {
       <div class="professor__broadcast-controls">
         <label class="professor__broadcast-field">
           <span>${t("professor.broadcast.showsUntil")}</span>
-          <input
-            type="date"
-            data-testid="professor-broadcast-expiry"
-            .value=${expiresOn}
-            ?disabled=${busy}
-            @input=${(event: Event) =>
-              props.onBroadcastExpiryChange((event.target as HTMLInputElement).value)}
-          />
+          ${renderDateControl(
+            html`<input
+              type="date"
+              data-testid="professor-broadcast-expiry"
+              .value=${live(expiresOn)}
+              ?disabled=${busy}
+              @input=${(event: Event) =>
+                props.onBroadcastExpiryChange((event.target as HTMLInputElement).value)}
+            />`,
+            expiresOn,
+          )}
         </label>
         <label class="professor__broadcast-field">
           <span>${t("professor.broadcast.availability")}</span>
@@ -712,7 +693,7 @@ function broadcastBox(props: ProfessorViewProps) {
             data-testid="professor-broadcast-post"
             ?disabled=${busy ||
             !draft.trim() ||
-            (!dirty && !!live && expiresOn === live.expires_at.slice(0, 10))}
+            (!dirty && !!liveBroadcast && expiresOn === liveBroadcast.expires_at.slice(0, 10))}
             @click=${() =>
               props.onBroadcastPublish({
                 message: draft,
@@ -721,9 +702,9 @@ function broadcastBox(props: ProfessorViewProps) {
                 ...(timezone.trim() ? { timezone: timezone.trim() } : {}),
               })}
           >
-            ${live ? t("professor.broadcast.update") : t("professor.broadcast.post")}
+            ${liveBroadcast ? t("professor.broadcast.update") : t("professor.broadcast.post")}
           </button>
-          ${live
+          ${liveBroadcast
             ? html`<button
                 class="btn btn--sm"
                 type="button"
@@ -760,9 +741,10 @@ export function renderProfessorView(props: ProfessorViewProps) {
   const drafts = overleafReadingQueue(props.papers);
   // Somebody short on two counts is still one person to remind, so the headline number is people,
   // not rows.
-  const toRemind = new Set(
-    adoptionColumns(props.profiles).flatMap((column) => column.rows.map((row) => row.id)),
-  );
+  const toRemind =
+    props.adoptionCounts?.people ??
+    new Set(adoptionColumns(props.profiles).flatMap((column) => column.rows.map((row) => row.id)))
+      .size;
 
   const sections: Array<{ settled: boolean; pinned?: boolean; body: unknown }> = [
     {
@@ -791,7 +773,10 @@ export function renderProfessorView(props: ProfessorViewProps) {
                 items: props.piReview.map((row) =>
                   rowButton({
                     action: t("professor.piReview.open"),
-                    onOpen: () => props.onOpen("adminbotPapers"),
+                    onOpen: () =>
+                      props.onOpenPaper
+                        ? props.onOpenPaper(row.paperId)
+                        : props.onOpen("adminbotPapers"),
                     body: html`<strong>${row.title}</strong>
                       <span class="muted">${row.authors.join(", ")}</span>
                       ${row.feedback
@@ -857,7 +842,7 @@ export function renderProfessorView(props: ProfessorViewProps) {
         id: "escalated",
         title: t("professor.escalated.title"),
         blurb: t("professor.escalated.blurb"),
-        count: props.escalated.length,
+        count: escalatedNudgeTotal(props.escalated),
         // Announcements is where she writes to somebody, which is the whole point of an
         // escalation: the automatic chasing is finished and it now wants a person.
         tab: "adminbotAnnouncements",
@@ -865,6 +850,7 @@ export function renderProfessorView(props: ProfessorViewProps) {
         onOpen: props.onOpen,
         body: rows({
           id: "escalated",
+          total: escalatedNudgeTotal(props.escalated),
           items: props.escalated.map((row) =>
             rowButton({
               action: t("professor.escalated.open"),
@@ -932,11 +918,11 @@ export function renderProfessorView(props: ProfessorViewProps) {
       }),
     },
     {
-      settled: toRemind.size === 0,
+      settled: toRemind === 0,
       body: section({
         id: "adoption",
         title: t("professor.adoption.title"),
-        count: toRemind.size,
+        count: toRemind,
         tab: "adminbotProfileOverview",
         linkLabel: t("professor.adoption.open"),
         onOpen: props.onOpen,
@@ -951,10 +937,6 @@ export function renderProfessorView(props: ProfessorViewProps) {
   // depending on how her week is going.
   return html`
     <div class="professor">
-      <adminbot-local-chat
-        style="display: block; grid-column: 1 / -1"
-        .sessionToken=${props.localChatSessionToken ?? ""}
-      ></adminbot-local-chat>
       ${broadcastBox(props)}
       ${sections
         .toSorted(

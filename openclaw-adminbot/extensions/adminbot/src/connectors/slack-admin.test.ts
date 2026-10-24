@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AdminBotStoredProposal } from "../contracts/actions.js";
-import { createAdminBotSlackAdminExecutor } from "./slack-admin.js";
+import {
+  classifySlackInviteFailure,
+  createAdminBotSlackAdminExecutor,
+  type SlackAdminFetch,
+} from "./slack-admin.js";
 
 function proposal(
   type: AdminBotStoredProposal["type"],
@@ -445,5 +449,172 @@ describe("deadline recommendation delivery", () => {
       executor.execute(proposal("deadline.recommend", { user_ids: ["UADA"], message: "text" })),
     ).rejects.toThrow("two distinct");
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});
+
+describe("conference intro delivery", () => {
+  it("opens one three-person conversation and posts the composed text as plain text", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        text: async () => '{"ok":true,"channel":{"id":"GEXAMPLE"}}',
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        text: async () => '{"ok":true}',
+      });
+    const executor = createAdminBotSlackAdminExecutor({
+      env: { SLACK_BOT_TOKEN: "test" },
+      fetchImpl,
+    });
+    const outcome = await executor.execute({
+      ...proposal("slack.conference_intro", {
+        user_ids: ["UADA", "UBOB", "UCY"],
+        member_ids: ["ada", "bob", "cy"],
+        message: "Intro text",
+      }),
+      id: "act_12345678-1234-1234-1234-123456789012",
+    });
+    expect(outcome).toEqual({ handled: true });
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body)).toEqual({ users: "UADA,UBOB,UCY" });
+    expect(JSON.parse(fetchImpl.mock.calls[1][1].body)).toMatchObject({
+      channel: "GEXAMPLE",
+      text: "Intro text",
+      mrkdwn: false,
+      client_msg_id: "12345678-1234-1234-1234-123456789012",
+    });
+  });
+
+  it.each([
+    ["one person", ["UADA"]],
+    ["four people", ["UADA", "UBOB", "UCY", "UDEE"]],
+    ["a duplicate that leaves one", ["UADA", "UADA"]],
+    ["a channel id in place of a user", ["UADA", "UBOB", "C0GENERAL"]],
+  ])("refuses an altered payload with %s", async (_label, userIds) => {
+    const fetchImpl = vi.fn();
+    const executor = createAdminBotSlackAdminExecutor({
+      env: { SLACK_BOT_TOKEN: "test" },
+      fetchImpl,
+    });
+    await expect(
+      executor.execute(
+        proposal("slack.conference_intro", { user_ids: userIds, message: "Intro text" }),
+      ),
+    ).rejects.toThrow("two or three distinct");
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("posts the intro's Block Kit with the text as fallback, and refuses any other block", async () => {
+    const ok = (body: string) => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      text: async () => body,
+    });
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(ok('{"ok":true,"channel":{"id":"GEXAMPLE"}}'))
+      .mockResolvedValueOnce(ok('{"ok":true}'));
+    const executor = createAdminBotSlackAdminExecutor({
+      env: { SLACK_BOT_TOKEN: "test" },
+      fetchImpl,
+    });
+    const blocks = [
+      { type: "header", text: { type: "plain_text", text: "Hi" } },
+      { type: "context", elements: [{ type: "mrkdwn", text: "footer" }] },
+    ];
+    await executor.execute(
+      proposal("slack.conference_intro", {
+        user_ids: ["UADA", "UBOB"],
+        message: "Intro text",
+        blocks,
+      }),
+    );
+    expect(JSON.parse(fetchImpl.mock.calls[1][1].body)).toMatchObject({
+      text: "Intro text",
+      blocks,
+    });
+
+    const refused = vi.fn();
+    await expect(
+      createAdminBotSlackAdminExecutor({ env: { SLACK_BOT_TOKEN: "test" }, fetchImpl: refused })
+        .execute(
+          proposal("slack.conference_intro", {
+            user_ids: ["UADA", "UBOB"],
+            message: "Intro text",
+            blocks: [{ type: "actions", elements: [] }],
+          }),
+        ),
+    ).rejects.toThrow("blocks must be");
+    expect(refused).not.toHaveBeenCalled();
+  });
+});
+
+describe("slack.invite_to_channel when the bot is not in the channel", () => {
+  const ok = (body: Record<string, unknown>) => ({
+    ok: true,
+    status: 200,
+    statusText: "OK",
+    text: async () => JSON.stringify(body),
+  });
+  const executor = (fetchImpl: ReturnType<typeof vi.fn>) =>
+    createAdminBotSlackAdminExecutor({
+      env: { SLACK_BOT_TOKEN: "xoxb-test" } as NodeJS.ProcessEnv,
+      fetchImpl: fetchImpl as unknown as SlackAdminFetch,
+    });
+
+  it("joins the channel itself and retries the invite once", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(ok({ ok: false, error: "not_in_channel" }))
+      .mockResolvedValueOnce(ok({ ok: true }))
+      .mockResolvedValueOnce(ok({ ok: true }));
+    await executor(fetchImpl).execute(
+      proposal("slack.invite_to_channel", { channel: "C0ROOM0001", user_id: "U1" }),
+    );
+    expect(fetchImpl.mock.calls.map((call) => call[0])).toEqual([
+      "https://slack.com/api/conversations.invite",
+      "https://slack.com/api/conversations.join",
+      "https://slack.com/api/conversations.invite",
+    ]);
+  });
+
+  it("says why when it cannot join", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(ok({ ok: false, error: "not_in_channel" }))
+      .mockResolvedValueOnce(ok({ ok: false, error: "method_not_supported_for_channel_type" }));
+    await expect(
+      executor(fetchImpl).execute(
+        proposal("slack.invite_to_channel", { channel: "C0ROOM0001", user_id: "U1" }),
+      ),
+    ).rejects.toThrow(/not_in_channel \(join refused: method_not_supported_for_channel_type\)/u);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("classifySlackInviteFailure", () => {
+  it("separates a broken channel from a person the bot cannot add", () => {
+    expect(classifySlackInviteFailure("Slack has no open channel named #help-rec-letters")).toEqual(
+      { scope: "channel", reason: "channel_missing" },
+    );
+    expect(classifySlackInviteFailure("Slack channel invite failed 200: not_in_channel")).toEqual({
+      scope: "channel",
+      reason: "not_in_channel",
+    });
+    expect(
+      classifySlackInviteFailure("Slack channel invite failed 200: user_team_not_in_channel"),
+    ).toEqual({ scope: "member", reason: "user_team_not_in_channel" });
+    expect(
+      classifySlackInviteFailure("Slack channel invite failed 200: org_user_not_in_team"),
+    ).toEqual({ scope: "member", reason: "org_user_not_in_team" });
+    expect(classifySlackInviteFailure("Slack channel lookup failed 500: ratelimited")).toBe(
+      undefined,
+    );
   });
 });

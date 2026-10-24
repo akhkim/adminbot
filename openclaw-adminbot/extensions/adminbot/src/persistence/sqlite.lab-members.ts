@@ -1,0 +1,86 @@
+import type { DatabaseSync } from "node:sqlite";
+import type { AdminBotLabMember } from "../contracts/actions.js";
+import type { AdminBotLabMemberSummary } from "../kernel/service.js";
+import { summarizeLabMember } from "../workflows/members/member-summary.js";
+import { labMemberRowReader } from "../workflows/onboarding/onboarding-storage.js";
+
+type Snapshot = {
+  version: number;
+  /** Counts rebuilds, so it moves on this connection's writes too, which `data_version` does not. */
+  generation: number;
+  members: readonly AdminBotLabMember[];
+  byId: ReadonlyMap<string, AdminBotLabMember>;
+  summaries?: readonly AdminBotLabMemberSummary[];
+};
+
+/**
+ * The parsed roster, kept until a member is written.
+ *
+ * On Aurora the roster is ~6MB of JSON (inline avatars, onboarding) and most requests and sweeps
+ * read all of it. Writes through the store call `invalidate()`; `PRAGMA data_version` catches
+ * commits from any other connection (scripts, a second process) without a write hook.
+ *
+ * Members are shared objects, as in the in-memory store: change one, then save it.
+ */
+export class SqliteLabMemberCache {
+  private snapshot: Snapshot | undefined;
+  private generation = 0;
+
+  constructor(private readonly db: DatabaseSync) {}
+
+  invalidate(): void {
+    this.snapshot = undefined;
+  }
+
+  list(): readonly AdminBotLabMember[] {
+    return this.current().members;
+  }
+
+  /** A token that changes whenever the parsed roster is rebuilt; equal tokens, same members. */
+  version(): number {
+    return this.current().generation;
+  }
+
+  get(memberId: string): AdminBotLabMember | undefined {
+    return this.current().byId.get(memberId);
+  }
+
+  summaries(): readonly AdminBotLabMemberSummary[] {
+    const snapshot = this.current();
+    snapshot.summaries ??= (
+      this.db
+        .prepare(
+          `SELECT id FROM adminbot_lab_members
+           ORDER BY adminbot_lower(json_extract(payload_json, '$.name')), id`,
+        )
+        .all() as Array<{ id: string }>
+    ).map(({ id }) => summarizeLabMember(snapshot.byId.get(id)!));
+    return snapshot.summaries;
+  }
+
+  private current(): Snapshot {
+    const { data_version: version } = this.db.prepare("PRAGMA data_version").get() as {
+      data_version: number;
+    };
+    if (this.snapshot?.version === version) {
+      return this.snapshot;
+    }
+    const read = labMemberRowReader();
+    const members = (
+      this.db
+        .prepare(
+          `SELECT payload_json FROM adminbot_lab_members
+           ORDER BY json_extract(payload_json, '$.name')`,
+        )
+        .all() as Array<{ payload_json: string }>
+    ).map((row) => read(row.payload_json));
+    this.generation += 1;
+    this.snapshot = {
+      version,
+      generation: this.generation,
+      members,
+      byId: new Map(members.map((m) => [m.id, m])),
+    };
+    return this.snapshot;
+  }
+}

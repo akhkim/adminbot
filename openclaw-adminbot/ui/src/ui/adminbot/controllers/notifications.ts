@@ -11,15 +11,13 @@ import { showToast } from "../../toast.ts";
 // alone would re-pop everything on the next poll and every reload, which turns a reminder into
 // something the member learns to close without reading; firing once and leaving the dashboard card
 // behind is the version that still says the thing tomorrow without saying it every minute.
+import { fetchLabBroadcasts, publishLabBroadcast } from "../api/lab-sharing.ts";
 import {
-  fetchLabBroadcasts,
-  publishLabBroadcast,
   fetchNotifications,
-  loadStoredMemberSession,
   markNotificationsRead,
-  resolveAdminBotBaseUrl,
   type MemberNotification,
-} from "../auth/session.ts";
+} from "../api/workspace.ts";
+import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 import type { AdminBotHost } from "./admin.ts";
 
 /** Notification ids already popped in this session. Cleared on sign-out via `resetNotificationPopups`. */
@@ -181,7 +179,14 @@ export async function publishAdminBotBroadcast(
   draft: { message: string; availability: string; expiresOn: string; timezone?: string } | null,
 ): Promise<void> {
   const stored = loadStoredMemberSession();
-  if (!stored || host.adminBotBroadcastBusy) {
+  if (host.adminBotBroadcastBusy) {
+    return;
+  }
+  if (!stored) {
+    host.adminBotBroadcastNotice = {
+      kind: "error",
+      text: "Sign in again before posting a broadcast.",
+    };
     return;
   }
   let body: Parameters<typeof publishLabBroadcast>[0] = null;
@@ -232,6 +237,13 @@ export async function publishAdminBotBroadcast(
       body?.timezone && !result.value.status?.timezone
         ? { kind: "error", text: "The message was posted, but its time zone was not saved." }
         : { kind: "success", text: body ? "Posted to the lab." : "Broadcast taken down." };
+  } catch {
+    if (loadStoredMemberSession()?.sessionToken === stored.sessionToken) {
+      host.adminBotBroadcastNotice = {
+        kind: "error",
+        text: "Could not confirm that broadcast was saved. Check the connection and reload before trying again.",
+      };
+    }
   } finally {
     if (loadStoredMemberSession()?.sessionToken === stored.sessionToken) {
       host.adminBotBroadcastBusy = false;

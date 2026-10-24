@@ -13,8 +13,9 @@
  *
  *   1. **The record**, with its access level implied by its Member Type (`newMemberRecord`).
  *   2. **Enrollment** (`enrollNewMember`): the access design's consequences of holding that type,
- *      applied as the move from "nobody" to it -- Slack rooms, the Monday meeting, the lab calendar
- *      and the sheet's Member Type cell -- by the same `applyMemberTypeChange` a type change runs.
+ *      applied as the move from "nobody" to it -- Slack rooms, the Monday meeting, the lab calendar,
+ *      the sheet's Member Type cell and, for full members and major coauthors, the DCS roster row
+ *      -- by the same `applyMemberTypeChange` a type change runs.
  *   3. **The guide** (`onboarding.send_guide`), for the Member Types the access design mails.
  *
  * An admin's click approves enrollment and the standard full-member guide on the spot.
@@ -41,7 +42,11 @@ import {
   type MemberSheetSource,
   approveAndExecute,
 } from "./server.member-sheet.js";
-import { applyMemberTypeChange, type MemberTypeChangeResult } from "./server.member-type-change.js";
+import {
+  applyMemberTypeChange,
+  type DcsRosterSheetSource,
+  type MemberTypeChangeResult,
+} from "./server.member-type-change.js";
 
 /** Everything enrollment needs from the route, built once per request by the caller. */
 export type NewMemberOnboardingDeps = {
@@ -50,6 +55,7 @@ export type NewMemberOnboardingDeps = {
   approver?: MemberSheetApprover;
   actor: string;
   memberSheet?: MemberSheetSource;
+  dcsRoster?: DcsRosterSheetSource;
   readGroupMeeting?: () => Promise<
     | { calendarId: string; seriesId: string; targets: string[] }
     | { error: { status: number; message: string } }
@@ -78,9 +84,9 @@ export async function enrollNewMember(
   return applyMemberTypeChange(
     {
       ...deps,
-      // The guide step below is this person's one onboarding mail; the alumni farewell inside a
-      // type change would be a second copy of it.
-      skipAlumniMail: true,
+      // The guide step below is this person's one onboarding mail; the guide inside a type change
+      // would be a second copy of it.
+      skipGuide: true,
       guideSendsSlackConnect: templateForMemberType(member.member_type).ok,
       skipGroupMeeting: options.skipGroupMeeting,
       skipSheet:
@@ -121,6 +127,8 @@ export async function queueNewMemberGuide(
     values?: Record<string, string>;
     slackChannels?: readonly string[];
     send?: boolean;
+    /** See `queueOnboardingGuideForMember`: an admin mailing the guide again on purpose. */
+    resend?: boolean;
   } = {},
 ): Promise<NewMemberGuideStep> {
   const queued = deps.service.queueOnboardingGuideForMember({
@@ -129,6 +137,7 @@ export async function queueNewMemberGuide(
     ...(options.email ? { email: options.email } : {}),
     ...(options.values ? { values: options.values } : {}),
     ...(options.slackChannels ? { slackChannels: options.slackChannels } : {}),
+    ...(options.resend ? { resend: true } : {}),
   });
   if (!queued.ok) {
     // 422 is a Member Type the design does not mail, or nobody to mail: a decision, not a fault.

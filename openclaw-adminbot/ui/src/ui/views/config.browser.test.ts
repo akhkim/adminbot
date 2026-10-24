@@ -41,7 +41,7 @@ describe("config view", () => {
     onSubsectionChange: vi.fn(),
     version: "2026.3.11",
     theme: "claw" as ThemeName,
-    themeMode: "system" as ThemeMode,
+    themeMode: "dark" as ThemeMode,
     setTheme: vi.fn(),
     setThemeMode: vi.fn(),
     hasCustomTheme: false,

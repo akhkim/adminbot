@@ -156,8 +156,8 @@ export function adminBotConsoleScript(): string {
         api("/lab/members"),
         api("/papers"),
         api("/papers/nudges"),
-        api("/proposals/pending?limit=50"),
-        api("/audit")
+        api("/proposals/pending?limit=50&view=summary"),
+        api("/audit?limit=200")
       ]);
       state.settings = settings;
       state.members = members.members || [];

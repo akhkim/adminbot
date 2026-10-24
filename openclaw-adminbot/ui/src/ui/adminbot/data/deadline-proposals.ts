@@ -6,6 +6,7 @@ import {
   type DeadlineProposalView,
 } from "../../../../../extensions/adminbot/src/contracts/deadline-proposals.js";
 import type { UiSettings } from "../../storage.ts";
+import { memberAuthHeaders } from "../api/device-clock.ts";
 import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 import type { DeadlineVenue } from "./deadlines.ts";
 
@@ -29,15 +30,6 @@ export interface DeadlineProposalStore {
   ): Promise<void>;
   revise(proposalId: string, input: DeadlineProposalInput): Promise<DeadlineProposal>;
   decide(proposal: DeadlineProposal, decision: "published" | "rejected"): Promise<DeadlineProposal>;
-}
-
-class DeadlineServiceError extends Error {
-  constructor(
-    readonly status: number,
-    message: string,
-  ) {
-    super(message);
-  }
 }
 
 function publishedItems(body: unknown): DeadlineVenue[] | undefined {
@@ -77,18 +69,7 @@ export class AdminBotDeadlineProposalStore implements DeadlineProposalStore {
   }
 
   async listPublished(): Promise<DeadlineVenue[]> {
-    try {
-      const items = publishedItems(await this.request("/deadlines", { method: "GET" }));
-      if (items) {
-        return items;
-      }
-    } catch (error) {
-      if (!(error instanceof DeadlineServiceError) || error.status !== 404) {
-        throw error;
-      }
-    }
-    // Older deployments still serve HTML at /deadlines and JSON at this route.
-    const items = publishedItems(await this.request("/deadlines/venues.json", { method: "GET" }));
+    const items = publishedItems(await this.request("/deadlines", { method: "GET" }));
     if (!items) {
       throw new Error("Deadline service returned an invalid dataset.");
     }
@@ -160,7 +141,7 @@ export class AdminBotDeadlineProposalStore implements DeadlineProposalStore {
       headers: {
         Accept: "application/json",
         ...(options.body === undefined ? {} : { "Content-Type": "application/json" }),
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...memberAuthHeaders(token),
         ...options.headers,
       },
       ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
@@ -169,10 +150,7 @@ export class AdminBotDeadlineProposalStore implements DeadlineProposalStore {
       error?: { message?: string };
     } | null;
     if (!response.ok) {
-      throw new DeadlineServiceError(
-        response.status,
-        body?.error?.message ?? `Deadline service returned ${response.status}.`,
-      );
+      throw new Error(body?.error?.message ?? `Deadline service returned ${response.status}.`);
     }
     return body;
   }

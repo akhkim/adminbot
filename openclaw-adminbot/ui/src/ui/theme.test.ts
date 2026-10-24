@@ -1,6 +1,6 @@
 // Control UI tests cover theme behavior.
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { parseThemeSelection, resolveSystemTheme, resolveTheme } from "./theme.ts";
+import { parseThemeSelection, resolveTheme } from "./theme.ts";
 
 /** Pretends the operating system is asking for one scheme or the other. */
 function systemPrefers(scheme: "light" | "dark") {
@@ -22,36 +22,19 @@ describe("resolveTheme", () => {
     expect(resolveTheme("claw", "light")).toBe("light");
   });
 
-  it("follows the machine when the mode is system", () => {
+  it("ignores what the operating system prefers", () => {
+    // There is no system mode: a light machine still gets the dark default until somebody picks
+    // light here.
     systemPrefers("light");
-    expect(resolveTheme("claw", "system")).toBe("light");
+    expect(resolveTheme("claw", "dark")).toBe("dark");
     systemPrefers("dark");
-    expect(resolveTheme("claw", "system")).toBe("dark");
+    expect(resolveTheme("claw", "light")).toBe("light");
   });
 
   it("keeps the custom escape hatch dark whatever the mode says", () => {
     // A pasted palette is a whole theme, not a variant of ours to take a light version of.
     expect(resolveTheme("custom", "dark")).toBe("custom");
     expect(resolveTheme("custom", "light")).toBe("custom");
-    systemPrefers("light");
-    expect(resolveTheme("custom", "system")).toBe("custom");
-  });
-});
-
-describe("resolveSystemTheme", () => {
-  it("mirrors the operating system", () => {
-    systemPrefers("light");
-    expect(resolveSystemTheme()).toBe("light");
-    systemPrefers("dark");
-    expect(resolveSystemTheme()).toBe("dark");
-  });
-
-  it("falls back to dark where it cannot ask", () => {
-    // A server render, a test environment and an old browser all land here. Dark is what this app
-    // looked like for everyone until light existed, so guessing light would change the appearance
-    // for people who never expressed a preference.
-    vi.stubGlobal("matchMedia", undefined);
-    expect(resolveSystemTheme()).toBe("dark");
   });
 });
 
@@ -62,8 +45,12 @@ describe("parseThemeSelection", () => {
     expect(parseThemeSelection("docsTheme", undefined)).toEqual({ theme: "claw", mode: "light" });
   });
 
-  it("gives back a stored system preference as system, not as dark", () => {
-    expect(parseThemeSelection("system", undefined)).toEqual({ theme: "claw", mode: "system" });
+  it("migrates the removed system mode to dark", () => {
+    expect(parseThemeSelection("claw", "system")).toEqual({ theme: "claw", mode: "dark" });
+    expect(parseThemeSelection("system", undefined)).toEqual({ theme: "claw", mode: "dark" });
+    // A stored "system" mode was a choice, so it is not overridden by a legacy light theme name.
+    expect(parseThemeSelection("lightTheme", "system")).toEqual({ theme: "claw", mode: "dark" });
+    expect(parseThemeSelection("custom", "system")).toEqual({ theme: "custom", mode: "dark" });
   });
 
   it("normalizes the removed knot/dash theme families instead of throwing", () => {

@@ -9,7 +9,9 @@
 //
 //   1. An observation is recorded only when it *differs* from the last one from the same source.
 //      Otherwise a member who signs in twice a day produces 700 identical rows a year and the
-//      timeline stops being a change log.
+//      timeline stops being a change log. The IP source is the one exception, by day rather than
+//      by request: it also records the first reading of each UTC day (isNewDailyObservation), so
+//      "still in Toronto today" is dated in the log and the daily check survives a restart.
 //   2. A divergence between inference and profile produces a *question*, never a write. The member
 //      answers it; their answer is self-reported and goes through the same path as any field they
 //      type. Nothing here edits a profile.
@@ -72,7 +74,7 @@ export function observationFor(params: {
   // a member listed in Zurich would acquire Netherlands days out of a clock setting. The zone is
   // kept as a zone, in `timezone`, and states nothing about a country.
   const place =
-    params.source === "slack_timezone"
+    params.source === "slack_timezone" || params.source === "device_timezone"
       ? undefined
       : params.source === "login_ip"
         ? resolveCountry(raw)
@@ -92,9 +94,53 @@ export function observationFor(params: {
     // where somebody is -- it is a zone their own device reports, stored as a zone, under a source
     // that says where it came from. It stays a *different claim* from the location: it says which
     // offset their laptop is set to, never which country they are standing in.
-    ...(params.timezone && (params.source === "self_reported" || params.source === "slack_timezone")
+    // `device_timezone` is the same kind of claim: the zone the browser in front of them reports.
+    ...(params.timezone &&
+    (params.source === "self_reported" ||
+      params.source === "slack_timezone" ||
+      params.source === "device_timezone")
       ? { timezone: params.timezone }
       : {}),
+    ...(observedAtLocal ? { observed_at_local: observedAtLocal } : {}),
+  };
+}
+
+/**
+ * A device reading as a timeline entry: city, region and country, and nothing finer.
+ *
+ * Its own constructor rather than `observationFor`, so the signature itself is the guarantee --
+ * there is no parameter a latitude could be passed through. `country` arrives as the ISO code
+ * GeoNames uses and is stored as the country name every other entry carries. The gazetteer key is
+ * attached only when the city resolves to a place in the same country; the label is always the
+ * city GeoNames named, since that is what the device said.
+ */
+export function deviceObservationFor(params: {
+  memberId: string;
+  city: string;
+  region?: string;
+  country: string;
+  observedAt: string;
+  /** The member's device zone, used only to render `observed_at_local`. */
+  zone?: string;
+}): AdminBotMemberLocationEntry | undefined {
+  const city = params.city.trim();
+  if (!city) {
+    return undefined;
+  }
+  const code = params.country.trim();
+  const country = resolveCountry(code)?.country ?? code;
+  const region = params.region?.trim();
+  const place = country ? resolvePlace(`${city}, ${country}`) : undefined;
+  const observedAtLocal = params.zone ? renderInZone(params.observedAt, params.zone) : undefined;
+  return {
+    id: `loc_${randomUUID()}`,
+    member_id: params.memberId,
+    observed_at: params.observedAt,
+    source: "device",
+    raw: [city, region, country].filter(Boolean).join(", "),
+    ...(place && place.country === country ? { place_key: place.key } : {}),
+    place_label: city,
+    ...(country ? { country } : {}),
     ...(observedAtLocal ? { observed_at_local: observedAtLocal } : {}),
   };
 }
@@ -164,16 +210,42 @@ export function isNewObservation(
   return normalize(latest.raw) !== normalize(candidate.raw);
 }
 
+/** The UTC calendar day of an ISO instant ("2026-10-16"), or "" for an unparseable one. */
+export function utcDay(iso: string | undefined): string {
+  const ms = iso ? Date.parse(iso) : Number.NaN;
+  return Number.isNaN(ms) ? "" : new Date(ms).toISOString().slice(0, 10);
+}
+
+/**
+ * The IP source's rule: new when the place changed, when the VPN verdict changed, or when the last
+ * reading was on an earlier UTC day. One row per member per day at most for an unchanged answer.
+ */
+export function isNewDailyObservation(
+  latest: AdminBotMemberLocationEntry | undefined,
+  candidate: AdminBotMemberLocationEntry,
+): boolean {
+  return (
+    isNewObservation(latest, candidate) ||
+    Boolean(latest?.suspected_vpn) !== Boolean(candidate.suspected_vpn) ||
+    utcDay(latest?.observed_at) !== utcDay(candidate.observed_at)
+  );
+}
+
 function normalize(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/gu, " ");
 }
 
-/** The most recent entry per source, which is what "where do we think they are" reads from. */
+/** The most recent entry per source, which is what "where do we think they are" reads from. Check-in non-answers are skipped. */
 export function latestBySource(
   history: readonly AdminBotMemberLocationEntry[],
 ): Map<AdminBotLocationSource, AdminBotMemberLocationEntry> {
   const latest = new Map<AdminBotLocationSource, AdminBotMemberLocationEntry>();
   for (const entry of history) {
+    // A check-in snooze or decline is logged as `self_reported` but states no place, so it is never
+    // "the latest thing this source said about where they are".
+    if (entry.checkin === "snoozed" || entry.checkin === "declined") {
+      continue;
+    }
     const held = latest.get(entry.source);
     if (!held || held.observed_at < entry.observed_at) {
       latest.set(entry.source, entry);
@@ -213,7 +285,8 @@ export function detectLocationDrift(
   const minObservations = options?.minObservations ?? LOCATION_DRIFT_MIN_OBSERVATIONS;
   const minDays = options?.minDays ?? LOCATION_DRIFT_MIN_DAYS;
   const logins = history
-    .filter((entry) => entry.source === "login_ip" && entry.country)
+    // A reading flagged as a likely VPN says where the exit node is, not the member.
+    .filter((entry) => entry.source === "login_ip" && entry.country && !entry.suspected_vpn)
     .toSorted((left, right) => left.observed_at.localeCompare(right.observed_at));
   const newest = logins.at(-1);
   if (!newest?.country) {
@@ -287,5 +360,7 @@ export function selfReportedChange(
 
 /** What the record says the member's location is on a day, as text, for quoting back to them. */
 function claimedLocation(member: AdminBotLabMember, dayIso: string): string | undefined {
-  return tripOn(member, dayIso)?.city.trim() || member.current_city?.trim() || member.location?.trim();
+  return (
+    tripOn(member, dayIso)?.city.trim() || member.current_city?.trim() || member.location?.trim()
+  );
 }

@@ -14,6 +14,7 @@ import type {
   AdminBotSheetValueRange,
   AdminBotStoredProposal,
 } from "../contracts/actions.js";
+import { adminBotIsGmailAddress } from "../contracts/member-outreach-email.js";
 import type { AdminBotService, AdminBotServiceResponse } from "../kernel/service.js";
 import { subgroupForMemberType } from "../workflows/members/collaborator-subgroups.js";
 import {
@@ -586,9 +587,23 @@ export async function approveAndExecute(
   if (!approved.ok) {
     return { ok: false, reason: approved.error.message };
   }
+  return executeApproved(service, proposal, `add-row-${proposal.id}`);
+}
+
+/**
+ * Execute a proposal that is already approved -- by an admin above, or by its own auto policy.
+ *
+ * Reported as done only when a connector carried it out, which is the half of approveAndExecute an
+ * auto-approved proposal still needs.
+ */
+export async function executeApproved(
+  service: AdminBotService,
+  proposal: AdminBotStoredProposal,
+  idempotencyKey: string,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
   const executed = await service.execute(proposal.id, {
     dry_run: false,
-    idempotency_key: `add-row-${proposal.id}`,
+    idempotency_key: idempotencyKey,
   });
   if (!executed.ok) {
     return { ok: false, reason: executed.error.message };
@@ -743,7 +758,15 @@ export async function addMemberSheetRow(
   // Steps 2 and 3 are the shared onboarding every way onto the roster runs
   // (server.member-onboarding.ts): the record with the level its type implies, the access design's
   // rooms and invites, and the guide -- approved by this admin's click, like the row above.
-  const onboarded = await onboard({ id: memberId, name, email, member_type: memberType });
+  // A Gmail typed as the Slack address is the member's Google account: kept as their Calendar
+  // email, so the lab calendar share lands somewhere they can open it.
+  const onboarded = await onboard({
+    id: memberId,
+    name,
+    email,
+    member_type: memberType,
+    ...(adminBotIsGmailAddress(slackEmail) ? { calendar_email: slackEmail } : {}),
+  });
   if (!onboarded.ok) {
     return {
       member_id: memberId,

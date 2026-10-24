@@ -10,6 +10,7 @@ import {
   resolveCoreOperatorGatewayMethodScope,
 } from "./methods/core-descriptors.js";
 import {
+  CHAT_SCOPE,
   ADMIN_SCOPE,
   APPROVALS_SCOPE,
   PAIRING_SCOPE,
@@ -21,6 +22,7 @@ import {
 } from "./operator-scopes.js";
 
 export {
+  CHAT_SCOPE,
   ADMIN_SCOPE,
   APPROVALS_SCOPE,
   PAIRING_SCOPE,
@@ -192,7 +194,10 @@ export function authorizeOperatorScopesForRequiredScope(
     }
     return { allowed: false, missingScope: READ_SCOPE };
   }
-  if (scopes.includes(requiredScope)) {
+  if (
+    scopes.includes(requiredScope) ||
+    (requiredScope === CHAT_SCOPE && scopes.includes(WRITE_SCOPE))
+  ) {
     return { allowed: true };
   }
   return { allowed: false, missingScope: requiredScope };

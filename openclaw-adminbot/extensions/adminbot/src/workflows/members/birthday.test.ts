@@ -121,6 +121,16 @@ describe("birthdayEventPayload", () => {
     expect(newYearsEve).toMatchObject({ from: "2026-12-31", to: "2027-01-01" });
   });
 
+  it("ends February 28 on March 1 in a non-leap year", () => {
+    expect(
+      birthdayEventPayload(
+        member({ birthday: "02-28" }),
+        "lab@example.com",
+        new Date("2026-01-01T00:00:00Z"),
+      ),
+    ).toMatchObject({ from: "2026-02-28", to: "2026-03-01" });
+  });
+
   it("keeps 29 February on the 29th rather than silently moving it", () => {
     const payload = birthdayEventPayload(
       member({ birthday: "02-29" }),
@@ -130,8 +140,8 @@ describe("birthdayEventPayload", () => {
     // The recurrence only fires in leap years, which is what the date actually means. Substituting
     // the 28th or the 1st would put a day on the calendar that is not this person's birthday.
     expect(payload).toMatchObject({
-      from: "2026-02-29",
-      to: "2026-03-01",
+      from: "2028-02-29",
+      to: "2028-03-01",
       rrule: "RRULE:FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=29",
     });
   });

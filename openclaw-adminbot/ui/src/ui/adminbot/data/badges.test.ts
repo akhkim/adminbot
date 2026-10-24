@@ -1,11 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { COMPLETE_PROFILE } from "../../../../../extensions/adminbot/src/contracts/profile-completion.test-helpers.js";
 import { i18n } from "../../../i18n/index.ts";
 import { createStorageMock } from "../../../test-helpers/storage.ts";
 import { saveStoredMemberSession } from "../auth/session.ts";
+import { resetAdminBotOfflineMemory } from "../offline/outbox.ts";
 import {
   type AdminBotBadgesHost,
   loadAdminBadgeNominations,
   loadBadgeDefinitions,
+  resetBlockedProfileBadgeErrors,
+  shouldLoadBadgeSuggestions,
   shouldLoadAdminBadgeNominations,
   shouldLoadBadgeDefinitions,
   shouldLoadProfileBadgeNominations,
@@ -45,6 +49,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 describe("adminbot-badges data", () => {
   beforeEach(async () => {
+    await resetAdminBotOfflineMemory();
     await i18n.setLocale("en");
     vi.stubGlobal("localStorage", createStorageMock());
     saveStoredMemberSession({ sessionToken: "sess-tok", expiresAt: "later" });
@@ -162,4 +167,32 @@ describe("adminbot-badges data", () => {
     expect(h.adminBotBadgeDefinitionsError).toBe("no-session");
     expect(shouldLoadBadgeDefinitions(h)).toBe(false);
   });
+});
+
+it("defers badge reads and clears cached gate failures so completion can load them", () => {
+  const state = Object.assign(host(), {
+    memberId: "member-1",
+    memberPrivilegeLevel: "member",
+    adminBotData: { members: [{ id: "member-1", privilege_level: "member" }] },
+    adminBotBadgeSuggestionsLoading: false,
+    adminBotBadgeSuggestionsLoadedAt: null,
+    adminBotBadgeSuggestionsError: "forbidden",
+  }) as AdminBotBadgesHost;
+  state.adminBotBadgeDefinitionsError = "forbidden";
+  state.profileBadgeNominationsError = "forbidden";
+  resetBlockedProfileBadgeErrors(state);
+  expect(state.adminBotBadgeDefinitionsError).toBeNull();
+  expect(state.profileBadgeNominationsError).toBeNull();
+  expect(state.adminBotBadgeSuggestionsError).toBeNull();
+  expect(shouldLoadBadgeDefinitions(state)).toBe(false);
+  expect(shouldLoadProfileBadgeNominations(state)).toBe(false);
+  expect(shouldLoadBadgeSuggestions(state)).toBe(false);
+  state.adminBotData.members = [{ ...COMPLETE_PROFILE, id: "member-1" } as never];
+  expect(shouldLoadBadgeDefinitions(state)).toBe(true);
+  expect(shouldLoadProfileBadgeNominations(state)).toBe(true);
+  expect(shouldLoadBadgeSuggestions(state)).toBe(true);
+  // An unrelated permission failure after unlocking must still settle, not loop.
+  state.adminBotBadgeDefinitionsError = "forbidden";
+  resetBlockedProfileBadgeErrors(state);
+  expect(shouldLoadBadgeDefinitions(state)).toBe(false);
 });

@@ -1,13 +1,11 @@
 /* @vitest-environment jsdom */
 // My Desk: what lands in each queue, and what does not.
 import { render } from "lit";
-import { afterEach, describe, expect, it } from "vitest";
-import type {
-  EscalatedNudgeRow,
-  LogisticsRequest,
-  MemberProfileOverviewRow,
-  PiReviewRow,
-} from "../auth/session.ts";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { LogisticsRequest } from "../api/logistics.ts";
+import type { MemberProfileOverviewRow } from "../api/members.ts";
+import { type EscalatedNudgeRow, fetchEscalatedNudges } from "../api/nudges.ts";
+import type { PiReviewRow } from "../api/paper-admin.ts";
 import type { AdminBotPaperRecord } from "../controllers/admin.ts";
 import {
   incompleteProfiles,
@@ -594,6 +592,20 @@ describe("renderProfessorView", () => {
     expect(section?.querySelector('[data-testid="professor-adoption-papers"]')).not.toBeNull();
   });
 
+  it("heads each column and the section with the service's counts, not the rows it was sent", () => {
+    // The service sends each column's head; the counts are over the whole roster.
+    const { container } = draw({
+      profiles: [profile({ id: "a", missing_fields: ["office"] })],
+      adoptionCounts: { profile: 37, timeline: 0, papers: 0, people: 52 },
+      expanded: new Set(["adoption-profile"]),
+    });
+    const section = container.querySelector('[data-testid="professor-adoption"]');
+    expect(section?.querySelector(".professor__count")?.textContent?.trim()).toBe("52");
+    const column = section?.querySelector('[data-testid="professor-adoption-profile"]');
+    expect(column?.querySelector(".ab-num")?.textContent?.trim()).toBe("37");
+    expect(column?.textContent).toContain("37");
+  });
+
   it("sinks a column with nobody in it below the ones with somebody in them", () => {
     const { container } = draw({
       profiles: [profile({ id: "papers", projects: { total: 2, self_updated: 0 } })],
@@ -663,6 +675,29 @@ describe("renderProfessorView", () => {
       expect(section?.textContent).toContain("2 things outstanding");
     });
 
+    it("counts the whole queue when the service sent only its first page", async () => {
+      const members = Array.from({ length: 20 }, (_, i) => ({
+        member_id: `m-${i}`,
+        name: `Member ${i}`,
+        escalated_at: "2026-08-20T09:00:00.000Z",
+        notifications: [{ id: `n-${i}`, title: "Poster", created_at: "2026-08-14T09:00:00Z" }],
+      }));
+      const fetchMock = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(
+          new Response(JSON.stringify({ members, total: 43, next_offset: 20 }), { status: 200 }),
+        );
+      const read = await fetchEscalatedNudges("tok", "http://127.0.0.1:8765");
+      fetchMock.mockRestore();
+      expect(read.ok).toBe(true);
+      const escalated = read.ok ? read.value : [];
+      expect(escalated[0]?.items[0]?.body).toBe("");
+      const { container } = draw({ escalated });
+      const section = container.querySelector('[data-testid="professor-escalated"]');
+      expect(section?.textContent).toContain("43");
+      expect(section?.textContent).toContain("Show 38 more");
+    });
+
     it("sits at the bottom even when somebody is waiting on her", () => {
       const { container } = draw({ escalated: [row()] });
       const order = queueOrder(container);
@@ -728,6 +763,16 @@ describe("the broadcast box", () => {
     });
     const first = container.querySelector(".professor__section");
     expect(first?.getAttribute("data-testid")).toBe("professor-broadcast");
+  });
+
+  // The local chat workspace used to sit above it. It was taken off My Desk, so the box is the
+  // page's first element, not merely its first section.
+  it("has no chat above it", () => {
+    const { container } = draw();
+    expect(container.querySelector("adminbot-local-chat")).toBeNull();
+    expect(
+      container.querySelector(".professor")?.firstElementChild?.getAttribute("data-testid"),
+    ).toBe("professor-broadcast");
   });
 
   it("starts holding whatever is live, so an edit is a correction not a retype", () => {
@@ -864,6 +909,17 @@ describe("the papers waiting on her yes", () => {
     expect(section?.textContent).toContain("paper password still missing");
     // Still listed: the missing password is the authors' errand, not a reason to stall her yes.
     expect(section?.textContent).toContain("Causal Garden Planning");
+  });
+
+  it("opens the selected paper in place on the PI page", () => {
+    const selected: string[] = [];
+    const onOpenPaper = (id: string) => selected.push(id);
+    const { container, opened } = draw({ piReview: [row()], onOpenPaper });
+    container
+      .querySelector<HTMLButtonElement>("#professor-list-pi-review .professor__row")!
+      .click();
+    expect(selected).toEqual(["p1"]);
+    expect(opened).toEqual([]);
   });
 
   it("leads the page when something is waiting on her", () => {

@@ -64,7 +64,10 @@ jobs:
 
   test-ui:
     name: Tests (ui)
-    runs-on: ubuntu-latest
+    # Pinned, unlike the other jobs: `ubuntu-latest` moved to 26.04 on 2026-10-19, and Playwright
+    # 1.60 refuses to install Chromium there ("does not support chromium on ubuntu26.04-x64"), which
+    # failed this job before a single test ran. Unpin once Playwright supports 26.04.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
@@ -73,8 +76,22 @@ jobs:
       - uses: ./.github/actions/setup
       # Scoped to the AdminBot surface. The wider `ui/src` lane carries the known-red i18n specs,
       # which the baseline job reports instead.
+      - name: Install Chromium for offline browser tests
+        run: pnpm exec playwright install --with-deps chromium
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: /tmp/adminbot-playwright
+      - name: Build the offline shell
+        run: pnpm exec vite build --config vite.config.ts
+        working-directory: openclaw-adminbot/ui
       - name: AdminBot UI suite
-        run: pnpm exec vitest run --config test/vitest/vitest.ui.config.ts ui/src/ui/adminbot
+        run: >
+          pnpm exec vitest run --config test/vitest/vitest.ui.config.ts ui/src/ui/adminbot
+          --exclude "**/*.browser.test.ts" --exclude "**/*.node.test.ts" --isolate --maxWorkers 3
+      - name: Offline browser and storage suite
+        run: pnpm exec vitest run --config vitest.config.ts src/ui/adminbot/offline
+        working-directory: openclaw-adminbot/ui
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: /tmp/adminbot-playwright
 
   structure:
     name: Structure

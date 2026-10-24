@@ -18,13 +18,11 @@
 // tabs of Lab Overview answer the same kind of question about the same people, and reading the
 // second should cost nothing once you have read the first.
 import { html, nothing } from "lit";
+import { paperStepProgress } from "../../../../../extensions/adminbot/src/contracts/paper-progress.js";
 import { t } from "../../../i18n/index.ts";
-import {
-  matchesMemberTypeFilter,
-  renderMemberTypeFilter,
-} from "../member-type-filter.ts";
-import type { PaperSlotOverviewRow } from "../auth/session.ts";
+import type { PaperSlotOverviewRow } from "../api/paper-admin.ts";
 import type { AdminBotPaperRecord } from "../controllers/admin.ts";
+import { matchesMemberTypeFilter, renderMemberTypeFilter } from "../member-type-filter.ts";
 
 /**
  * Which papers the page is looking at.
@@ -48,7 +46,7 @@ export type PaperOverviewFilter = {
    * below them off the screen, and an administrator scanning for who is stuck should be able to
    * put that person's stack away without losing the row that says how they are doing.
    */
-  collapsed: string[];
+  collapsed?: string[];
   /**
    * Roster member types to show, as a union. Empty means every type.
    *
@@ -65,7 +63,6 @@ export const EMPTY_PAPER_OVERVIEW_FILTER: PaperOverviewFilter = {
   venue: "",
   stage: "",
   state: "all",
-  collapsed: [],
   memberTypes: [],
 };
 
@@ -208,24 +205,22 @@ export function paperOverviewRows(params: {
   slots: readonly PaperSlotOverviewRow[];
   blockerCounts: ReadonlyMap<string, number>;
   stepLabel: (step: string) => string;
-  /** How many steps the flow has, for a paper the service has not computed a timeline for. */
+  /** How many steps the flow has, should the shared step plan ever come back empty. */
   stepCount: number;
 }): PaperOverviewRow[] {
   const slotsById = new Map(params.slots.map((row) => [row.paper_id, row]));
   return params.papers.map((paper) => {
     const slots = slotsById.get(paper.id);
-    const timeline = paper.timeline;
-    const current = timeline?.items.find((item) => item.status === "current");
-    const next = timeline?.items.find((item) => item.status === "upcoming");
+    const step = paperStepProgress(paper);
     const openBlockers = params.blockerCounts.get(paper.id) ?? 0;
     const dormant = Boolean(paper.dormant_override || slots?.closed || slots?.cycle_closed);
     const missingEvidence = slots ? slots.required_count - slots.provided_count : 0;
-    const stepCount = timeline?.items.length || params.stepCount;
+    const stepCount = step.stepCount || params.stepCount;
     const complete =
       paper.reminder?.status === "complete" || Boolean(slots?.closed || slots?.cycle_closed);
     return {
       paper,
-      stepIndex: complete ? stepCount : (timeline?.current_step_index ?? 0),
+      stepIndex: complete ? stepCount : step.stepIndex,
       stepCount,
       complete,
       progress: paperProgress({
@@ -233,8 +228,10 @@ export function paperOverviewRows(params: {
         decision: paper.venue_decision,
         complete,
       }),
-      currentLabel: current?.label ?? params.stepLabel(paper.current_step),
-      nextLabel: next?.label ?? "",
+      // A blocked step keeps the flow's own name for it, as it did when this read the timeline.
+      currentLabel:
+        (step.blocked ? undefined : step.currentLabel) ?? params.stepLabel(paper.current_step),
+      nextLabel: step.nextLabel ?? "",
       venue: paperVenue(paper),
       deadline: paper.deadline?.trim() ?? "",
       slots,
@@ -900,7 +897,9 @@ function renderPersonOutstandingCell(person: PaperPersonRow) {
 
 /** Fold one person's papers away, or bring them back. */
 function togglePerson(props: PaperOverviewProps, key: string) {
-  const collapsed = new Set(props.filter.collapsed ?? []);
+  const collapsed = new Set(
+    props.filter.collapsed ?? paperPersonRows(props.rows).map((person) => person.key),
+  );
   if (collapsed.has(key)) {
     collapsed.delete(key);
   } else {
@@ -910,7 +909,8 @@ function togglePerson(props: PaperOverviewProps, key: string) {
 }
 
 function renderPersonRow(props: PaperOverviewProps, person: PaperPersonRow) {
-  const collapsed = (props.filter.collapsed ?? []).includes(person.key);
+  const collapsed =
+    props.filter.collapsed === undefined || props.filter.collapsed.includes(person.key);
   return html`
     <tr
       class="profile-overview__row paper-overview__row"

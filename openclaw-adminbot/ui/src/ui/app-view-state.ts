@@ -1,14 +1,15 @@
 // Control UI module implements app view state behavior.
 import type { ActivityEntry, ActivityStatus } from "./activity-model.ts";
 import type {
-  LocationDrift,
   MeetingAttendanceNudgePreview,
   MeetingAttendanceNudgeResult,
   MeetingAttendee,
-  MeetingRecord,
-  MeetingCursor,
-  MemberNotification,
-} from "./adminbot/auth/session.ts";
+  MeetingRosters,
+  MeetingSeries,
+  MeetingSeriesPages,
+} from "./adminbot/api/meetings.ts";
+import type { LocationDrift } from "./adminbot/api/profile.ts";
+import type { MemberNotification } from "./adminbot/api/workspace.ts";
 import type { AdminBotLabMember } from "./adminbot/controllers/admin.ts";
 import type {
   AdminBotDashboardData,
@@ -17,6 +18,7 @@ import type {
   AdminBotMemberNudgeState,
   AdminBotReimbursementState,
 } from "./adminbot/controllers/admin.ts";
+import type { DeskLettersState } from "./adminbot/controllers/logistics.ts";
 import type {
   LetterFact,
   MeetingRequestRow,
@@ -25,9 +27,10 @@ import type {
 import type { LogisticsQueueOptions } from "./adminbot/data/logistics-queue.ts";
 import type { LogisticsRequest } from "./adminbot/data/logistics-requests.ts";
 import type { MemberMap } from "./adminbot/data/member-map.ts";
+import type { PagedListState } from "./adminbot/load-more.ts";
 import type { BlockerSort, PreregSort } from "./adminbot/views/admin.ts";
 import type { LogisticsMode } from "./adminbot/views/logistics.ts";
-import type { TripDraft } from "./adminbot/views/time-availability.trips.ts";
+import type { TripDraft } from "./adminbot/views/time-availability.trip-editor.ts";
 import type {
   MilestoneDraft,
   TimeAvailabilityDraft,
@@ -110,7 +113,7 @@ export type AppViewState = {
   // Membership tab: the lab's member spreadsheet as an editable grid. `memberSheetEdits` holds
   // only the cells actually changed, keyed "row:column", so saving one cell never rewrites the
   // row around it.
-  memberSheet?: import("./adminbot/auth/session.ts").MemberSheetView | null;
+  memberSheet?: import("./adminbot/api/onboarding.ts").MemberSheetView | null;
   /** When the tab last read the sheet on its own; null means it never has. */
   memberSheetLoadedAt?: number | null;
   memberSheetBusy?: boolean;
@@ -120,26 +123,28 @@ export type AppViewState = {
   memberSheetSelection?: number[];
   /** Text typed into the roster's search box; matched against every cell, client-side. */
   memberSheetFilter?: string;
-  memberSheetSaveResult?: import("./adminbot/auth/session.ts").MemberSheetEditResult | null;
-  memberSheetOnboardResult?: import("./adminbot/auth/session.ts").MemberSheetOnboardResult | null;
+  memberSheetSaveResult?: import("./adminbot/api/onboarding.ts").MemberSheetEditResult | null;
+  memberSheetOnboardResult?: import("./adminbot/api/onboarding.ts").MemberSheetOnboardResult | null;
   loadMemberSheet?: () => void | Promise<void>;
-  memberSheetOnboardPreview?: import("./adminbot/auth/session.ts").MemberSheetOnboardPreview | null;
+  memberSheetOnboardPreview?:
+    | import("./adminbot/api/onboarding.ts").MemberSheetOnboardPreview
+    | null;
   saveMemberSheetEdits?: () => void | Promise<void>;
   onboardSelectedMemberRows?: () => void | Promise<void>;
   previewOnboardSelectedRows?: () => void | Promise<void>;
-  memberSheetAddRowResult?: import("./adminbot/auth/session.ts").MemberSheetAddRowResult | null;
+  memberSheetAddRowResult?: import("./adminbot/api/onboarding.ts").MemberSheetAddRowResult | null;
   /** Resolves true when the service took the request, so the form can close. */
   addMemberSheetRow?: (
-    input: import("./adminbot/auth/session.ts").MemberSheetAddRowInput,
+    input: import("./adminbot/api/onboarding.ts").MemberSheetAddRowInput,
   ) => Promise<boolean>;
   editMemberSheetCell?: (sheetRow: number, column: number, value: string) => void;
   // Calendar tab. Two halves that share the roster the tab already has: a prompt that drafts an
   // event, and a picker that turns member facets into an invite list. Both end in a proposal.
-  calendarEvents?: import("./adminbot/auth/session.ts").CalendarEvent[];
+  calendarEvents?: import("./adminbot/api/calendar.ts").CalendarEvent[];
   calendarEventsLoading?: boolean;
   calendarEventsError?: string | null;
   calendarPrompt?: string;
-  calendarDraft?: import("./adminbot/auth/session.ts").CalendarEventDraft | null;
+  calendarDraft?: import("./adminbot/api/calendar.ts").CalendarEventDraft | null;
   calendarDraftBusy?: boolean;
   calendarDraftError?: string | null;
   calendarSelectedEventId?: string | null;
@@ -149,7 +154,7 @@ export type AppViewState = {
   calendarOpenEventId?: string | null;
   // Set while the prompt box is being used to change an event rather than compose a new one.
   calendarEditingEventId?: string | null;
-  calendarSource?: import("./adminbot/auth/session.ts").LabCalendar | null;
+  calendarSource?: import("./adminbot/api/calendar.ts").LabCalendar | null;
   /** First of the month the grid is showing, `YYYY-MM-01`. Defaults to the month containing today. */
   calendarMonth?: string;
   /** The assistant conversation, oldest first. */
@@ -160,10 +165,14 @@ export type AppViewState = {
   // Ids the operator unticked from the matched list, so a filter that is right for 39 of 40 people
   // does not have to be abandoned for the one exception.
   calendarExcludedMemberIds?: string[];
+  // Whether a send only adds the chosen people or makes them the whole guest list. Unset reads as
+  // "add", so the send that can uninvite somebody is always one the operator picked.
+  calendarInviteMode?: import("./adminbot/calendar-audience.ts").InviteMode;
   calendarBusy?: boolean;
   loadCalendarEvents?: () => Promise<void>;
   loadMeetings?: () => Promise<void>;
-  loadMoreMeetings?: () => Promise<void>;
+  /** One series' recordings: the first page when its dropdown opens, the next with `more`. */
+  loadMeetingSeriesPage?: (key: string, options?: { more?: boolean }) => Promise<void>;
   toggleMeetingAttendance?: (meetingId: string, attendee: MeetingAttendee) => Promise<void>;
   fileMeeting?: (draft: {
     topic: string;
@@ -232,9 +241,9 @@ export type AppViewState = {
     string,
     import("./adminbot/controllers/recent-edits.ts").RecentEditsState
   >;
-  /** The Travel tab's one record: the viewer's own. Never keyed by member -- see its controller. */
-  adminBotTravel: import("./adminbot/controllers/travel.ts").TravelState;
-  adminBotMailingListPreview: import("./adminbot/auth/session.ts").PublicationDigestPreview | null;
+  adminBotMailingListPreview:
+    | import("./adminbot/api/paper-admin.ts").PublicationDigestPreview
+    | null;
   adminBotMailingListLoading: boolean;
   adminBotMailingListSending: boolean;
   adminBotMailingListError: string | null;
@@ -243,7 +252,7 @@ export type AppViewState = {
   adminBotMailingListTo: string;
   adminBotMailingListEmail: string;
   adminBotMailingListVenue: string;
-  adminBotMailingListVenues: import("./adminbot/auth/session.ts").PublicationDigestVenue[];
+  adminBotMailingListVenues: import("./adminbot/api/paper-admin.ts").PublicationDigestVenue[];
   memberImpersonatedBy: import("./adminbot/auth/session.ts").MemberImpersonator | null;
   memberImpersonationBusy: boolean;
   memberImpersonationError: string | null;
@@ -276,6 +285,8 @@ export type AppViewState = {
   lastErrorCode: string | null;
   chatError: string | null;
   eventLog: EventLogEntry[];
+  eventLogBuffer: EventLogEntry[];
+  chatHasAutoScrolled: boolean;
   assistantName: string;
   assistantAvatar: string | null;
   assistantAvatarSource?: string | null;
@@ -446,6 +457,10 @@ export type AppViewState = {
   agentsSelectedId: string | null;
   adminBotLoading: boolean;
   adminBotError: string | null;
+  /** Last dashboard GETs were served from the device cache because the service was unreachable. */
+  adminBotUsingCachedReads?: boolean;
+  /** Mutations queued while the AdminBot service was offline. */
+  adminBotOfflinePendingWrites?: number;
   adminBotData: AdminBotDashboardData;
   adminBotRosterLoadedAt: number | null;
   adminBotRosterLoading: boolean;
@@ -485,6 +500,7 @@ export type AppViewState = {
   labSharingMembersTruncated?: boolean;
   labSharingBusy?: boolean;
   labSharingNotice?: string | null;
+  labSharingNoticeTone?: "success" | "error" | null;
   loadLabSharing?: () => Promise<void>;
   // Time Availability tab: whose schedule is on screen, which unit its hours are quoted in, and
   // the unsaved "add a commitment" draft. Draft lives here rather than in the view so a re-render
@@ -494,17 +510,20 @@ export type AppViewState = {
   adminBotMemberMap: MemberMap | null | undefined;
   adminBotMemberMapLoading: boolean;
   adminBotMemberMapRequestId: number;
+  adminBotMemberMapCheckedAt?: number;
+  /** The tab the last render was on, so opening a map tab can be told from staying on it. */
+  adminBotMemberMapTab?: string;
   adminBotCollaboratorSchedules: AdminBotLabMember[];
   adminBotCollaboratorSchedulesLoading: boolean;
   adminBotCollaboratorSchedulesError: string | null;
   adminBotCollaboratorSchedulesSession: string;
   adminBotTimeAvailabilityMemberId: string;
-  // Meeting Recordings tab. The list as the service returned it -- already redacted for a member,
-  // full for an admin -- plus the two flags the view needs to distinguish "still loading" from
-  // "the lab has not recorded a meeting yet".
+  // Meeting Recordings tab. The index of recurring meetings, and each opened series' recordings as
+  // the service returned them -- already redacted for a member, without rosters for an admin.
   // Undefined is the "never asked" sentinel the render pass keys its one-shot fetch on; a load
   // that genuinely finds nothing sets [], so an empty lab cannot loop.
-  adminBotMeetings?: MeetingRecord[];
+  adminBotMeetingSeries?: MeetingSeries[];
+  adminBotMeetingSeriesPages?: MeetingSeriesPages;
   // The attendance nudge, admin-only, on the Meeting Recordings tab. Null until the panel is
   // opened: resolving the audience reads the lab calendar, which is not something to do on a tab
   // most people open only to watch a recording.
@@ -512,11 +531,14 @@ export type AppViewState = {
   adminBotMeetingNudgeResult?: MeetingAttendanceNudgeResult | null;
   adminBotMeetingNudgeBusy?: boolean;
   adminBotMeetingNudgeError?: string | null;
+  adminBotMeetingRosters?: MeetingRosters;
+  adminBotMemberDetails?: import("./adminbot/controllers/member-detail.ts").AdminBotMemberDetails;
+  adminBotDuplicatePairs?: import("./adminbot/controllers/member-detail.ts").AdminBotDuplicatePairs;
   // What the lab has told this member. Undefined is "not read yet"; [] is a real "nothing".
   adminBotNotifications?: MemberNotification[];
   /** The live lab-wide broadcast, or null for none. `undefined` means "not loaded yet". */
-  adminBotBroadcast?: import("./adminbot/auth/session.ts").LabBroadcast | null;
-  adminBotBroadcastHistory?: import("./adminbot/auth/session.ts").LabBroadcast[];
+  adminBotBroadcast?: import("./adminbot/api/lab-sharing.ts").LabBroadcast | null;
+  adminBotBroadcastHistory?: import("./adminbot/api/lab-sharing.ts").LabBroadcast[];
   loadBroadcast?: () => Promise<void>;
   /** What is in the My Desk compose box. Undefined means "has not been opened since load". */
   adminBotBroadcastDraft?: string;
@@ -526,7 +548,7 @@ export type AppViewState = {
   adminBotBroadcastBusy?: boolean;
   adminBotBroadcastNotice?: { kind: "success" | "error"; text: string } | null;
   /** The tab-usage window, null until the first read answers. */
-  adminBotTabUsage: import("./adminbot/auth/session.ts").TabVisitReport | null;
+  adminBotTabUsage: import("./adminbot/api/workspace.ts").TabVisitReport | null;
   adminBotTabUsageDays: number;
   adminBotTabUsageLoading: boolean;
   adminBotTabUsageError: string | null;
@@ -543,18 +565,38 @@ export type AppViewState = {
     } | null,
   ) => Promise<void>;
   adminBotNotificationsError?: string | null;
-  adminBotTripDraft?: TripDraft;
+  // The /travel overview behind Events' nearby card: what the service said, what is being typed,
+  // and this browser's side of location sharing. See controllers/lab-travel.ts, which owns these.
+  labTravel?: import("./adminbot/data/lab-travel.ts").TravelOverview;
+  labTravelLoadedFor?: string | null;
+  labTravelLoading?: boolean;
+  labTravelError?: string | null;
+  labTravelNotice?: import("./adminbot/controllers/lab-travel.ts").LabTravelNotice | null;
+  labTravelBusy?: string | null;
+  labTravelLookupDraft?: import("./adminbot/controllers/lab-travel.ts").LookupDraft;
+  labTravelLookup?: import("./adminbot/data/lab-travel.ts").TravelLookup | null;
+  labTravelLookupError?: string | null;
+  labTravelCityDraft?: string;
+  labTravelSharing?: import("./adminbot/data/lab-travel.ts").TravelSharing | null;
+  labTravelSharingCheckedFor?: string | null;
+  labTravelDevice?: import("./adminbot/controllers/location-tracker.ts").LocationTrackerSnapshot;
+  // The Events tab; controllers/events.ts owns these.
+  events?: import("./adminbot/data/events.ts").EventsOverview;
+  eventsLoadedFor?: string | null;
+  eventsLoading?: boolean;
+  eventsError?: string | null;
+  eventsNotice?: import("./adminbot/controllers/events.ts").EventsNotice | null;
+  eventsBusy?: string | null;
   adminBotLocationDrift?: LocationDrift | null;
   adminBotLocationDrifts?: LocationDrift[];
+  // "Use my precise location": the city the device named this session, and the button's state.
+  adminBotPreciseLocation?: import("./adminbot/controllers/precise-location.ts").PreciseLocationState;
   adminBotLocationSaving?: boolean;
   adminBotLocationError?: string | null;
   loadLocationPrompt?: () => Promise<void>;
   loadLocationDrifts?: () => Promise<void>;
   answerLocationPrompt?: (answer: { current_city?: string; timezone?: string }) => Promise<void>;
   adminBotMeetingsLoading: boolean;
-  adminBotMeetingsLoadingMore: boolean;
-  adminBotMeetingsNextCursor: MeetingCursor | null;
-  adminBotMeetingsVisibleCount: number;
   adminBotMeetingsSaving: boolean;
   adminBotMeetingsError: string | null;
   // Documents picked for a signature request, held here rather than in the view so a re-render
@@ -581,6 +623,10 @@ export type AppViewState = {
   // for the mode the tab is now in. Not `requests.length`, which would re-ask forever in a lab
   // that has no requests yet.
   adminBotLogisticsRequestsLoadedAt: number | null;
+  // The service pages the list: the total for the filter on screen and where the next page starts.
+  adminBotLogisticsPage: PagedListState;
+  // My Desk's open letters, every page of them, so its bucket counts are the whole queue's.
+  adminBotDeskLetters: DeskLettersState;
   // Which request is open, and the copy of it that carries the file bytes. The list deliberately
   // has none, so opening one is a second read and the two are held apart.
   adminBotLogisticsOpenRequestId: string | null;
@@ -605,6 +651,9 @@ export type AppViewState = {
   // The request whose signed document is being uploaded right now, so its row can say so and no
   // second upload can start against the same one.
   adminBotLogisticsSigningId: string | null;
+  // Recommendation-letter eligibility: the member's own read, the queue's badges, the open
+  // request's panel and the admin's freeze records. Advisory only.
+  adminBotRecLetter: import("./adminbot/controllers/rec-letter-eligibility.ts").RecLetterEligibilityState;
   // "<requestId>:<fileName>" while that one document is being fetched for download.
   adminBotLogisticsDownloadingId: string | null;
   // What an admin has typed to go with the signed document they are about to send.
@@ -618,13 +667,15 @@ export type AppViewState = {
   adminBotLogisticsDraftScope: string | null;
   // Profile Overview: how far along every active member's own record is. `loadedAt` is the "ask for
   // it" signal, the same sentinel the logistics queue uses.
-  adminBotProfileOverview: import("./adminbot/auth/session.ts").MemberProfileOverviewRow[];
+  adminBotProfileOverview: import("./adminbot/api/members.ts").MemberProfileOverviewRow[];
+  /** Where the held rows stand: one page of the filtered list, or My Desk's column heads. */
+  adminBotProfileOverviewPage: import("./adminbot/controllers/profile-overview.ts").ProfileOverviewPageState;
   /** Nudges raised to the head professor and still unanswered. Read with the overview beside it. */
-  adminBotEscalatedNudges: import("./adminbot/auth/session.ts").EscalatedNudgeRow[];
-  adminBotPiReview: import("./adminbot/auth/session.ts").PiReviewRow[];
+  adminBotEscalatedNudges: import("./adminbot/api/nudges.ts").EscalatedNudgeRow[];
+  adminBotPiReview: import("./adminbot/api/paper-admin.ts").PiReviewRow[];
   adminBotPiReviewError: string | null;
   adminBotProfileOverviewFieldCount: number;
-  adminBotProfileAdoption?: import("./adminbot/auth/session.ts").MemberAdoptionSummary | null;
+  adminBotProfileAdoption?: import("./adminbot/api/members.ts").MemberAdoptionSummary | null;
   adminBotProfileOverviewLoading: boolean;
   adminBotProfileOverviewError: string | null;
   adminBotProfileOverviewLoadedAt: number | null;
@@ -637,10 +688,8 @@ export type AppViewState = {
   adminBotPaperCardId: string | null;
   // My Projects & Papers: what each paper still owes, and the slots of whichever cards are open.
   // `loadedAt` is the same "ask for it" sentinel the overview above uses.
-  adminBotPaperSlotOverview: import("./adminbot/auth/session.ts").PaperSlotOverviewRow[];
-  adminBotTripDrafts: Record<string, import("./adminbot/views/paper-cycle.ts").PaperTripDraft>;
-  adminBotTripSavingKey: string | null;
-  adminBotPaperSlots: Record<string, import("./adminbot/auth/session.ts").PaperCycle>;
+  adminBotPaperSlotOverview: import("./adminbot/api/paper-admin.ts").PaperSlotOverviewRow[];
+  adminBotPaperSlots: Record<string, import("./adminbot/api/papers.ts").PaperCycle>;
   adminBotPaperSlotsOpen: string[];
   adminBotPaperSlotsLoading: boolean;
   adminBotPaperSlotsError: string | null;
@@ -649,7 +698,7 @@ export type AppViewState = {
   adminBotPaperSlotsNotice: string | null;
   adminBotPaperSlotsBusyId: string | null;
   // The nudge preview. Null when closed; opening it sends nothing.
-  adminBotPaperNudgeBatches: import("./adminbot/auth/session.ts").PaperNudgeBatch[] | null;
+  adminBotPaperNudgeBatches: import("./adminbot/api/paper-admin.ts").PaperNudgeBatch[] | null;
   adminBotPaperNudgeLoading: boolean;
   adminBotPaperNudgeSelected: string[];
   adminBotLettersSchools: RecommendationSchool[];
@@ -673,6 +722,7 @@ export type AppViewState = {
   adminBotTimeAvailabilityDraft: TimeAvailabilityDraft;
   adminBotTimeAwayDraft: TimeAvailabilityDraft;
   adminBotMilestoneDraft: MilestoneDraft;
+  adminBotTripDraft: TripDraft;
   adminBotAvailabilityNotesDraft: string | null;
   adminBotActiveCommitmentType: string | null;
   adminBotTimeAvailabilitySaving: boolean;
@@ -710,36 +760,30 @@ export type AppViewState = {
   // Last press of the Slack channel naming sweep, same shape again. What it "did" is file
   // proposals, so the detail line points at Pending Actions rather than reporting a change.
   adminBotChannelNamingJob: import("./adminbot/controllers/admin.ts").AdminBotCvDigestJobState;
-  // Prototype-only: blockers a member raises from My Projects & Papers. Held in the browser
-  // because the AdminBot service has no blocker route yet -- see views/my-work.ts.
-  myWorkBlockerDraft: import("./adminbot/views/my-work.ts").BlockerDraft | null;
-  myWorkBlockers: import("./adminbot/views/my-work.ts").Blocker[];
-  // Non-null while the "add a project" field is open; holds what has been typed.
+  /** The viewer's active projects (GET /my/projects); null until read, and after a write. */
+  myProjects: import("./adminbot/projects/model.ts").ProjectSummary[] | null;
+  myProjectsLoading: boolean;
+  myProjectsError: string | null;
+  /** The sidebar list is showing its hide/show checkboxes. */
+  myProjectsChoosing: boolean;
+  /** A blocker report being written or edited on one paper, filed onto the paper record. */
+  myWorkBlockerDraft: import("./adminbot/projects/workspace.ts").BlockerDraft | null;
+  // Non-null while the "add a project" form is open; holds what has been typed.
   myWorkProjectDraft: string | null;
   myWorkProjectAlias: string;
   /**
-   * Why the add-project form refused, or null.
-   *
-   * The form used to `return` out of submit on every one of these, which files nothing and says
-   * nothing: the member is left looking at a filled-in form and an unchanged page. Most often it
-   * was the alias -- an apostrophe or a colon carried over from the title cannot be a Slack
-   * channel name, so `adminBotNormalizePaperAlias` returns null and the submit gives up silently.
+   * Why the add-project form refused, or null. Every refusal says why: a bare return files nothing
+   * and says nothing, and the alias -- which becomes a Slack channel -- is the one that bites.
    */
   myWorkProjectError: string | null;
-  /**
-   * Per-paper drafts for the card's own "project details" editor, keyed by paper id.
-   *
-   * A title changes over a project's life -- that is the normal case, not an exception -- and until
-   * now the three answers the create form insists on could never be revised afterwards. Held per
-   * paper because several cards can be open at once.
-   */
+  /** Per-paper drafts for a project's own details editor, keyed by paper id. */
   myWorkProjectEdits: Record<
     string,
-    { title: string; alias: string; startedOn: string; error: string | null }
+    import("./adminbot/projects/workspace.ts").ProjectDetailsDraft
   >;
-  myWorkChannelCheck: import("./adminbot/controllers/admin.ts").SlackChannelCheck;
   /** Venue rows on the add-project form: a paper can be aimed at several, each with its own odds. */
-  myWorkProjectVenues: Array<{ venueId: string; year: number; confidence: number }>;
+  myWorkProjectVenues: import("./adminbot/projects/workspace.ts").ProjectVenueDraft[];
+  myWorkChannelCheck: import("./adminbot/controllers/admin.ts").SlackChannelCheck;
   // Which profile section is in edit mode, if any.
   profileEditingSection: "basics" | null;
   profileAccountChecks: Record<
@@ -751,7 +795,7 @@ export type AppViewState = {
   registrationsError: import("./adminbot/data/registrations.ts").RegistrationsLoadError | null;
   registrationsBusyId: string | null;
   registrationsNotice: { kind: "success" | "error"; text: string } | null;
-  adminBotBadgeDefinitions: import("./adminbot/auth/session.ts").BadgeDefinition[];
+  adminBotBadgeDefinitions: import("./adminbot/api/badges.ts").BadgeDefinition[];
   adminBotBadgeDefinitionsLoading: boolean;
   adminBotBadgeDefinitionsLoadedAt: number | null;
   adminBotBadgeDefinitionsError: import("./adminbot/data/badges.ts").BadgeLoadError | null;

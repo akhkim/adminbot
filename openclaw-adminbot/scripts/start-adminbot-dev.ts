@@ -17,19 +17,14 @@ import {
   createDevicePairingApprover,
 } from "../extensions/adminbot/host/main.ts";
 import { createAdminBotMockService } from "../extensions/adminbot/src/api/server.ts";
+import { resolveGroupMeetingEventId } from "../extensions/adminbot/src/contracts/group-meeting.js";
+import { getRuntimeConfig } from "../src/config/io/io.js";
 import {
   approveDevicePairing,
   ensureDeviceToken,
   requestDevicePairing,
   resolveSharedGatewayAuthIssuer,
-} from "../src/plugin-sdk/device-bootstrap.ts";
-
-const devicePairing = {
-  approveDevicePairing,
-  ensureDeviceToken,
-  requestDevicePairing,
-  resolveSharedGatewayAuthIssuer,
-};
+} from "../src/plugin-sdk/device-bootstrap.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const email = requireEnv("ADMINBOT_DEV_EMAIL").toLowerCase();
@@ -46,12 +41,49 @@ if (password.length < 10) {
 
 fs.mkdirSync(path.dirname(databasePath), { recursive: true });
 
+const devicePairing = {
+  approveDevicePairing,
+  ensureDeviceToken,
+  requestDevicePairing,
+  resolveSharedGatewayAuthIssuer,
+};
+const gatewayConfig = getRuntimeConfig({ pin: false }).gateway;
+
 const app = createAdminBotMockService({
-  databasePath,
-  auditRetentionDays: 7,
   deviceTokenIssuer: createDeviceTokenIssuer({ devicePairing }),
   devicePairingApprover: createDevicePairingApprover({ devicePairing }),
+  gatewayUrl:
+    process.env.ADMINBOT_GATEWAY_WS_URL || `ws://127.0.0.1:${gatewayConfig?.port ?? 18789}`,
+  notificationDraftScriptPath: path.join(
+    repoRoot,
+    "scripts/openreview-notifications/adminbot_bridge.py",
+  ),
+  databasePath,
+  auditRetentionDays: 7,
   // Keep this local bootstrap isolated from real calendar/email connectors.
+  // Synthetic read data only: dev must not fetch real calendar attendees.
+  calendarEventsReader: async () => [
+    {
+      id: resolveGroupMeetingEventId(),
+      summary: "[Dev] Monday group meeting",
+      start: "2026-10-19T09:30:00-04:00",
+      attendees: ["alice@example.test", "bob@example.test", "erin@example.test"],
+    },
+    {
+      id: "dev-causal-meeting",
+      recurring_event_id: "dev-causal-meeting",
+      summary: "Theme: [Dev] Causal inference",
+      start: "2026-10-21T10:00:00-04:00",
+      attendees: ["bob@example.test", "dan@example.test"],
+    },
+    {
+      id: "dev-interpretability-meeting",
+      recurring_event_id: "dev-interpretability-meeting",
+      summary: "Theme: [Dev] Interpretability",
+      start: "2026-10-21T11:00:00-04:00",
+      attendees: ["alice@example.test", "carol@example.test"],
+    },
+  ],
   calendarInviteRunner: async () => {},
   accountApprovedEmailRunner: async () => {},
 });

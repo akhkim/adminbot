@@ -204,7 +204,9 @@ describe("workshop nudge HTTP flow", () => {
           recipient_member_id: string;
           delivery_ready: boolean;
           draft: { text: string } | null;
+          recommendations: Array<Record<string, unknown>>;
         }>;
+        workshops: Record<string, Record<string, unknown>>;
         coverage: { members_without_usable_papers: Array<{ member_id: string }> };
       };
     };
@@ -222,6 +224,16 @@ describe("workshop nudge HTTP flow", () => {
       member_id: "admin-1",
       name: "Ada Admin",
     });
+    // Each workshop profile travels once, keyed by id; pairs name it rather than repeat it, and
+    // the draft carries only its text.
+    const [recommendation] = body.recipients[0]?.recommendations ?? [];
+    expect(recommendation).toBeDefined();
+    expect(recommendation).not.toHaveProperty("workshop");
+    expect(recommendation).not.toHaveProperty("pair_id");
+    const workshop = body.workshops[String(recommendation?.workshop_id)];
+    expect(workshop).toEqual(expect.objectContaining({ name: expect.any(String) }));
+    expect(workshop).not.toHaveProperty("topics");
+    expect(Object.keys(body.recipients[0]?.draft ?? {})).toEqual(["text"]);
   });
 
   // Send delivers the pass the administrator was looking at, not a fresh one. Recomputing here ran
@@ -531,5 +543,62 @@ describe("the scheduled once-per-conference pass", () => {
     const { baseUrl } = await startService();
     const response = await fetch(`${baseUrl}/workshop-nudges/run`, { method: "POST" });
     expect(response.status).toBe(401);
+  });
+});
+
+// Pinned before the routes moved out of server.ts's route table, so the move can be shown to
+// change nothing a caller can see: the status, the gate each route sits behind, and that a wrong
+// method still falls through to the router rather than being claimed by the workshop handler.
+describe("workshop nudge route contract", () => {
+  const serviceHeaders = {
+    Authorization: `Bearer ${SERVICE_TOKEN}`,
+    "Content-Type": "application/json",
+  };
+
+  it("lists conferences for an administrator and refuses the service principal", async () => {
+    const { baseUrl, mock } = await startService();
+    const headers = await adminHeaders(baseUrl, mock);
+    const ok = await fetch(`${baseUrl}/workshop-nudges/conferences`, { headers });
+    expect(ok.status).toBe(200);
+    expect(Array.isArray(((await ok.json()) as { conferences: unknown }).conferences)).toBe(true);
+
+    const refused = await fetch(`${baseUrl}/workshop-nudges/conferences`, {
+      headers: serviceHeaders,
+    });
+    expect(refused.status).toBe(403);
+  });
+
+  it("lets an administrator cancel when nothing is running", async () => {
+    const { baseUrl, mock } = await startService();
+    const headers = await adminHeaders(baseUrl, mock);
+    const response = await fetch(`${baseUrl}/workshop-nudges/cancel`, {
+      method: "POST",
+      headers,
+      body: "{}",
+    });
+    expect(response.status).toBe(200);
+  });
+
+  it("rejects a send with no recipients before touching the stored pass", async () => {
+    const { baseUrl, mock } = await startService();
+    const headers = await adminHeaders(baseUrl, mock);
+    for (const body of ["{}", JSON.stringify({ recipient_member_ids: [" ", 7] })]) {
+      const response = await fetch(`${baseUrl}/workshop-nudges/send`, {
+        method: "POST",
+        headers,
+        body,
+      });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({
+        error: { message: "recipient_member_ids must not be empty" },
+      });
+    }
+  });
+
+  it("leaves a wrong method to the rest of the router", async () => {
+    const { baseUrl, mock } = await startService();
+    const headers = await adminHeaders(baseUrl, mock);
+    const response = await fetch(`${baseUrl}/workshop-nudges/preview`, { headers });
+    expect(response.status).toBe(404);
   });
 });

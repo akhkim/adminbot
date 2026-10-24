@@ -8,7 +8,6 @@ export type DeadlineRevision = {
   deadline_date?: string;
   deadline_timezone?: string;
   deadline_time_precision?: string;
-  deadline_planning_at?: string;
   notification_aoe?: string;
   deadline_label?: string;
   link?: string;
@@ -19,6 +18,8 @@ export type DeadlineMilestone = {
   /** reviews | rebuttal | notification | cycle_end | camera_ready | conference */
   milestone: string;
   label: string;
+  source_url?: string;
+  evidence?: string;
   /** How to read the date: an AoE cutoff, a day the venue acts on, or a span. */
   kind: "deadline" | "date" | "period";
   /** Set for kind "deadline" and "date". */
@@ -49,7 +50,6 @@ export type DeadlineVenue = {
   deadline_date?: string;
   deadline_timezone?: string;
   deadline_time_precision?: string;
-  deadline_planning_at?: string;
   /** Stable dated-deadline identity; equal to the legacy id. */
   deadline_id: string;
   /** Canonical venue identity, with every accepted legacy form listed below. */
@@ -88,6 +88,10 @@ export type DeadlineVenue = {
    *  when the venue has published none of it. The board counts down to the
    *  submission only; these render as a quiet list beside it. */
   schedule: DeadlineMilestone[];
+  schedule_status?: string;
+  schedule_issues?: string[];
+  schedule_checked_at?: string;
+  schedule_extracted_at?: string;
   deadline_label: string;
   deadline_aoe: string;
   notification_aoe?: string;
@@ -106,6 +110,145 @@ export type DeadlineVenue = {
 };
 
 export const DEADLINE_VENUES: DeadlineVenue[] = [
+  {
+    "id": "colm2026_abstract",
+    "name": "COLM 2026",
+    "venue_type": "conference",
+    "venue_group": "COLM 2026",
+    "track": "main",
+    "venue_family": "COLM",
+    "conference_location": "San Francisco, USA",
+    "workshop_location": "",
+    "entry_type": "main_conference",
+    "archival_status": "archival",
+    "venue_priority": "primary",
+    "archival": true,
+    "submission_type": "",
+    "milestone": "abstract",
+    "schedule": [
+      {
+        "milestone": "rebuttal",
+        "label": "Rebuttal period",
+        "starts": "2026-05-22",
+        "ends": "2026-06-08",
+        "kind": "period"
+      },
+      {
+        "milestone": "notification",
+        "label": "Paper decision notifications",
+        "date": "2026-07-08",
+        "kind": "date"
+      },
+      {
+        "milestone": "conference",
+        "label": "Conference",
+        "starts": "2026-10-06",
+        "ends": "2026-10-08",
+        "kind": "period"
+      }
+    ],
+    "deadline_label": "abstract deadline",
+    "deadline_aoe": "2026-03-26 23:59:00",
+    "notification_aoe": "",
+    "link": "https://colm.cc/Conferences/2026",
+    "homepage_url": "",
+    "cfp_url": "",
+    "openreview_url": "",
+    "source_url": "https://colm.cc/Conferences/2026/Dates",
+    "source_checked_at": "2026-10-24T00:00:00Z",
+    "deadline_source_kind": "official",
+    "deadline_source_status": "portal_unverified",
+    "deadline_source_precision": "date_only",
+    "deadline_official_url": "https://colm.cc/Conferences/2026/Dates",
+    "deadline_extended": false,
+    "deadline_history_status": "not_extended",
+    "deadline_id": "colm2026_abstract",
+    "venue_id": "COLM",
+    "venue_aliases": [
+      "COLM",
+      "colm2026_abstract"
+    ],
+    "revisions": [
+      {
+        "observed_at": "2026-10-24T00:00:00Z",
+        "deadline_aoe": "2026-03-26 23:59:59",
+        "notification_aoe": "",
+        "deadline_label": "abstract deadline",
+        "link": "https://colm.cc/Conferences/2026/Dates"
+      }
+    ],
+    "stale": false
+  },
+  {
+    "id": "colm2026_paper",
+    "name": "COLM 2026",
+    "venue_type": "conference",
+    "venue_group": "COLM 2026",
+    "track": "main",
+    "venue_family": "COLM",
+    "conference_location": "San Francisco, USA",
+    "workshop_location": "",
+    "entry_type": "main_conference",
+    "archival_status": "archival",
+    "venue_priority": "primary",
+    "archival": true,
+    "submission_type": "",
+    "milestone": "full_paper",
+    "schedule": [
+      {
+        "milestone": "rebuttal",
+        "label": "Rebuttal period",
+        "starts": "2026-05-22",
+        "ends": "2026-06-08",
+        "kind": "period"
+      },
+      {
+        "milestone": "notification",
+        "label": "Paper decision notifications",
+        "date": "2026-07-08",
+        "kind": "date"
+      },
+      {
+        "milestone": "conference",
+        "label": "Conference",
+        "starts": "2026-10-06",
+        "ends": "2026-10-08",
+        "kind": "period"
+      }
+    ],
+    "deadline_label": "full paper",
+    "deadline_aoe": "2026-03-31 23:59:00",
+    "notification_aoe": "",
+    "link": "https://colm.cc/Conferences/2026",
+    "homepage_url": "",
+    "cfp_url": "",
+    "openreview_url": "",
+    "source_url": "https://colm.cc/Conferences/2026/Dates",
+    "source_checked_at": "2026-10-24T00:00:00Z",
+    "deadline_source_kind": "official",
+    "deadline_source_status": "portal_unverified",
+    "deadline_source_precision": "date_only",
+    "deadline_official_url": "https://colm.cc/Conferences/2026/Dates",
+    "deadline_extended": false,
+    "deadline_history_status": "not_extended",
+    "deadline_id": "colm2026_paper",
+    "venue_id": "COLM",
+    "venue_aliases": [
+      "COLM",
+      "colm2026_paper"
+    ],
+    "revisions": [
+      {
+        "observed_at": "2026-10-24T00:00:00Z",
+        "deadline_aoe": "2026-03-31 23:59:59",
+        "notification_aoe": "",
+        "deadline_label": "full paper",
+        "link": "https://colm.cc/Conferences/2026/Dates"
+      }
+    ],
+    "stale": false,
+    "abstract_deadline_id": "colm2026_abstract"
+  },
   {
     "id": "arr_2026_may",
     "name": "ARR — May 2026 cycle (direct submission)",

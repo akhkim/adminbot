@@ -1,0 +1,165 @@
+{
+  "presentation_id": "deck_synthetic",
+  "slide_object_id": "g_scaling_slide",
+  "faces_on_slide_before": {
+    "interp": 22,
+    "power": 12,
+    "adversarial": 5,
+    "multiagent": 12,
+    "control": 5,
+    "causality": 13
+  },
+  "request_counts": {
+    "createImage": 6,
+    "updatePageElementAltText": 6
+  },
+  "groups": [
+    {
+      "group": "interp",
+      "title": "Interpretability",
+      "status": "full",
+      "added": [],
+      "removed": [],
+      "would_remove": [],
+      "no_room": [
+        "Bo Iyer",
+        "Cy Sato",
+        "Di Hughes"
+      ],
+      "skipped_no_photo": [],
+      "face_size_in": 0.55
+    },
+    {
+      "group": "power",
+      "title": "Power Concentration",
+      "status": "update",
+      "added": [
+        "Ada Moreau",
+        "Ben Brennan"
+      ],
+      "removed": [],
+      "would_remove": [],
+      "no_room": [],
+      "skipped_no_photo": [],
+      "face_size_in": 0.55
+    },
+    {
+      "group": "adversarial",
+      "title": "Adversarial Defense",
+      "status": "update",
+      "added": [
+        "Dee Petrov"
+      ],
+      "removed": [],
+      "would_remove": [],
+      "no_room": [],
+      "skipped_no_photo": [],
+      "face_size_in": 0.55
+    },
+    {
+      "group": "multiagent",
+      "title": "Multi-Agent",
+      "status": "update",
+      "added": [
+        "Eli Okafor"
+      ],
+      "removed": [],
+      "would_remove": [],
+      "no_room": [],
+      "skipped_no_photo": [],
+      "face_size_in": 0.55
+    },
+    {
+      "group": "control",
+      "title": "Loss of Control",
+      "status": "unchanged",
+      "added": [],
+      "removed": [],
+      "would_remove": [],
+      "no_room": [],
+      "skipped_no_photo": [],
+      "face_size_in": 0.55
+    },
+    {
+      "group": "causality",
+      "title": "Causality",
+      "status": "update",
+      "added": [
+        "Cai Ramirez",
+        "Fay Kowalski"
+      ],
+      "removed": [],
+      "would_remove": [
+        "Zoe Ali"
+      ],
+      "no_room": [],
+      "skipped_no_photo": [
+        "Gus Costa"
+      ],
+      "face_size_in": 0.55
+    }
+  ],
+  "sample_requests": [
+    {
+      "createImage": {
+        "objectId": "adminbot_face_power_3a02e811c8b8",
+        "url": "https://example.com/avatars/power0.png",
+        "elementProperties": {
+          "pageObjectId": "g_scaling_slide",
+          "size": {
+            "width": {
+              "magnitude": 502920,
+              "unit": "EMU"
+            },
+            "height": {
+              "magnitude": 502920,
+              "unit": "EMU"
+            }
+          },
+          "transform": {
+            "scaleX": 1,
+            "scaleY": 1,
+            "shearX": 0,
+            "shearY": 0,
+            "translateX": 4343400,
+            "translateY": 2606040,
+            "unit": "EMU"
+          }
+        }
+      }
+    },
+    {
+      "updatePageElementAltText": {
+        "objectId": "adminbot_face_power_3a02e811c8b8",
+        "title": "Ada Moreau",
+        "description": "adminbot:member:power0"
+      }
+    }
+  ],
+  "existing_images_unchanged_after_apply": true,
+  "rerun_after_apply": {
+    "requests": 0,
+    "statuses": {
+      "interp": "full",
+      "power": "unchanged",
+      "adversarial": "unchanged",
+      "multiagent": "unchanged",
+      "control": "unchanged",
+      "causality": "unchanged"
+    }
+  },
+  "with_ADMINBOT_SLIDES_ALLOW_REMOVALS_1": {
+    "request_counts": {
+      "deleteObject": 1,
+      "createImage": 6,
+      "updatePageElementAltText": 6
+    },
+    "deletes": [
+      {
+        "deleteObject": {
+          "objectId": "adminbot_face_causality_b3c2215003da"
+        }
+      }
+    ]
+  }
+}

@@ -3,7 +3,7 @@
 import { render } from "lit";
 import { describe, expect, it } from "vitest";
 import { ADMINBOT_LAB_OVERLEAF_HOST } from "../../../../../extensions/adminbot/src/contracts/overleaf.js";
-import type { PaperflowStageRow, PaperSlotRow } from "../auth/session.ts";
+import type { PaperflowStageRow, PaperSlotRow } from "../api/papers.ts";
 import { renderPaperSlots, type PaperDetailsProps } from "./paper-slots.ts";
 
 type Saved = {
@@ -783,4 +783,12 @@ describe("paper feedback requests", () => {
     remove.click();
     expect(saved).toEqual([{ slot: "feedback_arxiv", input: { value_text: "" } }]);
   });
+});
+
+it("starts checklist branches collapsed without hiding their headings", async () => {
+  const { container } = await draw([row({ slot: "overleaf_edit", status: "missing" })]);
+  const branches = [...container.querySelectorAll<HTMLDetailsElement>("details.paper-slots__group")];
+  expect(branches.length).toBeGreaterThan(0);
+  expect(branches.every((branch) => !branch.open)).toBe(true);
+  expect(branches.every((branch) => branch.querySelector("summary")?.textContent?.trim())).toBe(true);
 });

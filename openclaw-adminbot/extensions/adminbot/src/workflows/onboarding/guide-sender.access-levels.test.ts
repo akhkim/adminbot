@@ -64,7 +64,7 @@ type Recorded = {
  */
 async function send(
   templateId: string,
-  options: { activeChannels?: string | undefined; name?: string } = {},
+  options: { activeChannels?: string | undefined; name?: string; addDcsRosterRow?: boolean } = {},
 ): Promise<{
   result: Awaited<ReturnType<ReturnType<typeof createAdminBotOnboardingSender>>>;
   recorded: Recorded;
@@ -118,6 +118,9 @@ async function send(
     // time a template gains a field -- a missing value is a 400 about the operator's form, which is
     // guide.test.ts's subject and would only mask the provisioning question being asked here.
     values: formValuesFor(templateId),
+    ...(options.addDcsRosterRow === undefined
+      ? {}
+      : { add_dcs_roster_row: options.addDcsRosterRow }),
   });
   return { result, recorded };
 }
@@ -252,14 +255,22 @@ describe("access levels with no onboarding mail at all", () => {
 });
 
 // The row is acted on by the university's sysadmin under the lab's name, so what goes in it is
-// the one thing here that cannot be quietly wrong.
+// the one thing here that cannot be quietly wrong. The guide files it only when a send asks; the
+// default filing is the role change's `dcs_roster.add_row` (api/server.member-type-change.ts).
 describe("the DCS roster row", () => {
   const DCS_TEMPLATE = "member";
   const column = (row: string[], name: (typeof DCS_ROSTER_SHEET_COLUMNS)[number]) =>
     row[DCS_ROSTER_SHEET_COLUMNS.indexOf(name)];
+  const sendFiling = (name: string) => send(DCS_TEMPLATE, { name, addDcsRosterRow: true });
+
+  it("files nothing from a full-member guide nobody asked to file", async () => {
+    const { result, recorded } = await send(DCS_TEMPLATE, { name: "Eric Zhang" });
+    expect(recorded.dcsRows).toEqual([]);
+    expect(payloadOf(result).dcs_roster_row).toBeUndefined();
+  });
 
   it("files the preferred username built from the roster's one free-text name", async () => {
-    const { recorded } = await send(DCS_TEMPLATE, { name: "Eric Zhang" });
+    const { recorded } = await sendFiling("Eric Zhang");
     expect(recorded.dcsRows).toHaveLength(1);
     const row = recorded.dcsRows[0] as string[];
     expect(column(row, "full_name")).toBe("Eric Zhang");
@@ -271,7 +282,7 @@ describe("the DCS roster row", () => {
   // A brand-new account gets the least-privileged value in the DCS vocabulary. An escalation is a
   // deliberate later row, never a side effect of onboarding.
   it("asks for the least-privileged access when the roster grants nothing yet", async () => {
-    const { recorded } = await send(DCS_TEMPLATE, { name: "Eric Zhang" });
+    const { recorded } = await sendFiling("Eric Zhang");
     expect(column(recorded.dcsRows[0] as string[], "permission")).toBe("UofT-slack-only");
   });
 
@@ -279,7 +290,7 @@ describe("the DCS roster row", () => {
   // "Eric Eric". Two of the three username rules are built from the last name, so the refusal
   // travelled with them.
   it("refuses to file rather than inventing a username from a mononym", async () => {
-    const { result, recorded } = await send(DCS_TEMPLATE, { name: "Eric" });
+    const { result, recorded } = await sendFiling("Eric");
     expect(recorded.dcsRows).toEqual([]);
     const row = payloadOf(result).dcs_roster_row;
     expect(row?.added).toBe(false);
@@ -289,7 +300,7 @@ describe("the DCS roster row", () => {
   // The guide is the thing the member is waiting for; the row is a side errand. A name the rules
   // cannot take must not hold up the mail.
   it("still sends the guide when the row cannot be filed", async () => {
-    const { result, recorded } = await send(DCS_TEMPLATE, { name: "Eric" });
+    const { result, recorded } = await sendFiling("Eric");
     expect(payloadOf(result).sent).toBe(true);
     expect(recorded.mail).toHaveLength(1);
   });

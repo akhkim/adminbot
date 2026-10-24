@@ -1,13 +1,15 @@
-import "./interview-invite.ts";
 // oxlint-disable max-lines -- grandfathered at 2224 lines; see docs/adr/0006-deferred-monster-splits.md
 // Control UI view renders the AdminBot dashboard.
 import { html, nothing } from "lit";
-import "./member-guide-status.ts";
 import { ifDefined } from "lit/directives/if-defined.js";
+import { live } from "lit/directives/live.js";
+import { ref } from "lit/directives/ref.js";
+import "./interview-invite.ts";
 import {
   adminBotIsAlumniMember,
   adminBotMemberTypes,
 } from "../../../../../extensions/adminbot/src/contracts/actions.js";
+import "./member-guide-status.ts";
 import {
   findDuplicateMembers,
   type MemberDuplicatePair,
@@ -27,14 +29,10 @@ import {
 import { t } from "../../../i18n/index.ts";
 import { formatRelativeTimestamp } from "../../format.ts";
 import { icons } from "../../icons.ts";
-import type {
-  AdminBotEmailReviewResolution,
-  ConferenceRoster,
-  MemberNudgeChannel,
-  MemberProfileUpdate,
-  PaperSlotOverviewRow,
-  PaperSlotRow,
-} from "../auth/session.ts";
+import type { MemberProfileUpdate } from "../api/members.ts";
+import type { ConferenceRoster, PaperSlotOverviewRow } from "../api/paper-admin.ts";
+import type { PaperSlotRow } from "../api/papers.ts";
+import type { AdminBotEmailReviewResolution, MemberNudgeChannel } from "../auth/session.ts";
 import {
   type BlockerRow,
   blockerAgeDays,
@@ -47,28 +45,30 @@ import type {
   AdminBotActionProposal,
   AdminBotDashboardData,
   AdminBotLabMember,
-  AdminBotLabMemberSaveInput,
   AdminBotMemberNudgeState,
-  AdminBotPaperNudge,
   AdminBotPaperRecord,
   AdminBotPaperSaveInput,
   AdminBotPaperStep,
   AdminBotSensitiveInfoRecord,
   AdminBotReimbursementState,
   AdminBotSettings,
-  AdminBotSettingsSaveInput,
   AdminBotStandingMeetingsState,
   AdminBotVenueSource,
 } from "../controllers/admin.ts";
+import type { AdminBotLabMemberSaveInput } from "../controllers/members.ts";
 import {
   EMPTY_RECENT_EDITS,
   recentEditsKey,
   type RecentEditsState,
 } from "../controllers/recent-edits.ts";
+import type { AdminBotSettingsSaveInput } from "../controllers/workspace.ts";
 import { renderAvailabilitySchedule, renderAvailabilityStrip } from "../data/availability.js";
 import { noteField, parseMemberNotes } from "../data/member-notes.ts";
+import { renderDateControl } from "../date-control.ts";
 import { saveMemberInBackground, waitForMemberSave } from "../member-autosave.ts";
 import { PROFILE_FIELDS, type ProfileField } from "../member-fields.ts";
+import { takeMemberSearchSeed } from "../member-search-seed.ts";
+import { renderMonthDayControl } from "../month-day-control.ts";
 import { multiSelectOptionsFor, renderMultiSelectField } from "../multi-select-field.ts";
 import { notifyFields, nudgeSaveInput } from "../nudge-alerts.ts";
 import {
@@ -79,6 +79,12 @@ import {
   type PreRegistrationVenue,
   type VenueTarget,
 } from "../venue-targets.ts";
+import {
+  memberFacetLabels,
+  memberFacets,
+  memberJoinedMonth,
+  normalizeMemberLists,
+} from "./admin.member-filters.ts";
 import { renderMemberBadgeSymbols } from "./badge-symbols.ts";
 import {
   MEMBER_REQUEST_POPOVER_ID,
@@ -103,6 +109,8 @@ export type BlockerSort = "stage" | "age" | "paper";
  * somebody looks.
  */
 export type PreregSort = "readiness" | "deadline" | "title" | "editLink" | "viewLink";
+import { adminQueueTotal, type PagedAdminQueue } from "../controllers/admin-queues.ts";
+import { paperSteps, stepLabels } from "../data/paper-steps.ts";
 import {
   PAPER_GRID_THRESHOLD,
   clearSavedEdits,
@@ -113,13 +121,17 @@ import {
   unsentSlotEdits,
   type PaperGridState,
 } from "../paper-grid.ts";
+import { onViewSessionReset } from "../view-session-reset.ts";
 import { renderAdminBotEmailReview } from "./email-review.ts";
+import { renderNudges } from "./nudge-board.ts";
+import { renderPaperNudge, type PaperNudgeProps } from "./paper-nudge.ts";
 import {
   EMPTY_PAPER_OVERVIEW_FILTER,
   paperOverviewRows,
   renderPaperOverviewTable,
   type PaperOverviewFilter,
 } from "./paper-overview.ts";
+import { renderQueueMore } from "./queue-more.ts";
 import { renderAdminBotReimbursements } from "./reimbursements.ts";
 
 export type AdminBotProps = {
@@ -173,8 +185,10 @@ export type AdminBotProps = {
   /** Active Papers' own filter. Lives on app state so it survives a re-render, like the others. */
   paperFilter?: PaperOverviewFilter;
   onPaperFilter?: (filter: PaperOverviewFilter) => void;
-  /** Opens one paper's own card over the table. See renderPaperCardDialog. */
+  /** Opens one paper: its project page, or the head professor's review. */
   onOpenPaperCard?: (paperId: string) => void;
+  /** The lab-wide author nudge. Absent outside admin mode, which draws no nudge at all. */
+  paperNudge?: PaperNudgeProps;
   /** Redraw after local-only state changes, such as opening the bulk sheet. */
   onRerender?: () => void;
   /**
@@ -213,18 +227,15 @@ export type AdminBotProps = {
    * outside the Lab Members panel and for a visitor with no member session, who can do neither.
    */
   memberRequests?: Omit<MemberRequestsProps, "isAdmin">;
-  /** Search and page over the full roster; absent for callers with a complete local roster. */
+  /** Full roster load state; absent for callers with a complete local roster. */
   memberList?: {
     rows: AdminBotLabMember[];
-    total: number;
-    limit: number;
-    offset: number;
-    query: string;
     loading: boolean;
     error: string | null;
   };
-  onMemberListChange?: (query: string, offset: number) => void;
+  onMemberListChange?: () => void;
   rosterLoadedAt?: number | null;
+  duplicatePairs?: MemberDuplicatePair<AdminBotLabMember>[] | null; // service pairs; null: reading
   rosterLoading?: boolean;
   rosterError?: string | null;
   onLoadFullRoster?: () => void;
@@ -239,6 +250,8 @@ export type AdminBotProps = {
   onToggleActionSelected: (proposalId: string) => void;
   onSetSelectedActions: (proposalIds: string[]) => void;
   onRemoveSelectedActions: () => void;
+  /** Reads the next page of a paged queue; absent where the queues are not paged (the gateway). */
+  onLoadMoreQueue?: (queue: PagedAdminQueue) => void;
   onExecute: (proposal: AdminBotActionProposal) => void;
   onResolveEmailReview: (messageId: string, resolution: AdminBotEmailReviewResolution) => void;
   // `options.onboard` is the Add-member form's tick: save the record, then put them through
@@ -309,30 +322,6 @@ export type AdminBotPanel =
   | "papers"
   | "announcements";
 
-// Exported so My Projects & Papers advances a paper through the same named steps this page shows;
-// two step vocabularies would let the pages disagree about where a paper is.
-export const stepLabels: Record<string, string> = {
-  brainstorming_docs: "Brainstorming docs",
-  overleaf_writing: "Overleaf writing",
-  submission: "Submission",
-  google_drive_pdf: "Drive PDF",
-  arxiv_polish: "arXiv polish",
-  social_posts: "Social posts",
-  slide_making: "Slides",
-  poster_making: "Poster",
-};
-
-export const paperSteps: AdminBotPaperStep[] = [
-  "brainstorming_docs",
-  "overleaf_writing",
-  "submission",
-  "google_drive_pdf",
-  "arxiv_polish",
-  "social_posts",
-  "slide_making",
-  "poster_making",
-];
-
 const privilegeLabels: Record<string, string> = {
   external_collaborator: "External Collaborator",
   trial: "Trial",
@@ -347,6 +336,18 @@ const memberStatusOptions: Array<{ value: string; label: string }> = [
   { value: "external", label: "External" },
   { value: "alumni", label: "Alumni" },
 ];
+
+/**
+ * The status the roster shows, filters on and preselects in the edit form.
+ *
+ * The importers write the spreadsheet's Member Type and never `status`, so nearly every alumnus has
+ * `member_type: "alumni"` and no status at all. Defaulting a missing status to "active" therefore
+ * listed all of them as Full time -- and the edit form preselected "active", so saving one wrote
+ * that back. Either field saying alumni is enough, as it is for `adminBotIsAlumniMember` server-side.
+ */
+function memberDisplayStatus(member: AdminBotLabMember): string {
+  return adminBotIsAlumniMember(member) ? "alumni" : (member.status ?? "active");
+}
 
 function friendly(value: string | undefined | null): string {
   if (!value) {
@@ -604,7 +605,7 @@ function saveMemberForm(
         : {}),
     },
   );
-  return saved instanceof Promise ? saved : true;
+  return saved instanceof Promise ? saved : saved !== false;
 }
 
 /**
@@ -745,7 +746,7 @@ function submitSettingsForm(event: Event, props: AdminBotProps): void {
 function submitSensitiveInfoForm(event: Event, props: AdminBotProps): void {
   event.preventDefault();
   const form = event.currentTarget;
-  if (!(form instanceof HTMLFormElement)) {
+  if (!(form instanceof HTMLFormElement) || props.data.sensitiveInfo === undefined) {
     return;
   }
   const data = new FormData(form);
@@ -759,7 +760,7 @@ function submitSensitiveInfoForm(event: Event, props: AdminBotProps): void {
 function renderSettings(
   props: AdminBotProps,
   settings: AdminBotSettings | null,
-  sensitiveInfo: AdminBotSensitiveInfoRecord | null,
+  sensitiveInfo: AdminBotSensitiveInfoRecord | null | undefined,
 ) {
   if (!settings) {
     return html`<div class="muted">Settings have not loaded yet.</div>`;
@@ -782,7 +783,7 @@ function renderSettings(
               />
             </label>
             <label class="adminbot-form__field">
-              <span>Minimum meeting minutes</span>
+              <span>List recordings longer than (minutes)</span>
               <input
                 name="meetingMinimumMinutes"
                 type="number"
@@ -996,7 +997,12 @@ function renderPendingActions(props: AdminBotProps) {
         `;
       })}
     </div>
+    ${renderQueueMore(props.data.queuePages?.proposals, proposals.length, more(props, "proposals"))}
   `;
+}
+
+function more(props: AdminBotProps, queue: PagedAdminQueue) {
+  return props.onLoadMoreQueue && (() => props.onLoadMoreQueue?.(queue));
 }
 
 function papersForMember(
@@ -1012,14 +1018,13 @@ function papersForMember(
 }
 
 /**
- * A paper still moving through the pipeline. Explicitly marked complete, or a timeline that has
- * run to 100%, both mean the work is done and its venue is no longer something to announce about.
+ * A paper still moving through the pipeline. Only an explicit "complete" ends it: step progress
+ * (contracts/paper-progress) reaches 100% on that and nothing else, so it needs no second check.
  * Kept separate from `conferencesForMember` so the members sheet keeps listing every conference a
  * person has touched, while announcements only offer the ones with live work behind them.
  */
 function isOngoingPaper(paper: AdminBotPaperRecord): boolean {
-  if (paper.reminder?.status === "complete") return false;
-  return (paper.timeline?.progress_percent ?? 0) < 100;
+  return paper.reminder?.status !== "complete";
 }
 
 // Conferences a member has *ongoing* papers for, which is what makes them worth announcing to.
@@ -1046,22 +1051,33 @@ function signedInMember(props: AdminBotProps): AdminBotLabMember | undefined {
     : undefined;
 }
 
-function filterMemberSpreadsheet(event: Event, paged: boolean): void {
-  const form = event.currentTarget;
+const memberFilterSelections = new WeakMap<HTMLFormElement, Map<string, string>>();
+
+function filterMemberSpreadsheet(form: EventTarget | null | undefined): void {
   if (!(form instanceof HTMLFormElement)) {
     return;
   }
   const sheet = form.closest<HTMLElement>(".adminbot-member-sheet");
   if (!sheet) return;
+  memberFilterSelections.set(
+    form,
+    new Map([...form.querySelectorAll("select")].map((select) => [select.name, select.value])),
+  );
   const data = new FormData(form);
-  const search = paged ? "" : getFormValue(data, "search").toLocaleLowerCase();
+  const search = getFormValue(data, "search").trim().toLocaleLowerCase();
   const status = getFormValue(data, "status");
   const project = getFormValue(data, "project");
   const paper = getFormValue(data, "paper");
   const conference = getFormValue(data, "conference");
+  const selectedFacets = Object.keys(memberFacetLabels).map((key) => [
+    key,
+    getFormValue(data, key),
+  ]);
   let visible = 0;
   for (const row of sheet.querySelectorAll<HTMLTableRowElement>("tbody tr")) {
+    const facets = JSON.parse(row.dataset.facets ?? "{}") as Record<string, string[]>;
     const matches =
+      selectedFacets.every(([key, value]) => !value || facets[key!]?.includes(value)) &&
       (!search || (row.dataset.search ?? "").includes(search)) &&
       (!status || row.dataset.status === status) &&
       (!project || (row.dataset.projects ?? "").split("|").includes(project)) &&
@@ -1072,17 +1088,7 @@ function filterMemberSpreadsheet(event: Event, paged: boolean): void {
   }
   const count = sheet.querySelector<HTMLElement>("[data-member-result-count]");
   if (count) {
-    count.textContent = paged
-      ? `${visible} on this page`
-      : `${visible} ${visible === 1 ? "person" : "people"}`;
-  }
-}
-
-function resetMemberPageFacets(target: EventTarget | null): void {
-  if (!(target instanceof Element)) return;
-  const form = target.closest(".adminbot-member-sheet")?.querySelector(".adminbot-member-filters");
-  for (const select of form?.querySelectorAll<HTMLSelectElement>("select") ?? []) {
-    select.value = "";
+    count.textContent = `${visible} ${visible === 1 ? "person" : "people"}`;
   }
 }
 
@@ -1212,8 +1218,20 @@ function renderRegistryField(
           max=${ifDefined(field.max)}
           .value=${value}
         />`;
+      case "month_day":
+        return renderMonthDayControl(field.key, value);
+      case "month":
+        return html`<input
+          name=${field.key}
+          type=${!value || /^[0-9]{4}-(0[1-9]|1[0-2])$/.test(value) ? "month" : "text"}
+          pattern=${ifDefined(field.pattern)}
+          .value=${value}
+        />`;
       case "date":
-        return html`<input name=${field.key} type="date" .value=${value} />`;
+        return html`${renderDateControl(
+          html`<input name=${field.key} type="date" .value=${live(value)} />`,
+          value,
+        )}`;
       case "link":
         return html`<input
           name=${field.key}
@@ -1232,6 +1250,7 @@ function renderRegistryField(
         return html`<input
             name=${field.key}
             placeholder=${field.example}
+            pattern=${ifDefined(field.pattern)}
             .value=${value}
             ?required=${field.key === "name" && !member}
             list=${ifDefined(
@@ -1451,7 +1470,7 @@ function renderMemberFormFields(
             (option) =>
               html`<option
                 value=${option.value}
-                ?selected=${option.value === (member?.status ?? "active")}
+                ?selected=${option.value === (member ? memberDisplayStatus(member) : "active")}
               >
                 ${option.label}
               </option>`,
@@ -1582,6 +1601,11 @@ function renderMemberEditPopover(member: AdminBotLabMember, index: number, props
                 props.standingMeetings,
                 props.mode === "admin" ? props.onRenameMember : undefined,
               )}
+              ${props.notice?.kind === "error"
+                ? html`<div class="callout danger" role="alert" style="grid-column: 1 / -1">
+                    ${props.notice.text}
+                  </div>`
+                : nothing}
               <div class="adminbot-form__actions">
                 <button class="btn btn--sm primary" type="submit">Save member</button>
               </div>
@@ -1710,32 +1734,25 @@ function memberRowEdit(member: AdminBotLabMember, props: AdminBotProps): MemberR
   return props.signedInMemberId && member.id === props.signedInMemberId ? "self" : "none";
 }
 
-// Signed-in member's own row floats to the top; everyone else keeps the roster's fetch order
-// so the table does not silently reshuffle. No signed-in member (break-glass gateway-token
-// access) leaves the order untouched.
-function sortSignedInMemberFirst(
-  members: AdminBotLabMember[],
-  signedInMemberId: string | null | undefined,
-): AdminBotLabMember[] {
-  if (!signedInMemberId) {
-    return members;
-  }
-  const own = members.filter((member) => member.id === signedInMemberId);
-  return own.length === 0 ? members : [...own, ...members.filter((m) => m.id !== signedInMemberId)];
-}
-
 function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMember[]) {
   const page = props.memberList;
   const papers = props.data.papers;
-  const members = sortSignedInMemberFirst(allMembers, props.signedInMemberId);
+  const members = allMembers
+    .map(normalizeMemberLists)
+    .toSorted((a, b) =>
+      (memberJoinedMonth(a) || "9999").localeCompare(memberJoinedMonth(b) || "9999"),
+    );
+  const facets = new Map(
+    members.map((member) => [member.id, memberFacets(member, props.standingMeetings)]),
+  );
   const ownMember = signedInMember(props);
   const ownMemberOutsidePage =
     props.mode === "general" &&
     page !== undefined &&
     ownMember !== undefined &&
     !members.some((member) => member.id === ownMember.id);
-  const total = page?.total ?? members.length;
-  const statuses = [...new Set(members.map((member) => member.status ?? "active"))].sort();
+  const total = members.length;
+  const statuses = [...new Set(members.map((member) => memberDisplayStatus(member)))].sort();
   const projects = [...new Set(members.flatMap((member) => member.projects ?? []))].sort();
   const paperTitles = [...new Set(papers.map((paper) => paper.title))].sort();
   // Only conferences someone on the roster is actually submitting to, so the options match what
@@ -1769,16 +1786,29 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
       </div>
       <form
         class="adminbot-member-filters"
-        @input=${(event: Event) => filterMemberSpreadsheet(event, Boolean(page))}
-        @change=${(event: Event) => filterMemberSpreadsheet(event, Boolean(page))}
-        @submit=${(event: Event) => {
-          event.preventDefault();
-          if (page) {
-            const form = event.currentTarget as HTMLFormElement;
-            resetMemberPageFacets(form);
-            props.onMemberListChange?.(getFormValue(new FormData(form), "search").trim(), 0);
-          }
-        }}
+        ${ref((form) => {
+          // Restore selections by value after options/rows change, then reapply the filters.
+          if (form instanceof HTMLFormElement)
+            queueMicrotask(() => {
+              const selections = memberFilterSelections.get(form);
+              for (const select of form.querySelectorAll("select")) {
+                const value = selections?.get(select.name) ?? "";
+                select.value = [...select.options].some((option) => option.value === value)
+                  ? value
+                  : "";
+              }
+              const search = form.elements.namedItem("search");
+              const seeded = search instanceof HTMLInputElement ? takeMemberSearchSeed() : null;
+              if (seeded !== null && search instanceof HTMLInputElement) {
+                search.value = seeded;
+                search.scrollIntoView({ block: "nearest" });
+              }
+              filterMemberSpreadsheet(form);
+            });
+        })}
+        @input=${(event: Event) => filterMemberSpreadsheet(event.currentTarget)}
+        @change=${(event: Event) => filterMemberSpreadsheet(event.currentTarget)}
+        @submit=${(event: Event) => event.preventDefault()}
       >
         <div class="adminbot-member-filters__search">
           <label
@@ -1787,14 +1817,8 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
               name="search"
               type="search"
               placeholder="Name, topic, project…"
-              .value=${page?.query ?? ""}
               ?disabled=${page?.loading ?? false}
           /></label>
-          ${page
-            ? html`<button class="btn btn--sm" type="submit" ?disabled=${page.loading}>
-                Search
-              </button>`
-            : nothing}
         </div>
         <label
           ><span>Status</span
@@ -1824,13 +1848,36 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
             ${conferences.map((value) => html`<option value=${value}>${value}</option>`)}
           </select></label
         >
+        ${Object.entries(memberFacetLabels).map(([key, label]) => {
+          const facet = key as keyof typeof memberFacetLabels;
+          const options = [
+            ...new Set([
+              ...(facet === "membership" ? adminBotMemberTypes : []),
+              ...members.flatMap((member) => facets.get(member.id)![facet]),
+            ]),
+          ].sort();
+          const unavailable = facet === "meeting" && !props.standingMeetings?.loadedAt;
+          return html`<label
+            ><span>${label}</span
+            ><select name=${key} ?disabled=${unavailable}>
+              <option value="">
+                ${unavailable ? "Invitations unavailable" : `Any ${label.toLowerCase()}`}
+              </option>
+              ${options.map(
+                (value) =>
+                  html`<option value=${value}>
+                    ${facet === "meeting"
+                      ? props.standingMeetings?.meetings.find((meeting) => meeting.id === value)
+                          ?.title
+                      : facet === "membership"
+                        ? friendly(value)
+                        : value}
+                  </option>`,
+              )}
+            </select></label
+          >`;
+        })}
       </form>
-      ${page
-        ? html`<p class="muted">
-            Status, project, paper, and conference filters apply to this page and reset when you
-            change pages.
-          </p>`
-        : nothing}
       <div class="adminbot-member-sheet__scroll" @mousedown=${startSheetPan}>
         <table>
           <thead>
@@ -1878,8 +1925,9 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
                 .join(" ")
                 .toLocaleLowerCase();
               return html`<tr
+                data-facets=${JSON.stringify(facets.get(member.id))}
                 data-search=${search}
-                data-status=${member.status ?? "active"}
+                data-status=${memberDisplayStatus(member)}
                 data-projects=${(member.projects ?? []).join("|")}
                 data-papers=${memberPapers.map((entry) => entry.title).join("|")}
                 data-conferences=${[...new Set(memberPapers.map(paperConference))].join("|")}
@@ -1951,8 +1999,8 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
                   friendly(member.privilege_level)}
                 </td>
                 <td>
-                  <span class="adminbot-status adminbot-status--${member.status ?? "active"}"
-                    >${friendly(member.status ?? "active")}</span
+                  <span class="adminbot-status adminbot-status--${memberDisplayStatus(member)}"
+                    >${friendly(memberDisplayStatus(member))}</span
                   >
                 </td>
                 <td>
@@ -1982,7 +2030,7 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
                 <td>${member.location ?? noteDraft.location ?? "—"}</td>
                 <td>${member.timezone ?? "—"}</td>
                 <td>${member.affiliation ?? "—"}</td>
-                <td>${noteDraft.joinedMonth || "—"}</td>
+                <td>${memberJoinedMonth(member) || "—"}</td>
                 <td>
                   ${noteDraft.calendarEmail
                     ? html`<span class="adminbot-contact-item"
@@ -2027,55 +2075,17 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
           </tbody>
         </table>
         ${members.length === 0 && !page?.loading && !page?.error
-          ? html`<div class="adminbot-empty adminbot-empty--compact">
-              ${page?.query ? "No matching lab members." : "No lab members yet."}
-            </div>`
+          ? html`<div class="adminbot-empty adminbot-empty--compact">No lab members yet.</div>`
           : nothing}
       </div>
-      ${page
-        ? html`<nav class="adminbot-form__actions" aria-label="Member pages">
-              <span role="status" aria-live="polite">
-                ${page.loading
-                  ? "Loading people…"
-                  : members.length === 0
-                    ? `Showing 0 of ${page.total}`
-                    : `Showing ${page.offset + 1}–${Math.min(page.offset + members.length, page.total)} of ${page.total}`}
-              </span>
-              <button
-                class="btn btn--sm"
-                type="button"
-                ?disabled=${page.loading || page.offset === 0}
-                @click=${(event: Event) => {
-                  resetMemberPageFacets(event.currentTarget);
-                  props.onMemberListChange?.(page.query, Math.max(0, page.offset - page.limit));
-                }}
-              >
-                Previous
-              </button>
-              <button
-                class="btn btn--sm"
-                type="button"
-                ?disabled=${page.loading || page.offset + page.limit >= page.total}
-                @click=${(event: Event) => {
-                  resetMemberPageFacets(event.currentTarget);
-                  props.onMemberListChange?.(page.query, page.offset + page.limit);
-                }}
-              >
-                Next
-              </button>
-            </nav>
-            ${page.error
-              ? html`<div class="callout danger" role="alert">
-                  ${page.error}
-                  <button
-                    class="btn btn--sm"
-                    type="button"
-                    @click=${() => props.onMemberListChange?.(page.query, page.offset)}
-                  >
-                    Try again
-                  </button>
-                </div>`
-              : nothing}`
+      ${page?.loading ? html`<p role="status">Loading people…</p>` : nothing}
+      ${page?.error
+        ? html`<div class="callout danger" role="alert">
+            ${page.error}
+            <button class="btn btn--sm" type="button" @click=${() => props.onMemberListChange?.()}>
+              Try again
+            </button>
+          </div>`
         : nothing}
       ${members.map((member, index) => {
         const rowEdit = memberRowEdit(member, props);
@@ -2102,10 +2112,8 @@ const DUPLICATE_REASONS: Record<string, string> = {
   name_contains: "one name is the other plus a middle name",
 };
 const DUPLICATE_PAGE_SIZE = 20;
-const duplicateViews = new WeakMap<
-  readonly AdminBotLabMember[],
-  { pairs: MemberDuplicatePair<AdminBotLabMember>[]; page: number }
->();
+type DuplicateView = { pairs: MemberDuplicatePair<AdminBotLabMember>[]; page: number };
+const duplicateViews = new WeakMap<object, DuplicateView>(); // keyed by the pairs' source array
 
 /** The fields this record has that the other one does not -- the half it would contribute. */
 function contributedFields(candidate: AdminBotLabMember, other: AdminBotLabMember): string[] {
@@ -2195,13 +2203,13 @@ function renderMembersWithoutEmail(props: AdminBotProps, members: AdminBotLabMem
 }
 
 function renderDuplicateMembers(props: AdminBotProps, members: AdminBotLabMember[]) {
-  if (props.mode !== "admin" || !props.onMergeMembers) {
+  if (props.mode !== "admin" || !props.onMergeMembers || props.duplicatePairs === null) {
     return nothing;
   }
-  const cached = duplicateViews.get(members);
-  const view = cached ?? { pairs: findDuplicateMembers(members), page: 0 };
+  const cached = duplicateViews.get(props.duplicatePairs ?? members);
+  const view = cached ?? { pairs: props.duplicatePairs ?? findDuplicateMembers(members), page: 0 };
   if (!cached) {
-    duplicateViews.set(members, view);
+    duplicateViews.set(props.duplicatePairs ?? members, view);
   }
   const { pairs } = view;
   if (pairs.length === 0) {
@@ -2523,6 +2531,7 @@ export function resetAdminViewSessionState(): void {
   openedMemberEditors.clear();
   paperGridState = null;
 }
+onViewSessionReset(resetAdminViewSessionState);
 
 /**
  * Active Papers.
@@ -2625,12 +2634,17 @@ function renderPapers(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
     return html`${table} ${canAdd ? renderAddPaperCard(props, { governance: false }) : nothing}`;
   }
   return html`
-    ${board(`Active papers (${papers.length})`, table, { open: true })}
+    ${board(`Active papers (${papers.length})`, table)}
     ${board(t("paperOverview.details.preRegistration"), renderPreRegistrationBoard(papers, props))}
     ${board(t("paperOverview.details.travel"), renderTravelBoard(props))}
     ${board(t("paperOverview.details.blockers"), renderBlockers(props, papers))}
     ${board(t("paperOverview.details.nextSteps"), renderNextSteps(props, papers))}
-    ${board(t("paperOverview.details.nudges"), renderNudges(props.data.nudges))}
+    ${board(t("paperOverview.details.nudges"), renderNudges(props.data, more(props, "nudges")))}
+    ${props.paperNudge
+      ? board("Chase authors (whole lab)", renderPaperNudge(props.paperNudge), {
+          open: props.paperNudge.nudgeBatches !== null,
+        })
+      : nothing}
     ${board(t("paperOverview.details.add"), renderAddPaperCard(props, { governance: true }))}
   `;
 }
@@ -3378,7 +3392,7 @@ function nextStepNudgeMessage(
   label: string,
   waitingOn: string,
 ): string {
-  const deadline = row.deadline ? ` (deadline ${row.deadline})` : "";
+  const deadline = paper.deadline ? ` (deadline ${paper.deadline})` : "";
   return `"${paper.title}"${deadline} is waiting on ${waitingOn} for: ${label}. ${row.provided_count} of ${row.required_count} fields are in.`;
 }
 
@@ -3453,31 +3467,6 @@ function renderNextSteps(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
           </article>
         `;
       })}
-    </div>
-  `;
-}
-
-function renderNudges(nudges: AdminBotPaperNudge[]) {
-  if (nudges.length === 0) {
-    return html`<div class="adminbot-empty adminbot-empty--compact">No due paper nudges.</div>`;
-  }
-  return html`
-    <div class="adminbot-nudge-list">
-      ${nudges.map(
-        (nudge) => html`
-          <article class="adminbot-nudge adminbot-nudge--${nudge.type}">
-            <div class="adminbot-nudge__header">
-              <strong>${nudge.title}</strong>
-              <span>${nudge.type === "head_professor_escalation" ? "Escalate" : "Nudge"}</span>
-            </div>
-            <p>${nudge.message}</p>
-            <div class="adminbot-action__meta">
-              <span>${stepLabels[nudge.step] ?? friendly(nudge.step)}</span>
-              <span>${nudge.recipients.join(", ") || "No recipients"}</span>
-            </div>
-          </article>
-        `,
-      )}
     </div>
   `;
 }
@@ -3580,7 +3569,7 @@ function matchesRecipient(
   papers: AdminBotPaperRecord[],
   filters: RecipientFilters,
 ): boolean {
-  if (filters.status && (member.status ?? "active") !== filters.status) {
+  if (filters.status && memberDisplayStatus(member) !== filters.status) {
     return false;
   }
   if (filters.branch && member.research_branch !== filters.branch) {
@@ -3632,7 +3621,7 @@ function renderAnnouncementRecipients(
   );
   const offset = view.page * RECIPIENT_PAGE_SIZE;
   const pageMembers = filtered.slice(offset, offset + RECIPIENT_PAGE_SIZE);
-  const statuses = [...new Set(members.map((member) => member.status ?? "active"))].toSorted();
+  const statuses = [...new Set(members.map((member) => memberDisplayStatus(member)))].toSorted();
   const branches = [
     ...new Set(
       members.flatMap((member) => (member.research_branch ? [member.research_branch] : [])),
@@ -3771,7 +3760,7 @@ function renderAnnouncementRecipients(
               const hasContact = announceChannelHasContact(member, channel);
               return html`<tr
                 data-search=${search}
-                data-status=${member.status ?? "active"}
+                data-status=${memberDisplayStatus(member)}
                 data-branch=${member.research_branch ?? ""}
                 data-privilege=${member.privilege_level}
                 data-projects=${(member.projects ?? []).join("|")}
@@ -3804,8 +3793,8 @@ function renderAnnouncementRecipients(
                       html`<span class="adminbot-nudge-recipients__missing">no email</span>`)}
                 </td>
                 <td>
-                  <span class="adminbot-status adminbot-status--${member.status ?? "active"}"
-                    >${friendly(member.status ?? "active")}</span
+                  <span class="adminbot-status adminbot-status--${memberDisplayStatus(member)}"
+                    >${friendly(memberDisplayStatus(member))}</span
                   >
                 </td>
                 <td>${member.research_branch ?? "—"}</td>
@@ -3961,6 +3950,8 @@ function renderPanel(props: AdminBotProps) {
             </section>
             ${renderAdminBotEmailReview({
               reviews: props.data.emailReviews ?? [],
+              page: props.data.queuePages?.emailReview,
+              onMore: more(props, "emailReview"),
               candidates: props.data.emailReviewCandidates ?? [],
               recentResolutions: props.data.emailReviewHistory ?? [],
               busyActionId: props.busyActionId,
@@ -4079,7 +4070,7 @@ export function renderAdminBot(props: AdminBotProps) {
         ? html`<div class="adminbot-metrics">
             ${general
               ? nothing
-              : renderMetric("Pending", props.data.proposals.length, "approval queue")}
+              : renderMetric("Pending", adminQueueTotal(props.data, "proposals"), "approval queue")}
             ${renderMetric(
               "Members",
               props.data.members.length,
@@ -4088,7 +4079,7 @@ export function renderAdminBot(props: AdminBotProps) {
             ${renderMetric("Papers", props.data.papers.length, "publication pipeline")}
             ${general
               ? renderMetric("Updated", loadedAt, "read-only view")
-              : renderMetric("Nudges", props.data.nudges.length, `loaded ${loadedAt}`)}
+              : renderMetric("Nudges", adminQueueTotal(props.data, "nudges"), `loaded ${loadedAt}`)}
           </div>`
         : nothing}
       ${firstLoadPending || firstLoadFailed

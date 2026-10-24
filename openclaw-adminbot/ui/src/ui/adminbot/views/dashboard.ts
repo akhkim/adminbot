@@ -20,13 +20,24 @@ import type { AppViewState } from "../../app-view-state.ts";
 import { icons } from "../../icons.ts";
 import { iconForTab, isKnownTab, type Tab } from "../../navigation.ts";
 import type { AccessRole } from "../access.ts";
-import type { MemberNotification } from "../auth/session.ts";
-import { daysLeftLabel, upcomingMajorDeadlines, urgencyOf } from "../data/deadline-time.ts";
+import type { MemberNotification } from "../api/workspace.ts";
+import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
+import { openEntries } from "../blockers.ts";
+import {
+  deadlineDateTimeLabel,
+  daysLeftLabel,
+  plainDateLabel,
+  upcomingMajorDeadlines,
+  urgencyOf,
+} from "../data/deadline-time.ts";
 import { nextStepFor } from "../next-step.ts";
-import { renderAoeDateTime } from "./deadline-date.ts";
+import { ownPapers, paperProgress, stepLabel } from "../projects/model.ts";
+import { renderDeadlineDateLabel } from "./deadline-date.ts";
 import { renderMemberMap } from "./member-map.ts";
-import { ownPapers, paperProgress, stepLabel } from "./my-work.ts";
-import { blankFields, fieldLabel, findOwnMember, focusProfileField } from "./profile.ts";
+import "./map-coverage.ts";
+import "./nudge-campaign.ts";
+import { renderOwnPreciseLocation } from "./precise-location.ts";
+import { blankFields, fieldLabel, findOwnMember, focusProfileField } from "./profile-fields.ts";
 
 // One thing waiting on the viewer. `detail` is optional supporting text -- the queue items say
 // everything in their summary.
@@ -191,17 +202,20 @@ function proposalsItem(state: AppViewState, role: AccessRole): AttentionItem | n
   if (role !== "admin") {
     return null;
   }
-  const pending = (state.adminBotData?.proposals ?? []).filter(
-    (proposal) => proposal.status === "pending",
-  );
-  if (!pending.length) {
+  // The dashboard reads only the count (/admin/queue-counts); the list is there when another page
+  // loaded it first, before the count has landed.
+  const pending =
+    state.adminBotData?.queueCounts?.pendingProposals ??
+    (state.adminBotData?.proposals ?? []).filter((proposal) => proposal.status === "pending")
+      .length;
+  if (!pending) {
     return null;
   }
   return {
     id: "proposals",
     title: t("dashboard.proposals.title"),
     summary: t("dashboard.proposals.summary", {
-      count: String(pending.length),
+      count: String(pending),
     }),
     actionLabel: t("dashboard.proposals.open"),
     onAction: () => state.setTab("adminbot"),
@@ -212,15 +226,17 @@ function emailReviewsItem(state: AppViewState, role: AccessRole): AttentionItem 
   if (role !== "admin") {
     return null;
   }
-  const reviews = state.adminBotData?.emailReviews ?? [];
-  if (reviews.length === 0) {
+  const reviews =
+    state.adminBotData?.queueCounts?.emailReviews ??
+    (state.adminBotData?.emailReviews ?? []).length;
+  if (reviews === 0) {
     return null;
   }
   return {
     id: "email-reviews",
     title: "Emails need a decision",
-    summary: `${reviews.length} ${
-      reviews.length === 1 ? "message was" : "messages were"
+    summary: `${reviews} ${
+      reviews === 1 ? "message was" : "messages were"
     } held because AdminBot could not safely decide what to update.`,
     actionLabel: "Review emails",
     onAction: () => state.setTab("adminbot"),
@@ -388,7 +404,7 @@ function renderMore(count: number) {
 
 function renderWorkSummary(state: AppViewState) {
   const items = ownPapers(state);
-  const blockers = (state.myWorkBlockers ?? []).length;
+  const blockers = items.reduce((count, paper) => count + openEntries(paper).length, 0);
   return renderSummary({
     state,
     tab: "myWork",
@@ -445,6 +461,7 @@ type NextDeadline = {
   key: string;
   label: string;
   instant: number;
+  dateLabel: string;
   mine: boolean;
 };
 
@@ -467,6 +484,7 @@ function nextDeadlines(state: AppViewState): NextDeadline[] {
       key: `venue:${entry.venue.deadline_id ?? entry.venue.name}`,
       label: entry.venue.name,
       instant: entry.instant,
+      dateLabel: deadlineDateTimeLabel(entry.venue),
       mine: false,
     }),
   );
@@ -486,6 +504,7 @@ function nextDeadlines(state: AppViewState): NextDeadline[] {
       key: `mine:${date}:${milestone.label ?? ""}`,
       label: String(milestone.label ?? "").trim() || date,
       instant,
+      dateLabel: plainDateLabel(date),
       mine: true,
     });
   }
@@ -530,7 +549,7 @@ function renderNextDeadlines(state: AppViewState) {
                 : nothing}
             </span>
             <span class="dashboard__next-deadline-date">
-              ${renderAoeDateTime(new Date(row.instant).toISOString())}
+              ${renderDeadlineDateLabel(row.dateLabel)}
             </span>
           </li>`,
       )}
@@ -753,14 +772,72 @@ export function renderDashboard(state: AppViewState, role: AccessRole, onRetry?:
   }
   return html`
     <div class="dashboard">
-      ${renderBroadcast(state)} ${renderOneOffNotice(state, role)}
+      ${renderOfflineBanner(state)} ${renderBroadcast(state)} ${renderOneOffNotice(state, role)}
       ${renderNudgeWarning(state, role)} ${renderAttention(state, role)}
       <section class="dashboard__summaries">
         <div class="dashboard__grid">
-          ${renderWorkSummary(state)} ${renderMemberMap(state.adminBotMemberMap ?? null)}
+          ${renderWorkSummary(state)}
+          ${renderMemberMap(state.adminBotMemberMap ?? null, {
+            now: Date.now(),
+            ownLocation: renderOwnPreciseLocation(state),
+          })}
         </div>
+        ${renderMapCoverage(state, role)}
       </section>
-      ${renderNextDeadlines(state)}
+      ${renderNextDeadlines(state)} ${renderNudgeCampaigns(state, role)}
     </div>
+  `;
+}
+
+// Admins only: the server refuses everyone else, and a panel that could only ever say "forbidden"
+// is noise on a member's dashboard.
+function renderMapCoverage(state: AppViewState, role: AccessRole) {
+  const session = loadStoredMemberSession();
+  if (role !== "admin" || !session?.sessionToken) {
+    return nothing;
+  }
+  return html`<adminbot-map-coverage
+    .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
+    .sessionToken=${session.sessionToken}
+  ></adminbot-map-coverage>`;
+}
+
+// Admins only: the server refuses everyone else, and a list that could only ever say "forbidden" is
+// noise on a member's dashboard. Which nudge campaigns exist, how many members each has reached and
+// when it last sent.
+function renderNudgeCampaigns(state: AppViewState, role: AccessRole) {
+  const session = loadStoredMemberSession();
+  if (role !== "admin" || !session?.sessionToken) {
+    return nothing;
+  }
+  return html`<adminbot-nudge-campaigns
+    .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
+    .sessionToken=${session.sessionToken}
+  ></adminbot-nudge-campaigns>`;
+}
+
+function renderOfflineBanner(state: AppViewState) {
+  const pending = state.adminBotOfflinePendingWrites ?? 0;
+  const cached = Boolean(state.adminBotUsingCachedReads);
+  if (!cached && pending === 0) {
+    return nothing;
+  }
+  const reads = cached
+    ? "Showing the last copy saved on this device. You can still read and edit supported drafts. Submit requests when AdminBot is reachable."
+    : "";
+  const writes =
+    pending > 0
+      ? `${pending} edit${pending === 1 ? "" : "s"} retained from the old queue. Review and submit again when connected; these will not send automatically.`
+      : "";
+  return html`
+    <section
+      class="dashboard__nudge-warning"
+      data-tone="warn"
+      data-testid="dashboard-offline"
+      role="status"
+    >
+      <strong>Working offline</strong>
+      <p>${[reads, writes].filter(Boolean).join(" ")}</p>
+    </section>
   `;
 }

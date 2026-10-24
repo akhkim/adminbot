@@ -26,18 +26,22 @@ import { agentLogoUrl } from "../../views/agents-utils.ts";
 import { visibleTabsForRole } from "../access.ts";
 import { resolveAdminBotBaseUrl } from "../auth/session.ts";
 import {
-  generateGuestReimbursement,
-  loadAdminBotVenueSources,
   resetAdminBotReimbursement,
   setAdminBotReimbursementFunder,
-  searchAdminBotVenuePapers,
-  sendGuestReimbursementMessage,
   setAdminBotVenue,
   setAdminBotVenueCategory,
   setAdminBotVenueInterests,
   toggleAdminBotVenueAbstract,
-  type GuestReimbursementHost,
 } from "../controllers/admin.ts";
+import {
+  loadAdminBotVenueSources,
+  searchAdminBotVenuePapers,
+} from "../controllers/conference-papers.ts";
+import {
+  generateGuestReimbursement,
+  sendGuestReimbursementMessage,
+  type GuestReimbursementHost,
+} from "../controllers/reimbursements.ts";
 import { renderConferencePapers } from "./conference-papers.ts";
 import { renderDeadlines } from "./deadlines.ts";
 import { renderOpportunities } from "./opportunities.ts";
@@ -66,8 +70,11 @@ const GENERAL_TOOLS_TABS: readonly Tab[] =
  *
  * The theme controls live in Appearance and Settings, both admin-only, so a visitor had no way to
  * change the theme at all -- the one preference on this shell that is purely about how it looks to
- * the person looking at it. `system` is not offered as a third state: this is a toggle, and the
- * mode it starts from is whatever the viewer already resolved to.
+ * the person looking at it. Light and dark are the only two modes, so this is a plain toggle.
+ *
+ * The glyph is the theme a click switches to (a sun while dark), matching the label. No
+ * aria-pressed: the label already changes with the state, and a pressed toggle whose name also
+ * flips announces the state twice and contradicts itself.
  */
 function renderPublicThemeToggle(state: AppViewState) {
   const dark = state.themeResolved !== "light";
@@ -76,7 +83,7 @@ function renderPublicThemeToggle(state: AppViewState) {
       type="button"
       class="public-shell-theme"
       data-testid="public-shell-theme"
-      aria-pressed=${dark ? "true" : "false"}
+      data-mode=${dark ? "dark" : "light"}
       title=${t(dark ? "login.public.themeLight" : "login.public.themeDark")}
       aria-label=${t(dark ? "login.public.themeLight" : "login.public.themeDark")}
       @click=${() => {
@@ -141,10 +148,10 @@ function renderPublicPanel(state: AppViewState) {
   if (state.tab === "adminbotConferencePapers") {
     // The signed-in app loads this list from refreshActiveTab, which only runs behind a gateway
     // connection a visitor does not have. Kicked from here instead, once: `loadingSources` is set
-    // synchronously by the loader and `error` survives a failure, so neither a slow request nor a
-    // dead service turns this into a loop. The state slice is reactive, so the answer re-renders.
+    // synchronously by the loader, `error` survives a failure and `sourcesLoaded` an empty answer,
+    // so no reply turns this into a loop. The state slice is reactive, so the answer re-renders.
     const papers = state.adminBotVenuePapers;
-    if (papers.sources.length === 0 && !papers.loadingSources && !papers.error) {
+    if (!papers.sourcesLoaded && !papers.loadingSources && !papers.error) {
       void loadAdminBotVenueSources(state);
     }
     return renderConferencePapers({

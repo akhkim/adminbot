@@ -1,6 +1,7 @@
 import { css, html, LitElement, nothing } from "lit";
 import { property, state } from "lit/decorators.js";
 import { loadSettings } from "../../storage.ts";
+import { memberAuthHeaders } from "../api/device-clock.ts";
 import {
   loadStoredMemberSession,
   resolveAdminBotBaseUrl,
@@ -35,7 +36,7 @@ export class InterviewInvite extends LitElement {
     try {
       const response = await fetch(
         `${resolveAdminBotBaseUrl(loadSettings())}/onboarding/interviewers?q=${encodeURIComponent(query)}`,
-        { headers: { Authorization: `Bearer ${session.sessionToken}` } },
+        { headers: memberAuthHeaders(session.sessionToken) },
       );
       const result = await response.json();
       if (
@@ -189,7 +190,7 @@ export class InterviewInvite extends LitElement {
         {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${session.sessionToken}`,
+            ...memberAuthHeaders(session.sessionToken),
             "Content-Type": "application/json",
           },
           body: JSON.stringify({ ...payload, preview: !queue }),

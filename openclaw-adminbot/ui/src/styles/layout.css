@@ -315,7 +315,8 @@
   border: 1px solid transparent;
   border-radius: var(--radius-full);
   background: transparent;
-  color: var(--muted);
+  /* --text, like the bell beside it. --muted read as disabled on the white topbar. */
+  color: var(--text);
   cursor: pointer;
   transition:
     color var(--duration-fast) var(--ease-out),
@@ -340,8 +341,8 @@
 }
 
 .topbar-theme-mode__btn svg {
-  width: 14px;
-  height: 14px;
+  width: 18px;
+  height: 18px;
   stroke: currentColor;
   fill: none;
   stroke-width: 1.75px;
@@ -933,6 +934,31 @@
      rule could not reach it. `none` rather than `contain`: contain only stops the scroll chaining
      to a parent, and still leaves the pane its own bounce, which is the thing being seen. */
   overscroll-behavior-y: none;
+  /* An unbroken token (an email address, a URL) breaks rather than running out of the page: with
+     `overflow-x: hidden` above, anything wider than the pane is simply cut off. `break-word`, not
+     `anywhere`, so it never changes how wide a table column or flex item asks to be. */
+  overflow-wrap: break-word;
+}
+
+/* Titles and short labels sit in flex/grid rows, where `break-word` still lets one unbroken token
+   (a pasted URL, a long venue name) set the item's minimum width and push it past the pane.
+   `anywhere` lets them shrink. None of these sit in table cells, so column sizing is unchanged. */
+.content
+  :where(
+    h1,
+    h2,
+    h3,
+    .card-title,
+    .card-sub,
+    .profile__name,
+    .profile-badge-picker__title,
+    .deadline-action__venue,
+    .lab-travel__conference-title,
+    .onboarding-step-card__label,
+    .adminbot-form__field > span,
+    .opp-body > div
+  ) {
+  overflow-wrap: anywhere;
 }
 
 .content > * + * {
@@ -1459,11 +1485,15 @@
   list-style: none;
 }
 
+/* A wrapping row rather than a fixed `5.5rem` grid track: a browser minimum font size makes the
+   text larger without making `rem` larger, so "69 days left" outgrew its track and was painted
+   over the venue name. Here each piece is sized by its own text, and the date drops to the next
+   line when the three no longer fit side by side. */
 .dashboard__next-deadline {
-  display: grid;
-  grid-template-columns: 5.5rem minmax(0, 1fr) auto;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-1) var(--space-3);
   padding: var(--space-2) var(--space-3);
 }
 
@@ -1472,6 +1502,8 @@
 }
 
 .dashboard__next-deadline-countdown {
+  flex: 0 0 auto;
+  min-width: 5.5rem;
   color: var(--deadline-urgency);
   font-family: var(--mono);
   font-size: var(--control-ui-text-xs);
@@ -1481,6 +1513,7 @@
 
 .dashboard__next-deadline-name {
   display: flex;
+  flex: 1 1 10rem;
   align-items: center;
   gap: var(--space-2);
   min-width: 0;
@@ -1502,10 +1535,22 @@
   font-weight: 500;
 }
 
+/* The date and its "23:59 AoE" cutoff stay unbroken each, but may sit on two lines: on one line
+   at a large minimum font the pair is wider than a phone's list. A wrapping flex row rather than
+   inline text because the "·" between them removes itself (and its spaces) once the two are on
+   different lines, which would leave inline text no place to break. */
 .dashboard__next-deadline-date {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  column-gap: 0.5ch;
+  margin-left: auto;
   font-family: var(--mono);
   font-size: var(--control-ui-text-xs);
   font-variant-numeric: tabular-nums;
+}
+
+.dashboard__next-deadline-date > :is(.deadline-date, .deadline-time) {
   white-space: nowrap;
 }
 
@@ -1715,6 +1760,7 @@
 
 .onboarding-step-card__row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
@@ -1739,9 +1785,13 @@
   line-height: 1.3;
 }
 
+/* Never wider than the row, so on a narrow window the badges wrap among themselves instead of
+   pushing "Start here" past the card's rounded clip. */
 .onboarding-step-card__badges {
   flex-shrink: 0;
   display: flex;
+  flex-wrap: wrap;
+  max-width: 100%;
   align-items: center;
   gap: var(--space-2);
 }
@@ -1749,7 +1799,7 @@
 .onboarding-step-card__badge {
   display: inline-flex;
   align-items: center;
-  height: 26px;
+  min-height: 26px;
   padding: 0 var(--space-3);
   border-radius: var(--radius-full);
   font-size: var(--control-ui-text-sm);
@@ -1937,7 +1987,7 @@
 
 .dashboard__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(18rem, 100%), 1fr));
   gap: var(--space-3);
 }
 
@@ -1961,15 +2011,44 @@
   background: var(--bg-elevated);
 }
 
-/* Plot and ranked list side by side: the plot shows spread, the list shows rank, and neither alone
-   answers "where is the lab". Stacks under its own width rather than a viewport breakpoint, since
-   the card sits in a grid whose column count already varies. */
 /* The card spans every column of the dashboard grid. That grid is
    repeat(auto-fit, minmax(18rem, 1fr)), so a card taking one column gives the plot roughly 150px
-   once the list and the card padding are out â€” at which point a world map is a row of specks. A map
-   is wide by nature; this is the one card on the dashboard that has a natural aspect ratio. */
+   once the list and the card padding are out -- at which point a world map is a row of specks. A
+   map is wide by nature; this is the one card on the dashboard that has a natural aspect ratio.
+
+   The map's own palette lives here as a handful of tokens, tuned once per theme, so the plot, the
+   legend keys, the list swatches and the popover all draw from the same few colours. Land is a
+   shade off the ocean rather than an outline: at 1:110m the coastline is the only cue telling you
+   which dot is which, and a hairline of it disappears at card size. */
 .member-map {
+  --mm-ocean: color-mix(in srgb, var(--bg) 55%, var(--bg-elevated));
+  --mm-land: #24242b;
+  --mm-land-edge: #2f2f38;
+  --mm-grid: rgb(255 255 255 / 4%);
+  --mm-pin: var(--accent);
+  --mm-pin-soft: color-mix(in srgb, var(--mm-pin) 22%, transparent);
+  --mm-pin-ink: var(--accent-foreground);
+  --mm-dot-edge: color-mix(in srgb, var(--mm-ocean) 85%, transparent);
   grid-column: 1 / -1;
+}
+
+:root[data-theme="light"] .member-map {
+  --mm-ocean: #f3f5f9;
+  --mm-land: #e2e6ed;
+  --mm-land-edge: #d3d8e1;
+  --mm-grid: rgb(9 9 11 / 6%);
+  --mm-pin-soft: color-mix(in srgb, var(--mm-pin) 18%, transparent);
+  --mm-dot-edge: rgb(255 255 255 / 90%);
+}
+
+/* On Collaborate the pin wears the page's own violet, like every other accent there. */
+.lab-sharing .member-map {
+  --mm-pin: var(--ls-accent-bright);
+  --mm-pin-ink: #fff;
+}
+
+:root[data-theme="light"] .lab-sharing .member-map {
+  --mm-pin: var(--ls-accent);
 }
 
 .member-map__head {
@@ -1980,54 +2059,1094 @@
   width: 100%;
 }
 
+.member-map__heading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.member-map__expand {
+  flex-shrink: 0;
+}
+
+.member-map__updated {
+  font-weight: 400;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* --- Collaborate: a section like its neighbours, an h2 over one bordered panel --- */
+
+.member-map--section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.member-map--section .member-map__head {
+  align-items: flex-end;
+}
+
+.member-map__title {
+  margin: 0;
+  font-size: var(--control-ui-text-xl);
+  font-weight: 700;
+  color: var(--text-strong);
+}
+
+.member-map--section .member-map__sub {
+  margin: 0;
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted);
+}
+
+.member-map__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+}
+
+.member-map__panel--state {
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  min-height: 9rem;
+}
+
+.member-map__state {
+  margin: 0;
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted);
+  text-align: center;
+}
+
+.member-map__spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--mm-pin);
+  border-radius: var(--radius-full);
+  animation: member-map-spin 0.8s linear infinite;
+}
+
+@keyframes member-map-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .member-map__spinner {
+    animation: none;
+  }
+}
+
+/* --- Plot and list --- */
+
+/* Plot and city list side by side: the plot shows spread, the list shows rank, and neither alone
+   answers "where is the lab". Wraps under its own width rather than a viewport breakpoint, since
+   the card sits in a grid whose column count already varies. */
 .member-map__body {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-4);
+  gap: var(--space-5);
   align-items: flex-start;
   width: 100%;
+}
+
+.member-map--card .member-map__body {
   margin-top: var(--space-2);
 }
 
-/* 2:1, the projection's own ratio, so the plot fills its width and takes the height that implies
-   rather than being squashed into a box that distorts every position on it. */
-.member-map__plot {
-  flex: 1 1 420px;
-  min-width: 0;
-  aspect-ratio: 2 / 1;
-  height: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--panel);
+/* On the dashboard card the map takes the card's full width and the list goes under it, in as many
+   columns as fit. Side by side, the 2.4:1 plot was left with whatever the list did not use: about
+   380x160 in a 650px card, beside a list three times its height. The plot only shares the row once
+   the card is wide enough for it to be about as tall as the list (~1100px). Measured on the body,
+   not the viewport, since the card's width depends on the page around it. Child combinators keep
+   this off the full-screen list, which renders inside the card too. */
+.member-map--card > .member-map__body {
+  container: member-map-card / inline-size;
 }
 
-/* The plot doubles as the button that opens the full-screen view, so it carries no button chrome â€”
-   the map is the affordance. */
-.member-map__plot-button {
-  flex: 1 1 420px;
+.member-map--card > .member-map__body > .member-map__figure {
+  flex: 1 1 100%;
+}
+
+.member-map--card > .member-map__body > .member-map__list {
+  display: grid;
+  flex: 1 1 100%;
+  grid-template-columns: repeat(auto-fill, minmax(min(15rem, 100%), 1fr));
+  gap: 2px var(--space-4);
+  align-content: start;
+}
+
+.member-map--card > .member-map__body > .member-map__list > .member-map__row--more {
+  grid-column: 1 / -1;
+}
+
+@container member-map-card (min-width: 1100px) {
+  .member-map--card > .member-map__body > .member-map__figure {
+    flex: 1 1 0;
+  }
+
+  .member-map--card > .member-map__body > .member-map__list {
+    display: flex;
+    flex: 0 0 clamp(16rem, 26%, 22rem);
+  }
+}
+
+.member-map__figure {
+  position: relative;
+  flex: 1 1 26rem;
   min-width: 0;
+}
+
+/* The box the map is drawn in. Land is SVG under a transform; markers and labels are HTML laid out
+   in this box's pixels by the view, which measures it, so nothing here may give it padding. */
+.member-map__stage {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--mm-ocean);
+  contain: layout paint;
+}
+
+/* The projection's own ratio, so the map fills the card's width and takes the height that implies
+   rather than floating in a letterbox. */
+.member-map__stage--card {
+  aspect-ratio: 1000 / 422;
+}
+
+.member-map__plot {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Land is a shade off the ocean rather than an outline: at 1:110m the coastline is the only cue
+   telling you which dot is which, and a hairline alone disappears at card size. The edge stays one
+   hairline at any zoom (non-scaling-stroke). */
+.member-map__land {
+  fill: var(--mm-land);
+  stroke: var(--mm-land-edge);
+  stroke-width: 0.75;
+  stroke-linejoin: round;
+}
+
+.member-map__grid {
+  fill: none;
+  stroke: var(--mm-grid);
+  stroke-width: 1;
+}
+
+/* On the card the map is also the way into full screen. It sits under the markers, so a marker
+   gets its own click and the open water around them opens the map. */
+.member-map__plot-button {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   padding: 0;
   border: 0;
+  border-radius: inherit;
   background: none;
   cursor: zoom-in;
 }
 
-.member-map__plot-button .member-map__plot {
-  width: 100%;
-}
-
-.member-map__plot-button:hover .member-map__land {
-  fill: color-mix(in srgb, var(--bg-accent) 88%, var(--text));
-}
-
 .member-map__plot-button:focus-visible {
-  outline: 2px solid var(--accent, var(--text));
+  outline: 2px solid var(--mm-pin);
+  outline-offset: -3px;
+}
+
+.member-map__markers,
+.member-map__labels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* A zero-size button at the place, so its transform is the place and the dot, the hit area and
+   the focus ring are all centred on it whatever their size. */
+.member-map__marker {
+  --hit: max(calc(var(--r) + 3px), 12px);
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  transform: translate(var(--x), var(--y));
+  cursor: pointer;
+  pointer-events: auto;
+  transition: opacity 150ms ease;
+}
+
+/* The tap target, wider than the dot so a city of one is still easy to hit. On a touch screen the
+   view keeps markers 40px apart, so a 40px target never overlaps a neighbour's. */
+.member-map__marker::before {
+  content: "";
+  position: absolute;
+  inset: calc(var(--hit) * -1);
+  border-radius: var(--radius-full);
+}
+
+@media (pointer: coarse) {
+  .member-map__marker {
+    --hit: max(var(--r), 20px);
+  }
+}
+
+.member-map__marker:focus {
+  outline: none;
+}
+
+.member-map__dot {
+  position: absolute;
+  top: calc(var(--r) * -1);
+  left: calc(var(--r) * -1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: calc(var(--r) * 2);
+  height: calc(var(--r) * 2);
+  border-radius: var(--radius-full);
+  background: var(--mm-pin);
+  /* A thin edge of the ocean colour keeps a coastal dot a disc against the land under it; the soft
+     halo is what makes a dot read as a place rather than a speck. */
+  box-shadow:
+    0 0 0 1px var(--mm-dot-edge),
+    0 0 0 4px var(--mm-pin-soft);
+  color: var(--mm-pin-ink);
+  font-size: var(--fs);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  animation: member-map-pop 260ms cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+  transition:
+    box-shadow 150ms ease,
+    transform 150ms ease;
+}
+
+/* Several cities drawn as one: a ring outside the edge says "more than one place in here". */
+.member-map__marker--cluster .member-map__dot {
+  box-shadow:
+    0 0 0 1.5px var(--mm-dot-edge),
+    0 0 0 3px color-mix(in srgb, var(--mm-pin) 55%, transparent),
+    0 0 0 7px var(--mm-pin-soft);
+}
+
+/* Placed only to a country: hollow and dashed reads as "somewhere in here", not a city. */
+.member-map__marker--approximate .member-map__dot {
+  border: 1.5px dashed var(--mm-pin);
+  background: var(--mm-ocean);
+  box-shadow: 0 0 0 3px var(--mm-pin-soft);
+  color: var(--mm-pin);
+}
+
+.member-map__marker:hover .member-map__dot,
+.member-map__marker--active .member-map__dot {
+  transform: scale(1.08);
+  box-shadow:
+    0 0 0 1.5px var(--mm-dot-edge),
+    0 0 0 3.5px var(--mm-pin),
+    0 0 0 8px var(--mm-pin-soft);
+}
+
+.member-map__marker:focus-visible .member-map__dot {
+  outline: 2px solid var(--text-strong);
+  outline-offset: 5px;
+}
+
+.member-map__marker--active {
+  z-index: 2;
+}
+
+/* Picking a city in the list or on the map lifts its marker and lets the rest recede. */
+.member-map__stage--focus .member-map__marker:not(.member-map__marker--active),
+.member-map__stage--focus .member-map__label:not(.member-map__label--active) {
+  opacity: 0.35;
+}
+
+@keyframes member-map-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+}
+
+/* Placed by the view's collision pass from an estimate of this font's width, so the size is set
+   inline from the same number. A halo of the ocean colour keeps it legible over land. */
+.member-map__label {
+  position: absolute;
+  color: var(--text-strong);
+  font-weight: 600;
+  line-height: 1.25;
+  white-space: nowrap;
+  text-shadow:
+    0 0 2px var(--mm-ocean),
+    0 0 2px var(--mm-ocean),
+    0 0 4px var(--mm-ocean),
+    0 0 6px var(--mm-ocean);
+  transition: opacity 150ms ease;
+}
+
+/* Full screen pans and zooms by drag, pinch and wheel, so the browser must not scroll the page
+   under the same gesture. */
+.member-map__stage--dialog {
+  flex: 1 1 auto;
+  min-height: 0;
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+}
+
+.member-map__stage--dialog:active {
+  cursor: grabbing;
+}
+
+.member-map__controls {
+  position: absolute;
+  right: var(--space-3);
+  bottom: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-sm);
+}
+
+.member-map__control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.member-map__control + .member-map__control {
+  border-top: 1px solid var(--border);
+}
+
+.member-map__control svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.member-map__control:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-strong);
+}
+
+.member-map__control:disabled {
+  color: var(--muted);
+  opacity: 0.45;
+  cursor: default;
+}
+
+.member-map__control:focus-visible {
+  outline: 2px solid var(--mm-pin);
+  outline-offset: -2px;
+}
+
+@media (pointer: coarse) {
+  .member-map__control {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+/* --- Tooltip --- */
+
+/* Over the map beside its marker, positioned by the view inside the box. Never takes the pointer,
+   so it cannot steal the hover from the marker it describes. */
+.member-map__popover {
+  position: absolute;
+  z-index: 3;
+  box-sizing: border-box;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+  pointer-events: none;
+  animation: member-map-fade 140ms ease-out both;
+}
+
+@keyframes member-map-fade {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+
+.member-map__popover--above {
+  animation-name: member-map-fade-up;
+}
+
+@keyframes member-map-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+
+.member-map__popover-head {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: space-between;
+  margin: 0;
+  font-size: var(--control-ui-text-sm);
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.member-map__popover-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The headcount as a chip, the same everywhere a count sits beside a place. */
+.member-map__count,
+.member-map__row-count {
+  flex-shrink: 0;
+  min-width: 1.75rem;
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--mm-pin-soft);
+  color: var(--text-strong);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.member-map__popover .member-map__people,
+.member-map__popover-places {
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2) 0 0;
+  border-top: 1px solid var(--border);
+}
+
+.member-map__popover-places {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  list-style: none;
+  font-size: var(--control-ui-text-sm);
+  color: var(--text);
+}
+
+.member-map__popover-places li {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: space-between;
+}
+
+.member-map__count-plain {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.member-map__popover-more,
+.member-map__popover-hint {
+  margin: var(--space-1) 0 0;
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+/* One person per line: a face and a name, and only for an admin who asked, where the pin came from. */
+.member-map__people {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.member-map__people li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px var(--space-2);
+  align-items: center;
+  min-width: 0;
+}
+
+.member-map__person-text {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px var(--space-2);
+  align-items: center;
+  min-width: 0;
+}
+
+.member-map__people--faces .member-map__avatar {
+  margin-left: 0;
+}
+
+.member-map__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--control-ui-text-sm);
+  font-weight: 500;
+  color: var(--text);
+}
+
+/* The service's own phrase for how and when a member was placed ("IP today"), admin-only. */
+.member-map__source {
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+/* --- Search --- */
+
+/* A box over the map rather than a filter on it: picking a result flies to that city and lights
+   it, and the rest of the map stays drawn, so where the person is still reads against where
+   everyone else is. The results float over whatever is below instead of pushing the map down. */
+.member-map__search {
+  position: relative;
+  width: min(22rem, 100%);
+}
+
+.member-map--card > .member-map__search,
+.member-map__panel > .member-map__search {
+  margin-top: var(--space-2);
+}
+
+.member-map__search-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.member-map__search-icon,
+.member-map__search-clear svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.member-map__search-icon {
+  position: absolute;
+  left: var(--space-2);
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.member-map__search-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 2.25rem;
+  padding: var(--space-1) 2.25rem var(--space-1) calc(var(--space-2) + 20px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--control-ui-text-sm);
+}
+
+.member-map__search-input::placeholder {
+  color: var(--muted);
+}
+
+.member-map__search-input:focus-visible {
+  outline: 2px solid var(--mm-pin);
+  outline-offset: -1px;
+}
+
+.member-map__search-clear {
+  position: absolute;
+  right: 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.member-map__search-clear:hover {
+  color: var(--text-strong);
+}
+
+.member-map__search-clear:focus-visible {
+  outline: 2px solid var(--mm-pin);
+  outline-offset: -2px;
+}
+
+@media (pointer: coarse) {
+  .member-map__search-input {
+    min-height: 2.75rem;
+  }
+
+  .member-map__search-clear {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+}
+
+.member-map__search-pop {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 4px);
+  right: 0;
+  left: 0;
+  box-sizing: border-box;
+  max-height: min(22rem, 60dvh);
+  overflow-y: auto;
+  padding: var(--space-1);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+}
+
+.member-map__search-pop[hidden] {
+  display: none;
+}
+
+.member-map__search-results {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.member-map__search-results:empty {
+  display: none;
+}
+
+.member-map__search-option {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  min-height: 2.25rem;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.member-map__search-option .member-map__avatar {
+  margin-left: 0;
+}
+
+.member-map__search-option--active {
+  background: var(--mm-pin-soft);
+  color: var(--text-strong);
+}
+
+.member-map__search-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.member-map__search-name,
+.member-map__search-where {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.member-map__search-name {
+  font-size: var(--control-ui-text-sm);
+  font-weight: 500;
+}
+
+.member-map__search-where {
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.member-map__search-note {
+  margin: 0;
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.member-map__search-note--unplaced {
+  border-top: 1px solid var(--border);
+}
+
+/* A member who is not on the map: found by name, but there is no city to go to. */
+.member-map__search-option--absent .member-map__search-name {
+  color: var(--muted);
+}
+
+.member-map__search-absent {
+  display: flex;
+  flex-direction: column;
+  margin: var(--space-1) 0 0;
+  padding: var(--space-1) var(--space-2);
+  min-width: 0;
+}
+
+/* The person a search found, first in their city's tooltip. */
+.member-map__person--found .member-map__name {
+  color: var(--mm-pin);
+}
+
+/* --- City list --- */
+
+.member-map__list {
+  display: flex;
+  flex: 1 1 13rem;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.member-map__row {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-md);
+}
+
+.member-map__row-top {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 2.25rem;
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--control-ui-text-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+@media (pointer: coarse) {
+  .member-map__row-top {
+    min-height: 2.75rem;
+  }
+}
+
+.member-map__row-top:hover {
+  background: var(--bg-hover);
+}
+
+.member-map__row--active .member-map__row-top {
+  background: var(--mm-pin-soft);
+  color: var(--text-strong);
+}
+
+.member-map__row--active .member-map__row-count {
+  background: var(--mm-pin);
+  color: var(--mm-pin-ink);
+}
+
+.member-map__row-top:focus-visible {
+  outline: 2px solid var(--mm-pin);
+  outline-offset: -2px;
+}
+
+.member-map__row-main,
+.member-map__row-side {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.member-map__row-side {
+  flex-shrink: 0;
+}
+
+.member-map__swatch {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--mm-pin);
+}
+
+.member-map__swatch--country {
+  background: none;
+  border: 1.5px dashed var(--mm-pin);
+}
+
+.member-map__row-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.member-map__row--more {
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.member-map__row .member-map__people {
+  padding: var(--space-1) var(--space-2) var(--space-2) calc(var(--space-2) + 8px + var(--space-2));
+}
+
+/* Recently-active faces per city, overlapping like an avatar stack; names live in each circle's
+   title rather than as text, so the row stays glanceable. */
+.member-map__avatars {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.member-map__avatar {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-left: -6px;
+  border-radius: var(--radius-full);
+  outline: 1.5px solid var(--bg-elevated);
+  object-fit: cover;
+  background: linear-gradient(160deg, var(--mm-pin-soft), var(--bg-muted));
+  color: var(--text-strong);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.member-map__avatar:first-child {
+  margin-left: 0;
+}
+
+.member-map__avatar-more {
+  margin-left: var(--space-1);
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.member-map__expand-btn {
+  align-self: flex-start;
+  margin: 0 0 var(--space-1) calc(var(--space-2) + 8px + var(--space-2));
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--mm-pin);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.member-map__expand-btn:hover {
+  color: var(--text-strong);
+}
+
+/* --- Legend and small print --- */
+
+.member-map__foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
+.member-map__legend,
+.member-map__notes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  align-items: center;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.member-map__legend li {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.member-map__key {
+  display: inline-block;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  width: 9px;
+  height: 9px;
+  border-radius: var(--radius-full);
+}
+
+.member-map__key--country {
+  border: 1.5px dashed var(--mm-pin);
+}
+
+.member-map__key--cluster {
+  width: 10px;
+  height: 10px;
+  background: var(--mm-pin);
+  box-shadow:
+    0 0 0 1.5px var(--bg-elevated),
+    0 0 0 3px color-mix(in srgb, var(--mm-pin) 55%, transparent);
+  margin: 0 3px;
+}
+
+/* Two dots, small then large: "size is headcount" without a word of it in the key itself. */
+.member-map__key--size {
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
+  width: auto;
+  height: auto;
+}
+
+.member-map__key--size::before,
+.member-map__key--size::after {
+  content: "";
+  border-radius: var(--radius-full);
+  background: var(--mm-pin);
+}
+
+.member-map__key--size::before {
+  width: 5px;
+  height: 5px;
+}
+
+.member-map__key--size::after {
+  width: 12px;
+  height: 12px;
+}
+
+.member-map__note {
+  margin: 0;
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.member-map__own {
+  margin-top: 4px;
+}
+
+/* The passive "Use my precise location" line: inline, quiet, never a banner. */
+.precise-location {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.precise-location__change {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.precise-location__why summary {
+  cursor: pointer;
+}
+
+.member-map__credit a {
+  color: inherit;
+}
+
+/* The admin's "How we placed people" switch: quiet until pressed. */
+.member-map__how {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--control-ui-text-xs);
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.member-map__how:hover,
+.member-map__how[aria-pressed="true"] {
+  color: var(--text-strong);
+}
+
+.member-map__how:focus-visible {
+  outline: 2px solid var(--mm-pin);
   outline-offset: 2px;
   border-radius: var(--radius-sm);
 }
 
-/* Full screen, in the top layer. A native dialog gets Escape, focus trapping and stacking for
-   free; the alternative is a fixed overlay that reimplements all three. */
+.member-map__how-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: 100%;
+}
+
+/* --- Full screen --- */
+
+/* In the top layer. A native dialog gets Escape, focus trapping and stacking for free; the
+   alternative is a fixed overlay that reimplements all three. */
 .member-map__dialog {
   width: 100vw;
   max-width: 100vw;
@@ -2046,221 +3165,49 @@
 .member-map__dialog-panel {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-4);
+  box-sizing: border-box;
   width: 100%;
   height: 100%;
   padding: var(--space-5) var(--space-6);
 }
 
-/* The plot takes every pixel the header and list leave it. min-height:0 is what lets a flex child
-   actually shrink to its container instead of overflowing at its intrinsic size. */
-.member-map__dialog-plot {
-  display: flex;
-  flex: 1 1 auto;
-  min-height: 0;
-  align-items: center;
-  justify-content: center;
+.member-map__dialog-panel .member-map__sub {
+  margin: 0;
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted);
 }
 
-.member-map__dialog-plot .member-map__plot {
-  width: auto;
-  max-width: 100%;
-  height: auto;
-  max-height: 100%;
+/* The map takes every pixel the header and list leave it. min-height:0 is what lets a flex child
+   actually shrink to its container instead of overflowing at its intrinsic size. */
+.member-map__figure--dialog {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 14rem;
 }
 
 .member-map__dialog .member-map__list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
-  gap: 0 var(--space-4);
   flex: 0 0 auto;
+  grid-template-columns: repeat(auto-fill, minmax(min(12rem, 100%), 1fr));
+  gap: 2px var(--space-4);
   width: 100%;
+  max-height: 30dvh;
+  overflow-y: auto;
 }
 
-/* Labels and dots are sized for the card; at full screen the same viewBox units are three times
-   the pixels, so they are scaled back to keep the map from looking like a diagram. */
-.member-map__dialog .member-map__label {
-  font-size: 3px;
-  stroke-width: 1;
-}
+@media (prefers-reduced-motion: reduce) {
+  .member-map__dot,
+  .member-map__popover {
+    animation: none;
+  }
 
-.member-map__list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
-  gap: 0 var(--space-4);
-  width: 100%;
-}
-
-/* Land is a filled shape, not an outline: at 1:110m the coastline is the only cue telling you which
-   dot is which, and a hairline stroke of it disappears at card size. Ocean is barely separated from
-   the card so the map reads as part of the page rather than as a pasted-in graphic. */
-.member-map__ocean {
-  fill: var(--panel);
-}
-
-.member-map__land {
-  fill: var(--bg-accent);
-  stroke: var(--border-strong);
-  stroke-width: 0.3;
-  stroke-linejoin: round;
-}
-
-/* Under the dots and over the land, so it reads as a reference rather than as a border between
-   countries â€” which is what a stronger grid on top of a coastline starts to look like. */
-.member-map__grid {
-  stroke: var(--border-strong);
-  stroke-width: 0.3;
-  opacity: 0.35;
-}
-
-.member-map__grid--equator {
-  opacity: 0.6;
-}
-
-/* A ring of the ocean color behind each dot, so a city sitting on a coast is still a disc rather
-   than a shape bleeding into the landmass under it. */
-.member-map__halo {
-  fill: var(--panel);
-  fill-opacity: 0.85;
-}
-
-.member-map__dot {
-  fill: var(--accent, var(--text));
-  fill-opacity: 0.9;
-}
-
-.member-map__place:hover .member-map__dot {
-  fill-opacity: 1;
-}
-
-.member-map__label {
-  fill: var(--text);
-  font-size: 5px;
-  font-weight: 600;
-  paint-order: stroke;
-  stroke: var(--panel);
-  stroke-width: 1.6;
-  stroke-linejoin: round;
-}
-
-.member-map__list {
-  flex: 0 1 auto;
-  min-width: 120px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.member-map__row {
-  display: flex;
-  flex-direction: column;
-  padding: 1px 0;
-  font-size: var(--control-ui-text-xs);
-}
-
-.member-map__row-top {
-  display: flex;
-  gap: var(--space-3);
-  align-items: baseline;
-  justify-content: space-between;
-}
-
-.member-map__row-main {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-width: 0;
-}
-
-.member-map__row-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-}
-
-.member-map__row-count {
-  font-family: var(--mono);
-  color: var(--muted);
-  flex-shrink: 0;
-}
-
-.member-map__row--more {
-  color: var(--muted);
-}
-
-/* Recently-active faces per city. Overlapping like a classic avatar stack; names live in each
-   circle's title tooltip rather than as visible text, so the row stays glanceable. */
-.member-map__avatars {
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-}
-
-.member-map__avatar {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: var(--radius-full);
-  object-fit: cover;
-  outline: 1.5px solid var(--panel);
-  margin-left: -6px;
-  font-size: 9px;
-  font-weight: 600;
-  color: var(--text-strong);
-  background: linear-gradient(160deg, var(--accent-subtle), var(--bg-muted));
-}
-
-.member-map__avatar:first-child {
-  margin-left: 0;
-}
-
-.member-map__avatar-more {
-  margin-left: var(--space-1);
-  color: var(--muted);
-  font-size: var(--control-ui-text-xs);
-}
-
-/* Its own row below the count, not squeezed inline with the avatars -- a bigger target that
-   reads as "there's more here" rather than a stray mark next to the last face. */
-.member-map__expand-btn {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  width: 100%;
-  border: 0;
-  border-top: 1px solid var(--border);
-  background: none;
-  color: var(--accent, var(--text));
-  font-size: var(--control-ui-text-xs);
-  font-weight: 500;
-  padding: 3px 0 0;
-  margin-top: 2px;
-  cursor: pointer;
-}
-
-.member-map__expand-btn:hover {
-  color: var(--text-strong);
-}
-
-.member-map__expand-caret {
-  font-size: 0.9em;
-}
-
-/* The readable list an expanded row shows below its avatars -- actual names, not more circles
-   someone would have to hover one at a time to read off. */
-.member-map__name-list {
-  margin: 4px 0 0;
-  padding: 0;
-  list-style: none;
-  color: var(--text);
-  font-size: var(--control-ui-text-xs);
-}
-
-.member-map__name-list li {
-  padding: 1px 0;
+  .member-map__dot,
+  .member-map__marker,
+  .member-map__label {
+    transition: none;
+  }
 }
 
 .dashboard-summary__title {
@@ -3581,6 +4528,7 @@
    the button is optional, and reading it beside the button is the only place that pairing lands. */
 .profile__form-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
   gap: var(--space-3);
@@ -4480,6 +5428,50 @@
     background-color 150ms ease;
 }
 
+/*
+ * The signed-out shell's light/dark toggle. It had no rules at all, so it rendered as a native
+ * grey button with a 0x0 svg -- no moon or sun in either theme. Sized and bordered like
+ * .public-shell-back so the two chrome buttons match; the icon strokes in currentColor.
+ */
+.public-shell-theme {
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-strong);
+  cursor: pointer;
+}
+
+.public-shell-theme:hover {
+  border-color: var(--text-strong);
+  background: color-mix(in srgb, var(--text-strong) 8%, transparent);
+}
+
+.public-shell-theme:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.public-shell-theme span {
+  display: inline-flex;
+}
+
+.public-shell-theme svg {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.75px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .public-shell-back:hover,
 .public-shell-back:focus-visible {
   border-color: var(--text-strong);
@@ -5198,7 +6190,7 @@ adminbot-deadline-timezone {
 .deadline-group__summary {
   display: grid;
   position: relative;
-  grid-template-columns: 7.75rem minmax(0, 1fr) 15rem 14rem;
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
   gap: var(--space-3);
   width: 100%;
@@ -5249,17 +6241,20 @@ adminbot-deadline-timezone {
 .deadline-group__heading {
   display: flex;
   min-width: 0;
-  flex-direction: column;
-  gap: 0;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1);
 }
 
+/* No `overflow: hidden` here: `overflow-wrap: anywhere` already keeps a long name inside the row,
+   and the clip only ever cut the bottom off the line once a minimum font size made it taller. */
 .deadline-group__heading strong {
-  overflow: hidden;
+  min-width: 0;
   color: var(--text-strong);
   font-size: var(--control-ui-text-lg);
   font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .deadline-group__heading small,
@@ -5270,7 +6265,7 @@ adminbot-deadline-timezone {
 
 .deadline-group__count {
   white-space: normal;
-  text-align: right;
+  text-align: left;
   padding: 0;
   border: 0;
   border-radius: var(--radius-full);
@@ -5327,9 +6322,11 @@ adminbot-deadline-timezone {
   font-weight: 500;
 }
 
+/* The countdown track grows with its text (`max-content`) above its usual 7.75rem: rem does not
+   follow a browser minimum font size, so a fixed track let "108d 19:11:54" spill onto the venue. */
 .deadline-group__row {
   display: grid;
-  grid-template-columns: 7.75rem minmax(0, 1fr) 15rem 14rem;
+  grid-template-columns: minmax(7.75rem, max-content) minmax(0, 1fr) 15rem 14rem;
   grid-template-areas: "countdown main date source";
   align-items: center;
   gap: var(--space-3);
@@ -5499,8 +6496,12 @@ adminbot-deadline-timezone {
   gap: var(--space-2);
 }
 
+/* Each badge stays on one line, but the type and the archival badge may stack: side by side they
+   were wider than a card at a large minimum font size, and the card's rounded clip cut off the ⓘ. */
 .deadline-classification {
   display: inline-flex;
+  flex-wrap: wrap;
+  max-width: 100%;
   gap: var(--space-2);
   white-space: nowrap;
 }
@@ -5565,6 +6566,14 @@ adminbot-deadline-timezone {
   gap: var(--space-1);
   background: transparent;
   color: var(--muted-strong);
+}
+
+/* The policy label ("Non-archival ...") is longer than a narrow card once a minimum font size
+   applies; let it wrap inside the button rather than push the ⓘ past the card's clipped edge. */
+.deadline-classification > .deadline-archival {
+  max-width: 100%;
+  white-space: normal;
+  text-align: start;
 }
 
 .deadline-card__urgency {
@@ -6178,36 +7187,6 @@ adminbot-deadline-timezone {
   margin-bottom: var(--space-1);
 }
 
-@container deadline-board (max-width: 64em) {
-  .deadline-group__summary {
-    grid-template-columns: max-content minmax(0, 1fr);
-    gap: var(--space-1) var(--space-2);
-  }
-
-  .deadline-group__summary-countdown {
-    grid-row: 3;
-    grid-column: 1;
-  }
-
-  .deadline-group__heading {
-    grid-row: 1;
-    grid-column: 1 / -1;
-  }
-
-  .deadline-group__summary-date {
-    grid-row: 2;
-    grid-column: 1 / -1;
-  }
-
-  .deadline-group__count {
-    grid-row: 3;
-    grid-column: 2;
-    max-width: 10rem;
-    text-align: right;
-    justify-self: end;
-  }
-}
-
 @container deadline-board (max-width: 96em) {
   .deadline-board__grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -6355,24 +7334,55 @@ adminbot-deadline-timezone {
 }
 
 @container deadline-board (max-width: 34em) {
+  /* A browser minimum font size grows the text but not this query's em, so the narrow-phone rule
+     below can miss a window it was written for, and a two-column grid then has to squeeze either
+     "Add to my timeline" or the countdown's digits. Flex-wrap decides from the real text widths
+     instead: the countdown and the actions share a line while both fit, and the actions drop
+     under the countdown once they do not. */
   .deadline-group__row {
-    grid-template-columns: max-content minmax(0, 1fr);
-    grid-template-areas:
-      "main main"
-      "date date"
-      "countdown source";
+    display: flex;
+    flex-wrap: wrap;
   }
 
-  .deadline-group__row--milestone {
-    grid-template-areas: "main main" "date date";
+  .deadline-group__row > .deadline-group__row-main {
+    order: 1;
+    flex: 1 0 100%;
+  }
+
+  .deadline-group__row > .deadline-group__row-date-wrap {
+    order: 2;
+    flex: 1 0 100%;
+  }
+
+  .deadline-group__row > .deadline-group__row-countdown {
+    order: 3;
+    flex: 0 1 auto;
+    min-width: 0;
+    white-space: normal;
+  }
+
+  /* The actions: a bare link group, or the recommendation wrapper for signed-in members. */
+  .deadline-group__row
+    > :not(
+      .deadline-group__row-main,
+      .deadline-group__row-date-wrap,
+      .deadline-group__row-countdown
+    ) {
+    order: 4;
+    flex: 1 1 0;
+    min-width: min-content;
   }
 }
 
 /* Keep personal actions clear of the countdown on narrow phones. */
 @container deadline-board (max-width: 21em) {
-  .deadline-group__row:has(.deadline-card__personal-actions) {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-areas: "main" "date" "countdown" "source";
+  .deadline-group__row:has(.deadline-card__personal-actions)
+    > :not(
+      .deadline-group__row-main,
+      .deadline-group__row-date-wrap,
+      .deadline-group__row-countdown
+    ) {
+    flex-basis: 100%;
   }
 }
 
@@ -6951,82 +7961,130 @@ adminbot-deadline-timezone {
   line-height: 1.5;
 }
 
-/* ====================================}
-
-   Lab Sharing
+/* ===========================================
+   Lab Sharing (Collaborate)
    =========================================== */
 
-/* A quiet secondary accent for this surface: the lab-collab tab gets a muted teal instead of the
-   app-wide blue, so the section reads as its own place without shouting. Stays low-key for dark
-   mode -- this is a work surface, not a highlight reel. */
-/* The two strips that came from the other implementation sit inside this container now rather than
-   beside it. They carry their own section shell, so the page's padding and column gap belong to the
-   container alone -- nested, they were paying for both. */
-.lab-sharing .lab-sharing {
-  max-width: none;
-  padding: 0;
-}
-
+/* The tab is built from the app's own pieces -- card / card-title / card-sub sections, the
+   adminbot-form controls, btn, chip, pill and callout -- so it inherits the app accent, focus ring,
+   dark mode and phone sizing. What is left here is layout, plus the few pieces those do not cover:
+   the deck, the dialogs, and the director strip. */
 .lab-sharing {
-  --ls-accent: #715fb3;
-  --ls-accent-hover: #8375b8;
-  --ls-accent-subtle: rgba(127, 184, 168, 0.14);
-  /* Brighter tint used for tag chips -- the base accent reads too dim against the dark surface. */
-  --ls-accent-bright: #a89fdc;
+  /* Kept as aliases so styles keyed to the old violet accent (the member map's pin) follow the app
+     accent instead of a colour this page no longer uses. */
+  --ls-accent: var(--accent);
+  --ls-accent-hover: var(--accent-hover, var(--accent));
+  --ls-accent-bright: var(--accent);
+  --ls-accent-subtle: var(--accent-subtle);
   display: flex;
   flex-direction: column;
-  gap: var(--space-8);
-  max-width: 62rem;
-  padding: var(--space-6) clamp(var(--space-6), 4vw, var(--space-10));
+  gap: var(--space-4);
+  min-width: 0;
 }
 
-.lab-sharing .btn.primary {
-  border-color: var(--ls-accent);
-  background: var(--ls-accent);
-  color: #2a1736;
+.lab-sharing > * {
+  min-width: 0;
 }
 
-.lab-sharing .btn.primary:hover,
-.lab-sharing .btn.primary:focus-visible {
-  background: var(--ls-accent-hover);
-  border-color: var(--ls-accent-hover);
+lab-sharing-how-to {
+  display: block;
 }
-/* --- Director status strip --- */
+
+.lab-sharing :is(p, h2, h3, h4) {
+  margin: 0;
+}
+
+.lab-sharing__notices {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* `.callout__dismiss svg` sizes the icon but leaves painting to the icon set; this one is a bare
+   path, so it needs a stroke to show. */
+.lab-sharing .callout__dismiss svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2px;
+  stroke-linecap: round;
+}
+
+.lab-sharing__load-error {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.lab-sharing__load-error .callout__content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.lab-sharing__loading {
+  padding: var(--space-2) 0;
+}
+
+/* Section head: title and subtitle on the left, a small control (pager, add button) on the right.
+   Wraps under the title when the row runs out of room rather than squeezing either side. */
+.lab-sharing-section__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-4);
+}
+
+.lab-sharing-section__heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  min-width: 0;
+  flex: 1 1 16rem;
+}
+
+/* Same scale as `.adminbot-card--wide > .card-title`, which these headings miss only because they
+   share a row with the section's control. */
+.lab-sharing-section__heading > .card-title {
+  font-size: var(--control-ui-text-xl);
+  letter-spacing: var(--tracking-tight);
+}
+
+.lab-sharing-section__heading > .card-sub {
+  flex-basis: 100%;
+}
+
+.lab-sharing-section__heading .pill {
+  white-space: normal;
+}
+
+.lab-sharing-section__head:only-child,
+.lab-sharing-section__head:last-child {
+  margin-bottom: 0;
+}
+
+/* --- Director strip ------------------------------------------------------------------------ */
 
 .lab-sharing-director {
   display: flex;
   align-items: center;
-  gap: var(--space-6);
-  padding: var(--space-5) var(--space-6);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: linear-gradient(180deg, var(--bg-elevated), var(--bg));
-}
-
-.lab-sharing-director__identity {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  flex: 1;
-  min-width: 0;
-}
-
-.lab-sharing-director__name-row {
-  display: inline-flex;
-  align-items: flex-start;
-  gap: var(--space-2);
-  min-width: 0;
+  gap: var(--space-3);
 }
 
 .lab-sharing-director__dot {
+  flex: 0 0 auto;
   width: 10px;
   height: 10px;
   border-radius: var(--radius-full);
-  flex-shrink: 0;
+  background: var(--muted);
 }
 
 .lab-sharing-director__dot[data-availability="available"] {
-  background: var(--ok, #32d45b);
+  background: var(--ok);
 }
 
 .lab-sharing-director__dot[data-availability="busy"] {
@@ -7034,165 +8092,114 @@ adminbot-deadline-timezone {
 }
 
 .lab-sharing-director__dot[data-availability="away"] {
-  background: var(--muted);
+  background: var(--warn);
+}
+
+.lab-sharing-director__identity {
+  min-width: 0;
+}
+
+.lab-sharing-director__eyebrow,
+.lab-sharing-director__meta {
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
 }
 
 .lab-sharing-director__name {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  white-space: normal;
+  color: var(--text-strong);
   font-size: var(--control-ui-text-md);
   font-weight: 600;
-  color: var(--text-strong);
+  overflow-wrap: anywhere;
 }
 
-.lab-sharing-director__meta {
-  font-size: var(--control-ui-text-sm);
-  color: var(--muted);
-}
+/* --- Rows (invites, requests, announcements) ------------------------------------------------ */
 
-.lab-sharing-director__progress {
-  flex: 1;
-  min-width: 0;
-}
-
-.lab-sharing-director__progress-label {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--space-3);
-  margin-bottom: var(--space-2);
-  font-size: var(--control-ui-text-sm);
-  color: var(--muted-strong);
-}
-
-.lab-sharing-director__progress-track {
-  height: 6px;
-  border-radius: var(--radius-full);
-  background: var(--border);
-  overflow: hidden;
-}
-
-.lab-sharing-director__progress-fill {
-  height: 100%;
-  border-radius: var(--radius-full);
-  background: var(--ls-accent);
-}
-
-.lab-sharing-director__blocker {
-  flex-shrink: 0;
-  height: var(--control-h-lg);
-  padding: 0 var(--space-5);
-  font-size: var(--control-ui-text-sm);
-  font-weight: 600;
-}
-
-/* --- Seek help --- */
-
-.lab-sharing-seek {
+.lab-sharing-list {
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
 }
 
-.lab-sharing-seek__header {
+.lab-sharing-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  flex-wrap: wrap;
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--border);
+}
+
+.lab-sharing-row:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.lab-sharing-row:last-child {
+  padding-bottom: 0;
+}
+
+.lab-sharing-row__main {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+  min-width: 0;
+  flex: 1 1 18rem;
 }
 
-.lab-sharing-seek__title {
-  margin: 0;
-  font-size: var(--control-ui-text-xl);
-  font-weight: 700;
+.lab-sharing-row__title {
   color: var(--text-strong);
+  font-size: var(--control-ui-text-md);
+  font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
-.lab-sharing-seek__sub {
-  margin: 0;
-  font-size: var(--control-ui-text-sm);
+.lab-sharing-row__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-2);
   color: var(--muted);
+  font-size: var(--control-ui-text-sm);
 }
 
-/* Ask form fields â€” roomier than the generic inputs, with a hand-drawn select arrow so the
-   chevron sits clear of the edge instead of hugging the border. */
-
-.lab-sharing-ask {
+.lab-sharing-row__aside {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  padding: var(--space-5);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--bg-elevated);
-}
-
-.lab-sharing-ask__field {
-  display: flex;
-  flex-direction: column;
+  align-items: center;
+  flex-wrap: wrap;
   gap: var(--space-2);
 }
 
-.lab-sharing-ask__label {
-  font-size: var(--control-ui-text-xs);
-  letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
-  color: var(--muted);
+.lab-sharing-row__aside .pill {
+  white-space: normal;
 }
 
-.lab-sharing-ask__select,
-.lab-sharing-ask__textarea,
-.lab-sharing-ask__input {
-  width: 100%;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-md, 8px);
-  background: var(--bg);
+.lab-sharing-request__note,
+.lab-sharing-announcement__body {
   color: var(--text);
-  font-size: var(--control-ui-text-md);
-  transition: border-color var(--duration-fast) var(--ease-out);
+  font-size: var(--control-ui-text-sm);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
-.lab-sharing-ask__select:hover,
-.lab-sharing-ask__textarea:hover,
-.lab-sharing-ask__input:hover {
-  border-color: var(--border-hover);
+.lab-sharing-request__needs {
+  margin-top: var(--space-1);
 }
 
-.lab-sharing-ask__select:focus,
-.lab-sharing-ask__textarea:focus,
-.lab-sharing-ask__input:focus {
-  outline: none;
-  border-color: var(--ls-accent);
+.lab-sharing-announcement__author {
+  color: var(--text-strong);
+  font-weight: 600;
 }
 
-.lab-sharing-ask__select {
-  height: var(--control-h-lg);
-  padding: 0 var(--space-8) 0 var(--space-4);
-  appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath d='M2.5 3.5L5 6.5L7.5 3.5' fill='none' stroke='%236b6b73' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right var(--space-3) center;
-}
-
-.lab-sharing-ask__textarea {
-  height: auto;
-  padding: var(--space-3) var(--space-4);
-  resize: vertical;
-  font-family: inherit;
-  line-height: 1.5;
-}
-
-.lab-sharing-ask__input {
-  height: var(--control-h-lg);
-  padding: 0 var(--space-4);
-}
+/* --- Seek help -------------------------------------------------------------------------------- */
 
 .lab-sharing-ask__row {
-  display: flex;
-  gap: var(--space-4);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
 }
 
-.lab-sharing-ask__field--narrow {
-  max-width: 10rem;
+.lab-sharing-ask__none {
+  font-size: var(--control-ui-text-sm);
 }
 
 .lab-sharing-tags {
@@ -7201,411 +8208,214 @@ adminbot-deadline-timezone {
   gap: var(--space-2);
 }
 
+/* Tags are toggles. `.chip` gives the shape; the pressed state borrows the app accent, the same
+   way `.btn.active` does. */
 .lab-sharing-tag {
-  height: 30px;
-  padding: 0 var(--space-3);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-full);
-  background: transparent;
-  color: var(--muted-strong);
-  font-size: var(--control-ui-text-sm);
   cursor: pointer;
-  transition:
-    border-color 150ms ease,
-    background-color 150ms ease,
-    color 150ms ease;
-}
-
-.lab-sharing-tag:hover {
-  border-color: var(--text-strong);
+  font-family: inherit;
 }
 
 .lab-sharing-tag--active {
-  border-color: var(--ls-accent-bright);
-  background: var(--ls-accent-subtle);
-  color: var(--ls-accent-bright);
+  border-color: var(--accent);
+  background: var(--accent-subtle);
+  color: var(--accent);
 }
 
 .lab-sharing-tag--add {
   border-style: dashed;
   color: var(--muted);
+  background: transparent;
 }
 
-.lab-sharing-tag--add:hover,
-.lab-sharing-tag--add:focus-visible {
-  border-color: var(--ls-accent-bright);
-  color: var(--ls-accent-bright);
+.lab-sharing-tag:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus);
 }
 
-.lab-sharing-tag--input {
+/* The free-text tag field sits in the chip row, so it is chip-sized rather than a full control. */
+.adminbot-form input.lab-sharing-tag--input {
   width: 12rem;
-  height: 26px;
-  padding: 0 var(--space-3);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-full);
-  background: var(--bg-elevated);
-  color: var(--text);
-  font-size: var(--control-ui-text-xs);
-  font-family: inherit;
-  outline: none;
-}
-
-.lab-sharing-tag--input:focus {
-  border-color: var(--ls-accent);
-}
-
-.lab-sharing-seek__divider {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-}
-
-.lab-sharing-seek__divider::before,
-.lab-sharing-seek__divider::after {
-  content: "";
-  flex: 1;
-  height: 1px;
-  background: var(--border);
-}
-
-.lab-sharing-seek__divider span {
-  font-size: var(--control-ui-text-xs);
-  letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
-  color: var(--muted);
-  white-space: nowrap;
-}
-
-.lab-sharing-seek__search-row {
-  display: flex;
-  gap: var(--space-3);
-}
-
-.lab-sharing-seek__search {
-  flex: 1;
-  height: var(--control-h-lg);
-  padding: 0 var(--space-4);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-full);
-  background: var(--bg-elevated);
-  color: var(--text);
-  font-size: var(--control-ui-text-md);
-  transition: border-color var(--duration-fast) var(--ease-out);
-}
-
-.lab-sharing-seek__search:hover {
-  border-color: var(--border-hover);
-}
-
-.lab-sharing-seek__search:focus {
-  outline: none;
-  border-color: var(--ls-accent);
-}
-
-.lab-sharing-seek__call {
-  flex-shrink: 0;
-  width: 100%;
-  min-height: calc(var(--control-h-lg) * 1.6);
+  max-width: 100%;
   height: auto;
-  padding: var(--space-3) var(--space-8);
-  font-size: var(--control-ui-text-xl);
-  font-weight: 700;
+  padding: var(--space-1) 10px;
+  border-radius: var(--radius-full);
+  font-size: var(--control-ui-text-xs);
+}
+
+.lab-sharing-seek__route {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+.lab-sharing-seek__route-title {
+  color: var(--text-strong);
+  font-size: var(--control-ui-text-md);
+  font-weight: 600;
+}
+
+.lab-sharing-seek__route--call {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.lab-sharing-seek__call-copy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+  flex: 1 1 18rem;
+}
+
+.lab-sharing-seek__call-copy .muted,
+.lab-sharing-seek__hint,
+.lab-sharing-seek__empty {
+  font-size: var(--control-ui-text-sm);
 }
 
 .lab-sharing-seek__results {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(18rem, 100%), 1fr));
-  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fill, minmax(min(16rem, 100%), 1fr));
+  gap: var(--space-3);
 }
 
-.lab-sharing-seek__empty,
-.lab-sharing-seek__hint {
-  margin: 0;
-  color: var(--muted);
-  font-size: var(--control-ui-text-md);
+.lab-sharing-seek__results > p {
+  grid-column: 1 / -1;
 }
 
 .lab-sharing-member {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-4);
+  min-width: 0;
+  padding: var(--space-3);
   border: 1px solid var(--border);
-  border-radius: var(--radius-md, 8px);
-  background: var(--bg-elevated);
+  border-radius: var(--radius-md);
+  background: var(--bg);
 }
 
 .lab-sharing-member__header {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-2);
+  gap: var(--space-1) var(--space-2);
 }
 
 .lab-sharing-member__name {
-  font-size: var(--control-ui-text-md);
-  font-weight: 600;
   color: var(--text-strong);
+  font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
-.lab-sharing-member__role {
-  font-size: var(--control-ui-text-xs);
-  color: var(--muted);
-}
-
+.lab-sharing-member__role,
 .lab-sharing-member__line {
-  margin: 0;
+  color: var(--muted);
   font-size: var(--control-ui-text-sm);
-  color: var(--muted-strong);
+  overflow-wrap: anywhere;
 }
 
 .lab-sharing-member__line-label {
-  margin-right: var(--space-1);
-  color: var(--muted);
-}
-
-.lab-sharing-member__message {
-  align-self: flex-start;
-  margin-top: var(--space-2);
-  height: var(--control-h-md, 32px);
-  padding: 0 var(--space-4);
-  font-size: var(--control-ui-text-sm);
+  color: var(--muted-strong);
+  font-weight: 500;
 }
 
 .lab-sharing-member__invite {
   align-self: flex-start;
-  margin-top: var(--space-2);
-  height: var(--control-h-md, 32px);
-  padding: 0 var(--space-4);
-  font-size: var(--control-ui-text-sm);
+  margin-top: auto;
 }
 
-.lab-sharing-seek__or {
+/* --- Open projects deck ----------------------------------------------------------------------- */
+
+.lab-sharing-projects__pager {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-1);
 }
 
-.lab-sharing-seek__or-line {
-  flex: 1;
-  height: 1px;
-  background: var(--border);
-}
-
-.lab-sharing-seek__or-label {
-  font-size: var(--control-ui-text-xs);
-  letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
+.lab-sharing-projects__count {
+  min-width: 3.5em;
   color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
 }
 
-/* --- Your invites --- */
-
-.lab-sharing-invites {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.lab-sharing-invites__title {
-  margin: 0;
-  font-size: var(--control-ui-text-xl);
-  font-weight: 700;
-  color: var(--text-strong);
-}
-
-.lab-sharing-invites__list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.lab-sharing-invite {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-4) var(--space-5);
-  border-left: 3px solid var(--ls-accent);
-  border-radius: var(--radius-md, 8px);
-  background: var(--bg-elevated);
-}
-
-.lab-sharing-invite__header {
-  display: flex;
-  justify-content: space-between;
+.lab-sharing-projects__empty {
   font-size: var(--control-ui-text-sm);
 }
 
-.lab-sharing-invite__from {
+.lab-sharing-project {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+}
+
+.lab-sharing-project__header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.lab-sharing-project__title {
+  color: var(--text-strong);
+  font-size: var(--control-ui-text-lg);
   font-weight: 600;
-  color: var(--text-strong);
+  overflow-wrap: anywhere;
 }
 
-.lab-sharing-invite__time {
+.lab-sharing-project__owner,
+.lab-sharing-project__stats {
   color: var(--muted);
-}
-
-.lab-sharing-invite__project {
-  margin: 0;
-  font-size: var(--control-ui-text-md);
-  font-weight: 600;
-  color: var(--text-strong);
-}
-
-.lab-sharing-invite__note {
-  margin: 0;
-  font-size: var(--control-ui-text-sm);
-  color: var(--muted-strong);
-}
-
-.lab-sharing-invite__actions {
-  display: flex;
-  gap: var(--space-3);
-  margin-top: var(--space-2);
-}
-
-.lab-sharing-invite__respond {
-  height: var(--control-h-md, 32px);
-  padding: 0 var(--space-5);
   font-size: var(--control-ui-text-sm);
 }
 
-.lab-sharing-invite__view {
-  height: var(--control-h-md, 32px);
-  padding: 0 var(--space-5);
+.lab-sharing-project__summary {
   font-size: var(--control-ui-text-sm);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
 }
 
-/* --- Your requests --- */
-
-.lab-sharing-requests {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.lab-sharing-requests__title {
-  margin: 0;
-  font-size: var(--control-ui-text-xl);
-  font-weight: 700;
-  color: var(--text-strong);
-}
-
-.lab-sharing-requests__list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.lab-sharing-requests__empty {
-  margin: 0;
-  font-size: var(--control-ui-text-sm);
-  color: var(--muted);
-}
-
-.lab-sharing-request {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-4) var(--space-5);
-  border-left: 3px solid var(--ls-accent);
-  border-radius: var(--radius-md, 8px);
-  background: var(--bg-elevated);
-}
-
-.lab-sharing-request__header {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: var(--space-3);
-}
-
-.lab-sharing-request__project {
-  font-size: var(--control-ui-text-md);
-  font-weight: 600;
-  color: var(--text-strong);
-}
-
-.lab-sharing-request__time {
-  font-size: var(--control-ui-text-sm);
-  color: var(--muted);
-}
-
-.lab-sharing-request__note {
-  margin: 0;
-  font-size: var(--control-ui-text-sm);
-  color: var(--muted-strong);
-}
-
-.lab-sharing-request__meta {
+.lab-sharing-project__footer {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-3);
+  gap: var(--space-2) var(--space-3);
 }
 
-.lab-sharing-request__stats {
-  font-size: var(--control-ui-text-sm);
-  color: var(--muted);
+/* --- Announcements ---------------------------------------------------------------------------- */
+
+.lab-sharing-compose {
+  margin-bottom: var(--space-4);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border);
 }
 
-.lab-sharing-request__needs {
+.lab-sharing-compose__actions,
+.lab-sharing-howto__actions {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.lab-sharing-request__need {
-  display: inline-flex;
-  align-items: center;
-  height: 24px;
-  padding: 0 var(--space-3);
-  border-radius: var(--radius-full);
-  background: var(--ls-accent-subtle);
-  color: var(--ls-accent-bright);
-  font-size: var(--control-ui-text-xs);
-  font-weight: 600;
-}
-
-.lab-sharing-request__actions {
-  display: flex;
   justify-content: flex-end;
-  margin-top: var(--space-2);
+  gap: var(--space-2);
 }
 
-.lab-sharing-request__delete {
-  height: var(--control-h-md, 32px);
-  padding: 0 var(--space-5);
-  font-size: var(--control-ui-text-sm);
-  border-color: var(--danger-muted);
-  color: var(--danger);
-}
-
-.lab-sharing-request__cancel {
-  height: var(--control-h-md, 32px);
-  padding: 0 var(--space-5);
+.lab-sharing-announcements__empty,
+.lab-sharing-invites__empty,
+.lab-sharing-requests__empty {
   font-size: var(--control-ui-text-sm);
 }
 
-.lab-sharing-request__delete:hover:not(:disabled),
-.lab-sharing-request__delete:focus-visible:not(:disabled) {
-  border-color: var(--danger);
-  background: var(--danger-subtle);
-}
-
-.lab-sharing-request__delete--confirm {
-  border-color: var(--danger);
-  background: var(--danger);
-  color: #fff;
-}
-
-.lab-sharing-request__delete--confirm:hover:not(:disabled),
-.lab-sharing-request__delete--confirm:focus-visible:not(:disabled) {
-  background: var(--danger);
-}
-
-/* --- Invite details dialog --- */
+/* --- Dialogs (invite details, ask a member, general call) ------------------------------------- */
 
 .lab-sharing-invite-dialog {
   position: fixed;
@@ -7614,22 +8424,24 @@ adminbot-deadline-timezone {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: var(--space-6);
-  background: rgb(0 0 0 / 55%);
+  padding: var(--space-4);
+  background: rgb(0 0 0 / 50%);
 }
 
 .lab-sharing-invite-dialog__panel {
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
-  width: min(30rem, 100%);
+  gap: var(--space-4);
+  width: min(32rem, 100%);
   max-height: 85dvh;
-  overflow: auto;
-  padding: var(--space-8) var(--space-6);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-xl);
+  overflow-y: auto;
+  padding: var(--space-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
   background: var(--bg-elevated);
-  box-shadow: var(--shadow-xl);
+  box-shadow: var(--shadow-xl, 0 20px 40px rgb(0 0 0 / 25%));
+  color: var(--text);
 }
 
 .lab-sharing-invite-dialog__head {
@@ -7638,382 +8450,191 @@ adminbot-deadline-timezone {
   gap: var(--space-1);
 }
 
-.lab-sharing-invite-dialog__title {
-  margin: 0;
-  font-size: var(--control-ui-text-xl);
-  font-weight: 700;
-  color: var(--text-strong);
+.lab-sharing-invite-dialog__from {
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
 }
 
-.lab-sharing-invite-dialog__from {
-  font-size: var(--control-ui-text-sm);
-  color: var(--muted);
+.lab-sharing-invite-dialog__title {
+  color: var(--text-strong);
+  font-size: var(--control-ui-text-lg);
+  font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
 .lab-sharing-invite-dialog__summary {
+  font-size: var(--control-ui-text-sm);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.lab-sharing-invite-dialog__details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(9rem, 100%), 1fr));
+  gap: var(--space-3);
   margin: 0;
-  font-size: var(--control-ui-text-md);
-  line-height: 1.6;
-  color: var(--muted-strong);
 }
 
 .lab-sharing-invite-dialog__detail {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-3);
-  padding-top: var(--space-2);
-  border-top: 1px solid var(--border);
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
 }
 
 .lab-sharing-invite-dialog__label {
-  font-size: var(--control-ui-text-xs);
-  letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
   color: var(--muted);
-}
-
-.lab-sharing-invite-dialog__value {
-  font-size: var(--control-ui-text-md);
-  color: var(--text-strong);
-}
-
-.lab-sharing-invite-dialog__needs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.lab-sharing-invite-dialog__need {
-  display: inline-flex;
-  align-items: center;
-  height: 24px;
-  padding: 0 var(--space-3);
-  border-radius: var(--radius-full);
-  background: var(--ls-accent-subtle);
-  color: var(--ls-accent-bright);
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
 }
 
-.lab-sharing-invite-dialog__note {
+.lab-sharing-invite-dialog__value {
   margin: 0;
+  color: var(--text-strong);
   font-size: var(--control-ui-text-sm);
-  color: var(--muted-strong);
+  overflow-wrap: anywhere;
+}
+
+.lab-sharing-invite-dialog__value .pill {
+  white-space: normal;
 }
 
 .lab-sharing-invite-dialog__actions {
   display: flex;
-  justify-content: flex-end;
-  gap: var(--space-3);
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--border);
-}
-
-.lab-sharing-invite-dialog__close,
-.lab-sharing-invite-dialog__respond {
-  height: var(--control-h-md, 32px);
-  padding: 0 var(--space-5);
-  font-size: var(--control-ui-text-sm);
-  font-weight: 600;
-}
-
-.lab-sharing-invite-dialog__field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.lab-sharing-invite-dialog__input {
-  width: 100%;
-  padding: var(--space-3);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-md, 8px);
-  background: var(--bg);
-  color: var(--text);
-  font-family: inherit;
-  font-size: var(--control-ui-text-md);
-  resize: vertical;
-  outline: none;
-}
-
-.lab-sharing-invite-dialog__input:focus {
-  border-color: var(--ls-accent-bright);
-}
-
-/* --- Open projects deck --- */
-
-.lab-sharing-projects {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-5);
-}
-
-.lab-sharing-projects__header {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-}
-
-.lab-sharing-projects__title {
-  margin: 0;
-  font-size: var(--control-ui-text-xl);
-  font-weight: 700;
-  color: var(--text-strong);
-}
-
-.lab-sharing-projects__count {
-  font-size: var(--control-ui-text-sm);
-  font-variant-numeric: tabular-nums;
-  color: var(--muted);
-}
-
-.lab-sharing-projects__deck {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-}
-
-.lab-sharing-projects__nav {
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  padding: 0;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-full);
-  background: transparent;
-  color: var(--text-strong);
-  cursor: pointer;
-  transition:
-    border-color 150ms ease,
-    background-color 150ms ease;
-}
-
-.lab-sharing-projects__chevron {
-  display: block;
-}
-
-.lab-sharing-projects__nav:hover:not(:disabled),
-.lab-sharing-projects__nav:focus-visible:not(:disabled) {
-  border-color: var(--ls-accent);
-  background: var(--ls-accent-subtle);
-  color: var(--ls-accent);
-}
-
-.lab-sharing-projects__nav:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
-
-/* The active project gets its own card so the deck reads as one focused panel at a time. */
-.lab-sharing-project {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-5);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--bg-elevated);
-}
-
-.lab-sharing-project__header {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-
-.lab-sharing-project__title {
-  margin: 0;
-  font-size: var(--control-ui-text-lg);
-  font-weight: 600;
-  color: var(--text-strong);
-}
-
-.lab-sharing-project__owner {
-  flex-shrink: 0;
-  font-size: var(--control-ui-text-sm);
-  color: var(--muted);
-}
-
-.lab-sharing-project__summary {
-  margin: 0;
-  font-size: var(--control-ui-text-md);
-  line-height: 1.6;
-  color: var(--muted-strong);
-}
-
-.lab-sharing-project__needs {
-  display: flex;
   flex-wrap: wrap;
+  justify-content: flex-end;
   gap: var(--space-2);
 }
 
-.lab-sharing-project__need {
-  display: inline-flex;
-  align-items: center;
-  height: 24px;
-  padding: 0 var(--space-3);
-  border-radius: var(--radius-full);
-  background: var(--ls-accent-subtle);
-  color: var(--ls-accent-bright);
+/* --- Guidebook and resources strips ----------------------------------------------------------- */
+
+.lab-sharing-howto .card-sub {
+  margin-bottom: var(--space-4);
+}
+
+.lab-sharing-howto__status,
+.lab-sharing-howto__error,
+.lab-sharing-howto__answer {
+  margin-top: var(--space-3);
+}
+
+.lab-sharing-howto__status {
+  font-size: var(--control-ui-text-sm);
+}
+
+.lab-sharing-howto__answer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+}
+
+.lab-sharing-howto__answer-title {
+  color: var(--text-strong);
+  font-size: var(--control-ui-text-md);
+  font-weight: 600;
+}
+
+.lab-sharing-howto__answer-body {
+  font-size: var(--control-ui-text-sm);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.lab-sharing-howto__sources-title {
+  color: var(--muted);
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
 }
 
-.lab-sharing-project__footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: var(--space-2);
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--border);
-}
-
-.lab-sharing-project__stats {
+.lab-sharing-howto__sources {
+  margin: 0;
+  padding-left: var(--space-5);
   font-size: var(--control-ui-text-sm);
-  color: var(--muted);
 }
 
-.lab-sharing-project__offer {
-  height: var(--control-h-lg);
-  padding: 0 var(--space-6);
-  font-size: var(--control-ui-text-md);
-  font-weight: 700;
+.lab-sharing-resources .card-sub {
+  margin-bottom: var(--space-4);
 }
 
-/* --- Announcements --- */
-
-.lab-sharing-announcements {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.lab-sharing-announcements__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+.lab-sharing-resources__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(14rem, 100%), 1fr));
   gap: var(--space-3);
-}
-
-.lab-sharing-announcements__title {
   margin: 0;
-  font-size: var(--control-ui-text-xl);
-  font-weight: 700;
-  color: var(--text-strong);
+  padding: 0;
+  list-style: none;
 }
 
-.lab-sharing-announcements__add {
-  height: var(--control-h-md, 32px);
-  padding: 0 var(--space-4);
-  font-size: var(--control-ui-text-sm);
-  font-weight: 600;
-  border-color: var(--ls-accent);
-  color: var(--ls-accent);
-}
-
-.lab-sharing-announcements__add:hover,
-.lab-sharing-announcements__add:focus-visible {
-  border-color: var(--ls-accent-hover);
-  background: var(--ls-accent-subtle);
-  color: var(--ls-accent);
-}
-
-.lab-sharing-announcements__list {
+.lab-sharing-resources__link {
   display: flex;
   flex-direction: column;
-  gap: 0;
-}
-
-/* No boxes here either: a hairline between items, plenty of breathing room. */
-.lab-sharing-announcement {
-  padding: var(--space-4) 0;
-  border-bottom: 1px solid var(--border);
-}
-
-.lab-sharing-announcement:last-child {
-  border-bottom: 0;
-}
-
-.lab-sharing-announcement__header {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: var(--space-1);
-  font-size: var(--control-ui-text-sm);
-}
-
-.lab-sharing-announcement__author {
-  font-weight: 600;
-  color: var(--text-strong);
-}
-
-.lab-sharing-announcement__time {
-  color: var(--muted);
-}
-
-.lab-sharing-announcement__body {
-  margin: 0;
-  font-size: var(--control-ui-text-md);
-  line-height: 1.6;
-  color: var(--muted-strong);
-}
-
-/* --- Announcement compose dialog --- */
-
-.lab-sharing-compose {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-5);
-  border: 1px solid var(--ls-accent);
-  border-radius: var(--radius-lg);
-  background: var(--bg-elevated);
-  box-shadow: 0 12px 40px rgb(0 0 0 / 30%);
-}
-
-.lab-sharing-compose__title {
-  margin: 0;
-  font-size: var(--control-ui-text-lg);
-  font-weight: 700;
-  color: var(--text-strong);
-}
-
-.lab-sharing-compose__input {
-  width: 100%;
+  gap: var(--space-1);
+  height: 100%;
+  box-sizing: border-box;
   padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-md, 8px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   background: var(--bg);
-  color: var(--text);
-  font-size: var(--control-ui-text-md);
-  font-family: inherit;
-  line-height: 1.5;
-  resize: vertical;
+  color: inherit;
+  text-decoration: none;
+  transition: border-color var(--duration-fast) var(--ease-out);
 }
 
-.lab-sharing-compose__input:focus {
+.lab-sharing-resources__link:hover {
+  border-color: var(--border-strong);
+}
+
+.lab-sharing-resources__link:focus-visible {
   outline: none;
-  border-color: var(--ls-accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--focus);
 }
 
-.lab-sharing-compose__actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-3);
-}
-
-.lab-sharing-compose__cancel,
-.lab-sharing-compose__send {
-  height: var(--control-h-md, 32px);
-  padding: 0 var(--space-4);
-  font-size: var(--control-ui-text-sm);
+.lab-sharing-resources__title {
+  color: var(--accent);
   font-weight: 600;
+}
+
+.lab-sharing-resources__desc {
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+}
+
+/* --- Phones ----------------------------------------------------------------------------------- */
+
+@media (max-width: 600px) {
+  .lab-sharing-ask__row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .lab-sharing-seek__call,
+  .lab-sharing-project__offer {
+    width: 100%;
+  }
+
+  .lab-sharing .callout__dismiss {
+    width: 44px;
+    height: 44px;
+  }
+
+  .lab-sharing-invite-dialog {
+    align-items: flex-end;
+    padding: var(--space-3);
+  }
+
+  .lab-sharing-invite-dialog__panel {
+    padding: var(--space-4);
+  }
+
+  .lab-sharing-invite-dialog__actions .btn {
+    flex: 1 1 auto;
+  }
 }
 
 /* A sidebar slot for a tool that does not exist yet: visibly present, visibly not ready. Rendered
@@ -8027,7 +8648,7 @@ adminbot-deadline-timezone {
    to read than the answer is worth. */
 .pstats {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(9rem, 100%), 1fr));
   gap: var(--space-3);
 }
 
@@ -8367,7 +8988,7 @@ adminbot-deadline-timezone {
    squeezed into a 9rem grid cell is unreadable, and the grid would jump as one tile grew. */
 .pstats {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(9rem, 100%), 1fr));
   gap: var(--space-3);
   align-items: start;
 }
@@ -9292,7 +9913,7 @@ adminbot-deadline-timezone {
 
 .paper-slots__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(16rem, 100%), 1fr));
   gap: var(--space-3);
   align-items: start;
 }
@@ -10584,6 +11205,24 @@ adminbot-deadline-timezone {
   color: var(--muted);
 }
 
+/* The logistics drop zone, tightened to sit between the context inputs and the draft box. Both
+   classes, because logistics.css loads after this file and would otherwise win the tie. */
+.logistics-upload__drop.paper-cycle__pdf-drop {
+  margin-top: 0;
+  padding: var(--space-3) var(--space-4);
+}
+
+/* Outside the logistics page nothing sizes or strokes a bare icon svg, so it rendered at 0x0. */
+.paper-cycle__pdf-drop .logistics-upload__drop-icon svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 /* Generate sits left; sign-off rides the right edge, matching how the card's action rows read. */
 .paper-cycle__draft-actions {
   display: flex;
@@ -11147,38 +11786,6 @@ adminbot-paper-visibility {
   }
 }
 
-/* "Zhijing's updates": the archive under the current broadcast. A plain list rather than cards --
-   these are things that were said and are no longer being said, so they should read as a record
-   somebody scans, not as a stack of live notices competing with the one above them. */
-.lab-sharing-status__history {
-  margin-top: var(--space-5);
-}
-
-.lab-sharing-status__history-list {
-  list-style: none;
-  margin: var(--space-3) 0 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.lab-sharing-status__history-item {
-  border-inline-start: 2px solid var(--border, currentColor);
-  padding-inline-start: var(--space-3);
-}
-
-/* The author's own line breaks, same as the banner. */
-.lab-sharing-status__history-body {
-  margin: 0;
-  white-space: pre-wrap;
-  line-height: 1.5;
-}
-
-.lab-sharing-status__retracted {
-  font-style: italic;
-}
-
 @container deadline-board (max-width: 34em) {
   .deadline-board__controls {
     margin-bottom: var(--space-3);
@@ -11351,10 +11958,15 @@ adminbot-paper-visibility {
 }
 .deadline-board
   [data-entry-type="workshop"]
-  :is(.btn, .deadline-card__source, .deadline-card__actions, deadline-recommendation) {
+  :is(
+    .btn:not(.primary),
+    .deadline-card__source,
+    .deadline-card__actions,
+    deadline-recommendation
+  ) {
   color: var(--muted);
 }
-.deadline-board [data-entry-type="workshop"] :is(.btn, .deadline-card__source):hover {
+.deadline-board [data-entry-type="workshop"] :is(.btn:not(.primary), .deadline-card__source):hover {
   color: var(--text-strong);
 }
 .deadline-board .deadline-group[data-group-kind="workshops"] .deadline-group__heading strong {
@@ -12009,6 +12621,23 @@ html[data-theme="light"] .deadline-board [data-urgency] {
 .deadline-group__date-line {
   white-space: nowrap;
 }
+
+/* The date track is a fixed rem width, which a minimum font size does not grow: let the time drop
+   under the date instead of running beneath the actions column. Same as the dashboard date: a
+   wrapping flex row, because the "·" separator removes itself (and its spaces) once wrapped. */
+.deadline-group__row-date-wrap .deadline-group__date-line {
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+.deadline-group__row-date-wrap .deadline-group__row-date {
+  display: inline-flex;
+  flex-wrap: wrap;
+  column-gap: 0.5ch;
+  min-width: 0;
+}
+.deadline-group__row-date > :is(.deadline-date, .deadline-time) {
+  white-space: nowrap;
+}
 .deadline-group__date-stage {
   margin-inline-start: var(--space-2);
 }
@@ -12087,7 +12716,7 @@ html[data-theme="light"] .deadline-board [data-urgency] {
   color: var(--muted);
 }
 .deadline-board .deadline-group__heading {
-  display: grid;
+  display: flex;
   gap: 4px;
 }
 .deadline-board .deadline-group__heading > strong,
@@ -12165,7 +12794,7 @@ html[data-theme="light"] .deadline-board [data-urgency] {
   box-sizing: border-box;
 }
 .deadline-board .deadline-group__heading {
-  gap: var(--deadline-row-gap);
+  gap: var(--space-1);
 }
 .deadline-board .deadline-group__heading > strong,
 .deadline-board .deadline-group__heading > small {
@@ -12296,6 +12925,14 @@ html[data-theme="light"] .deadline-board [data-urgency] {
   border-color: var(--accent-hover);
   color: var(--primary-foreground);
 }
+/* The label wraps inside the button instead of running out of it. Unbroken, "Add to my timeline"
+   at a large minimum font size was wider than a phone's row: it spilled past both edges of the
+   button, onto the countdown beside it, and was cut off by the group's rounded box. */
+.deadline-board .deadline-card__timeline-button {
+  max-width: 100%;
+  white-space: normal;
+  text-align: center;
+}
 
 .adminbot-member-badge-symbols {
   display: inline-flex;
@@ -12333,8 +12970,9 @@ html[data-theme="light"] .deadline-board [data-urgency] {
   padding: 16px;
   margin: 16px 0;
 }
-.deadline-recent h2 {
-  margin: 0 0 8px;
+.deadline-recent summary {
+  cursor: pointer;
+  font-weight: 600;
 }
 .deadline-recent p {
   color: var(--muted);
@@ -12364,4 +13002,137 @@ html[data-theme="light"] .deadline-board [data-urgency] {
 .deadline-board .deadline-card__name.deadline-action__venue {
   font-size: 0.875rem;
   font-weight: 400;
+}
+
+.deadline-conference-attendance {
+  padding: 0 var(--space-4) var(--space-3);
+  display: grid;
+  gap: var(--space-2);
+}
+.deadline-conference-people {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  list-style: none;
+  padding: 0;
+  margin: var(--space-1) 0;
+}
+.deadline-conference-people li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.deadline-conference-people img,
+.deadline-conference-initials {
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+}
+.deadline-conference-initials {
+  display: inline-grid;
+  place-items: center;
+  background: var(--bg-accent);
+  font-size: 12px;
+}
+.deadline-conference-attendance .btn {
+  justify-self: start;
+  white-space: normal;
+  text-align: left;
+}
+
+/* Paper thread composer: focused editing with an adjacent, readable preview. */
+.paper-cycle__composer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 24px;
+}
+.paper-cycle__thread,
+.paper-cycle__preview {
+  min-width: 0;
+}
+.paper-cycle__post {
+  min-width: 0;
+  margin: 0 0 16px;
+  padding: 16px;
+  border: 1px solid var(--branch-border);
+  border-radius: 12px;
+}
+.paper-cycle__post legend {
+  display: flex;
+  gap: 24px;
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+}
+.paper-cycle__post textarea {
+  min-height: 120px;
+  resize: vertical;
+}
+.paper-cycle__post label {
+  display: block;
+  margin-top: 12px;
+  font-size: var(--control-ui-text-sm);
+}
+.paper-cycle__post input[type="file"] {
+  max-width: 100%;
+  margin-top: 6px;
+}
+.paper-cycle__post img,
+.paper-cycle__preview img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 10px;
+}
+.paper-cycle__preview h5 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+.paper-cycle__preview-post {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 12px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--branch-border);
+}
+.paper-cycle__preview-post p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+  margin: 8px 0 12px;
+}
+.paper-cycle__post-number {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--branch-border);
+  border-radius: 50%;
+  color: var(--muted);
+}
+.paper-cycle__draft-settings {
+  margin-bottom: 20px;
+}
+.paper-cycle__draft-settings summary {
+  cursor: pointer;
+  padding: 8px 0;
+  color: var(--muted);
+}
+.paper-cycle__draft-settings[open] summary {
+  margin-bottom: 12px;
+}
+.paper-cycle__over-limit {
+  color: var(--danger, #dc2626);
+}
+@media (max-width: 760px) {
+  .paper-cycle__composer {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+  }
+}
+
+.paper-cycle__attachments summary {
+  cursor: pointer;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
 }

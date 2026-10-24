@@ -12,6 +12,12 @@ const TIMED = {
 };
 
 describe("parseCalendarEvents", () => {
+  it("excludes cancelled lunches and refuses omitted attendee lists", () => {
+    expect(parseCalendarEvents(JSON.stringify([{ ...TIMED, status: "cancelled" }]))).toEqual([]);
+    expect(() =>
+      parseCalendarEvents(JSON.stringify([{ ...TIMED, attendeesOmitted: true }])),
+    ).toThrow("omitted");
+  });
   it("reads a bare array", () => {
     const events = parseCalendarEvents(JSON.stringify([TIMED]));
     expect(events).toHaveLength(1);

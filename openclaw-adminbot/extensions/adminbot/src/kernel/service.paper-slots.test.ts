@@ -2,7 +2,8 @@
 // what the global nudge actually sends.
 //
 // Its own file rather than more of service.test.ts, which is already the longest in the extension.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { AdminBotMemoryStore } from "../persistence/memory.js";
 import { AdminBotService } from "./service.js";
 
 function unwrap<T>(
@@ -327,6 +328,22 @@ describe("collectPaperNudgeBatches", () => {
     const { batches } = unwrap(service.collectPaperNudgeBatches());
     expect(batches[0]).toMatchObject({ member_id: "ada", deliverable: false });
   });
+
+  it("asks the first author to fix a link the sheet found the PI cannot open", () => {
+    const service = new AdminBotService(undefined, {
+      paperLinkProblems: () =>
+        new Map([
+          ["p1", ["Overleaf: asks the PI to request access"]],
+          ["gone", ["Drive: missing"]],
+        ]),
+    });
+    seed(service);
+    const { batches } = unwrap(service.collectPaperNudgeBatches());
+    expect(batches).toHaveLength(1);
+    expect(batches[0]).toMatchObject({ member_id: "ada", item_count: 2 });
+    expect(batches[0]?.message).toContain("Fix the paper link the PI cannot open");
+    expect(batches[0]?.message).toContain("Overleaf: asks the PI to request access");
+  });
 });
 
 describe("sendPaperSlotNudges", () => {
@@ -463,6 +480,135 @@ describe("the conference roll-call", () => {
     );
     return service;
   }
+
+  it("invites only confirmed linked attendees through audited proposals, across venues and years", async () => {
+    const deliveries: Array<{ type: string; proposed_payload: unknown }> = [];
+    const service = new AdminBotService(undefined, {
+      executor: {
+        execute: async (proposal) => {
+          deliveries.push(proposal);
+          return { handled: true };
+        },
+      },
+    });
+    seed(service);
+    for (const [id, venue, year] of [
+      ["p1", "EMNLP", 2026],
+      ["p2", "ICLR 2027", 2027],
+    ] as const) {
+      unwrap(
+        service.upsertPaper({
+          id,
+          title: id,
+          authors: ["Ada Lovelace", "Bob Coauthor"],
+          author_links: [
+            { name: "Ada Lovelace", member_id: "ada" },
+            { name: "Bob Coauthor", member_id: "bob" },
+          ],
+          current_step: "overleaf_writing",
+          first_author_member_id: "ada",
+          venue_decision: "accept",
+          accepted_venue: venue,
+          accepted_year: year,
+          is_archival: true,
+          presentation_type: "poster",
+        }),
+      );
+      unwrap(
+        service.setConferenceAttendee({
+          paperId: id,
+          name: "Ada Lovelace",
+          memberId: "ada",
+          attending: "yes",
+          actorId: "ada",
+          privileged: false,
+        }),
+      );
+    }
+    await vi.waitFor(() =>
+      expect(deliveries.filter((entry) => entry.type === "slack.invite_to_channel")).toHaveLength(
+        2,
+      ),
+    );
+    const rosters = unwrap(service.listConferenceRosters()).conferences;
+    for (const roster of rosters)
+      expect(unwrap(await service.inviteConferenceAttendees(roster.key))).toMatchObject({
+        invited: 1,
+        skipped: 1,
+        failed: 0,
+      });
+    expect(
+      deliveries
+        .filter((entry) => entry.type === "slack.invite_to_channel")
+        .map((entry) => entry.proposed_payload),
+    ).toEqual(
+      expect.arrayContaining([
+        { channel: "conf-iclr-2027", user_id: "U-ADA" },
+        { channel: "conf-emnlp-2026", user_id: "U-ADA" },
+      ]),
+    );
+    await service.inviteConferenceAttendees(rosters[0].key);
+    expect(deliveries.filter((entry) => entry.type === "slack.invite_to_channel")).toHaveLength(2);
+    expect((await service.inviteConferenceAttendees("missing:2026")).ok).toBe(false);
+  });
+
+  it("automatically invites when acceptance follows Going and keeps save failures separate", async () => {
+    const deliveries: unknown[] = [];
+    const service = new AdminBotService(undefined, {
+      executor: {
+        execute: async (proposal) => {
+          deliveries.push(proposal.proposed_payload);
+          throw new Error("Slack unavailable");
+        },
+      },
+    });
+    seed(service);
+    const paper = unwrap(
+      service.upsertPaper({
+        id: "auto",
+        title: "Synthetic",
+        authors: ["Ada Lovelace"],
+        author_links: [{ name: "Ada Lovelace", member_id: "ada" }],
+        current_step: "overleaf_writing",
+        first_author_member_id: "ada",
+      }),
+    );
+    unwrap(
+      service.setConferenceAttendee({
+        paperId: paper.id,
+        name: "Ada Lovelace",
+        memberId: "ada",
+        attending: "yes",
+        actorId: "ada",
+        privileged: false,
+      }),
+    );
+    expect(deliveries).toHaveLength(0);
+    const accepted = {
+      ...paper,
+      venue_decision: "accept" as const,
+      accepted_venue: "EMNLP",
+      accepted_year: 2026,
+      is_archival: true,
+      presentation_type: "poster" as const,
+    };
+    expect(service.upsertPaper(accepted).ok).toBe(true);
+    await vi.waitFor(() =>
+      expect(deliveries).toEqual([{ channel: "conf-emnlp-2026", user_id: "U-ADA" }]),
+    );
+    expect(service.upsertPaper(accepted).ok).toBe(true);
+    unwrap(
+      service.setConferenceAttendee({
+        paperId: paper.id,
+        name: "Ada Lovelace",
+        memberId: "ada",
+        attending: "no",
+        actorId: "ada",
+        privileged: false,
+      }),
+    );
+    expect(deliveries).toHaveLength(1);
+  });
 
   it("puts every author on the card before anybody has been added by hand", () => {
     const { attendees } = unwrap(acceptedService().listPaperSlots("p1"));
@@ -636,4 +782,145 @@ it("queues an author's feedback with reason and deadlines without publication ap
     }),
   );
   expect(unwrap(service.listPiReviewQueue()).papers).toHaveLength(0);
+});
+
+describe("roster reads on the all-paper sweeps", () => {
+  // Every roster read parses every member's whole payload (avatars included), so a sweep that
+  // re-reads it per paper costs seconds on the real lab and blocks the synchronous store meanwhile.
+  it("reads the roster once per sweep, not once per paper", async () => {
+    const store = new AdminBotMemoryStore();
+    const service = new AdminBotService(store);
+    seed(service);
+    for (const id of ["p2", "p3", "p4"]) {
+      unwrap(
+        service.upsertPaper({
+          id,
+          title: `Paper ${id}`,
+          authors: ["Ada Lovelace", "Bob Coauthor"],
+          current_step: "overleaf_writing",
+        }),
+      );
+    }
+    const reads = vi.spyOn(store, "listLabMembers");
+    for (const sweep of [
+      () => service.listPaperSlotOverview(),
+      () => service.collectPaperNudgeBatches(),
+      () => service.collectWeeklyUpdateGaps(),
+    ]) {
+      reads.mockClear();
+      unwrap(sweep());
+      expect(reads.mock.calls.length).toBeLessThanOrEqual(1);
+    }
+  });
+});
+
+describe("PI review completion authorization", () => {
+  it("lets only the configured PI complete feedback or approve publication", () => {
+    const service = new AdminBotService();
+    seed(service);
+    unwrap(service.updateSettings({ head_professor_member_id: "ada" }));
+    const input = {
+      value_text: JSON.stringify({
+        reason: "Review please",
+        url: "https://overleaf.com/project/test",
+        reviewed: true,
+        review_note: "Looks ready",
+      }),
+    };
+    expect(
+      service.setPaperSlot({
+        paperId: "p1",
+        slot: "feedback_arxiv",
+        input,
+        memberId: "bob",
+        privileged: true,
+      }).status,
+    ).toBe(403);
+    expect(
+      service.setPaperSlot({
+        paperId: "p1",
+        slot: "pi_approval",
+        input: { done: true },
+        memberId: "bob",
+        privileged: true,
+      }).status,
+    ).toBe(403);
+    expect(
+      service.setPaperSlot({
+        paperId: "p1",
+        slot: "feedback_arxiv",
+        input,
+        memberId: "ada",
+        privileged: true,
+      }).ok,
+    ).toBe(true);
+    expect(unwrap(service.listPiReviewQueue()).papers).toEqual([]);
+    expect(
+      service.setPaperSlot({
+        paperId: "p1",
+        slot: "pi_approval",
+        input: { done: true },
+        memberId: "ada",
+        privileged: true,
+      }).ok,
+    ).toBe(true);
+  });
+});
+
+it("keeps resubmission feedback visible after rejection without reopening publication approval", () => {
+  const service = new AdminBotService();
+  seed(service);
+  unwrap(service.updateSettings({ head_professor_member_id: "ada" }));
+  unwrap(
+    service.upsertPaper({
+      id: "p1",
+      title: "Causal abstraction",
+      authors: ["Ada Lovelace", "Bob Coauthor"],
+      current_step: "overleaf_writing",
+      first_author_member_id: "ada",
+      venue_decision: "reject",
+    }),
+  );
+  for (const slot of ["authors_ack", "drive_pdf_arxiv"] as const) {
+    unwrap(
+      service.setPaperSlot({
+        paperId: "p1",
+        slot,
+        input: { done: true },
+        memberId: "ada",
+        privileged: true,
+      }),
+    );
+  }
+  const feedback = {
+    reason: "Review the revised submission",
+    url: "https://example.test/revision",
+    soft_deadline: "2026-10-09T12:00:00.000Z",
+    hard_deadline: "2026-10-12T12:00:00.000Z",
+  };
+  unwrap(
+    service.setPaperSlot({
+      paperId: "p1",
+      slot: "feedback_arr",
+      input: { value_text: JSON.stringify(feedback) },
+      memberId: "ada",
+      privileged: false,
+    }),
+  );
+  const queue = unwrap(service.listPiReviewQueue()).papers;
+  expect(queue).toHaveLength(1);
+  expect(queue[0]).toMatchObject({
+    paper_id: "p1",
+    feedback: { ...feedback, slot: "feedback_arr" },
+  });
+  unwrap(
+    service.setPaperSlot({
+      paperId: "p1",
+      slot: "feedback_arr",
+      input: { value_text: JSON.stringify({ ...feedback, reviewed: true }) },
+      memberId: "ada",
+      privileged: true,
+    }),
+  );
+  expect(unwrap(service.listPiReviewQueue()).papers).toEqual([]);
 });

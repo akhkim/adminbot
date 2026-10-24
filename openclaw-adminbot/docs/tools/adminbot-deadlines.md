@@ -24,19 +24,65 @@ workshop daily only within three days of its deadline; other workshop pages wait
 public GitHub Pages histories needed to recover earlier extension dates are checked concurrently in
 a second bounded pool.
 
-Workshop notification requirements are separate from individual decision dates. The shared
-NeurIPS requirement is represented as a “Notify authors by” milestone, never as each workshop's
-actual decision date. The UI keeps both milestones distinct and displays conflicting observations.
+Workshop notification requirements are separate from individual decision dates. The NeurIPS
+workshop call supplies a shared “Workshops must notify authors by” milestone, collected once for
+the family and reused by its workshops. It is never copied into each workshop's `notification_aoe`.
+A workshop's own supported decision date remains a separate notification milestone; a published
+calendar date later than the shared cutoff raises a conflict instead of replacing either value.
+
+The manually tracked NLP4PI ARR commitment reads its official CFP through the schedule extractor,
+including its decision date. Alternative submission routes remain separate stages with their
+conditions. Its source identity and URL remain configured; its submission and notification dates
+are no longer constants. This change does not add model calls for every discovered workshop.
 
 Both ordinary collection and offline output regeneration migrate legacy workshop notification
 values. Shared NeurIPS values become unverified policy dates; other legacy values remain as
 `notification_previous_aoe` with unverified status. Revision history is retained. The existing
 NLP4PI submission date remains available but is marked unverified if it lacks extraction evidence.
-The UI labels unverified values explicitly.
+Successful extraction replaces these provisional projections; failed checks preserve previous
+observations and their last successful check time. The UI labels unverified values explicitly.
 
 An exact deadline carries `deadline_at` as a UTC instant; the Control UI defaults to the browser timezone. When a source gives only a date, `deadline_at` is empty and `deadline_time_precision` is `date_only`. `deadline_date` retains the published day and `deadline_timezone` records the known zone, or an empty string when the zone is unknown. The original timezone is preserved when the source supplies it; normalized legacy AoE stamps alone do not establish the source timezone.
 
-`deadline_planning_at` is the exact cutoff when known. For a date-only source it is the start of that day in the known zone, or UTC+14 when the zone is unknown. The compatibility field `deadline_aoe` represents the same planning instant for existing scheduled consumers. This boundary is an early planning target, not evidence that submissions close then. The board shows the source day with “time unknown”, uses the normal countdown style, and explains the boundary in the deadline details. Reminder messages, calendar entries and copied member milestones identify these as planning cutoffs. Passing one does not trigger a missed-submission escalation. A matched exact OpenReview cutoff remains authoritative when the website supplies only a date.
+A date-only deadline has a planning cutoff instead of an exact one. It is not stored: consumers compute it from `deadline_date` and `deadline_timezone` as the start of that day in the known zone, or in UTC+14 when the zone is unknown, so it cannot disagree with the published date. The compatibility field `deadline_aoe` represents the same planning instant for existing scheduled consumers. This boundary is an early planning target, not evidence that submissions close then. The board shows the source day with “time unknown”, uses the normal countdown style, and explains the boundary in the deadline details. Reminder messages, calendar entries and copied member milestones identify these as planning cutoffs. Passing one does not trigger a missed-submission escalation. A matched exact OpenReview cutoff remains authoritative when the website supplies only a date.
+
+Conference schedules are collected from configured official CFP and schedule pages, including
+surrounding prose and footnotes. The collector retains venue/track identities in code, not their
+dates. Existing dataset observations remain the fallback when a page or extractor is unavailable.
+An offline `--rewrite-outputs` preserves schedules; it never reinstates a hardcoded calendar.
+
+The Python collector calls the service-only `POST /internal/deadlines/extract-schedule` operation using
+`ADMINBOT_SERVICE_BASE_URL` (default `http://127.0.0.1:8765`) and `ADMINBOT_SERVICE_TOKEN`. The service
+uses the shared `completeLocally` client with the existing `ADMINBOT_LOCAL_BASE_URL`,
+`ADMINBOT_LOCAL_MODEL`, and optional `VLLM_API_KEY` configuration and shared defaults; with
+`LLM_GATEWAY_URL` set, that client sends the completion through the shared LLM gateway's `local`
+route like every other local completion. Both hops require loopback endpoints and reject
+redirects. Truncated model output and invalid evidence are rejected.
+Pages are checked once per day per venue/track or ARR cycle, independently of the submission
+cutoff. Shared URLs are fetched once per run. Unchanged normalized text reuses the extracted
+result; a prose or footnote change triggers extraction even if a table is unchanged. `--force-refresh`
+bypasses the daily page check interval but still reuses identical text. Change the extractor version
+when its contract changes. Input is limited to 80,000 characters per scope; oversized input fails
+rather than silently dropping the end of a page. Stored state contains only the current extraction,
+its evidence and content hash, not successive full-page snapshots.
+
+Every extracted date needs a matching excerpt from a configured source. Exact times additionally
+need explicit clock/timezone evidence; otherwise the date retains its conservative planning cutoff.
+Initial author response, reviewer discussion, and other phases have distinct milestone identities.
+The model must report unpublished phases and ambiguities instead of filling in dates. Evidence
+validation checks transcription, not semantic completeness: `source_backed` means the accepted
+entries have supporting text, not that every possible requirement has been discovered.
+
+`schedule_checked_at` advances after a successful page read and validated extraction or cache reuse;
+`schedule_extracted_at` advances only after new extraction. `schedule_status` is `needs_review` for
+reported uncertainty, omitted prior stages or a primary-date disagreement, and `source_unavailable`
+when a website read fails; `extraction_unavailable` identifies model or evidence-validation failure. These states are shown with the venue details. Failures keep the previous
+schedule and successful-check timestamp. A separately observed primary deadline is preserved when
+the schedule disagrees. Full extraction evidence is retained in `schedule_observation` in the runtime
+JSON, while the UI receives milestone evidence and compact status fields. A missing collection
+service credential is an explicit collection failure, not a successful refresh. Failures retain a
+separate attempt timestamp and retry after 15 minutes, doubling to at most one day; a forced
+refresh bypasses this backoff. A successful check clears the failure count.
 
 Workshop website extraction and OpenReview observation have separate clocks. A successful website
 read saves its parsed `website_deadline_candidates` alongside `profile_extracted_at`. Between
@@ -244,7 +290,7 @@ and title-only papers. It requires the configured local model
 
 ## Member deadline recommendations
 
-Signed-in members can recommend a deadline to another active member from the board. The form searches members in pages and loads linked papers only after choosing the recipient. Several papers may be included in one recommendation. Search and member selection share a row; paper choices and long message previews scroll inside the form.
+Signed-in members can recommend a deadline to another active member from the board. The form searches members in pages and loads linked papers only after choosing the recipient. Several papers may be included in one recommendation. Search and member selection share a row; paper choices and long message previews scroll inside the form. A recommendation points at a published deadline, so a newly proposed one can be recommended only after an administrator publishes it; the notice shown after a member submits a new deadline says so and names the **Recommend** button.
 
 Preview creates a proposal without sending. Only its author can approve and send that exact preview to the Slack conversation containing AdminBot, the recommender, and the recipient. Changed deadlines or linked Slack identities require a new preview. Duplicate sends share an execution key across restarts. A failed send retains the preview for retry.
 
@@ -282,6 +328,14 @@ Discovered workshops remain in the dataset with an empty `deadline_aoe` until a 
 
 The board includes undated workshops in their usual venue groups, after dated entries in Upcoming, with “Deadline unknown” and neutral styling. It does not show a countdown or an Add to timeline action. Known notification or conference dates remain available as milestones, without substituting for the missing submission deadline. Undated workshops are excluded from deadline-driven matching, reminders, escalation, and channel digests.
 
+Deadline schedule extraction takes its turn in the shared LLM gateway's local queue alongside
+chat and every other local completion; the gateway, not the service, decides when it runs (see
+[the gateway guide](llm-gateway.md)). Because a queued request cannot be told apart from a running
+one, the service sets no extraction deadline of its own. The collector waits up to 15 minutes per
+extraction and then disconnects, which removes a queued request from the gateway or cancels a
+running one; the collector then retains the saved dates. Releasing inference capacity depends on
+the model server honoring HTTP disconnect cancellation.
+
 ### Deadline board layout
 
 Group headers and expanded rows use compact padding; narrower layouts share space between countdowns and source links without breaking the countdown text. Urgency pills use the regular UI font and retain their urgency colors. Cards use compact spacing and place location and publication policy together. Conference/workshop colors distinguish entry types. Urgency pills and thin 2px left stripes across cards, group summaries, deadline rows, and the featured deadline reinforce the countdown colors. Outer cards and groups have a faint urgency tint that fades to the right; the top and bottom border colors fade into the neutral border. Interior rows retain straight urgency stripes. Card badges and stage labels can yield space without overflowing. Milestone dates break between the calendar date and time when needed, preserving room for their labels. Cards in each grid row share the same height, and a conference name already used as the title is not repeated in its subtitle.
@@ -292,4 +346,10 @@ Publication-policy labels open a short explanation by click, tap, or keyboard. T
 
 On phones, filters use two columns when space permits and one column on narrow screens. Search remains full-width, venue chips scroll horizontally, and search and filters use 32px heights, while venue chips and view switches use 28px heights with spacing between separate controls. These compact sizes also apply on desktop.
 
-The frontend temporarily falls back to `/deadlines/venues.json` when `/deadlines` is missing or returns the legacy HTML page instead of a dataset. Empty current datasets remain valid, and authentication or server errors are not hidden by the fallback. Remove this compatibility read after the backend serves JSON at `/deadlines`.
+### Workshop snapshot upgrades
+
+The bundled snapshot already separates unverified historical notification values from individual workshop decisions. Collection reads that representation directly; loading, refreshing, and rewriting outputs do not run historical data migrations. New workshops obtain shared notification requirements only from the organizer source. A failed first extraction leaves the requirement undated; a failed later extraction retains the saved policy and its evidence.
+
+A separate abstract deadline links the two stages but does not establish a mandatory registration requirement. Requirement labels come from source evidence.
+
+The frontend reads deadline data only from `/deadlines` and rejects malformed dataset responses. Deploy the backend that serves this JSON route before deploying the frontend.

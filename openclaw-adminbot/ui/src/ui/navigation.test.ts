@@ -59,6 +59,8 @@ describe("iconForTab", () => {
       gettingStarted: "check",
       myWork: "book",
       labSharing: "link",
+      events: "users",
+      adminbotNotificationDrafts: "send",
       adminbotOpportunities: "zap",
       chat: "messageSquare",
       overview: "barChart",
@@ -70,11 +72,11 @@ describe("iconForTab", () => {
       adminbotSettings: "settings",
       adminbotMembers: "folder",
       adminbotProfileOverview: "check",
+      adminbotArrReviewers: "check",
       adminbotTabUsage: "barChart",
       adminbotGrantReport: "scrollText",
       adminbotMailingList: "send",
       adminbotProfessor: "lobster",
-      adminbotTravel: "globe",
       adminbotMeetings: "play",
       adminbotTimeAvailability: "clock",
       adminbotSignatures: "penLine",
@@ -122,6 +124,8 @@ describe("titleForTab", () => {
       gettingStarted: "Getting Started",
       myWork: "My Projects & Papers",
       labSharing: "Collaborate",
+      events: "Events",
+      adminbotNotificationDrafts: "OpenReview To Tweet",
       adminbotOpportunities: "Opportunities",
       chat: "Chat",
       overview: "Overview",
@@ -132,11 +136,11 @@ describe("titleForTab", () => {
       adminbotSettings: "Settings",
       adminbotMembers: "Lab Members",
       adminbotProfileOverview: "Profile Completeness",
+      adminbotArrReviewers: "ARR Eligible Reviewers",
       adminbotTabUsage: "Tab Usage",
       adminbotGrantReport: "Grant Report",
       adminbotMailingList: "Mailing List",
       adminbotProfessor: "My Desk",
-      adminbotTravel: "Travel",
       adminbotMeetings: "Meeting Recordings",
       adminbotTimeAvailability: "Time Availability",
       adminbotSignatures: "Signatures for You",
@@ -181,6 +185,8 @@ describe("subtitleForTab", () => {
       // Corrected to the shipped string: the tab has said "Coming soon" for a while and this
       // expectation had not followed, leaving the suite red for a reason unrelated to it.
       labSharing: "Coming soon — share resources, ideas, and collaborate.",
+      events: "Upcoming events, who from the lab is going, and who is nearby.",
+      adminbotNotificationDrafts: "Create tweet drafts and images from notification exports.",
       adminbotOpportunities: "PhD programs, internships, grants, awards, and Rising Stars.",
       chat: "Gateway chat for quick interventions.",
       overview: "Status, entry points, health.",
@@ -191,12 +197,12 @@ describe("subtitleForTab", () => {
       adminbotSettings: "Lab defaults and escalation policy.",
       adminbotMembers: "Privilege levels and access profiles.",
       adminbotProfileOverview: "Who has filled in their profile and planned their term.",
+      adminbotArrReviewers: "Self-reported ARR reviewer qualification and capacity.",
       adminbotTabUsage: "Which parts of AdminBot the lab actually opens.",
       adminbotGrantReport:
         "Every paper mapped to a safety area, and the track record behind each ask.",
       adminbotMailingList: "Mail our publications for a date range to one address.",
       adminbotProfessor: "What is waiting on you, across every queue.",
-      adminbotTravel: "Where you have been, from your own sign-ins.",
       adminbotMeetings: "Recordings, attendance and summaries of lab meetings.",
       adminbotTimeAvailability: "Who is committed to what, and when.",
       adminbotSignatures: "Send a document over for signing, and follow where it got to.",
@@ -372,6 +378,18 @@ describe("tabFromPath", () => {
 
   it("routes the Lab Sharing placeholder", () => {
     expect(tabFromPath("/lab-sharing")).toBe("labSharing");
+    // The member Travel tab became part of Events; its old links, in paper cards and Slack, land
+    // there.
+    expect(tabFromPath("/lab-travel")).toBe("events");
+    expect(tabFromPath("/events")).toBe("events");
+  });
+
+  // The head professor's Travel History was My Desk's second tab. It is gone, and its old links
+  // land on My Desk rather than a 404.
+  it("sends the old Travel History paths to My Desk", () => {
+    expect(tabFromPath("/travel")).toBe("adminbotProfessor");
+    expect(tabFromPath("/adminbot/travel")).toBe("adminbotProfessor");
+    expect(pathForTab("adminbotProfessor")).toBe("/professor");
   });
 
   it("handles base paths", () => {

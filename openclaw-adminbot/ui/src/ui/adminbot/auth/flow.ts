@@ -5,10 +5,24 @@ import { loadOrCreateDeviceIdentity } from "../../device-identity.ts";
 import { clearSignedOutView, goToSignedOutView } from "../../signed-out-view.ts";
 import type { UiSettings } from "../../storage.ts";
 import {
+  type MemberSession,
+  type SignupProfile,
+  changeMemberPassword,
+  claimMember,
+  confirmPasswordReset,
+  issueDeviceToken,
+  loginMember,
+  requestPasswordReset,
+  signupMember,
+  startImpersonation,
+} from "../api/auth.ts";
+import { setOnboardingStep } from "../api/onboarding.ts";
+import { acknowledgeOnboardingStep } from "../api/profile.ts";
+import { forgetAdminQueues } from "../controllers/admin-queues.ts";
+import {
   createEmptyAdminBotDashboardData,
   createEmptyAdminBotMemberList,
   createEmptyAdminBotStandingMeetings,
-  createEmptyAdminBotMemberNudgeState,
   createEmptyAdminBotReimbursementState,
   createEmptyLabPapersState,
   createEmptyVenuePapersState,
@@ -24,12 +38,19 @@ import {
   type SlackChannelCheck,
   type WorkshopNudgeReviewState,
 } from "../controllers/admin.ts";
+import { clearEvents, type EventsState } from "../controllers/events.ts";
+import { clearLabTravel, type LabTravelState } from "../controllers/lab-travel.ts";
 import { createEmptyAdminBotMemberRequests } from "../controllers/member-requests.ts";
-import { EMPTY_TRAVEL, type TravelState } from "../controllers/travel.ts";
+import { createEmptyAdminBotMemberNudgeState } from "../controllers/nudges.ts";
+import { stopAdminBotPreciseLocationRefresh } from "../controllers/precise-location.ts";
+import { EMPTY_PROFILE_OVERVIEW_PAGE } from "../controllers/profile-overview.ts";
+import { createRecLetterEligibilityState } from "../controllers/rec-letter-eligibility.ts";
 import { invalidateMemberMap } from "../data/member-map.ts";
 import { localTimezone } from "../data/timezones.ts";
-import type { TripDraft } from "../views/time-availability.trips.ts";
+import { EMPTY_PAGED_LIST } from "../load-more.ts";
+import { EMPTY_TRIP_DRAFT } from "../views/time-availability.trip-editor.ts";
 import type { MilestoneDraft, TimeAvailabilityDraft } from "../views/time-availability.ts";
+import { forgetSessionReads } from "./read-cache.ts";
 // Control UI module orchestrates member auth against the app view state.
 //
 // Bridges the pure AdminBot API client (`adminbot-auth.ts`) into the running
@@ -38,30 +59,19 @@ import type { MilestoneDraft, TimeAvailabilityDraft } from "../views/time-availa
 // flows through applySettings so it stays in sessionStorage-scoped plumbing.
 import {
   type AuthErrorKind,
-  acknowledgeOnboardingStep,
   type MemberImpersonator,
   type MemberOnboarding,
-  type MemberSession,
   type RosterMember,
-  type SignupProfile,
-  changeMemberPassword,
-  claimMember,
   clearStoredMemberSession,
-  confirmPasswordReset,
   fetchMemberSession,
+  cacheOfflineMemberSession,
   fetchRoster,
   hasAcknowledgedOnboardingChecklist,
-  issueDeviceToken,
   loadStoredMemberSession,
-  loginMember,
   logoutMember,
   markOnboardingChecklistAcknowledged,
-  requestPasswordReset,
   resolveAdminBotBaseUrl,
   saveStoredMemberSession,
-  setOnboardingStep,
-  signupMember,
-  startImpersonation,
   stopImpersonation,
 } from "./session.ts";
 
@@ -162,22 +172,21 @@ export type MemberAuthHost = {
   adminBotTimeAwayDraft?: TimeAvailabilityDraft;
   adminBotTimeAvailabilityDraft?: TimeAvailabilityDraft;
   adminBotMilestoneDraft?: MilestoneDraft;
-  adminBotTripDraft?: TripDraft;
+  adminBotTripDraft?: import("../views/time-availability.trip-editor.ts").TripDraft;
   adminBotAvailabilityNotesDraft?: string | null;
   adminBotActiveCommitmentType?: string | null;
   adminBotTimeAvailabilitySaving?: boolean;
   myWorkCoauthorDraft?: Record<string, { email: string; name: string; twitter: string }>;
-  myWorkBlockerDraft?: import("../views/my-work.ts").BlockerDraft | null;
-  myWorkBlockers?: import("../views/my-work.ts").Blocker[];
+  myWorkBlockerDraft?: import("../projects/workspace.ts").BlockerDraft | null;
   myWorkProjectDraft?: string | null;
   myWorkProjectAlias?: string;
   myWorkProjectError?: string | null;
-  myWorkProjectEdits?: Record<
-    string,
-    { title: string; alias: string; startedOn: string; error: string | null }
-  >;
+  myWorkProjectEdits?: Record<string, import("../projects/workspace.ts").ProjectDetailsDraft>;
+  myWorkProjectVenues?: import("../projects/workspace.ts").ProjectVenueDraft[];
+  myProjects?: import("../projects/model.ts").ProjectSummary[] | null;
+  myProjectsError?: string | null;
+  myProjectsChoosing?: boolean;
   myWorkChannelCheck?: SlackChannelCheck;
-  myWorkProjectVenues?: Array<{ venueId: string; year: number; confidence: number }>;
   profileEditingSection?: "basics" | null;
   profileAccountChecks?: Record<
     string,
@@ -208,10 +217,10 @@ export type MemberAuthHost = {
   registrationsError?: import("../data/registrations.ts").RegistrationsLoadError | null;
   registrationsBusyId?: string | null;
   registrationsNotice?: { kind: "success" | "error"; text: string } | null;
-  adminBotNotifications?: import("./session.ts").MemberNotification[];
+  adminBotNotifications?: import("../api/workspace.ts").MemberNotification[];
   adminBotNotificationsError?: string | null;
-  adminBotBroadcast?: import("./session.ts").LabBroadcast | null;
-  adminBotBroadcastHistory?: import("./session.ts").LabBroadcast[];
+  adminBotBroadcast?: import("../api/lab-sharing.ts").LabBroadcast | null;
+  adminBotBroadcastHistory?: import("../api/lab-sharing.ts").LabBroadcast[];
   adminBotBroadcastDraft?: string;
   adminBotBroadcastExpiry?: string;
   adminBotBroadcastAvailability?: string;
@@ -220,52 +229,54 @@ export type MemberAuthHost = {
   adminBotBroadcastNotice?: { kind: "success" | "error"; text: string } | null;
   adminBotNotice?: { kind: "success" | "error"; text: string } | null;
   professorExpandedLists?: Set<string>;
-  memberSheet?: import("./session.ts").MemberSheetView | null;
+  memberSheet?: import("../api/onboarding.ts").MemberSheetView | null;
   memberSheetLoadedAt?: number | null;
   memberSheetBusy?: boolean;
   memberSheetError?: string | null;
   memberSheetEdits?: Record<string, string>;
   memberSheetBaseline?: Record<string, string>;
   memberSheetSelection?: number[];
-  memberSheetSaveResult?: import("./session.ts").MemberSheetEditResult | null;
-  memberSheetOnboardResult?: import("./session.ts").MemberSheetOnboardResult | null;
-  memberSheetAddRowResult?: import("./session.ts").MemberSheetAddRowResult | null;
-  adminBotProfileOverview?: import("./session.ts").MemberProfileOverviewRow[];
+  memberSheetSaveResult?: import("../api/onboarding.ts").MemberSheetEditResult | null;
+  memberSheetOnboardResult?: import("../api/onboarding.ts").MemberSheetOnboardResult | null;
+  memberSheetAddRowResult?: import("../api/onboarding.ts").MemberSheetAddRowResult | null;
+  adminBotProfileOverview?: import("../api/members.ts").MemberProfileOverviewRow[];
+  adminBotProfileOverviewPage?: import("../controllers/profile-overview.ts").ProfileOverviewPageState;
   adminBotProfileOverviewLoadedAt?: number | null;
   adminBotProfileOverviewLoading?: boolean;
   adminBotProfileOverviewError?: string | null;
   adminBotProfileOverviewFieldCount?: number;
   adminBotProfileOverviewReminding?: boolean;
   adminBotProfileOverviewNotice?: string | null;
-  adminBotProfileAdoption?: import("./session.ts").MemberAdoptionSummary | null;
-  adminBotEscalatedNudges?: import("./session.ts").EscalatedNudgeRow[];
-  adminBotPiReview?: import("./session.ts").PiReviewRow[];
+  adminBotProfileAdoption?: import("../api/members.ts").MemberAdoptionSummary | null;
+  adminBotEscalatedNudges?: import("../api/nudges.ts").EscalatedNudgeRow[];
+  adminBotPiReview?: import("../api/paper-admin.ts").PiReviewRow[];
   adminBotPiReviewError?: string | null;
-  adminBotTravel?: TravelState;
-  adminBotLocationDrift?: import("./session.ts").LocationDrift | null;
-  adminBotLocationDrifts?: import("./session.ts").LocationDrift[];
+  adminBotLocationDrift?: import("../api/profile.ts").LocationDrift | null;
+  adminBotLocationDrifts?: import("../api/profile.ts").LocationDrift[];
+  adminBotPreciseLocation?: import("../controllers/precise-location.ts").PreciseLocationState;
   adminBotLocationSaving?: boolean;
   adminBotLocationError?: string | null;
-  adminBotMeetings?: import("./session.ts").MeetingRecord[];
+  adminBotMeetingSeries?: import("../api/meetings.ts").MeetingSeries[];
+  adminBotMeetingSeriesPages?: import("../api/meetings.ts").MeetingSeriesPages;
   adminBotMeetingsRequestVersion?: number;
-  adminBotMeetingsNextCursor?: import("./session.ts").MeetingCursor | null;
-  adminBotMeetingsLoadingMore?: boolean;
-  adminBotMeetingsVisibleCount?: number;
   adminBotMeetingsLoading?: boolean;
   adminBotMeetingsSaving?: boolean;
   adminBotMeetingsError?: string | null;
-  adminBotMeetingNudgePreview?: import("./session.ts").MeetingAttendanceNudgePreview | null;
-  adminBotMeetingNudgeResult?: import("./session.ts").MeetingAttendanceNudgeResult | null;
+  adminBotMeetingNudgePreview?: import("../api/meetings.ts").MeetingAttendanceNudgePreview | null;
+  adminBotMeetingNudgeResult?: import("../api/meetings.ts").MeetingAttendanceNudgeResult | null;
   adminBotMeetingNudgeBusy?: boolean;
   adminBotMeetingNudgeError?: string | null;
-  calendarEvents?: import("./session.ts").CalendarEvent[];
+  adminBotMeetingRosters?: import("../api/meetings.ts").MeetingRosters;
+  adminBotMemberDetails?: import("../controllers/member-detail.ts").AdminBotMemberDetails;
+  adminBotDuplicatePairs?: import("../controllers/member-detail.ts").AdminBotDuplicatePairs;
+  calendarEvents?: import("../api/calendar.ts").CalendarEvent[];
   calendarEventsLoading?: boolean;
   calendarEventsError?: string | null;
-  calendarSource?: import("./session.ts").LabCalendar | null;
+  calendarSource?: import("../api/calendar.ts").LabCalendar | null;
   calendarMonth?: string;
   calendarPrompt?: string;
   calendarMessages?: Array<{ role: "user" | "assistant"; content: string }>;
-  calendarDraft?: import("./session.ts").CalendarEventDraft | null;
+  calendarDraft?: import("../api/calendar.ts").CalendarEventDraft | null;
   calendarDraftBusy?: boolean;
   calendarDraftError?: string | null;
   calendarSelectedEventId?: string | null;
@@ -276,8 +287,8 @@ export type MemberAuthHost = {
   calendarExcludedMemberIds?: string[];
   calendarBusy?: boolean;
   calendarConfirming?: "save" | "invite" | null;
-  adminBotPaperSlotOverview?: import("./session.ts").PaperSlotOverviewRow[];
-  adminBotPaperSlots?: Record<string, import("./session.ts").PaperCycle>;
+  adminBotPaperSlotOverview?: import("../api/paper-admin.ts").PaperSlotOverviewRow[];
+  adminBotPaperSlots?: Record<string, import("../api/papers.ts").PaperCycle>;
   adminBotPaperSlotsOpen?: string[];
   adminBotPaperSlotsLoadedAt?: number | null;
   adminBotPaperSlotsLoading?: boolean;
@@ -285,23 +296,24 @@ export type MemberAuthHost = {
   adminBotPaperSlotsNudging?: boolean;
   adminBotPaperSlotsNotice?: string | null;
   adminBotPaperSlotsBusyId?: string | null;
-  adminBotPaperNudgeBatches?: import("./session.ts").PaperNudgeBatch[] | null;
+  adminBotPaperNudgeBatches?: import("../api/paper-admin.ts").PaperNudgeBatch[] | null;
   adminBotPaperNudgeLoading?: boolean;
   adminBotPaperNudgeSelected?: string[];
-  adminBotTripDrafts?: Record<string, import("../views/paper-cycle.ts").PaperTripDraft>;
-  adminBotTripSavingKey?: string | null;
-  adminBotTabUsage?: import("./session.ts").TabVisitReport | null;
+  adminBotTabUsage?: import("../api/workspace.ts").TabVisitReport | null;
   adminBotTabUsageLoadedAt?: number | null;
   adminBotTabUsageLoading?: boolean;
   adminBotTabUsageError?: string | null;
   adminBotTabUsageExporting?: boolean;
   adminBotReimbursement?: AdminBotReimbursementState;
-  adminBotLogisticsRequests?: import("./session.ts").LogisticsRequest[];
+  adminBotLogisticsRequests?: import("../api/logistics.ts").LogisticsRequest[];
   adminBotLogisticsRequestsLoading?: boolean;
   adminBotLogisticsRequestsError?: string | null;
   adminBotLogisticsRequestsLoadedAt?: number | null;
+  adminBotLogisticsPage?: import("../load-more.ts").PagedListState;
+  adminBotDeskLetters?: import("../controllers/logistics.ts").DeskLettersState;
+  adminBotRecLetter?: import("../controllers/rec-letter-eligibility.ts").RecLetterEligibilityState;
   adminBotLogisticsOpenRequestId?: string | null;
-  adminBotLogisticsOpenRequest?: import("./session.ts").LogisticsRequest | null;
+  adminBotLogisticsOpenRequest?: import("../api/logistics.ts").LogisticsRequest | null;
   adminBotLogisticsOpenLoading?: boolean;
   adminBotLogisticsDraftScope?: string | null;
   adminBotLogisticsDescription?: string;
@@ -319,7 +331,7 @@ export type MemberAuthHost = {
   adminBotLogisticsSignedNote?: string;
   adminBotLogisticsStatusNote?: string;
   adminBotLogisticsEditingId?: string | null;
-  adminBotBadgeDefinitions?: import("./session.ts").BadgeDefinition[];
+  adminBotBadgeDefinitions?: import("../api/badges.ts").BadgeDefinition[];
   adminBotBadgeDefinitionsLoadedAt?: number | null;
   adminBotBadgeDefinitionsError?: import("../data/badges.ts").BadgeLoadError | null;
   adminBotBadgeNominations?: import("./session.ts").BadgeNominationView[];
@@ -366,7 +378,8 @@ export type MemberAuthHost = {
   changePasswordNotice: string | null;
   applySettings: (next: UiSettings) => void;
   connect: () => void;
-};
+} & LabTravelState &
+  EventsState;
 
 function toMemberAuthFailure(
   kind: AuthErrorKind,
@@ -546,6 +559,9 @@ async function connectAsMember(
 }
 
 function clearMemberScopedData(host: MemberAuthHost): void {
+  // Kept read bodies and shared in-flight reads are the departing member's data too.
+  forgetSessionReads();
+  forgetAdminQueues(host);
   host.adminBotRosterRequestId = (host.adminBotRosterRequestId ?? 0) + 1;
   host.adminBotRosterLoadedAt = null;
   host.adminBotRosterLoading = false;
@@ -596,26 +612,22 @@ function clearMemberScopedData(host: MemberAuthHost): void {
     time: "",
     timezone: localTimezone(),
   };
-  host.adminBotTripDraft = {
-    city: "",
-    start: "",
-    end: "",
-    timezone: "",
-    note: "",
-    editingIndex: null,
-  };
+  host.adminBotTripDraft = EMPTY_TRIP_DRAFT;
   host.adminBotAvailabilityNotesDraft = null;
   host.adminBotActiveCommitmentType = null;
   host.adminBotTimeAvailabilitySaving = false;
   host.myWorkCoauthorDraft = {};
   host.myWorkBlockerDraft = null;
-  host.myWorkBlockers = [];
   host.myWorkProjectDraft = null;
   host.myWorkProjectAlias = "";
   host.myWorkProjectError = null;
   host.myWorkProjectEdits = {};
-  host.myWorkChannelCheck = { ...EMPTY_SLACK_CHANNEL_CHECK };
   host.myWorkProjectVenues = [];
+  // Another member's projects must not survive into this session's sidebar.
+  host.myProjects = null;
+  host.myProjectsError = null;
+  host.myProjectsChoosing = false;
+  host.myWorkChannelCheck = { ...EMPTY_SLACK_CHANNEL_CHECK };
   host.profileEditingSection = null;
   host.profileAccountChecks = {};
   host.adminBotVenueFilter = "";
@@ -666,6 +678,7 @@ function clearMemberScopedData(host: MemberAuthHost): void {
   host.memberSheetOnboardResult = null;
   host.memberSheetAddRowResult = null;
   host.adminBotProfileOverview = [];
+  host.adminBotProfileOverviewPage = EMPTY_PROFILE_OVERVIEW_PAGE;
   host.adminBotProfileOverviewLoadedAt = null;
   host.adminBotProfileOverviewLoading = false;
   host.adminBotProfileOverviewError = null;
@@ -676,16 +689,17 @@ function clearMemberScopedData(host: MemberAuthHost): void {
   host.adminBotEscalatedNudges = [];
   host.adminBotPiReview = [];
   host.adminBotPiReviewError = null;
-  host.adminBotTravel = { ...EMPTY_TRAVEL };
   host.adminBotLocationDrift = undefined;
   host.adminBotLocationDrifts = undefined;
+  host.adminBotPreciseLocation = undefined;
+  stopAdminBotPreciseLocationRefresh();
   host.adminBotLocationSaving = false;
   host.adminBotLocationError = null;
-  host.adminBotMeetings = undefined;
+  host.adminBotMeetingSeries = undefined;
+  // Emptied, not left for the next index to replace: a series read in flight checks for its own
+  // pending entry, so dropping it is what makes the previous member's late reply land nowhere.
+  host.adminBotMeetingSeriesPages = {};
   host.adminBotMeetingsRequestVersion = (host.adminBotMeetingsRequestVersion ?? 0) + 1;
-  host.adminBotMeetingsNextCursor = null;
-  host.adminBotMeetingsLoadingMore = false;
-  host.adminBotMeetingsVisibleCount = 12;
   host.adminBotMeetingsLoading = false;
   host.adminBotMeetingsSaving = false;
   host.adminBotMeetingsError = null;
@@ -693,6 +707,9 @@ function clearMemberScopedData(host: MemberAuthHost): void {
   host.adminBotMeetingNudgeResult = null;
   host.adminBotMeetingNudgeBusy = false;
   host.adminBotMeetingNudgeError = null;
+  host.adminBotMeetingRosters = {};
+  host.adminBotMemberDetails = {};
+  host.adminBotDuplicatePairs = undefined;
   host.calendarEvents = undefined;
   host.calendarEventsLoading = false;
   host.calendarEventsError = null;
@@ -723,8 +740,6 @@ function clearMemberScopedData(host: MemberAuthHost): void {
   host.adminBotPaperNudgeBatches = null;
   host.adminBotPaperNudgeLoading = false;
   host.adminBotPaperNudgeSelected = [];
-  host.adminBotTripDrafts = {};
-  host.adminBotTripSavingKey = null;
   host.adminBotTabUsage = null;
   host.adminBotTabUsageLoadedAt = null;
   host.adminBotTabUsageLoading = false;
@@ -739,6 +754,12 @@ function clearMemberScopedData(host: MemberAuthHost): void {
   host.adminBotLogisticsRequestsLoading = false;
   host.adminBotLogisticsRequestsError = null;
   host.adminBotLogisticsRequestsLoadedAt = null;
+  host.adminBotLogisticsPage = EMPTY_PAGED_LIST;
+  host.adminBotDeskLetters = { requests: [], loading: false, loadedAt: null };
+  // Another member's eligibility, or an admin's freeze notes, must not outlive the session.
+  if (host.adminBotRecLetter) {
+    host.adminBotRecLetter = createRecLetterEligibilityState();
+  }
   host.adminBotLogisticsOpenRequestId = null;
   host.adminBotLogisticsOpenRequest = null;
   host.adminBotLogisticsOpenLoading = false;
@@ -782,10 +803,19 @@ function clearMemberScopedData(host: MemberAuthHost): void {
   host.labSharingAskTags = [];
   host.labSharingInvitedMemberIds = [];
   host.labSharingRespondedInviteIds = [];
+  // Stops this browser's location watch too: the next person to sign in here must not inherit it,
+  // and the opt-in they hold is read fresh for their own session.
+  clearLabTravel(host);
+  clearEvents(host);
 }
 
 async function applyMemberSession(host: MemberAuthHost, session: MemberSession) {
   clearMemberScopedData(host);
+  await cacheOfflineMemberSession(
+    session.session_token,
+    resolveAdminBotBaseUrl(host.settings),
+    session,
+  );
   saveStoredMemberSession({
     sessionToken: session.session_token,
     expiresAt: session.expires_at,
@@ -987,7 +1017,9 @@ export async function resumeMemberSession(
       ? hasAcknowledgedOnboardingChecklist(host.memberId)
       : true;
     clearSignedOutView(host);
-    await connectAsMember(host, result.value, stored.sessionToken, isCurrent);
+    if (!result.cached) {
+      await connectAsMember(host, result.value, stored.sessionToken, isCurrent);
+    }
     return "resumed";
   }
   if (result.kind === "unreachable") {
@@ -1039,9 +1071,7 @@ export async function beginViewAs(host: MemberAuthHost, memberId: string): Promi
     }
     if (!result.ok) {
       host.memberImpersonationError =
-        result.kind === "unreachable"
-          ? t("adminbot.impersonation.unreachable")
-          : t("adminbot.impersonation.refused");
+        result.kind === "unreachable" ? t("impersonation.unreachable") : t("impersonation.refused");
       return;
     }
     await applyMemberSession(host, result.value);

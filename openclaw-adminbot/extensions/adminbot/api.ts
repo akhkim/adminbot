@@ -83,6 +83,20 @@ export {
   defaultAdminBotPrivacyBrokerConfig,
 } from "./src/privacy/broker.js";
 export type { AdminBotPrivacyBroker, AdminBotPrivacyBrokerConfig } from "./src/privacy/broker.js";
+export {
+  createLlmLoadRouter,
+  parseLlmNodes,
+  sharedLlmLoadRouter,
+} from "./src/kernel/llm-router.js";
+export type { LlmLoadRouter } from "./src/kernel/llm-router.js";
+export {
+  createMemoryFailedRequestLedger,
+  createSqliteFailedRequestLedger,
+} from "./src/persistence/failed-requests.js";
+export type {
+  AdminBotFailedExternalRequest,
+  AdminBotLlmLoadStatus,
+} from "./src/contracts/resilience.js";
 export { createAdminBotReimbursementWorkflow } from "./src/workflows/reimbursements/workflow.js";
 export type {
   AdminBotReimbursementRequest,
@@ -118,5 +132,17 @@ export {
   type ZoomRecordingNotice,
 } from "./src/workflows/meetings/zoom-email.js";
 export { summarizeMeeting } from "./src/workflows/meetings/summarize.js";
+export {
+  DEFAULT_SNAPSHOT_INTERVAL_SECONDS,
+  formatOffset,
+  parseFfmpegDuration,
+  readGalleryFrame,
+  snapshotOffsets,
+  snapshotUpdate,
+  type GalleryFrameReading,
+} from "./src/workflows/meetings/gallery-snapshots.js";
 export { parseVtt } from "./src/workflows/meetings/vtt.js";
 export { parseParticipantCsv } from "./src/workflows/meetings/attendance.js";
+
+export { createLlmGateway } from "./src/kernel/llm-gateway.js";
+export { routeLlmFetch, readLlmGatewayStatus } from "./src/kernel/llm-gateway-client.js";

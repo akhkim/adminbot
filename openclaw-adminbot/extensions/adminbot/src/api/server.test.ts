@@ -1,8 +1,9 @@
-import { rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AdminBotLabMemberInput } from "../contracts/actions.js";
+import { COMPLETE_PROFILE } from "../contracts/profile-completion.test-helpers.js";
 import { createAdminBotMockService } from "./server.js";
 
 const SERVICE_TOKEN = "test-service-token";
@@ -87,10 +88,19 @@ function mockFor(baseUrl: string): ReturnType<typeof createAdminBotMockService> 
   return entry.mock;
 }
 
-function seedMember(baseUrl: string, id: string, body: Record<string, unknown>): void {
+function seedMember(
+  baseUrl: string,
+  id: string,
+  body: Record<string, unknown>,
+  complete = true,
+): void {
   const result = mockFor(baseUrl).service.upsertLabMember({
     // Seeded onto the nudge list unless the case says otherwise: the list is opt-in, and a fixture
     // that is not on it can never be mailed. See adminBotReceivesNudges.
+    ...(complete ? COMPLETE_PROFILE : {}),
+    privilege_level: "external_collaborator",
+    email: undefined,
+    calendar_email: complete ? String(body.email ?? `${id}@example.com`) : undefined,
     receives_nudges: true,
     ...(body as AdminBotLabMemberInput),
     id,
@@ -159,6 +169,44 @@ async function namePi(baseUrl: string, adminSession: string, memberId: string): 
 }
 
 describe("AdminBot mock service", () => {
+  it("checks Drive access through the authenticated durable API", async () => {
+    const databasePath = path.join(
+      os.tmpdir(),
+      `adminbot-drive-api-${Date.now()}-${Math.random().toString(16).slice(2)}.sqlite`,
+    );
+    const seen: string[] = [];
+    const { baseUrl, mock } = await startService({
+      databasePath,
+      driveProbe: async (id) => {
+        seen.push(id);
+        return { status: "found", canEdit: true };
+      },
+    });
+    const entry = running.find((candidate) => candidate.baseUrl === baseUrl)!;
+    entry.cleanupPaths.push(databasePath, `${databasePath}-wal`, `${databasePath}-shm`);
+    seedMember(baseUrl, "pat", { name: "Pat", email: "pat@institute.example" });
+    await approveClaim(baseUrl, "pat", "pat@institute.example");
+    const token = await loginToken(baseUrl, "pat@institute.example");
+    const before = mock.service.listLabMembers();
+    const url = "https://drive.google.com/drive/folders/1SyntheticEditableFolder";
+    const response = await fetch(`${baseUrl}/drive/check-edit-access`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ status: "accessible" });
+    expect(seen).toEqual(["1SyntheticEditableFolder"]);
+    expect(mock.service.listLabMembers()).toEqual(before);
+    const denied = await fetch(`${baseUrl}/drive/check-edit-access`, {
+      method: "POST",
+      headers: serviceHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ url }),
+    });
+    expect(denied.status).toBe(401);
+    expect(seen).toHaveLength(1);
+  });
+
   it("serves the management UI and state endpoints for the service principal", async () => {
     const { baseUrl } = await startService();
 
@@ -414,7 +462,7 @@ describe("AdminBot mock service", () => {
     expect(await loginToken(baseUrl, "new@cs.toronto.edu")).toBeTruthy();
   });
 
-  it("approving a registration invites the account email to the lab calendar and seeds an onboarding checklist", async () => {
+  it("approving an unclassified registration does not grant calendar access and seeds a checklist", async () => {
     const invited: string[] = [];
     const { baseUrl } = await startService({
       calendarInviteRunner: async (email) => {
@@ -451,18 +499,18 @@ describe("AdminBot mock service", () => {
     expect(approved.status).toBe(200);
     const approveBody = (await approved.json()) as { member_id: string };
 
-    // Granted through the typed `calendar.grant_lab_calendar` action, approved by the admin who
-    // approved the account, like every other new member's.
-    expect(invited).toEqual(["calendar-person@cs.toronto.edu"]);
+    // Portal approval alone does not establish full/major membership.
+    expect(invited).toEqual([]);
 
+    // Onboarding is owner-only, so the checklist is read as the admin, not the service principal.
     const members = (await (
-      await fetch(`${baseUrl}/lab/members`, { headers: serviceHeaders() })
+      await fetch(`${baseUrl}/lab/members`, {
+        headers: { Authorization: `Bearer ${adminSession}` },
+      })
     ).json()) as {
       members: Array<{ id: string; onboarding?: { steps: Array<{ id: string; status: string }> } }>;
     };
     const created = members.members.find((m) => m.id === approveBody.member_id);
-    const calendarStep = created?.onboarding?.steps.find((step) => step.id === "calendar_invite");
-    expect(calendarStep?.status).toBe("complete");
     expect(created?.onboarding?.steps.length).toBeGreaterThan(1);
   });
 
@@ -829,6 +877,41 @@ describe("AdminBot mock service", () => {
     await expect(loginCookie(true, "https")).resolves.toContain("SameSite=Lax");
   });
 
+  it("returns correspondence validation errors over HTTP without changing the saved member", async () => {
+    const { baseUrl } = await startService();
+    await seedMember(baseUrl, "email-self", {
+      name: "Email Self",
+      email: "email-self@cs.toronto.edu",
+      correspondence_email: "self@institute.example",
+      privilege_level: "member",
+    });
+    await approveClaim(baseUrl, "email-self", "email-self@cs.toronto.edu");
+    const token = await loginToken(baseUrl, "email-self@cs.toronto.edu");
+    const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+    const rejected = await fetch(`${baseUrl}/lab/members/email-self`, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ correspondence_email: "self@gmail.com" }),
+    });
+    expect(rejected.status).toBe(400);
+    await expect(rejected.json()).resolves.toMatchObject({
+      error: {
+        message:
+          "Use an institutional or company email for correspondence, rather than a personal email address.",
+      },
+    });
+    const accepted = await fetch(`${baseUrl}/lab/members/email-self`, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ name: "Email Self Updated" }),
+    });
+    expect(accepted.status).toBe(200);
+    await expect(accepted.json()).resolves.toMatchObject({
+      name: "Email Self Updated",
+      correspondence_email: "self@institute.example",
+    });
+  });
+
   it("guards member self-profile edits", async () => {
     const { baseUrl } = await startService();
     await seedMember(baseUrl, "self", {
@@ -1131,7 +1214,14 @@ describe("AdminBot mock service", () => {
     // Unplaced (no location anywhere), so a summary that ever put unplaced names back in would
     // leak "Zedunia" specifically, and the check below would catch it even though Zed never
     // appears in a `places` entry at all.
-    await seedMember(baseUrl, "zed", { name: "Zedunia", privilege_level: "member" });
+    await seedMember(baseUrl, "zed", { name: "Zedunia", privilege_level: "member" }, false);
+    // Hid themselves from the map: the admin search may say so by name, never where they wrote.
+    await seedMember(
+      baseUrl,
+      "hal",
+      { name: "Halvard", privilege_level: "member", location: "Berlin", map_visibility: "hidden" },
+      false,
+    );
     await approveClaim(baseUrl, "ada", "ada@example.com");
     const memberToken = await loginToken(baseUrl, "ada@example.com");
 
@@ -1141,6 +1231,8 @@ describe("AdminBot mock service", () => {
     expect(anonymousText).not.toContain("Ada");
     expect(anonymousText).not.toContain("Zedunia");
     expect(anonymousText).not.toContain("members");
+    expect(anonymousText).not.toContain("Halvard");
+    expect(anonymousText).not.toContain("not_on_map");
     const anonymousBody = JSON.parse(anonymousText) as {
       mode: string;
       places: Array<{ label: string; count: number; members?: unknown }>;
@@ -1162,6 +1254,8 @@ describe("AdminBot mock service", () => {
     expect(asMemberText).not.toContain("Ada");
     expect(asMemberText).not.toContain("Zedunia");
     expect(asMemberText).not.toContain("members");
+    expect(asMemberText).not.toContain("Halvard");
+    expect(asMemberText).not.toContain("not_on_map");
     const asMemberBody = JSON.parse(asMemberText) as {
       mode: string;
       places: Array<{ members?: unknown }>;
@@ -1173,18 +1267,170 @@ describe("AdminBot mock service", () => {
 
     const response = await fetch(`${baseUrl}/member-map`, { headers: serviceHeaders() });
     expect(response.status).toBe(200);
-    const body = (await response.json()) as {
+    const text = await response.text();
+    const body = JSON.parse(text) as {
       mode: string;
       places: Array<{ label: string; members: Array<{ name: string; source: string }> }>;
-      unplaced: Array<{ name: string }>;
+      unplaced?: unknown;
+      unplaced_count: number;
+      not_on_map: Array<{ name: string; reason: string }>;
     };
+    // Everyone not on the map, by name and why -- and nothing about where the hidden one is.
+    expect(body.not_on_map).toEqual(
+      expect.arrayContaining([
+        { name: "Halvard", reason: "hidden" },
+        { name: "Zedunia", reason: "no_location" },
+      ]),
+    );
+    expect(body.not_on_map.map((entry) => entry.name)).not.toContain("Ada");
+    expect(text).not.toContain("Berlin");
     expect(body.mode).toBe("full");
     expect(body.places[0]?.label).toBe("Toronto");
     expect(body.places[0]?.members[0]).toMatchObject({ name: "Ada", source: "roster" });
+    // The dashboard card needs how many, not who: the names come only on request.
+    expect(body.unplaced).toBeUndefined();
+    expect(body.unplaced_count).toBeGreaterThan(0);
+    const listed = (await (
+      await fetch(`${baseUrl}/member-map?unplaced=list`, { headers: serviceHeaders() })
+    ).json()) as { unplaced: Array<{ name: string }>; unplaced_count: number };
     // The full path still surfaces the unplaced name -- proving the two summary checks above
     // are actually testing something the admin view does show, not a name that was never in
     // the data to begin with.
-    expect(body.unplaced.map((entry) => entry.name)).toContain("Zedunia");
+    expect(listed.unplaced.map((entry) => entry.name)).toContain("Zedunia");
+    expect(listed.unplaced).toHaveLength(body.unplaced_count);
+  });
+
+  it("tells an admin whether sign-in geolocation is on, and dates each row; the summaries stay as they were", async () => {
+    const { baseUrl } = await startService();
+    seedMember(baseUrl, "ada", { name: "Ada", privilege_level: "member", current_city: "Toronto" });
+    await approveClaim(baseUrl, "ada", "ada@example.com");
+    const memberToken = await loginToken(baseUrl, "ada@example.com");
+
+    const admin = (await (
+      await fetch(`${baseUrl}/member-map`, { headers: serviceHeaders() })
+    ).json()) as {
+      ip_geolocation?: { active: boolean; provider: string; trust_proxy?: boolean };
+      places: Array<{ members: Array<{ source: string }> }>;
+    };
+    // No database and no token in the test environment: off, and saying so.
+    expect(admin.ip_geolocation).toMatchObject({ active: false, provider: "off" });
+    expect(admin.places[0]?.members[0]?.source).toBe("roster");
+
+    for (const headers of [{}, { Authorization: `Bearer ${memberToken}` }]) {
+      const text = await (await fetch(`${baseUrl}/member-map`, { headers })).text();
+      const summary = JSON.parse(text) as Record<string, unknown>;
+      expect(summary.mode).toBe("summary");
+      expect(summary.ip_geolocation).toBeUndefined();
+      expect(text).not.toContain("located_at");
+      expect(text).not.toContain("tz_mismatch");
+    }
+  });
+
+  it("places a member by a fresh login city for anyone signed in, and only by stated text for a visitor", async () => {
+    const { baseUrl } = await startService();
+    // A complete profile (so Ada may use AdminBot) with a stated city: the sign-in city outranks
+    // it for signed-in callers, and it is all an anonymous visitor's map may use.
+    seedMember(baseUrl, "ada", {
+      name: "Ada",
+      privilege_level: "member",
+      current_city: "Toronto",
+    });
+    await approveClaim(baseUrl, "ada", "ada@example.com");
+    const memberToken = await loginToken(baseUrl, "ada@example.com");
+    // Synthetic geolocation written straight to the store, the way a sign-in would record it,
+    // so no test ever asks a real IP-lookup service where anybody is.
+    const now = new Date().toISOString();
+    await mockFor(baseUrl).store.patchLabMemberAuthFields("ada", {
+      last_login_city: "Lyon",
+      last_login_country: "FR",
+      last_ip_observed_at: now,
+      updated_at: now,
+    });
+
+    const admin = await fetch(`${baseUrl}/member-map`, { headers: serviceHeaders() });
+    const adminBody = (await admin.json()) as {
+      places: Array<{ key: string; label: string; members: Array<{ source: string }> }>;
+    };
+    expect(adminBody.places[0]).toMatchObject({ key: "lyon", label: "Lyon" });
+    expect(adminBody.places[0]?.members[0]?.source).toBe("login");
+
+    // A signed-in member gets the same placement as a headcount, without the name.
+    const memberText = await (
+      await fetch(`${baseUrl}/member-map`, { headers: { Authorization: `Bearer ${memberToken}` } })
+    ).text();
+    expect(memberText).not.toContain("Ada");
+    expect(JSON.parse(memberText).places[0]).toMatchObject({ key: "lyon", count: 1 });
+
+    // An anonymous visitor's map uses only what Ada stated, so the sign-in city never leaves.
+    const anonymousText = await (await fetch(`${baseUrl}/member-map`)).text();
+    expect(anonymousText).not.toContain("Lyon");
+    const anonymousBody = JSON.parse(anonymousText) as {
+      places: Array<{ key: string; label: string; count: number }>;
+    };
+    expect(anonymousBody.places[0]).toMatchObject({ key: "toronto", count: 1 });
+
+    // "My stated city only", set by Ada herself, holds for every caller, admins included.
+    const saved = await fetch(`${baseUrl}/lab/members/ada`, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${memberToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ map_visibility: "stated" }),
+    });
+    expect(saved.status).toBe(200);
+    const stated = (await (
+      await fetch(`${baseUrl}/member-map`, { headers: serviceHeaders() })
+    ).json()) as { places: Array<{ key: string; members: Array<{ source: string }> }> };
+    expect(stated.places[0]).toMatchObject({ key: "toronto" });
+    expect(stated.places[0]?.members[0]?.source).toBe("roster");
+
+    // "Hidden" takes her off the map entirely: no place, no city. An admin's search still finds
+    // her by name, with the reason and nothing else.
+    await fetch(`${baseUrl}/lab/members/ada`, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${memberToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ map_visibility: "hidden" }),
+    });
+    const hiddenText = await (
+      await fetch(`${baseUrl}/member-map`, { headers: serviceHeaders() })
+    ).text();
+    const hidden = JSON.parse(hiddenText) as { places: unknown[]; not_on_map: unknown[] };
+    expect(hidden.places).toEqual([]);
+    expect(hidden.not_on_map).toEqual([{ name: "Ada", reason: "hidden" }]);
+    expect(hiddenText).not.toContain("Toronto");
+
+    const invalid = await fetch(`${baseUrl}/lab/members/ada`, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${memberToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ map_visibility: "everywhere" }),
+    });
+    expect(invalid.status).toBe(400);
+  });
+
+  it("credits the local IP database on the map, in both shapes, only when one is configured", async () => {
+    // A path that does not exist: selecting the provider never opens the file, and nothing here
+    // signs in, so no lookup ever runs.
+    const { baseUrl } = await startService({
+      geoipMmdbPath: path.join(os.tmpdir(), "adminbot-test-missing", "dbip-city-lite.mmdb"),
+    });
+    await seedMember(baseUrl, "ada", {
+      name: "Ada",
+      privilege_level: "member",
+      location: "Toronto",
+    });
+    const credit = { text: "IP geolocation by DB-IP", url: "https://db-ip.com" };
+    const admin = (await (
+      await fetch(`${baseUrl}/member-map`, { headers: serviceHeaders() })
+    ).json()) as { attribution?: unknown };
+    expect(admin.attribution).toEqual(credit);
+    const anonymous = (await (await fetch(`${baseUrl}/member-map`)).json()) as {
+      attribution?: unknown;
+    };
+    expect(anonymous.attribution).toEqual(credit);
+
+    const { baseUrl: plainUrl } = await startService();
+    const plain = (await (await fetch(`${plainUrl}/member-map`)).json()) as {
+      attribution?: unknown;
+    };
+    expect(plain.attribution).toBeUndefined();
   });
 
   it("reports a 503 for a map refresh when no slack lookup is configured", async () => {
@@ -1616,6 +1862,93 @@ describe("AdminBot service-principal privilege scoping", () => {
     expect(adaToService.availability).toHaveLength(1);
   });
 
+  // Checklist progress, per-field provenance and resolved grants are bookkeeping for the member and
+  // the admins, and most of a record's bytes. A peer's roster read carries none of them.
+  it("keeps onboarding, provenance and access off a peer's roster read", async () => {
+    const { baseUrl } = await startService();
+    for (const [id, privilege] of [
+      ["ada", "member"],
+      ["peer", "member"],
+      ["boss", "admin"],
+    ] as const) {
+      seedMember(baseUrl, id, {
+        name: id,
+        email: `${id}@cs.toronto.edu`,
+        privilege_level: privilege,
+      });
+    }
+    const tokens = new Map<string, string>();
+    for (const id of ["peer", "boss"]) {
+      await approveClaim(baseUrl, id, `${id}@cs.toronto.edu`);
+      tokens.set(id, await loginToken(baseUrl, `${id}@cs.toronto.edu`));
+    }
+    const readAs = async (id: string, path: string) => {
+      const token = tokens.get(id)!;
+      const res = await fetch(`${baseUrl}${path}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      return (await res.json()) as {
+        members: Array<Record<string, unknown>>;
+        self?: Record<string, unknown>;
+      };
+    };
+    const owned = ["onboarding", "field_provenance", "access"];
+
+    for (const path of ["/lab/members", "/lab/members?view=summary", "/lab/members?limit=10"]) {
+      const asPeer = await readAs("peer", path);
+      const ada = asPeer.members.find((member) => member.id === "ada")!;
+      expect(ada.name, path).toBe("ada");
+      for (const field of owned) {
+        expect(field in ada, `${path} ${field}`).toBe(false);
+      }
+      if (!path.includes("limit=")) {
+        const own = asPeer.members.find((member) => member.id === "peer")!;
+        expect(own.access ?? asPeer.self?.access, path).toBeDefined();
+      }
+
+      const asAdmin = await readAs("boss", path);
+      const adaToAdmin = asAdmin.members.find((member) => member.id === "ada")!;
+      expect(adaToAdmin.onboarding, path).toBeDefined();
+    }
+  });
+
+  it("pages the roster as card summaries, not full records", async () => {
+    const { baseUrl } = await startService();
+    for (const [id, privilege] of [
+      ["ada", "member"],
+      ["boss", "admin"],
+    ] as const) {
+      seedMember(baseUrl, id, {
+        name: id,
+        email: `${id}@cs.toronto.edu`,
+        privilege_level: privilege,
+      });
+    }
+    await approveClaim(baseUrl, "boss", "boss@cs.toronto.edu");
+    const token = await loginToken(baseUrl, "boss@cs.toronto.edu");
+    const res = await fetch(`${baseUrl}/lab/members?limit=10&offset=0`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      members: Array<Record<string, unknown> & { onboarding?: { steps: object[] } }>;
+      total: number;
+      limit: number;
+      offset: number;
+    };
+    expect(body).toMatchObject({ total: 2, limit: 10, offset: 0 });
+    const ada = body.members.find((member) => member.id === "ada")!;
+    expect(ada.email).toBe("ada@cs.toronto.edu");
+    expect(ada).not.toHaveProperty("field_provenance");
+    expect(ada).not.toHaveProperty("access");
+    // Step states only: the admin panel checks `{ id, status }`, the copy stays in the catalog.
+    expect(ada.onboarding).toEqual({ steps: expect.any(Array) });
+    expect(ada.onboarding!.steps.length).toBeGreaterThan(0);
+    for (const step of ada.onboarding!.steps) {
+      expect(Object.keys(step).toSorted()).toEqual(["id", "status"]);
+    }
+  });
+
   it("lets a member write, and clear, the overall note on their own schedule", async () => {
     const { baseUrl } = await startService();
     seedMember(baseUrl, "ada", {
@@ -1653,7 +1986,7 @@ describe("AdminBot service-principal privilege scoping", () => {
 
   it("reports members with incomplete mandatory profile fields to any caller", async () => {
     const { baseUrl } = await startService();
-    seedMember(baseUrl, "blank", { name: "Blank" });
+    seedMember(baseUrl, "blank", { name: "Blank" }, false);
     const res = await fetch(`${baseUrl}/members/mandatory-fields-incomplete`, {
       headers: serviceHeaders(),
     });
@@ -1663,10 +1996,30 @@ describe("AdminBot service-principal privilege scoping", () => {
     expect(body.members[0]?.missing_fields).toContain("cv_url");
   });
 
+  it("shows a member who is not an admin only their own incomplete fields", async () => {
+    const { baseUrl } = await startService();
+    seedMember(baseUrl, "blank", { name: "Blank" });
+    seedMember(baseUrl, "plain", {
+      name: "Plain",
+      email: "plain@cs.toronto.edu",
+      privilege_level: "member",
+    });
+    await approveClaim(baseUrl, "plain", "plain@cs.toronto.edu");
+    const token = await loginToken(baseUrl, "plain@cs.toronto.edu");
+    const res = await fetch(`${baseUrl}/members/mandatory-fields-incomplete`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { members: Array<{ id: string }> };
+    // The profile gate only lets a complete member this far, so their own row is gone too;
+    // what matters is that Blank's incomplete row is not shown to them.
+    expect(body.members.map((member) => member.id)).toEqual([]);
+  });
+
   it("lets the service principal (unlike /nudges/send) run the daily mandatory-fields reminder, since it takes no caller-supplied content", async () => {
     const executor = { execute: async () => ({ handled: true }) };
     const { baseUrl } = await startService({ executor });
-    seedMember(baseUrl, "blank", { name: "Blank", slack_user_id: "U1" });
+    seedMember(baseUrl, "blank", { name: "Blank", slack_user_id: "U1" }, false);
     const res = await fetch(`${baseUrl}/members/mandatory-fields-reminder/run`, {
       method: "POST",
       headers: serviceHeaders(),
@@ -1698,16 +2051,39 @@ describe("AdminBot service-principal privilege scoping", () => {
     });
     seedMember(baseUrl, "bad", { name: "Bad", slack_user_id: "U-BAD", status: "active" });
     seedMember(baseUrl, "good", { name: "Good", slack_user_id: "U-GOOD", status: "active" });
-    const res = await fetch(`${baseUrl}/profile-photo/review/run`, {
-      method: "POST",
-      headers: serviceHeaders(),
-    });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as {
+    type PhotoRun = {
+      dry_run: boolean;
+      count: number;
       reviewed: number;
       non_compliant: number;
       nudges_created: number;
     };
+    // A body-less POST is a preview: nothing is sent.
+    const preview = await fetch(`${baseUrl}/profile-photo/review/run`, {
+      method: "POST",
+      headers: serviceHeaders(),
+    });
+    expect(preview.status).toBe(200);
+    const previewBody = (await preview.json()) as PhotoRun;
+    expect(previewBody.dry_run).toBe(true);
+    expect(previewBody.count).toBe(1);
+    expect(previewBody.nudges_created).toBe(0);
+
+    const mismatch = await fetch(`${baseUrl}/profile-photo/review/run`, {
+      method: "POST",
+      headers: { ...serviceHeaders(), "content-type": "application/json" },
+      body: JSON.stringify({ dry_run: false, confirm: 5 }),
+    });
+    expect(mismatch.status).toBe(409);
+
+    const res = await fetch(`${baseUrl}/profile-photo/review/run`, {
+      method: "POST",
+      headers: { ...serviceHeaders(), "content-type": "application/json" },
+      body: JSON.stringify({ dry_run: false, confirm: previewBody.count }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PhotoRun;
+    expect(body.dry_run).toBe(false);
     expect(body.reviewed).toBe(2);
     expect(body.non_compliant).toBe(1);
     expect(body.nudges_created).toBe(1);
@@ -1820,7 +2196,9 @@ describe("AdminBot service-principal privilege scoping", () => {
     expect(own.status).toBe(200);
     await expect(own.json()).resolves.toMatchObject({
       onboarding: {
-        completed: expect.arrayContaining([expect.objectContaining({ id: "linkedin" })]),
+        steps: expect.arrayContaining([
+          expect.objectContaining({ id: "linkedin", status: "complete" }),
+        ]),
       },
     });
 
@@ -1951,6 +2329,9 @@ describe("AdminBot member-side restrictions", () => {
     const pending = await fetch(`${baseUrl}/proposals/pending`, { headers });
     expect(pending.status).toBe(403);
 
+    const counts = await fetch(`${baseUrl}/admin/queue-counts`, { headers });
+    expect(counts.status).toBe(403);
+
     const settings = await fetch(`${baseUrl}/settings`, { headers });
     expect(settings.status).toBe(403);
   });
@@ -2009,6 +2390,14 @@ describe("AdminBot member-side restrictions", () => {
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(pending.status).toBe(200);
+
+    // The dashboard's counts agree with the queues they summarize.
+    const counts = await fetch(`${baseUrl}/admin/queue-counts`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(counts.status).toBe(200);
+    const { proposals } = (await pending.json()) as { proposals: unknown[] };
+    expect(await counts.json()).toEqual({ pending_proposals: proposals.length, email_reviews: 0 });
   });
 
   it("keeps other people's papers and paper deletion out of a plain member's reach", async () => {
@@ -2075,21 +2464,22 @@ describe("onboarding acknowledgement", () => {
 
     const before = (await (
       await fetch(`${baseUrl}/auth/session`, { headers: { Authorization: `Bearer ${token}` } })
-    ).json()) as { member: { onboarding: { current_step?: { id: string } } } };
-    const firstStepId = before.member.onboarding.current_step!.id;
+    ).json()) as { member: { onboarding: { steps: Array<{ id: string; status: string }> } } };
+    const currentOf = (onboarding: { steps: Array<{ id: string; status: string }> }) =>
+      onboarding.steps.find((step) => step.status === "current")?.id;
+    const firstStepId = currentOf(before.member.onboarding)!;
 
     const res = await ack(baseUrl, token, firstStepId);
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       onboarding: {
-        current_step?: { id: string };
         steps: Array<{ id: string; status: string; acknowledged_at?: string }>;
       };
     };
     const acknowledged = body.onboarding.steps.find((step) => step.id === firstStepId);
     expect(acknowledged?.status).toBe("complete");
     expect(acknowledged?.acknowledged_at).toBeTruthy();
-    expect(body.onboarding.current_step?.id).not.toBe(firstStepId);
+    expect(currentOf(body.onboarding)).not.toBe(firstStepId);
   });
 
   it("persists the acknowledgement on the member record", async () => {
@@ -2324,6 +2714,35 @@ describe("member-authored papers", () => {
       expect(res.status).toBe(400);
     }
   });
+
+  it("lists only the viewer's own papers for scope=mine", async () => {
+    const { baseUrl } = await startService();
+    const token = await tokenFor(baseUrl, "ada", "Ada Author");
+    const json = serviceHeaders({ "Content-Type": "application/json" });
+    await putPaper(baseUrl, "filed", memberHeaders(token), {
+      title: "Filed by Ada",
+      authors: ["Someone Else"],
+      current_step: "overleaf_writing",
+    });
+    await putPaper(baseUrl, "named", json, {
+      title: "Ada by name",
+      authors: ["Ada Author"],
+      current_step: "overleaf_writing",
+    });
+    await putPaper(baseUrl, "other", json, {
+      title: "Not Ada's",
+      authors: ["Someone Else"],
+      current_step: "overleaf_writing",
+    });
+
+    const mine = await fetch(`${baseUrl}/papers?scope=mine`, { headers: memberHeaders(token) });
+    expect(mine.status).toBe(200);
+    const body = (await mine.json()) as { papers: Array<{ id: string }> };
+    expect(body.papers.map((paper) => paper.id).toSorted()).toEqual(["filed", "named"]);
+
+    const service = await fetch(`${baseUrl}/papers?scope=mine`, { headers: serviceHeaders() });
+    expect(service.status).toBe(400);
+  });
 });
 
 describe("AdminBot device pairing approval", () => {
@@ -2353,7 +2772,7 @@ describe("AdminBot device pairing approval", () => {
     return await loginToken(baseUrl, `${id}@cs.toronto.edu`);
   }
 
-  it("approves a plain member's device with read-only scope", async () => {
+  it("approves a plain member's device with read and chat scope", async () => {
     const calls: ApproverCall[] = [];
     const { baseUrl } = await startService({ devicePairingApprover: fakeApprover(calls) });
     const token = await seededMemberToken(baseUrl, "plain", "member");
@@ -2364,8 +2783,13 @@ describe("AdminBot device pairing approval", () => {
       body: JSON.stringify({ requestId: "req-1" }),
     });
     expect(res.status).toBe(200);
-    await expect(res.json()).resolves.toMatchObject({ approved: true, scopes: ["operator.read"] });
-    expect(calls).toEqual([{ requestId: "req-1", allowedScopes: ["operator.read"] }]);
+    await expect(res.json()).resolves.toMatchObject({
+      approved: true,
+      scopes: ["operator.read", "operator.chat"],
+    });
+    expect(calls).toEqual([
+      { requestId: "req-1", allowedScopes: ["operator.read", "operator.chat"] },
+    ]);
   });
 
   it("approves an admin's device with write scope", async () => {
@@ -2382,6 +2806,7 @@ describe("AdminBot device pairing approval", () => {
     expect(calls[0]?.allowedScopes).toEqual([
       "operator.admin",
       "operator.read",
+      "operator.chat",
       "operator.write",
       "operator.approvals",
       "operator.pairing",
@@ -2447,7 +2872,7 @@ describe("AdminBot device token issuance", () => {
     result: import("./server.js").DeviceTokenIssuance = {
       ok: true,
       token: "device-token",
-      scopes: ["operator.read"],
+      scopes: ["operator.read", "operator.chat"],
     },
   ) {
     return async (params: IssuerCall) => {
@@ -2478,7 +2903,7 @@ describe("AdminBot device token issuance", () => {
     });
   }
 
-  it("mints a read-only token for a plain member", async () => {
+  it("mints a read and chat token for a plain member", async () => {
     const calls: IssuerCall[] = [];
     const { baseUrl } = await startService({ deviceTokenIssuer: fakeIssuer(calls) });
     const token = await seededMemberToken(baseUrl, "plain", "member");
@@ -2491,14 +2916,14 @@ describe("AdminBot device token issuance", () => {
     expect(res.status).toBe(200);
     await expect(res.json()).resolves.toMatchObject({
       token: "device-token",
-      scopes: ["operator.read"],
+      scopes: ["operator.read", "operator.chat"],
       deviceId: "dev-1",
     });
     expect(calls[0]).toMatchObject({
       deviceId: "dev-1",
       publicKey: "pk-1",
       platform: "Win32",
-      allowedScopes: ["operator.read"],
+      allowedScopes: ["operator.read", "operator.chat"],
     });
   });
 
@@ -2525,6 +2950,7 @@ describe("AdminBot device token issuance", () => {
     expect(calls[0]?.allowedScopes).toEqual([
       "operator.admin",
       "operator.read",
+      "operator.chat",
       "operator.write",
       "operator.approvals",
       "operator.pairing",
@@ -2574,6 +3000,100 @@ describe("AdminBot device token issuance", () => {
 });
 
 describe("anonymous reimbursement access", () => {
+  it("only mails the unchanged package produced by the server's generation gate", async () => {
+    const executed: unknown[] = [];
+    const artifacts = [
+      {
+        filename: "expense.xlsx",
+        media_type: "application/octet-stream",
+        data_base64: "ZXhwZW5zZQ==",
+      },
+      {
+        filename: "summary.docx",
+        media_type: "application/octet-stream",
+        data_base64: "c3VtbWFyeQ==",
+      },
+    ];
+    const { baseUrl, mock } = await startService({
+      reimbursementWorkflow: { ...stubWorkflow, generate: async () => ({ artifacts }) },
+      executor: {
+        execute: async (proposal) => {
+          executed.push(proposal);
+          return { handled: true };
+        },
+      },
+    });
+    seedMember(baseUrl, "claimant", { name: "Claimant", email: "claimant@cs.toronto.edu" });
+    await approveClaim(baseUrl, "claimant", "claimant@cs.toronto.edu");
+    const token = await loginToken(baseUrl, "claimant@cs.toronto.edu");
+    mock.service.updateSettings({
+      reimbursement_dcs_email: "finance@example.org",
+      reimbursement_mpi_email: "mpi@example.org",
+    });
+    const generatedResponse = await fetch(`${baseUrl}/reimbursements/generate`, {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({ draft: { funder: "DCS" } }),
+    });
+    expect(generatedResponse.status).toBe(200);
+    const generated = (await generatedResponse.json()) as { submission_proof: string };
+    const packageInput = { funder: "DCS", artifacts, submission_proof: generated.submission_proof };
+    const submit = (input: unknown) =>
+      fetch(`${baseUrl}/reimbursements/submit`, {
+        method: "POST",
+        headers: jsonHeaders({ Authorization: `Bearer ${token}` }),
+        body: JSON.stringify(input),
+      });
+    for (const input of [
+      { ...packageInput, funder: "MPI-IS" },
+      { ...packageInput, artifacts: artifacts.slice(0, 1) },
+      {
+        ...packageInput,
+        artifacts: [{ ...artifacts[0], filename: "replacement.xlsx" }, artifacts[1]],
+      },
+      {
+        ...packageInput,
+        artifacts: [{ ...artifacts[0], data_base64: "bW9kaWZpZWQ=" }, artifacts[1]],
+      },
+      { ...packageInput, submission_proof: "f".repeat(64) },
+    ]) {
+      const response = await submit(input);
+      expect(response.status).toBe(422);
+      await expect(response.json()).resolves.toMatchObject({
+        error: { message: expect.stringContaining("Generate and review") },
+      });
+    }
+    expect(executed).toEqual([]);
+    expect((await submit(packageInput)).status).toBe(200);
+    expect(executed).toHaveLength(1);
+  });
+
+  it("refuses unchecked reimbursement attachments before any external execution", async () => {
+    const executed: unknown[] = [];
+    const { baseUrl, mock } = await startService({
+      executor: {
+        execute: async (proposal) => {
+          executed.push(proposal);
+          return { handled: true };
+        },
+      },
+    });
+    seedMember(baseUrl, "claimant", { name: "Claimant", email: "claimant@cs.toronto.edu" });
+    await approveClaim(baseUrl, "claimant", "claimant@cs.toronto.edu");
+    const token = await loginToken(baseUrl, "claimant@cs.toronto.edu");
+    mock.service.updateSettings({ reimbursement_dcs_email: "finance@example.org" });
+    const response = await fetch(`${baseUrl}/reimbursements/submit`, {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: `Bearer ${token}` }),
+      body: JSON.stringify({
+        funder: "DCS",
+        artifacts: [{ filename: "unchecked.docx", data_base64: "dW5jaGVja2Vk" }],
+      }),
+    });
+    expect(response.status).toBe(422);
+    expect(executed).toEqual([]);
+  });
+
   it("rejects oversized JSON before the anonymous workflow handles it", async () => {
     const { baseUrl } = await startService({ reimbursementWorkflow: stubWorkflow });
     const res = await fetch(`${baseUrl}/reimbursements/converse`, {
@@ -2604,7 +3124,7 @@ describe("anonymous reimbursement access", () => {
       const res = await fetch(`${baseUrl}${route}`, {
         method: "POST",
         headers: jsonHeaders(),
-        body: JSON.stringify({ messages: [], draft: {} }),
+        body: JSON.stringify({ message: "Synthetic request", messages: [], draft: {} }),
       });
       expect(res.status).toBe(200);
     }
@@ -2619,6 +3139,7 @@ describe("anonymous reimbursement access", () => {
       ["GET", "/settings"],
       ["GET", "/lab/members"],
       ["GET", "/proposals/pending"],
+      ["GET", "/admin/queue-counts"],
       ["POST", "/proposals"],
       ["POST", "/automation/email/run"],
     ] as const) {
@@ -2647,7 +3168,7 @@ describe("anonymous reimbursement access", () => {
       const res = await fetch(`${baseUrl}/reimbursements/converse`, {
         method: "POST",
         headers: jsonHeaders(),
-        body: JSON.stringify({ messages: [] }),
+        body: JSON.stringify({ message: "Synthetic request", messages: [] }),
       });
       statuses.push(res.status);
     }
@@ -2787,9 +3308,16 @@ describe("the calendar routes", () => {
       ).status,
     ).toBe(200);
 
-    await expect((await fetch(`${baseUrl}/opportunities`)).json()).resolves.toMatchObject({
+    const board = (await (await fetch(`${baseUrl}/opportunities`)).json()) as {
+      opportunities: Array<Record<string, unknown>>;
+    };
+    expect(board).toMatchObject({
       opportunities: [{ id: opportunity.id, status: "approved", submitted_by_name: "Plain" }],
     });
+    // The board names the submitter; the review trail stays on the service.
+    for (const field of ["submitted_by_member_id", "decided_by", "decided_at", "created_at"]) {
+      expect(board.opportunities[0]).not.toHaveProperty(field);
+    }
   });
 
   it("refuses an anonymous write and a non-admin decision", async () => {
@@ -3330,7 +3858,7 @@ describe("the meetings routes", () => {
     return result.payload;
   }
 
-  it("gives an admin the full roster", async () => {
+  it("gives an admin a headcount on the list and the full roster on the meeting read", async () => {
     const { baseUrl } = await startService();
     const token = await memberToken(baseUrl, "root", "Root Admin", "admin");
     await memberToken(baseUrl, "ada", "Ada Attendee");
@@ -3351,8 +3879,16 @@ describe("the meetings routes", () => {
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { meetings: Array<Record<string, unknown>> };
-    expect(body.meetings[0]?.attendees).toHaveLength(2);
-    expect(body.meetings[0]?.attendee_count).toBeUndefined();
+    expect(body.meetings[0]?.attendees).toBeUndefined();
+    expect(body.meetings[0]?.attendee_count).toBe(2);
+
+    const detail = await fetch(`${baseUrl}/meetings/zoom-812-2026-08-12`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(detail.status).toBe(200);
+    const meeting = (await detail.json()) as Record<string, unknown>;
+    expect(meeting.attendees).toHaveLength(2);
+    expect(meeting.attendee_count).toBeUndefined();
   });
 
   // Who sat in a lab meeting is personal data about everyone else in it. A member gets the
@@ -3459,13 +3995,18 @@ describe("the meetings routes", () => {
     const admin = await fetch(`${baseUrl}/meetings?limit=2`, {
       headers: { Authorization: `Bearer ${adminToken}` },
     });
-    const adminPage = (await admin.json()) as { meetings: Array<{ attendees: unknown[] }> };
+    const adminPage = (await admin.json()) as {
+      meetings: Array<{ attendees?: unknown[]; attendee_count?: number }>;
+    };
+    // The roster is read per meeting (GET /meetings/:id); a row carries the headcount.
     expect(adminPage.meetings[0]?.attendees).toBeUndefined();
-    expect(adminPage.meetings[1]?.attendees).toHaveLength(2);
+    expect(adminPage.meetings[1]?.attendees).toBeUndefined();
+    expect(adminPage.meetings[1]?.attendee_count).toBe(2);
+    // No `limit` is the default page of ten, which holds all four here.
     const unpaged = await fetch(`${baseUrl}/meetings`, { headers });
-    const legacy = (await unpaged.json()) as { meetings: unknown[]; next_cursor?: unknown };
-    expect(legacy.meetings).toHaveLength(4);
-    expect(legacy.next_cursor).toBeUndefined();
+    const firstPage = (await unpaged.json()) as { meetings: unknown[]; next_cursor?: unknown };
+    expect(firstPage.meetings).toHaveLength(4);
+    expect(firstPage.next_cursor).toBeUndefined();
   });
 
   it("keeps historical recordings with invalid or blank dates reachable across pages", async () => {
@@ -3782,7 +4323,7 @@ describe("the member location timeline", () => {
     const after = await fetch(`${baseUrl}/profile/location-prompt`, {
       headers: { Authorization: `Bearer ${token}` },
     });
-    await expect(after.json()).resolves.toEqual({ drift: null });
+    await expect(after.json()).resolves.toMatchObject({ drift: null });
   });
 
   // "No, still Toronto" has to settle it without editing the profile, or the prompt becomes
@@ -3808,7 +4349,27 @@ describe("the member location timeline", () => {
     const after = await fetch(`${baseUrl}/profile/location-prompt`, {
       headers: { Authorization: `Bearer ${token}` },
     });
-    await expect(after.json()).resolves.toEqual({ drift: null });
+    await expect(after.json()).resolves.toMatchObject({ drift: null });
+  });
+
+  // Location is fully automatic: there is no check-in question to fetch, answer, snooze or decline,
+  // and no picker list for one.
+  it("never asks a member where they are", async () => {
+    const { baseUrl } = await startService();
+    const token = await memberToken(baseUrl, "ada", "Ada Attendee", "member");
+    const res = await fetch(`${baseUrl}/profile/location-prompt`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body).toEqual({ drift: null });
+    expect(
+      (
+        await fetch(`${baseUrl}/profile/location-places`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+      ).status,
+    ).toBe(404);
   });
 
   it("lists everyone worth re-checking for an admin, and refuses a member", async () => {
@@ -3846,7 +4407,7 @@ describe("GET /nudges/escalated", () => {
 
     const privileged = await fetch(`${baseUrl}/nudges/escalated`, { headers: serviceHeaders() });
     expect(privileged.status).toBe(200);
-    await expect(privileged.json()).resolves.toEqual({ members: [] });
+    await expect(privileged.json()).resolves.toEqual({ members: [], total: 0 });
 
     // /notifications is still nobody else's business, service token or not: this route exists
     // because that one deliberately refuses, not as a way around it.
@@ -3996,7 +4557,9 @@ describe("lab calendar invite backfill route", () => {
     });
     seedMember(baseUrl, "ada", {
       name: "Ada",
+      member_type: "full",
       email: "ada@cs.toronto.edu",
+      calendar_email: "ada@gmail.com",
       privilege_level: "member",
     });
     await approveClaim(baseUrl, "root", "root@cs.toronto.edu");
@@ -4029,7 +4592,7 @@ describe("lab calendar invite backfill route", () => {
       body: JSON.stringify({ dry_run: false }),
     });
     expect(ran.status).toBe(200);
-    expect(invited).toContain("ada@cs.toronto.edu");
+    expect(invited).toContain("ada@gmail.com");
   });
 });
 
@@ -4078,11 +4641,22 @@ describe("publication mailing list", () => {
     });
     const body = (await preview.json()) as {
       publications: Array<{ id: string }>;
+      excluded: Array<{ id: string; reason: string }>;
+      out_of_range_count: number;
       undated_count: number;
       subject: string;
     };
     expect(body.publications.map((entry) => entry.id)).toEqual(["in-range"]);
     expect(body.undated_count).toBe(3);
+    // The undated papers are listed by name; the one outside the range is only counted, since the
+    // tab never lists those and they grow with every paper the lab has written.
+    expect(body.excluded.map((entry) => entry.id).toSorted()).toEqual([
+      "accepted",
+      "aimed",
+      "undated",
+    ]);
+    expect(body.excluded[0]).not.toHaveProperty("date");
+    expect(body.out_of_range_count).toBe(1);
     // Read-only: a preview must never be the thing that sends.
     expect(sent).toEqual([]);
 
@@ -4216,5 +4790,199 @@ describe("publication mailing list", () => {
     // very different statement from "we have no record of that venue".
     expect(missing.status).toBe(404);
     expect(sent).toEqual([]);
+  });
+});
+
+describe("POST /profile/device-location", () => {
+  // A two-row GeoNames extract (tab-separated, the columns the reader uses), written to a temp
+  // directory so the server's own loader reads it. Synthetic; nothing is downloaded.
+  const geonamesRow = (name: string, lat: number, lon: number, admin1: string, pop: number) => {
+    const cols = Array.from({ length: 19 }, () => "");
+    Object.assign(cols, { 1: name, 2: name, 4: String(lat), 5: String(lon), 6: "P", 7: "PPL" });
+    Object.assign(cols, { 8: "IT", 10: admin1, 14: String(pop) });
+    return cols.join("\t");
+  };
+  const dirs: string[] = [];
+  afterEach(async () => {
+    for (const dir of dirs.splice(0)) {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  async function start(): Promise<string> {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "adminbot-geonames-"));
+    dirs.push(dir);
+    await writeFile(
+      path.join(dir, "cities1000.txt"),
+      [
+        geonamesRow("Reggio Emilia", 44.698, 10.631, "05", 140_000),
+        geonamesRow("Rome", 41.892, 12.511, "07", 2_300_000),
+      ].join("\n"),
+    );
+    await writeFile(
+      path.join(dir, "admin1CodesASCII.txt"),
+      "IT.05\tEmilia-Romagna\tEmilia-Romagna\t1\nIT.07\tLazio\tLazio\t2\n",
+    );
+    const { baseUrl } = await startService({ geonamesDir: dir });
+    return baseUrl;
+  }
+
+  async function signedIn(baseUrl: string, id: string, profile: Record<string, unknown> = {}) {
+    seedMember(baseUrl, id, { name: `${id} Example`, email: `${id}@cs.toronto.edu`, ...profile });
+    await approveClaim(baseUrl, id, `${id}@cs.toronto.edu`);
+    return await loginToken(baseUrl, `${id}@cs.toronto.edu`);
+  }
+
+  const share = (baseUrl: string, token: string, body: unknown) =>
+    fetch(`${baseUrl}/profile/device-location`, {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: `Bearer ${token}` }),
+      body: JSON.stringify(body),
+    });
+
+  it("keeps the city, region and country, and never stores, logs or returns the position", async () => {
+    const baseUrl = await start();
+    const token = await signedIn(baseUrl, "ada");
+    const logs = [
+      vi.spyOn(console, "log"),
+      vi.spyOn(console, "info"),
+      vi.spyOn(console, "warn"),
+      vi.spyOn(console, "error"),
+    ];
+    try {
+      const res = await share(baseUrl, token, { lat: 44.70123, lon: 10.62987 });
+      expect(res.status).toBe(200);
+      const text = await res.text();
+      expect(JSON.parse(text)).toMatchObject({
+        recorded: true,
+        city: "Reggio Emilia",
+        region: "Emilia-Romagna",
+        country: "IT",
+      });
+      expect(text).not.toMatch(/44\.70|10\.62/u);
+      const member = mockFor(baseUrl).store.getLabMember("ada")!;
+      expect(member).toMatchObject({
+        device_city: "Reggio Emilia",
+        device_region: "Emilia-Romagna",
+        device_country: "IT",
+      });
+      expect(JSON.stringify(member)).not.toMatch(/44\.70|10\.62/u);
+      expect(Object.keys(member).filter((key) => /lat|lon|coord/u.test(key))).toEqual([]);
+      // Logged in the location history too, at the same grain: the city and no position.
+      const history = mockFor(baseUrl).store.listMemberLocations("ada");
+      expect(history.filter((entry) => entry.source === "device")).toMatchObject([
+        { place_label: "Reggio Emilia", raw: "Reggio Emilia, Emilia-Romagna, Italy" },
+      ]);
+      expect(JSON.stringify(history)).not.toMatch(/44\.70|10\.62/u);
+      for (const spy of logs) {
+        expect(JSON.stringify(spy.mock.calls)).not.toMatch(/44\.70|10\.62/u);
+      }
+    } finally {
+      for (const spy of logs) {
+        spy.mockRestore();
+      }
+    }
+  });
+
+  it("writes once a day for the same city, and at once when the city changes", async () => {
+    const baseUrl = await start();
+    const token = await signedIn(baseUrl, "ada");
+    const first = (await (await share(baseUrl, token, { lat: 44.7, lon: 10.63 })).json()) as {
+      located_at: string;
+    };
+    const again = await (await share(baseUrl, token, { lat: 44.69, lon: 10.64 })).json();
+    expect(again).toMatchObject({ recorded: false, city: "Reggio Emilia" });
+    expect((again as { located_at: string }).located_at).toBe(first.located_at);
+    const moved = await (await share(baseUrl, token, { lat: 41.9, lon: 12.5 })).json();
+    expect(moved).toMatchObject({ recorded: true, city: "Rome", region: "Lazio" });
+  });
+
+  it("discards the position of a member who chose to stay off the map or typed their city", async () => {
+    const baseUrl = await start();
+    for (const visibility of ["hidden", "stated"] as const) {
+      const token = await signedIn(baseUrl, `m${visibility}`);
+      const store = mockFor(baseUrl).store;
+      store.saveLabMember({
+        ...store.getLabMember(`m${visibility}`)!,
+        map_visibility: visibility,
+      });
+      const res = await share(baseUrl, token, { lat: 44.7, lon: 10.63 });
+      await expect(res.json()).resolves.toEqual({ recorded: false, skipped: "visibility" });
+      expect(store.getLabMember(`m${visibility}`)?.device_city).toBeUndefined();
+    }
+  });
+
+  it("refuses bad input, the service token, nobody, and an admin viewing as the member", async () => {
+    const baseUrl = await start();
+    const token = await signedIn(baseUrl, "ada");
+    expect((await share(baseUrl, token, { lat: "44.7", lon: 10.63 })).status).toBe(400);
+    expect((await share(baseUrl, token, { lat: 91, lon: 10.63 })).status).toBe(400);
+    const anonymous = await fetch(`${baseUrl}/profile/device-location`, {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({ lat: 44.7, lon: 10.63 }),
+    });
+    expect(anonymous.status).toBe(401);
+    const service = await fetch(`${baseUrl}/profile/device-location`, {
+      method: "POST",
+      headers: serviceHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ lat: 44.7, lon: 10.63 }),
+    });
+    expect([401, 403]).toContain(service.status);
+    const adminToken = await signedIn(baseUrl, "root", { privilege_level: "admin" });
+    const viewing = await fetch(`${baseUrl}/auth/impersonate`, {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: `Bearer ${adminToken}` }),
+      body: JSON.stringify({ member_id: "ada" }),
+    });
+    const viewToken = ((await viewing.json()) as { session_token: string }).session_token;
+    expect((await share(baseUrl, viewToken, { lat: 44.7, lon: 10.63 })).status).toBe(403);
+    expect(mockFor(baseUrl).store.getLabMember("ada")?.device_city).toBeUndefined();
+  });
+
+  it("records the browser's answer to the prompt, but not for nobody or under view-as", async () => {
+    const { baseUrl } = await startService();
+    const token = await signedIn(baseUrl, "ada");
+    const answer = (bearer: string | undefined, state: unknown) =>
+      fetch(`${baseUrl}/profile/location-permission`, {
+        method: "POST",
+        headers: jsonHeaders(bearer ? { Authorization: `Bearer ${bearer}` } : {}),
+        body: JSON.stringify({ state }),
+      });
+    const res = await answer(token, "denied");
+    expect(res.status).toBe(200);
+    // The member is told nothing, and never sees the answer on their own record.
+    await expect(res.json()).resolves.toEqual({});
+    expect(mockFor(baseUrl).store.getLabMember("ada")?.location_permission).toBe("denied");
+    const session = await fetch(`${baseUrl}/auth/session`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(session.status).toBe(200);
+    expect(await session.text()).not.toContain("location_permission");
+    const profile = await fetch(`${baseUrl}/lab/members/ada/detail`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(profile.status).toBe(200);
+    const own = await profile.text();
+    expect(own).toContain("ada@cs.toronto.edu");
+    expect(own).not.toContain("location_permission");
+    expect((await answer(token, "maybe")).status).toBe(400);
+    expect((await answer(undefined, "granted")).status).toBe(401);
+    const adminToken = await signedIn(baseUrl, "root", { privilege_level: "admin" });
+    const viewing = await fetch(`${baseUrl}/auth/impersonate`, {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: `Bearer ${adminToken}` }),
+      body: JSON.stringify({ member_id: "ada" }),
+    });
+    const viewToken = ((await viewing.json()) as { session_token: string }).session_token;
+    expect((await answer(viewToken, "granted")).status).toBe(403);
+    expect(mockFor(baseUrl).store.getLabMember("ada")?.location_permission).toBe("denied");
+  });
+
+  it("says nothing was placed when the GeoNames files are not installed", async () => {
+    const { baseUrl } = await startService();
+    const token = await signedIn(baseUrl, "ada");
+    const res = await share(baseUrl, token, { lat: 44.7, lon: 10.63 });
+    await expect(res.json()).resolves.toEqual({ recorded: false, skipped: "unavailable" });
   });
 });

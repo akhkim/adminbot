@@ -4,11 +4,26 @@ export const paperFeedbackSlots = {
   feedback_arxiv: "arXiv feedback",
   feedback_camera_ready: "Camera-ready feedback",
 } as const;
+
+/**
+ * Whether a slot is a feedback request rather than a piece of evidence.
+ *
+ * These live in the slot registry for storage only. Their value is a JSON request that just the
+ * feedback form builds, so any view that draws every slot as a generic field has to leave them out:
+ * a text box there autosaves something the service rejects, and a link cell writes `url`, which
+ * the feedback kind ignores and clears the slot over.
+ */
+export function isPaperFeedbackSlot(slot: string): slot is keyof typeof paperFeedbackSlots {
+  return Object.hasOwn(paperFeedbackSlots, slot);
+}
+
 export type PaperFeedback = {
   reason: string;
   url: string;
   soft_deadline?: string;
   hard_deadline?: string;
+  reviewed?: boolean;
+  review_note?: string;
 };
 export function parsePaperFeedback(value: string): PaperFeedback | null {
   try {
@@ -19,6 +34,13 @@ export function parsePaperFeedback(value: string): PaperFeedback | null {
       !data.reason.trim() ||
       data.reason.length > 2000 ||
       typeof data.url !== "string"
+    ) {
+      return null;
+    }
+    if (
+      (data.reviewed !== undefined && typeof data.reviewed !== "boolean") ||
+      (data.review_note !== undefined &&
+        (typeof data.review_note !== "string" || data.review_note.length > 4000))
     ) {
       return null;
     }
@@ -45,6 +67,8 @@ export function parsePaperFeedback(value: string): PaperFeedback | null {
     }
     return {
       reason: data.reason.trim(),
+      ...(data.reviewed !== undefined ? { reviewed: data.reviewed } : {}),
+      ...(data.review_note !== undefined ? { review_note: data.review_note.trim() } : {}),
       url: url.href,
       ...(data.soft_deadline ? { soft_deadline: new Date(data.soft_deadline).toISOString() } : {}),
       ...(data.hard_deadline ? { hard_deadline: new Date(data.hard_deadline).toISOString() } : {}),

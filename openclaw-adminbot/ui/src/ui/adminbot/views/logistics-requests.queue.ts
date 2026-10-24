@@ -8,14 +8,17 @@
 // writes are returning the signed file and answering, and both belong to the lab.
 import { html, nothing } from "lit";
 import { t } from "../../../i18n/index.ts";
-import type { LogisticsRequest, LogisticsRequestStatus } from "../auth/session.ts";
+import type { LogisticsRequest, LogisticsRequestStatus } from "../api/logistics.ts";
+import type { RecLetterEligibilitySummary } from "../api/rec-letter-eligibility.ts";
 import {
   logisticsDeadlineText,
   selectLogisticsQueue,
   type LogisticsQueueOptions,
 } from "../data/logistics-queue.ts";
 import { isSettledRequest } from "../data/logistics-requests.ts";
+import { renderLoadMore, type LoadMoreProps } from "../load-more.ts";
 import { logisticsStatusLabel } from "./logistics-status.ts";
+import { renderRecLetterBadge } from "./rec-letter-eligibility.ts";
 
 export type AdminBotLogisticsQueueProps = {
   requests: LogisticsRequest[];
@@ -23,6 +26,8 @@ export type AdminBotLogisticsQueueProps = {
   onOptionsChange: (patch: Partial<LogisticsQueueOptions>) => void;
   loading: boolean;
   error: string | null;
+  /** The next page of the same filter and sort, cut on the service. */
+  more?: LoadMoreProps;
   /** Outstanding only, or everything the lab has ever been sent. */
   showSettled: boolean;
   onShowSettledChange: (showSettled: boolean) => void;
@@ -33,6 +38,8 @@ export type AdminBotLogisticsQueueProps = {
   onSignedNoteChange: (note: string) => void;
   onOpenRequest: (requestId: string) => void;
   onSetStatus: (requestId: string, status: LogisticsRequestStatus) => void;
+  /** Letter-eligibility badges by member id; advisory, and absent until each one has been read. */
+  eligibility?: Record<string, RecLetterEligibilitySummary>;
 };
 
 function formatInstant(instant: string | undefined): string {
@@ -138,6 +145,9 @@ function renderRow(props: AdminBotLogisticsQueueProps, request: LogisticsRequest
         >
           ${request.member_name}
         </button>
+        ${request.kind === "recommendation_letters"
+          ? renderRecLetterBadge(props.eligibility?.[request.member_id])
+          : nothing}
       </td>
       <td class="logistics-queue__cell ab-num">
         ${deadline
@@ -262,7 +272,7 @@ export function renderAdminBotLogisticsQueue(props: AdminBotLogisticsQueueProps)
       ${props.error
         ? html`<p class="logistics-requests__error" role="alert">${props.error}</p>`
         : nothing}
-      ${props.loading
+      ${props.loading && !rows.length
         ? html`<p class="logistics-requests__empty">${t("logistics.requests.loading")}</p>`
         : rows.length
           ? html`
@@ -315,6 +325,7 @@ export function renderAdminBotLogisticsQueue(props: AdminBotLogisticsQueueProps)
                   </tbody>
                 </table>
               </div>
+              ${renderLoadMore(props.more, "logistics-queue-more")}
             `
           : html`<p class="logistics-requests__empty">
               ${filtered

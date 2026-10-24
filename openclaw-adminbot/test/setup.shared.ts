@@ -41,6 +41,9 @@ vi.mock("@mariozechner/clipboard", () => ({
 
 // Ensure Vitest environment is properly set.
 process.env.VITEST = "true";
+// A member save in a test can become a DCS roster row, and the arm that writes it shells out to
+// gog. A box whose environment names the real sheet must not have its tests append to it.
+delete process.env.ADMINBOT_DCS_ROSTER_SHEET_ID;
 // Tests frequently point bundled plugin discovery at temp fixture roots. Production still rejects
 // arbitrary OPENCLAW_BUNDLED_PLUGINS_DIR overrides unless this Vitest-only opt-in is present.
 process.env.OPENCLAW_TEST_TRUST_BUNDLED_PLUGINS_DIR ??= "1";

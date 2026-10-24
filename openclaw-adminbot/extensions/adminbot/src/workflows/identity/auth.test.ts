@@ -44,6 +44,7 @@ function setup(
       expiresInMinutes: number;
     }) => Promise<void>;
     sendAccountApprovedEmail?: (params: { email: string; name?: string }) => Promise<void>;
+    afterLoginLocated?: (memberId: string) => void;
   } = {},
 ) {
   const store = new AdminBotMemoryStore();
@@ -61,6 +62,7 @@ function setup(
     ...(options.gatewayUrl === null ? {} : { gatewayUrl: options.gatewayUrl ?? GATEWAY_URL }),
     ...(options.now ? { now: options.now } : {}),
     ...(options.geolocateIp ? { geolocateIp: options.geolocateIp } : {}),
+    ...(options.afterLoginLocated ? { afterLoginLocated: options.afterLoginLocated } : {}),
     ...(options.sendPasswordResetEmail
       ? { sendPasswordResetEmail: options.sendPasswordResetEmail }
       : {}),
@@ -847,6 +849,60 @@ describe("AdminBotAuthService claim/login flow", () => {
     expect(updated?.last_login_country).toBe("Switzerland");
     expect(updated?.last_login_continent).toBe("Europe");
     expect(updated?.last_login_at).toBeTruthy();
+  });
+
+  // The merge patch keeps keys it is not given, so a country-only sign-in has to clear the city
+  // explicitly -- otherwise last week's city rides along with today's `last_login_at`.
+  it("stamps city and region together, and clears both when a sign-in locates only a country", async () => {
+    const geolocateIp = vi
+      .fn()
+      .mockResolvedValueOnce({ country: "CA", continent: "NA", city: "London", region: "Ontario" })
+      .mockResolvedValueOnce({ country: "GB", continent: "EU" });
+    const { store, auth } = setup({ geolocateIp });
+    await claimAndApprove(store, auth, "ada", "ada@example.com");
+
+    await auth.login({ email: "ada@example.com", password: "correcthorse", remoteIp: "8.8.8.8" });
+    await vi.waitFor(() => expect(store.getLabMember("ada")?.last_login_city).toBe("London"));
+    expect(store.getLabMember("ada")?.last_login_region).toBe("Ontario");
+
+    await auth.login({ email: "ada@example.com", password: "correcthorse", remoteIp: "9.9.9.9" });
+    await vi.waitFor(() => expect(store.getLabMember("ada")?.last_login_country).toBe("GB"));
+    expect(store.getLabMember("ada")?.last_login_city ?? "").toBe("");
+    expect(store.getLabMember("ada")?.last_login_region ?? "").toBe("");
+  });
+
+  it("tells the meetup hook who was located to a city, and nothing else", async () => {
+    // A mocked geolocator: no real IPinfo call.
+    const geolocateIp = vi.fn(async (ip: string) =>
+      ip === "8.8.8.8"
+        ? { country: "United States", city: "San Francisco", timezone: "America/Los_Angeles" }
+        : { country: "United States" },
+    );
+    const afterLoginLocated = vi.fn();
+    const { store, auth } = setup({ geolocateIp, afterLoginLocated });
+    await claimAndApprove(store, auth, "ada", "ada@example.com");
+
+    await auth.login({ email: "ada@example.com", password: "correcthorse", remoteIp: "8.8.4.4" });
+    await vi.waitFor(() => expect(store.getLabMember("ada")?.last_login_country).toBeTruthy());
+    // A country alone places nobody in a city: no meetup work.
+    expect(afterLoginLocated).not.toHaveBeenCalled();
+
+    // A city with no clock to check it against starts nothing either.
+    await auth.login({ email: "ada@example.com", password: "correcthorse", remoteIp: "8.8.8.8" });
+    await vi.waitFor(() =>
+      expect(store.getLabMember("ada")?.last_login_city).toBe("San Francisco"),
+    );
+    expect(afterLoginLocated).not.toHaveBeenCalled();
+
+    // The same city, with a device clock that agrees with it.
+    await auth.login({
+      email: "ada@example.com",
+      password: "correcthorse",
+      remoteIp: "8.8.8.8",
+      device: { tz: "America/Los_Angeles", offsetMinutes: -420 },
+    });
+    await vi.waitFor(() => expect(afterLoginLocated).toHaveBeenCalledTimes(1));
+    expect(afterLoginLocated).toHaveBeenCalledWith("ada");
   });
 
   it("stamps the login observation's collection time in the zone the IP resolved to", async () => {
@@ -1835,7 +1891,9 @@ describe("lab calendar invite backfill", () => {
   ) {
     store.saveLabMember({
       ...member(id, `${id}@cs.toronto.edu`),
+      correspondence_email: `${id}@gmail.com`,
       privilege_level: "member",
+      member_type: "full",
       ...overrides,
     });
   }
@@ -1863,7 +1921,7 @@ describe("lab calendar invite backfill", () => {
     if (!result.ok) {
       throw new Error(result.error.message);
     }
-    expect(invites).toEqual(["ada@cs.toronto.edu"]);
+    expect(invites).toEqual(["ada@gmail.com"]);
     expect(result.payload.granted).toHaveLength(1);
     const sent = store
       .listAuditEvents()
@@ -1885,14 +1943,14 @@ describe("lab calendar invite backfill", () => {
       timestamp: "2026-08-01T00:00:00.000Z",
       type: "auth.calendar_invite_sent",
       actor: "root",
-      details: { member_id: "ada" },
+      details: { member_id: "ada", email: "ada@gmail.com" },
     });
     const result = await auth.backfillLabCalendarInvites({ actorId: "root", dryRun: false });
     if (!result.ok) {
       throw new Error(result.error.message);
     }
     // The ACL write is idempotent; the mail Google sends on it is not.
-    expect(invites).toEqual(["grace@cs.toronto.edu"]);
+    expect(invites).toEqual(["grace@gmail.com"]);
     expect(result.payload.already_invited).toBe(1);
   });
 
@@ -1900,15 +1958,15 @@ describe("lab calendar invite backfill", () => {
     const invites: string[] = [];
     const { store, auth } = labWith(invites);
     seed(store, "ada");
-    seed(store, "ext", { privilege_level: "external_collaborator" });
-    seed(store, "gone", { status: "alumni" });
+    seed(store, "ext", { privilege_level: "external_collaborator", member_type: "coauthor-minor" });
+    seed(store, "gone", { status: "alumni", member_type: "alumni" });
     const result = await auth.backfillLabCalendarInvites({ actorId: "root", dryRun: false });
     if (!result.ok) {
       throw new Error(result.error.message);
     }
     // Same predicate the standing-invite sweep uses, so "who is on the lab calendar" keeps one
     // answer rather than gaining a second one here.
-    expect(invites).toEqual(["ada@cs.toronto.edu"]);
+    expect(invites).toEqual(["ada@gmail.com"]);
   });
 
   it("prefers the Google address over the departmental one", async () => {
@@ -1921,6 +1979,34 @@ describe("lab calendar invite backfill", () => {
     expect(invites).toEqual(["ada.personal@gmail.com"]);
   });
 
+  it("re-invites a member whose earlier share went to a different address", async () => {
+    const invites: string[] = [];
+    const { store, auth } = labWith(invites);
+    seed(store, "ada");
+    // The share that never worked: a departmental login is not a Google account.
+    store.recordAudit({
+      id: "aud_old",
+      timestamp: "2026-08-01T00:00:00.000Z",
+      type: "auth.calendar_invite_sent",
+      actor: "root",
+      details: { member_id: "ada", email: "ada@cs.toronto.edu" },
+    });
+    await auth.backfillLabCalendarInvites({ actorId: "root", dryRun: false });
+    expect(invites).toEqual(["ada@gmail.com"]);
+  });
+
+  it("never shares with a departmental login; reports the member as needing a Gmail", async () => {
+    const invites: string[] = [];
+    const { store, auth } = labWith(invites);
+    seed(store, "dept", { correspondence_email: "dept@utoronto.ca" });
+    const result = await auth.backfillLabCalendarInvites({ actorId: "root", dryRun: false });
+    if (!result.ok) {
+      throw new Error(result.error.message);
+    }
+    expect(invites).toEqual([]);
+    expect(result.payload.no_address.map((entry) => entry.id)).toEqual(["dept"]);
+  });
+
   it("reports members with no address instead of inventing one", async () => {
     const invites: string[] = [];
     const { store, auth } = labWith(invites);
@@ -1928,6 +2014,7 @@ describe("lab calendar invite backfill", () => {
     store.saveLabMember({
       ...member("noaddr", ""),
       privilege_level: "member",
+      member_type: "full",
       email: undefined as unknown as string,
     });
     const result = await auth.backfillLabCalendarInvites({ actorId: "root", dryRun: false });
@@ -1935,7 +2022,7 @@ describe("lab calendar invite backfill", () => {
       throw new Error(result.error.message);
     }
     expect(result.payload.no_address.map((entry) => entry.id)).toEqual(["noaddr"]);
-    expect(invites).toEqual(["ada@cs.toronto.edu"]);
+    expect(invites).toEqual(["ada@gmail.com"]);
   });
 
   it("stops after the first failure rather than burning the batch on one broken variable", async () => {

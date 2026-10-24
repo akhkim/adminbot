@@ -7,6 +7,19 @@ import { connectGateway, resolveControlUiClientVersion } from "./app-gateway.ts"
 import type { GatewayHelloOk } from "./gateway.ts";
 import type { ChatQueueItem } from "./ui-types.ts";
 
+const storedMemberSessionMock = vi.hoisted(() =>
+  vi.fn<() => { sessionToken: string; memberId: string; email: string } | null>(() => null),
+);
+const recoverDeviceTokenMock = vi.hoisted(() => vi.fn(async () => false));
+vi.mock("./adminbot/auth/session.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./adminbot/auth/session.ts")>()),
+  loadStoredMemberSession: storedMemberSessionMock,
+}));
+vi.mock("./adminbot/auth/flow.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./adminbot/auth/flow.ts")>()),
+  recoverFromRejectedDeviceToken: recoverDeviceTokenMock,
+}));
+
 const loadChatHistoryMock = vi.hoisted(() => vi.fn(async () => undefined));
 const loadChatComposerSnapshotMock = vi.hoisted(() =>
   vi.fn<(...args: unknown[]) => { draft: string; queue: ChatQueueItem[] } | null>(() => null),
@@ -262,6 +275,8 @@ function emitToolResultEvent(client: GatewayClientMock) {
 
 describe("connectGateway", () => {
   beforeEach(() => {
+    storedMemberSessionMock.mockReset().mockReturnValue(null);
+    recoverDeviceTokenMock.mockReset().mockResolvedValue(false);
     gatewayClientInstances.length = 0;
     loadChatHistoryMock.mockClear();
     loadChatComposerSnapshotMock.mockReset();
@@ -963,6 +978,29 @@ describe("connectGateway", () => {
     expect(host.execApprovalQueue[0]?.id).toBe("approval-1");
   });
 
+  it("re-mints a signed-in member's old device token after a scope upgrade, once", async () => {
+    storedMemberSessionMock.mockReturnValue({
+      sessionToken: "synthetic",
+      memberId: "ada",
+      email: "ada@example.test",
+    });
+    const { host, client } = connectHostGateway();
+    const info = {
+      code: 4008,
+      error: {
+        code: "INVALID_REQUEST",
+        message: "device token scope mismatch",
+        details: { code: ConnectErrorDetailCodes.AUTH_SCOPE_MISMATCH },
+      },
+    };
+    client.emitClose(info);
+    await Promise.resolve();
+    expect(recoverDeviceTokenMock).toHaveBeenCalledTimes(1);
+    client.emitClose(info);
+    expect(recoverDeviceTokenMock).toHaveBeenCalledTimes(1);
+    expect(host.deviceTokenRecoveryAttempted).toBe(true);
+  });
+
   it("maps generic fetch-failed auth errors to actionable token mismatch message", () => {
     const host = createHost();
 
@@ -1242,14 +1280,22 @@ describe("connectGateway", () => {
     await vi.waitFor(() => expect(fetchRealtimeTalkCatalog).toHaveBeenCalledOnce());
   });
 
-  it("falls back from restored unconfigured agent sessions before refreshing chat", async () => {
+  it.each([
+    ["agent:local:main", "agent:main:main", null],
+    ["main", "agent:main:member-ada", "ada"],
+    ["agent:main:main", "agent:main:member-ada", "ada"],
+    ["agent:main:member-other", "agent:main:member-ada", "ada"],
+    ["agent:main:member-ada", "agent:main:member-ada", "ada"],
+    ["agent:main:dashboard:owned-chat", "agent:main:dashboard:owned-chat", "ada"],
+  ] as const)("restores %s", async (savedKey, expectedKey, memberId) => {
     const host = createHost();
     host.tab = "chat";
-    host.sessionKey = "agent:local:main";
+    host.memberId = memberId;
+    host.sessionKey = savedKey;
     host.settings = {
       ...host.settings,
-      sessionKey: "agent:local:main",
-      lastActiveSessionKey: "agent:local:main",
+      sessionKey: savedKey,
+      lastActiveSessionKey: savedKey,
     };
 
     connectGateway(host);
@@ -1286,11 +1332,13 @@ describe("connectGateway", () => {
     } as GatewayHelloOk);
 
     await vi.waitFor(() => {
-      expect(loadChatHistoryMock).toHaveBeenCalledWith(host, { startup: false });
+      expect(loadChatHistoryMock).toHaveBeenCalledWith(host, {
+        startup: savedKey === expectedKey,
+      });
     });
-    expect(host.sessionKey).toBe("agent:main:main");
-    expect(host.settings.sessionKey).toBe("agent:main:main");
-    expect(host.settings.lastActiveSessionKey).toBe("agent:main:main");
+    expect(host.sessionKey).toBe(expectedKey);
+    expect(host.settings.sessionKey).toBe(expectedKey);
+    expect(host.settings.lastActiveSessionKey).toBe(expectedKey);
   });
 
   it("sends queued chat aborts after reconnect before clearing pending state", async () => {

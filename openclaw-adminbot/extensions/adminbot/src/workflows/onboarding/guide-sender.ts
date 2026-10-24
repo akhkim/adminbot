@@ -54,8 +54,6 @@ const GOG_TIMEOUT_MS = 45_000;
  */
 const FULL_MEMBER_TEMPLATE_IDS = new Set(["member", "member_what_to_expect"]);
 
-const DCS_ROSTER_TEMPLATE_ID = "member";
-
 /**
  * The mail whose Slack Connect invitation travels separately, and the template that carries it.
  *
@@ -95,16 +93,15 @@ export type AdminBotOnboardingSendRequest = {
   values?: Record<string, string | undefined>;
   slack_channel_id?: string;
   /**
-   * Also file this person's row on the DCS roster sheet, and mail them the credentials it carries.
+   * Also file this person's row on the DCS roster sheet, positionally and with a generated
+   * password, and mail them the credentials it carries.
    *
-   * Defaults to on for the full-member guide and off for every other template: that mail is what
-   * starts a new member's CS account, and its own copy tells the reader an account request is
-   * coming. This used to fire on registration approval instead, which was the wrong moment --
-   * by then the member has an address and the request has already been made.
-   *
-   * Still a flag rather than a rule, because a re-send is not a second request: an operator
-   * resending the guide to someone who already has an account unticks it. Leaving it ticked would
-   * file a second row, asking for a second account under a second password.
+   * Off unless asked for. The row is filed by the role change now -- `dcs_roster.add_row`, whenever
+   * somebody becomes a full member or a major coauthor (api/server.member-type-change.ts) -- which
+   * reaches everyone this guide reaches and the major coauthors it never did. Defaulting this on
+   * as well would ask the department for every new full member twice. The sheet has also dropped
+   * its `dcs_password` column, so this path refuses on the header check until somebody puts one
+   * back; it stays for that case, not as the normal filing.
    */
   add_dcs_roster_row?: boolean;
   /** Compose and provision nothing; used by the tab's preview. */
@@ -791,7 +788,7 @@ export function createAdminBotOnboardingSender(
     let dcsRosterRow:
       | { added: boolean; username?: string; candidates?: string[]; error?: string }
       | undefined;
-    const wantsDcsRosterRow = request.add_dcs_roster_row ?? template.id === DCS_ROSTER_TEMPLATE_ID;
+    const wantsDcsRosterRow = request.add_dcs_roster_row === true;
     if (wantsDcsRosterRow) {
       if (!options.addDcsRosterRow) {
         dcsRosterRow = { added: false, error: "the DCS roster sheet is not configured" };

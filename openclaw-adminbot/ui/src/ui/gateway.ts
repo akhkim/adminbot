@@ -193,19 +193,16 @@ const CONTROL_UI_OPERATOR_ROLE = "operator";
 export const CONTROL_UI_OPERATOR_SCOPES = [
   "operator.admin",
   "operator.read",
+  "operator.chat",
   "operator.write",
   "operator.approvals",
   "operator.pairing",
 ] as const;
 
-// Operator scopes the Control-UI requests when pairing a member's device. Must mirror the
-// AdminBot service's allowedGatewayScopesForPrivilege: with device auth ON, the service caps the
-// approved scopes at the member's privilege and rejects (does not narrow) an over-request, so
-// requesting more than the member is allowed would leave them unable to pair. Plain members get
-// read only — which is what denies them operator.write (and therefore tools.invoke) at the gateway.
+// Mirrors the service ceiling: members may read and chat, but cannot invoke privileged tools.
 export function resolveMemberOperatorScopes(privilegeLevel: string | null | undefined): string[] {
   const privileged = privilegeLevel === "admin";
-  return privileged ? [...CONTROL_UI_OPERATOR_SCOPES] : ["operator.read"];
+  return privileged ? [...CONTROL_UI_OPERATOR_SCOPES] : ["operator.read", "operator.chat"];
 }
 
 // True when `next` grants an operator scope `previous` did not. The Control-UI resolves connect
@@ -295,7 +292,7 @@ export type GatewayBrowserClientOptions = {
   onConnectTiming?: (timing: GatewayConnectTiming) => void;
   // Operator scopes to request when initiating device pairing / connect. Defaults to the full
   // Control-UI set; app-gateway narrows this to the signed-in member's privilege so a plain member
-  // pairs a read-only device. See resolveMemberOperatorScopes.
+  // pairs a member device without privileged tool access. See resolveMemberOperatorScopes.
   operatorScopes?: readonly string[];
 };
 

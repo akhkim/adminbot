@@ -29,7 +29,7 @@ import {
   type AdminBotExternalCollaboratorSubgroup,
   type AdminBotLabMember,
 } from "../../contracts/actions.js";
-import { templateForMemberType } from "../onboarding/member-type-template.js";
+import { dcsRosterRoleOf } from "../onboarding/dcs-roster-entry.js";
 import {
   type AdminBotCollaboratorAccessItemId,
   type AdminBotCollaboratorGrantedCell,
@@ -465,12 +465,11 @@ const BASELINE_ITEMS = [
   {
     id: "baseline_dcs_roster_row" as const,
     label: "DCS roster sheet row",
-    // Filed by one onboarding template -- the full-member one (DCS_ROSTER_TEMPLATE_ID = "member").
-    // Every other member type's onboarding never files it.
-    applies: (member: AdminBotLabMember) => {
-      const template = templateForMemberType(member.member_type);
-      return template.ok ? template.templateId === "member" : undefined;
-    },
+    // Filed when somebody becomes a full member or a major coauthor (`dcs_roster.add_row`), by
+    // the same rule that files it: alumni are owed none whatever their type still says. A blank
+    // type is unknown rather than "not owed", as it is for the other baseline rows.
+    applies: (member: AdminBotLabMember) =>
+      dcsRosterRoleOf(member) !== undefined ? true : member.member_type?.trim() ? false : undefined,
     check: attemptCheck((evidence) => evidence.dcs_roster_row, "DCS roster row filing"),
   },
   {

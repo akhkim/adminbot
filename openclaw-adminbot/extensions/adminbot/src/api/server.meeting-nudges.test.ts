@@ -8,6 +8,7 @@ import { rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { withCompleteProfile } from "../contracts/profile-completion.test-helpers.js";
 import { createAdminBotMockService } from "./server.js";
 
 const SERVICE_TOKEN = "test-service-token";
@@ -74,12 +75,14 @@ async function startLab(): Promise<Lab> {
     ["grace", "member"],
     ["zhijing", "admin"],
   ] as const) {
-    const seeded = mock.service.upsertLabMember({
-      id,
-      name: id,
-      email: `${id}@cs.toronto.edu`,
-      privilege_level: privilege,
-    });
+    const seeded = mock.service.upsertLabMember(
+      withCompleteProfile({
+        id,
+        name: id,
+        email: `${id}@cs.toronto.edu`,
+        privilege_level: privilege,
+      }),
+    );
     if (!seeded.ok) {
       throw new Error(seeded.error.message);
     }
@@ -155,6 +158,47 @@ describe("GET/POST /meetings/attendance-nudges", () => {
     // cannot happen narrows the audience rather than failing the route.
     expect(body.absent).toEqual([]);
     expect(body.invite_resolved).toBe(false);
+  });
+
+  it("names the streak once rather than repeating it on every absent row", async () => {
+    const lab = await startLab();
+    const service = running.at(-1)?.mock.service;
+    expect(
+      service?.upsertLabMember({
+        id: "grace",
+        name: "grace",
+        email: "grace@cs.toronto.edu",
+        privilege_level: "member",
+        member_type: "full",
+      }).ok,
+    ).toBe(true);
+    for (const [id, started_at] of [
+      ["gm-1", "2026-09-01T15:00:00.000Z"],
+      ["gm-2", "2026-09-08T15:00:00.000Z"],
+    ] as const) {
+      const filed = service?.upsertMeeting({
+        id,
+        topic: `Group meeting ${id}`,
+        started_at,
+        duration_minutes: 60,
+        recording: { share_url: `https://zoom.example/rec/${id}` },
+        attendees: [{ display_name: "A guest", source: "manual", present: true }],
+        source: "manual",
+      });
+      expect(filed?.ok).toBe(true);
+    }
+    const res = await fetch(`${lab.baseUrl}/meetings/attendance-nudges`, {
+      headers: asMember(lab, "zhijing"),
+    });
+    const body = (await res.json()) as {
+      meetings: Array<{ id: string }>;
+      absent: Array<Record<string, unknown>>;
+    };
+    expect(body.meetings.map((meeting) => meeting.id)).toEqual(["gm-2", "gm-1"]);
+    expect(body.absent.length).toBeGreaterThan(0);
+    for (const row of body.absent) {
+      expect(Object.keys(row).toSorted()).toEqual(["member_id", "name", "reason"]);
+    }
   });
 
   it("does not answer other verbs", async () => {

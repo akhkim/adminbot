@@ -57,6 +57,7 @@ import {
   type LabDirectorStatus,
 } from "../contracts/lab-sharing-status.js";
 import type { LabHelpRequest } from "../contracts/lab-sharing.js";
+import type { AdminBotLocationShareRecord } from "../contracts/lab-travel.js";
 import type {
   AdminBotMemberRequest,
   AdminBotMemberRequestStatus,
@@ -76,8 +77,11 @@ import type { AdminBotPaperSlotRecord } from "../contracts/paper-slots.js";
 import type { AdminBotPaperWeeklyUpdate } from "../contracts/paper-weekly-updates.js";
 import type { AdminBotPaperflowEvidenceRecord } from "../contracts/paperflow-stages.js";
 import type { AdminBotPaperMentorRun } from "../contracts/papermentor.js";
+import type { AdminBotRecLetterAttestation } from "../contracts/rec-letter-attestations.js";
+import type { AdminBotRecLetterFreezeIncident } from "../contracts/rec-letter-freezes.js";
 import type { ReferenceScan } from "../contracts/reference-scans.js";
 import type { AdminBotTabVisit } from "../contracts/tab-visits.js";
+import { MemberRenameBlockedError } from "../kernel/member-rename.js";
 import type {
   AdminBotLabMemberSummary,
   AdminBotListPage,
@@ -88,7 +92,7 @@ import type {
   AdminBotSlackConnectInvite,
 } from "../kernel/service.js";
 import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
-import { meetsDurationFloor } from "../workflows/meetings/records.js";
+import { meetingSeriesKey, meetsDurationFloor } from "../workflows/meetings/records.js";
 import { discoverMemoryHelpRequests } from "./lab-sharing-discovery-memory.js";
 
 /** Addresses are matched case-insensitively, as they are in the SQLite store. */
@@ -117,6 +121,15 @@ function compareSqliteText(left: string, right: string): number {
 function comparePageText(left: string, right: string): number {
   return compareSqliteText(left.toLowerCase(), right.toLowerCase());
 }
+
+/** The fields a member-id rename leaves alone: the audit log and the action ledger. */
+const MEMORY_RENAME_HISTORY_FIELDS: ReadonlySet<string> = new Set([
+  "auditEvents",
+  "proposals",
+  "executionResults",
+  "executionResultsByIdempotencyKey",
+  "executionClaims",
+]);
 
 /**
  * A copy of `value` with every string equal to `from` -- as a value or as an object key -- turned
@@ -318,6 +331,8 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   // Keyed by member + entry, matching the SQLite primary key, so both stores dedupe identically.
   private readonly cvChanges = new Map<string, AdminBotCvChangeEvent>();
   private readonly logisticsRequests = new Map<string, AdminBotLogisticsRequest>();
+  private readonly recLetterFreezeIncidents = new Map<string, AdminBotRecLetterFreezeIncident>();
+  private readonly recLetterAttestations = new Map<string, AdminBotRecLetterAttestation>();
   // Append-only, in insertion order. The sqlite store sorts on read; this one relies on the array
   // order being the insertion order, which is the same thing for a store that never updates a row.
   private readonly memberLocations: AdminBotMemberLocationEntry[] = [];
@@ -356,9 +371,14 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     this.proposals.set(proposal.id, proposal);
   }
 
-  listPending(limit?: number): AdminBotStoredProposal[] {
+  listPending(limit?: number, offset = 0): AdminBotStoredProposal[] {
     const max = Number.isFinite(limit) && typeof limit === "number" ? limit : this.proposals.size;
-    return [...this.proposals.values()].filter((entry) => entry.status === "pending").slice(0, max);
+    const pending = [...this.proposals.values()].filter((entry) => entry.status === "pending");
+    return pending.slice(Math.max(0, offset), Math.max(0, offset) + max);
+  }
+
+  countPending(): number {
+    return [...this.proposals.values()].filter((entry) => entry.status === "pending").length;
   }
 
   listProposalsByType(type: AdminBotStoredProposal["type"]): AdminBotStoredProposal[] {
@@ -785,16 +805,29 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   /**
    * The in-memory mirror of the SQLite rename, and generic for the same reason: it walks every
    * collection this store holds rather than a list that would fall behind the next one added. The
-   * audit log is left alone as history. Two passes -- plan everything, then write -- so a collision
-   * throws with nothing changed, as the SQLite transaction rolls back.
+   * audit log and the action ledger are left alone as history (MEMBER_RENAME_HISTORY_TABLES says
+   * why), and an action still open on the member refuses the rename. Two passes -- plan
+   * everything, then write -- so a collision throws with nothing changed, as the SQLite
+   * transaction rolls back.
    */
   renameMemberId(fromMemberId: string, toMemberId: string): Record<string, number> {
+    const fromJson = JSON.stringify(fromMemberId);
+    const open = [...this.proposals.values()]
+      .filter(
+        (proposal) =>
+          (proposal.status === "pending" || proposal.status === "approved") &&
+          JSON.stringify(proposal).includes(fromJson),
+      )
+      .map((proposal) => proposal.id);
+    if (open.length > 0) {
+      throw new MemberRenameBlockedError(open.slice(0, 5));
+    }
     const changed: Record<string, number> = {};
     const fields = this as unknown as Record<string, unknown>;
     const writes: Array<() => void> = [];
     for (const field of Object.keys(fields)) {
       const current = fields[field];
-      if (field === "auditEvents" || typeof current === "function") {
+      if (MEMORY_RENAME_HISTORY_FIELDS.has(field) || typeof current === "function") {
         continue;
       }
       if (current instanceof Map) {
@@ -1013,8 +1046,9 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     return page ? papers.slice(page.offset, page.offset + page.limit) : papers;
   }
 
-  countPapers(q?: string): number {
-    return [...this.papers.values()].filter((paper) => !q || paperMatchesQuery(paper, q)).length;
+  countPapers(filter?: { q?: string; authorMemberId?: string }): number {
+    return this.listPapers(filter && { ...filter, limit: Number.MAX_SAFE_INTEGER, offset: 0 })
+      .length;
   }
 
   deletePaper(paperId: string): boolean {
@@ -1064,9 +1098,13 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     this.socialDrafts.set(record.id, record);
   }
 
-  listSocialDrafts(paperId?: string): AdminBotSocialDraftRecord[] {
+  listSocialDrafts(paperId?: string, draftId?: string): AdminBotSocialDraftRecord[] {
     return [...this.socialDrafts.values()]
-      .filter((draft) => paperId === undefined || draft.paper_id === paperId)
+      .filter(
+        (draft) =>
+          (paperId === undefined || draft.paper_id === paperId) &&
+          (draftId === undefined || draft.id === draftId),
+      )
       .toSorted((left, right) => right.generated_at.localeCompare(left.generated_at));
   }
 
@@ -1102,6 +1140,29 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
           left.conference_key.localeCompare(right.conference_key) ||
           left.member_id.localeCompare(right.member_id),
       );
+  }
+
+  // The Travel tab's location opt-in, mirroring persistence/location-shares.ts: one row per member
+  // who switched it on, deleted outright when they switch it off.
+  private readonly locationShares = new Map<string, AdminBotLocationShareRecord>();
+
+  saveLocationShare(record: AdminBotLocationShareRecord): void {
+    this.locationShares.set(record.member_id, structuredClone(record));
+  }
+
+  getLocationShare(memberId: string): AdminBotLocationShareRecord | undefined {
+    const row = this.locationShares.get(memberId);
+    return row ? structuredClone(row) : undefined;
+  }
+
+  listLocationShares(): AdminBotLocationShareRecord[] {
+    return [...this.locationShares.values()]
+      .map((row) => structuredClone(row))
+      .toSorted((left, right) => left.member_id.localeCompare(right.member_id));
+  }
+
+  deleteLocationShare(memberId: string): boolean {
+    return this.locationShares.delete(memberId);
   }
 
   saveConferenceAttendee(record: AdminBotConferenceAttendeeRecord): void {
@@ -1366,14 +1427,23 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     return [...this.meetings.values()];
   }
 
+  listMeetingHeads(): AdminBotMeetingRecord[] {
+    return [...this.meetings.values()];
+  }
+
   listMeetingsPage(options: {
     limit: number;
     before?: AdminBotMeetingCursor;
     minimumMinutes: number;
+    seriesKey?: string;
   }): AdminBotMeetingRecord[] {
     const timestamp = (meeting: AdminBotMeetingCursor) => Date.parse(meeting.started_at) || 0;
     return [...this.meetings.values()]
       .filter((meeting) => meetsDurationFloor(meeting, options.minimumMinutes))
+      .filter(
+        (meeting) =>
+          options.seriesKey === undefined || meetingSeriesKey(meeting.topic) === options.seriesKey,
+      )
       .filter(
         (meeting) =>
           !options.before ||
@@ -1507,6 +1577,43 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
 
   deleteLogisticsRequest(requestId: string): boolean {
     return this.logisticsRequests.delete(requestId);
+  }
+
+  saveRecLetterFreezeIncident(incident: AdminBotRecLetterFreezeIncident): void {
+    this.recLetterFreezeIncidents.set(incident.id, incident);
+  }
+
+  /** Newest incident first, ties by entry time, matching the sqlite store's ORDER BY. */
+  listRecLetterFreezeIncidents(memberId?: string): AdminBotRecLetterFreezeIncident[] {
+    return [...this.recLetterFreezeIncidents.values()]
+      .filter((incident) => !memberId || incident.member_id === memberId)
+      .toSorted(
+        (left, right) =>
+          right.occurred_on.localeCompare(left.occurred_on) ||
+          right.created_at.localeCompare(left.created_at),
+      );
+  }
+
+  deleteRecLetterFreezeIncident(incidentId: string): boolean {
+    return this.recLetterFreezeIncidents.delete(incidentId);
+  }
+
+  saveRecLetterAttestation(attestation: AdminBotRecLetterAttestation): void {
+    this.recLetterAttestations.set(attestation.id, attestation);
+  }
+
+  /** Newest first, ties by id, matching the sqlite store's ORDER BY. */
+  listRecLetterAttestations(memberId?: string): AdminBotRecLetterAttestation[] {
+    return [...this.recLetterAttestations.values()]
+      .filter((attestation) => !memberId || attestation.member_id === memberId)
+      .toSorted(
+        (left, right) =>
+          right.created_at.localeCompare(left.created_at) || right.id.localeCompare(left.id),
+      );
+  }
+
+  deleteRecLetterAttestation(attestationId: string): boolean {
+    return this.recLetterAttestations.delete(attestationId);
   }
 
   getSettings(): AdminBotSettings | undefined {

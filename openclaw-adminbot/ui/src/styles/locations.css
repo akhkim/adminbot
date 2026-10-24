@@ -193,3 +193,287 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* --- The Travel tab ------------------------------------------------------------------------------
+   Three cards -- conferences, other trips, lab members nearby -- stacked, each a list of rows. The
+   trip rows reuse .adminbot-trips__* above, so a trip reads the same here as it did on Time
+   Availability. */
+
+.lab-travel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.lab-travel__card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.lab-travel__conferences,
+.lab-travel__people,
+.lab-travel__matches {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.lab-travel__conferences {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.lab-travel__conference {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  min-width: 0;
+}
+
+.lab-travel__conference-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.lab-travel__conference-title {
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+/* The member's own answer, so a long list can be scanned for "where am I going". */
+.lab-travel__status {
+  flex: none;
+}
+
+.lab-travel__status--going {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.lab-travel__going,
+.lab-travel__people {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.lab-travel__person {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+}
+
+.lab-travel__person + .lab-travel__person::before {
+  content: "·";
+  color: var(--muted);
+  margin-right: var(--space-1);
+}
+
+.lab-travel__tag {
+  font-size: 0.75em;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
+
+.lab-travel__conference-actions,
+.lab-travel__form-actions,
+.lab-travel__intent {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.lab-travel__form-actions {
+  justify-content: flex-end;
+}
+
+.lab-travel__rsvp {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
+}
+
+.lab-travel__check {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.lab-travel__check small {
+  display: block;
+}
+
+.lab-travel__nights {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--space-3);
+}
+
+.lab-travel__form-error {
+  color: var(--danger);
+  margin-right: auto;
+}
+
+.lab-travel__form-title {
+  grid-column: 1 / -1;
+}
+
+/* A trip that is over stays listed -- it is still a record -- but stops competing with the ones
+   ahead. */
+.lab-travel__past {
+  opacity: 0.6;
+}
+
+.lab-travel__sharing {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.lab-travel__device {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.lab-travel__city {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+
+.lab-travel__groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-3);
+}
+
+.lab-travel__group {
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  min-width: 0;
+}
+
+.lab-travel__group-title {
+  font-weight: 600;
+  margin-bottom: var(--space-2);
+}
+
+.lab-travel__matches {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.lab-travel__match {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.lab-travel__match-name {
+  font-weight: 500;
+}
+
+/* Somebody physically here right now is the answer the tab exists for. */
+.lab-travel__match--live .lab-travel__match-name::before {
+  content: "●";
+  color: var(--ok);
+  margin-right: var(--space-1);
+  font-size: 0.7em;
+  vertical-align: middle;
+}
+
+.paper-cycle__travel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+}
+
+@media (max-width: 600px) {
+  .lab-travel__conference-head {
+    flex-direction: column;
+  }
+
+  .lab-travel__form-actions {
+    justify-content: stretch;
+  }
+
+  .lab-travel__form-actions .btn {
+    flex: 1 1 auto;
+  }
+}
+
+/* The trip and lookup forms: fields side by side where there is room, stacked on a phone. */
+.lab-travel__form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.lab-travel__form .lab-travel__form-actions {
+  grid-column: 1 / -1;
+}
+
+/* An admin's location log for one member, under their schedule: a dated list, newest first. */
+.adminbot-location-log {
+  margin-top: var(--space-4);
+}
+
+.adminbot-location-log__title {
+  margin: 0 0 var(--space-2);
+}
+
+.adminbot-location-log__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: 0.9em;
+}
+
+.adminbot-location-log__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+}
+
+.adminbot-location-log__day {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.adminbot-location-log__source {
+  min-width: 7.5em;
+  font-weight: 500;
+}
+
+.adminbot-location-log__outcome {
+  color: var(--muted);
+}

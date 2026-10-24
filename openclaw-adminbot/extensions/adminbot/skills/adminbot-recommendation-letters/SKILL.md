@@ -34,3 +34,14 @@ days -- one message however many are due, said once per request per deadline. It
 is server-computed from the request log, so there is nothing here to trigger or
 address by hand; see "Recommendation letter deadlines" in
 `docs/tools/adminbot.md`.
+
+## Eligibility is advisory
+
+The request detail shows an eligibility result (`eligible`, `frozen`, `not_yet` or
+`insufficient_data`, shown as "Not enough data yet"): a freeze after a desk rejection for
+hallucinated citations, and five months of 20+ committed hours a week. Attendance is not counted
+yet. A month with no availability row is unknown, not a fail, and an admin may confirm a criterion
+("Hours confirmed by admin"). It never blocks a request, and it is not grounds to refuse to draft a
+letter. Do not quote another member's result, any freeze note or any attestation note, and remember
+its limits: hours are committed rather than logged. See
+`docs/tools/adminbot-rec-letter-eligibility.md`.

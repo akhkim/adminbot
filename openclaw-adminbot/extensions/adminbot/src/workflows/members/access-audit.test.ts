@@ -324,26 +324,29 @@ describe("auditMemberAccess — onboarding side effects apply to who gets them",
   });
 
   it("grades the calendar invite by the access design's standing-invites row", () => {
-    // Own-pace advisees and major coauthors hold the lab calendar and Monday meeting row; a minor
-    // coauthor does not. The audit has to agree with `belongsOnSurface`, which is what the invite
-    // sweep itself asks.
-    for (const type of ["coauthor-major", "own-pace-advisee"]) {
+    // The audit follows the full/major policy used by subscription and Monday invitations.
+    for (const type of ["full", "coauthor-major"]) {
       const row = auditMemberAccess(member({ member_type: type }), evidence());
       expect(finding(row, "baseline_calendar_invite").verdict, type).not.toBe("not_applicable");
     }
-    const minor = auditMemberAccess(member({ member_type: "coauthor-minor" }), evidence());
-    expect(finding(minor, "baseline_calendar_invite").verdict).toBe("not_applicable");
+    for (const type of ["coauthor-minor", "own-pace-advisee"]) {
+      const row = auditMemberAccess(member({ member_type: type }), evidence());
+      expect(finding(row, "baseline_calendar_invite").verdict).toBe("not_applicable");
+    }
   });
 
-  it("asks the DCS roster row only of the template that files it", () => {
-    expect(
-      finding(
-        auditMemberAccess(member({ member_type: "full" }), evidence()),
-        "baseline_dcs_roster_row",
-      ).verdict,
-    ).toBe("pass");
-    // Every other template's onboarding never files the form.
-    for (const type of ["coauthor-major", "coauthor-minor", "alumni", "interviewee"]) {
+  it("asks the DCS roster row of full members and major coauthors only", () => {
+    for (const type of ["full", "coauthor-major", "full, coauthor-major"]) {
+      expect(
+        finding(
+          auditMemberAccess(member({ member_type: type }), evidence()),
+          "baseline_dcs_roster_row",
+        ).verdict,
+        type,
+      ).toBe("pass");
+    }
+    // Nobody else's role files it -- and alumni are owed none even while the type says full.
+    for (const type of ["coauthor-minor", "alumni", "full, alumni", "interviewee"]) {
       expect(
         finding(
           auditMemberAccess(member({ member_type: type }), evidence()),

@@ -16,6 +16,7 @@ import type {
   AdminBotCvSnapshot,
   AdminBotLabMember,
 } from "./contracts/actions.js";
+import { routeLlmFetch } from "./kernel/llm-gateway-client.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -602,7 +603,11 @@ async function extractCvEntries(
   signal?: AbortSignal,
 ): Promise<AdminBotCvEntry[]> {
   const baseUrl = assertLoopbackModelUrl(env);
-  const response = await fetchImpl(new URL("chat/completions", baseUrl), {
+  const response = await routeLlmFetch(
+    fetchImpl,
+    "local",
+    env,
+  )(new URL("chat/completions", baseUrl), {
     method: "POST",
     headers: {
       authorization: `Bearer ${env.VLLM_API_KEY?.trim() || "vllm-local"}`,
@@ -720,7 +725,11 @@ export async function draftMemberBlurb(
         .join(" | "),
     )
     .join("\n");
-  const response = await fetchImpl(new URL("chat/completions", baseUrl), {
+  const response = await routeLlmFetch(
+    fetchImpl,
+    "local",
+    env,
+  )(new URL("chat/completions", baseUrl), {
     method: "POST",
     headers: {
       authorization: `Bearer ${env.VLLM_API_KEY?.trim() || "vllm-local"}`,

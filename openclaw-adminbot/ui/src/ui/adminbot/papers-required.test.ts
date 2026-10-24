@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { needsLabPapers } from "./papers-required.ts";
+import { needsLabPapers, paperScopeForTab, papersReadyFor } from "./papers-required.ts";
 
 describe("page paper dependencies", () => {
   it("keeps Meeting Recordings, Time Availability, and unrelated pages off the full paper read", () => {
@@ -29,5 +29,21 @@ describe("page paper dependencies", () => {
     ]) {
       expect(needsLabPapers(tab)).toBe(true);
     }
+  });
+});
+
+describe("paper scope", () => {
+  it("reads only the viewer's own papers for the Profile and a plain member's Dashboard", () => {
+    expect(paperScopeForTab("profile", "admin")).toBe("own");
+    expect(paperScopeForTab("dashboard", "member")).toBe("own");
+    expect(paperScopeForTab("dashboard", "admin")).toBe("lab");
+    expect(paperScopeForTab("myWork", "member")).toBe("lab");
+  });
+
+  it("lets the lab list satisfy an own page but never the reverse", () => {
+    expect(papersReadyFor({ papersLoadedAt: 1 }, "own")).toBe(true);
+    expect(papersReadyFor({ papersLoadedAt: null, ownPapersLoadedAt: 1 }, "own")).toBe(true);
+    expect(papersReadyFor({ papersLoadedAt: null, ownPapersLoadedAt: 1 }, "lab")).toBe(false);
+    expect(papersReadyFor(undefined, "own")).toBe(false);
   });
 });

@@ -137,7 +137,7 @@ const createHost = (tab: Tab): SettingsHost => ({
     sessionKey: "main",
     lastActiveSessionKey: "main",
     theme: "claw",
-    themeMode: "system",
+    themeMode: "dark",
     chatShowThinking: true,
     chatShowToolCalls: true,
     splitRatio: 0.6,
@@ -148,7 +148,7 @@ const createHost = (tab: Tab): SettingsHost => ({
     textScale: 100,
   },
   theme: "claw" as unknown as ThemeName & ThemeMode,
-  themeMode: "system",
+  themeMode: "dark",
   themeResolved: "dark",
   applySessionKey: "main",
   sessionKey: "main",
@@ -193,6 +193,35 @@ describe("setTabFromRoute", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it("preserves the requested route until the member profile has loaded", () => {
+    const host = Object.assign(createHost("overview"), {
+      connected: false,
+      memberId: "loading-member",
+      memberPrivilegeLevel: "member",
+      adminBotData: { members: [] },
+    });
+    setTestWindowUrl("http://localhost/dashboard");
+    setTabFromRoute(host, "overview");
+    expect(host.tab).toBe("overview");
+    expect(window.location.pathname).toBe("/dashboard");
+  });
+
+  it("redirects incomplete members to My Profile for direct links and permits admins", () => {
+    const host = Object.assign(createHost("overview"), {
+      connected: false,
+      memberId: "incomplete-member",
+      memberPrivilegeLevel: "member",
+      adminBotData: { members: [{ id: "incomplete-member", privilege_level: "member" }] },
+    });
+    setTestWindowUrl("http://localhost/dashboard");
+    setTabFromRoute(host, "overview");
+    expect(host.tab).toBe("profile");
+    expect(window.location.pathname).toBe("/profile");
+    host.memberPrivilegeLevel = "admin";
+    setTabFromRoute(host, "overview");
+    expect(host.tab).toBe("overview");
   });
 
   it("starts and stops log polling based on the tab", () => {
@@ -272,31 +301,23 @@ describe("setTabFromRoute", () => {
     expect(host.themeResolved).toBe("dark");
   });
 
-  it("applies named system themes on OS preference changes", () => {
-    const listeners: Array<(event: MediaQueryListEvent) => void> = [];
+  it("ignores the OS colour scheme, including for a stored system preference", () => {
+    // The system mode was removed; a stored "system" loads as dark, and nothing listens for the
+    // machine changing its mind afterwards.
     const matchMedia = vi.fn().mockReturnValue({
-      matches: false,
-      addEventListener: (_name: string, handler: (event: MediaQueryListEvent) => void) => {
-        listeners.push(handler);
-      },
+      matches: true,
+      addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
     });
     vi.stubGlobal("matchMedia", matchMedia);
-    Object.defineProperty(window, "matchMedia", {
-      configurable: true,
-      value: matchMedia,
-    });
 
     const host = createHost("chat");
     host.settings.theme = "claw";
-    host.settings.themeMode = "system";
+    host.settings.themeMode = "dark";
 
     syncThemeWithSettings(host);
-    listeners[0]?.({ matches: true } as MediaQueryListEvent);
     expect(host.themeResolved).toBe("dark");
-
-    listeners[0]?.({ matches: false } as MediaQueryListEvent);
-    expect(host.themeResolved).toBe("dark");
+    expect(matchMedia).not.toHaveBeenCalled();
   });
 
   it("applies the imported custom theme as dark-mode tokens", () => {

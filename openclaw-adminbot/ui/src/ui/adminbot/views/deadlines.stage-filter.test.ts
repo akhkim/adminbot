@@ -23,3 +23,16 @@ describe("stage selection", () => {
     ).toEqual([{ value: "notification", label: "Decisions" }]);
   });
 });
+
+it("default publication actions skip decisions and past submissions", () => {
+  const stages = [
+    { key: "notification", instant: 6 },
+    { key: "abstract", instant: 3 },
+    { key: "submission", instant: 10 },
+    { key: "commitment", instant: 12 },
+    { key: "conference", instant: 7 },
+  ];
+  expect(chooseStage(stages, "submission_actions", 4, "upcoming")?.key).toBe("submission");
+  expect(chooseStage(stages, "submission_actions", 10, "upcoming")?.key).toBe("commitment");
+  expect(chooseStage(stages, "submission_actions", 12, "upcoming")).toBeUndefined();
+});

@@ -1,3 +1,30 @@
+import { html, nothing } from "lit";
+import { live } from "lit/directives/live.js";
+import { i18n, t } from "../../../i18n/index.ts";
+import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
+import { icons } from "../../icons.ts";
+import type { AdminBotLabMember } from "../controllers/admin.ts";
+import {
+  availabilityRows,
+  deadlineMilestoneRow,
+  hasDeadlineMilestone,
+  milestoneRows,
+  timeOffRows,
+  tripRows,
+  whereBins,
+  type AvailabilityRow,
+  type MilestoneRow,
+  type TimeOffRow,
+  type TripRow,
+} from "../data/availability.ts";
+import {
+  allUpcomingVenues,
+  aoeInstantMs,
+  MS_DAY,
+  upcomingMajorDeadlines,
+  urgencyOf,
+} from "../data/deadline-time.ts";
+import { AOE_TIMEZONE, timezoneOptions } from "../data/timezones.ts";
 // A member's committed time: an hours-per-week chart over a timeline, the commitments behind it,
 // and the dated milestones they are planning back from.
 //
@@ -32,33 +59,11 @@
 // The chart reads in hours per week rather than percent of capacity. Percent needed a declared
 // `hours_per_week` as a denominator, so a member who had not set one got no chart at all; hours are
 // the number they typed in, and capacity becomes a reference line when it is known.
-import { html, nothing } from "lit";
-import { i18n, t } from "../../../i18n/index.ts";
-import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
-import { icons } from "../../icons.ts";
-import type { AdminBotLabMember } from "../controllers/admin.ts";
-import {
-  availabilityRows,
-  deadlineMilestoneRow,
-  hasDeadlineMilestone,
-  milestoneRows,
-  timeOffRows,
-  tripRows,
-  whereBins,
-  type AvailabilityRow,
-  type MilestoneRow,
-  type TimeOffRow,
-  type TripRow,
-} from "../data/availability.ts";
-import {
-  allUpcomingVenues,
-  aoeInstantMs,
-  MS_DAY,
-  upcomingMajorDeadlines,
-  urgencyOf,
-} from "../data/deadline-time.ts";
-import { AOE_TIMEZONE, localTimezone, timezoneOptions } from "../data/timezones.ts";
+import { renderDateControl } from "../date-control.ts";
+import { renderLocationLog } from "./location-log.ts";
 import { renderMemberSelect } from "./member-select.ts";
+import { renderTravelPlans, type TripDraft } from "./time-availability.trip-editor.ts";
+import { renderWhereStrip } from "./time-availability.trips.ts";
 import {
   CHART_COLORS,
   CHART_NEUTRAL_COLOR,
@@ -67,8 +72,7 @@ import {
   type TimeAllocationInterval,
   type TimeAllocationTask as ChartTask,
   type TimeChartWindow,
-} from "./time-allocation-chart.ts";
-import { renderTrips, renderWhereStrip, type TripDraft } from "./time-availability.trips.ts";
+} from "./time-chart.ts";
 
 type TimeAllocationTask = {
   key: string;
@@ -188,19 +192,6 @@ export type TimeAvailabilityDraft = {
   editingIndex: number | null;
 };
 
-export const EMPTY_TIME_AVAILABILITY_DRAFT: TimeAvailabilityDraft = {
-  category: "jinesis",
-  customLabel: "",
-  project: "",
-  start: "",
-  end: "",
-  hoursPerWeek: "",
-  wholeDay: true,
-  note: "",
-  link: "",
-  editingIndex: null,
-};
-
 export type MilestoneDraft = {
   date: string;
   label: string;
@@ -219,16 +210,12 @@ export type MilestoneDraft = {
   timezone: string;
 };
 
-export const EMPTY_MILESTONE_DRAFT: MilestoneDraft = {
-  date: "",
-  label: "",
-  link: "",
-  time: "",
-  // Prefilled with the browser's own zone rather than blank. Someone who types a time almost
-  // always means their own clock, and a zone they have to go and find first is how a field ends up
-  // answered wrong or left empty.
-  timezone: localTimezone(),
-};
+import { EMPTY_TIME_AVAILABILITY_DRAFT } from "./time-availability.drafts.ts";
+
+export {
+  EMPTY_MILESTONE_DRAFT,
+  EMPTY_TIME_AVAILABILITY_DRAFT,
+} from "./time-availability.drafts.ts";
 
 /** Everything the editor may rewrite. An omitted list is left as it is. */
 export type SchedulePatch = {
@@ -261,6 +248,7 @@ export type AdminBotTimeAvailabilityProps = {
   onRefresh?: () => void;
   selectedMemberId: string;
   onMemberChange: (memberId: string) => void;
+  onMemberHighlight?: (memberId: string) => void; // admin picker: read before the pick lands
   range: TimeAvailabilityRange;
   onRangeChange: (range: TimeAvailabilityRange) => void;
   /**
@@ -275,9 +263,11 @@ export type AdminBotTimeAvailabilityProps = {
   viewerMemberId: string | null;
   /** Admins see the roster; members see self and separately authorized collaborator snapshots. */
   viewerIsAdmin: boolean;
-  /** The trips log's draft, kept out here so a re-render cannot wipe half-typed input. */
-  tripDraft?: TripDraft;
-  onTripDraftChange?: (draft: TripDraft) => void;
+  /**
+   * The service, for an admin's location log under the schedule. Absent for a member, and the
+   * panel with it: the route behind it answers admins (and the member themself) only.
+   */
+  locationLogBaseUrl?: string;
   /** The Jinesis-commitment form's draft. Its category is always "jinesis". */
   draft: TimeAvailabilityDraft;
   onDraftChange: (draft: TimeAvailabilityDraft) => void;
@@ -286,6 +276,9 @@ export type AdminBotTimeAvailabilityProps = {
   onAwayDraftChange: (draft: TimeAvailabilityDraft) => void;
   milestoneDraft: MilestoneDraft;
   onMilestoneDraftChange: (draft: MilestoneDraft) => void;
+  /** The trip editor's draft, kept out here so a re-render cannot wipe half-typed input. */
+  tripDraft: TripDraft;
+  onTripDraftChange: (draft: TripDraft) => void;
   /** The overall note while it is being edited; null means "showing what is stored". */
   notesDraft: string | null;
   onNotesDraftChange: (draft: string | null) => void;
@@ -951,11 +944,22 @@ function renderCommitmentForm(form: CommitmentFormProps) {
         ${head({ draft, update, field })}
         <label class="adminbot-form__field">
           <span>${t("adminbotTimeAvailability.startDate")}</span>
-          <input type="date" .value=${draft.start} required @input=${field("start")} />
+          ${renderDateControl(
+            html`<input
+              type="date"
+              .value=${live(draft.start)}
+              required
+              @input=${field("start")}
+            />`,
+            draft.start,
+          )}
         </label>
         <label class="adminbot-form__field">
           <span>${t("adminbotTimeAvailability.endDate")}</span>
-          <input type="date" .value=${draft.end} required @input=${field("end")} />
+          ${renderDateControl(
+            html`<input type="date" .value=${live(draft.end)} required @input=${field("end")} />`,
+            draft.end,
+          )}
         </label>
         <label class="adminbot-form__field">
           <span>${t("adminbotTimeAvailability.form.link")}</span>
@@ -1256,7 +1260,10 @@ function renderMilestoneEditor(props: AdminBotTimeAvailabilityProps, existing: M
       >
         <label class="adminbot-form__field">
           <span>${t("adminbotTimeAvailability.milestones.date")}</span>
-          <input type="date" .value=${draft.date} @input=${field("date")} />
+          ${renderDateControl(
+            html`<input type="date" .value=${live(draft.date)} @input=${field("date")} />`,
+            draft.date,
+          )}
         </label>
         <!-- Time and zone sit together and immediately after the date, because they are one answer
            split across three controls. Both are optional: a thesis deadline is usually a day, and
@@ -1266,7 +1273,7 @@ function renderMilestoneEditor(props: AdminBotTimeAvailabilityProps, existing: M
           <input
             type="time"
             data-testid="time-availability-milestone-time"
-            .value=${draft.time}
+            .value=${live(draft.time)}
             @input=${field("time")}
           />
         </label>
@@ -1680,7 +1687,7 @@ function renderBigDeadlines(
  */
 function revealCommitmentEditor(
   props: AdminBotTimeAvailabilityProps,
-  type: "jinesis" | "away" | "milestone" | "trip",
+  type: "jinesis" | "away" | "milestone",
 ): void {
   props.onActiveCommitmentChange(type);
   requestAnimationFrame(() => {
@@ -1973,8 +1980,7 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
   const emptyOptionLabel = props.loading
     ? t("adminbotTimeAvailability.loadingUsers")
     : t("adminbotTimeAvailability.selectUser");
-  // Whose schedules this viewer may read. An admin plans for the lab, so they get everyone; anyone
-  // else gets self plus the narrow authorized collaborator snapshots.
+  // Readable schedules: an admin plans for the lab; others get self plus authorized snapshots.
   const readableMembers = props.viewerIsAdmin
     ? props.members
     : [
@@ -1993,8 +1999,7 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
   const dismissedDeadlines = (selectedMember?.dismissed_deadlines ?? []).filter(
     (name): name is string => typeof name === "string",
   );
-  // Built from the same bins the bars use, so "where you are" and "what you are committed to" are
-  // divided into the same periods and cannot drift apart when the range switch changes.
+  // The bars' own bins, so "where you are" and "what you are committed to" can never drift apart.
   const whereStrip = whereBins(
     rangeBins(props.range, Date.now()),
     storedTrips,
@@ -2066,6 +2071,7 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
                 label: t("adminbotTimeAvailability.selectUser"),
                 disabled: props.loading || readableMembers.length === 0,
                 onPick: (memberId: string) => props.onMemberChange(memberId),
+                onHighlight: props.onMemberHighlight,
               })}
             </label>`
           : html`<p
@@ -2134,8 +2140,11 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
                       ${renderWhereStrip(whereStrip)}
                     </div>`
                   : html`<div class="adminbot-time-availability__empty">
-                      ${t("adminbotTimeAvailability.noAllocations")}
-                    </div>`}
+                        ${t("adminbotTimeAvailability.noAllocations")}
+                      </div>
+                      <!-- Trips are worth showing with no commitments to chart: where somebody
+                           will be is often what this page is looked up for. -->
+                      ${renderWhereStrip(whereStrip)}`}
                 ${visibleTasks.length
                   ? renderJinesisTable(visibleTasks, storedAvailability, props, editable)
                   : nothing}
@@ -2143,6 +2152,9 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
                   ? renderOtherTable(visibleTimeOff, props, editable)
                   : nothing}
                 ${renderOverallNotes(props, storedNotes, editable)}
+                ${props.viewerIsAdmin && props.locationLogBaseUrl
+                  ? renderLocationLog(selectedMember.id, props.locationLogBaseUrl)
+                  : nothing}
                 ${!hasAnything && !editable
                   ? html`<div class="adminbot-time-availability__empty">
                       ${t("adminbotTimeAvailability.noAllocations")}
@@ -2156,118 +2168,90 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
               ${t("adminbotTimeAvailability.empty")}
             </div>
           `}
-      <!-- The editor stack. Trips render for a reader who cannot edit too, because where somebody
-           will be is the part of their schedule an admin is looking this page up for; the section
-           itself drops its form in that case. The other three are writes and nothing else, so
-           they stay behind the editable check. -->
-      ${editable || storedTrips.length
+      <!-- The editor stack, self only. -->
+      ${editable
         ? html`<div class="adminbot-time-availability__editors">
-            ${editable
+            ${props.activeCommitmentType
               ? html`
-                  ${props.activeCommitmentType
-                    ? html`
-                        <div class="adminbot-time-availability__commitment-picker">
-                          <div class="adminbot-time-availability__commitment-tabs">
-                            <button
-                              type="button"
-                              class="adminbot-time-availability__commitment-tab ${props.activeCommitmentType ===
-                              "jinesis"
-                                ? "adminbot-time-availability__commitment-tab--active"
-                                : ""}"
-                              @click=${() => props.onActiveCommitmentChange("jinesis")}
-                            >
-                              Jinesis Commitment
-                            </button>
-                            <button
-                              type="button"
-                              class="adminbot-time-availability__commitment-tab ${props.activeCommitmentType ===
-                              "away"
-                                ? "adminbot-time-availability__commitment-tab--active"
-                                : ""}"
-                              @click=${() => props.onActiveCommitmentChange("away")}
-                            >
-                              Non-Jinesis Commitment
-                            </button>
-                            <button
-                              type="button"
-                              class="adminbot-time-availability__commitment-tab ${props.activeCommitmentType ===
-                              "milestone"
-                                ? "adminbot-time-availability__commitment-tab--active"
-                                : ""}"
-                              @click=${() => props.onActiveCommitmentChange("milestone")}
-                            >
-                              Big Deadline
-                            </button>
-                            <button
-                              type="button"
-                              class="adminbot-time-availability__commitment-tab ${props.activeCommitmentType ===
-                              "trip"
-                                ? "adminbot-time-availability__commitment-tab--active"
-                                : ""}"
-                              @click=${() => props.onActiveCommitmentChange("trip")}
-                            >
-                              Trip Away
-                            </button>
-                          </div>
-                          <div class="adminbot-time-availability__commitment-form">
-                            ${props.activeCommitmentType === "jinesis"
-                              ? renderJinesisEditor(props, {
-                                  availability: storedAvailability,
-                                  timeOff: storedTimeOff,
+                  <div class="adminbot-time-availability__commitment-picker">
+                    <div class="adminbot-time-availability__commitment-tabs">
+                      <button
+                        type="button"
+                        class="adminbot-time-availability__commitment-tab ${props.activeCommitmentType ===
+                        "jinesis"
+                          ? "adminbot-time-availability__commitment-tab--active"
+                          : ""}"
+                        @click=${() => props.onActiveCommitmentChange("jinesis")}
+                      >
+                        Jinesis Commitment
+                      </button>
+                      <button
+                        type="button"
+                        class="adminbot-time-availability__commitment-tab ${props.activeCommitmentType ===
+                        "away"
+                          ? "adminbot-time-availability__commitment-tab--active"
+                          : ""}"
+                        @click=${() => props.onActiveCommitmentChange("away")}
+                      >
+                        Non-Jinesis Commitment
+                      </button>
+                      <button
+                        type="button"
+                        class="adminbot-time-availability__commitment-tab ${props.activeCommitmentType ===
+                        "milestone"
+                          ? "adminbot-time-availability__commitment-tab--active"
+                          : ""}"
+                        @click=${() => props.onActiveCommitmentChange("milestone")}
+                      >
+                        Big Deadline
+                      </button>
+                      <button
+                        type="button"
+                        class="adminbot-time-availability__commitment-tab ${props.activeCommitmentType ===
+                        "trip"
+                          ? "adminbot-time-availability__commitment-tab--active"
+                          : ""}"
+                        @click=${() => props.onActiveCommitmentChange("trip")}
+                      >
+                        Trip Away
+                      </button>
+                    </div>
+                    <div class="adminbot-time-availability__commitment-form">
+                      ${props.activeCommitmentType === "jinesis"
+                        ? renderJinesisEditor(props, {
+                            availability: storedAvailability,
+                            timeOff: storedTimeOff,
+                          })
+                        : props.activeCommitmentType === "away"
+                          ? renderTimeAwayEditor(props, {
+                              availability: storedAvailability,
+                              timeOff: storedTimeOff,
+                            })
+                          : props.activeCommitmentType === "milestone"
+                            ? renderMilestoneEditor(props, [...storedMilestones])
+                            : props.activeCommitmentType === "trip" && selectedMember
+                              ? renderTravelPlans({
+                                  trips: storedTrips,
+                                  homeLocation: selectedMember.location ?? null,
+                                  draft: props.tripDraft,
+                                  onDraftChange: props.onTripDraftChange,
+                                  saving: props.saving,
+                                  onSave: (trips) =>
+                                    props.onSaveSchedule(selectedMember.id, { trips }),
                                 })
-                              : props.activeCommitmentType === "away"
-                                ? renderTimeAwayEditor(props, {
-                                    availability: storedAvailability,
-                                    timeOff: storedTimeOff,
-                                  })
-                                : props.activeCommitmentType === "milestone"
-                                  ? renderMilestoneEditor(props, [...storedMilestones])
-                                  : props.activeCommitmentType === "trip"
-                                    ? html`
-                                        ${props.tripDraft
-                                          ? renderTrips({
-                                              trips: storedTrips,
-                                              homeLocation: selectedMember?.location ?? null,
-                                              draft: props.tripDraft,
-                                              onDraftChange: (draft) =>
-                                                props.onTripDraftChange?.(draft),
-                                              editable,
-                                              saving: props.saving,
-                                              onSave: (trips) =>
-                                                selectedMember &&
-                                                props.onSaveSchedule(selectedMember.id, {
-                                                  trips,
-                                                }),
-                                            })
-                                          : nothing}
-                                      `
-                                    : nothing}
-                          </div>
-                          <div class="adminbot-time-availability__commitment-actions">
-                            <button
-                              type="button"
-                              class="btn secondary"
-                              @click=${() => props.onActiveCommitmentChange(null)}
-                            >
-                              ${t("adminbotTimeAvailability.form.hide")}
-                            </button>
-                          </div>
-                        </div>
-                      `
-                    : nothing}
+                              : nothing}
+                    </div>
+                    <div class="adminbot-time-availability__commitment-actions">
+                      <button
+                        type="button"
+                        class="btn secondary"
+                        @click=${() => props.onActiveCommitmentChange(null)}
+                      >
+                        ${t("adminbotTimeAvailability.form.hide")}
+                      </button>
+                    </div>
+                  </div>
                 `
-              : nothing}
-            ${!editable && props.tripDraft
-              ? renderTrips({
-                  trips: storedTrips,
-                  homeLocation: selectedMember?.location ?? null,
-                  draft: props.tripDraft,
-                  onDraftChange: (draft) => props.onTripDraftChange?.(draft),
-                  editable,
-                  saving: props.saving,
-                  onSave: (trips) =>
-                    selectedMember && props.onSaveSchedule(selectedMember.id, { trips }),
-                })
               : nothing}
           </div>`
         : nothing}

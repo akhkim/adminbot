@@ -17,8 +17,14 @@ import {
   type LogisticsTemplate,
   type SubmitBlock,
 } from "./logistics.ts";
+import type {
+  RecLetterAdvisoryProps,
+  RecLetterDetailPanelProps,
+} from "./rec-letter-eligibility.ts";
 
 type DrawOptions = {
+  /** Re-render into an existing container, the way the app redraws the form after each save. */
+  container?: HTMLElement;
   /** False draws the Google Form signpost instead of the correction form. */
   signatureEditing?: boolean;
   role?: AccessRole;
@@ -63,6 +69,8 @@ type DrawOptions = {
   lettersSaving?: boolean;
   lettersSavedAt?: number | null;
   lettersSaveError?: string | null;
+  lettersEligibility?: RecLetterAdvisoryProps;
+  eligibilityPanel?: RecLetterDetailPanelProps;
 };
 
 type Drawn = {
@@ -158,8 +166,10 @@ function draw(options: DrawOptions = {}): Drawn {
   let lettersSaves = 0;
   let meetingSaves = 0;
   let myProjectsOpened = 0;
-  const container = document.createElement("div");
-  document.body.append(container);
+  const container = options.container ?? document.createElement("div");
+  if (!options.container) {
+    document.body.append(container);
+  }
   render(
     renderAdminBotLogistics({
       role: options.role ?? "member",
@@ -194,6 +204,7 @@ function draw(options: DrawOptions = {}): Drawn {
         onSetStatus: (id, status, note) => answers.push({ id, status, note }),
         statusNote: options.statusNote ?? "",
         onStatusNoteChange: (next) => noteChanges.push(next),
+        ...(options.eligibilityPanel ? { eligibilityPanel: options.eligibilityPanel } : {}),
       },
       template: options.template ?? "documentSignature",
       signature: {
@@ -255,6 +266,7 @@ function draw(options: DrawOptions = {}): Drawn {
         onCvOverleafUrlChange: (next) => cvOverleafChanges.push(next),
         driveFolderUrl: options.driveFolderUrl ?? "",
         onDriveFolderUrlChange: (next) => driveFolderChanges.push(next),
+        ...(options.lettersEligibility ? { eligibility: options.lettersEligibility } : {}),
         saving: options.lettersSaving ?? false,
         savedAt: options.lettersSavedAt ?? null,
         saveError: options.lettersSaveError ?? null,
@@ -858,6 +870,78 @@ describe("list of schools", () => {
       "AoE (UTC−12) by default",
       "If it is not a regular program, what it looks for.",
     ]);
+  });
+
+  // Chrome's date and time fields lose a half-typed segment when their value is written while the
+  // member is typing. Each keystroke saves and redraws, so a redraw must not write back what the box
+  // already holds -- that write is what turned "14" into "4" and deadlines into the 4th.
+  describe("redrawing while a date is being typed", () => {
+    function watchWrites(input: HTMLInputElement): string[] {
+      const writes: string[] = [];
+      const native = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!;
+      Object.defineProperty(input, "value", {
+        configurable: true,
+        get() {
+          return native.get!.call(this);
+        },
+        set(value: string) {
+          writes.push(value);
+          native.set!.call(this, value);
+        },
+      });
+      return writes;
+    }
+
+    const typed = (input: HTMLInputElement, value: string) =>
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+
+    it("does not write a typed date back into its own box", () => {
+      const row = createSchoolRow({ letterDeadline: "2026-12-14", letterDeadlineTime: "23:59" });
+      const { container } = drawLetters({ schools: [row] });
+      for (const key of ["letterDeadline", "letterDeadlineTime"] as const) {
+        const input = cellInput(container, key)!;
+        const value = key === "letterDeadline" ? "2026-12-01" : "17:00";
+        typed(input, value);
+        const writes = watchWrites(input);
+        drawLetters({ container, schools: [{ ...row, [key]: value }] });
+        expect(writes).toEqual([]);
+        expect(input.value).toBe(value);
+      }
+    });
+
+    it("still shows a different date when the form is restored or reset", () => {
+      const row = createSchoolRow({ letterDeadline: "2026-12-14" });
+      const { container } = drawLetters({ schools: [row] });
+      const input = cellInput(container, "letterDeadline")!;
+      drawLetters({ container, schools: [{ ...row, letterDeadline: "2027-01-15" }] });
+      expect(input.value).toBe("2027-01-15");
+      drawLetters({ container, schools: [{ ...row, letterDeadline: "" }] });
+      expect(input.value).toBe("");
+    });
+
+    // The reported "dates switch" case: once one date was typed, its label went out of Lit's
+    // reach and every redraw stopped there, so the next date box still held the handler from
+    // before -- with the rows from before -- and typing in it put the first date back.
+    it("keeps an earlier date when the next one is typed after a redraw", () => {
+      const row = createSchoolRow();
+      const first = drawLetters({ schools: [row] });
+      const container = first.container;
+      const application = cellInput(container, "applicationDeadline")!;
+      typed(application, "2026-12-14");
+      application.dispatchEvent(new Event("input", { bubbles: true }));
+      const afterFirst = first.schoolChanges.at(-1)!;
+      expect(afterFirst[0]?.applicationDeadline).toBe("2026-12-14");
+
+      const second = drawLetters({ container, schools: afterFirst });
+      const letter = cellInput(container, "letterDeadline")!;
+      typed(letter, "2026-12-24");
+      letter.dispatchEvent(new Event("input", { bubbles: true }));
+      expect(second.schoolChanges.at(-1)?.[0]).toMatchObject({
+        applicationDeadline: "2026-12-14",
+        letterDeadline: "2026-12-24",
+      });
+      expect(application.value).toBe("2026-12-14");
+    });
   });
 
   it("gives every column of a row its own control", () => {
@@ -1766,4 +1850,65 @@ it("provides visible phone labels for every editable request cell", () => {
       ).toBeTruthy();
     }
   }
+});
+
+// The requests page is drawn whatever the eligibility read brought back. Offline, or against a
+// service that answers with less than a whole result, the page still renders and the eligibility
+// parts say "unavailable" instead of throwing.
+describe("letter eligibility with no or partial data", () => {
+  const letterRequest: LogisticsRequest = {
+    id: "logreq_partial",
+    kind: "recommendation_letters",
+    member_id: "m-alpha",
+    member_name: "Member Alpha",
+    status: "submitted",
+    submitted_at: "2026-08-01T09:30:00.000Z",
+    updated_at: "2026-08-01T09:30:00.000Z",
+  };
+  const partials: unknown[] = [
+    null,
+    {},
+    { items: [], requests: [] },
+    { member_id: "m-alpha", status: "eligible" },
+    { member_id: "m-alpha", status: "not_yet", as_of: "2026-10-16", hours: {}, missing: [] },
+  ];
+
+  it.each(partials)("draws the letters form for %j", (value) => {
+    const { container } = drawLetters({
+      lettersEligibility: {
+        value: value as RecLetterAdvisoryProps["value"],
+        loading: false,
+        error: null,
+      },
+    });
+    expect(container.querySelector("[data-testid='logistics-cv-overleaf']")).not.toBeNull();
+    expect(
+      container.querySelector("[data-testid='rec-eligibility-unavailable']")?.textContent,
+    ).toContain("unavailable");
+  });
+
+  it.each(partials)("draws an admin's open letter request for %j", (eligibility) => {
+    const { container } = draw({
+      role: "admin",
+      mode: "view",
+      requests: [letterRequest],
+      openRequest: letterRequest,
+      eligibilityPanel: {
+        value:
+          eligibility === null
+            ? null
+            : ({
+                member: { id: "m-alpha", name: "Member Alpha" },
+                eligibility,
+                incidents: [],
+                attestations: [],
+              } as RecLetterDetailPanelProps["value"]),
+        loading: false,
+        error: null,
+      },
+    });
+    const panel = container.querySelector<HTMLElement>("[data-testid='rec-eligibility-panel']");
+    expect(panel?.dataset.status).toBe("unavailable");
+    expect(panel?.textContent).toContain("unavailable");
+  });
 });

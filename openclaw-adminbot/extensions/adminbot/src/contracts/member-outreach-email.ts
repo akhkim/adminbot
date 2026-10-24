@@ -52,3 +52,47 @@ function firstAddress(value: string | undefined): string {
 export function adminBotOutreachEmail(member: AdminBotAddressableMember): string {
   return firstAddress(member.correspondence_email) || firstAddress(member.email);
 }
+
+type CalendarAddressable = AdminBotAddressableMember & { calendar_email?: string };
+
+function addressesIn(value: string | undefined): string[] {
+  return (value ?? "")
+    .split(/[/,;\s]+/u)
+    .filter((candidate) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(candidate));
+}
+
+/** A Gmail address is always a Google account, so a calendar share to it always lands. */
+export function adminBotIsGmailAddress(email: string): boolean {
+  return /@(?:gmail|googlemail)\.com$/iu.test(email.trim());
+}
+
+/**
+ * The Google account the lab calendar is shared with: the explicit Calendar email, else any Gmail
+ * address on the record. Empty when neither exists.
+ *
+ * Never the departmental login. Google accepts a share to any address, but one that is not a
+ * Google account cannot open the calendar -- the member sees "request access" while the audit
+ * trail says they were invited. An empty answer is reported as "needs a Gmail" instead.
+ */
+export function adminBotCalendarShareEmail(member: CalendarAddressable): string {
+  const explicit = addressesIn(member.calendar_email)[0];
+  if (explicit) {
+    return explicit;
+  }
+  return (
+    [member.email, member.correspondence_email].flatMap(addressesIn).find(adminBotIsGmailAddress) ??
+    ""
+  );
+}
+
+/**
+ * Calendar event destination: the share account above, else any saved address. An event invite,
+ * unlike a share, still arrives by email at a non-Google address.
+ */
+export function adminBotCalendarEmail(member: CalendarAddressable): string {
+  return (
+    adminBotCalendarShareEmail(member) ||
+    [member.email, member.correspondence_email].flatMap(addressesIn)[0] ||
+    ""
+  );
+}

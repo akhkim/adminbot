@@ -179,3 +179,16 @@ describe("buildConferenceAttendance", () => {
     expect(conferences.map((entry) => entry.year)).toEqual([2026, 2025]);
   });
 });
+
+it("ignores only the repeated conference year, keeping tracks and other years separate", () => {
+  expect(conferenceKey("NeurIPS 2026", 2026)).toBe("neurips:2026");
+  expect(conferenceKey("NeurIPS2026", 2026)).toBe("neurips:2026");
+  expect(conferenceKey("NeurIPS 2025", 2026)).not.toBe("neurips:2026");
+  expect(conferenceKey("NeurIPS Workshop 2026", 2026)).toBe("neuripsworkshop:2026");
+  expect(conferenceKey("NeurIPS Paris 2026", 2026)).not.toBe(
+    conferenceKey("NeurIPS San Diego 2026", 2026),
+  );
+  expect(conferenceKey("EMNLP Budapest 2026", 2026)).not.toBe(
+    conferenceKey("EMNLP Paris 2026", 2026),
+  );
+});

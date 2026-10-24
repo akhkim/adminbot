@@ -2,16 +2,25 @@ import { ADMINBOT_PASSWORD_RESET_PATH } from "../../../extensions/adminbot/src/c
 // Control UI module implements app settings behavior.
 import { roleScopesAllow } from "../../../src/shared/operator-scope-compat.js";
 import { t } from "../i18n/index.ts";
+import { loadStoredMemberSession } from "./adminbot/auth/session.ts";
+import { ensureAdminQueuesForTab } from "./adminbot/controllers/admin-queues.ts";
 import {
   loadAdminBot,
-  loadAdminBotVenueSources,
+  loadAdminBotSensitiveInfo,
+  pendingAdminBotLoad,
   type AdminBotHost,
 } from "./adminbot/controllers/admin.ts";
+import { loadAdminBotVenueSources } from "./adminbot/controllers/conference-papers.ts";
 import {
   loadAdminBotRegistrations,
   type AdminBotRegistrationsHost,
 } from "./adminbot/data/registrations.ts";
-import { needsLabPapers } from "./adminbot/papers-required.ts";
+import { needsLabPapers, papersMissingFor } from "./adminbot/papers-required.ts";
+import {
+  isProfileBlocked,
+  profileAccessState,
+  type ProfileGateState,
+} from "./adminbot/views/profile-gate.ts";
 import { refreshChat } from "./app-chat.ts";
 import {
   startLogsPolling,
@@ -22,6 +31,7 @@ import {
   stopDebugPolling,
 } from "./app-polling.ts";
 import { scheduleChatScroll, scheduleLogsScroll } from "./app-scroll.ts";
+import { resetChatViewStateIfLoaded } from "./chat/view-reset.ts";
 import {
   beginControlUiRefresh,
   controlUiNowMs,
@@ -66,6 +76,7 @@ import {
   inferBasePathFromPathname,
   normalizeBasePath,
   normalizePath,
+  isSubpathOfTab,
   pathForTab,
   pathIsRoot,
   tabFromPath,
@@ -84,11 +95,10 @@ import { startThemeTransition, type ThemeTransitionContext } from "./theme-trans
 import { resolveTheme, type ResolvedTheme, type ThemeMode, type ThemeName } from "./theme.ts";
 import type { AgentsListResult, AttentionItem } from "./types.ts";
 import { normalizeLocalUserIdentity } from "./user-identity.ts";
-import { resetChatViewState } from "./views/chat.ts";
 
 export { setLastActiveSessionKey } from "./app-last-active-session.ts";
 
-type SettingsHost = {
+type SettingsHost = ProfileGateState & {
   settings: UiSettings;
   userName?: string | null;
   userAvatar?: string | null;
@@ -113,7 +123,6 @@ type SettingsHost = {
   // Signed-out overlays, restored from the URL on popstate alongside the tab.
   authGateVisible?: boolean;
   guestReimbursements?: boolean;
-  systemThemeCleanup?: (() => void) | null;
   pendingGatewayToken?: string | null;
   passwordResetToken?: string;
   loginMode?: import("./adminbot/auth/flow.ts").LoginMode;
@@ -154,6 +163,7 @@ type SettingsAppHost = SettingsHost &
   AdminBotHost &
   AdminBotRegistrationsHost &
   UsageState & {
+    memberPrivilegeLevel?: string | null;
     overviewLogCursor: number | null;
     overviewLogLines: string[];
     attentionItems: AttentionItem[];
@@ -391,7 +401,6 @@ function applyThemeTransition(
     context,
     currentTheme: host.themeResolved,
   });
-  syncSystemThemeListener(host);
 }
 
 export function setTheme(host: SettingsHost, next: ThemeName, context?: ThemeTransitionContext) {
@@ -417,8 +426,7 @@ export function setThemeMode(
 }
 
 async function refreshAgentsTab(host: SettingsHost, app: SettingsAppHost) {
-  await loadAgents(app);
-  await loadConfig(app);
+  await Promise.all([loadAgents(app), loadConfig(app)]);
   const agentIds = host.agentsList?.agents?.map((entry) => entry.id) ?? [];
   if (agentIds.length > 0) {
     void loadAgentIdentities(app, agentIds);
@@ -460,21 +468,83 @@ function loadConfigSchemaAfterPrimary(
   );
 }
 
-export async function refreshActiveTab(host: SettingsHost, opts?: { chatStartup?: boolean }) {
+type TabRefreshOptions = { chatStartup?: boolean };
+const pendingProfileRefreshes = new WeakMap<
+  SettingsHost,
+  {
+    requestId: symbol;
+    memberId: string | null | undefined;
+    sessionToken: string | undefined;
+    promise: Promise<void>;
+  }
+>();
+
+// All entry points (navigation, gateway startup, and the loading view) await the same access
+// check. Once it resolves, continue the normal loader for the CURRENT tab, exactly once.
+export function refreshActiveTab(host: SettingsHost, opts?: TabRefreshOptions): Promise<void> {
+  const memberId = host.memberId;
+  const sessionToken = loadStoredMemberSession()?.sessionToken;
+  const existing = pendingProfileRefreshes.get(host);
+  if (existing && existing.memberId === memberId && existing.sessionToken === sessionToken) {
+    return existing.promise;
+  }
+  if (profileAccessState(host) !== "loading") return refreshAccessibleTab(host, opts);
   const app = host as unknown as SettingsAppHost;
+  const requestId = Symbol();
+  const pending = (async () => {
+    const current = () =>
+      host.memberId === memberId && loadStoredMemberSession()?.sessionToken === sessionToken;
+    const inFlight = pendingAdminBotLoad(app);
+    if (inFlight) await inFlight;
+    if (!current()) return;
+    if (profileAccessState(host) === "loading" && !app.adminBotError) {
+      await loadAdminBot(app, "general", false);
+    }
+    if (!current()) return;
+    if (profileAccessState(host) !== "loading") {
+      // The access check is finished. Subsequent navigation must not join a different tab's load.
+      if (pendingProfileRefreshes.get(host)?.requestId === requestId)
+        pendingProfileRefreshes.delete(host);
+      await refreshAccessibleTab(host, opts);
+    }
+    host.requestUpdate?.();
+  })();
+  pendingProfileRefreshes.set(host, { requestId, memberId, sessionToken, promise: pending });
+  const clear = () => {
+    if (pendingProfileRefreshes.get(host)?.requestId === requestId)
+      pendingProfileRefreshes.delete(host);
+  };
+  void pending.then(clear, clear);
+  return pending;
+}
+
+async function refreshAccessibleTab(host: SettingsHost, opts?: TabRefreshOptions) {
+  const app = host as unknown as SettingsAppHost;
+  if (isProfileBlocked(host)) {
+    if (host.tab !== "profile") {
+      host.tab = "profile";
+      host.landedWithoutATab = false;
+      syncUrlWithTab(host, "profile", true);
+    }
+    host.requestUpdate?.();
+    return;
+  }
   // Navigation should reuse the session's dashboard read where the page has its own Refresh button.
   const needsPapers = needsLabPapers(host.tab);
   const loadAdminBotOnce = () =>
-    app.adminBotLoading ||
-    (app.adminBotData?.loadedAt && (!needsPapers || app.adminBotData.papersLoadedAt))
+    app.adminBotLoading || (app.adminBotData?.loadedAt && (!needsPapers || !papersMissingFor(app)))
       ? Promise.resolve()
       : loadAdminBot(
           app,
-          "admin",
+          // A plain member asked in "admin" mode spends five reads on queues the service refuses.
+          app.memberPrivilegeLevel === "admin" ? "admin" : "general",
           needsPapers,
-          Boolean(app.adminBotData?.loadedAt && needsPapers && !app.adminBotData.papersLoadedAt),
+          Boolean(app.adminBotData?.loadedAt && needsPapers && papersMissingFor(app)),
         );
   const refreshRun = beginControlUiRefresh(host, host.tab);
+  // The admin queues this page draws (proposals, email review, nudges...), read alongside the
+  // page's own loads and only when this session has not read them yet; see admin-queues.ts.
+  const adminQueues = ensureAdminQueuesForTab(app, host.tab);
   try {
     switch (host.tab) {
       case "config":
@@ -493,9 +563,12 @@ export async function refreshActiveTab(host: SettingsHost, opts?: { chatStartup?
       case "overview":
         await loadOverview(host);
         break;
-      case "adminbot":
       case "adminbotSettings":
+        await Promise.all([loadAdminBotOnce(), loadAdminBotSensitiveInfo(app, true)]);
+        break;
+      case "adminbot":
       case "adminbotMembers":
+      case "adminbotArrReviewers":
       case "adminbotPapers":
       case "adminbotAnnouncements":
       case "adminbotTimeAvailability":
@@ -503,10 +576,11 @@ export async function refreshActiveTab(host: SettingsHost, opts?: { chatStartup?
         break;
       // Needs the roster too: the interests box is prefilled from the viewer's own topics, which
       // only exist once the member list has loaded.
-      case "adminbotConferencePapers":
-        await loadAdminBotOnce();
-        await loadAdminBotVenueSources(app);
+      case "adminbotConferencePapers": {
+        const profile = loadAdminBotOnce();
+        await Promise.all([profile, loadAdminBotVenueSources(app, profile)]);
         break;
+      }
       // The audience filters read the roster and the papers; the event list is a separate read.
       case "adminbotCalendar": {
         const loadEvents = (app as { loadCalendarEvents?: () => Promise<void> }).loadCalendarEvents;
@@ -574,6 +648,7 @@ export async function refreshActiveTab(host: SettingsHost, opts?: { chatStartup?
         scheduleLogsScroll(host as unknown as Parameters<typeof scheduleLogsScroll>[0], true);
         break;
     }
+    await adminQueues;
     finishControlUiRefresh(host, refreshRun, "ok");
   } catch (err) {
     finishControlUiRefresh(host, refreshRun, "error");
@@ -600,7 +675,7 @@ export function syncThemeWithSettings(host: SettingsHost) {
       ? "claw"
       : (host.settings.theme ?? "claw");
   host.theme = normalizedTheme;
-  host.themeMode = host.settings.themeMode ?? "system";
+  host.themeMode = host.settings.themeMode ?? "dark";
   if (normalizedTheme !== host.settings.theme) {
     host.settings = { ...host.settings, theme: normalizedTheme };
     saveSettings(host.settings);
@@ -608,12 +683,6 @@ export function syncThemeWithSettings(host: SettingsHost) {
   applyResolvedTheme(host, resolveTheme(host.theme, host.themeMode));
   applyBorderRadius(host.settings.borderRadius ?? 50);
   applyTextScale(host.settings.textScale);
-  syncSystemThemeListener(host);
-}
-
-export function detachThemeListener(host: SettingsHost) {
-  host.systemThemeCleanup?.();
-  host.systemThemeCleanup = null;
 }
 
 // Must stay in sync with the --radius-* tokens in ui/src/styles/base.css: this writes them
@@ -660,41 +729,6 @@ export function applyResolvedTheme(host: SettingsHost, resolved: ResolvedTheme) 
   root.style.colorScheme = family;
 }
 
-function syncSystemThemeListener(host: SettingsHost) {
-  // Clean up existing listener if mode is not "system"
-  if (host.themeMode !== "system") {
-    host.systemThemeCleanup?.();
-    host.systemThemeCleanup = null;
-    return;
-  }
-
-  // Skip if listener already attached for this host
-  if (host.systemThemeCleanup) {
-    return;
-  }
-
-  if (typeof globalThis.matchMedia !== "function") {
-    return;
-  }
-
-  const mql = globalThis.matchMedia("(prefers-color-scheme: light)");
-  const onChange = () => {
-    if (host.themeMode !== "system") {
-      return;
-    }
-    applyResolvedTheme(host, resolveTheme(host.theme, "system"));
-  };
-  if (typeof mql.addEventListener === "function") {
-    mql.addEventListener("change", onChange);
-    host.systemThemeCleanup = () => mql.removeEventListener("change", onChange);
-    return;
-  }
-  if (typeof mql.addListener === "function") {
-    mql.addListener(onChange);
-    host.systemThemeCleanup = () => mql.removeListener(onChange);
-  }
-}
-
 export function syncTabWithLocation(host: SettingsHost, replace: boolean) {
   if (typeof window === "undefined") {
     return;
@@ -728,6 +762,8 @@ export function onPopState(host: SettingsHost) {
   }
 
   setTabFromRoute(host, resolved);
+  // Back within one tab (My Projects' own pages) changes no tab, so nothing else would re-render.
+  host.requestUpdate?.();
 }
 
 export function setTabFromRoute(host: SettingsHost, next: Tab) {
@@ -758,6 +794,8 @@ function applyTabSelection(
   next: Tab,
   options: { refreshPolicy: "always" | "connected"; syncUrl?: boolean },
 ) {
+  const profileRedirect = isProfileBlocked(host) && next !== "profile";
+  if (profileRedirect) next = "profile";
   const prev = host.tab;
   host.tab = next;
   // Whatever brought us here -- a click, Back, a deep link -- the tab on screen is now a choice,
@@ -770,7 +808,7 @@ function applyTabSelection(
 
   // Cleanup chat module state when navigating away from chat
   if (prev === "chat" && next !== "chat") {
-    resetChatViewState();
+    resetChatViewStateIfLoaded();
   }
 
   if (next === "chat") {
@@ -790,8 +828,8 @@ function applyTabSelection(
     void refreshActiveTab(host);
   }
 
-  if (options.syncUrl) {
-    syncUrlWithTab(host, next, false);
+  if (options.syncUrl || profileRedirect) {
+    syncUrlWithTab(host, next, profileRedirect);
   }
 }
 
@@ -811,7 +849,8 @@ export function syncUrlWithTab(host: SettingsHost, tab: Tab, replace: boolean) {
     url.searchParams.delete("session");
   }
 
-  if (currentPath !== targetPath) {
+  // Arriving on a deep link (a reload, Back) keeps it; choosing the tab itself goes to its top.
+  if (currentPath !== targetPath && !(replace && isSubpathOfTab(tab, currentPath, host.basePath))) {
     url.pathname = targetPath;
   }
 

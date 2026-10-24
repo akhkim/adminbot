@@ -43,7 +43,9 @@ jobs:
        github.event.workflow_run.event == 'push' &&
        github.event.workflow_run.head_branch == 'main' &&
        github.event.workflow_run.head_repository.full_name == github.repository)
-    runs-on: [self-hosted, aurora-deploy]
+    # Only the installer's label: it registers with --no-default-labels, so the runner has no
+    # `self-hosted` label and a job that asks for one queues forever.
+    runs-on: [aurora-deploy]
     environment: aurora
     timeout-minutes: 45
     steps:
@@ -57,3 +59,18 @@ jobs:
         env:
           TARGET_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
         run: bash openclaw-adminbot/deploy/aurora/auto-deploy.sh --source "$GITHUB_WORKSPACE" --ref "$TARGET_SHA"
+      # The deploy installs the IP geolocation database (deploy/aurora/install-geoip.sh), but a
+      # download that failed only warns there. Read the service's own startup line so a deploy that
+      # left sign-in geolocation off says so on the run summary instead of on a half-empty map.
+      - name: Check IP geolocation
+        if: success()
+        run: |
+          line="$(journalctl --user -u jinesis-adminbot.service --since "-15min" --no-pager -o cat 2>/dev/null |
+            grep "AdminBot IP geolocation:" | tail -n 1 || true)"
+          if [[ -z "$line" ]]; then
+            echo "::notice title=IP geolocation::no restart in the last 15 minutes (nothing deployed?); not checked"
+          elif [[ "$line" == *": off"* ]]; then
+            echo "::warning title=IP geolocation::$line"
+          else
+            echo "$line"
+          fi

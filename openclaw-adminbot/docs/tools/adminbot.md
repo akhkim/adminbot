@@ -18,27 +18,49 @@ Use this shape when the same agent should actively read permitted conversations
 or forms and suggest useful work, but every sensitive action must become a
 specific approval item before anything mutates outside OpenClaw.
 
+## Required profile before using AdminBot
+
+Only accounts with the `member` privilege level must fill every member-answerable required profile
+field before using other AdminBot features. Admins, external collaborators (all subgroups), and trial
+accounts are exempt. Members are directed to My Profile, with the other sidebar tabs disabled and
+an explanation above the form. Sign-out remains available. Saving the last missing answer unlocks the tabs without
+signing in again. While the profile loads, the requested page is preserved and interaction waits;
+a failed load offers retry. Only confirmed incomplete profiles are redirected. Direct links and
+browser history cannot open another tab while blocked.
+The service rechecks the stored profile on member API requests, so clearing a required answer
+locks access again. Profile reads, self-edits, and the Drive-access check used by the form remain
+available.
+
+This uses the same completeness rules as profile reminders: an explicit ARR qualification answer
+is required, review capacity is required only for qualified reviewers (zero is valid), and marking
+an application response link unavailable satisfies that question. Optional profile fields and
+Time Availability timeline entries do not block access. Service-token jobs and public,
+unauthenticated pages retain their existing access rules.
+
 ## Before you begin
 
 You need a local AdminBot service listening on loopback, for example
 `http://127.0.0.1:8765`. The service must implement these endpoints:
 
-| Endpoint                              | Purpose                                                           |
-| ------------------------------------- | ----------------------------------------------------------------- |
-| `POST /public/deadline-proposals`     | Submit a deadline for administrator review.                       |
-| `POST /proposals`                     | Create one typed action proposal.                                 |
-| `POST /privacy/tasks`                 | Route reasoning through the VM-local privacy gate.                |
-| `GET /proposals/pending`              | Return pending approval items.                                    |
-| `GET /settings`                       | Return service defaults such as member privilege and escalation.  |
-| `PUT /settings`                       | Update AdminBot service defaults.                                 |
-| `GET /lab/members`                    | Return lab members and computed access profiles.                  |
-| `PUT /lab/members/{member_id}`        | Create or update one lab member.                                  |
-| `GET /papers`                         | Return paper pipeline records with computed timeline estimates.   |
-| `PUT /papers/{paper_id}`              | Create or update one paper pipeline record.                       |
-| `GET /papers/nudges`                  | Return due paper reminders and PI escalations.                    |
-| `POST /approvals/{action_id}/approve` | Approve one immutable payload by hash.                            |
-| `POST /actions/{action_id}/execute`   | Execute or simulate an approved action.                           |
-| `GET /audit`                          | Return service audit events for local development and inspection. |
+| Endpoint                              | Purpose                                                            |
+| ------------------------------------- | ------------------------------------------------------------------ |
+| `POST /public/deadline-proposals`     | Submit a deadline for administrator review.                        |
+| `POST /proposals`                     | Create one typed action proposal.                                  |
+| `POST /privacy/tasks`                 | Route reasoning through the VM-local privacy gate.                 |
+| `GET /proposals/pending`              | Return pending approval items.                                     |
+| `GET /admin/queue-counts`             | Return how many proposals and held emails await an administrator.  |
+| `GET /settings`                       | Return service defaults such as member privilege and escalation.   |
+| `PUT /settings`                       | Update AdminBot service defaults.                                  |
+| `GET /lab/members`                    | Return lab members and computed access profiles.                   |
+| `PUT /lab/members/{member_id}`        | Create or update one lab member.                                   |
+| `GET /papers`                         | Return paper pipeline records with computed timeline estimates.    |
+| `GET /papers?scope=mine`              | Return only the papers the signed-in member is involved in.        |
+| `PUT /papers/{paper_id}`              | Create or update one paper pipeline record.                        |
+| `GET /my/projects`                    | Return the signed-in member's active projects, open work per lane. |
+| `GET /papers/nudges`                  | Return due paper reminders and PI escalations.                     |
+| `POST /approvals/{action_id}/approve` | Approve one immutable payload by hash.                             |
+| `POST /actions/{action_id}/execute`   | Execute or simulate an approved action.                            |
+| `GET /audit`                          | Return service audit events for local development and inspection.  |
 
 Keep external connector credentials in the AdminBot service. Do not place Slack,
 Google, email, calendar, reimbursement, or social media write tokens in OpenClaw
@@ -73,6 +95,12 @@ that name the release, restarts AdminBot and the Gateway (an outage of a few sec
 fail, it restores the previous release and units and fails the job. A rollback restores code, not
 the database.
 
+The deadline cron jobs rewrite `extensions/adminbot/content/deadlines/deadlines.json` (and
+`matches.json`) inside the live release, so the deploy copies those into the new release before the
+swap; otherwise every deploy would put the Deadlines board back on the committed snapshot until the
+next daily refresh. A live copy still identical to what its commit shipped was never refreshed, and
+the new commit's copy is used instead.
+
 It refuses, without touching the services, when:
 
 - the commit does not contain the live release's commit. Merge a `deploy/*` branch into `main`
@@ -103,7 +131,7 @@ environment restricted to `main`. Trigger a deploy by hand with
 
 The AdminBot service classifies every `adminbot_reason` request with local
 Ollama `gemma4:e4b` before any remote call. Generic tasks can use NVIDIA NIM
-`minimaxai/minimax-m3`. Private tasks are replaced with opaque placeholders;
+`nvidia/nemotron-3-ultra-550b-a55b`. Private tasks are replaced with opaque placeholders;
 only the sanitized task reaches NIM, and Gemma fills the placeholders locally.
 Use `privacy="private"` or `sensitiveTerms` to force private handling. Missing
 keys, uncertain or malformed classification, unsafe sanitization, and model
@@ -124,6 +152,26 @@ pnpm tsx start-adminbot.ts
 Vercel should serve static Control UI assets only. Prompts must connect directly
 to the VM gateway over authenticated TLS; do not proxy or log prompts through a
 Vercel Function, analytics collector, or other hosted middleware.
+
+### Load, failover, and offline
+
+The [shared LLM gateway](llm-gateway.md) coordinates AdminBot and PaperMentor across
+processes. Public requests wait when either 100 public or 8 local calls are active.
+Local privacy calls remain capped at 8. Set `LLM_GATEWAY_URL` and `LLM_GATEWAY_TOKEN`
+in participating services and run one gateway with `node --import tsx start-llm-gateway.ts`.
+Without that configuration, the in-process allocator is development-only and cannot
+coordinate separate services. See the gateway guide for GPU tunnels, streaming,
+cancellation, and deployment checks.
+
+Department account filing uses the DCS roster sheet described below; the retired form
+failover is not enabled. Privileged operators can inspect the external-request ledger at
+`GET /ops/failed-requests`; signed-in members can read `GET /ops/llm-load`.
+
+The Control UI caches successful member GETs in account-scoped IndexedDB.
+Recommendation-letter, meeting-request, and signature drafts save locally and sync
+private working copies on reconnect. Final requests and approvals require an explicit
+connected action; legacy queued mutations are retained for recovery and never replayed.
+An on-device SLM is not shipped.
 
 ### Connect Gmail and Calendar with gog
 
@@ -513,10 +561,15 @@ The member ID is the key papers, sign-ins, sessions, settings and pending action
 editor keeps it read-only and an admin changes it with **Change ID** in the Edit member popover
 (`POST /lab/members/{id}/id` with `{ "new_id": ... }`). The service re-keys every table in one
 transaction, matching the old ID only as a whole value, so renaming `pat` leaves `pat-lee` alone.
-The member stays signed in. The audit log is the exception: it is history and keeps the old ID,
-and the `lab_member.id_changed` line joins the two. A row already keyed on the new ID -- a
+The member stays signed in. The audit log and the action ledger are the exceptions: they are
+history and keep the old ID, and the `lab_member.id_changed` line joins the two. An action still
+pending approval or execution that names the member is a 409 until it has run or been removed,
+because its payload is bound to its approval by hash. A row already keyed on the new ID -- a
 leftover from a deleted member -- is a 409 that changes nothing. New IDs are lowercase letters and
-digits joined by single hyphens or underscores, at most 64 characters.
+digits joined by single hyphens or underscores, at most 64 characters. Because the old ID is
+matched as a whole value everywhere, an ID that is also a word the records store (an access level
+such as `member` or `admin`, a status, a Member Type, an actor stamp such as `service`) can be
+neither renamed from nor renamed to; it has to be changed by hand.
 
 ### Adding a member from the Members tab
 
@@ -525,8 +578,9 @@ their onboarding**, puts the new member through onboarding in the same press. Th
 over `PUT /lab/members/{id}`; the onboarding leg is `POST /lab/members/{id}/onboarding/guide`, which
 composes nothing and sends nothing -- it files an `onboarding.send_guide` proposal for approval,
 exactly as the Onboarding section's sheet selection and the weekly sweep do. Approving it is what
-mints the Slack Connect invite, provisions the Drive folder, files the DCS account request and
-sends the mail.
+mints the Slack Connect invite, provisions the Drive folder and sends the mail. The DCS account
+request is filed by the save itself for a new full member or major coauthor (see
+[The DCS roster sheet](#the-dcs-roster-sheet)).
 
 Which guide somebody gets is decided by **Member type** on the form, through the same
 most-committed-role rule the sheet rows use: `full, coauthor-major` gets the full-member mail. Five
@@ -541,12 +595,21 @@ approver -- which is what pressing **Add member** twice on one id produces. Onbo
 admin sign-in; over break-glass gateway access the record still saves and the notice says the guide
 was not queued.
 
+Opening a member in the editor shows their **Onboarding email** status. When nothing has gone out
+(never queued, failed or rejected) it offers **Send onboarding email**; once the guide has been
+sent it offers **Resend onboarding email**, for a mail that went to spam or was never read. Both
+ask for confirmation in the panel and call the same `POST /lab/members/{id}/onboarding/guide`, a
+resend with `{"resend": true}`. A resend lifts only the "already sent" refusal: a copy still
+waiting for an approver is refused either way, and the resend is filed with
+`add_dcs_roster_row: false` so DCS is never asked for a second account. It needs an admin member
+session; the service token is refused.
+
 ### Changing a Member Type
 
-Changing **Member type** on an existing member on the Lab Members tab re-onboards them, without
-the welcome mail, and applies it on the spot. The admin's save is the approval: each external
-step is still a typed proposal, approved by that admin, executed and audited, the same way Add
-row works. None of them waits in Pending Actions. `PUT /lab/members/{id}` does this only for a
+Changing **Member type** on an existing member on the Lab Members tab re-onboards them and
+applies it on the spot. The admin's save is the approval: each external step is still a typed
+proposal, approved by that admin, executed and audited, the same way Add row works. Only a
+non-standard guide waits in Pending Actions (below). `PUT /lab/members/{id}` does this only for a
 genuine admin session and only when the type actually changes (compared token-wise, so
 `Coauthor-Major ` is not a change). The service token still cannot set the field.
 
@@ -564,12 +627,18 @@ genuine admin session and only when the type actually changes (compared token-wi
   `slack.remove_from_channel`). Becoming `full` never removes anyone from the lab's rooms.
 - **The Monday group meeting** gains or loses them on every live series (`calendar.add_attendees` /
   `calendar.remove_attendees`, both `--send-updates none`).
+- **The DCS roster sheet** gets a row when the change makes them a full member or a major coauthor
+  (`dcs_roster.add_row`; see [The DCS roster sheet](#the-dcs-roster-sheet)).
 - **Lab calendar** read access is granted silently when they gain it
   (`calendar.grant_lab_calendar`, recorded as `auth.calendar_invite_sent` like the backfill). No
   action revokes a calendar share, so a loss is reported in the notice for someone to handle by
   hand.
-- **One email, in one case:** somebody moving _into_ alumni gets the `alumni` guide
-  (`onboarding.send_guide`). Every other change sends nothing.
+- **The new type's onboarding email**, when the new type calls for a different guide than the old
+  one did (`onboarding.send_guide`). Setting a blank type to `full` sends the full-member guide;
+  `full` to `full, alumni` sends nothing, since `full` still decides the guide. The full-member and
+  alumni guides go out on the admin's save; every other guide waits in Pending Actions, as it does
+  from Add member. A guide the address has already been sent, or that is already waiting, is
+  reported as skipped rather than sent twice. Types that send no mail send nothing here either.
 
 **Meetings** is a second checkbox field listing the lab calendar's standing meetings: the Monday
 group meeting and every recurring `Theme:` and `Proj:` series (`GET /lab/meetings`, admin only).
@@ -589,7 +658,7 @@ the others, and it turns the notice red. The whole change is recorded as
 
 ### Roster sync
 
-`scripts/adminbot-roster-sync-cron.sh` calls `POST /members/roster-sync` at 06:10 daily. It reads
+`scripts/adminbot-roster-sync-cron.sh` calls `POST /members/roster-sync` at 06:00 daily. It reads
 the same tab as the grid above, through the same configuration, and reconciles exactly two things
 against the database: who is on the roster, and each member's **Member Type**. Profile fields are
 `adminbot-member-sheet-poller`'s job -- widening this would let a spreadsheet typo overwrite what a
@@ -605,6 +674,9 @@ What it does with what it finds is the whole design:
   External Collab Access Design matrix, and where that row names a standing Slack room the sync
   files a `slack.remove_from_channel` proposal. Nothing here executes: `slack.remove_from_channel`
   is T3/admin, and somebody losing a conversation they were part of is not a cron job's call.
+- **A type that makes somebody a full member or a major coauthor writes their DCS roster row**
+  directly (`dcs_roster.add_row`, auto-approved), returned under `dcs_roster`. The DCS sheet is a
+  derivative of this one; the Member Type it follows is the decision.
 - **Joiners and leavers are reported, not acted on.** A sheet row matching no member is far more
   often somebody mid-onboarding than a member to create -- and creating one is an access grant, which
   a sync must never make on its own. Use the Membership tab's Onboarding section for that. A member
@@ -652,6 +724,33 @@ when you do not want to wait for tomorrow. The two are separate passes writing
 separate fields, which is easy to misread from their names -- the ID/timezone
 sync does not touch `slack_location`, and before the map pass was scheduled a
 stale Slack stamp could outrank a fresher roster location indefinitely.
+
+The ID/timezone sync reads Slack's `tz` for **every** linked active member, not only those who
+use AdminBot, and stamps it as `slack_tz` (read-only: it calls Slack's user lookup and never
+posts). For a member who never signs in it is the only signal that keeps arriving, so it is what
+places them on the map ("Slack time zone") and what the VPN check compares their IP against when
+their browser has not reported a zone.
+
+#### Map coverage (admins)
+
+`GET /member-map/coverage` (admin-only) says how well the map covers the lab. Each active member
+is counted in exactly one bucket, by what placed them: `ip` (a fresh IP reading that agrees with
+their clock), `checkin` (an answer to the retired check-in, under 60 days old), `stored_city`, `timezone`,
+`country`, `unplaced`, or `hidden`. `suspected_vpn` is counted on top of these: members whose
+fresh IP reading was set aside, who are still placed by something else. `stale` lists everyone
+without a fresh IP or a recent check-in answer, with what placed them and `last_seen_at`, the last day
+they used AdminBot themselves (stamped once a day on any authenticated request, whatever their map
+visibility, and never by an admin's "view as"). Never-seen members come first. The dashboard shows
+it to admins as the "Map coverage" card beside the map. It is built from the same memoised map as
+`GET /member-map`, so the two never disagree.
+
+The same response carries the answers to the browser's location prompt for members whose
+visibility is "auto" (hidden and "stated" members are never asked). `permission` counts
+`granted`, `denied` (Block), `dismissed` (closed the prompt without answering) and `not_asked` (no
+answer recorded yet). `refused` lists each `denied` or `dismissed` member with `at`, when that answer
+was recorded, and `last_seen_at`, newest first. The card shows these under "Answer to the browser's
+location prompt", with a collapsible list of who said no. Members who refused before this was
+recorded count as `not_asked` until their next visit.
 
 Both are also reachable without a person: `scripts/adminbot-member-directory-cron.sh`
 calls `POST /members/directory/refresh-slack` once a day as an OpenClaw cron job,
@@ -963,6 +1062,33 @@ when something was due rather than guessing at an inbox -- and stays quiet on a 
 was. A send that fails is not stamped, so it is retried the next morning while the letter is still
 worth writing.
 
+## Recommendation letter eligibility
+
+Each letter request shows whether the member currently meets the lab's bar for a letter: a badge
+in the admin queue, a panel in the request detail, and a note on the member's letters form. It is
+**advisory**: nothing blocks or delays a request.
+
+The result is `eligible`, `frozen`, `not_yet` or `insufficient_data`, with the detail behind each
+criterion:
+
+- **Freeze.** A desk rejection for hallucinated citations, recorded by an admin, freezes the member
+  for one year from the latest incident. Frozen overrides the rest.
+- **Committed hours.** At least five months, not necessarily consecutive, averaging 20 or more
+  committed hours a week on the availability page. Committed, not logged.
+- **Attendance.** Some three consecutive months with at least 80% of Monday meetings, and a
+  Wednesday meeting in at least 80% of the weeks that had one, read in America/Toronto. **Not
+  counted yet**: `adminBotRecLetterAttendanceEnabled` is `false`, so attendance never affects the
+  result. Admins see the raw figures labelled "not counted yet"; members see one muted line.
+
+A month with no availability row is unknown, not 0 hours: hours are `not_met` only when enough
+months have data and the gap cannot close, otherwise "Not enough data yet". Members can backfill
+past months on the Time Availability page, and an admin can confirm a criterion with a note from the
+request detail (`/logistics/eligibility-attestations`, audited); it then counts as met, labelled as
+confirmed by an admin.
+
+Members see only their own result and, while frozen, the date it ends; incident records, attestation
+notes and who confirmed are admin-only. See [Recommendation-letter eligibility](/tools/adminbot-rec-letter-eligibility).
+
 ## City channels
 
 A city gets a Slack channel at **four members** -- `#group-toronto`, `#group-zurich`,
@@ -996,23 +1122,103 @@ how a directory fills with them.
 
 ## The DCS roster sheet
 
-Sending the full-member onboarding guide (template `member`) files one row on the sheet the
-department's sysadmin acts on, and mails that member the credentials the row carries. It replaces
-the Microsoft-Forms automation that used to drive a headless browser through
+Whenever somebody **becomes a full member or a major coauthor**, AdminBot files one row for them on
+the sheet the department's sysadmin works from (the lab's "DCS Members" sheet). It replaces the
+Microsoft-Forms automation that used to drive a headless browser through
 `https://forms.office.com/r/TgGWBGWLZa`: the form carried only First/Last/Email, its selectors
 could be relaid out by Microsoft without notice, and it handed back no receipt, so "submitted" only
 ever meant "the click did not throw".
 
-Point it at a spreadsheet with:
+"Becomes" is a change of role, read from Member Type token-wise (`dcsRosterRoleGained` in
+`extensions/adminbot/src/workflows/onboarding/dcs-roster-entry.ts`):
+
+- `full` wins over `coauthor-major` when somebody is both, so `coauthor-major` -> `full` files a
+  row and `full` -> `full, coauthor-major` does not.
+- Alumni are never filed, whatever their type still says -- `full, alumni` is somebody who left.
+- Giving a role up (`full` -> `alumni`, `coauthor-major` -> `coauthor-minor`) files nothing. Nothing
+  here removes a row.
+
+Every way a role changes reaches it, as a typed `dcs_roster.add_row` action that is **written
+directly**: its policy is `autoPolicy("T1")`, so it is created approved and executed on the spot,
+with the usual `proposal.created`, `proposal.auto_approved` and execution audit rows. Nothing waits
+in Pending Actions.
+
+| Where the role changed                                     |
+| ---------------------------------------------------------- |
+| Lab Members tab: a Member Type save, or Add member         |
+| Onboarding tab: Add row, onboard selected rows             |
+| Approving a weekly-sweep joiner's `lab_member.enroll` card |
+| Approving a member request or a portal sign-up             |
+| The spreadsheet itself, applied by the 06:10 roster sync   |
+| `POST /members/dcs-roster/backfill` with `dry_run: false`  |
+
+The DCS sheet is a derivative of the lab roster: the decision is the Member Type, which the roster
+already gates. The cost is that a wrong Member Type in the spreadsheet reaches the sysadmin without
+a second look -- fix the type, then delete the row before the department acts on it.
+`POST /members/roster-sync` returns what it wrote under `dcs_roster`. On the save paths the step is
+reported as `dcs_roster` in the save notice (done, skipped or failed), and like the other steps it
+never undoes the save.
+
+Point it at the spreadsheet with:
 
 | Variable                       | What it names                                    |
 | ------------------------------ | ------------------------------------------------ |
 | `ADMINBOT_DCS_ROSTER_SHEET_ID` | The spreadsheet id alone. Unset disables filing. |
 
-Unset is not an error and not a silent skip: the send reports `dcs_roster_row.added: false` with
-"the DCS roster sheet is not configured", the same shape the retired form used for "not wired up".
+There is deliberately no default: the row is appended through gog, and a dev box or a test run must
+not reach the department's sheet by omission (the test setup also clears the variable). Unset is
+not an error and not a silent skip: each role change reports the `dcs_roster` step as skipped with
+"no DCS roster sheet configured".
 
-The sheet's columns, which `DCS_ROSTER_SHEET_COLUMNS` in
+The row is laid out against the sheet's **own header, by column name**, when it is written -- not
+when it is proposed, since a card the roster sync files may be approved days later. A column the
+sheet gains is left blank, one it loses is not written, and a sheet with no `full_name` or
+`adminbot_internal_id` column is refused as not being the DCS roster. The values, by column:
+
+| Column                    | Value                                                                      |
+| ------------------------- | -------------------------------------------------------------------------- |
+| `full_name`               | The roster name                                                            |
+| `adminbot_internal_id`    | The member id                                                              |
+| `dcs_username`            | The stored account name, else the first free candidate (below), else blank |
+| `non_dcs_email`           | The first address on file that is not `@cs.toronto.edu`                    |
+| `career_stage`            | The Member Type                                                            |
+| `at_uoft_or_not`          | `yes` / `no`, or blank when the roster does not know                       |
+| `permission`              | The DCS access already granted, else `UofT-slack-only`                     |
+| `date_of_this_row_change` | The filing date                                                            |
+| anything else (`UTORid`)  | Left blank for the sysadmin                                                |
+
+The sheet is one row per person. Somebody already on it is skipped rather than filed -- at proposal
+time, and again at execution, because a row typed in by hand while a card waited must win over the
+card. "On it" is matched widely, since older rows were typed by hand under generated `mem_…` ids:
+the `adminbot_internal_id`, any address in the `non_dcs_email` cell, or the name (ignoring accents,
+case and spacing). A member with a card already waiting in Pending Actions is skipped too.
+
+### Catching up members who predate this
+
+`POST /members/dcs-roster/backfill` files a card for every full member and major coauthor (alumni
+excluded) the sheet does not have yet. It is a **dry run unless the body says `"dry_run": false`**:
+the dry run returns `owed`, `already_on_sheet` (with the matched row) and `missing`, and files
+nothing. A real run leaves the cards in Pending Actions; an admin session that has read the list may
+add `"approve": true` to approve them on the same click (the service token gets a `403` for that).
+Re-running is safe -- anyone with a waiting card is skipped. It reads the live sheet once and answers
+`503` when no sheet is configured. Either outcome is audited as
+`auth.dcs_roster_row_added` / `auth.dcs_roster_row_failed`, with the account name and nothing
+resembling a credential; the access audit grades its DCS baseline row on those.
+
+No password is written. The sheet dropped its `dcs_password` column, and if one comes back the role
+change still leaves it empty: where an initial credential goes is a decision for whoever adds the
+column, not a side effect of a role change.
+
+### The guide's own filing (opt-in)
+
+Sending the full-member onboarding guide used to file this row itself, positionally and with a
+generated password it then mailed to the member. It now does that only when a send asks for it
+with `add_dcs_roster_row: true` -- the role change above already reaches everyone the guide reached,
+and both defaulting on would ask the department for every new full member twice. Against the sheet
+as it is now, that path refuses on its header check (there is no `dcs_password` column); it stays
+for a sheet that has one. The rest of this section describes it.
+
+Its columns, which `DCS_ROSTER_SHEET_COLUMNS` in
 `extensions/adminbot/src/workflows/onboarding/dcs-roster-sheet.ts` declares and checks against the
 live header before every write:
 
@@ -1111,6 +1317,9 @@ whether somebody was ever told.
 | Workshop matches               | admin presses Nudge | Slack          | no        |
 | Ad-hoc admin nudge             | admin types it      | Slack or email | no        |
 
+The profile photo nudge runs through the shared campaign module (filter, dry run, confirm guard,
+ledger, pacing, audit). See [Nudge campaigns](/tools/adminbot-nudges).
+
 ### The onboarding follow-up ladder
 
 The onboarding email itself is queued by a person -- from **Add member**, from the Onboarding
@@ -1193,34 +1402,35 @@ feature. Three of the fourteen wrappers had one and the rest were registered by 
 "what does AdminBot run, and when" could only be answered by reading the cron store on Aurora -- and
 a job that was never registered is silent: nobody is nudged and nothing errors.
 
-| Job                                 | Schedule             | What it does                                                                 |
-| ----------------------------------- | -------------------- | ---------------------------------------------------------------------------- |
-| `adminbot-email`                    | `5 * * * *`          | Hourly inbound email triage pass                                             |
-| `adminbot-openreview`               | `15 0,6,12,18 * * *` | Reviewing-cycle pass, four times a day                                       |
-| `adminbot-citation-checks`          | `25,55 * * * *`      | Check the citations of each new OpenReview submission version                |
-| `adminbot-iclr-integrity`           | `12 * * * *`         | Pangram AI-text score of new ICLR versions; Slack alert on AI text/citations |
-| `adminbot-meeting-artifacts`        | `20 * * * *`         | Meeting artifact drop-folder pass                                            |
-| `adminbot-member-directory`         | `40 5 * * *`         | Daily Slack timezone/directory sync                                          |
-| `adminbot-slack-directory`          | `45 5 * * *`         | Daily Slack channel directory refresh                                        |
-| `adminbot-deadline-refresh-venues`  | `50 5 * * *`         | Refresh conference/workshop deadlines from official CFPs                     |
-| `adminbot-deadline-refresh-matches` | `20 6 * * *`         | Re-map papers onto the refreshed deadlines                                   |
-| `adminbot-vector-roster`            | `30 6 * * *`         | Daily Vector sponsor spreadsheet refresh                                     |
-| `adminbot-graduations`              | `0 8 * * 1`          | Confirm finishing months, chase alumni transitions, and arrange the ceremony |
-| `adminbot-city-channels`            | `0 7 * * 1,4`        | Add members to their city Slack channel once a city reaches four             |
-| `adminbot-email-templates`          | `30 8 * * 1`         | Check the email-template doc against the shipped copy                        |
-| `adminbot-paperflow-nudges`         | `0 9 * * 1`          | PaperFlow venue-stage nudges, once a week                                    |
-| `adminbot-paper-slot-nudges`        | `10 9 * * 1-5`       | Chase the evidence each paper still owes                                     |
-| `adminbot-mandatory-fields`         | `20 9 * * 1-5`       | Chase profiles and term timelines that are still blank                       |
-| `adminbot-onboarding-chase`         | `40 9 * * 1-5`       | Chase setup checklists still open after ten days, then every two months      |
-| `adminbot-thesis-milestones`        | `50 9 * * 1-5`       | Guidebook nudge before a thesis deadline, grading reminder five days after   |
-| `adminbot-paper-stages`             | `45 * * * *`         | Verify the evidence, advance each paper on it, and queue the PI's gate       |
-| `adminbot-papermentor-runs`         | `35 * * * *`         | Collect PaperMentor's cached reviews and record them against their papers    |
-| `adminbot-rec-letter-reminders`     | `25 10 * * *`        | Mail the head professor the letters due within three days                    |
-| `adminbot-meeting-attendance`       | `30 9 * * 1`         | Chase members who have stopped coming to the group meeting                   |
-| `adminbot-weekly-updates`           | `0 10 * * 1`         | Ask authors for the week's paper updates                                     |
-| `adminbot-prereg-nudges`            | `0 14 * * 4`         | Pre-meeting pre-registration sweep                                           |
-| `adminbot-onboarding-confirm`       | `10 */2 * * *`       | Onboarding-step confirmation loop                                            |
-| `adminbot-nudge-escalation`         | `0 11 * * 1-5`       | Ask the head professor to chase what nobody answered in five days            |
+| Job                                 | Schedule             | What it does                                                                                |
+| ----------------------------------- | -------------------- | ------------------------------------------------------------------------------------------- |
+| `adminbot-email`                    | `5 * * * *`          | Hourly inbound email triage pass                                                            |
+| `adminbot-openreview`               | `15 0,6,12,18 * * *` | Reviewing-cycle pass, four times a day                                                      |
+| `adminbot-citation-checks`          | `25,55 * * * *`      | Check the citations of each new OpenReview submission version                               |
+| `adminbot-iclr-integrity`           | `12 * * * *`         | Pangram AI-text score of new ICLR versions; Slack alert on AI text/citations                |
+| `adminbot-meeting-artifacts`        | `20 * * * *`         | Meeting artifact drop-folder pass                                                           |
+| `adminbot-member-directory`         | `40 5 * * *`         | Daily Slack timezone/directory sync                                                         |
+| `adminbot-slack-directory`          | `45 5 * * *`         | Daily Slack channel directory refresh                                                       |
+| `adminbot-deadline-refresh-venues`  | `50 5 * * *`         | Refresh conference/workshop deadlines from official CFPs                                    |
+| `adminbot-deadline-refresh-matches` | `20 6 * * *`         | Re-map papers onto the refreshed deadlines                                                  |
+| `adminbot-vector-roster`            | `30 6 * * *`         | Daily Vector sponsor spreadsheet refresh                                                    |
+| `adminbot-graduations`              | `15 8 * * 1`         | Confirm finishing months, chase alumni transitions, and arrange the ceremony                |
+| `adminbot-slides-working-groups`    | `20 7 * * 1`         | Propose the working-groups slide update ([details](../operations/slides-working-groups.md)) |
+| `adminbot-city-channels`            | `10 7 * * 1,4`       | Add members to their city Slack channel once a city reaches four                            |
+| `adminbot-email-templates`          | `30 8 * * 1`         | Check the email-template doc against the shipped copy                                       |
+| `adminbot-paperflow-nudges`         | `0 9 * * 1`          | PaperFlow venue-stage nudges, once a week                                                   |
+| `adminbot-paper-slot-nudges`        | `10 9 * * 1-5`       | Chase the evidence each paper still owes                                                    |
+| `adminbot-mandatory-fields`         | `20 9 * * 1-5`       | Chase profiles and term timelines that are still blank                                      |
+| `adminbot-onboarding-chase`         | `40 9 * * 1-5`       | Chase setup checklists still open after ten days, then every two months                     |
+| `adminbot-thesis-milestones`        | `50 9 * * 1-5`       | Guidebook nudge before a thesis deadline, grading reminder five days after                  |
+| `adminbot-paper-stages`             | `45 * * * *`         | Verify the evidence, advance each paper on it, and queue the PI's gate                      |
+| `adminbot-papermentor-runs`         | `35 * * * *`         | Collect PaperMentor's cached reviews and record them against their papers                   |
+| `adminbot-rec-letter-reminders`     | `25 10 * * *`        | Mail the head professor the letters due within three days                                   |
+| `adminbot-meeting-attendance`       | `30 9 * * 1`         | Chase members who have stopped coming to the group meeting                                  |
+| `adminbot-weekly-updates`           | `0 10 * * 1`         | Ask authors for the week's paper updates                                                    |
+| `adminbot-prereg-nudges`            | `0 14 * * 4`         | Pre-meeting pre-registration sweep                                                          |
+| `adminbot-onboarding-confirm`       | `10 */2 * * *`       | Onboarding-step confirmation loop                                                           |
+| `adminbot-nudge-escalation`         | `0 11 * * 1-5`       | Ask the head professor to chase what nobody answered in five days                           |
 
 Times are the gateway's. The nudge passes are staggered through the morning and
 `adminbot-nudge-escalation` runs after them on purpose: it reads what those passes filed, so running
@@ -1236,9 +1446,25 @@ roster's mandatory timezone field.
 The endpoint is public, but its response shape depends on who's asking:
 
 - Signed in as **admin**: `{ mode: "full", places: [...{ ...place, members:
-[{ member_id, name, source, avatar_url?, last_login_at? }] } ], unplaced,
-counts }` -- names included, plus each member's Slack avatar and last login
-  time where known, for the recently-active faces shown per city.
+[{ member_id, name, source, precision, avatar_url?, last_login_at?, ip_observed_at?,
+located_at?, ip_ignored?, source_label?, tz_mismatch? }] } ], unplaced, counts, ip_geolocation }`
+  -- names included, plus each member's Slack avatar and, for IP-placed members,
+  the time of the IP reading that placed them (`ip_observed_at`, also sent as
+  `last_login_at` for older clients), for the recently-active faces shown per
+  city. `source` is `login` (an IP reading), `checkin`, `roster`, `slack` or
+  `device` (the browser's time zone); `located_at` is when that source said so.
+  `source_label` is the row's wording by UTC day: "IP today", "IP 2d ago",
+  "stated yesterday", "profile", "device time zone" and so on, with " · IP
+  ignored (VPN?)" appended when `ip_ignored: "suspected_vpn"` is set (a fresh IP
+  reading existed but its city disagreed with the member's clock; see
+  [IP geolocation](adminbot-geoip.md#vpn-check)). A roster field typed at some
+  point has no date and prints none. `tz_mismatch`
+  (`{ slack_tz, place_tz, hours }`) is set when the member's Slack time zone
+  keeps a clock more than two hours from the city that placed them (see
+  "Slack time zone" below). `ip_geolocation` is `{ active, provider,
+  trust_proxy }` (`provider` is `mmdb`, `ipinfo` or `off`), shown as the
+  status line at the foot of the admin map: "Sign-in geolocation is on
+  (mmdb)." or "... is off".
 - Anyone else (anonymous, or a signed-in non-admin member):
   `{ mode: "summary", places: [...{ ...place, count }], counts }` -- a
   headcount per city, no names, no `unplaced` list (the header counts already
@@ -1249,54 +1475,162 @@ counts }` -- names included, plus each member's Slack avatar and last login
 regardless: publishing a headcount is one thing, triggering a real Slack API
 call on someone else's behalf is another.
 
-Location comes from three sources, tried in a fixed order, each one falling
-through to the next whenever it fails to resolve -- not only when it is empty.
+A member is placed by the first source that answers, and a country never outranks a city, whatever
+it came from:
 
-1. **Slack**, city-level. `POST /member-map/refresh` reads each member's Slack
-   profile (a workspace location field if one is configured, otherwise their
-   timezone, whose IANA name carries a city) and stamps it on the member as
-   `slack_location`. A member Slack no longer knows about has their stamp
-   cleared rather than left stale, so an old value cannot outrank a fresher
-   source forever. That clearing only happens when the pass runs, which is why
-   it is scheduled daily (`adminbot-member-map`, 06:10) rather than left to the
-   button: this is the one source of the three that cannot refresh itself, and
-   it is the one the other two defer to.
-2. **Last-login location**, country-level only. Stamped automatically on every
-   successful sign-in from the caller's IP (see "Login location" below) -- there
-   is nothing to manually refresh here, it is already as current as their most
-   recent login.
-3. **Roster `location`**, city-level -- what they typed once, at signup or when
-   an admin added them. Tried last on purpose: unlike the two sources above, it
-   never updates itself.
+1. **The member's own device, or a recent check-in answer, whichever is newer.** The device city is
+   the one the member's browser named through "Use my precise location" (see "Precise location"
+   below), used for 7 days (`device_city`, `device_located_at`). The check-in answer is one the
+   member gave the retired "Are you in <city>?" check-in (see "Location check-in" below), while it
+   is younger than `ADMINBOT_LOCATION_CHECKIN_DAYS` (60). Both say where the member is; the IP only
+   says where their network exits.
+2. **A fresh, trusted IP city.** Read from the caller's current IP on every authenticated request,
+   never only at sign-in (see "Login location" below), and used for 7 days after the latest
+   reading (`ADMINBOT_MAP_LOGIN_FRESH_DAYS`), unless the reading was set aside as a likely VPN: its
+   city keeps a clock more than two hours from the browser's time zone, else the Slack zone. It
+   counts toward the map that signed-in members and admins see, and the admin's row for it says
+   "IP today · approx.": an IP city is approximate. An anonymous visitor gets only what members
+   stated, plus sign-in countries; the device city is never shown to them either.
+3. **A stated city.** `current_city` (where they are right now), then the roster `location`, then
+   the Slack profile's location field. `POST /member-map/refresh` reads each member's Slack profile
+   and stamps it as `slack_location`. A member Slack no longer knows about has the stamp cleared
+   rather than left stale. That only happens when the pass runs, which is why it is scheduled daily
+   (`adminbot-member-map`, 06:10).
+4. **A time zone's city.** The zone the member's browser reported (`last_device_tz`, under 30
+   days old), then the synced Slack `tz` (`slack_tz`, while it is under 30 days old), then
+   a zone written in the Slack location field, then the roster `timezone`. `Europe/Zurich` is also
+   what somebody in Basel reports, so the UI says "from Slack time zone" or "from profile time
+   zone", not just the city.
+5. **A country.** A country written in any of the text fields above, then the IP country, unless
+   that reading was set aside as a likely VPN.
+   Drawn as a hollow, dashed dot on the country's centroid.
 
-All three are free text (or, for last-login, a plain country name), so the
-resolver copes with what people actually write: institutions (`ETH` becomes
-Zürich), accents and spelling variants (`Tuebingen`/`Tübingen`), several places
-at once (`Zurich/Tuebingen/Toronto` takes the first), parentheticals, and
-leading hedges (`Mainly Montreal`). Anything none of the three sources can
-place is listed under **Not placed** with whatever the highest-priority source
-that had text wrote -- that is the signal to add a city (or country, for
-last-login) to the tables in `extensions/adminbot/src/member-map.ts`, not a
-reason to guess. A member placed by last-login only (no city, just a country)
-shows on the map as a dashed, lighter dot, distinct from a real city-level
-placement.
+#### Precise location
+
+Until a member allows location, the page raises the browser's own location prompt every time they
+sign in or open AdminBot with a session, every time they arrive at the dashboard, and every time
+the tab comes back into view. One prompt is in flight at a time. Dismissing it does not stop the
+next one; only "Block" does, because the browser then refuses the page and the page stops asking.
+Chrome may also quiet a prompt dismissed several times in a row. There is no banner, reminder or
+message. A single control, "Use my precise location", sits under the map-visibility row in Profile and on the dashboard map card's
+own-location line. Pressing it asks the browser for a city-level position
+(`enableHighAccuracy: false`, 10 s timeout) and posts it to `POST /profile/device-location`, which
+reduces it to the nearest place in the offline GeoNames `cities1000` table (see
+[IP geolocation](adminbot-geoip.md#device-location)) and keeps only the city, region and country.
+The position itself is never stored, logged, audited or returned. The line then reads
+"📍 City · Change", and "Change" takes a new reading.
+
+Once the browser has granted the permission, the page refreshes the reading silently on each visit
+and whenever the tab comes back into view, at most once an hour per device; the service writes only
+when the city changed or once a day. The refresh checks the permission first: on "denied" it never reads, and on "prompt" (or a
+browser without the Permissions API) it asks, unthrottled, as described above. A failure shows nothing.
+Members whose visibility is "stated" or "hidden" are never asked, and the service discards a
+position posted for them. Each write also adds a row to the location history with
+`source: "device"`, holding the city, region and country and never the position, so a new city
+or the day's first reading in the same city ("still here") is logged like an IP reading. The admin
+location log labels these rows "Device".
+
+The page also reports what the browser said to `POST /profile/location-permission` with
+`{ "state": "granted" | "denied" | "dismissed" }`. It sends a state and never a position. A read
+that succeeds is `granted`. A refused read (error code 1) is `denied` if the permission now says
+"denied", and `dismissed` otherwise, because Chrome uses the same code for Block and for closing
+the prompt. An existing block or grant is reported on each visit without asking. The page sends a
+state once per session unless it changes, and the service writes `location_permission` and
+`location_permission_at` only when the state changes. Writes are refused under "view as" and ignored
+for members who are not "auto". The member is never shown that this was noted. The reply is empty, and
+the two fields are dropped from every JSON response the service sends, on any route and for any
+reader. Admins see the answers only as the map coverage counts and list (see "Map coverage").
+
+City intros never fire from an IP city alone. An IP city places a member in a city for an intro
+only when the device city, a check-in answer or the Slack location agrees with it within 30 days;
+a fresh device city counts on its own.
+
+Each member chooses how they appear, under Profile, "Show me on the lab map as"
+(`map_visibility`, self-editable):
+
+- **Auto** (the default): the order above.
+- **My stated city only** (`stated`): skips every IP source -- the IP city and the IP country --
+  and the device city. Everything else (stated cities, time zones) applies as usual.
+- **Hidden** (`hidden`): left off the map entirely, including the counts.
+
+Only a city is ever shown. The map never carries an IP address, coordinates from a lookup, or a
+history of sign-ins. Each listed member says where their place came from, for example "San
+Francisco · IP today" or "Toronto · profile · IP ignored (VPN?)". The Collaborate and Dashboard tabs
+reload the map when they open and every five minutes while the page is visible, and the card says
+when it last updated.
+
+The resolver copes with what people actually write: institutions (`ETH` becomes Zürich, `UWO`
+London, ON), accents and spelling variants (`Tuebingen`/`Tübingen`, `Calcutta`), several places at
+once (`Zurich/Tuebingen/Toronto` takes the first), "city, region, country"
+(`London, Ontario, Canada`), parentheticals, and leading hedges (`Mainly Montreal`). A sign-in city
+is only accepted inside the country the IP provider reported, so `London` + `CA` lands in London, ON
+and never in England. Anything no source can place is listed under **Not placed** with what the
+member wrote -- the signal to add the city to the gazetteer in
+`extensions/adminbot/src/workflows/members/member-map.ts`, not a reason to guess. Every pin sits on
+a city's (or country's) centroid from that table; no coordinates from an IP lookup are stored or
+drawn. Members whose name is a do-not-contact marker (`Null,do not contact`) or a placeholder are
+left off the map entirely.
+
+### Location check-in (retired)
+
+AdminBot no longer asks members where they are. Location comes only from automatic sources: the
+live IP reading with its VPN and time-zone check, the Slack time zone and profile sync, and the
+member's own Profile fields. There is no check-in strip, no `?checkin=location` link and no Slack
+message. `GET /profile/location-prompt` returns only `{ drift }`, and
+`GET /profile/location-places` is gone. Answers members already gave are still read, as source 2
+above, until they are 60 days old; rows already in the location history keep their `checkin`
+outcome.
+
+### Slack time zone
+
+The daily directory sync (`adminbot-member-directory`) already reads each member's Slack `tz`. It
+now also stores it as `slack_tz` with `slack_tz_observed_at`, and appends a `slack_timezone` row to
+the location history whenever it changes. The sync only reads from Slack; nothing is
+written there.
+
+A Slack zone is a laptop setting, so it is a weak signal and is used in only three ways:
+
+- **Fallback.** While under 30 days old it is the first time-zone source in the order above.
+- **Cross-check.** When a member is placed by a city and their Slack zone keeps a clock more than
+  two hours from that city's, the admin map flags it ("Slack time zone Europe/Berlin is 6 h off").
+  The comparison is made at the current instant with each zone's real offset, so daylight saving is
+  handled: Reykjavík and Helsinki are two hours apart in winter (no flag) and three in summer
+  (flag), and in the weeks North America and Europe change clocks on different dates the gap is
+  measured as it actually is.
+
+It never moves a stated pin. It can set aside an IP city as a likely VPN, but only when the
+browser did not report its own zone, which is the better witness.
 
 ### Login location
 
-On every successful login, if `IPINFO_TOKEN` is configured, AdminBot
-geolocates the caller's IP (via IPinfo's free "Lite" tier -- country and
-continent only, not city-level) and stamps `last_login_at` /
-`last_login_country` / `last_login_continent` on the member record. This is
-best-effort and fire-and-forget: it never blocks or fails the login itself,
-and with no token configured it is simply skipped. It is visible to the
+On every successful login and every authenticated member request,
+AdminBot geolocates the caller's IP and stamps `last_login_country` /
+`last_login_continent`, and, when the provider answers with one,
+`last_login_city` / `last_login_region`, with the reading's time in
+`last_ip_observed_at` (`last_login_at` is the sign-in itself). A reading whose
+city disagrees with the browser's time zone (else the member's stored device
+zone, else Slack's) is logged but not stamped, and a reading with no zone to
+check it against never starts meetup intros; see
+[IP geolocation](adminbot-geoip.md#live-reading). A request writes only when the
+city or country changed, else once a UTC day. The
+provider is a local DB-IP City Lite database when `ADMINBOT_GEOIP_MMDB_PATH` is
+set (city-level, no network call per sign-in), otherwise IPinfo when
+`IPINFO_TOKEN` is set (country only on the free Lite tier), otherwise none; the
+service logs which at startup. Setup is in
+[IP geolocation](adminbot-geoip.md). This is best-effort and
+fire-and-forget: it never blocks or fails the login itself. It is visible to the
 member on their own profile ("Last login location", top of the Profile tab)
 and to admins in the Members table.
 
-Behind a reverse proxy (Render, Fly, etc.) the caller's real IP only reaches
-AdminBot via the `X-Forwarded-For` header, since the proxy terminates the
-actual connection -- set `ADMINBOT_TRUST_PROXY=1` in that environment so
-`remoteIp()` reads it, otherwise every login resolves to the proxy's own
-(private, unroutable) address and nothing ever gets recorded. Leave this unset
+Behind a reverse proxy (the Aurora Cloudflare tunnel, Render, Fly, etc.) the
+caller's real IP only reaches AdminBot in a header, since the proxy terminates
+the actual connection -- set `ADMINBOT_TRUST_PROXY=1` in that environment
+(Aurora deploys append it when it is missing) so `remoteIp()` reads it,
+otherwise every login resolves to the proxy's own (private, unroutable)
+address and nothing ever gets recorded. With it set, `remoteIp()` takes
+`CF-Connecting-IP` when present, which Cloudflare writes and overwrites, and
+otherwise the right-most `X-Forwarded-For` entry, which is the one the nearest
+proxy appended. It never takes the left-most entry, which the client wrote. Leave this unset
 for any deployment where the app might be reached directly: trusting the
 header there would let a caller spoof both this and IP-based rate limiting by
 hand-writing it.
@@ -1598,6 +1932,7 @@ checks and audit logging.
 
 ## Related
 
+- [Travel: conference RSVPs, travel plans and opt-in location sharing](/tools/adminbot-travel)
 - [Email template drift check](/tools/adminbot-email-templates)
 - [PaperFlow stage nudges](/tools/adminbot-paperflow-nudges)
 - [Email triage](/tools/adminbot-email-triage)
@@ -1615,14 +1950,22 @@ months in Berlin and keeps being invited to a 10am Toronto meeting.
 
 `adminbot_member_locations` is an append-only timeline fed by three sources:
 
-| Source          | Written by                                                            |
-| --------------- | --------------------------------------------------------------------- |
-| `self_reported` | any profile edit that changes `location` / `current_city`             |
-| `login_ip`      | the country of a successful sign-in (IPinfo Lite, country-level only) |
-| `slack_profile` | the member-map Slack sweep                                            |
+| Source           | Written by                                                                             |
+| ---------------- | -------------------------------------------------------------------------------------- |
+| `self_reported`  | any profile edit that changes `location` / `current_city`, and past check-in responses |
+| `login_ip`       | a successful sign-in: the city when the provider names one, else the country           |
+| `slack_profile`  | the member-map Slack sweep                                                             |
+| `slack_timezone` | the daily directory sync, when the member's Slack `tz` changes                         |
+| `admin`          | an admin editing the member's location                                                 |
 
 An observation is appended only when it **differs** from the last one from the same source, so a
-member who signs in twice a day adds no rows and the timeline stays a change log.
+member who signs in twice a day adds no rows and the timeline stays a change log. Past check-in rows
+were the exception: every response was written, because each one was the member saying so on that
+day.
+
+Admins see the newest 30 rows for a member under **Time Availability** (the member's own view), as
+**Location log**: the day, the source ("Check-in", "IP", "Slack time zone", ...), the place,
+and for check-ins whether it was snoozed, declined or given from the device.
 
 **Inference never writes a profile.** When recent sign-ins disagree with the profile for long
 enough — 2 sign-ins spanning 3 days, counted over the unbroken run of the current country — the
@@ -1720,3 +2063,107 @@ The configured bot needs Slack permissions for private-channel listing/creation,
 reads/invites, `auth.test`, and email lookup, plus the existing Slack Connect and Gmail sender.
 Missing permissions stop execution; preview and queueing never provision a channel. This needs
 an Aurora backend release as well as the frontend release.
+
+### Daily active Slack channel cleanup
+
+`adminbot-active-channels` runs daily at 08:00 in the gateway's configured timezone
+(`0 8 * * *` in `config/adminbot-cron.json`). After deployment, register/update it using
+`scripts/adminbot-cron-sync.sh`, as with the other scheduled jobs -- a deploy alone does not
+change the registered schedule.
+
+The job calls `POST /members/active-channels/sync` with the service token. The route also
+accepts admin sessions; ordinary members cannot run it and callers cannot supply targets.
+It reads the complete live membership of `jinesis-active` and `random-active`, including
+Slack Connect members from other organizations (`users.list` omits them, so each is looked up
+with `users.info`; a failed lookup aborts the read). Eligibility uses the same resolved member
+classification as active-channel invitations: full or coauthor-major. Alumni with one of these
+classifications remain eligible. Bots/app accounts are excluded. There is no separate exemption
+for human admins. The Slack pass leaves other channels untouched; the calendar pass is described
+below.
+
+Only an account whose SQLite member row names a non-eligible Member Type is removed. An account
+no member row claims (`no_roster_row`) and one whose row has a blank Member Type
+(`blank_member_type`) are returned in `needs_review` and left in the channel: the roster not
+knowing somebody is a gap in the roster, not a decision about them.
+
+This is a standing automatic policy: each removal is a normal T3 `slack.remove_from_channel`
+proposal, approved against its exact payload hash by `system:daily-active-channel-policy`,
+then executed and audited. Other removal proposals still require their existing approvals.
+Repeat runs deduplicate removals within the UTC day; the next day can remove an account that
+was re-added. Failed executions are reported and can be retried. Concurrent requests share the
+same pass.
+
+Slack requires the existing `SLACK_BOT_TOKEN` (directory/channel reads) and
+`SLACK_USER_TOKEN` (channel removals), with the corresponding Slack permissions.
+An empty SQLite member roster, failed/incomplete Slack read, or unavailable connector fails
+closed. Run only against the intended production member database. Local tests use synthetic
+Slack responses and never contact Slack or remove live users.
+
+### Daily lab calendar event membership
+
+The same daily 08:00 `adminbot-active-channels` job also calls
+`POST /members/calendar-membership/sync`. Both passes run even when one fails; any
+failure makes the combined job fail. Re-sync the cron manifest after deployment to
+apply its increased 30-minute timeout. No additional cron job is needed.
+
+The calendar pass restricts **only the Monday group meeting and direct calendar
+subscription access**. Monday is identified by `ADMINBOT_GROUP_MEETING_EVENT_ID`
+(normalized to its recurring series), including upcoming modified occurrences. Social,
+theme, project and other event guest lists are untouched by this policy.
+
+Full members and major coauthors (including alumni with those classifications) remain
+eligible. Calendar, main and correspondence addresses are matched against SQLite.
+Only known ineligible members are removed; unmatched guests such as invited speakers
+are preserved. Organizers, the calendar's own address and resources are protected.
+
+The same pass reads all calendar-sharing ACL pages and revokes known ineligible users'
+direct permissions. Owners, unmatched accounts, group/domain/public grants are untouched;
+inherited or public access cannot be revoked per member by this job. The Google account
+must have permission to manage the calendar's sharing settings.
+
+Event removals use `calendar.remove_attendees`; subscription removals use the new T3
+`calendar.revoke_lab_calendar` action. Both require hash-bound approval, execution and
+audit, using `system:weekly-calendar-membership-policy` for this standing policy. The
+executor re-reads before writing, preserving remaining guests and RSVP metadata and
+refusing to remove a changed/owner ACL. Empty rosters or incomplete inventories fail
+closed before any writes. Monday invitations and subscription grants enforce eligibility
+at execution; other event invitations are unrestricted by this membership rule.
+
+The same pass then **grants** missing access. Every eligible member is shared with one
+Google account, picked by a single rule: the profile's Calendar email if set, otherwise
+the first Gmail (`@gmail.com` / `@googlemail.com`) on the record. A departmental login is
+never used for a share: Google accepts it, but the member then sees "request access".
+Members with neither are listed as `needs_gmail` in the response instead of being guessed.
+The check reads the live ACL rather than the audit trail, so a member whose address
+changed, or whose share was removed by hand, is repaired on the next Sunday. Grants use the
+T3 `calendar.grant_lab_calendar` action approved by `system:lab-calendar-access-policy`.
+Changing the Calendar email on a profile triggers the same grant immediately.
+
+Event invites (themed meetings, local events) use the same Google account when there is
+one, and fall back to another address on file, since an invite still arrives by email. A
+member already on a guest list under any of their addresses is not invited twice.
+
+This requires `gog api call` support (verified against gog 0.43.0) and the configured
+Google account's Calendar read/write access. It uses Calendar `events.list/get/patch` and `acl.list/delete`
+through the existing gog credentials. Event updates remain silent (`sendUpdates=none`).
+The endpoint is restricted to service tokens/admins and accepts no calendar or recipient
+overrides. ACL deletion uses Google's deletion endpoint,
+which has no notification parameter. This does not repair invitations removed by older runs.
+
+### Member chat permissions
+
+Ordinary members receive `operator.read` and `operator.chat` on their own paired device.
+Chat sending, stopping, and creating a fresh owned conversation use the narrow chat permission; `operator.write` remains required
+for privileged gateway tools. Member turns stay in their own session, cannot select another
+transcript or deliver to an external channel, and run without slash commands or model tools.
+Member session creation accepts only an agent ID and optional label; the server generates the key
+and stamps the authenticated owner. Parent sessions, explicit keys, model overrides, initial
+messages, and command hooks require broader privileges. The UI moves signed-in members away
+from shared default conversations into their private member session.
+ACP tool runtimes are unavailable to chat-only devices. Admin and existing write clients keep
+their prior chat access.
+
+After this change is released, a signed-in browser with an older read-only device token re-mints
+its credential once on a scope mismatch. If recovery fails, sign out and back in. Do not grant
+broad write scope manually to repair member chat. Both the gateway and the Control UI must be
+updated; this code change does not approve or deploy a production device by itself.

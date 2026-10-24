@@ -5,7 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AdminBotLabMember } from "../contracts/actions.js";
 import { ADMINBOT_LAB_OVERLEAF_HOST } from "../contracts/overleaf.js";
-import { createAdminBotSqliteService } from "./sqlite.js";
+import { createAdminBotSqliteService, sqliteServiceOptions } from "./sqlite.js";
 
 const tempDirs: string[] = [];
 
@@ -31,6 +31,117 @@ function unwrap<T>(
 }
 
 describe("AdminBotSqliteStore", () => {
+  it("retains stage-specific X figures across reopen and supersedes only the same stage", () => {
+    const databasePath = tempDbPath();
+    const first = createAdminBotSqliteService({ databasePath });
+    unwrap(
+      first.service.upsertPaper({
+        id: "x-paper",
+        title: "Synthetic paper",
+        authors: ["Synthetic Author"],
+        current_step: "overleaf_writing",
+      }),
+    );
+    const release = unwrap(
+      first.service.saveSocialDraft({
+        paperId: "x-paper",
+        platform: "x",
+        body: "ignored",
+        memberId: "test",
+        privileged: true,
+        xThread: {
+          stage: "arxiv",
+          posts: [
+            {
+              text: "1/1 Release",
+              images: [
+                { data_uri: "data:image/png;base64,iVBORw0KGgo=", alt_text: "Synthetic figure" },
+              ],
+            },
+          ],
+        },
+      }),
+    ).draft;
+    const poster = unwrap(
+      first.service.saveSocialDraft({
+        paperId: "x-paper",
+        platform: "x",
+        body: "",
+        memberId: "test",
+        privileged: true,
+        xThread: { stage: "poster", posts: [{ text: "1/1 Come chat" }] },
+      }),
+    ).draft;
+    first.close();
+    const second = createAdminBotSqliteService({ databasePath });
+    try {
+      expect(second.store.listSocialDrafts(undefined, release.id)[0]).toMatchObject({
+        body: "1/1 Release",
+        status: "draft",
+        x_thread: { stage: "arxiv", posts: [{ images: [{ alt_text: "Synthetic figure" }] }] },
+      });
+      unwrap(
+        second.service.saveSocialDraft({
+          paperId: "x-paper",
+          platform: "x",
+          body: "",
+          memberId: "test",
+          privileged: true,
+          xThread: { stage: "poster", posts: [{ text: "1/1 Updated poster" }] },
+        }),
+      );
+      expect(second.store.listSocialDrafts(undefined, poster.id)[0].status).toBe("superseded");
+      expect(second.store.listSocialDrafts(undefined, release.id)[0].status).toBe("draft");
+      expect(
+        second.service.saveSocialDraft({
+          paperId: "x-paper",
+          platform: "x",
+          body: "",
+          memberId: "test",
+          privileged: false,
+          xThread: { stage: "arxiv", posts: [{ text: "Unauthorized edit" }] },
+        }),
+      ).toMatchObject({ ok: false, status: 403 });
+    } finally {
+      second.close();
+    }
+  });
+  it("preserves the injected Drive checker in the durable service", async () => {
+    const seen: string[] = [];
+    const durable = createAdminBotSqliteService({
+      databasePath: tempDbPath(),
+      driveProbe: async (id) => {
+        seen.push(id);
+        return { status: "found", canEdit: true };
+      },
+    });
+    try {
+      expect(
+        await durable.service.checkDriveAccess(
+          "https://drive.google.com/drive/folders/1SyntheticEditableFolder",
+        ),
+      ).toMatchObject({
+        ok: true,
+        payload: { status: "accessible" },
+      });
+      expect(seen).toEqual(["1SyntheticEditableFolder"]);
+    } finally {
+      durable.close();
+    }
+  });
+
+  it("retains a self-edited ACL Anthology link after reopening SQLite", () => {
+    const databasePath = tempDbPath();
+    const first = createAdminBotSqliteService({ databasePath });
+    unwrap(first.service.upsertLabMember({ id: "pat", name: "Pat", privilege_level: "member" }));
+    const url = "https://aclanthology.org/people/pat-doe/";
+    unwrap(first.service.updateOwnProfile("pat", { acl_anthology_url: url }));
+    first.store.close();
+    const reopened = createAdminBotSqliteService({ databasePath });
+    expect(unwrap(reopened.service.listLabMembers()).members[0].acl_anthology_url).toBe(url);
+    reopened.store.close();
+  });
+
   it("retains explicit badge counts after reopening SQLite", () => {
     const databasePath = tempDbPath();
     const first = createAdminBotSqliteService({ databasePath });
@@ -114,6 +225,59 @@ describe("AdminBotSqliteStore", () => {
     const second = unwrap(lab.service.listMeetingsPage({ limit: 2, before: first.next_cursor }));
     expect(second.meetings.map((meeting) => meeting.id)).toEqual(["older-a"]);
     expect(second.next_cursor).toBeUndefined();
+    lab.close();
+  });
+
+  it("indexes meeting series from heads and pages one series past other series' rows", () => {
+    const lab = createAdminBotSqliteService({ databasePath: tempDbPath() });
+    const file = (id: string, topic: string, startedAt: string, extra: object = {}) =>
+      unwrap(
+        lab.service.upsertMeeting({
+          id,
+          topic,
+          started_at: startedAt,
+          recording: { share_url: `https://example.test/${id}` },
+          source: "manual",
+          ...extra,
+        }),
+      );
+    file("weekly-old", "Weekly Sync", "2026-08-03T14:00:00Z", { duration_minutes: 50 });
+    // More than one 64-row read chunk of another series between the two Weekly Syncs.
+    for (let index = 0; index < 90; index++) {
+      file(
+        `journal-${index}`,
+        "Journal Club",
+        new Date(Date.UTC(2026, 8, 1, 0, index)).toISOString(),
+      );
+    }
+    // Its length is known only from the transcript, which the heads read must still see.
+    file("weekly-new", "weekly sync", "2026-09-14T14:00:00Z", {
+      transcript: {
+        processed_at: "2026-09-14T16:00:00Z",
+        speaker_names: [],
+        duration_seconds: 3000,
+      },
+    });
+    file("weekly-short", "Weekly Sync", "2026-09-15T14:00:00Z", {
+      transcript: { processed_at: "2026-09-15T16:00:00Z", speaker_names: [], duration_seconds: 60 },
+    });
+    expect(unwrap(lab.service.listMeetingSeries()).series).toEqual([
+      {
+        key: "weekly sync",
+        topic: "weekly sync",
+        count: 2,
+        latest_started_at: "2026-09-14T14:00:00.000Z",
+      },
+      {
+        key: "journal club",
+        topic: "Journal Club",
+        count: 90,
+        latest_started_at: "2026-09-01T01:29:00.000Z",
+      },
+    ]);
+    const page = unwrap(lab.service.listMeetingsPage({ limit: 5, seriesKey: "weekly sync" }));
+    expect(page.meetings.map((meeting) => meeting.id)).toEqual(["weekly-new", "weekly-old"]);
+    expect(page.next_cursor).toBeUndefined();
     lab.close();
   });
 
@@ -794,5 +958,32 @@ describe("AdminBotSqliteStore", () => {
       scope: "paper records",
     });
     second.close();
+  });
+});
+
+describe("sqliteServiceOptions", () => {
+  // An allowlist here once dropped these, so they worked against the memory store in tests and
+  // silently did nothing in production.
+  it("forwards every wired service option, not just an allowlist", () => {
+    const deadlineDataset = () => [];
+    const arxivProbe = { probe: async () => ({ ok: true }) } as never;
+    const openReviewProbe = { probe: async () => ({ ok: true }) } as never;
+    const reviewSlackProfilePhoto = (async () => ({})) as never;
+    const options = sqliteServiceOptions({
+      databasePath: "/unused.sqlite",
+      auditRetentionDays: 30,
+      deadlineDataset,
+      arxivProbe,
+      openReviewProbe,
+      reviewSlackProfilePhoto,
+    });
+    expect(options).toMatchObject({
+      auditRetentionDays: 30,
+      deadlineDataset,
+      arxivProbe,
+      openReviewProbe,
+      reviewSlackProfilePhoto,
+    });
+    expect(options).not.toHaveProperty("databasePath");
   });
 });

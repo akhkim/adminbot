@@ -5,9 +5,9 @@ import type { UiSettings } from "../../storage.ts";
 import {
   createEmptyAdminBotDashboardData,
   createEmptyAdminBotMemberList,
-  createEmptyAdminBotMemberNudgeState,
   createEmptyAdminBotReimbursementState,
 } from "../controllers/admin.ts";
+import { createEmptyAdminBotMemberNudgeState } from "../controllers/nudges.ts";
 import {
   type MemberAuthHost,
   acknowledgeOnboardingChecklist,
@@ -285,10 +285,11 @@ describe("memberPrivilegeLevel wiring", () => {
       memberSheetLoadedAt: 1,
       adminBotProfileOverview: [{ member_id: "old-private" }] as never,
       adminBotProfileOverviewLoadedAt: 1,
-      adminBotTravel: { history: [{ id: "old-trip" }] } as never,
       adminBotPaperSlots: { "old-paper": { paperId: "old-paper" } } as never,
       adminBotPaperSlotsLoadedAt: 1,
-      adminBotTripDrafts: { "old-conference": { notes: "private" } } as never,
+      labTravel: { matches: [{ people: [{ member_id: "old-peer" }] }] } as never,
+      labTravelLookup: { people: [{ member_id: "old-peer" }] } as never,
+      labTravelSharing: { enabled: true } as never,
       adminBotTabUsage: { visits: 7 } as never,
       adminBotTabUsageLoadedAt: 1,
     });
@@ -316,10 +317,11 @@ describe("memberPrivilegeLevel wiring", () => {
     expect(host.memberSheetLoadedAt).toBeNull();
     expect(host.adminBotProfileOverview).toEqual([]);
     expect(host.adminBotProfileOverviewLoadedAt).toBeNull();
-    expect(host.adminBotTravel?.history).toBeNull();
     expect(host.adminBotPaperSlots).toEqual({});
     expect(host.adminBotPaperSlotsLoadedAt).toBeNull();
-    expect(host.adminBotTripDrafts).toEqual({});
+    expect(host.labTravel).toBeUndefined();
+    expect(host.labTravelLookup).toBeNull();
+    expect(host.labTravelSharing).toBeNull();
     expect(host.adminBotTabUsage).toBeNull();
     expect(host.adminBotTabUsageLoadedAt).toBeNull();
     resolveLogout(jsonResponse(200, {}));
@@ -338,10 +340,15 @@ describe("memberPrivilegeLevel wiring", () => {
       memberPassword: "password-b",
       adminBotLocationDrift: { current_city: "A's city" } as never,
       adminBotLocationDrifts: [{ current_city: "A's city" }] as never,
-      adminBotMeetings: [{ id: "A's meeting", recording: { passcode: "private" } }] as never,
-      adminBotMeetingsVisibleCount: 24,
-      adminBotMeetingsNextCursor: { started_at: "2026-08-12T14:00:00Z", id: "A's meeting" },
-      adminBotMeetingsLoadingMore: true,
+      adminBotMeetingSeries: [{ key: "a's meeting", topic: "A's meeting", count: 1 }] as never,
+      adminBotMeetingSeriesPages: {
+        "a's meeting": {
+          meetings: [{ id: "A's meeting", recording: { passcode: "private" } }],
+          next_cursor: null,
+          loading: true,
+          error: null,
+        },
+      } as never,
       adminBotMeetingNudgePreview: { members: [{ id: "a" }] } as never,
       calendarEvents: [{ id: "A's event", summary: "private" }] as never,
       calendarMessages: [{ role: "user", content: "A's private prompt" }],
@@ -365,9 +372,13 @@ describe("memberPrivilegeLevel wiring", () => {
       adminBotTimeAwayDraft: { note: "A's holiday" } as never,
       adminBotMilestoneDraft: { label: "A's deadline" } as never,
       adminBotTripDraft: { note: "A's trip" } as never,
+      labTravelCityDraft: "A's city",
       myWorkProjectDraft: "A's project",
       myWorkProjectAlias: "a-private",
       myWorkProjectEdits: { a: { title: "A's title", alias: "x", startedOn: "", error: null } },
+      myWorkBlockerDraft: { paperId: "a", text: "", title: "A's blocker" },
+      myProjects: [{ paper_id: "a", title: "A's project" }] as never,
+      myProjectsChoosing: true,
       adminBotVenueFilter: "A's venue",
       adminBotPreregMissingEdit: true,
       profileBadgeNomineeId: "a-peer",
@@ -405,10 +416,8 @@ describe("memberPrivilegeLevel wiring", () => {
     expect(loadStoredMemberSession()?.sessionToken).toBe("session-b");
     expect(host.adminBotLocationDrift).toBeUndefined();
     expect(host.adminBotLocationDrifts).toBeUndefined();
-    expect(host.adminBotMeetings).toBeUndefined();
-    expect(host.adminBotMeetingsVisibleCount).toBe(12);
-    expect(host.adminBotMeetingsNextCursor).toBeNull();
-    expect(host.adminBotMeetingsLoadingMore).toBe(false);
+    expect(host.adminBotMeetingSeries).toBeUndefined();
+    expect(host.adminBotMeetingSeriesPages).toEqual({});
     expect(host.adminBotMeetingNudgePreview).toBeNull();
     expect(host.calendarEvents).toBeUndefined();
     expect(host.calendarMessages).toEqual([]);
@@ -426,9 +435,13 @@ describe("memberPrivilegeLevel wiring", () => {
     expect(host.adminBotTimeAwayDraft?.note).toBe("");
     expect(host.adminBotMilestoneDraft?.label).toBe("");
     expect(host.adminBotTripDraft?.note).toBe("");
+    expect(host.labTravelCityDraft).toBe("");
     expect(host.myWorkProjectDraft).toBeNull();
     expect(host.myWorkProjectAlias).toBe("");
     expect(host.myWorkProjectEdits).toEqual({});
+    expect(host.myWorkBlockerDraft).toBeNull();
+    expect(host.myProjects).toBeNull();
+    expect(host.myProjectsChoosing).toBe(false);
     expect(host.adminBotVenueFilter).toBe("");
     expect(host.adminBotPreregMissingEdit).toBe(false);
     expect(host.profileBadgeNomineeId).toBe("");
@@ -443,8 +456,6 @@ describe("memberPrivilegeLevel wiring", () => {
 
 describe("onboarding checklist acknowledgement", () => {
   const onboarding = {
-    completed: [],
-    remaining: [],
     steps: [
       {
         id: "profile_photo",
@@ -797,8 +808,6 @@ describe("toggleOnboardingStep", () => {
     saveStoredMemberSession({ sessionToken: "sess-tok", expiresAt: "later" });
     const refreshed = {
       steps: [{ id: "linkedin", status: "complete", label: "Connect on LinkedIn" }],
-      completed: [],
-      remaining: [],
     };
     const spy = vi
       .spyOn(globalThis, "fetch")

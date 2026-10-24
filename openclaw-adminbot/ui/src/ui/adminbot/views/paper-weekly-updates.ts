@@ -16,7 +16,7 @@ import {
   adminBotWeekStart,
 } from "../../../../../extensions/adminbot/src/contracts/paper-weekly-updates.js";
 import { icons } from "../../icons.ts";
-import type { PaperWeeklyUpdate } from "../auth/session.ts";
+import type { PaperWeeklyUpdate } from "../api/papers.ts";
 
 export type PaperWeeklyUpdatesProps = {
   paperId: string;
@@ -63,7 +63,7 @@ export function renderPaperWeeklyUpdates(props: PaperWeeklyUpdatesProps) {
   ).slice(0, VISIBLE_WEEKS);
 
   return html`
-    <details class="weekly-updates" open data-testid=${`paper-weekly-updates-${props.paperId}`}>
+    <details class="weekly-updates" data-testid=${`paper-weekly-updates-${props.paperId}`}>
       <summary class="paper-slots__group-head">
         <h4 class="weekly-updates__title">
           <span class="weekly-updates__icon" aria-hidden="true">${icons.activity}</span>

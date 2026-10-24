@@ -9,7 +9,7 @@ import { createEmptyAdminBotDashboardData } from "../controllers/admin.ts";
 import * as deadlineTime from "../data/deadline-time.ts";
 import { DEADLINE_VENUES } from "../data/deadlines.ts";
 import { renderDashboard } from "./dashboard.ts";
-import { findOwnMember } from "./profile.ts";
+import { findOwnMember } from "./profile-fields.ts";
 
 function createState(overrides: Partial<AppViewState> = {}): AppViewState {
   return {
@@ -105,8 +105,6 @@ describe("renderDashboard", () => {
               required: true,
             },
           ],
-          completed: [],
-          remaining: [],
         },
         adminBotOnboardingAcknowledged: false,
       } as unknown as Partial<AppViewState>),
@@ -162,6 +160,21 @@ describe("renderDashboard", () => {
     expect(attentionIds(renderPage(state, "member"))).not.toContain("email-reviews");
   });
 
+  it("counts the admin queues from the dashboard's own count read", () => {
+    const container = renderPage(
+      createState({
+        adminBotData: {
+          proposals: [],
+          emailReviews: [],
+          queueCounts: { pendingProposals: 3, emailReviews: 2 },
+        },
+      }),
+      "admin",
+    );
+    expect(attentionIds(container)).toEqual(expect.arrayContaining(["proposals", "email-reviews"]));
+    expect(container.textContent).toContain("2 messages were held");
+  });
+
   it("keeps the admin queues out of a member's view", () => {
     const container = renderPage(
       createState({
@@ -195,18 +208,15 @@ describe("renderDashboard", () => {
               title: "A paper",
               authors: ["Ada"],
               current_step: "submission",
+              // Blockers are read off the paper's own log, the same record Active Papers reads.
+              artifacts: {
+                blocker_log: JSON.stringify([
+                  { stage: "submission", title: "Stuck", note: "", by: "m1", at: "2026-10-01" },
+                ]),
+              },
             },
           ],
         },
-        myWorkBlockers: [
-          {
-            id: "b1",
-            paperId: "p1",
-            paperTitle: "A paper",
-            text: "Stuck",
-            createdAt: 0,
-          },
-        ],
       } as unknown as Partial<AppViewState>),
       "member",
     );
@@ -239,12 +249,22 @@ describe("renderDashboard", () => {
   // The whole board used to render here, which made the dashboard mostly a second copy of the
   // Deadlines tab. It is a two-row glance now, and the board is a click away.
   it("shows a two-row deadline glance rather than the whole board", () => {
-    const container = renderPage(createState(), "member");
-    expect(container.querySelector("adminbot-deadlines-view")).toBeNull();
-    const widget = container.querySelector('[data-testid="dashboard-next-deadlines"]');
-    expect(widget).not.toBeNull();
-    expect(widget?.querySelectorAll(".dashboard__next-deadline")).toHaveLength(2);
-    expect(container.querySelector('[data-testid="dashboard-next-deadlines-open"]')).not.toBeNull();
+    // A fixed day: the glance reads the bundled deadline dataset, which on the real clock can run
+    // down to fewer than two upcoming deadlines.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-08-24T12:00:00Z"));
+    try {
+      const container = renderPage(createState(), "member");
+      expect(container.querySelector("adminbot-deadlines-view")).toBeNull();
+      const widget = container.querySelector('[data-testid="dashboard-next-deadlines"]');
+      expect(widget).not.toBeNull();
+      expect(widget?.querySelectorAll(".dashboard__next-deadline")).toHaveLength(2);
+      expect(
+        container.querySelector('[data-testid="dashboard-next-deadlines-open"]'),
+      ).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   // The member's own dated milestones are the ones they plan around, so a glance that showed only
@@ -279,6 +299,8 @@ describe("renderDashboard", () => {
       expect(rows).toHaveLength(2);
       expect(rows[0]?.textContent).toContain("Thesis draft");
       expect(rows[0]?.textContent).toContain("yours");
+      expect(rows[0]?.querySelector(".deadline-date")?.textContent).toBe("Aug 25, 2026");
+      expect(rows[0]?.querySelector(".deadline-time")).toBeNull();
       expect(rows[1]?.textContent).toContain("Example conference");
     } finally {
       deadlines.mockRestore();
@@ -290,31 +312,65 @@ describe("renderDashboard", () => {
   // attribute is what resolves the countdown's color, so without it every row reads as plain text
   // and a deadline tomorrow looks like one in March.
   it("carries the board's urgency and countdown on each row", () => {
-    const soon = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    const container = renderPage(
-      createState({
-        memberId: "ada",
-        adminBotData: {
-          proposals: [],
-          members: [
-            {
-              id: "ada",
-              name: "Ada",
-              milestones: [{ date: soon, label: "Thesis" }],
-            },
-          ],
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-10-12T20:00:00Z"));
+    const deadlines = vi.spyOn(deadlineTime, "upcomingMajorDeadlines").mockReturnValue([]);
+    try {
+      const soon = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      const container = renderPage(
+        createState({
+          memberId: "ada",
+          adminBotData: {
+            proposals: [],
+            members: [
+              {
+                id: "ada",
+                name: "Ada",
+                milestones: [{ date: soon, label: "Thesis" }],
+              },
+            ],
+          },
+        } as unknown as Partial<AppViewState>),
+        "member",
+      );
+      const row = [...container.querySelectorAll<HTMLElement>(".dashboard__next-deadline")].find(
+        (candidate) => candidate.textContent?.includes("Thesis"),
+      );
+      expect(row).toBeDefined();
+      expect(row?.dataset.urgency).toBe("critical");
+      expect(row?.querySelector(".dashboard__next-deadline-countdown")?.textContent).toMatch(
+        /day|today/u,
+      );
+      // The date splits the same way the board splits it, so the time reads as secondary.
+      expect(row?.querySelector(".deadline-date")).not.toBeNull();
+      expect(row?.querySelector(".deadline-time")).toBeNull();
+    } finally {
+      deadlines.mockRestore();
+      clock.mockRestore();
+    }
+  });
+
+  it("keeps the public cutoff in AoE instead of relabeling its UTC instant", () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-10-06T12:00:00Z"));
+    const deadlines = vi.spyOn(deadlineTime, "upcomingMajorDeadlines").mockReturnValue([
+      {
+        venue: {
+          ...DEADLINE_VENUES[0]!,
+          name: "Example conference",
+          deadline_at: "2026-10-12T11:59:00Z",
+          deadline_aoe: "2026-10-11 23:59:00",
+          deadline_time_precision: "minute",
         },
-      } as unknown as Partial<AppViewState>),
-      "member",
-    );
-    const row = container.querySelector<HTMLElement>(".dashboard__next-deadline");
-    expect(row?.dataset.urgency).toBe("critical");
-    expect(row?.querySelector(".dashboard__next-deadline-countdown")?.textContent).toMatch(
-      /day|today/u,
-    );
-    // The date splits the same way the board splits it, so the time reads as secondary.
-    expect(row?.querySelector(".deadline-date")).not.toBeNull();
-    expect(row?.querySelector(".deadline-time")).not.toBeNull();
+        instant: Date.parse("2026-10-12T11:59:00Z"),
+      },
+    ]);
+    try {
+      const row = renderPage(createState()).querySelector(".dashboard__next-deadline");
+      expect(row?.querySelector(".deadline-date")?.textContent).toBe("Oct 11, 2026");
+      expect(row?.querySelector(".deadline-time")?.textContent).toBe("23:59 AoE");
+    } finally {
+      deadlines.mockRestore();
+      clock.mockRestore();
+    }
   });
 
   // A blank mandatory field never blocks saving or leaving the profile editor (see profile.ts),
@@ -408,7 +464,8 @@ describe("renderDashboard", () => {
           proposals: [],
           members: [
             {
-              // The mandatory set is the member sheet's own columns, plus the CV.
+              // All required profile questions have answers.
+              arr_reviewer_qualified: false,
               id: "m1",
               name: "Ada",
               location: "Toronto",
@@ -424,6 +481,8 @@ describe("renderDashboard", () => {
               openreview_id: "~Ada_Lovelace1",
               github_url: "https://github.com/ada",
               linkedin_url: "https://www.linkedin.com/in/ada",
+              twitter_url: "https://x.com/ada",
+              personal_website: "https://ada.dev",
               cv_url: "https://ada.dev/cv.pdf",
               one_on_one_folder_url: "https://drive.google.com/drive/folders/ada",
               intake_form_url: "https://docs.google.com/forms/d/e/ada/viewform",
@@ -669,6 +728,18 @@ describe("notifications on the dashboard", () => {
       ?.click();
     expect(read).toEqual([[NOTIFICATION.id]]);
     expect(tabs).toEqual(["adminbotMeetings"]);
+  });
+
+  it("explains cached reads and queued writes when the service is offline", () => {
+    const container = renderPage(
+      createState({
+        adminBotUsingCachedReads: true,
+        adminBotOfflinePendingWrites: 2,
+      }),
+    );
+    const banner = container.querySelector('[data-testid="dashboard-offline"]');
+    expect(banner?.textContent).toContain("Working offline");
+    expect(banner?.textContent).toContain("2 edits retained from the old queue");
   });
 });
 

@@ -2,6 +2,28 @@ import { LitElement } from "lit";
 import { state } from "lit/decorators.js";
 import { i18n, I18nController, isSupportedLocale, t } from "../i18n/index.ts";
 import type { ActivityEntry, ActivityStatus } from "./activity-model.ts";
+import type { CalendarEvent, CalendarEventDraft, LabCalendar } from "./adminbot/api/calendar.ts";
+import type { LabBroadcast } from "./adminbot/api/lab-sharing.ts";
+import type {
+  MeetingAttendanceNudgePreview,
+  MeetingAttendanceNudgeResult,
+  MeetingSeries,
+  MeetingSeriesPages,
+} from "./adminbot/api/meetings.ts";
+import type { MemberAdoptionSummary, MemberProfileOverviewRow } from "./adminbot/api/members.ts";
+import type { EscalatedNudgeRow } from "./adminbot/api/nudges.ts";
+import type {
+  PublicationDigestPreview,
+  PublicationDigestVenue,
+} from "./adminbot/api/paper-admin.ts";
+import type {
+  PiReviewRow,
+  PaperNudgeBatch,
+  PaperSlotOverviewRow,
+} from "./adminbot/api/paper-admin.ts";
+import type { PaperCycle } from "./adminbot/api/papers.ts";
+import type { LocationDrift } from "./adminbot/api/profile.ts";
+import type { MemberNotification, TabVisitReport } from "./adminbot/api/workspace.ts";
 import {
   type LoginMode,
   type MemberAuthFailure,
@@ -16,40 +38,17 @@ import {
   submitMemberAuth as submitMemberAuthInternal,
 } from "./adminbot/auth/flow.ts";
 import type {
-  MemberAdoptionSummary,
   MemberImpersonator,
-  PublicationDigestPreview,
-  PublicationDigestVenue,
   MemberOnboarding,
   MemberRegistration,
   RosterMember,
-  CalendarEvent,
-  LocationDrift,
-  MeetingAttendanceNudgePreview,
-  MeetingAttendanceNudgeResult,
-  MeetingRecord,
-  MeetingCursor,
-  MemberNotification,
-  CalendarEventDraft,
-  LabBroadcast,
-  LabCalendar,
 } from "./adminbot/auth/session.ts";
-import type {
-  EscalatedNudgeRow,
-  PiReviewRow,
-  MemberProfileOverviewRow,
-  PaperCycle,
-  PaperNudgeBatch,
-  PaperSlotOverviewRow,
-  TabVisitReport,
-} from "./adminbot/auth/session.ts";
-import type { AudienceFilter } from "./adminbot/calendar-audience.ts";
+import type { AudienceFilter, InviteMode } from "./adminbot/calendar-audience.ts";
 import type { AdminBotLabMember } from "./adminbot/controllers/admin.ts";
 import {
   createEmptyAdminBotDashboardData,
   createEmptyAdminBotMemberList,
   createEmptyAdminBotStandingMeetings,
-  createEmptyAdminBotMemberNudgeState,
   createEmptyAdminBotReimbursementState,
   createEmptyLabPapersState,
   createEmptyVenuePapersState,
@@ -72,17 +71,21 @@ import {
   requestAdminBotCalendarDraft,
   saveAdminBotCalendarEvent,
 } from "./adminbot/controllers/calendar.ts";
+import type { EventsNotice } from "./adminbot/controllers/events.ts";
+import type { LabTravelNotice, LookupDraft } from "./adminbot/controllers/lab-travel.ts";
 import {
   answerAdminBotLocationPrompt,
   loadAdminBotLocationDrifts,
   loadAdminBotLocationPrompt,
 } from "./adminbot/controllers/location-prompt.ts";
+import type { LocationTrackerSnapshot } from "./adminbot/controllers/location-tracker.ts";
+import type { DeskLettersState } from "./adminbot/controllers/logistics.ts";
 import { defaultMailingListRange } from "./adminbot/controllers/mailing-list.ts";
 import {
   fileAdminBotMeeting,
   loadAdminBotMeetingNudges,
   loadAdminBotMeetings,
-  loadMoreAdminBotMeetings,
+  loadAdminBotMeetingSeriesPage,
   sendAdminBotMeetingNudges,
   setAdminBotMeetingAttendance,
 } from "./adminbot/controllers/meetings.ts";
@@ -105,13 +108,18 @@ import {
   markAdminBotNotificationsRead,
   resetNotificationPopups,
 } from "./adminbot/controllers/notifications.ts";
+import { createEmptyAdminBotMemberNudgeState } from "./adminbot/controllers/nudges.ts";
+import type { PreciseLocationState } from "./adminbot/controllers/precise-location.ts";
+import { EMPTY_PROFILE_OVERVIEW_PAGE } from "./adminbot/controllers/profile-overview.ts";
+import { createRecLetterEligibilityState } from "./adminbot/controllers/rec-letter-eligibility.ts";
 import type { RecentEditsState } from "./adminbot/controllers/recent-edits.ts";
 import {
   recordAdminBotTabVisit,
   type AdminBotTabVisitHost,
 } from "./adminbot/controllers/tab-visits.ts";
-import { EMPTY_TRAVEL, type TravelState } from "./adminbot/controllers/travel.ts";
 import type { BadgeLoadError } from "./adminbot/data/badges.ts";
+import type { EventsOverview } from "./adminbot/data/events.ts";
+import type { TravelLookup, TravelOverview, TravelSharing } from "./adminbot/data/lab-travel.ts";
 import {
   createFactRow,
   createSchoolRow,
@@ -119,7 +127,6 @@ import {
   type MeetingRequestRow,
   type RecommendationSchool,
 } from "./adminbot/data/logistics-draft.ts";
-// Control UI module implements app behavior.
 import {
   DEFAULT_LOGISTICS_QUEUE_OPTIONS,
   type LogisticsQueueOptions,
@@ -127,14 +134,18 @@ import {
 import type { LogisticsRequest } from "./adminbot/data/logistics-requests.ts";
 import type { MemberMap } from "./adminbot/data/member-map.ts";
 import type { RegistrationsLoadError } from "./adminbot/data/registrations.ts";
+import { EMPTY_PAGED_LIST, type PagedListState } from "./adminbot/load-more.ts";
+import type { ProjectSummary } from "./adminbot/projects/model.ts";
+import { resetProjectsSessionState } from "./adminbot/projects/view.ts";
+import type {
+  BlockerDraft,
+  ProjectDetailsDraft,
+  ProjectVenueDraft,
+} from "./adminbot/projects/workspace.ts";
+import { resetViewSessions } from "./adminbot/view-session-reset.ts";
 import type { BlockerSort, PreregSort } from "./adminbot/views/admin.ts";
-import { resetAdminViewSessionState } from "./adminbot/views/admin.ts";
 import type { ConferencePapersTab } from "./adminbot/views/conference-papers.ts";
-import { resetLabSharingSessionState } from "./adminbot/views/lab-sharing.ts";
 import type { LogisticsMode } from "./adminbot/views/logistics.ts";
-import type { Blocker, BlockerDraft } from "./adminbot/views/my-work.ts";
-import { resetMyWorkSessionState } from "./adminbot/views/my-work.ts";
-import type { PaperTripDraft } from "./adminbot/views/paper-cycle.ts";
 import {
   EMPTY_PAPER_OVERVIEW_FILTER,
   type PaperOverviewFilter,
@@ -144,15 +155,19 @@ import {
   EMPTY_PROFILE_OVERVIEW_FILTER,
   type ProfileOverviewFilter,
 } from "./adminbot/views/profile-overview.ts";
-import { resetProfileSessionState } from "./adminbot/views/profile.ts";
 import type { TimeChartWindow } from "./adminbot/views/time-allocation-chart.ts";
-import { EMPTY_TRIP_DRAFT, type TripDraft } from "./adminbot/views/time-availability.trips.ts";
 import {
   EMPTY_MILESTONE_DRAFT,
   EMPTY_TIME_AVAILABILITY_DRAFT,
-  type MilestoneDraft,
-  type TimeAvailabilityDraft,
-  type TimeAvailabilityRange,
+} from "./adminbot/views/time-availability.drafts.ts";
+import {
+  EMPTY_TRIP_DRAFT,
+  type TripDraft,
+} from "./adminbot/views/time-availability.trip-editor.ts";
+import type {
+  MilestoneDraft,
+  TimeAvailabilityDraft,
+  TimeAvailabilityRange,
 } from "./adminbot/views/time-availability.ts";
 import {
   handleChannelConfigReload as handleChannelConfigReloadInternal,
@@ -357,7 +372,7 @@ export class OpenClawApp extends LitElement {
   @state() loginPendingNotice = false;
   @state() guestReimbursements = false;
   @state() authGateVisible = false;
-  @state() memberSheet: import("./adminbot/auth/session.ts").MemberSheetView | null = null;
+  @state() memberSheet: import("./adminbot/api/onboarding.ts").MemberSheetView | null = null;
   @state() memberSheetLoadedAt: number | null = null;
   @state() memberSheetBusy = false;
   @state() memberSheetError: string | null = null;
@@ -365,13 +380,13 @@ export class OpenClawApp extends LitElement {
   @state() memberSheetBaseline: Record<string, string> = {};
   @state() memberSheetSelection: number[] = [];
   @state() memberSheetSaveResult:
-    | import("./adminbot/auth/session.ts").MemberSheetEditResult
+    | import("./adminbot/api/onboarding.ts").MemberSheetEditResult
     | null = null;
   @state() memberSheetOnboardResult:
-    | import("./adminbot/auth/session.ts").MemberSheetOnboardResult
+    | import("./adminbot/api/onboarding.ts").MemberSheetOnboardResult
     | null = null;
   @state() memberSheetAddRowResult:
-    | import("./adminbot/auth/session.ts").MemberSheetAddRowResult
+    | import("./adminbot/api/onboarding.ts").MemberSheetAddRowResult
     | null = null;
   // Calendar tab. Declared here, not merely typed on AppViewState: an undeclared field is not a
   // reactive property, so writing one from a controller changes nothing on screen. That is what
@@ -379,12 +394,36 @@ export class OpenClawApp extends LitElement {
   // not re-render. The view tests could not catch it because they render with a plain object.
   // Declared here for the same reason as the calendar block above: a controller writing a plain
   // class field would change nothing on screen.
-  @state() adminBotTripDraft: TripDraft = EMPTY_TRIP_DRAFT;
+  // The /travel overview behind Events' nearby card, and location sharing
+  // (controllers/lab-travel.ts). Declared as state for the same reason: its controller writes after
+  // awaits, and a plain field would change nothing on screen.
+  @state() labTravel?: TravelOverview;
+  @state() labTravelLoadedFor: string | null = null;
+  @state() labTravelLoading = false;
+  @state() labTravelError: string | null = null;
+  @state() labTravelNotice: LabTravelNotice | null = null;
+  @state() labTravelBusy: string | null = null;
+  @state() labTravelLookupDraft: LookupDraft = { place: "", from: "", to: "" };
+  @state() labTravelLookup: TravelLookup | null = null;
+  @state() labTravelLookupError: string | null = null;
+  @state() labTravelCityDraft = "";
+  @state() labTravelSharing: TravelSharing | null = null;
+  @state() labTravelSharingCheckedFor: string | null = null;
+  @state() labTravelDevice: LocationTrackerSnapshot = { status: "idle" };
+  // The Events tab (controllers/events.ts), state for the same reason.
+  @state() events?: EventsOverview;
+  @state() eventsLoadedFor: string | null = null;
+  @state() eventsLoading = false;
+  @state() eventsError: string | null = null;
+  @state() eventsNotice: EventsNotice | null = null;
+  @state() eventsBusy: string | null = null;
   @state() adminBotLocationDrift?: LocationDrift | null;
   @state() adminBotLocationDrifts?: LocationDrift[];
+  @state() adminBotPreciseLocation?: PreciseLocationState;
   @state() adminBotLocationSaving = false;
   @state() adminBotLocationError: string | null = null;
-  @state() adminBotMeetings?: MeetingRecord[];
+  @state() adminBotMeetingSeries?: MeetingSeries[];
+  @state() adminBotMeetingSeriesPages: MeetingSeriesPages = {};
   // Attendance nudge, admin-only. Null rather than undefined once read, so "opened the panel and
   // nobody qualified" is distinguishable from "never opened it".
   @state() adminBotMeetingNudgePreview: MeetingAttendanceNudgePreview | null = null;
@@ -407,9 +446,6 @@ export class OpenClawApp extends LitElement {
   @state() adminBotNotificationsError: string | null = null;
   @state() adminBotMeetingsLoading = false;
   adminBotMeetingsRequestVersion = 0;
-  @state() adminBotMeetingsLoadingMore = false;
-  @state() adminBotMeetingsNextCursor: MeetingCursor | null = null;
-  @state() adminBotMeetingsVisibleCount = 12;
   @state() adminBotMeetingsSaving = false;
   @state() adminBotMeetingsError: string | null = null;
   @state() calendarEvents?: CalendarEvent[];
@@ -428,6 +464,7 @@ export class OpenClawApp extends LitElement {
   @state() calendarEditingEventId: string | null = null;
   @state() calendarAudience: AudienceFilter = {};
   @state() calendarExcludedMemberIds: string[] = [];
+  @state() calendarInviteMode: InviteMode = "add";
   @state() calendarBusy = false;
   @state() calendarConfirming: "save" | "invite" | null = null;
   @state() rosterMembers: RosterMember[] = [];
@@ -459,7 +496,6 @@ export class OpenClawApp extends LitElement {
   // Reactive: the whole app re-renders around these -- the banner appears, the Lab Members button
   // disappears, and the swap in flight disables both.
   @state() adminBotRecentEdits: Record<string, RecentEditsState> = {};
-  @state() adminBotTravel: TravelState = EMPTY_TRAVEL;
   @state() adminBotMailingListPreview: PublicationDigestPreview | null = null;
   @state() adminBotMailingListLoading = false;
   @state() adminBotMailingListSending = false;
@@ -489,7 +525,7 @@ export class OpenClawApp extends LitElement {
   @state() onboarding = resolveOnboardingMode();
   @state() connected = false;
   @state() theme: ThemeName = this.settings.theme ?? "claw";
-  @state() themeMode: ThemeMode = this.settings.themeMode ?? "system";
+  @state() themeMode: ThemeMode = this.settings.themeMode ?? "dark";
   @state() themeResolved: ResolvedTheme = "dark";
   @state() themeOrder: ThemeName[] = this.buildThemeOrder(this.theme);
   @state() customThemeImportUrl = "";
@@ -686,6 +722,8 @@ export class OpenClawApp extends LitElement {
   @state() agentsSelectedId: string | null = null;
   @state() adminBotLoading = false;
   @state() adminBotError: string | null = null;
+  @state() adminBotUsingCachedReads = false;
+  @state() adminBotOfflinePendingWrites = 0;
   @state() adminBotData: AdminBotDashboardData = createEmptyAdminBotDashboardData();
   @state() adminBotRosterLoadedAt: number | null = null;
   @state() adminBotRosterLoading = false;
@@ -701,6 +739,8 @@ export class OpenClawApp extends LitElement {
   @state() adminBotMemberMap: MemberMap | null | undefined = undefined;
   @state() adminBotMemberMapLoading = false;
   adminBotMemberMapRequestId = 0;
+  adminBotMemberMapCheckedAt: number | undefined = undefined;
+  adminBotMemberMapTab: string | undefined = undefined;
   @state() adminBotCollaboratorSchedules: AdminBotLabMember[] = [];
   @state() adminBotCollaboratorSchedulesLoading = false;
   @state() adminBotCollaboratorSchedulesError: string | null = null;
@@ -713,14 +753,14 @@ export class OpenClawApp extends LitElement {
   @state() adminBotLogisticsSavedAt: number | null = null;
   @state() adminBotLogisticsSaveError: string | null = null;
   // Admins land on the same page members do; reading everyone's requests is a deliberate step.
-  @state() adminBotLogisticsQueueOptions: LogisticsQueueOptions = {
-    ...DEFAULT_LOGISTICS_QUEUE_OPTIONS,
-  };
+  @state() adminBotLogisticsQueueOptions: LogisticsQueueOptions = DEFAULT_LOGISTICS_QUEUE_OPTIONS;
   @state() adminBotLogisticsMode: LogisticsMode = "make";
   @state() adminBotLogisticsRequests: LogisticsRequest[] = [];
   @state() adminBotLogisticsRequestsLoading = false;
   @state() adminBotLogisticsRequestsError: string | null = null;
   @state() adminBotLogisticsRequestsLoadedAt: number | null = null;
+  @state() adminBotLogisticsPage: PagedListState = EMPTY_PAGED_LIST;
+  @state() adminBotDeskLetters: DeskLettersState = { requests: [], loading: false, loadedAt: null };
   @state() adminBotLogisticsOpenRequestId: string | null = null;
   // The open request is held apart from the list because it is a different read: the list carries
   // no file bytes and this one does.
@@ -741,6 +781,7 @@ export class OpenClawApp extends LitElement {
   @state() adminBotSignatureSubmitted = false;
   @state() adminBotLogisticsEditingId: string | null = null;
   @state() adminBotLogisticsSigningId: string | null = null;
+  @state() adminBotRecLetter = createRecLetterEligibilityState();
   @state() adminBotLogisticsDownloadingId: string | null = null;
   @state() adminBotLogisticsSignedNote = "";
   @state() adminBotLogisticsShowSettled = false;
@@ -748,6 +789,7 @@ export class OpenClawApp extends LitElement {
   // signed-in member to be loaded. See the scope effect in app-render.
   @state() adminBotLogisticsDraftScope: string | null = null;
   @state() adminBotProfileOverview: MemberProfileOverviewRow[] = [];
+  @state() adminBotProfileOverviewPage = EMPTY_PROFILE_OVERVIEW_PAGE;
   @state() adminBotEscalatedNudges: EscalatedNudgeRow[] = [];
   @state() adminBotPiReview: PiReviewRow[] = [];
   @state() adminBotPiReviewError: string | null = null;
@@ -760,12 +802,9 @@ export class OpenClawApp extends LitElement {
   @state() adminBotProfileOverviewLoadedAt: number | null = null;
   @state() adminBotProfileOverviewReminding = false;
   @state() adminBotProfileOverviewNotice: string | null = null;
-  // Defaults to the people with something outstanding, which is what a sweep is looking for.
   @state() myWorkCoauthorDraft: Record<string, { email: string; name: string; twitter: string }> =
     {};
-  @state() adminBotProfileOverviewFilter: ProfileOverviewFilter = {
-    ...EMPTY_PROFILE_OVERVIEW_FILTER,
-  };
+  @state() adminBotProfileOverviewFilter: ProfileOverviewFilter = EMPTY_PROFILE_OVERVIEW_FILTER;
   // Active Papers opens on the sweep rather than the inventory: the page is read to find what needs
   // moving, and "every paper" is one click away for the times it is not.
   // Which paper's card is open over Active Papers, or null. An id and not the record: the papers
@@ -776,8 +815,6 @@ export class OpenClawApp extends LitElement {
     state: "attention",
   };
   @state() adminBotPaperSlotOverview: PaperSlotOverviewRow[] = [];
-  @state() adminBotTripDrafts: Record<string, PaperTripDraft> = {};
-  @state() adminBotTripSavingKey: string | null = null;
   @state() adminBotPaperSlots: Record<string, PaperCycle> = {};
   // Nothing expanded on arrival: the page opens as a scannable list of papers, and the form is
   // what you go into rather than what you land in.
@@ -821,6 +858,7 @@ export class OpenClawApp extends LitElement {
     ...EMPTY_TIME_AVAILABILITY_DRAFT,
   };
   @state() adminBotMilestoneDraft: MilestoneDraft = { ...EMPTY_MILESTONE_DRAFT };
+  @state() adminBotTripDraft: TripDraft = EMPTY_TRIP_DRAFT;
   // The overall availability note while it is being edited. `null` means "not touched since the
   // last load", which is what makes the textarea show the stored note again after a save or after
   // switching members, rather than holding onto a copy of someone else's text.
@@ -859,17 +897,17 @@ export class OpenClawApp extends LitElement {
   @state() adminBotWorkshopNudges: WorkshopNudgeReviewState = createEmptyWorkshopNudgeReviewState();
   @state() adminBotVenueIndexJob: AdminBotCvDigestJobState = { status: "idle" };
   @state() adminBotChannelNamingJob: AdminBotCvDigestJobState = { status: "idle" };
+  @state() myProjects: ProjectSummary[] | null = null;
+  @state() myProjectsLoading = false;
+  @state() myProjectsError: string | null = null;
+  @state() myProjectsChoosing = false;
   @state() myWorkBlockerDraft: BlockerDraft | null = null;
-  @state() myWorkBlockers: Blocker[] = [];
   @state() myWorkProjectDraft: string | null = null;
   @state() myWorkProjectAlias = "";
   @state() myWorkProjectError: string | null = null;
-  @state() myWorkProjectEdits: Record<
-    string,
-    { title: string; alias: string; startedOn: string; error: string | null }
-  > = {};
+  @state() myWorkProjectEdits: Record<string, ProjectDetailsDraft> = {};
+  @state() myWorkProjectVenues: ProjectVenueDraft[] = [];
   @state() myWorkChannelCheck: SlackChannelCheck = { ...EMPTY_SLACK_CHANNEL_CHECK };
-  @state() myWorkProjectVenues: Array<{ venueId: string; year: number; confidence: number }> = [];
   @state() profileEditingSection: "basics" | null = null;
   @state() profileAccountChecks: Record<string, ProfileAccountCheck> = {};
   @state() registrations: MemberRegistration[] = [];
@@ -877,7 +915,7 @@ export class OpenClawApp extends LitElement {
   @state() registrationsError: RegistrationsLoadError | null = null;
   @state() registrationsBusyId: string | null = null;
   @state() registrationsNotice: { kind: "success" | "error"; text: string } | null = null;
-  @state() adminBotBadgeDefinitions: import("./adminbot/auth/session.ts").BadgeDefinition[] = [];
+  @state() adminBotBadgeDefinitions: import("./adminbot/api/badges.ts").BadgeDefinition[] = [];
   @state() adminBotBadgeDefinitionsLoading = false;
   @state() adminBotBadgeDefinitionsLoadedAt: number | null = null;
   @state() adminBotBadgeDefinitionsError: BadgeLoadError | null = null;
@@ -1342,10 +1380,9 @@ export class OpenClawApp extends LitElement {
   }
 
   resetMemberViewSessionState() {
-    resetMyWorkSessionState();
-    resetProfileSessionState();
-    resetLabSharingSessionState();
-    resetAdminViewSessionState();
+    resetProjectsSessionState();
+    // Profile, Lab Sharing and the admin panels register their resets when they load.
+    resetViewSessions();
   }
 
   async beginViewAs(memberId: string) {
@@ -1814,7 +1851,7 @@ export class OpenClawApp extends LitElement {
   }
 
   addMemberSheetRow(
-    input: import("./adminbot/auth/session.ts").MemberSheetAddRowInput,
+    input: import("./adminbot/api/onboarding.ts").MemberSheetAddRowInput,
   ): Promise<boolean> {
     return addMemberSheetRowController(
       this as unknown as Parameters<typeof addMemberSheetRowController>[0],
@@ -1858,9 +1895,11 @@ export class OpenClawApp extends LitElement {
     return loadAdminBotMeetings(this as unknown as Parameters<typeof loadAdminBotMeetings>[0]);
   }
 
-  loadMoreMeetings(): Promise<void> {
-    return loadMoreAdminBotMeetings(
-      this as unknown as Parameters<typeof loadMoreAdminBotMeetings>[0],
+  loadMeetingSeriesPage(key: string, options?: { more?: boolean }): Promise<void> {
+    return loadAdminBotMeetingSeriesPage(
+      this as unknown as Parameters<typeof loadAdminBotMeetingSeriesPage>[0],
+      key,
+      options,
     );
   }
 

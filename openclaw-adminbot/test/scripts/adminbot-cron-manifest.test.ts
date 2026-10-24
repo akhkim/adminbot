@@ -73,4 +73,25 @@ describe("config/adminbot-cron.json", () => {
       hourOf("adminbot-paper-slot-nudges"),
     );
   });
+
+  it("reads OpenReview every six hours, and before the paper nudges ask for a submission it already shows", () => {
+    const runs = (name: string) => {
+      const job = manifest.jobs.find((entry) => entry.name === name);
+      const [minute, hours] = (job?.cron ?? "").split(/\s+/u);
+      return hours.split(",").map((hour) => Number(hour) * 60 + Number(minute));
+    };
+    const results = runs("adminbot-openreview-results");
+    const sync = runs("adminbot-paper-openreview-sync");
+    expect(results).toHaveLength(4);
+    expect(sync).toHaveLength(4);
+    // Each sync pass reads a snapshot taken shortly before it, and the weekday nudge pass reads
+    // the sync's morning pass.
+    for (const [index, at] of sync.entries()) {
+      expect(at - results[index]).toBeGreaterThan(0);
+      expect(at - results[index]).toBeLessThan(120);
+    }
+    const [nudges] = runs("adminbot-paper-slot-nudges");
+    const lastSync = Math.max(...sync.filter((at) => at < nudges));
+    expect(nudges - lastSync).toBeLessThan(60);
+  });
 });

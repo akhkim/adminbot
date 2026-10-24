@@ -7,6 +7,7 @@ import type {
   AdminBotLabMemberInput,
   AdminBotPaperRecord,
 } from "../contracts/actions.js";
+import { withCompleteProfile } from "../contracts/profile-completion.test-helpers.js";
 import { createAdminBotMockService } from "./server.js";
 
 const SERVICE_TOKEN = "test-service-token";
@@ -60,7 +61,7 @@ async function lab() {
   const baseUrl = `http://127.0.0.1:${address.port}`;
   const store = (mock.service as never as { store: Store }).store;
   const seed = (input: AdminBotLabMemberInput) => {
-    const result = mock.service.upsertLabMember(input);
+    const result = mock.service.upsertLabMember(withCompleteProfile(input));
     if (!result.ok) {
       throw new Error(result.error.message);
     }
@@ -187,11 +188,23 @@ describe("changing a member id", () => {
 
   it("refuses a taken, malformed or unchanged id and leaves the member where they were", async () => {
     const { store, admin, rename } = await lab();
-    expect((await rename(admin, "pat", "admin")).status).toBe(409);
+    expect((await rename(admin, "pat", "mem_2589c705")).status).toBe(409);
+    // Words the records also store as values: landing on one would make the next rename rewrite
+    // every access level or status that spells it.
+    expect((await rename(admin, "pat", "admin")).status).toBe(400);
+    expect((await rename(admin, "pat", "member")).status).toBe(400);
     expect((await rename(admin, "pat", "Pat Lee")).status).toBe(400);
     expect((await rename(admin, "pat", "../admin")).status).toBe(400);
     expect((await rename(admin, "pat", "pat")).status).toBe(400);
     expect((await rename(admin, "nobody", "somebody")).status).toBe(404);
     expect(store.getLabMember("pat")?.name).toBe("Pat");
+  });
+
+  it("will not move a member whose id is also a word the records store", async () => {
+    // Matching "admin" as a whole value would rewrite every admin's privilege level with it.
+    const { store, admin, rename } = await lab();
+    expect((await rename(admin, "admin", "the-admin")).status).toBe(409);
+    expect(store.getLabMember("admin")?.privilege_level).toBe("admin");
+    expect(store.getLabMember("the-admin")).toBeUndefined();
   });
 });

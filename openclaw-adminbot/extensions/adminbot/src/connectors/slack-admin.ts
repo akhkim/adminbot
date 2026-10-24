@@ -92,6 +92,28 @@ export function createAdminBotSlackAdminExecutor(
         );
         return { handled: true };
       }
+      // Two or three people: a conference intro is a trio, a city meetup can be a pair. One person
+      // or the whole roster is a different message from the one that was approved.
+      if (proposal.type === "slack.conference_intro") {
+        const payload = readGroupDmPayload(proposal);
+        if (
+          payload.user_ids.length < 2 ||
+          payload.user_ids.length > 3 ||
+          !payload.user_ids.every((id) => /^[UW][A-Z0-9]+$/u.test(id))
+        ) {
+          throw new Error("slack.conference_intro requires two or three distinct Slack users");
+        }
+        const token = resolveSlackBotToken(env);
+        await notifySlackOwner(
+          token,
+          payload.user_ids.join(","),
+          payload.message,
+          fetchImpl,
+          proposal.id,
+          readIntroBlocks(proposal),
+        );
+        return { handled: true };
+      }
       // The hourly digest can instead live in a channel as one message, edited each hour.
       if (proposal.type === "paper_integrity.report" && readChannelTarget(proposal)) {
         const target = readChannelTarget(proposal)!;
@@ -228,7 +250,7 @@ export function adminBotSlackBotToken(env: NodeJS.ProcessEnv): string {
   return resolveSlackBotToken(env);
 }
 
-async function resolveChannelId(
+export async function resolveChannelId(
   token: string,
   channelName: string,
   fetchImpl: SlackAdminFetch,
@@ -264,22 +286,77 @@ async function inviteToSlackChannel(
   fetchImpl: SlackAdminFetch,
 ): Promise<void> {
   const channelId = await resolveChannelId(token, channelName, fetchImpl);
-  const invite = await fetchImpl("https://slack.com/api/conversations.invite", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json; charset=utf-8",
-    },
-    body: JSON.stringify({ channel: channelId, users: userId }),
-  });
-  const invitePayload = parseSlackJson<SlackRenameResponse>(await invite.text());
-  if (invitePayload?.error === "already_in_channel") {
+  const post = async (method: string, body: Record<string, unknown>) => {
+    const response = await fetchImpl(`https://slack.com/api/${method}`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json; charset=utf-8",
+      },
+      body: JSON.stringify(body),
+    });
+    const payload = parseSlackJson<SlackRenameResponse>(await response.text());
+    return { response, payload, error: payload?.error?.trim() || undefined };
+  };
+  let invite = await post("conversations.invite", { channel: channelId, users: userId });
+  // The bot can only invite into a channel it sits in. A public channel it can join itself, so
+  // join once and retry rather than failing the same invite every hour until someone adds it.
+  if (invite.error === "not_in_channel") {
+    const join = await post("conversations.join", { channel: channelId });
+    if (!join.response.ok || !join.payload?.ok) {
+      const detail = join.error || join.response.statusText || "unknown error";
+      throw new Error(
+        `Slack channel invite failed ${invite.response.status}: not_in_channel (join refused: ${detail})`,
+      );
+    }
+    invite = await post("conversations.invite", { channel: channelId, users: userId });
+  }
+  if (invite.error === "already_in_channel") {
     return;
   }
-  if (!invite.ok || !invitePayload?.ok) {
-    const detail = invitePayload?.error?.trim() || invite.statusText || "unknown error";
-    throw new Error(`Slack channel invite failed ${invite.status}: ${detail}`);
+  if (!invite.response.ok || !invite.payload?.ok) {
+    const detail = invite.error || invite.response.statusText || "unknown error";
+    throw new Error(`Slack channel invite failed ${invite.response.status}: ${detail}`);
   }
+}
+
+/**
+ * What a failed invite says about retrying it.
+ *
+ * `channel`: the room is missing, archived or closed to the bot; no invite into it can succeed
+ * until a person fixes the channel, so every invite into it waits. `member`: this one person cannot
+ * be added by the bot (a guest, or someone from another workspace or org); it needs a manual
+ * invite, and retrying only re-fails. `undefined`: transient or unknown, retried as before.
+ */
+export type SlackInviteFailureScope = "channel" | "member";
+
+export function classifySlackInviteFailure(
+  message: string,
+): { scope: SlackInviteFailureScope; reason: string } | undefined {
+  const text = message.toLowerCase();
+  if (text.includes("no open channel named")) {
+    return { scope: "channel", reason: "channel_missing" };
+  }
+  // Member codes first: "user_team_not_in_channel" contains "not_in_channel".
+  for (const reason of [
+    "user_team_not_in_channel",
+    "org_user_not_in_team",
+    "user_is_ultra_restricted",
+    "user_is_restricted",
+    "cant_invite_self",
+    "cant_invite",
+    "user_not_found",
+  ]) {
+    if (text.includes(reason)) {
+      return { scope: "member", reason };
+    }
+  }
+  for (const reason of ["not_in_channel", "channel_not_found", "is_archived"]) {
+    if (text.includes(reason)) {
+      return { scope: "channel", reason };
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -389,6 +466,35 @@ async function removeFromSlackChannel(
     const detail = removalPayload?.error?.trim() || removal.statusText || "unknown error";
     throw new Error(`Slack channel removal failed ${removal.status}: ${detail}`);
   }
+}
+
+/**
+ * The intro's Block Kit, when the payload carries it. `message` stays the plain-text fallback.
+ *
+ * Only the block kinds the intro builder makes (header, section, context, divider), at most a
+ * dozen: anything else is not the message that was approved. No buttons, so no interactivity
+ * endpoint or new scope is needed -- links in mrkdwn just open.
+ */
+function readIntroBlocks(proposal: AdminBotStoredProposal): unknown[] | undefined {
+  const blocks = (proposal.proposed_payload as { blocks?: unknown } | undefined)?.blocks;
+  if (blocks === undefined) {
+    return undefined;
+  }
+  const kinds = new Set(["header", "section", "context", "divider"]);
+  if (
+    !Array.isArray(blocks) ||
+    blocks.length === 0 ||
+    blocks.length > 12 ||
+    !blocks.every(
+      (block) =>
+        block &&
+        typeof block === "object" &&
+        kinds.has(String((block as { type?: unknown }).type)),
+    )
+  ) {
+    throw new Error("slack.conference_intro blocks must be header, section or context blocks");
+  }
+  return blocks;
 }
 
 function readGroupDmPayload(proposal: AdminBotStoredProposal): {
@@ -557,6 +663,7 @@ async function notifySlackOwner(
   message: string,
   fetchImpl: SlackAdminFetch,
   messageId?: string,
+  blocks?: readonly unknown[],
 ): Promise<void> {
   const openResponse = await fetchImpl("https://slack.com/api/conversations.open", {
     method: "POST",
@@ -580,6 +687,7 @@ async function notifySlackOwner(
     body: JSON.stringify({
       channel: openPayload.channel.id,
       text: message,
+      ...(blocks ? { blocks } : {}),
       ...(messageId
         ? {
             client_msg_id: messageId.replace(/^act_/u, ""),
