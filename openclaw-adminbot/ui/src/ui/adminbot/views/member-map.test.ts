@@ -1330,4 +1330,65 @@ describe("member map search", () => {
     await mapElement(none).updateComplete;
     expect(none.querySelector('[data-testid="member-map-search-unplaced"]')).toBeNull();
   });
+
+  it("finds an admin a member who is not on the map, says why, and goes nowhere", async () => {
+    const container = await draw(
+      parseMemberMap({
+        ...nearby,
+        unplaced_count: 2,
+        not_on_map: [
+          { name: "Cyra Holt", reason: "ip_off" },
+          { name: "Cyd Marsh", reason: "no_location" },
+        ],
+      }),
+    );
+    const element = mapElement(container);
+    const input = cardSearch(container);
+    input.focus();
+    type(input, "cy");
+    await element.updateComplete;
+    const search = container.querySelector('[data-testid="member-map-search-card"]')!;
+    expect(options(search)).toEqual([
+      expect.stringContaining("Cy"),
+      expect.stringContaining("Cyd Marsh"),
+      expect.stringContaining("Cyra Holt"),
+    ]);
+    const absent = [...search.querySelectorAll<HTMLElement>('[data-kind="absent"]')];
+    expect(absent.map((node) => node.getAttribute("aria-label"))).toEqual([
+      "Cyd Marsh, not on the map: No location yet",
+      "Cyra Holt, not on the map: Location hidden: IP logging blocked and no city given",
+    ]);
+    // No city to light, so no swatch and no place key.
+    expect(absent[1]!.querySelector(".member-map__swatch")).toBeNull();
+    expect(absent[1]!.hasAttribute("data-place")).toBe(false);
+    // The list now names everyone, so the "cannot be found here" note would be wrong.
+    expect(container.querySelector('[data-testid="member-map-search-unplaced"]')).toBeNull();
+
+    absent[1]!.click();
+    await element.updateComplete;
+    expect(input.value).toBe("Cyra Holt");
+    expect(input.getAttribute("aria-expanded")).toBe("false");
+    const dialog = container.querySelector<HTMLDialogElement>('[data-testid="member-map-dialog"]')!;
+    expect(dialog.open).toBe(false);
+    expect(container.querySelector(".member-map__marker--active")).toBeNull();
+    expect(search.querySelector('[data-testid="member-map-search-absent"]')?.textContent).toContain(
+      "IP logging blocked",
+    );
+
+    type(input, "cyr");
+    await element.updateComplete;
+    expect(search.querySelector('[data-testid="member-map-search-absent"]')).toBeNull();
+  });
+
+  it("never lists names off a summary map, whatever it carried", async () => {
+    const container = await draw(
+      parseMemberMap({ ...summary, not_on_map: [{ name: "Cyra Holt", reason: "ip_off" }] }),
+    );
+    const input = cardSearch(container);
+    input.focus();
+    type(input, "cyra");
+    await mapElement(container).updateComplete;
+    expect(container.querySelector('[data-kind="absent"]')).toBeNull();
+    expect(container.textContent).not.toContain("Cyra");
+  });
 });

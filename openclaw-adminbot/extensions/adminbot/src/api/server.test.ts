@@ -1201,6 +1201,13 @@ describe("AdminBot mock service", () => {
     // leak "Zedunia" specifically, and the check below would catch it even though Zed never
     // appears in a `places` entry at all.
     await seedMember(baseUrl, "zed", { name: "Zedunia", privilege_level: "member" }, false);
+    // Hid themselves from the map: the admin search may say so by name, never where they wrote.
+    await seedMember(
+      baseUrl,
+      "hal",
+      { name: "Halvard", privilege_level: "member", location: "Berlin", map_visibility: "hidden" },
+      false,
+    );
     await approveClaim(baseUrl, "ada", "ada@example.com");
     const memberToken = await loginToken(baseUrl, "ada@example.com");
 
@@ -1210,6 +1217,8 @@ describe("AdminBot mock service", () => {
     expect(anonymousText).not.toContain("Ada");
     expect(anonymousText).not.toContain("Zedunia");
     expect(anonymousText).not.toContain("members");
+    expect(anonymousText).not.toContain("Halvard");
+    expect(anonymousText).not.toContain("not_on_map");
     const anonymousBody = JSON.parse(anonymousText) as {
       mode: string;
       places: Array<{ label: string; count: number; members?: unknown }>;
@@ -1231,6 +1240,8 @@ describe("AdminBot mock service", () => {
     expect(asMemberText).not.toContain("Ada");
     expect(asMemberText).not.toContain("Zedunia");
     expect(asMemberText).not.toContain("members");
+    expect(asMemberText).not.toContain("Halvard");
+    expect(asMemberText).not.toContain("not_on_map");
     const asMemberBody = JSON.parse(asMemberText) as {
       mode: string;
       places: Array<{ members?: unknown }>;
@@ -1242,12 +1253,23 @@ describe("AdminBot mock service", () => {
 
     const response = await fetch(`${baseUrl}/member-map`, { headers: serviceHeaders() });
     expect(response.status).toBe(200);
-    const body = (await response.json()) as {
+    const text = await response.text();
+    const body = JSON.parse(text) as {
       mode: string;
       places: Array<{ label: string; members: Array<{ name: string; source: string }> }>;
       unplaced?: unknown;
       unplaced_count: number;
+      not_on_map: Array<{ name: string; reason: string }>;
     };
+    // Everyone not on the map, by name and why -- and nothing about where the hidden one is.
+    expect(body.not_on_map).toEqual(
+      expect.arrayContaining([
+        { name: "Halvard", reason: "hidden" },
+        { name: "Zedunia", reason: "no_location" },
+      ]),
+    );
+    expect(body.not_on_map.map((entry) => entry.name)).not.toContain("Ada");
+    expect(text).not.toContain("Berlin");
     expect(body.mode).toBe("full");
     expect(body.places[0]?.label).toBe("Toronto");
     expect(body.places[0]?.members[0]).toMatchObject({ name: "Ada", source: "roster" });
@@ -1346,16 +1368,20 @@ describe("AdminBot mock service", () => {
     expect(stated.places[0]).toMatchObject({ key: "toronto" });
     expect(stated.places[0]?.members[0]?.source).toBe("roster");
 
-    // "Hidden" takes her off the map entirely.
+    // "Hidden" takes her off the map entirely: no place, no city. An admin's search still finds
+    // her by name, with the reason and nothing else.
     await fetch(`${baseUrl}/lab/members/ada`, {
       method: "PUT",
       headers: { Authorization: `Bearer ${memberToken}`, "Content-Type": "application/json" },
       body: JSON.stringify({ map_visibility: "hidden" }),
     });
-    const hidden = await (
+    const hiddenText = await (
       await fetch(`${baseUrl}/member-map`, { headers: serviceHeaders() })
     ).text();
-    expect(hidden).not.toContain("Ada");
+    const hidden = JSON.parse(hiddenText) as { places: unknown[]; not_on_map: unknown[] };
+    expect(hidden.places).toEqual([]);
+    expect(hidden.not_on_map).toEqual([{ name: "Ada", reason: "hidden" }]);
+    expect(hiddenText).not.toContain("Toronto");
 
     const invalid = await fetch(`${baseUrl}/lab/members/ada`, {
       method: "PUT",

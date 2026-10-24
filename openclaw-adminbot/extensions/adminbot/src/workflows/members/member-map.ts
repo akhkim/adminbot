@@ -847,11 +847,46 @@ export type AdminBotMapPlaceGroup = AdminBotMapPlace & {
   members: AdminBotMapMember[];
 };
 
+/**
+ * Why an active member is not on the map, for the admin map's search: "Where is Ada?" deserves
+ * "location hidden" rather than silence. One reason per member, the first that applies:
+ *
+ * - `hidden`: they set "Show me on the lab map as" to Hidden (or answered "Prefer not to say").
+ * - `ip_off`: they set it to "My stated city only", which stops their IP being looked up at all
+ *   (auth.ts `noteAccountUse`), and nothing they stated could be placed.
+ * - `suspected_vpn`: their fresh IP reading was set aside as a likely VPN and nothing else placed them.
+ * - `browser_blocked`: their browser blocked the location prompt and nothing else placed them.
+ * - `unrecognised`: they wrote a location the gazetteer cannot place.
+ * - `no_location`: no source says anything yet.
+ *
+ * Never more than this word: not the text they wrote, a city, or anything else about where they are.
+ * Members who opted out of contact, departed, or have no usable name are not listed at all, exactly
+ * as they are absent from `places` and `unplaced` (isHiddenFromMemberMap).
+ */
+export type AdminBotMapAbsenceReason =
+  | "hidden"
+  | "ip_off"
+  | "suspected_vpn"
+  | "browser_blocked"
+  | "unrecognised"
+  | "no_location";
+
+export type AdminBotMapAbsentMember = {
+  member_id: string;
+  name: string;
+  reason: AdminBotMapAbsenceReason;
+};
+
 export type AdminBotMemberMap = {
   places: AdminBotMapPlaceGroup[];
   // Members whose location text could not be placed, with what they wrote, so the
   // gazetteer can be extended deliberately instead of the map quietly under-reporting.
   unplaced: Array<{ member_id: string; name: string; raw?: string; source?: AdminBotMapSource }>;
+  /**
+   * Everyone active who is not in `places`, with why (see AdminBotMapAbsenceReason): the unplaced
+   * and those who hid themselves. Admin payload only, as `not_on_map`; never in the summary.
+   */
+  absent: AdminBotMapAbsentMember[];
   counts: { placed: number; unplaced: number; unknown: number };
 };
 
@@ -1009,7 +1044,9 @@ export function resolveDevicePlace(
     return undefined;
   }
   const countryName = resolveCountry(centroid.country)?.country ?? centroid.country;
-  const slug = normalize(centroid.label).replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const slug = normalize(centroid.label)
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
   return {
     key: `${slug}-${centroid.country.toLowerCase()}`,
     label: centroid.label,
@@ -1625,14 +1662,15 @@ export function buildMemberMap(
   };
   const groups = new Map<string, AdminBotMapPlaceGroup>();
   const unplaced: AdminBotMemberMap["unplaced"] = [];
+  const absent: AdminBotMemberMap["absent"] = [];
   let unknown = 0;
 
   for (const member of members) {
-    if (
-      DEPARTED_STATUSES.has(member.status ?? "") ||
-      isHiddenFromMemberMap(member) ||
-      memberMapVisibility(member) === "hidden"
-    ) {
+    if (DEPARTED_STATUSES.has(member.status ?? "") || isHiddenFromMemberMap(member)) {
+      continue;
+    }
+    if (memberMapVisibility(member) === "hidden") {
+      absent.push({ member_id: member.id, name: member.name, reason: "hidden" });
       continue;
     }
     const slackRaw = member.slack_user_id ? slackLocations.get(member.slack_user_id) : undefined;
@@ -1644,6 +1682,11 @@ export function buildMemberMap(
         ? ipCityState(member, resolveOptions.now).ignored
         : undefined;
     if (!resolution.place) {
+      absent.push({
+        member_id: member.id,
+        name: member.name,
+        reason: absenceReason(member, resolution, ipIgnored),
+      });
       if (!resolution.raw || !resolution.source) {
         unknown += 1;
         unplaced.push({ member_id: member.id, name: member.name });
@@ -1688,12 +1731,35 @@ export function buildMemberMap(
   return {
     places,
     unplaced: unplaced.toSorted((left, right) => left.name.localeCompare(right.name)),
+    absent: absent.toSorted((left, right) => left.name.localeCompare(right.name)),
     counts: {
       placed: places.reduce((sum, place) => sum + place.members.length, 0),
       unplaced: unplaced.length - unknown,
       unknown,
     },
   };
+}
+
+/**
+ * Why a member nothing placed is off the map; see AdminBotMapAbsenceReason. The member's own
+ * setting comes first because it is the answer they gave; the browser's refusal only explains the
+ * gap when no reading of theirs was set aside, and written-but-unknown text before "nothing at all".
+ */
+function absenceReason(
+  member: AdminBotLabMember,
+  resolution: { raw?: string; source?: AdminBotMapSource },
+  ipIgnored: "suspected_vpn" | undefined,
+): AdminBotMapAbsenceReason {
+  if (memberMapVisibility(member) === "stated") {
+    return "ip_off";
+  }
+  if (ipIgnored) {
+    return "suspected_vpn";
+  }
+  if (member.location_permission === "denied") {
+    return "browser_blocked";
+  }
+  return resolution.raw && resolution.source ? "unrecognised" : "no_location";
 }
 
 /** Whole UTC days from `at` to `now`, never negative; undefined for an unparseable stamp. */
@@ -1835,23 +1901,33 @@ export function memberMapMemo(): (
   };
 }
 
+/** One entry of `not_on_map`: a name and why, and nothing else -- no id, text, city or time. */
+export type AdminBotNotOnMapEntry = { name: string; reason: AdminBotMapAbsenceReason };
+
 /**
- * The privileged map as sent: who is where, and how many are unplaced. The names of the unplaced
- * go only to a caller that asks for them (the standalone map page lists them to fix the
- * gazetteer); the dashboard card shows a count, and a lab of 1000 can have hundreds unplaced.
+ * The privileged map as sent: who is where, and how many are unplaced. The unplaced entries with
+ * what they wrote go only to a caller that asks for them (the standalone map page lists them to fix
+ * the gazetteer); the dashboard card gets a count of those.
+ *
+ * `not_on_map` is always sent, so the card's search can say "Ada: location hidden" instead of
+ * finding nobody. It is a name and a reason word per member and nothing else: the reason comes
+ * from settings admins can already read (map visibility on the roster, the browser's answer in
+ * GET /member-map/coverage), and never the raw text, a place, or a time. A few dozen bytes each.
  */
 export function toPrivilegedMemberMap(
   map: AdminBotMemberMap,
   options: { listUnplaced: boolean },
-): Omit<AdminBotMemberMap, "unplaced"> &
+): Omit<AdminBotMemberMap, "unplaced" | "absent"> &
   Partial<Pick<AdminBotMemberMap, "unplaced">> & {
     unplaced_count: number;
+    not_on_map: AdminBotNotOnMapEntry[];
   } {
-  const { unplaced, ...rest } = map;
+  const { unplaced, absent, ...rest } = map;
   return {
     ...rest,
     unplaced_count: unplaced.length,
     ...(options.listUnplaced ? { unplaced } : {}),
+    not_on_map: absent.map(({ name, reason }) => ({ name, reason })),
   };
 }
 

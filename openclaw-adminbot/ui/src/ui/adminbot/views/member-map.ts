@@ -21,7 +21,13 @@
 import { html, LitElement, nothing, svg } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import { t } from "../../../i18n/index.ts";
-import type { MemberMap, MemberMapMember, MemberMapPlace } from "../data/member-map.ts";
+import type {
+  MemberMap,
+  MemberMapAbsenceReason,
+  MemberMapAbsentMember,
+  MemberMapMember,
+  MemberMapPlace,
+} from "../data/member-map.ts";
 import {
   clusterPoints,
   layoutLabels,
@@ -216,6 +222,21 @@ function placeWhere(place: MemberMapPlace): string {
     return t("dashboard.memberMap.approximatePlace", { place: place.label });
   }
   return place.country ? `${place.label}, ${place.country}` : place.label;
+}
+
+// Why a member is not on the map, as the search shows it. "IP logging blocked" is a member who
+// stated their location as none: the service then never looks their sign-in address up.
+const ABSENCE_KEYS: Record<MemberMapAbsenceReason, string> = {
+  hidden: "dashboard.memberMap.absentHidden",
+  ip_off: "dashboard.memberMap.absentIpOff",
+  suspected_vpn: "dashboard.memberMap.absentVpn",
+  browser_blocked: "dashboard.memberMap.absentBrowserBlocked",
+  unrecognised: "dashboard.memberMap.absentUnrecognised",
+  no_location: "dashboard.memberMap.absentNoLocation",
+};
+
+function absenceText(reason: MemberMapAbsenceReason): string {
+  return t(ABSENCE_KEYS[reason]);
 }
 
 function seenAt(member: MemberMapMember): string | undefined {
@@ -856,6 +877,9 @@ class AdminbotMemberMap extends LitElement {
   // Whether the current pick came from the search. Clearing the search lets go of that pick and
   // shows the whole map again, but must not undo a city somebody picked from the list instead.
   private searchPicked = false;
+  // The member the last pick found who is not on the map. There is no city to fly to, so the box
+  // says why under it instead, until the query changes.
+  private searchAbsent: MemberMapAbsentMember | undefined = undefined;
   // The card and full screen each render a box; their option ids must not collide, nor collide
   // with another map element on the same page.
   private readonly searchId = nextSearchId();
@@ -925,6 +949,15 @@ class AdminbotMemberMap extends LitElement {
    * does not zoom, so a pick there opens full screen on the city, as a cluster tapped there does.
    */
   private chooseResult(result: MemberMapSearchResult, kind: StageKind): void {
+    if (result.kind === "absent") {
+      // Nowhere to go: keep the map as it is and say why under the box.
+      this.query = result.member.name;
+      this.searchOpen = undefined;
+      this.searchActive = -1;
+      this.searchAbsent = result.member;
+      return;
+    }
+    this.searchAbsent = undefined;
     const key = result.place.key;
     this.query = result.kind === "person" ? result.member.name : result.place.label;
     this.searchOpen = undefined;
@@ -947,6 +980,7 @@ class AdminbotMemberMap extends LitElement {
   /** Empties the box and, if the search had picked a city, lets it go and shows the whole map. */
   private clearSearch(): void {
     this.query = "";
+    this.searchAbsent = undefined;
     this.searchOpen = undefined;
     this.searchActive = -1;
     if (!this.searchPicked) {
@@ -965,6 +999,7 @@ class AdminbotMemberMap extends LitElement {
   private onSearchInput(event: Event, kind: StageKind): void {
     const value = (event.currentTarget as HTMLInputElement).value;
     this.query = value;
+    this.searchAbsent = undefined;
     this.searchActive = -1;
     this.searchOpen = kind;
     if (!foldForSearch(value)) {
@@ -1091,6 +1126,9 @@ class AdminbotMemberMap extends LitElement {
               search.results,
               (result) => searchResultKey(result),
               (result, index) => {
+                if (result.kind === "absent") {
+                  return this.renderAbsentOption(result.member, kind, index, base, activeIndex);
+                }
                 const person = result.kind === "person";
                 const name = person ? result.member.name : result.place.label;
                 const where = person
@@ -1153,7 +1191,7 @@ class AdminbotMemberMap extends LitElement {
                 ${t("dashboard.more", { count: String(search.more) })}
               </p>`
             : nothing}
-          ${map.unplaced > 0
+          ${map.unplaced > 0 && !map.notOnMap
             ? html`<p
                 class="member-map__search-note member-map__search-note--unplaced"
                 data-testid="member-map-search-unplaced"
@@ -1162,6 +1200,16 @@ class AdminbotMemberMap extends LitElement {
               </p>`
             : nothing}
         </div>
+        ${this.searchAbsent && !expanded
+          ? html`<p
+              class="member-map__search-absent"
+              data-testid="member-map-search-absent"
+              role="status"
+            >
+              <span class="member-map__search-name">${this.searchAbsent.name}</span>
+              <span class="member-map__search-where">${absenceText(this.searchAbsent.reason)}</span>
+            </p>`
+          : nothing}
         <span class="sr-only" role="status" aria-live="polite"
           >${expanded
             ? total > 0
@@ -1171,6 +1219,34 @@ class AdminbotMemberMap extends LitElement {
         >
       </div>
     `;
+  }
+
+  // A member who is not on the map: their name and why, and no swatch, since there is no city.
+  private renderAbsentOption(
+    member: MemberMapAbsentMember,
+    kind: StageKind,
+    index: number,
+    base: string,
+    activeIndex: number,
+  ) {
+    const why = absenceText(member.reason);
+    return html`<li
+      id=${`${base}-opt-${index}`}
+      class=${`member-map__search-option member-map__search-option--absent${index === activeIndex ? " member-map__search-option--active" : ""}`}
+      role="option"
+      aria-selected=${index === activeIndex ? "true" : "false"}
+      aria-label=${t("dashboard.memberMap.searchAbsentAria", { name: member.name, reason: why })}
+      data-kind="absent"
+      data-reason=${member.reason}
+      @mousedown=${(event: Event) => event.preventDefault()}
+      @mouseenter=${() => (this.searchActive = index)}
+      @click=${() => this.chooseResult({ kind: "absent", member, index }, kind)}
+    >
+      <span class="member-map__search-text">
+        <span class="member-map__search-name">${member.name}</span>
+        <span class="member-map__search-where">${why}</span>
+      </span>
+    </li>`;
   }
 
   private toggleExpanded(key: string): void {

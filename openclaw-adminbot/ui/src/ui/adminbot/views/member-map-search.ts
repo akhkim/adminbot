@@ -5,16 +5,25 @@
 // and no names, so for them the same box finds cities and nothing else. Nothing here asks the
 // service for more, and nothing finer than the city the map already draws is ever involved.
 //
-// Members the gazetteer could not place arrive as a count only (see parseMemberMap): the card is a
-// prompt to extend the gazetteer, not a roster, and the service keeps their names off this route.
-// The view says that some people cannot be found rather than letting them be silently absent.
+// Members who are not on the map reach an admin as a name and a reason only (`notOnMap`): hidden by
+// their own choice, IP lookup turned off, a VPN reading set aside, location blocked in the browser,
+// text no gazetteer knows, or nothing yet. They are found like anyone else and listed with why, so
+// "Ada" answers "location hidden" rather than nothing; there is no city to fly to. An older service
+// sends only a count, and the view then says that some people cannot be found.
 //
 // Pure functions, no DOM, like member-map-layout.ts, so ranking is unit-tested directly.
-import type { MemberMap, MemberMapMember, MemberMapPlace } from "../data/member-map.ts";
+import type {
+  MemberMap,
+  MemberMapAbsentMember,
+  MemberMapMember,
+  MemberMapPlace,
+} from "../data/member-map.ts";
 
 export type MemberMapSearchResult =
   | { kind: "person"; member: MemberMapMember; place: MemberMapPlace }
-  | { kind: "place"; place: MemberMapPlace };
+  | { kind: "place"; place: MemberMapPlace }
+  /** Not on the map: `index` into `notOnMap` keeps two people of the same name apart. */
+  | { kind: "absent"; member: MemberMapAbsentMember; index: number };
 
 /** How many results the box lists before "+N more": a short list to pick from, not a roster. */
 export const SEARCH_LIMIT = 8;
@@ -99,6 +108,17 @@ export function searchMemberMap(
       }
     }
   }
+  for (const [index, member] of (map.notOnMap ?? []).entries()) {
+    const rank = matchRank(member.name, query);
+    if (rank !== undefined) {
+      // Behind the people the map shows at the same rank (they can be flown to), ahead of cities.
+      scored.push({
+        rank: rank - 0.15,
+        name: member.name,
+        result: { kind: "absent", member, index },
+      });
+    }
+  }
   const sorted = scored
     .toSorted((left, right) => left.rank - right.rank || left.name.localeCompare(right.name))
     .map((entry) => entry.result);
@@ -109,5 +129,7 @@ export function searchMemberMap(
 export function searchResultKey(result: MemberMapSearchResult): string {
   return result.kind === "person"
     ? `person:${result.place.key}:${result.member.member_id || result.member.name}`
-    : `place:${result.place.key}`;
+    : result.kind === "absent"
+      ? `absent:${result.index}`
+      : `place:${result.place.key}`;
 }

@@ -66,7 +66,11 @@ const summary = parseMemberMap({
 
 function labels(results: MemberMapSearchResult[]): string[] {
   return results.map((result) =>
-    result.kind === "person" ? `${result.member.name} @ ${result.place.key}` : result.place.key,
+    result.kind === "person"
+      ? `${result.member.name} @ ${result.place.key}`
+      : result.kind === "absent"
+        ? `${result.member.name} (${result.member.reason})`
+        : result.place.key,
   );
 }
 
@@ -163,5 +167,47 @@ describe("searchMemberMap", () => {
   it("gives every result a distinct key", () => {
     const keys = searchMemberMap(full, "a", 100).results.map(searchResultKey);
     expect(new Set(keys).size).toBe(keys.length);
+  });
+});
+
+describe("searching members who are not on the map", () => {
+  const withAbsent = parseMemberMap({
+    mode: "full",
+    places: [
+      {
+        key: "toronto",
+        label: "Toronto",
+        country: "Canada",
+        lat: 43.65,
+        lon: -79.38,
+        members: [{ member_id: "a", name: "Tom Ross" }],
+      },
+    ],
+    not_on_map: [
+      { name: "Tom Hale", reason: "ip_off" },
+      { name: "Tom Hale", reason: "no_location" },
+      { name: "Toni Berg", reason: "hidden" },
+    ],
+    counts: { placed: 1, unplaced: 0, unknown: 3 },
+  })!;
+
+  it("finds them by name, after the people on the map and before cities", () => {
+    const { results } = searchMemberMap(withAbsent, "to");
+    expect(labels(results)).toEqual([
+      "Tom Ross @ toronto",
+      "Tom Hale (ip_off)",
+      "Tom Hale (no_location)",
+      "Toni Berg (hidden)",
+      "toronto",
+    ]);
+  });
+
+  it("gives two people of the same name their own keys", () => {
+    const keys = searchMemberMap(withAbsent, "hale").results.map(searchResultKey);
+    expect(keys).toEqual(["absent:0", "absent:1"]);
+  });
+
+  it("finds nobody by name on a summary map", () => {
+    expect(searchMemberMap(summary, "tom").results).toEqual([]);
   });
 });

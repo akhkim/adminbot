@@ -2818,6 +2818,19 @@
   border-top: 1px solid var(--border);
 }
 
+/* A member who is not on the map: found by name, but there is no city to go to. */
+.member-map__search-option--absent .member-map__search-name {
+  color: var(--muted);
+}
+
+.member-map__search-absent {
+  display: flex;
+  flex-direction: column;
+  margin: var(--space-1) 0 0;
+  padding: var(--space-1) var(--space-2);
+  min-width: 0;
+}
+
 /* The person a search found, first in their city's tooltip. */
 .member-map__person--found .member-map__name {
   color: var(--mm-pin);
