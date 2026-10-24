@@ -22,7 +22,7 @@ URGENCY_COLOURS = {'⛔': {'red': .96, 'green': .73, 'blue': .73}, '🔴': {'red
 PAPER_CORE = exporter.PAPERS[:exporter.PAPERS.index('Blocker / next step') + 1]
 PAPER_WIDTHS = {'Paper': 380, 'Urgency': 190, 'PI review': 150, 'Review for': 170, 'Review link': 280,
                 'Due (Toronto)': 170, 'Requested by': 150, 'Requested on': 130, 'Request note': 320,
-                'Venue deadline (Toronto)': 260, 'Stage': 170, 'Lead': 150,
+                'Venue deadline (Toronto)': 260, 'OpenReview': 300, 'Stage': 170, 'Lead': 150,
                 'Blocker / next step': 280, 'Link problems': 240, 'Still missing': 260, 'Authors': 360,
                 'All artifact statuses': 300, 'Venue (as entered)': 220, 'Venue': 230, 'Checks': 240, exporter.PAPER_ID: 160}
 
@@ -264,7 +264,9 @@ def main():
         access = {}
     with sqlite3.connect(Path(args.database).resolve().as_uri() + '?mode=ro', uri=True, timeout=15) as connection:
         connection.execute('PRAGMA query_only=ON')
-        batch = exporter.snapshot(connection, timestamp, full_people=True, link_access=access)
+        # Written by the OpenReview results job under the account that holds the login; absent is fine.
+        openreview = exporter.load_openreview_results(Path(args.database).with_name('openreview-author-results.json'))
+        batch = exporter.snapshot(connection, timestamp, full_people=True, link_access=access, openreview=openreview)
     requests = refresh_requests(batch, properties)
     with tempfile.NamedTemporaryFile(mode='w', suffix='.json') as body:
         json.dump({'requests': requests}, body)

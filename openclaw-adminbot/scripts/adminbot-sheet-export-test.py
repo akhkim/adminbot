@@ -384,3 +384,56 @@ assert noted['Venue'] == 'Not ARR (per PI, Oct 11 2026)'
 real = exporter.paper_row({'id': 'uka-clinical-post-training', 'title': 'U', 'venue': 'ICML 2027'}, members, [], [], NOW)
 assert real['Venue'].startswith('ICML'), real['Venue']
 print('PASS: sheet-only venue note fills a blank venue, a real AdminBot venue wins')
+
+# OpenReview: forum id in a paper link wins, then title; a later cycle beats an earlier one; scores summarized.
+results = [
+    {'id': 'mayRun', 'forum': 'mayRun', 'title': 'Entropy Collapse in Agentic Social Media',
+     'venue_id': 'aclweb.org/ACL/ARR/2026/May/Submission', 'status': 'rejected'},
+    {'id': 'octRun', 'forum': 'octRun', 'title': 'Entropy Collapse in Agentic Social Media',
+     'venue_id': 'aclweb.org/ACL/ARR/2026/October/Submission', 'status': 'under_review'},
+    {'id': 'emnlp1', 'forum': 'emnlp1', 'review_forum': 'arr1', 'title': 'Other paper', 'venue': 'EMNLP 2026 Findings',
+     'status': 'accepted', 'track': 'findings', 'presentation': 'poster',
+     'reviews': [{'overall_assessment': 3.0}, {'overall_assessment': 3.5, 'soundness': 4.0}, {'confidence': 4.0}],
+     'meta_review': {'overall_assessment': 3.5}},
+    {'id': 'iclr1', 'forum': 'iclr1', 'title': 'Oral paper', 'venue': 'ICLR 2026 Oral', 'status': 'accepted',
+     'track': 'main', 'presentation': 'oral', 'reviews': [{'rating': 8.0}, {'rating': 6.0}], 'error': 'timeout'},
+]
+entropy = {'title': 'Entropy collapse in agentic social-media!'}
+assert exporter.openreview_match(entropy, [], results)['id'] == 'octRun'
+linked = [{'slot': 'submission', 'url': 'https://openreview.net/forum?id=mayRun&noteId=x'}]
+assert exporter.openreview_match(entropy, linked, results)['id'] == 'mayRun'
+assert exporter.openreview_match({'title': 'x', 'artifacts': {'submission_url': 'https://openreview.net/forum?id=arr1'}},
+                                 [], results)['id'] == 'emnlp1'
+assert exporter.openreview_match({'title': 'Unknown'}, [], results) is None
+assert exporter.openreview_text(results[1]) == '⏳ Under review · ARR October 2026'
+assert exporter.openreview_text(results[2]) == (
+    '✅ Accepted · Findings · Poster · EMNLP 2026 Findings · reviews 3 · 3.5 (avg 3.25) · meta 3.5')
+assert exporter.openreview_text(results[3]) == (
+    "✅ Accepted · Main · 🎤 Oral · ICLR 2026 Oral · reviews 8 · 6 (avg 7) · (reviews couldn't be read)")
+assert exporter.openreview_text({'status': 'under_review', 'venue': 'Submitted to ICLR 2027'}) == '⏳ Under review · ICLR 2027'
+assert exporter.openreview_text(None) == ''
+assert exporter.venue_from_id('ICLR.cc/2027/Conference/Submission') == 'ICLR 2027'
+assert exporter.venue_from_id('NeurIPS.cc/2026/Workshop/LLM_Agents/Submission') == 'NeurIPS 2026 Workshop LLM Agents'
+assert exporter.load_openreview_results('/nonexistent/openreview.json') == []
+# Fallback from the citation-check table, and the column + Accepted fill through a full snapshot.
+connection = sqlite3.connect(':memory:')
+connection.executescript('''
+CREATE TABLE adminbot_lab_members (id TEXT, payload_json TEXT);
+CREATE TABLE adminbot_papers (id TEXT, payload_json TEXT);
+CREATE TABLE adminbot_openreview_citation_checks (submission_id TEXT, title TEXT, venue_id TEXT);
+INSERT INTO adminbot_openreview_citation_checks VALUES
+  ('octRun', 'Entropy Collapse in Agentic Social Media', 'aclweb.org/ACL/ARR/2026/October/Submission'),
+  ('old', 'Gone', 'aclweb.org/ACL/ARR/2026/May/Withdrawn_Submission');
+''')
+connection.execute('INSERT INTO adminbot_papers VALUES (?,?)', ('p1', json.dumps({'id': 'p1', 'title': 'Entropy Collapse in Agentic Social Media'})))
+connection.execute('INSERT INTO adminbot_papers VALUES (?,?)', ('p2', json.dumps({'id': 'p2', 'title': 'Oral paper'})))
+connection.commit()
+fallback = {e['id']: e['status'] for e in exporter.citation_check_results(connection)}
+assert fallback == {'octRun': 'under_review', 'old': 'withdrawn'}, fallback
+values = exporter.snapshot(connection, NOW.isoformat(), openreview=[results[3]])['data'][1]['values']
+header = values[0]
+rows = {row[header.index('Paper')]: row for row in values[1:]}
+assert rows['Entropy Collapse in Agentic Social Media'][header.index('OpenReview')] == '⏳ Under review · ARR October 2026'
+assert rows['Oral paper'][header.index('OpenReview')].startswith('✅ Accepted · Main · 🎤 Oral')
+assert rows['Oral paper'][header.index('Accepted')] == 'ICLR 2026 Oral'
+print('PASS: OpenReview column matches by forum then title, prefers the latest cycle, fills Accepted, falls back to citation checks')

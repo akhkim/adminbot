@@ -44,7 +44,7 @@ VENUE_NOTES = {
 # Plain-language layout: what the PI acts on first, links next, record-keeping detail last.
 PAPERS = ('Paper', 'Urgency', 'PI review', 'Review for', 'Review link', 'Due (Toronto)',
           'Requested by', 'Requested on', 'Request note', 'Venue', 'Venue deadline (Toronto)',
-          'Stage', 'Lead', 'Blocker / next step', 'Link problems', 'Still missing', 'Mentor review', 'Co-author feedback', 'Accepted',
+          'OpenReview', 'Stage', 'Lead', 'Blocker / next step', 'Link problems', 'Still missing', 'Mentor review', 'Co-author feedback', 'Accepted',
           'Going to conference', 'Started', 'Last updated', 'Feedback givers', 'Checks',
           'Authors', 'Venue (as entered)', 'All artifact statuses', PAPER_ID)
 LINK_COLUMNS = ('Review link',)
@@ -506,7 +506,119 @@ def due_text(request):
     return toronto(hard) if hard else ('Soft target ' + toronto(soft)) if soft else ''
 
 
-def paper_row(record, members, slots, deadlines, now, access=None):
+# --------------------------------------------------------------------------
+# OpenReview outcome per paper
+# --------------------------------------------------------------------------
+FORUM_ID_RE = re.compile(r'openreview\.net/(?:forum|pdf)\?(?:[^#]*&)?id=([A-Za-z0-9_-]+)')
+OVERALL_KEYS = ('overall_assessment', 'rating', 'recommendation', 'overall_recommendation')
+STATUS_TEXT = {'accepted': '✅ Accepted', 'under_review': '⏳ Under review', 'rejected': '❌ Rejected',
+               'desk_rejected': '❌ Desk rejected', 'withdrawn': '↩️ Withdrawn'}
+
+
+def normalized_title(title):
+    return re.sub(r'[^a-z0-9]', '', str(title or '').lower())
+
+
+def venue_from_id(venue_id):
+    """'aclweb.org/ACL/ARR/2026/October/Submission' -> 'ARR October 2026'."""
+    parts = [p for p in str(venue_id or '').split('/') if p]
+    if 'ARR' in parts and len(parts) >= parts.index('ARR') + 3:
+        year, month = parts[parts.index('ARR') + 1:parts.index('ARR') + 3]
+        return f'ARR {month} {year}'
+    # 'ICLR.cc/2027/Conference/Submission' -> 'ICLR 2027'; workshops keep their name after the year.
+    year = next((i for i, p in enumerate(parts) if p.isdigit() and len(p) == 4), None)
+    if not parts or year is None:
+        return str(venue_id or '')
+    rest = [p.replace('_', ' ') for p in parts[year + 1:] if p != 'Conference' and not p.endswith('Submission')]
+    return ' '.join([parts[0].split('.')[0], parts[year], *rest])
+
+
+def cycle_key(entry):
+    """(year, month) of a submission's venue, so a resubmission beats the cycle before it."""
+    words = str(entry.get('venue_id') or '').replace('/', ' ').lower().split()
+    year = next((int(w) for w in words if w.isdigit() and len(w) == 4), 0)
+    names = [datetime.date(2000, m, 1).strftime('%B').lower() for m in range(1, 13)]
+    month = next((names.index(w) + 1 for w in words if w in names), 0)
+    return year, month
+
+
+def citation_check_results(connection):
+    """Submissions the citation checker already saw, as a fallback when the results snapshot is missing.
+
+    These rows say only which venue a submission sits in, so they yield nothing but "under review",
+    "rejected" or "withdrawn"; decisions, presentation and scores need the snapshot.
+    """
+    if not connection.execute("SELECT 1 FROM sqlite_master WHERE name='adminbot_openreview_citation_checks'").fetchone():
+        return []
+    entries = {}
+    for submission_id, title, venue_id in connection.execute(
+            'SELECT submission_id,title,venue_id FROM adminbot_openreview_citation_checks'):
+        lowered = str(venue_id or '').lower()
+        status = ('withdrawn' if 'withdraw' in lowered else 'desk_rejected' if 'desk_reject' in lowered
+                  else 'rejected' if 'reject' in lowered else 'under_review' if lowered.endswith('/submission') else None)
+        if status:
+            entries[submission_id] = {'id': submission_id, 'forum': submission_id, 'title': title,
+                                      'venue': venue_from_id(venue_id), 'venue_id': venue_id, 'status': status}
+    return list(entries.values())
+
+
+def openreview_match(record, slots, results):
+    """The submission a paper refers to: a forum id in any of its links first, else the same title."""
+    urls = [row.get('url') for row in slots] + list((record.get('artifacts') or {}).values())
+    forums = {m.group(1) for u in urls if isinstance(u, str) for m in [FORUM_ID_RE.search(u)] if m}
+    by_forum = [e for e in results if forums & {e.get('id'), e.get('forum'), e.get('review_forum')}]
+    title = normalized_title(record.get('title'))
+    candidates = by_forum or [e for e in results if title and normalized_title(e.get('title')) == title]
+    # Results snapshot entries come before citation-check fallbacks, so ties keep the richer one.
+    return max(candidates, key=cycle_key, default=None)
+
+
+def overall(scores):
+    return next((scores[k] for k in OVERALL_KEYS if k in (scores or {})), None)
+
+
+def number(value):
+    return f'{value:g}'
+
+
+def openreview_text(entry):
+    """'✅ Accepted · Findings · Poster · EMNLP 2026 · reviews 3 · 3.5 · 4 (avg 3.5) · meta 3.5'."""
+    if not entry:
+        return ''
+    status = entry.get('status') or 'under_review'
+    parts = [STATUS_TEXT.get(status, status)]
+    if entry.get('track') == 'findings':
+        parts.append('Findings')
+    elif entry.get('track') == 'main' and status == 'accepted':
+        parts.append('Main')
+    if entry.get('presentation'):
+        parts.append({'oral': '🎤 Oral', 'spotlight': '✨ Spotlight'}.get(entry['presentation'], 'Poster'))
+    venue = entry.get('venue') or venue_from_id(entry.get('venue_id'))
+    if venue and not venue.lower().startswith('submitted to'):
+        parts.append(venue)
+    elif venue:
+        parts.append(venue[len('submitted to'):].strip())
+    scores = [s for s in (overall(r) for r in entry.get('reviews') or []) if s is not None]
+    if scores:
+        parts.append('reviews ' + ' · '.join(number(s) for s in scores) +
+                     f' (avg {number(round(sum(scores) / len(scores), 2))})')
+    meta = overall(entry.get('meta_review'))
+    if meta is not None:
+        parts.append(f'meta {number(meta)}')
+    if entry.get('error'):
+        parts.append("(reviews couldn't be read)")
+    return ' · '.join(parts)
+
+
+def load_openreview_results(path):
+    """Submissions from the OpenReview results snapshot; [] when it is absent or unreadable."""
+    try:
+        return [e for e in json.loads(Path(path).read_text()).get('submissions', []) if isinstance(e, dict)]
+    except (OSError, ValueError, AttributeError):
+        return []
+
+
+def paper_row(record, members, slots, deadlines, now, access=None, openreview=()):
     artifacts = record.get('artifacts') or {}
     by_slot = {row['slot']: row for row in slots}
     links = {}
@@ -577,6 +689,9 @@ def paper_row(record, members, slots, deadlines, now, access=None):
     owner_id = record.get('lead_owner_member_id')
     name = lambda member_id: members.get(member_id, {}).get('name', member_id or '')
     accepted = ' '.join(str(record.get(k) or '') for k in ('accepted_venue', 'accepted_year')).strip()
+    review = openreview_match(record, slots, openreview)
+    if not accepted and review and review.get('status') == 'accepted':
+        accepted = review.get('venue') or ''
     row = {
         'Paper': record.get('title', ''),
         'Urgency': label,
@@ -592,6 +707,7 @@ def paper_row(record, members, slots, deadlines, now, access=None):
         'Venue deadline (Toronto)': '\n'.join(f"{deadline_name(d)}: {toronto(d['at'])}" for d in (
             deadline.get('soft'), deadline) if d) if deadline else '',
         'Venue (as entered)': ' '.join(str(record.get('venue') or artifacts.get('conference') or '').split()),
+        'OpenReview': openreview_text(review),
         'Stage': STAGES.get(record.get('current_step'), record.get('current_step') or ''),
         'Lead': record.get('lead_owner') or name(owner_id),
         'Blocker / next step': '\n'.join(str(x) for x in [artifacts.get('blocker_title'), artifacts.get('blocker_note'),
@@ -805,7 +921,7 @@ def order_people_values(values):
     ]]
 
 
-def snapshot(connection, timestamp, people_values=None, full_people=False, link_access=None):
+def snapshot(connection, timestamp, people_values=None, full_people=False, link_access=None, openreview=None):
     """Read both tables in one snapshot; never infer active status from missing data."""
     data = []
     records = {}
@@ -829,6 +945,7 @@ def snapshot(connection, timestamp, people_values=None, full_people=False, link_
                                                  'provided_by_member_id': by, 'invalid_reason': reason,
                                                  'url': url, 'value_text': text})
         deadlines = published_deadlines(connection)
+        openreview = list(openreview or []) + citation_check_results(connection)
         now = parse_time(timestamp) or datetime.datetime.now(datetime.timezone.utc)
         paper_links = None
         for table, tab, fields in (
@@ -844,7 +961,7 @@ def snapshot(connection, timestamp, people_values=None, full_people=False, link_
                 if tab == 'PaperList':
                     record['going_attendees'] = '\n'.join(sorted(
                         going_by_paper[record['id']].values(), key=str.casefold))
-                    rows.append(paper_row(record, member_index, slots_by_paper[record['id']], deadlines, now, link_access))
+                    rows.append(paper_row(record, member_index, slots_by_paper[record['id']], deadlines, now, link_access, openreview))
                 else:
                     rows.append([cell(record.get(field)) for field in fields])
             if tab == 'PaperList':
