@@ -517,6 +517,12 @@ import {
   type ActiveChannelReader,
 } from "./service.active-channels.js";
 import {
+  automationHealthIssues,
+  slackInviteBlockFor,
+  slackInviteBlocks,
+  type AutomationHealthIssue,
+} from "./service.automation-health.js";
+import {
   birthdayProposalStillCurrent,
   reconcileBirthdayEvent,
   reconcileExecutedBirthday,
@@ -1811,10 +1817,58 @@ export class AdminBotService {
     if (!proposal.summary.trim()) {
       return serviceError(400, "summary is required");
     }
+    const blocked = this.slackInviteBlock(proposal);
+    if (blocked) {
+      // Refused rather than proposed: T1 auto-approves, so a proposal here is an execution, and an
+      // execution into a channel Slack has already refused is one more failure and nothing else.
+      // Every caller already treats a refused proposal as a skip, which is what this is.
+      return serviceError(409, blocked);
+    }
     const stored = this.prepareProposal(proposal);
     this.store.saveProposal(stored);
     this.auditProposalCreation(stored);
     return { ok: true, status: 200, payload: stored };
+  }
+
+  /**
+   * Why a Slack invite should not be tried again yet, or undefined when it may be.
+   *
+   * See service.automation-health.ts: a missing or closed channel pauses every invite into it for a
+   * day, and a person the bot cannot add (a guest, another workspace) is left for a manual invite
+   * for a month. The admin hears about both once, from the automation health check.
+   */
+  private slackInviteBlock(proposal: {
+    type: string;
+    proposed_payload?: unknown;
+  }): string | undefined {
+    if (proposal.type !== "slack.invite_to_channel") {
+      return undefined;
+    }
+    const payload = proposal.proposed_payload as Record<string, unknown> | undefined;
+    if (typeof payload?.channel !== "string" || typeof payload.user_id !== "string") {
+      return undefined;
+    }
+    const block = slackInviteBlockFor(
+      slackInviteBlocks(this.store.listAuditEvents(), (id) => this.failedInviteProposal(id)),
+      payload.channel,
+      payload.user_id,
+    );
+    if (!block) {
+      return undefined;
+    }
+    return block.scope === "channel"
+      ? `invites into #${block.channel} are paused after Slack refused one (${block.reason}) at ${block.since}`
+      : `${block.user_id} needs a manual invite to #${block.channel} (${block.reason})`;
+  }
+
+  // Invite payloads do not change once proposed, and a sweep asks about the same few hundred
+  // failures once per invite it considers; remembered so that is a map read, not a query.
+  private readonly failedInviteProposals = new Map<string, AdminBotStoredProposal | undefined>();
+  private failedInviteProposal(id: string): AdminBotStoredProposal | undefined {
+    if (!this.failedInviteProposals.has(id)) {
+      this.failedInviteProposals.set(id, this.store.getProposal(id));
+    }
+    return this.failedInviteProposals.get(id);
   }
 
   /** What service.birthday.ts needs to propose or withdraw a member's birthday event. */
@@ -3099,6 +3153,113 @@ export class AdminBotService {
     return this.store.listAuditEvents();
   }
 
+  /** One cron run, as reported by scripts/lib/adminbot-cron-run.sh. */
+  recordAutomationHeartbeat(
+    actor: string,
+    input: { job?: unknown; ok?: unknown; cron?: unknown; exit_code?: unknown; detail?: unknown },
+  ): AdminBotServiceResponse<{ recorded: true }> {
+    const job = typeof input.job === "string" ? input.job.trim() : "";
+    if (!/^[a-z0-9][a-z0-9-]{0,79}$/u.test(job) || typeof input.ok !== "boolean") {
+      return serviceError(400, "job (a cron job name) and ok (boolean) are required");
+    }
+    this.recordAudit({
+      type: "automation_health.heartbeat",
+      actor,
+      details: {
+        job,
+        ok: input.ok,
+        ...(typeof input.cron === "string" ? { cron: input.cron.slice(0, 64) } : {}),
+        ...(typeof input.exit_code === "number" ? { exit_code: input.exit_code } : {}),
+        ...(typeof input.detail === "string" && input.detail.trim()
+          ? { detail: input.detail.trim().slice(0, 300) }
+          : {}),
+      },
+    });
+    return { ok: true, status: 200, payload: { recorded: true } };
+  }
+
+  /** Every open automation issue: the dashboard read. Nothing is sent. */
+  automationHealth(
+    now = new Date(),
+  ): AdminBotServiceResponse<{ checked_at: string; issues: AutomationHealthIssue[] }> {
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        checked_at: now.toISOString(),
+        issues: automationHealthIssues(
+          this.store.listAuditEvents(),
+          (id) => this.failedInviteProposal(id),
+          now,
+        ),
+      },
+    };
+  }
+
+  /**
+   * Tell the admins about each open issue, once a week at most per issue.
+   *
+   * Through the notifications on their own page rather than Slack: one of the things this reports
+   * is Slack refusing the bot, and an alert that travels over the broken path is not an alert. The
+   * key changes when the problem does -- a second person needing a manual invite is a new key --
+   * so something new is heard about at once, and something unchanged is repeated weekly until
+   * somebody fixes it.
+   */
+  raiseAutomationHealthAlerts(
+    actor: string,
+    now = new Date(),
+  ): AdminBotServiceResponse<{ issues: number; alerted: string[]; admins: number }> {
+    const health = this.automationHealth(now);
+    if (!health.ok) {
+      return health;
+    }
+    const admins = this.store
+      .listLabMembers()
+      .filter((member) => member.privilege_level === "admin" && !adminBotIsAlumniMember(member));
+    const ledger = this.nudgeLedgerIndex();
+    const nowIso = now.toISOString();
+    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const alerted: string[] = [];
+    // Nobody to tell is not the same as told: leave the ledger alone so the first admin hears it.
+    for (const issue of admins.length > 0 ? health.payload.issues : []) {
+      const said = ledger.get(`automation_health|${issue.key}`);
+      if (said?.last_nudged_at && said.last_nudged_at > weekAgo) {
+        continue;
+      }
+      for (const admin of admins) {
+        this.store.saveMemberNotification({
+          id: `notif_${randomUUID()}`,
+          member_id: admin.id,
+          kind: "automation",
+          title: issue.label,
+          body: issue.detail,
+          tab: "adminbotSettings",
+          created_at: nowIso,
+        });
+      }
+      this.store.saveNudgeLedgerEntry({
+        domain: "automation_health",
+        subject_id: issue.key,
+        member_id: actor,
+        last_nudged_at: nowIso,
+        nudge_count: (said?.nudge_count ?? 0) + 1,
+      });
+      alerted.push(issue.key);
+    }
+    if (alerted.length > 0) {
+      this.recordAudit({
+        type: "automation_health.alerted",
+        actor,
+        details: { issue_keys: alerted, admin_count: admins.length },
+      });
+    }
+    return {
+      ok: true,
+      status: 200,
+      payload: { issues: health.payload.issues.length, alerted, admins: admins.length },
+    };
+  }
+
   // Anonymous reimbursement use has no member to attribute it to, so the audit trail is the only
   // record that a submission happened and the only way to spot abuse of the open endpoint.
   recordAnonymousReimbursementUse(details: {
@@ -3637,6 +3798,10 @@ export class AdminBotService {
         .listProposalsByType("slack.invite_to_channel")
         .find((proposal) => proposal.idempotency_key === key);
       if (previous?.status === "executed" || previous?.status === "rejected") {
+        continue;
+      }
+      // A reused proposal skips createProposal's check, so it is asked here before re-executing.
+      if (previous && this.slackInviteBlock(previous)) {
         continue;
       }
       const proposed = previous
@@ -8848,12 +9013,11 @@ export class AdminBotService {
   /**
    * Send the batches. One Slack message per person, whatever they owe and on however many papers.
    *
-   * Manual only: there is no cron behind this. Nudging the lab is a judgement about timing --
-   * whether a deadline week is the right moment to chase somebody about a poster -- and the person
-   * making that judgement should be looking at the batches when they make it. The route is still
-   * gated to a genuine admin session, and the message is still composed entirely from state, so
-   * pressing the button asks for the standing rule to be applied now rather than composing
-   * anything.
+   * Two callers: the admin's button (a session route, which may narrow the send), and the weekday
+   * cron through `/papers/slot-reminder/scheduled-run`, which sends every batch. It used to be
+   * manual only, but the schedule existed anyway and was refused every weekday, so the domain went
+   * quiet for two months with nobody choosing that. The message is composed entirely from state
+   * and the ledger's cooldown decides who is due, so the schedule chooses nothing a person would.
    *
    * `recipientIds` narrows a send to the people an admin picked out of the preview. Omitted, it
    * sends every batch. Either way the batches themselves are recomputed here rather than taken

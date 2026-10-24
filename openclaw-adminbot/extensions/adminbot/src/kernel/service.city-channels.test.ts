@@ -77,10 +77,12 @@ describe("syncCityChannels", () => {
     expect(result.invited).toEqual([]);
     expect(result.skipped).toHaveLength(4);
     expect(memberById(service, "m0")?.city_channel_invited_at).toBeTruthy();
+    // A missing channel is tried once; the other three are paused rather than sent to fail too.
+    expect(result.skipped.filter((row) => row.reason.includes("paused"))).toHaveLength(3);
 
     const again = unwrap(await service.syncCityChannels("cron"));
     expect(again.skipped).toEqual([]);
-    expect(sent.filter((entry) => entry.type === "slack.invite_to_channel")).toHaveLength(4);
+    expect(sent.filter((entry) => entry.type === "slack.invite_to_channel")).toHaveLength(1);
   });
 
   it("waits until a city has four", async () => {
