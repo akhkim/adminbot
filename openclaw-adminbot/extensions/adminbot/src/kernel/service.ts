@@ -6,6 +6,7 @@ import type {
 import type { ReverseGeocoder } from "../connectors/reverse-geocode.js";
 import type { AdminBotExternalCollaboratorSubgroup } from "../contracts/actions.js";
 import {
+  adminBotActionTypes,
   ADMINBOT_ONBOARDING_CATCH_UP_ROUND,
   adminBotHasBeenOnboardEmailed,
   adminBotIsAlumniType,
@@ -1817,7 +1818,12 @@ export class AdminBotService {
   createProposal(
     proposal: AdminBotActionProposal,
   ): AdminBotServiceResponse<AdminBotStoredProposal> {
-    if (!proposal.summary.trim()) {
+    // Checked before anything reads the policy table: an unknown type has no policy, and failing
+    // here is a 400 that names the problem rather than a 500 from a missing table entry.
+    if (!(adminBotActionTypes as readonly string[]).includes(proposal.type)) {
+      return serviceError(400, "unsupported action type");
+    }
+    if (typeof proposal.summary !== "string" || !proposal.summary.trim()) {
       return serviceError(400, "summary is required");
     }
     const blocked = this.slackInviteBlock(proposal);

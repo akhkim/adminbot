@@ -3108,7 +3108,7 @@ describe("anonymous reimbursement access", () => {
       const res = await fetch(`${baseUrl}${route}`, {
         method: "POST",
         headers: jsonHeaders(),
-        body: JSON.stringify({ messages: [], draft: {} }),
+        body: JSON.stringify({ message: "Synthetic request", messages: [], draft: {} }),
       });
       expect(res.status).toBe(200);
     }
@@ -3152,7 +3152,7 @@ describe("anonymous reimbursement access", () => {
       const res = await fetch(`${baseUrl}/reimbursements/converse`, {
         method: "POST",
         headers: jsonHeaders(),
-        body: JSON.stringify({ messages: [] }),
+        body: JSON.stringify({ message: "Synthetic request", messages: [] }),
       });
       statuses.push(res.status);
     }
