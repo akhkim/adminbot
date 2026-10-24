@@ -47,11 +47,11 @@ export async function inviteLocalLunches(
   if (!store.listLabMembers().length)
     throw new Error("Refusing lunch invites with an empty roster");
   const until = new Date(now.getTime() + 7 * 86_400_000);
+  // Google text search can miss “Lunch&Meeting”; filter the bounded calendar read locally.
   const events = await read({
     calendarId,
     from: now.toISOString(),
     to: until.toISOString(),
-    query: "lunch",
     max: 250,
   });
   if (events.length >= 250)
@@ -65,6 +65,7 @@ export async function inviteLocalLunches(
     const start = Date.parse(event.start);
     if (!Number.isFinite(start) || start < now.getTime() || start >= until.getTime()) continue;
     if (event.calendar_id && event.calendar_id !== calendarId) continue;
+    if (!/\blunch(?:es)?\b/iu.test(event.summary)) continue;
     const city = lunchCity(event, [...gazetteerPlaces(), ...map.payload.places]);
     if (!city) {
       skipped.push({ event_id: event.id, reason: "Not a timed lunch with one identifiable city" });
@@ -76,7 +77,7 @@ export async function inviteLocalLunches(
       // A timezone can cover several cities. Automatic invitations require a city placement.
       if (local.precision !== "city") continue;
       const member = store.getLabMember(local.member_id);
-      if (!member) continue;
+      if (!member || member.map_visibility === "hidden") continue;
       const email = inviteAddressFor(member);
       if (
         !email ||

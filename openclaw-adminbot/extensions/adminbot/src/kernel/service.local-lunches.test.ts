@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { AdminBotCalendarEvent } from "../workflows/calendar/events.js";
+import type { AdminBotCalendarEvent, CalendarEventsReader } from "../workflows/calendar/events.js";
 import { AdminBotMemoryStore, AdminBotService } from "./service.js";
 import { inviteLocalLunches, lunchCity } from "./service.local-lunches.js";
 
@@ -39,8 +39,8 @@ function lab() {
 describe("automatic local lunch invitations", () => {
   it("discovers all lunches, matches their cities, includes alumni and audits standing approval", async () => {
     const { service, store, execute } = lab();
-    const read = vi.fn(async () => [
-      event("mon"),
+    const read = vi.fn(async (_params: Parameters<CalendarEventsReader>[0]) => [
+      event("mon", "Zurich: Jinesis Lunch&Meeting@OAT 20th floor"),
       event("thu", "Lunch", "Zeughausstrasse 31, Zürich, Switzerland"),
       event("ny", "New York: Lunch"),
       event("no-city", "Columbia lunch"),
@@ -52,12 +52,11 @@ describe("automatic local lunch invitations", () => {
       ["thu", "alum"],
       ["ny", "ny"],
     ]);
-    expect(result.skipped).toHaveLength(2);
+    expect(result.skipped).toHaveLength(1);
     expect(result.failed).toEqual([]);
     expect(execute).toHaveBeenCalledTimes(3);
-    expect(read).toHaveBeenCalledWith(
-      expect.objectContaining({ calendarId: "lab", query: "lunch" }),
-    );
+    expect(read.mock.calls[0]?.[0]).not.toHaveProperty("query");
+    expect(read).toHaveBeenCalledWith(expect.objectContaining({ calendarId: "lab" }));
     expect(store.listProposalsByType("calendar.remove_attendees")).toHaveLength(0);
     for (const proposal of store.listProposalsByType("calendar.add_attendees")) {
       expect(proposal).toMatchObject({
