@@ -1,7 +1,8 @@
-// The DCS roster row, filed whenever somebody becomes a full member or a major coauthor: on a
-// Lab Members tab save, on Add member, on approving a sweep joiner, and -- queued for an admin --
-// when the nightly roster sync applies a type changed in the spreadsheet. Every row is a typed
-// `dcs_roster.add_row` proposal, laid out against the live header when it executes.
+// The DCS roster row, written whenever somebody becomes a full member or a major coauthor: on a
+// Lab Members tab save, on Add member, on approving a sweep joiner, and when the nightly roster
+// sync applies a type changed in the spreadsheet. The sheet is a derivative of the roster, so every
+// row is written directly: a typed `dcs_roster.add_row` proposal that its policy auto-approves,
+// executed on the spot and laid out against the live header when it runs.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AdminBotLabMemberInput, AdminBotStoredProposal } from "../contracts/actions.js";
 import { withCompleteProfile } from "../contracts/profile-completion.test-helpers.js";
@@ -196,6 +197,19 @@ const dcsProposals = (mock: ReturnType<typeof createAdminBotMockService>) =>
 const auditOf = (mock: ReturnType<typeof createAdminBotMockService>, type: string) =>
   mock.store.listAuditEvents().filter((event) => event.type === type);
 
+/** Written directly: executed, approved by its own policy, and on the record as such. */
+function expectWrittenDirectly(
+  mock: ReturnType<typeof createAdminBotMockService>,
+  proposal: AdminBotStoredProposal | undefined,
+) {
+  expect(proposal?.status).toBe("executed");
+  expect(proposal?.approvals).toEqual([]);
+  expect(proposal?.approval_requirement.requires_approval).toBe(false);
+  expect(
+    auditOf(mock, "proposal.auto_approved").some((event) => event.action_id === proposal?.id),
+  ).toBe(true);
+}
+
 async function approveAndRun(
   baseUrl: string,
   token: string,
@@ -235,7 +249,7 @@ const sheetWithMinnieAs = (type: string) => [
 ];
 
 describe("a Lab Members tab save that makes somebody a major coauthor or a full member", () => {
-  it("files their row, approved by the saving admin, under the sheet's own columns", async () => {
+  it("writes their row directly, under the sheet's own columns", async () => {
     const { baseUrl, mock, appended } = await startService({ dcsRows: [HOLDS_MINNIE] });
     const token = await adminToken(mock, baseUrl);
 
@@ -259,8 +273,7 @@ describe("a Lab Members tab save that makes somebody a major coauthor or a full 
     expect(row?.[8]).toMatch(/^\d{4}-\d{2}-\d{2}$/u);
 
     const [proposal] = dcsProposals(mock);
-    expect(proposal?.status).toBe("executed");
-    expect(proposal?.approvals.map((approval) => approval.approver_id)).toEqual(["admin"]);
+    expectWrittenDirectly(mock, proposal);
     expect(proposal?.proposed_payload).toMatchObject({
       spreadsheet_id: "dcs-sheet",
       member_id: "minnie",
@@ -386,14 +399,13 @@ describe("the weekly sweep's joiners", () => {
     expect(appended.map((row) => row.slice(0, 5))).toEqual([
       ["Ada Lovelace", "ada-lovelace", "ada", "ada@example.test", "full"],
     ]);
-    expect(dcsProposals(mock)[0]?.approvals.map((approval) => approval.approver_id)).toEqual([
-      "admin",
-    ]);
+    // The enrollment was the admin's decision; the row it owes follows without a second card.
+    expectWrittenDirectly(mock, dcsProposals(mock)[0]);
   });
 });
 
 describe("a type changed in the spreadsheet", () => {
-  it("queues the row for an admin instead of approving it, then files it on approval", async () => {
+  it("writes the row directly, with nothing left in Pending Actions", async () => {
     const { baseUrl, mock, appended } = await startService({
       dcsRows: [],
       memberSheetRows: sheetWithMinnieAs("coauthor-major"),
@@ -403,36 +415,45 @@ describe("a type changed in the spreadsheet", () => {
 
     expect(synced.applied).toHaveLength(1);
     expect(synced.dcs_roster).toEqual([
-      expect.objectContaining({ step: "dcs_roster", status: "queued", target: "Minnie Minor" }),
+      expect.objectContaining({ step: "dcs_roster", status: "done", target: "Minnie Minor" }),
     ]);
-    expect(appended).toEqual([]);
-    const [proposal] = dcsProposals(mock);
-    expect(proposal?.status).toBe("pending");
-    expect(proposal?.approvals).toEqual([]);
-
-    const token = await adminToken(mock, baseUrl);
-    expect((await approveAndRun(baseUrl, token, proposal!)).status).toBe(200);
     expect(appended.map((row) => [row[1], row[2], row[4]])).toEqual([
       ["minnie", "minnie", "coauthor-major"],
     ]);
+    expectWrittenDirectly(mock, dcsProposals(mock)[0]);
+    const pending = mock.service.listPending();
+    expect(
+      (pending.ok ? pending.payload.proposals : []).some(
+        (proposal) => proposal.type === "dcs_roster.add_row",
+      ),
+    ).toBe(false);
   });
 
-  // The card can wait for days. A row somebody typed in by hand meanwhile wins.
-  it("refuses at approval when the person reached the sheet while the card waited", async () => {
+  // The executor reads the sheet again when it runs, so a row somebody typed in by hand between
+  // the read and the write wins -- and so does one on a card filed before rows became direct.
+  it("refuses to write when the person is already on the sheet by the time it runs", async () => {
     const dcsRows: string[][] = [];
-    const { baseUrl, mock, appended } = await startService({
-      dcsRows,
-      memberSheetRows: sheetWithMinnieAs("coauthor-major"),
+    const { mock, appended } = await startService({ dcsRows });
+    const created = mock.service.createProposal({
+      type: "dcs_roster.add_row",
+      summary: "Add Minnie Minor to the DCS roster sheet",
+      target: { service: "google", channel: "sheets", target: "dcs-sheet" },
+      proposed_payload: {
+        spreadsheet_id: "dcs-sheet",
+        member_id: "minnie",
+        role: "coauthor-major",
+        values: { full_name: "Minnie Minor", adminbot_internal_id: "minnie" },
+      },
     });
-    await rosterSync(baseUrl);
-    const [proposal] = dcsProposals(mock);
+    if (!created.ok) {
+      throw new Error(created.error.message);
+    }
     dcsRows.push(["Minnie Minor", "minnie", "mminor", "", "coauthor-major"]);
 
-    const token = await adminToken(mock, baseUrl);
-    await approveAndRun(baseUrl, token, proposal!);
+    await mock.service.execute(created.payload.id, { dry_run: false, idempotency_key: "late" });
 
     expect(appended).toEqual([]);
-    expect(mock.store.getProposal(proposal!.id)?.status).not.toBe("executed");
+    expect(mock.store.getProposal(created.payload.id)?.status).not.toBe("executed");
     const [failed] = auditOf(mock, "auth.dcs_roster_row_failed");
     expect(String(failed?.details?.error)).toContain("already on the DCS roster sheet (row 2)");
   });
@@ -500,21 +521,20 @@ describe("the catch-up for members who predate role-change filing", () => {
     expect(appended).toEqual([]);
   });
 
-  it("files waiting cards on a real run, and a second run files no duplicates", async () => {
+  it("writes the missing rows on a real run, and a second run writes no duplicates", async () => {
     const { baseUrl, mock, appended } = await startService({ dcsRows: LEGACY_ROWS });
 
     const first = (await (await backfill(baseUrl, { dry_run: false })).json()) as BackfillBody;
     expect(first.steps).toEqual([
-      expect.objectContaining({ step: "dcs_roster", status: "queued", target: "Admin" }),
+      expect.objectContaining({ step: "dcs_roster", status: "done", target: "Admin" }),
     ]);
     const second = (await (await backfill(baseUrl, { dry_run: false })).json()) as BackfillBody;
-    expect(second.steps).toEqual([
-      expect.objectContaining({ status: "skipped", proposal_id: first.steps[0]?.proposal_id }),
-    ]);
+    expect(second.missing).toEqual([]);
+    expect(second.steps).toEqual([]);
 
     expect(dcsProposals(mock)).toHaveLength(1);
-    expect(dcsProposals(mock)[0]?.status).toBe("pending");
-    expect(appended).toEqual([]);
+    expectWrittenDirectly(mock, dcsProposals(mock)[0]);
+    expect(appended.map((row) => row.slice(0, 2))).toEqual([["Admin", "admin"]]);
   });
 
   it("lets only an admin session approve on the same click", async () => {
@@ -537,8 +557,8 @@ describe("the catch-up for members who predate role-change filing", () => {
   });
 });
 
-describe("the gate in front of the sheet", () => {
-  async function queuedCard() {
+describe("the guards on a direct write", () => {
+  async function writtenRow() {
     const started = await startService({
       dcsRows: [],
       memberSheetRows: sheetWithMinnieAs("coauthor-major"),
@@ -552,31 +572,18 @@ describe("the gate in front of the sheet", () => {
     };
   }
 
-  it("refuses an approval bound to a different payload", async () => {
-    const { baseUrl, token, proposal, appended } = await queuedCard();
-    const approved = await fetch(`${baseUrl}/approvals/${proposal.id}/approve`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ payload_hash: "0".repeat(64) }),
-    });
-    expect(approved.status).toBeGreaterThanOrEqual(400);
-    expect(appended).toEqual([]);
+  // Direct is a property of this one action's policy, not a hole in the gate: the row is still a
+  // typed proposal with a payload hash and an audit trail, written once.
+  it("keeps the payload hash it was auto-approved against, and audits the write", async () => {
+    const { mock, proposal } = await writtenRow();
+    expectWrittenDirectly(mock, proposal);
+    expect(proposal.payload_hash).toMatch(/^[0-9a-f]{64}$/u);
+    expect(auditOf(mock, "auth.dcs_roster_row_added")).toHaveLength(1);
   });
 
-  it("does not run without an approval", async () => {
-    const { baseUrl, token, proposal, appended } = await queuedCard();
-    const executed = await fetch(`${baseUrl}/actions/${proposal.id}/execute`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ dry_run: false, idempotency_key: "unapproved" }),
-    });
-    expect(executed.status).toBeGreaterThanOrEqual(400);
-    expect(appended).toEqual([]);
-  });
-
-  it("files one row however many times the approved card is executed", async () => {
-    const { baseUrl, token, proposal, appended } = await queuedCard();
-    await approveAndRun(baseUrl, token, proposal, "first");
+  it("files one row however many times the executed card is executed again", async () => {
+    const { baseUrl, token, proposal, appended } = await writtenRow();
+    expect(appended).toHaveLength(1);
     await fetch(`${baseUrl}/actions/${proposal.id}/execute`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },

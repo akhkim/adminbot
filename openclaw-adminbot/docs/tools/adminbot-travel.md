@@ -24,8 +24,9 @@ The detailed RSVP form (lab Airbnb nights, funding, visa letter, notes) went wit
 already stored keep their fields, and paper cards still read them back ("staying in the lab
 Airbnb"), but members can no longer enter them in the UI.
 
-The head professor's sign-in travel history is a different surface, **My Desk → Travel History**
-(`/travel` in the Control UI), and is unchanged.
+The head professor's sign-in travel history used to be a second tab on My Desk, **Travel History**
+(`/travel` in the Control UI). That tab has been removed too; `/travel` and `/adminbot/travel` now
+open My Desk. `GET /lab/members/:id/travel` and the sign-in data behind it are unchanged.
 
 ## Who can use it
 

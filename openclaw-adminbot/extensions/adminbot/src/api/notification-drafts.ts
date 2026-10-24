@@ -7,7 +7,74 @@ import { readDriveFileBase64, resolveGogExecutable } from "../connectors/gog.js"
 import { adminBotNormalizeXHandle, type AdminBotLabMember } from "../contracts/actions.js";
 import { readJson, sendJson } from "./server.http.js";
 
-const DEFAULT_NOTIFICATIONS_FILE_ID = "1M88hLvN6WvWIthUPTnHilWbsmOz2DZg7";
+// The PI's OpenReview notification export, refreshed daily. Read here for announcement drafts and
+// by the paper OpenReview sync for submissions and decisions.
+export const DEFAULT_NOTIFICATIONS_FILE_ID = "1M88hLvN6WvWIthUPTnHilWbsmOz2DZg7";
+
+/** The export as text, fetched afresh. Throws on a failed or empty read. */
+export async function downloadNotificationsCsv(signal?: AbortSignal): Promise<string> {
+  const encoded = await readDriveFileBase64(DEFAULT_NOTIFICATIONS_FILE_ID, {
+    command: resolveGogExecutable(),
+    maxBytes: 25 * 1024 * 1024,
+    ...(signal ? { signal } : {}),
+  });
+  const text = Buffer.from(encoded, "base64").toString("utf8");
+  if (!text.trim()) {
+    throw new Error("Empty CSV");
+  }
+  return text;
+}
+
+/**
+ * Run one of the notification adapters with the request on stdin and return its stdout.
+ *
+ * Exit 1 is the adapters' "handled error" code, which still prints a JSON answer, so it resolves
+ * like a success and the caller reads the `error` field.
+ */
+export function runNotificationsScript(
+  scriptPath: string,
+  args: string[],
+  input: unknown,
+  signal?: AbortSignal,
+): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    // Uploaded contents stay on stdin, never in shell arguments or logs.
+    const child = spawn(process.env.ADMINBOT_NOTIFICATIONS_PYTHON || "python3", [scriptPath, ...args], {
+      stdio: ["pipe", "pipe", "pipe"],
+      ...(signal ? { signal } : {}),
+      timeout: 180_000,
+      killSignal: "SIGKILL",
+      env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" },
+    });
+    let stdout = "";
+    let overflow = false;
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      if (overflow) {
+        return;
+      }
+      stdout += chunk;
+      if (Buffer.byteLength(stdout) > 12 * 1024 * 1024) {
+        overflow = true;
+        child.kill("SIGKILL");
+      }
+    });
+    child.stderr.resume();
+    child.stdin.on("error", () => {});
+    let processError: Error | undefined;
+    child.on("error", (error) => {
+      processError = error;
+    });
+    child.on("close", (code) => {
+      if (!processError && !overflow && (code === 0 || code === 1) && stdout.trim()) {
+        resolve(stdout);
+      } else {
+        reject(new Error("Generation failed"));
+      }
+    });
+    child.stdin.end(JSON.stringify(input));
+  });
+}
 
 export function createNotificationDraftHandler(
   scriptPath?: string,
@@ -72,15 +139,7 @@ export function createNotificationDraftHandler(
       clearTimeout(timeout);
       if (body.notifications === undefined && body.notifications_csv === undefined) {
         try {
-          const encoded = await readDriveFileBase64(DEFAULT_NOTIFICATIONS_FILE_ID, {
-            command: resolveGogExecutable(),
-            maxBytes: 25 * 1024 * 1024,
-            signal: controller.signal,
-          });
-          body.notifications_csv = Buffer.from(encoded, "base64").toString("utf8");
-          if (!(body.notifications_csv as string).trim()) {
-            throw new Error("Empty CSV");
-          }
+          body.notifications_csv = await downloadNotificationsCsv(controller.signal);
         } catch {
           sendJson(res, 502, {
             error: {
@@ -96,59 +155,22 @@ export function createNotificationDraftHandler(
         handle: adminBotNormalizeXHandle(member.twitter_url),
       }));
       directory = await mkdtemp(path.join(tmpdir(), "adminbot-notification-drafts-"));
-      const output = await new Promise<string>((resolve, reject) => {
-        // Uploaded contents stay on stdin, never in shell arguments or logs.
-        const child = spawn(
-          process.env.ADMINBOT_NOTIFICATIONS_PYTHON || "python3",
-          [scriptPath, directory!],
-          {
-            stdio: ["pipe", "pipe", "pipe"],
-            signal: controller.signal,
-            timeout: 180_000,
-            killSignal: "SIGKILL",
-            env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" },
-          },
-        );
-        let stdout = "";
-        let overflow = false;
-        child.stdout.setEncoding("utf8");
-        child.stdout.on("data", (chunk: string) => {
-          if (overflow) {
-            return;
-          }
-          stdout += chunk;
-          if (Buffer.byteLength(stdout) > 12 * 1024 * 1024) {
-            overflow = true;
-            child.kill("SIGKILL");
-          }
-        });
-        child.stderr.resume();
-        child.stdin.on("error", () => {});
-        let processError: Error | undefined;
-        child.on("error", (error) => {
-          processError = error;
-        });
-        child.on("close", (code) => {
-          if (!processError && !overflow && (code === 0 || code === 1) && stdout.trim()) {
-            resolve(stdout);
-          } else {
-            reject(new Error("Generation failed"));
-          }
-        });
-        child.stdin.end(
-          JSON.stringify({
-            notifications: body.notifications,
-            notifications_csv: body.notifications_csv,
-            min_date: body.min_date,
-            conference: body.conference,
-            template: body.template,
-            images: body.images,
-            // The roster comes only from the service store, never the browser.
-            members,
-            paper_links: listPaperLinks(),
-          }),
-        );
-      });
+      const output = await runNotificationsScript(
+        scriptPath,
+        [directory],
+        {
+          notifications: body.notifications,
+          notifications_csv: body.notifications_csv,
+          min_date: body.min_date,
+          conference: body.conference,
+          template: body.template,
+          images: body.images,
+          // The roster comes only from the service store, never the browser.
+          members,
+          paper_links: listPaperLinks(),
+        },
+        controller.signal,
+      );
       const result = JSON.parse(output) as { error?: string };
       sendJson(
         res,

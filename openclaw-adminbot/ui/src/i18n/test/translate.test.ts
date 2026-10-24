@@ -206,3 +206,31 @@ describe("i18n", () => {
     }
   });
 });
+
+// The Travel tab was folded into Events (7ef009f7). en.ts says "Events"; a locale that still says
+// "Travel" points members at a tab that no longer exists. `tabs.adminbotTravel` is the head
+// professor's own trip log, a different page, and keeps its name.
+describe("Events tab name", () => {
+  function travelStrings(value: Record<string, unknown>, prefix = ""): string[] {
+    return Object.entries(value).flatMap(([key, nested]) => {
+      const fullKey = prefix ? `${prefix}.${key}` : key;
+      if (typeof nested === "string") {
+        return /\bTravel\b/u.test(nested) && fullKey !== "tabs.adminbotTravel" ? [fullKey] : [];
+      }
+      return travelStrings(nested as Record<string, unknown>, fullKey);
+    });
+  }
+
+  it.each(Object.entries({ en, ...shippedLocales }))("%s never calls it Travel", (_locale, map) => {
+    expect(travelStrings(map as Record<string, unknown>)).toEqual([]);
+  });
+
+  it("names the paper-card link after Events in every locale", () => {
+    for (const map of Object.values(shippedLocales)) {
+      const paperCard = (map as { labTravel?: { paperCard?: Record<string, string> } }).labTravel
+        ?.paperCard;
+      expect(paperCard?.rsvp).toBe(en.labTravel.paperCard.rsvp);
+      expect(paperCard?.change).toBe(en.labTravel.paperCard.change);
+    }
+  });
+});

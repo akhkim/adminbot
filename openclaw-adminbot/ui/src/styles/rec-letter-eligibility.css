@@ -77,14 +77,131 @@
   margin: 0;
 }
 
-/* The note on the member's form: a side remark, set off by a rule rather than a box, so it does not
-   read as a field the form is waiting on. */
-.rec-eligibility--advisory {
-  border-width: 0 0 0 2px;
-  border-color: var(--accent-muted);
-  border-radius: 0;
-  background: transparent;
-  padding: var(--space-1) 0 var(--space-1) var(--space-3);
+/* The readiness card on the member's form. It reads as progress, never as an error: the open items
+   are amber, a freeze is the accent color rather than red, and an unknown month is hatched grey
+   because a gap in the records says nothing about the member. */
+.rec-readiness {
+  background: var(--bg-elevated);
+}
+
+.rec-readiness__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+}
+
+.rec-readiness__head h4 {
+  margin: 0;
+  font-size: var(--control-ui-text-md);
+}
+
+.rec-readiness__chip {
+  border-radius: var(--radius-full);
+  padding: 2px var(--space-2);
+  background: var(--bg-muted);
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.rec-readiness--eligible .rec-readiness__chip {
+  background: var(--ok-subtle);
+  color: var(--ok);
+}
+
+.rec-readiness--not_yet .rec-readiness__chip {
+  background: var(--warn-subtle);
+  color: var(--warn);
+}
+
+.rec-readiness--frozen .rec-readiness__chip {
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
+
+.rec-readiness__bar {
+  display: flex;
+  gap: var(--space-1);
+  margin-top: var(--space-3);
+}
+
+.rec-readiness__segment {
+  flex: 1;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--bg-muted);
+  border: 1px solid var(--border);
+}
+
+.rec-readiness__segment--met {
+  background: var(--ok);
+  border-color: var(--ok);
+}
+
+.rec-readiness__segment--unknown {
+  background: repeating-linear-gradient(45deg, var(--bg-muted) 0 4px, var(--border) 4px 8px);
+}
+
+.rec-readiness__list {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--control-ui-text-sm);
+}
+
+.rec-readiness__item {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: var(--space-2);
+}
+
+.rec-readiness__item p {
+  margin: 0;
+}
+
+.rec-readiness__mark {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.rec-readiness__item--met .rec-readiness__mark {
+  background: var(--ok-subtle);
+  color: var(--ok);
+}
+
+.rec-readiness__item--todo .rec-readiness__mark {
+  border: 1.5px solid var(--warn);
+}
+
+.rec-readiness__item--unknown .rec-readiness__mark,
+.rec-readiness__item--off .rec-readiness__mark {
+  border: 1.5px dashed var(--muted);
+}
+
+.rec-readiness__item--paused .rec-readiness__mark {
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
+
+.rec-readiness__hint {
+  display: block;
+  color: var(--muted);
+}
+
+.rec-readiness .rec-eligibility__frozen {
+  border-left-color: var(--accent-muted);
+  color: var(--muted);
 }
 
 .rec-eligibility__frozen {

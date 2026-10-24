@@ -465,6 +465,19 @@ describe("renderMemberMap", () => {
     expect(label).toBe("Toronto, Canada — 9 members");
   });
 
+  it("names the person on a dot of one, with the city in its tooltip", async () => {
+    const container = await draw(parseMemberMap(nearby));
+    const card = container.querySelector(".member-map__body")!;
+    const toronto = card.querySelector('.member-map__marker[data-place="toronto"]')!;
+    expect(toronto.getAttribute("title")).toBe("Ada · Toronto, Canada");
+    expect(card.querySelector('.member-map__label[data-label="toronto"]')?.textContent).toBe("Ada");
+
+    // A viewer who sees counts only gets the city, as before, and no name anywhere.
+    const anonymous = await draw(parseMemberMap(summary));
+    const counted = anonymous.querySelector('.member-map__marker[data-place="toronto"]')!;
+    expect(counted.hasAttribute("title")).toBe(false);
+  });
+
   it("merges cities that would touch into one marker with the total", async () => {
     const container = await draw(parseMemberMap(nearby));
     const card = container.querySelector(".member-map__body")!;
@@ -1098,5 +1111,297 @@ describe("renderMemberMap", () => {
         '[data-testid="dashboard-member-map"]',
       ),
     ).toBeNull();
+  });
+});
+
+describe("member map search", () => {
+  const key = (target: Element, name: string) => {
+    const event = new KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true });
+    target.dispatchEvent(event);
+    return event;
+  };
+  const type = (input: HTMLInputElement, value: string) => {
+    input.value = value;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+  const cardSearch = (container: HTMLElement) =>
+    container.querySelector<HTMLInputElement>(
+      '[data-testid="member-map-search-card"] [data-testid="member-map-search-input"]',
+    )!;
+  const options = (scope: Element) =>
+    [...scope.querySelectorAll('[role="option"]')].map((node) => node.textContent?.trim() ?? "");
+
+  it("lists people by name with their city, and moves through them with the arrow keys", async () => {
+    const container = await draw(parseMemberMap(nearby));
+    const element = mapElement(container);
+    const input = cardSearch(container);
+    expect(input.getAttribute("role")).toBe("combobox");
+    expect(input.getAttribute("aria-label")).toBe("Find someone on the map");
+    expect(input.placeholder).toBe("Find a person or city");
+    expect(input.getAttribute("aria-expanded")).toBe("false");
+
+    input.focus();
+    type(input, "c");
+    await element.updateComplete;
+    const search = container.querySelector('[data-testid="member-map-search-card"]')!;
+    expect(input.getAttribute("aria-expanded")).toBe("true");
+    const listbox = search.querySelector('[role="listbox"]')!;
+    expect(input.getAttribute("aria-controls")).toBe(listbox.id);
+    // Cy by name first; then Toronto by its country, Canada, and Zürich mid-word. No one is listed
+    // merely for living in Toronto.
+    expect(options(search)).toEqual([
+      expect.stringContaining("Cy"),
+      expect.stringContaining("Toronto"),
+      expect.stringContaining("Zürich"),
+    ]);
+    expect(search.querySelector('[role="option"]')?.getAttribute("aria-label")).toBe(
+      "Cy, Zürich, Switzerland",
+    );
+
+    expect(key(input, "ArrowDown").defaultPrevented).toBe(true);
+    await element.updateComplete;
+    const first = search.querySelectorAll('[role="option"]')[0]!;
+    expect(input.getAttribute("aria-activedescendant")).toBe(first.id);
+    expect(first.getAttribute("aria-selected")).toBe("true");
+    for (let i = 0; i < 3; i++) {
+      key(input, "ArrowDown");
+      await element.updateComplete;
+    }
+    // Wraps round to the top.
+    expect(input.getAttribute("aria-activedescendant")).toBe(first.id);
+    // And from the top back round to the bottom.
+    key(input, "ArrowUp");
+    await element.updateComplete;
+    expect(input.getAttribute("aria-activedescendant")).toBe(
+      search.querySelectorAll('[role="option"]')[2]!.id,
+    );
+  });
+
+  it("flies full screen to the person's city on Enter, names them first, and clears back to the whole map", async () => {
+    reduceMotion();
+    const container = await draw(parseMemberMap(nearby));
+    const element = mapElement(container);
+    const settled = async () => {
+      for (let i = 0; i < 4; i++) {
+        await element.updateComplete;
+      }
+    };
+    const input = cardSearch(container);
+    input.focus();
+    type(input, "cy");
+    await element.updateComplete;
+    expect(key(input, "Enter").defaultPrevented).toBe(true);
+    await settled();
+
+    const dialog = container.querySelector<HTMLDialogElement>('[data-testid="member-map-dialog"]')!;
+    expect(dialog.open).toBe(true);
+    const stage = dialog.querySelector(".member-map__stage--dialog")!;
+    expect(stage.classList).toContain("member-map__stage--zoomed");
+    const lit = stage.querySelector<HTMLElement>(".member-map__marker--active")!;
+    expect([lit.dataset.place, ...(lit.dataset.cluster ?? "").split(" ")]).toContain("zurich");
+    // Zürich's tooltip, with the person searched for first (Bo would otherwise lead).
+    const popover = dialog.querySelector('[data-testid="member-map-popover"]')!;
+    expect(popover.textContent).toContain("Zürich, Switzerland");
+    const found = popover.querySelector(".member-map__person--found .member-map__name");
+    expect(found?.textContent).toBe("Cy");
+    expect(popover.querySelector(".member-map__person .member-map__name")?.textContent).toBe("Cy");
+    expect(
+      dialog
+        .querySelector('.member-map__row[data-place="zurich"]')
+        ?.classList.contains("member-map__row--active"),
+    ).toBe(true);
+
+    // The search carries on in full screen's own box, focused, with the list closed.
+    const dialogInput = dialog.querySelector<HTMLInputElement>(
+      '[data-testid="member-map-search-input"]',
+    )!;
+    expect(dialogInput.value).toBe("Cy");
+    expect(document.activeElement).toBe(dialogInput);
+    expect(dialogInput.getAttribute("aria-expanded")).toBe("false");
+
+    dialog.querySelector<HTMLButtonElement>('[data-testid="member-map-search-clear"]')!.click();
+    await settled();
+    expect(dialogInput.value).toBe("");
+    expect(stage.classList).not.toContain("member-map__stage--zoomed");
+    expect(stage.querySelector(".member-map__marker--active")).toBeNull();
+    expect(dialog.querySelector('[data-testid="member-map-search-clear"]')).toBeNull();
+  });
+
+  it("picks a result with a click and leaves a city picked by hand alone when cleared", async () => {
+    reduceMotion();
+    const container = await draw(parseMemberMap(nearby));
+    const element = mapElement(container);
+    container.querySelector<HTMLButtonElement>('[data-testid="member-map-toggle"]')!.click();
+    await element.updateComplete;
+    await element.updateComplete;
+    const dialog = container.querySelector('[data-testid="member-map-dialog"]')!;
+    const input = dialog.querySelector<HTMLInputElement>(
+      '[data-testid="member-map-search-input"]',
+    )!;
+    input.focus();
+    type(input, "tor");
+    await element.updateComplete;
+    const option = dialog.querySelector<HTMLElement>('[role="option"][data-place="toronto"]')!;
+    // A mousedown must not take focus from the box, or its blur would close the list first.
+    const down = new MouseEvent("mousedown", { bubbles: true, cancelable: true });
+    option.dispatchEvent(down);
+    expect(down.defaultPrevented).toBe(true);
+    option.click();
+    await element.updateComplete;
+    const stage = dialog.querySelector(".member-map__stage--dialog")!;
+    expect(stage.querySelector('.member-map__marker[data-place="toronto"]')?.classList).toContain(
+      "member-map__marker--active",
+    );
+    expect(input.value).toBe("Toronto");
+
+    // Picking Zürich's row by hand replaces the search's pick; clearing the box then keeps it.
+    dialog
+      .querySelector<HTMLButtonElement>(
+        '.member-map__row[data-place="zurich"] .member-map__row-top',
+      )!
+      .click();
+    await element.updateComplete;
+    type(input, "");
+    await element.updateComplete;
+    expect(
+      dialog
+        .querySelector('.member-map__row[data-place="zurich"] .member-map__row-top')
+        ?.getAttribute("aria-pressed"),
+    ).toBe("true");
+  });
+
+  it("closes the list on Escape, clears on the next, and only then lets Escape close full screen", async () => {
+    const container = await draw(parseMemberMap(nearby));
+    const element = mapElement(container);
+    container.querySelector<HTMLButtonElement>('[data-testid="member-map-toggle"]')!.click();
+    await element.updateComplete;
+    await element.updateComplete;
+    const dialog = container.querySelector('[data-testid="member-map-dialog"]')!;
+    const input = dialog.querySelector<HTMLInputElement>(
+      '[data-testid="member-map-search-input"]',
+    )!;
+    input.focus();
+    type(input, "bo");
+    await element.updateComplete;
+    expect(input.getAttribute("aria-expanded")).toBe("true");
+    const reachedDialog = vi.fn();
+    dialog.addEventListener("keydown", reachedDialog);
+
+    expect(key(input, "Escape").defaultPrevented).toBe(true);
+    await element.updateComplete;
+    expect(input.getAttribute("aria-expanded")).toBe("false");
+    expect(input.value).toBe("bo");
+
+    expect(key(input, "Escape").defaultPrevented).toBe(true);
+    await element.updateComplete;
+    expect(input.value).toBe("");
+    expect(reachedDialog).not.toHaveBeenCalled();
+
+    // Nothing left to clear: the press is the dialog's.
+    expect(key(input, "Escape").defaultPrevented).toBe(false);
+    expect(reachedDialog).toHaveBeenCalledTimes(1);
+  });
+
+  it("finds only cities for a viewer whose map has no names, and says when nothing matches", async () => {
+    const container = await draw(parseMemberMap(summary));
+    const element = mapElement(container);
+    const input = cardSearch(container);
+    expect(input.placeholder).toBe("Find a city");
+    input.focus();
+    type(input, "zur");
+    await element.updateComplete;
+    const search = container.querySelector('[data-testid="member-map-search-card"]')!;
+    expect(options(search)).toEqual([expect.stringContaining("Zurich")]);
+    expect(search.querySelector(".member-map__avatar")).toBeNull();
+
+    // No names on this map, so a name finds nobody.
+    type(input, "xyz");
+    await element.updateComplete;
+    expect(options(search)).toEqual([]);
+    expect(search.querySelector('[data-testid="member-map-search-none"]')?.textContent).toContain(
+      "Nobody on the map matches “xyz”.",
+    );
+    expect(search.querySelector('[role="status"]')?.textContent).toContain("Nobody on the map");
+  });
+
+  // Their names never reach the card, so they cannot be listed -- but they are not silently absent.
+  it("says that members who could not be placed cannot be found", async () => {
+    const container = await draw(parseMemberMap({ ...nearby, unplaced_count: 3 }));
+    const element = mapElement(container);
+    const input = cardSearch(container);
+    input.focus();
+    type(input, "zz");
+    await element.updateComplete;
+    expect(
+      container.querySelector('[data-testid="member-map-search-unplaced"]')?.textContent,
+    ).toContain("3 members are not on the map");
+
+    const none = await draw(parseMemberMap(nearby));
+    const noneInput = cardSearch(none);
+    noneInput.focus();
+    type(noneInput, "zz");
+    await mapElement(none).updateComplete;
+    expect(none.querySelector('[data-testid="member-map-search-unplaced"]')).toBeNull();
+  });
+
+  it("finds an admin a member who is not on the map, says why, and goes nowhere", async () => {
+    const container = await draw(
+      parseMemberMap({
+        ...nearby,
+        unplaced_count: 2,
+        not_on_map: [
+          { name: "Cyra Holt", reason: "ip_off" },
+          { name: "Cyd Marsh", reason: "no_location" },
+        ],
+      }),
+    );
+    const element = mapElement(container);
+    const input = cardSearch(container);
+    input.focus();
+    type(input, "cy");
+    await element.updateComplete;
+    const search = container.querySelector('[data-testid="member-map-search-card"]')!;
+    expect(options(search)).toEqual([
+      expect.stringContaining("Cy"),
+      expect.stringContaining("Cyd Marsh"),
+      expect.stringContaining("Cyra Holt"),
+    ]);
+    const absent = [...search.querySelectorAll<HTMLElement>('[data-kind="absent"]')];
+    expect(absent.map((node) => node.getAttribute("aria-label"))).toEqual([
+      "Cyd Marsh, not on the map: No location yet",
+      "Cyra Holt, not on the map: Location hidden: IP logging blocked and no city given",
+    ]);
+    // No city to light, so no swatch and no place key.
+    expect(absent[1]!.querySelector(".member-map__swatch")).toBeNull();
+    expect(absent[1]!.hasAttribute("data-place")).toBe(false);
+    // The list now names everyone, so the "cannot be found here" note would be wrong.
+    expect(container.querySelector('[data-testid="member-map-search-unplaced"]')).toBeNull();
+
+    absent[1]!.click();
+    await element.updateComplete;
+    expect(input.value).toBe("Cyra Holt");
+    expect(input.getAttribute("aria-expanded")).toBe("false");
+    const dialog = container.querySelector<HTMLDialogElement>('[data-testid="member-map-dialog"]')!;
+    expect(dialog.open).toBe(false);
+    expect(container.querySelector(".member-map__marker--active")).toBeNull();
+    expect(search.querySelector('[data-testid="member-map-search-absent"]')?.textContent).toContain(
+      "IP logging blocked",
+    );
+
+    type(input, "cyr");
+    await element.updateComplete;
+    expect(search.querySelector('[data-testid="member-map-search-absent"]')).toBeNull();
+  });
+
+  it("never lists names off a summary map, whatever it carried", async () => {
+    const container = await draw(
+      parseMemberMap({ ...summary, not_on_map: [{ name: "Cyra Holt", reason: "ip_off" }] }),
+    );
+    const input = cardSearch(container);
+    input.focus();
+    type(input, "cyra");
+    await mapElement(container).updateComplete;
+    expect(container.querySelector('[data-kind="absent"]')).toBeNull();
+    expect(container.textContent).not.toContain("Cyra");
   });
 });

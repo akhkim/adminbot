@@ -43,6 +43,7 @@ import {
 import { templateForMemberType } from "../workflows/onboarding/member-type-template.js";
 import {
   approveAndExecute,
+  executeApproved,
   type MemberSheetApprover,
   type MemberSheetSource,
   writeMemberTypeToSheet,
@@ -124,10 +125,17 @@ async function runAction(
   if (!created.ok) {
     return { step, target, status: "failed", detail: created.error.message };
   }
-  if (!deps.approver) {
+  // An action whose policy needs no approver (the DCS roster row) is born approved; it runs here
+  // whether or not an admin is behind this change, rather than sitting approved and unexecuted.
+  const ran =
+    created.payload.status === "approved"
+      ? await executeApproved(deps.service, created.payload, `${step}-${created.payload.id}`)
+      : deps.approver
+        ? await approveAndExecute(deps.service, created.payload, deps.approver)
+        : undefined;
+  if (!ran) {
     return { step, target, status: "queued", proposal_id: created.payload.id };
   }
-  const ran = await approveAndExecute(deps.service, created.payload, deps.approver);
   return ran.ok
     ? { step, target, status: "done", proposal_id: created.payload.id }
     : { step, target, status: "failed", detail: ran.reason, proposal_id: created.payload.id };
@@ -422,12 +430,12 @@ export async function applyMemberTypeChange(
  *
  * Every door onto the roster and every Member Type change reaches this: new members through
  * `enrollNewMember` (the move from nobody), Lab Members tab saves through `applyMemberTypeChange`,
- * and the spreadsheet's own edits through the roster-sync route. Approved by the saving admin when
- * there is one and left in Pending Actions when there is not.
+ * and the spreadsheet's own edits through the roster-sync route. Written directly on every one of
+ * them: `dcs_roster.add_row` is auto-approved (see its policy), so nothing waits in Pending Actions.
  *
  * The sheet is read first, and somebody already on it is skipped rather than proposed: it is one
  * row per person, and a second row is a second account request. The executor checks again, since
- * a queued proposal can be approved after somebody typed the row in by hand.
+ * a card filed before the row became direct can still be approved after somebody typed it in.
  */
 export async function proposeDcsRosterRow(
   deps: Pick<MemberTypeChangeDeps, "service" | "approver" | "dcsRoster">,

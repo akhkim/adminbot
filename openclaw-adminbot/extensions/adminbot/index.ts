@@ -6,6 +6,7 @@ import {
   defaultAdminBotConfig,
   type AdminBotPluginConfig,
 } from "./src/adapters/openclaw/index.js";
+import { handleSlackStopDispatch } from "./src/adapters/openclaw/slack-stop-hook.js";
 import {
   accessGrantSchema,
   actionTypeSchema,
@@ -35,7 +36,7 @@ const adminBotConfigSchema = Type.Object(
 const unknownRecord = Type.Record(Type.String(), Type.Unknown());
 const evidenceArray = Type.Optional(Type.Array(evidencePointerSchema));
 
-export default defineToolPlugin({
+const adminbotPlugin = defineToolPlugin({
   id: "adminbot",
   name: "AdminBot",
   description: "Typed proposal, approval, and execution broker for sensitive admin workflows.",
@@ -684,6 +685,22 @@ export default defineToolPlugin({
     }),
   ],
 });
+
+// "stop"/"start" DMed to the bot, answered before the agent runs. The tool plugin owns register,
+// so it is wrapped in place rather than rebuilt; the entry keeps its hidden tool metadata.
+const registerTools = adminbotPlugin.register;
+adminbotPlugin.register = (api) => {
+  registerTools(api);
+  api.on("before_dispatch", (event, ctx) =>
+    handleSlackStopDispatch(event, ctx, (params) =>
+      createAdminBotToolHandlers(
+        resolveConfig((api.pluginConfig ?? {}) as Partial<AdminBotPluginConfig>),
+      ).applySlackStop(params),
+    ),
+  );
+};
+
+export default adminbotPlugin;
 
 function resolveConfig(config: Partial<AdminBotPluginConfig>): AdminBotPluginConfig {
   return { ...defaultAdminBotConfig, ...config };

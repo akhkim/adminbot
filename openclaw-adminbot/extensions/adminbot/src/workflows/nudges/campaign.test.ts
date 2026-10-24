@@ -107,6 +107,15 @@ describe("filter", () => {
     expect(JSON.stringify(result)).not.toContain("gone");
   });
 
+  it("skips a member who DMed AdminBot stop, before any Slack check", async () => {
+    const d = deps([
+      member("a"),
+      member("stopped", { slack_stop_at: ago(3), slack_user_id: undefined }),
+    ]);
+    const result = await runNudgeCampaign(campaign(), { dry_run: true }, d);
+    expect(result).toMatchObject({ count: 1, skipped: { replied_stop: 1 } });
+  });
+
   it("can leave members without Slack to the send (the photo nudge's notify-anyway behaviour)", async () => {
     const d = deps([member("noslack", { slack_user_id: undefined })]);
     const result = await runNudgeCampaign(campaign({ requireSlack: false }), { dry_run: true }, d);

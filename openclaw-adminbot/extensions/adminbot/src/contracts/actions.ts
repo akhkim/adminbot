@@ -424,6 +424,34 @@ export function adminBotIsAlumniMember(member: { status?: string; member_type?: 
 }
 
 /**
+ * Somebody the head professor works with directly: a full member or a major coauthor.
+ *
+ * The audience of My Desk's "needs a word from you" list, which asks her to go and write to a
+ * person herself. That is worth her time for the people carrying the lab's work and not for the
+ * rest of the roster -- acquaintances, minor coauthors, visiting professors, mailing-list rows --
+ * who get the same automatic nudges but whom she would not chase in person.
+ *
+ * Narrower than `adminBotNudgeableMemberTypes` on purpose: own-pace advisees are chased by the lab
+ * but not by her. A blank type is out too: "unknown" is not "works with me", and filling the
+ * column in is what puts somebody back on the list.
+ *
+ * Alumni lose even when they are also coauthor-major, the same rule as everywhere else. Tokens are
+ * read through `adminBotMemberTypeTokens`, with `_` taken as `-` so a hand-typed "coauthor_major"
+ * is not silently dropped from the one list that asks her to act.
+ */
+export function adminBotIsDirectCollaborator(member: {
+  status?: string;
+  member_type?: string;
+}): boolean {
+  if (adminBotIsAlumniMember(member)) {
+    return false;
+  }
+  return adminBotMemberTypeTokens(member.member_type)
+    .map((token) => token.replaceAll("_", "-"))
+    .some((token) => token === "full" || token === "coauthor-major");
+}
+
+/**
  * Member types the lab has decided may sign in to the Control UI.
  *
  * Transcribed from "Have AdminBot portal access" -- row 7 of the External Collab Access Design
@@ -1495,6 +1523,12 @@ export type AdminBotLabMemberInput = {
    * never list them as nearby. Not self-editable (a member turns intros off instead).
    */
   do_not_contact?: boolean;
+  /**
+   * When the member last DMed AdminBot "stop" (workflows/members/slack-stop.ts). While set, no
+   * intro names them and optional nudges skip them; "start", or turning an intro back on in the
+   * portal, clears it. Self-owned: the member's own word, so neither an admin nor an import sets it.
+   */
+  slack_stop_at?: string;
   // Governance-owned: the department directory address, required to be @cs.toronto.edu for
   // everyone except external_collaborator (see validateCsEmail in kernel/service.ts).
   email?: string;
@@ -2082,6 +2116,8 @@ export const adminBotPaperSteps = [
 
 export type AdminBotPaperStep = (typeof adminBotPaperSteps)[number];
 
+export type AdminBotPaperProgressUpdate = { current_step: AdminBotPaperStep };
+
 export type AdminBotPaperArtifactLinks = {
   /** Human confirmation that the paper has been presented; blank reopens it. */
   completed_at?: string;
@@ -2231,6 +2267,19 @@ export function adminBotProjectChannelName(alias: string): string {
   return `proj-${alias}`;
 }
 
+/** What the OpenReview sync applied to a paper; see `openreview_sync` on the record. */
+export type AdminBotPaperOpenReviewSync = {
+  /** Submission, status, venue, track and presentation, joined: changes when OpenReview does. */
+  fingerprint: string;
+  status: "accepted" | "under_review" | "rejected" | "desk_rejected" | "withdrawn";
+  source: "author_results" | "notifications" | "citation_checks";
+  venue: string;
+  submission_id?: string;
+  observed_at?: string;
+  reference?: string;
+  applied_at: string;
+};
+
 export type AdminBotPaperRecordInput = {
   id: string;
   title: string;
@@ -2332,6 +2381,14 @@ export type AdminBotPaperRecordInput = {
   };
   reminder?: AdminBotPaperReminderState;
   notes?: string;
+  /**
+   * The OpenReview observation last applied to this record by the OpenReview sync.
+   *
+   * Set only by the sync (upsertPaper ignores it on input). The sync re-applies a submission's
+   * status only when this fingerprint changes, so a field a person corrects afterwards stays
+   * corrected until OpenReview itself reports something new.
+   */
+  openreview_sync?: AdminBotPaperOpenReviewSync;
   // Member who filed this paper themselves. Set by the service on a member-authored create, never
   // accepted from request input, and it is one of the two ways a member is recognized as an owner
   // allowed to edit the record (the other is being named in `authors`).
@@ -2383,6 +2440,11 @@ export type AdminBotMemberNudgeRequest = {
    * that matter, which is the failure this flag exists to avoid.
    */
   important?: boolean;
+  /**
+   * A nice-to-have rather than lab work (a photo campaign, a channel welcome). A member who DMed
+   * "stop" is skipped; reminders about papers, reviews and onboarding still reach them.
+   */
+  optional?: boolean;
 };
 
 export type AdminBotMemberNudgeSkip = {
@@ -2598,10 +2660,17 @@ export type AdminBotAuditEvent = {
     | "lab_member_request.rejected"
     | "lab_member_request.withdrawn"
     | "paper.upserted"
+    // A paper record brought in line with the PI's OpenReview submissions, field by field.
+    | "paper.openreview_synced"
     | "paper_slot.updated"
     | "paper_slot.waived"
     | "paper_slots.nudged"
     | "paperflow_stages.nudged"
+    // One cron run, reported by scripts/lib/adminbot-cron-run.sh: job name, schedule, ok, and the
+    // last line of a failure. The automation health check reads staleness and failure from these.
+    | "automation_health.heartbeat"
+    // The health check told the admins about these issue keys (deduped by the ledger).
+    | "automation_health.alerted"
     | "paperflow_stage.evidenced"
     | "email_review.resolved"
     | "paper_social_draft.saved"
@@ -2755,6 +2824,8 @@ export type AdminBotAuditEvent = {
     | "auth.impersonation_ended"
     // Where members are. An observation is a fact about a person's whereabouts, and the answer to
     // the prompt is the only thing that turns one into a profile change, so both are recorded.
+    | "member.slack_stopped"
+    | "member.slack_started"
     | "member.location_observed"
     | "member.location_prompt_answered"
     | "member.location_checkin_answered"
@@ -3151,7 +3222,9 @@ export type AdminBotMemberNotificationKind =
    * profile retraction would have marked an outstanding photo nudge as dealt with.
    */
   | "profile_photo"
-  | "workshop";
+  | "workshop"
+  /** An automation health issue, for the admins: a job stopped or failing, or an invite paused. */
+  | "automation";
 
 export type AdminBotMemberNotification = {
   id: string;

@@ -134,6 +134,11 @@ export type SlidesWorkingGroupsSource = {
    * still lists them under "would remove", and nothing placed by hand is ever deleted either way.
    */
   allowRemovals?: boolean;
+  /**
+   * Approve and write an append-only plan as soon as it is made, so the slide keeps itself
+   * current with nobody watching the queue. A plan that deletes anything still waits for an admin.
+   */
+  autoApply?: boolean;
   /** How long a burst of profile saves is coalesced before one sync is proposed. */
   debounceMs?: number;
 };

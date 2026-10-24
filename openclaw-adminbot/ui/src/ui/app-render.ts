@@ -68,7 +68,6 @@ import {
 } from "./adminbot/controllers/precise-location.ts";
 import { readAdminBotProfileOverview } from "./adminbot/controllers/profile-overview-paging.ts";
 import { exportAdminBotTabUsage, loadAdminBotTabUsage } from "./adminbot/controllers/tab-usage.ts";
-import { loadAdminBotTravel } from "./adminbot/controllers/travel.ts";
 import { milestoneRows } from "./adminbot/data/availability.ts";
 import {
   assignAdminBadge,
@@ -107,11 +106,14 @@ import {
 } from "./adminbot/data/registrations.ts";
 import { feedbackConfigForTab } from "./adminbot/feedback-tab.ts";
 import "./components/feedback-widget.ts";
+import { buildGlobalSearchRecords } from "./adminbot/global-search.ts";
+import { seedMemberSearch } from "./adminbot/member-search-seed.ts";
 import { agoLabel, alertText, nudgeAlerts } from "./adminbot/nudge-alerts.ts";
 import { configureDraftSync, retryDraftSync } from "./adminbot/offline/draft-sync.ts";
 import { needsLabPapers, papersMissingFor } from "./adminbot/papers-required.ts";
 import { ownPapers } from "./adminbot/projects/model.ts";
 import { renderProjectsNav, type ProjectsNavState } from "./adminbot/projects/nav.ts";
+import { openPaperForViewer } from "./adminbot/projects/open-paper.ts";
 import { needsLabRoster } from "./adminbot/roster-required.ts";
 import { renderAdminPanelsSurface } from "./adminbot/surfaces/admin-panels.ts";
 import { renderCollaborateSurface } from "./adminbot/surfaces/collaborate.ts";
@@ -625,7 +627,6 @@ const lazyOpportunities = createLazyView(
   () => import("./adminbot/views/opportunities.ts"),
   notifyLazyViewHost,
 );
-const lazyTravel = createLazyView(() => import("./adminbot/views/travel.ts"), notifyLazyViewHost);
 const lazyGrantReport = createLazyView(
   () => import("./adminbot/views/grant-report.ts"),
   notifyLazyViewHost,
@@ -2683,18 +2684,6 @@ export function renderApp(state: AppViewState) {
     void loadAdminBotTabUsage(state).finally(() => requestHostUpdate?.());
   }
   readAdminBotProfileOverview(state, hasMemberSession, requestHostUpdate);
-  // The travel timeline, read when the tab is opened and not again. A sign-in log does not change
-  // while somebody is reading their own year off it, and the only thing that re-reads it is the
-  // range buttons, which pass their own range through.
-  if (
-    state.tab === "adminbotTravel" &&
-    hasMemberSession &&
-    !state.adminBotTravel.loading &&
-    !state.adminBotTravel.error &&
-    state.adminBotTravel.history === null
-  ) {
-    void loadAdminBotTravel(state).finally(() => requestHostUpdate?.());
-  }
   // The sidebar lists the member's active projects on every tab, so the list is read once a member
   // session exists, and again whenever a write clears it.
   if (
@@ -3015,6 +3004,38 @@ export function renderApp(state: AppViewState) {
         state.setTab("chat" as import("./navigation.ts").Tab);
         state.handleChatDraftChange(cmd.endsWith(" ") ? cmd : `${cmd} `);
       },
+      // The whole roster, not just the people the dashboard happened to load, so a name typed on
+      // any page finds its person. The read is the one Lab Members makes; it runs once.
+      onOpen: () => {
+        const list = state.adminBotMemberList;
+        if (hasMemberSession && !list.loading && !list.loadedAt && !list.error) {
+          void loadAdminBotMemberList(state).finally(() => requestHostUpdate?.());
+        }
+      },
+      // Built only while the palette is open: the app re-renders far more often than anyone searches.
+      records:
+        state.paletteOpen && !profileBlocked
+          ? buildGlobalSearchRecords({
+              members: state.adminBotMemberList.rows.length
+                ? state.adminBotMemberList.rows
+                : state.adminBotData.members,
+              papers: state.adminBotData.papers,
+            })
+          : [],
+      onOpenRecord: (kind, id) => {
+        if (kind === "paper") {
+          openPaperForViewer(state, id, requestHostUpdate);
+          return;
+        }
+        const member =
+          kind === "member"
+            ? [...state.adminBotMemberList.rows, ...state.adminBotData.members].find(
+                (row) => row.id === id,
+              )
+            : undefined;
+        seedMemberSearch(member?.name ?? id);
+        state.setTab("adminbotMembers");
+      },
     })}
     ${state.memberId ? renderChangePasswordPopover(state) : nothing}
     <div
@@ -3300,17 +3321,6 @@ export function renderApp(state: AppViewState) {
         ${renderProfileSurface(state, adminBotSurfaces)}
         ${state.tab === "gettingStarted" ? renderGettingStarted(state) : nothing}
         ${renderProfessorSurface(state, adminBotSurfaces)}
-        ${state.tab === "adminbotTravel" && adminBotMode === "admin"
-          ? renderLazyView(lazyTravel, (m) =>
-              m.renderTravel({
-                history: state.adminBotTravel.history,
-                range: state.adminBotTravel.range,
-                loading: state.adminBotTravel.loading,
-                error: state.adminBotTravel.error,
-                onRangeChange: (range) => void loadAdminBotTravel(state, { range }),
-              }),
-            )
-          : nothing}
         ${renderCollaborateSurface(state, adminBotSurfaces)}
         ${renderEventsSurface(state, adminBotSurfaces)}
         ${state.tab === "adminbotTabUsage"

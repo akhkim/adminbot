@@ -58,19 +58,21 @@ done
 }
 
 # The store is read once. Asking the gateway per job turns a sixteen-job sync into sixteen round
-# trips, and a partial answer halfway through would leave the set half-applied.
-existing="$($OPENCLAW cron list --all --json)"
-
+# trips, and a partial answer halfway through would leave the set half-applied. It goes through a
+# file, not an argument: the listing outgrew Linux's 128 KB per-argument limit, and the first
+# deploy that ran this sync failed with "Argument list too long".
 PLAN="$(mktemp)"
-trap 'rm -f "$PLAN"' EXIT
+EXISTING="$(mktemp)"
+trap 'rm -f "$PLAN" "$EXISTING"' EXIT
+$OPENCLAW cron list --all --json > "$EXISTING"
 
-python3 - "$MANIFEST" "$REPO_ROOT" "$existing" "$DRY_RUN" "$ONLY" <<'PY' > "$PLAN"
+python3 - "$MANIFEST" "$REPO_ROOT" "$EXISTING" "$DRY_RUN" "$ONLY" <<'PY' > "$PLAN"
 import json, shlex, sys
 
-manifest_path, repo_root, existing_raw, dry_run, only = sys.argv[1:6]
+manifest_path, repo_root, existing_path, dry_run, only = sys.argv[1:6]
 manifest = json.load(open(manifest_path))
 
-parsed = json.loads(existing_raw)
+parsed = json.load(open(existing_path))
 rows = parsed.get("jobs", parsed) if isinstance(parsed, dict) else parsed
 if not isinstance(rows, list) or any(not isinstance(row, dict) or not row.get("name") or not row.get("id") for row in rows):
     raise SystemExit("Invalid cron listing; refusing to register jobs")
@@ -96,6 +98,9 @@ for job in manifest["jobs"]:
     # Paths are absolute in the store: cron runs from the gateway's cwd, not the repo's.
     argv = [part.replace("scripts/", f"{repo_root}/scripts/", 1) if part.startswith("scripts/") else part
             for part in job["argv"]]
+    # Every job reports its run to the automation health check through one wrapper, so a job that
+    # stops or keeps failing is noticed without each script having to remember to say so.
+    argv = ["bash", f"{repo_root}/scripts/lib/adminbot-cron-run.sh", name, job["cron"], "--", *argv]
     verb = "edit" if name in known else "add"
     if verb == "edit":
         # The id first, as the positional the command wants. `--name` is not repeated: it is what

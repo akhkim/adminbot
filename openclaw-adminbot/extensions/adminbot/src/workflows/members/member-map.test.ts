@@ -9,6 +9,7 @@ import {
   resolveLoginCity,
   resolvePlace,
   toPrivilegedMemberMap,
+  toPublicMemberMapSummary,
 } from "./member-map.js";
 
 function member(overrides: Partial<AdminBotLabMember> = {}): AdminBotLabMember {
@@ -385,11 +386,14 @@ describe("buildMemberMap", () => {
         new Map(),
         { loginCity: true, now },
       );
+      // Off the map and out of the unplaced list; only a name and why, for the admin search.
       expect(hidden).toEqual({
         places: [],
         unplaced: [],
+        absent: [{ member_id: "t", name: "Tess", reason: "hidden" }],
         counts: { placed: 0, unplaced: 0, unknown: 0 },
       });
+      expect(JSON.stringify(hidden)).not.toMatch(/Toronto|Lyon/);
 
       // Absent or unrecognised is "auto".
       expect(memberMapVisibility({})).toBe("auto");
@@ -658,12 +662,109 @@ describe("memberMapMemo", () => {
   });
 });
 
+describe("why a member is not on the map", () => {
+  const now = new Date("2026-10-15T12:00:00.000Z");
+  const reasons = (members: AdminBotLabMember[]) =>
+    buildMemberMap(members, new Map(), { loginCity: true, now }).absent.map(
+      (entry) => `${entry.name}: ${entry.reason}`,
+    );
+  // A fresh IP reading in Lyon, which places an "auto" member.
+  const lyon = {
+    last_login_city: "Lyon",
+    last_login_country: "FR",
+    last_ip_observed_at: "2026-10-15T08:00:00.000Z",
+  } satisfies Partial<AdminBotLabMember>;
+
+  it("names each reason, and lists nobody the map placed", () => {
+    expect(
+      reasons([
+        member({ id: "p", name: "Placed", ...lyon }),
+        member({ id: "h", name: "Hidden", location: "Toronto", map_visibility: "hidden" }),
+        member({ id: "s", name: "Stated", map_visibility: "stated", ...lyon }),
+        member({ id: "v", name: "Vpn", ...lyon, last_ip_suspected_vpn: true }),
+        member({ id: "b", name: "Blocked", location_permission: "denied" }),
+        member({ id: "u", name: "Unknown text", location: "nowhere-in-particular" }),
+        member({ id: "n", name: "Nothing" }),
+      ]),
+    ).toEqual([
+      "Blocked: browser_blocked",
+      "Hidden: hidden",
+      "Nothing: no_location",
+      "Stated: ip_off",
+      "Unknown text: unrecognised",
+      "Vpn: suspected_vpn",
+    ]);
+  });
+
+  it("gives the member's own setting first, then the IP, then the browser, then the text", () => {
+    expect(
+      reasons([
+        member({
+          id: "s",
+          name: "Stated",
+          map_visibility: "stated",
+          location: "nowhere-in-particular",
+          location_permission: "denied",
+        }),
+        member({
+          id: "v",
+          name: "Vpn",
+          ...lyon,
+          last_ip_suspected_vpn: true,
+          location_permission: "denied",
+        }),
+        member({
+          id: "b",
+          name: "Blocked",
+          location: "nowhere-in-particular",
+          location_permission: "denied",
+        }),
+      ]),
+    ).toEqual(["Blocked: browser_blocked", "Stated: ip_off", "Vpn: suspected_vpn"]);
+  });
+
+  it("does not list a member a stated city places although their browser said no", () => {
+    expect(
+      reasons([member({ name: "Ada", location: "Toronto", location_permission: "denied" })]),
+    ).toEqual([]);
+  });
+
+  it("leaves out whoever the map leaves out entirely: opted out, departed, no usable name", () => {
+    expect(
+      reasons([
+        member({ id: "d", name: "Null, do not contact", map_visibility: "hidden" }),
+        member({ id: "a", name: "Alum", status: "alumni" }),
+        member({ id: "x", name: "null" }),
+      ]),
+    ).toEqual([]);
+  });
+});
+
 describe("toPrivilegedMemberMap", () => {
   const map = buildMemberMap([
     member({ id: "a", name: "Ada", location: "Toronto" }),
     member({ id: "z", name: "Zed", location: "nowhere-in-particular" }),
     member({ id: "y", name: "Yan" }),
+    member({ id: "h", name: "Hal", location: "Berlin", map_visibility: "hidden" }),
   ]);
+
+  it("always says who is not on the map and why, as a name and a reason word only", () => {
+    const sent = toPrivilegedMemberMap(map, { listUnplaced: false });
+    expect(sent).not.toHaveProperty("absent");
+    expect(sent.not_on_map).toEqual([
+      { name: "Hal", reason: "hidden" },
+      { name: "Yan", reason: "no_location" },
+      { name: "Zed", reason: "unrecognised" },
+    ]);
+    // Not what they wrote, not the city a hidden member gave, not an id.
+    const text = JSON.stringify(sent.not_on_map);
+    expect(text).not.toMatch(/nowhere|Berlin|member_id|"h"/);
+  });
+
+  it("never puts names or reasons in the public summary", () => {
+    const summary = JSON.stringify(toPublicMemberMapSummary(map));
+    expect(summary).not.toMatch(/Hal|Yan|Zed|Ada|not_on_map|reason/);
+  });
 
   it("sends a count of the unplaced, and the names only when asked", () => {
     const counted = toPrivilegedMemberMap(map, { listUnplaced: false });

@@ -65,7 +65,7 @@ describe("renderPreciseLocation", () => {
   it("shows a short note only after a press came back empty", () => {
     const { host } = mount({}, { note: "denied" });
     expect(host.querySelector('[data-testid="precise-location-note"]')?.textContent).toBe(
-      "Location is off for this site in your browser.",
+      "Location is blocked — click 🔒 in the address bar to allow",
     );
     expect(host.querySelector('[role="alert"], .callout, .toast')).toBeNull();
   });

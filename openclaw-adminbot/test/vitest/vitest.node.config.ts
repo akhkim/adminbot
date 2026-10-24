@@ -10,7 +10,14 @@ export default createScopedVitestConfig(
   ],
   {
     name: "node",
-    exclude: ["**/*.browser.test.ts", "**/*.e2e.test.ts", "**/*.live.test.ts"],
+    // The CLI package tests with node:test (`pnpm --filter @adminbot/cli test`, run by the
+    // AdminBot API workflow). Vitest would import those files and find no suite.
+    exclude: [
+      "**/*.browser.test.ts",
+      "**/*.e2e.test.ts",
+      "**/*.live.test.ts",
+      "extensions/adminbot/cli/**",
+    ],
     environment: "node",
     isolate: false,
   },

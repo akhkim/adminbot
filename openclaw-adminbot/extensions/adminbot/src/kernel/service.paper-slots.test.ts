@@ -476,6 +476,22 @@ describe("collectPaperNudgeBatches", () => {
     const { batches } = unwrap(service.collectPaperNudgeBatches());
     expect(batches[0]).toMatchObject({ member_id: "ada", deliverable: false });
   });
+
+  it("asks the first author to fix a link the sheet found the PI cannot open", () => {
+    const service = new AdminBotService(undefined, {
+      paperLinkProblems: () =>
+        new Map([
+          ["p1", ["Overleaf: asks the PI to request access"]],
+          ["gone", ["Drive: missing"]],
+        ]),
+    });
+    seed(service);
+    const { batches } = unwrap(service.collectPaperNudgeBatches());
+    expect(batches).toHaveLength(1);
+    expect(batches[0]).toMatchObject({ member_id: "ada", item_count: 2 });
+    expect(batches[0]?.message).toContain("Fix the paper link the PI cannot open");
+    expect(batches[0]?.message).toContain("Overleaf: asks the PI to request access");
+  });
 });
 
 describe("sendPaperSlotNudges", () => {

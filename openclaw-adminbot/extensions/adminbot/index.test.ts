@@ -85,6 +85,17 @@ describe("adminbot plugin metadata", () => {
     },
   );
 
+  it("registers the Slack stop hook alongside the tools", () => {
+    const captured = createCapturedPluginRegistration({ id: "adminbot" });
+    const on = vi.fn();
+    captured.api.on = on as typeof captured.api.on;
+
+    adminbotPlugin.register(captured.api);
+
+    expect(on.mock.calls.map((call) => call[0])).toContain("before_dispatch");
+    expect(captured.tools.length).toBeGreaterThan(0);
+  });
+
   it("still asks the user before removing a pending action from chat", async () => {
     const captured = createCapturedPluginRegistration({ id: "adminbot" });
     const on = vi.fn();

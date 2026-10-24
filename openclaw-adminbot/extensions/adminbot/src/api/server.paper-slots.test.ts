@@ -559,13 +559,29 @@ describe("the global nudge, end to end", () => {
     expect(preview.body.batches[0]).toMatchObject({ member_id: "ada", deliverable: false });
   });
 
-  it("refuses the send from the service principal -- this one needs a person", async () => {
+  it("refuses the button route from the service principal -- that one needs a person", async () => {
     const { baseUrl, sent } = await startLab();
-    // Unlike the mandatory-fields reminder, nothing schedules this. It messages the lab under the
-    // presser's authority, so an agent tool call must not be able to trigger it.
+    // The button messages the lab under the presser's authority; the cron has its own route.
     const result = await call(baseUrl, "POST", "/papers/slot-reminder/run");
     expect(result.status).toBe(403);
     expect(sent).toHaveLength(0);
+  });
+
+  it("sends on the weekday schedule with the button's cadence and ledger", async () => {
+    const { baseUrl, sent } = await startLab();
+    const scheduled = await call(baseUrl, "POST", "/papers/slot-reminder/scheduled-run");
+    expect(scheduled.status).toBe(200);
+    expect(scheduled.body.created[0]).toMatchObject({ type: "member_nudge.send", status: "executed" });
+    expect(sent).toHaveLength(1);
+    // Same ledger: an admin pressing the button the same morning does not send it twice.
+    const pressed = await callAs(
+      await adminHeaders(baseUrl),
+      baseUrl,
+      "POST",
+      "/papers/slot-reminder/run",
+    );
+    expect(pressed.body.created).toHaveLength(0);
+    expect(sent).toHaveLength(1);
   });
 
   it("sends one Slack message to the first author naming exactly what is outstanding", async () => {

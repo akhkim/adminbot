@@ -285,7 +285,6 @@ describe("memberPrivilegeLevel wiring", () => {
       memberSheetLoadedAt: 1,
       adminBotProfileOverview: [{ member_id: "old-private" }] as never,
       adminBotProfileOverviewLoadedAt: 1,
-      adminBotTravel: { history: [{ id: "old-trip" }] } as never,
       adminBotPaperSlots: { "old-paper": { paperId: "old-paper" } } as never,
       adminBotPaperSlotsLoadedAt: 1,
       labTravel: { matches: [{ people: [{ member_id: "old-peer" }] }] } as never,
@@ -318,7 +317,6 @@ describe("memberPrivilegeLevel wiring", () => {
     expect(host.memberSheetLoadedAt).toBeNull();
     expect(host.adminBotProfileOverview).toEqual([]);
     expect(host.adminBotProfileOverviewLoadedAt).toBeNull();
-    expect(host.adminBotTravel?.history).toBeNull();
     expect(host.adminBotPaperSlots).toEqual({});
     expect(host.adminBotPaperSlotsLoadedAt).toBeNull();
     expect(host.labTravel).toBeUndefined();

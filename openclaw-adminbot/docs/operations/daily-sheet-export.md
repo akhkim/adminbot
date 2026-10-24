@@ -6,7 +6,7 @@ The existing [Contact Spreadsheet](https://docs.google.com/spreadsheets/d/1ZqdaR
 
 Verified database refresh on October 1, 2026 (September 30, 21:18:22 UTC): PeopleList contains all 189 database members and 131 columns. PaperList contains 187 database papers with 42 columns: review status, recorded missing/invalid artifacts, acceptance details, review-ready and project-start dates, stage, venue, recorded owner/deadline/action details, links, review checks, feedback givers, all recorded artifact statuses and authors. Both exports come directly from one read-only snapshot of `/w/406/adminbot/state/adminbot.sqlite`; neither depends on the Members tab. Missing fields remain blank. Activity counts come from recorded database rows, and paper associations use explicit member IDs. Embedded profile images that exceed Google's 50,000-character cell limit are replaced with an explicit omission marker; other oversized cells stop publication. Auth secrets are never selected or exported.
 
-The first 19 PeopleList columns follow `PEOPLE_PRIORITY`, with the remainder retaining their order. Both tabs freeze exactly one row and one column. PeopleList's frozen ID column remains 200 pixels wide with wrapping. PaperList uses a native slate-blue table header, subtle alternating rows, Arial text and bold progress stages. Titles are 460 pixels wide, artifact summaries 320, authors 400 and other review columns 180 (IDs 160), with 36-pixel headers and 72-pixel data rows. IDs are muted and clipped; titles/authors wrap. Long author lists remain intact in their cells even when the overview row cannot display every line. Columns with no nonblank paper values are hidden on every refresh and automatically shown once populated; recorded zero/false values count as data. This layout is applied on each refresh. Protection and values remain intact.
+The first 23 PeopleList columns follow `PEOPLE_PRIORITY`, starting with name and ending with `search`; the remainder keep their order behind one collapsible column group (the [+] above the header), collapsed when the group is first made and left as the viewer set it afterwards. Both tabs freeze exactly one row and one column. PeopleList's frozen name column is 170 pixels wide, bold and wrapped, so it fits a phone screen. `search` joins name, preferred name, ID, emails, member type, role, affiliation, city, location, research branch and topics, projects, and authored paper titles with venues (deduplicated, at most 4,000 characters), so Ctrl-F or a mobile filter finds a person by any of them; it is clipped in small grey text. PeopleList also has a `Full members` view (member_type contains "full"); the default view still shows everyone. PaperList's non-core columns sit behind the same kind of collapsible group, and its frozen title is 260 pixels wide. PaperList uses a native slate-blue table header, subtle alternating rows, Arial text and bold progress stages. Artifact summaries are 320, authors 400 and other review columns 180 (IDs 160), with 36-pixel headers and 72-pixel data rows. IDs are muted and clipped; titles/authors wrap. Long author lists remain intact in their cells even when the overview row cannot display every line. Columns with no nonblank paper values are hidden on every refresh and automatically shown once populated; recorded zero/false values count as data. This layout is applied on each refresh. Protection and values remain intact.
 
 Both exports are native Google Sheets tables named `PeopleList` and `PaperList`, with visible table-name bars, column menus, native Views controls and status/stage dropdown chips. Legacy basic filters and standalone banding were removed during conversion, without deleting data. Each daily refresh resizes the same table IDs and preserves table headers, rather than recreating tables. Text fields remain text; dropdown options reflect recorded nonempty values. The existing named `PeopleList sort and filter` / `PaperList sort and filter` views are preserved. PaperList also has table-backed `By stage` and `By venue` views visible in its native Views menu; range-backed versions are replaced once because Sheets does not convert their table association in place. Use a personal/temporary view for sorting protected data without changing the shared export.
 
@@ -72,3 +72,34 @@ Review categories normalize known venue spellings, remove years from known categ
 The early review_ready_date position is now overleaf_edit_link (edit evidence only, existing URL safety applies). review_ready_date remains later in the export for oldest-wait approval sorting. View-only links remain in overleaf_link and are not mislabeled as edit links.
 
 Pending feedback has separate feedback_review_status, pending_feedback_types, feedback_requested_date and feedback_manuscript_link columns. Awaiting PI feedback shows valid unreviewed ARR, arXiv and camera-ready requests, including revisions after a venue rejection; reviewed requests disappear from this view. Both pending queues sort oldest wait first. A rejection still prevents publication readiness. Only a safe URL from the oldest pending request is exported as a native hyperlink; credential-bearing links remain blank without hiding the pending status. Request prose and passwords are never exported.
+
+## Paper state, conference, year and track from OpenReview (October 24, 2026)
+
+PaperList gives each paper one `Paper state` value from `PAPER_STATE_RULES` in
+`scripts/adminbot-sheet-export.py`: Accepted, Camera-ready due, Resubmitted after rejection,
+Under review (no PI review), Under review, Desk rejected, Rejected, Withdrawn, Needs PI review,
+On arXiv, arXiv planned, Not started, Writing, Unknown. `PI review` is still a separate column:
+it says whether the PI owes a review. `Paper state` says where the paper stands.
+
+`Conference`, `Year`, `Track` (Main, Findings, Workshop, Demo, Industry, Tutorial, Journal) and
+`Presentation` (Oral, Spotlight, Poster) come from the PI's OpenReview whenever it knows the
+paper, and from AdminBot only otherwise. A workshop at a named conference is filed under that
+conference with Track Workshop, so the `Conference` filter shows all of that conference's papers.
+`Source` says where those values came from, and flags an AdminBot venue that OpenReview
+contradicts. `Submission history` lists every venue the paper went to
+(`❌ ICLR 2026 → ⏳ ARR May 2026 → ✅ EMNLP 2026`).
+
+Every OpenReview submission of a paper counts: a forum link, the same title, a title cut
+short, a title with the same subtitle, or a renamed title that keeps all of its content words.
+Renamed matches only apply to submissions no other paper claims by exact title. The latest
+cycle decides the current state, and a conference acceptance outranks a later workshop run. A
+rejection at the venue AdminBot calls accepted clears that acceptance. When OpenReview still
+shows a submission under review but AdminBot records an acceptance at that same venue (demo and
+workshop decisions are often mailed only to the submitter), the paper reads as accepted with
+`(decision from AdminBot)`.
+
+Overleaf `project/<id>/share#<token>` links are share links that anyone with the link can open.
+They are not treated as invite-only project links.
+
+Views `Blocked`, `By paper state`, `By year` and `By track` are added. Blocked reviews sort
+first within their deadline or conference group.

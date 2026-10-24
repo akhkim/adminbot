@@ -286,22 +286,77 @@ async function inviteToSlackChannel(
   fetchImpl: SlackAdminFetch,
 ): Promise<void> {
   const channelId = await resolveChannelId(token, channelName, fetchImpl);
-  const invite = await fetchImpl("https://slack.com/api/conversations.invite", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json; charset=utf-8",
-    },
-    body: JSON.stringify({ channel: channelId, users: userId }),
-  });
-  const invitePayload = parseSlackJson<SlackRenameResponse>(await invite.text());
-  if (invitePayload?.error === "already_in_channel") {
+  const post = async (method: string, body: Record<string, unknown>) => {
+    const response = await fetchImpl(`https://slack.com/api/${method}`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json; charset=utf-8",
+      },
+      body: JSON.stringify(body),
+    });
+    const payload = parseSlackJson<SlackRenameResponse>(await response.text());
+    return { response, payload, error: payload?.error?.trim() || undefined };
+  };
+  let invite = await post("conversations.invite", { channel: channelId, users: userId });
+  // The bot can only invite into a channel it sits in. A public channel it can join itself, so
+  // join once and retry rather than failing the same invite every hour until someone adds it.
+  if (invite.error === "not_in_channel") {
+    const join = await post("conversations.join", { channel: channelId });
+    if (!join.response.ok || !join.payload?.ok) {
+      const detail = join.error || join.response.statusText || "unknown error";
+      throw new Error(
+        `Slack channel invite failed ${invite.response.status}: not_in_channel (join refused: ${detail})`,
+      );
+    }
+    invite = await post("conversations.invite", { channel: channelId, users: userId });
+  }
+  if (invite.error === "already_in_channel") {
     return;
   }
-  if (!invite.ok || !invitePayload?.ok) {
-    const detail = invitePayload?.error?.trim() || invite.statusText || "unknown error";
-    throw new Error(`Slack channel invite failed ${invite.status}: ${detail}`);
+  if (!invite.response.ok || !invite.payload?.ok) {
+    const detail = invite.error || invite.response.statusText || "unknown error";
+    throw new Error(`Slack channel invite failed ${invite.response.status}: ${detail}`);
   }
+}
+
+/**
+ * What a failed invite says about retrying it.
+ *
+ * `channel`: the room is missing, archived or closed to the bot; no invite into it can succeed
+ * until a person fixes the channel, so every invite into it waits. `member`: this one person cannot
+ * be added by the bot (a guest, or someone from another workspace or org); it needs a manual
+ * invite, and retrying only re-fails. `undefined`: transient or unknown, retried as before.
+ */
+export type SlackInviteFailureScope = "channel" | "member";
+
+export function classifySlackInviteFailure(
+  message: string,
+): { scope: SlackInviteFailureScope; reason: string } | undefined {
+  const text = message.toLowerCase();
+  if (text.includes("no open channel named")) {
+    return { scope: "channel", reason: "channel_missing" };
+  }
+  // Member codes first: "user_team_not_in_channel" contains "not_in_channel".
+  for (const reason of [
+    "user_team_not_in_channel",
+    "org_user_not_in_team",
+    "user_is_ultra_restricted",
+    "user_is_restricted",
+    "cant_invite_self",
+    "cant_invite",
+    "user_not_found",
+  ]) {
+    if (text.includes(reason)) {
+      return { scope: "member", reason };
+    }
+  }
+  for (const reason of ["not_in_channel", "channel_not_found", "is_archived"]) {
+    if (text.includes(reason)) {
+      return { scope: "channel", reason };
+    }
+  }
+  return undefined;
 }
 
 /**

@@ -47,16 +47,38 @@ export function createActiveChannelReader(
         user.is_bot === true || user.is_app_user === true || user.id === "USLACKBOT",
       );
     }
+    // `users.list` only returns this workspace's own accounts. Slack Connect members of a shared
+    // channel belong to another organization and are absent from it, so they are looked up one at
+    // a time. A lookup that fails still aborts the read: a member whose bot-ness is unknown cannot
+    // be classified, and a partial snapshot must never reach the removal pass.
+    const isBot = async (id: string): Promise<boolean> => {
+      const known = users.get(id);
+      if (known !== undefined) {
+        return known;
+      }
+      const params = new URLSearchParams({ user: id });
+      const response = await fetchImpl(`https://slack.com/api/users.info?${params}`, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const body = JSON.parse(await response.text());
+      if (!response.ok || body.ok !== true || body.user?.id !== id) {
+        throw new Error(`Slack users.info failed: ${body.error ?? response.status}`);
+      }
+      const bot = body.user.is_bot === true || body.user.is_app_user === true;
+      users.set(id, bot);
+      return bot;
+    };
     const snapshot = [];
     for (const channel of ADMINBOT_ACTIVE_CHANNELS) {
       const channelId = await resolveChannelId(token, channel, fetchImpl);
       const ids = await pages("conversations.members", "members", { channel: channelId });
       const userIds: string[] = [];
       for (const id of ids) {
-        if (typeof id !== "string" || !users.has(id)) {
-          throw new Error("Slack channel member missing from directory");
+        if (typeof id !== "string") {
+          throw new Error("Slack returned a channel member without an ID");
         }
-        if (!users.get(id)) {
+        if (!(await isBot(id))) {
           userIds.push(id);
         }
       }

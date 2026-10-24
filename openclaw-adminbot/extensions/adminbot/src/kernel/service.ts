@@ -6,6 +6,7 @@ import type {
 import type { ReverseGeocoder } from "../connectors/reverse-geocode.js";
 import type { AdminBotExternalCollaboratorSubgroup } from "../contracts/actions.js";
 import {
+  adminBotActionTypes,
   ADMINBOT_ONBOARDING_CATCH_UP_ROUND,
   adminBotHasBeenOnboardEmailed,
   adminBotIsAlumniType,
@@ -13,6 +14,7 @@ import {
   ADMINBOT_REC_LETTER_CHANNEL,
   adminBotDormantChaseMemberTypes,
   adminBotIsAlumniMember,
+  adminBotIsDirectCollaborator,
   adminBotProjectChannelName,
   adminBotRecLetterChannelWindowMonths,
   adminBotNormalizePaperAlias,
@@ -339,6 +341,7 @@ import {
   type AdminBotWriteOrigin,
 } from "../workflows/members/adoption.js";
 import { validateBirthday } from "../workflows/members/birthday.js";
+import { slackStopReply, type SlackStopCommand } from "../workflows/members/slack-stop.js";
 import { collaboratorSubgroupAccess } from "../workflows/members/collaborator-subgroups.js";
 import {
   localEventAudience,
@@ -488,6 +491,14 @@ import {
 } from "../workflows/papers/papermentor-nudges.js";
 import { paperFeedbackQueue } from "../workflows/papers/pi-review.js";
 import {
+  evidenceFromCitationChecks,
+  matchPaperEvidence,
+  normalizedTitle,
+  planOpenReviewSync,
+  type OpenReviewEvidence,
+  type OpenReviewFieldChange,
+} from "../workflows/papers/openreview-paper-sync.js";
+import {
   buildPiReviewNotice,
   isAwaitingPiReview,
   piReviewLedgerSubject,
@@ -509,6 +520,14 @@ import {
   isActiveChannelEligible,
   type ActiveChannelReader,
 } from "./service.active-channels.js";
+import { inviteLocalLunches } from "./service.local-lunches.js";
+import type { CalendarEventsReader } from "../workflows/calendar/events.js";
+import {
+  automationHealthIssues,
+  slackInviteBlockFor,
+  slackInviteBlocks,
+  type AutomationHealthIssue,
+} from "./service.automation-health.js";
 import {
   birthdayProposalStillCurrent,
   reconcileBirthdayEvent,
@@ -1247,6 +1266,13 @@ export type AdminBotServiceOptions = {
    */
   paperflowPriorityMemberId?: string;
   /**
+   * Paper links the PI cannot open (restricted or "request access" Overleaf projects, Drive
+   * files that do not resolve), keyed by paper id. Only the sheet export can probe them, and it
+   * runs as another Unix user, so it leaves a file next to the database and the persistence layer
+   * reads it here; no reader, or a stale file, means no link nudges rather than wrong ones.
+   */
+  paperLinkProblems?: () => ReadonlyMap<string, readonly string[]>;
+  /**
    * Asks Google whether a Drive file a paper points at is really there.
    *
    * Injected rather than imported, like every other outward-facing read: a deployment with no
@@ -1313,10 +1339,13 @@ const DEFAULT_ACTION_POLICIES = {
   // Raises a member's access level and grants what it brings, so an admin approves it; the
   // approving admin is also who approves each step it runs.
   "lab_member.enroll": approvalPolicy("T3", ["admin"]),
-  // Same tier as the guide that used to file this row: the sysadmin reading it creates a CS
-  // account, which is not something to undo. The admin-driven paths approve it on the click that
-  // changed the role; the roster sync and the weekly sweep leave it in Pending Actions.
-  "dcs_roster.add_row": approvalPolicy("T3", ["admin"]),
+  // The DCS roster is a derivative of the lab roster: a row is owed the moment somebody becomes a
+  // full member or a major coauthor, and the decision that matters was the Member Type, which the
+  // roster already gates. So the row is written directly -- by the admin save, the roster sync and
+  // the backfill alike -- and keeps its proposal, auto-approval and audit rows as the record. The
+  // cost is that a wrong Member Type reaches the sysadmin without a second look; the fix is the
+  // roster, then deleting the row before the department acts on it (the undo plan says so).
+  "dcs_roster.add_row": autoPolicy("T1"),
   // A placeholder/test account the Slack roster sync wants gone. T3 so it can never ride the auto
   // tier: the sync only proposes, and an admin approving it is the only way a record is deleted.
   "lab_member.remove": approvalPolicy("T3", ["admin"]),
@@ -1676,6 +1705,29 @@ export type AdminBotRosterSyncResult = RosterSyncPlan & {
   synced_at: string;
 };
 
+/** What one OpenReview sync pass did, or in a dry run would do. */
+export type OpenReviewPaperSyncReport = {
+  dry_run: boolean;
+  /** Reports read across every source. */
+  evidence: number;
+  /** Papers some report spoke for. */
+  matched: number;
+  applied: Array<{
+    paper_id: string;
+    title: string;
+    status: string;
+    venue: string;
+    source: string;
+    changes: OpenReviewFieldChange[];
+    slots: string[];
+  }>;
+  /** Papers whose current observation was applied on an earlier pass. */
+  unchanged: number;
+  kept: Array<{ paper_id: string; reason: string }>;
+  /** Snapshot or e-mail reports that matched no paper on file. */
+  unmatched_submissions: number;
+};
+
 export class AdminBotService {
   constructor(
     private readonly store: AdminBotServiceStore = new AdminBotMemoryStore(),
@@ -1771,13 +1823,66 @@ export class AdminBotService {
   createProposal(
     proposal: AdminBotActionProposal,
   ): AdminBotServiceResponse<AdminBotStoredProposal> {
-    if (!proposal.summary.trim()) {
+    // Checked before anything reads the policy table: an unknown type has no policy, and failing
+    // here is a 400 that names the problem rather than a 500 from a missing table entry.
+    if (!(adminBotActionTypes as readonly string[]).includes(proposal.type)) {
+      return serviceError(400, "unsupported action type");
+    }
+    if (typeof proposal.summary !== "string" || !proposal.summary.trim()) {
       return serviceError(400, "summary is required");
+    }
+    const blocked = this.slackInviteBlock(proposal);
+    if (blocked) {
+      // Refused rather than proposed: T1 auto-approves, so a proposal here is an execution, and an
+      // execution into a channel Slack has already refused is one more failure and nothing else.
+      // Every caller already treats a refused proposal as a skip, which is what this is.
+      return serviceError(409, blocked);
     }
     const stored = this.prepareProposal(proposal);
     this.store.saveProposal(stored);
     this.auditProposalCreation(stored);
     return { ok: true, status: 200, payload: stored };
+  }
+
+  /**
+   * Why a Slack invite should not be tried again yet, or undefined when it may be.
+   *
+   * See service.automation-health.ts: a missing or closed channel pauses every invite into it for a
+   * day, and a person the bot cannot add (a guest, another workspace) is left for a manual invite
+   * for a month. The admin hears about both once, from the automation health check.
+   */
+  private slackInviteBlock(proposal: {
+    type: string;
+    proposed_payload?: unknown;
+  }): string | undefined {
+    if (proposal.type !== "slack.invite_to_channel") {
+      return undefined;
+    }
+    const payload = proposal.proposed_payload as Record<string, unknown> | undefined;
+    if (typeof payload?.channel !== "string" || typeof payload.user_id !== "string") {
+      return undefined;
+    }
+    const block = slackInviteBlockFor(
+      slackInviteBlocks(this.store.listAuditEvents(), (id) => this.failedInviteProposal(id)),
+      payload.channel,
+      payload.user_id,
+    );
+    if (!block) {
+      return undefined;
+    }
+    return block.scope === "channel"
+      ? `invites into #${block.channel} are paused after Slack refused one (${block.reason}) at ${block.since}`
+      : `${block.user_id} needs a manual invite to #${block.channel} (${block.reason})`;
+  }
+
+  // Invite payloads do not change once proposed, and a sweep asks about the same few hundred
+  // failures once per invite it considers; remembered so that is a map read, not a query.
+  private readonly failedInviteProposals = new Map<string, AdminBotStoredProposal | undefined>();
+  private failedInviteProposal(id: string): AdminBotStoredProposal | undefined {
+    if (!this.failedInviteProposals.has(id)) {
+      this.failedInviteProposals.set(id, this.store.getProposal(id));
+    }
+    return this.failedInviteProposals.get(id);
   }
 
   /** What service.birthday.ts needs to propose or withdraw a member's birthday event. */
@@ -1915,16 +2020,30 @@ export class AdminBotService {
     }
     const day = (params.day || new Date().toISOString()).slice(0, 10);
     const audience = localEventAudience({
-      members: this.store.listLabMembers().filter((member) => !adminBotIsAlumniMember(member)),
+      // Local lunches include alumni and acquaintances, unlike mandatory lab meetings.
+      members: this.store.listLabMembers(),
       historyFor: (memberId) => this.locationSignalsFor(memberId),
       city: params.city,
       zone: params.zone,
       attendees: params.attendees,
       day,
     });
+    // An invitation awaiting approval must not become a fresh card every morning.
+    const proposeOnce = (proposal: AdminBotActionProposal) => {
+      const previous = this.store
+        .listProposalsByType(proposal.type)
+        .find(
+          (stored) =>
+            (stored.status === "pending" || stored.status === "approved") &&
+            payloadHash(stored.proposed_payload) === payloadHash(proposal.proposed_payload),
+        );
+      return previous
+        ? { ok: true as const, status: 200, payload: previous }
+        : this.createProposal(proposal);
+    };
     const proposals: string[] = [];
     if (audience.add.length > 0) {
-      const created = this.createProposal({
+      const created = proposeOnce({
         type: "calendar.add_attendees",
         summary: `Add ${audience.add.length} to the ${params.city} event: ${audience.add
           .map((row) => row.name)
@@ -1952,7 +2071,7 @@ export class AdminBotService {
           "refusing to propose a removal that would empty the guest list -- check the attendee list passed in",
         );
       }
-      const created = this.createProposal({
+      const created = proposeOnce({
         type: "calendar.remove_attendees",
         summary: `Remove ${audience.remove.length} from the ${params.city} event: ${audience.remove
           .map((row) => `${row.name} (${row.reason})`)
@@ -3062,6 +3181,113 @@ export class AdminBotService {
     return this.store.listAuditEvents();
   }
 
+  /** One cron run, as reported by scripts/lib/adminbot-cron-run.sh. */
+  recordAutomationHeartbeat(
+    actor: string,
+    input: { job?: unknown; ok?: unknown; cron?: unknown; exit_code?: unknown; detail?: unknown },
+  ): AdminBotServiceResponse<{ recorded: true }> {
+    const job = typeof input.job === "string" ? input.job.trim() : "";
+    if (!/^[a-z0-9][a-z0-9-]{0,79}$/u.test(job) || typeof input.ok !== "boolean") {
+      return serviceError(400, "job (a cron job name) and ok (boolean) are required");
+    }
+    this.recordAudit({
+      type: "automation_health.heartbeat",
+      actor,
+      details: {
+        job,
+        ok: input.ok,
+        ...(typeof input.cron === "string" ? { cron: input.cron.slice(0, 64) } : {}),
+        ...(typeof input.exit_code === "number" ? { exit_code: input.exit_code } : {}),
+        ...(typeof input.detail === "string" && input.detail.trim()
+          ? { detail: input.detail.trim().slice(0, 300) }
+          : {}),
+      },
+    });
+    return { ok: true, status: 200, payload: { recorded: true } };
+  }
+
+  /** Every open automation issue: the dashboard read. Nothing is sent. */
+  automationHealth(
+    now = new Date(),
+  ): AdminBotServiceResponse<{ checked_at: string; issues: AutomationHealthIssue[] }> {
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        checked_at: now.toISOString(),
+        issues: automationHealthIssues(
+          this.store.listAuditEvents(),
+          (id) => this.failedInviteProposal(id),
+          now,
+        ),
+      },
+    };
+  }
+
+  /**
+   * Tell the admins about each open issue, once a week at most per issue.
+   *
+   * Through the notifications on their own page rather than Slack: one of the things this reports
+   * is Slack refusing the bot, and an alert that travels over the broken path is not an alert. The
+   * key changes when the problem does -- a second person needing a manual invite is a new key --
+   * so something new is heard about at once, and something unchanged is repeated weekly until
+   * somebody fixes it.
+   */
+  raiseAutomationHealthAlerts(
+    actor: string,
+    now = new Date(),
+  ): AdminBotServiceResponse<{ issues: number; alerted: string[]; admins: number }> {
+    const health = this.automationHealth(now);
+    if (!health.ok) {
+      return health;
+    }
+    const admins = this.store
+      .listLabMembers()
+      .filter((member) => member.privilege_level === "admin" && !adminBotIsAlumniMember(member));
+    const ledger = this.nudgeLedgerIndex();
+    const nowIso = now.toISOString();
+    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const alerted: string[] = [];
+    // Nobody to tell is not the same as told: leave the ledger alone so the first admin hears it.
+    for (const issue of admins.length > 0 ? health.payload.issues : []) {
+      const said = ledger.get(`automation_health|${issue.key}`);
+      if (said?.last_nudged_at && said.last_nudged_at > weekAgo) {
+        continue;
+      }
+      for (const admin of admins) {
+        this.store.saveMemberNotification({
+          id: `notif_${randomUUID()}`,
+          member_id: admin.id,
+          kind: "automation",
+          title: issue.label,
+          body: issue.detail,
+          tab: "adminbotSettings",
+          created_at: nowIso,
+        });
+      }
+      this.store.saveNudgeLedgerEntry({
+        domain: "automation_health",
+        subject_id: issue.key,
+        member_id: actor,
+        last_nudged_at: nowIso,
+        nudge_count: (said?.nudge_count ?? 0) + 1,
+      });
+      alerted.push(issue.key);
+    }
+    if (alerted.length > 0) {
+      this.recordAudit({
+        type: "automation_health.alerted",
+        actor,
+        details: { issue_keys: alerted, admin_count: admins.length },
+      });
+    }
+    return {
+      ok: true,
+      status: 200,
+      payload: { issues: health.payload.issues.length, alerted, admins: admins.length },
+    };
+  }
+
   // Anonymous reimbursement use has no member to attribute it to, so the audit trail is the only
   // record that a submission happened and the only way to spot abuse of the open endpoint.
   recordAnonymousReimbursementUse(details: {
@@ -3445,6 +3671,7 @@ export class AdminBotService {
               changed: result.changed,
               reused: result.reused,
               superseded: result.superseded.length,
+              applied: Boolean(result.applied),
               groups: result.groups.map((group) => `${group.group}:${group.status}`).join(","),
             },
           });
@@ -3503,6 +3730,17 @@ export class AdminBotService {
       });
     }
     return this.calendarMembershipCleanup;
+  }
+
+  private localLunchInvites: ReturnType<typeof inviteLocalLunches> | undefined;
+
+  syncLocalLunchInvites(calendarId: string, read: CalendarEventsReader) {
+    if (!this.localLunchInvites) {
+      this.localLunchInvites = inviteLocalLunches(this, this.store, calendarId, read).finally(() => {
+        this.localLunchInvites = undefined;
+      });
+    }
+    return this.localLunchInvites;
   }
 
   private activeChannelCleanup: ReturnType<typeof enforceActiveChannels> | undefined;
@@ -3599,6 +3837,10 @@ export class AdminBotService {
         .listProposalsByType("slack.invite_to_channel")
         .find((proposal) => proposal.idempotency_key === key);
       if (previous?.status === "executed" || previous?.status === "rejected") {
+        continue;
+      }
+      // A reused proposal skips createProposal's check, so it is asked here before re-executing.
+      if (previous && this.slackInviteBlock(previous)) {
         continue;
       }
       const proposed = previous
@@ -6353,6 +6595,9 @@ export class AdminBotService {
     const stored: AdminBotPaperRecord = {
       ...(existing ? withoutTimeline(existing) : {}),
       ...withoutTimeline(paper),
+      // Written only by syncPapersFromOpenReview, after this write. A client echoing a record
+      // back must not be able to forge or reset what the sync last applied.
+      openreview_sync: existing?.openreview_sync,
       // Both name lists are trimmed and de-blanked on write rather than on read. The stage sweep
       // matches authors by name and an empty row would look like an author nobody can resolve,
       // which reads as "this paper has no lab member on it" -- the one state that stops the chase.
@@ -6886,6 +7131,145 @@ export class AdminBotService {
       status: 200,
       payload: { advanced, pi_review_requested: requested, waiting_on_pi: waiting },
     };
+  }
+
+  /**
+   * Bring paper records in line with the PI's OpenReview submissions.
+   *
+   * OpenReview is the ground truth for whether a paper was submitted and what the venue decided,
+   * so each paper is matched to the newest evidence about it (forum id first, then title; see
+   * openreview-paper-sync.ts) and the record follows: under review fills the submission slots and
+   * the venue, an acceptance fills the decision, venue, year, track and presentation, and a
+   * rejection withdraws a claimed acceptance.
+   *
+   * Applied once per observation. The record keeps the fingerprint of what was applied, and an
+   * unchanged fingerprint is skipped, so a person who corrects a field afterwards keeps their
+   * correction until OpenReview says something new. `dryRun` plans the same changes and writes
+   * nothing, which is the report mode.
+   */
+  syncPapersFromOpenReview(options: {
+    evidence: readonly OpenReviewEvidence[];
+    dryRun: boolean;
+    nowIso?: string;
+  }): AdminBotServiceResponse<OpenReviewPaperSyncReport> {
+    const nowIso = options.nowIso ?? new Date().toISOString();
+    // The citation-watch table is the fallback: the snapshot and the e-mails speak first, and
+    // match() prefers the newer report anyway.
+    const evidence = [
+      ...options.evidence,
+      ...evidenceFromCitationChecks(this.store.listOpenReviewCitationChecks()),
+    ];
+    const report: OpenReviewPaperSyncReport = {
+      dry_run: options.dryRun,
+      evidence: evidence.length,
+      matched: 0,
+      applied: [],
+      unchanged: 0,
+      kept: [],
+      unmatched_submissions: 0,
+    };
+    const matchedEvidence = new Set<OpenReviewEvidence>();
+    const ledger = this.nudgeLedgerIndex();
+    for (const paper of this.store.listPapers()) {
+      const slots = this.store.listPaperSlots(paper.id);
+      const match = matchPaperEvidence(paper, slots, evidence);
+      if (!match) {
+        continue;
+      }
+      matchedEvidence.add(match);
+      report.matched += 1;
+      const plan = planOpenReviewSync(paper, slots, match, nowIso);
+      if (plan.unchanged) {
+        report.unchanged += 1;
+        continue;
+      }
+      if (plan.kept) {
+        report.kept.push({ paper_id: paper.id, reason: plan.kept });
+      }
+      const slotNames = [...plan.slotWrites, ...plan.feedbackClosures].map((write) => write.slot);
+      if (plan.changes.length || slotNames.length) {
+        report.applied.push({
+          paper_id: paper.id,
+          title: paper.title,
+          status: plan.sync.status,
+          venue: plan.sync.venue,
+          source: plan.sync.source,
+          changes: plan.changes,
+          slots: slotNames,
+        });
+      }
+      if (options.dryRun) {
+        continue;
+      }
+      if (Object.keys(plan.patch).length) {
+        const written = this.upsertPaper({
+          ...paper,
+          ...plan.patch,
+          artifacts: { ...plan.patch.artifacts },
+        });
+        if (!written.ok) {
+          report.kept.push({ paper_id: paper.id, reason: `write refused: ${written.error.message}` });
+          continue;
+        }
+      }
+      for (const write of plan.slotWrites) {
+        const check = write.url ? validateAdminBotPaperSlotUrl(write.slot, write.url) : { ok: true as const };
+        this.store.savePaperSlot({
+          paper_id: paper.id,
+          slot: write.slot,
+          status: check.ok ? "provided" : "invalid",
+          ...(write.url ? { url: write.url } : {}),
+          ...(write.value_text ? { value_text: write.value_text } : {}),
+          provided_at: nowIso,
+          ...(check.ok
+            ? {
+                validated_at: nowIso,
+                verified_by: "openreview" as const,
+                verified_at: nowIso,
+                ...(write.verified_title ? { verified_title: write.verified_title } : {}),
+              }
+            : { invalid_reason: check.reason }),
+        });
+      }
+      for (const closure of plan.feedbackClosures) {
+        const existing = slots.find((row) => row.slot === closure.slot);
+        if (existing) {
+          this.store.savePaperSlot({ ...existing, value_text: closure.value_text });
+        }
+      }
+      // Recorded last, on the record as it now stands, so a refused write is retried next pass.
+      const current = this.store.getPaper(paper.id) ?? paper;
+      this.store.savePaper({ ...current, openreview_sync: plan.sync });
+      if (plan.changes.length || slotNames.length) {
+        this.recordAudit({
+          type: "paper.openreview_synced",
+          actor: "openreview",
+          details: {
+            paper_id: paper.id,
+            status: plan.sync.status,
+            venue: plan.sync.venue,
+            source: plan.sync.source,
+            ...(plan.sync.submission_id ? { submission_id: plan.sync.submission_id } : {}),
+            ...(plan.sync.reference ? { reference: plan.sync.reference } : {}),
+            changes: plan.changes,
+            slots: slotNames,
+          },
+        });
+      }
+      if (plan.slotWrites.length) {
+        this.syncOnePaperStage(current, "openreview", nowIso, ledger);
+      }
+    }
+    // Counted per submission, not per report: one paper is usually several e-mails.
+    const keyOf = (item: OpenReviewEvidence) => normalizedTitle(item.title) || item.forums[0] || "";
+    const matchedKeys = new Set([...matchedEvidence].map(keyOf));
+    report.unmatched_submissions = new Set(
+      evidence
+        .filter((item) => item.source !== "citation_checks")
+        .map(keyOf)
+        .filter((key) => key && !matchedKeys.has(key)),
+    ).size;
+    return { ok: true, status: 200, payload: report };
   }
 
   /**
@@ -7985,6 +8369,52 @@ export class AdminBotService {
     return this.serializeIntros(() => this.meetups().sayHiNow(memberId, input));
   }
 
+  /**
+   * "stop" or "start" DMed to the bot, matched by the plugin before any model sees it
+   * (workflows/members/slack-stop.ts). Unknown Slack users get `matched: false` and the agent
+   * answers them as usual; the record is the member's own, so nothing here needs an approval.
+   */
+  applySlackStop(params: {
+    slackUserId: string;
+    command: SlackStopCommand;
+  }): AdminBotServiceResponse<{ matched: boolean; changed: boolean; reply?: string }> {
+    const slackUserId = params.slackUserId.trim();
+    if (!slackUserId || (params.command !== "stop" && params.command !== "start")) {
+      return serviceError(400, "slack_user_id and command (stop or start) are required");
+    }
+    const member = this.store
+      .listLabMembers()
+      .find((candidate) => candidate.slack_user_id?.trim() === slackUserId);
+    if (!member) {
+      return { ok: true, status: 200, payload: { matched: false, changed: false } };
+    }
+    const stopped = Boolean(member.slack_stop_at);
+    const nowIso = (this.options.now?.() ?? new Date()).toISOString();
+    const changed = params.command === "stop" ? !stopped : stopped;
+    if (changed) {
+      const { slack_stop_at: _cleared, ...rest } = member;
+      this.store.saveLabMember(
+        params.command === "stop"
+          ? { ...member, slack_stop_at: nowIso, updated_at: nowIso }
+          : { ...rest, updated_at: nowIso },
+      );
+      this.recordAudit({
+        type: params.command === "stop" ? "member.slack_stopped" : "member.slack_started",
+        actor: `slack:${slackUserId}`,
+        details: { member_id: member.id },
+      });
+    }
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        matched: true,
+        changed,
+        reply: slackStopReply(params.command, stopped),
+      },
+    };
+  }
+
   /** The member Events tab and the intros behind it. */
   meetups() {
     return new MeetupService(
@@ -8554,6 +8984,7 @@ export class AdminBotService {
       Map<string, { venue?: string; deadline?: string; items: NudgeItem[] }>
     >();
     const stamped: Array<{ item: NudgeItem; memberId: string }> = [];
+    const linkProblemsByPaper = this.options.paperLinkProblems?.() ?? new Map<string, string[]>();
 
     const enqueue = (memberId: string, paper: AdminBotPaperRecord, item: NudgeItem) => {
       const key = `${item.domain}|${item.subjectId}|${memberId}`;
@@ -8588,6 +9019,22 @@ export class AdminBotService {
       )) {
         for (const memberId of this.resolvePaperSlotOwner(paper, item.owner)) {
           enqueue(memberId, paper, item);
+        }
+      }
+
+      // The sheet marks these Incomplete; the first author is the one who can share the project.
+      const linkProblems = linkProblemsByPaper.get(paper.id);
+      if (linkProblems?.length) {
+        for (const memberId of this.resolvePaperSlotOwner(paper, "first_author")) {
+          enqueue(memberId, paper, {
+            domain: "paper_slot",
+            subjectId: `${paper.id}:link_access`,
+            owner: "first_author",
+            label: "Fix the paper link the PI cannot open",
+            detail: linkProblems.join("; "),
+            priority: adminBotPaperSlotBranchPriority.core,
+            deadlineBearing: false,
+          });
         }
       }
 
@@ -8661,12 +9108,11 @@ export class AdminBotService {
   /**
    * Send the batches. One Slack message per person, whatever they owe and on however many papers.
    *
-   * Manual only: there is no cron behind this. Nudging the lab is a judgement about timing --
-   * whether a deadline week is the right moment to chase somebody about a poster -- and the person
-   * making that judgement should be looking at the batches when they make it. The route is still
-   * gated to a genuine admin session, and the message is still composed entirely from state, so
-   * pressing the button asks for the standing rule to be applied now rather than composing
-   * anything.
+   * Two callers: the admin's button (a session route, which may narrow the send), and the weekday
+   * cron through `/papers/slot-reminder/scheduled-run`, which sends every batch. It used to be
+   * manual only, but the schedule existed anyway and was refused every weekday, so the domain went
+   * quiet for two months with nobody choosing that. The message is composed entirely from state
+   * and the ledger's cooldown decides who is due, so the schedule chooses nothing a person would.
    *
    * `recipientIds` narrows a send to the people an admin picked out of the preview. Omitted, it
    * sends every batch. Either way the batches themselves are recomputed here rather than taken
@@ -10359,6 +10805,10 @@ export class AdminBotService {
    * Drains on its own. An entry is outstanding while it is escalated and unread, so a member
    * acknowledging the nudge takes them off this list through the path they already use -- there is
    * no second "handled" flag here to forget to set.
+   *
+   * Only full members and major coauthors are listed. The professor only chases the people she
+   * works with directly; everyone else's escalations stay stored, unread and drainable, but are
+   * not hers to follow up, so they are left off rather than crowding the list.
    */
   listEscalatedNudges(): AdminBotServiceResponse<{
     members: Array<{
@@ -10391,7 +10841,11 @@ export class AdminBotService {
         // carry no status at all. They are also the people least likely to ever answer a nudge, so
         // their escalations never drain, which put departed members permanently at the top of the
         // one queue on My Desk that asks the professor to go and chase somebody in person.
-        if (!member || adminBotIsAlumniMember(member)) {
+        //
+        // `adminBotIsDirectCollaborator` asks that and then narrows to full members and major
+        // coauthors (see the doc comment above). Everyone else's escalations are left as they are;
+        // nothing here deletes or re-stamps a notification.
+        if (!member || !adminBotIsDirectCollaborator(member)) {
           return [];
         }
         const escalatedAt = notifications
@@ -11080,6 +11534,7 @@ export class AdminBotService {
             channel: "slack",
             recipient_member_ids: [member.id],
             message,
+            optional: true,
             kind: campaign.notification.kind,
             title: campaign.notification.title,
             ...(campaign.notification.tab ? { tab: campaign.notification.tab } : {}),
@@ -12639,6 +13094,11 @@ export class AdminBotService {
       }
       if (!adminBotReceivesNudges(member)) {
         skipped.push({ member_id: memberId, reason: "member is not on the nudge list" });
+        continue;
+      }
+      // The member's own "stop" (workflows/members/slack-stop.ts) covers the nice-to-haves only.
+      if (request.optional && member.slack_stop_at) {
+        skipped.push({ member_id: memberId, reason: "member replied stop" });
         continue;
       }
       // Filed before the send, and kept whatever the send does. Slack is where the lab talks, but
@@ -14600,6 +15060,7 @@ export class AdminBotService {
           channel: "slack",
           recipient_member_ids: [invite.member_id],
           message: buildCityChannelMessage(invite),
+          optional: true,
           kind: "nudge",
           title: `Added to #${invite.channel}`,
           tab: "adminbotMembers",

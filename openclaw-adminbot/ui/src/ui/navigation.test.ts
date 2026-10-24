@@ -77,7 +77,6 @@ describe("iconForTab", () => {
       adminbotGrantReport: "scrollText",
       adminbotMailingList: "send",
       adminbotProfessor: "lobster",
-      adminbotTravel: "globe",
       adminbotMeetings: "play",
       adminbotTimeAvailability: "clock",
       adminbotSignatures: "penLine",
@@ -142,7 +141,6 @@ describe("titleForTab", () => {
       adminbotGrantReport: "Grant Report",
       adminbotMailingList: "Mailing List",
       adminbotProfessor: "My Desk",
-      adminbotTravel: "Travel History",
       adminbotMeetings: "Meeting Recordings",
       adminbotTimeAvailability: "Time Availability",
       adminbotSignatures: "Signatures for You",
@@ -205,7 +203,6 @@ describe("subtitleForTab", () => {
         "Every paper mapped to a safety area, and the track record behind each ask.",
       adminbotMailingList: "Mail our publications for a date range to one address.",
       adminbotProfessor: "What is waiting on you, across every queue.",
-      adminbotTravel: "Where you have been, from your own sign-ins.",
       adminbotMeetings: "Recordings, attendance and summaries of lab meetings.",
       adminbotTimeAvailability: "Who is committed to what, and when.",
       adminbotSignatures: "Send a document over for signing, and follow where it got to.",
@@ -382,10 +379,17 @@ describe("tabFromPath", () => {
   it("routes the Lab Sharing placeholder", () => {
     expect(tabFromPath("/lab-sharing")).toBe("labSharing");
     // The member Travel tab became part of Events; its old links, in paper cards and Slack, land
-    // there. Kept apart from the head professor's `/travel` history.
+    // there.
     expect(tabFromPath("/lab-travel")).toBe("events");
     expect(tabFromPath("/events")).toBe("events");
-    expect(tabFromPath("/travel")).toBe("adminbotTravel");
+  });
+
+  // The head professor's Travel History was My Desk's second tab. It is gone, and its old links
+  // land on My Desk rather than a 404.
+  it("sends the old Travel History paths to My Desk", () => {
+    expect(tabFromPath("/travel")).toBe("adminbotProfessor");
+    expect(tabFromPath("/adminbot/travel")).toBe("adminbotProfessor");
+    expect(pathForTab("adminbotProfessor")).toBe("/professor");
   });
 
   it("handles base paths", () => {

@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AdminBotStoredProposal } from "../contracts/actions.js";
-import { createAdminBotSlackAdminExecutor } from "./slack-admin.js";
+import {
+  classifySlackInviteFailure,
+  createAdminBotSlackAdminExecutor,
+  type SlackAdminFetch,
+} from "./slack-admin.js";
 
 function proposal(
   type: AdminBotStoredProposal["type"],
@@ -548,5 +552,69 @@ describe("conference intro delivery", () => {
         ),
     ).rejects.toThrow("blocks must be");
     expect(refused).not.toHaveBeenCalled();
+  });
+});
+
+describe("slack.invite_to_channel when the bot is not in the channel", () => {
+  const ok = (body: Record<string, unknown>) => ({
+    ok: true,
+    status: 200,
+    statusText: "OK",
+    text: async () => JSON.stringify(body),
+  });
+  const executor = (fetchImpl: ReturnType<typeof vi.fn>) =>
+    createAdminBotSlackAdminExecutor({
+      env: { SLACK_BOT_TOKEN: "xoxb-test" } as NodeJS.ProcessEnv,
+      fetchImpl: fetchImpl as unknown as SlackAdminFetch,
+    });
+
+  it("joins the channel itself and retries the invite once", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(ok({ ok: false, error: "not_in_channel" }))
+      .mockResolvedValueOnce(ok({ ok: true }))
+      .mockResolvedValueOnce(ok({ ok: true }));
+    await executor(fetchImpl).execute(
+      proposal("slack.invite_to_channel", { channel: "C0ROOM0001", user_id: "U1" }),
+    );
+    expect(fetchImpl.mock.calls.map((call) => call[0])).toEqual([
+      "https://slack.com/api/conversations.invite",
+      "https://slack.com/api/conversations.join",
+      "https://slack.com/api/conversations.invite",
+    ]);
+  });
+
+  it("says why when it cannot join", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(ok({ ok: false, error: "not_in_channel" }))
+      .mockResolvedValueOnce(ok({ ok: false, error: "method_not_supported_for_channel_type" }));
+    await expect(
+      executor(fetchImpl).execute(
+        proposal("slack.invite_to_channel", { channel: "C0ROOM0001", user_id: "U1" }),
+      ),
+    ).rejects.toThrow(/not_in_channel \(join refused: method_not_supported_for_channel_type\)/u);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("classifySlackInviteFailure", () => {
+  it("separates a broken channel from a person the bot cannot add", () => {
+    expect(classifySlackInviteFailure("Slack has no open channel named #help-rec-letters")).toEqual(
+      { scope: "channel", reason: "channel_missing" },
+    );
+    expect(classifySlackInviteFailure("Slack channel invite failed 200: not_in_channel")).toEqual({
+      scope: "channel",
+      reason: "not_in_channel",
+    });
+    expect(
+      classifySlackInviteFailure("Slack channel invite failed 200: user_team_not_in_channel"),
+    ).toEqual({ scope: "member", reason: "user_team_not_in_channel" });
+    expect(
+      classifySlackInviteFailure("Slack channel invite failed 200: org_user_not_in_team"),
+    ).toEqual({ scope: "member", reason: "org_user_not_in_team" });
+    expect(classifySlackInviteFailure("Slack channel lookup failed 500: ratelimited")).toBe(
+      undefined,
+    );
   });
 });

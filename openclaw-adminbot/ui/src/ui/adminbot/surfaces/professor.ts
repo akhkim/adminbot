@@ -6,7 +6,6 @@
 import { nothing } from "lit";
 import type { AppViewState } from "../../app-view-state.ts";
 import { createLazyView, notifyLazyViewHost, renderLazyView } from "../../lazy-view.ts";
-import { loadStoredMemberSession } from "../auth/session.ts";
 import { profileOverviewQuery } from "../controllers/profile-overview-paging.ts";
 import { loadAdminBotProfileOverview } from "../controllers/profile-overview.ts";
 import { openPaperForViewer } from "../projects/open-paper.ts";
@@ -23,7 +22,6 @@ export function renderProfessorSurface(state: AppViewState, scope: AdminBotSurfa
   const desk = state.adminBotProfileOverviewPage.view === "desk";
   return renderLazyView(lazyProfessor, (m) =>
     m.renderProfessorView({
-      localChatSessionToken: loadStoredMemberSession()?.sessionToken ?? "",
       requests: state.adminBotDeskLetters.requests,
       requestsLoading: state.adminBotDeskLetters.loading,
       papers: state.adminBotData?.papers ?? [],

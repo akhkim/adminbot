@@ -67,6 +67,7 @@ import { noteField, parseMemberNotes } from "../data/member-notes.ts";
 import { renderDateControl } from "../date-control.ts";
 import { saveMemberInBackground, waitForMemberSave } from "../member-autosave.ts";
 import { PROFILE_FIELDS, type ProfileField } from "../member-fields.ts";
+import { takeMemberSearchSeed } from "../member-search-seed.ts";
 import { renderMonthDayControl } from "../month-day-control.ts";
 import { multiSelectOptionsFor, renderMultiSelectField } from "../multi-select-field.ts";
 import { notifyFields, nudgeSaveInput } from "../nudge-alerts.ts";
@@ -1746,6 +1747,12 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
                 select.value = [...select.options].some((option) => option.value === value)
                   ? value
                   : "";
+              }
+              const search = form.elements.namedItem("search");
+              const seeded = search instanceof HTMLInputElement ? takeMemberSearchSeed() : null;
+              if (seeded !== null && search instanceof HTMLInputElement) {
+                search.value = seeded;
+                search.scrollIntoView({ block: "nearest" });
               }
               filterMemberSpreadsheet(form);
             });

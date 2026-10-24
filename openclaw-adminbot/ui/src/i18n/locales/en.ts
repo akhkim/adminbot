@@ -607,7 +607,6 @@ export const en: TranslationMap = {
     labOverview: "Lab Overview",
     nudges: "Nudges",
     membership: "Membership",
-    myDesk: "My Desk",
   },
 
   tabs: {
@@ -629,7 +628,6 @@ export const en: TranslationMap = {
     adminbotProfileOverview: "Profile Completeness",
     adminbotTabUsage: "Tab Usage",
     adminbotProfessor: "My Desk",
-    adminbotTravel: "Travel History",
     adminbotTimeAvailability: "Time Availability",
     adminbotMeetings: "Meeting Recordings",
     adminbotSignatures: "Signatures for You",
@@ -688,7 +686,6 @@ export const en: TranslationMap = {
     adminbotProfileOverview: "Who has filled in their profile and planned their term.",
     adminbotTabUsage: "Which parts of AdminBot the lab actually opens.",
     adminbotProfessor: "What is waiting on you, across every queue.",
-    adminbotTravel: "Where you have been, from your own sign-ins.",
     adminbotTimeAvailability: "Who is committed to what, and when.",
     adminbotMeetings: "Recordings, attendance and summaries of lab meetings.",
     adminbotSignatures: "Send a document over for signing, and follow where it got to.",
@@ -906,12 +903,15 @@ export const en: TranslationMap = {
       terminal: "Terminal",
     },
     palette: {
-      placeholder: "Type a command…",
+      placeholder: "Search people, papers, projects or commands…",
       noResults: "No results",
       categories: {
         search: "Search",
         navigation: "Navigation",
         skills: "Skills",
+        members: "Members",
+        papers: "Papers",
+        projects: "Projects",
       },
       items: {
         overview: "Overview",
@@ -1425,6 +1425,27 @@ export const en: TranslationMap = {
       legendCluster: "Nearby cities, combined",
       loading: "Loading the map…",
       empty: "No one is on the map yet. Add your city in Profile to appear here.",
+      searchLabel: "Find someone on the map",
+      searchPlaceholder: "Find a person or city",
+      // A non-admin's map carries no names, so the box can only find cities for them.
+      searchPlaceholderPlaces: "Find a city",
+      searchClear: "Clear the search and show the whole map",
+      searchResults: "Matches on the map",
+      searchCount: "{count} matches",
+      searchNone: "Nobody on the map matches “{query}”.",
+      searchUnplaced:
+        "{count} members are not on the map because their location could not be placed, so they cannot be found here.",
+      searchPersonAria: "{name}, {place}",
+      searchPlaceAria: "{place}, {count} members",
+      searchPlaceMembers: "{count} members",
+      searchAbsentAria: "{name}, not on the map: {reason}",
+      // Why an admin's search finds someone who is not on the map. Only admins see these.
+      absentHidden: "Location hidden: chose not to be on the map",
+      absentIpOff: "Location hidden: IP logging blocked and no city given",
+      absentVpn: "Not on the map: sign-in address ignored as a likely VPN",
+      absentBrowserBlocked: "Not on the map: browser location blocked",
+      absentUnrecognised: "Not on the map: their location could not be recognised",
+      absentNoLocation: "No location yet",
     },
     workSummary: {
       title: "My projects & papers",
@@ -1951,16 +1972,6 @@ export const en: TranslationMap = {
       change: "Change on Events",
     },
   },
-  adminbotTravel: {
-    error: {
-      signIn: "Sign in to read your travel history.",
-      forbidden: "You can only read your own travel history.",
-      unreachable: "Could not reach the AdminBot service at {url}.",
-      notDeployed:
-        "This service build has no travel history yet — the Control UI ships on merge and the service is deployed separately.",
-      failed: "Could not read your travel history.",
-    },
-  },
   recentEdits: {
     title: "Recent edits",
     loading: "reading…",
@@ -2184,7 +2195,31 @@ export const en: TranslationMap = {
         "Attendance isn't counted toward eligibility yet. The figures below are for reference only.",
       attendanceNotTracked: "Meeting attendance isn't tracked yet and isn't counted.",
       memberNote:
-        "The lab looks for no hallucinated-citation desk rejection in the past year and at least {months} months averaging {hours}+ committed hours a week. This is a guide, not a gate — you can still submit.",
+        "The lab looks for no hallucinated-citation desk rejection in the past year and at least {months} months averaging {hours}+ committed hours a week.",
+      readiness: {
+        title: {
+          eligible: "You're set",
+          not_yet: "Almost there",
+          insufficient_data: "We can't tell yet",
+          frozen: "Letter requests paused",
+        },
+        chip: {
+          eligible: "Meets the guidelines",
+          not_yet: "Not yet",
+          insufficient_data: "Missing records",
+          frozen: "Paused",
+        },
+        chipMonthLeft: "{count} month to go",
+        chipMonthsLeft: "{count} months to go",
+        chipFrozen: "Until {date}",
+        chipDaysLeft: "{count} days left",
+        noFreeze: "No citation freeze",
+        hours: "{count} of {required} months at {hours}+ h/week",
+        workedMore: "Worked more?",
+        blankMonths: "{months} are blank.",
+        addMonths: "Add past months →",
+        frozenExplain: "Paused until {date} after a hallucinated-citation desk rejection.",
+      },
       memberNoteAttendance:
         "It also looks for a {window}-month stretch with {rate} attendance at Monday and Wednesday meetings.",
       memberNotYet: "Still to reach: {items}.",
@@ -2521,7 +2556,7 @@ export const en: TranslationMap = {
     whyBody:
       "Places you on the lab map by city, more accurately than your sign-in. Only the city is kept; your exact position is never stored.",
     note: {
-      denied: "Location is off for this site in your browser.",
+      denied: "Location is blocked — click 🔒 in the address bar to allow",
       unavailable: "Couldn't find a city just now.",
     },
   },

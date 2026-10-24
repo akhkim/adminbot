@@ -155,6 +155,22 @@ describe("Slack users.list reader", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
+  it("drops Slack's default silhouette instead of offering it as a photo", () => {
+    const silhouette =
+      "https://secure.gravatar.com/avatar/abc.jpg?s=512&d=https%3A%2F%2Fa.slack-edge.com%2Fdf10d%2Fimg%2Favatars%2Fava_0013-512.png";
+    expect(
+      normalizeSlackUser({ id: "U1", profile: { is_custom_image: false, image_512: "https://avatars.slack-edge.com/x.png" } })
+        .image,
+    ).toBeUndefined();
+    expect(normalizeSlackUser({ id: "U2", profile: { image_512: silhouette } }).image).toBeUndefined();
+    expect(
+      normalizeSlackUser({
+        id: "U3",
+        profile: { is_custom_image: true, image_512: "https://avatars.slack-edge.com/2026/u3_512.jpg" },
+      }).image,
+    ).toBe("https://avatars.slack-edge.com/2026/u3_512.jpg");
+  });
+
   it("rejects a member without an id", () => {
     expect(() => normalizeSlackUser({ profile: {} })).toThrow("without an ID");
   });

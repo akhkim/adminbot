@@ -46,7 +46,10 @@ How the Power Concentration keywords work:
 - `RESEARCH_THEME_IDS` and the classifier are unchanged, so no meeting channel appears for this
   box.
 
-Members with no `http(s)` `avatar_url` are skipped and listed under `skipped_no_photo`.
+Members with no `http(s)` `avatar_url`, or whose avatar is Slack's default silhouette, are skipped
+and listed under `skipped_no_photo`. The Slack roster sync no longer stores the silhouette: it drops
+the image when Slack reports `is_custom_image: false`, and it recognises the silhouette URL
+(`/img/avatars/ava_NNNN`, directly or as a Gravatar fallback) for avatars stored before this check.
 
 **The slide has more faces than the rule finds.** Faces on the live slide were placed by hand from
 more sources than the roster topics, so in most boxes there are more faces than the rule produces.
@@ -159,6 +162,16 @@ member-change trigger, it catches both roster edits and hand edits to the slide.
 - Each run supersedes any earlier open proposal, so there is only ever one card for the slide.
 - A run that produces exactly the same requests as the open card returns that card unchanged.
 
+**Unattended runs.** With `ADMINBOT_SLIDES_AUTO_APPLY=1`, a plan that only adds faces is approved
+as `adminbot:slides-auto-apply` and written in the same run, so the weekly job keeps the slide
+current with nobody watching the queue. A plan that deletes anything still waits for an admin.
+Re-running is safe: once the slide matches, the plan is empty and nothing is written.
+
+**Failures.** A failed read or write is audited as `slides.working_groups_failed` and the cron script
+exits non-zero, which the automation health check turns into one admin alert. A deck that is not
+configured is also a failure (the script used to exit 0 on the 503 and hide it). To turn the job
+off on purpose, set `ADMINBOT_SLIDES_WORKING_GROUPS_DISABLED=1` in the cron environment.
+
 ## Setup
 
 AdminBot reads and writes the deck through the `gog` CLI, as `GOG_ACCOUNT`. This is the same
@@ -186,6 +199,7 @@ is no separate service account or key file.
    # ADMINBOT_SLIDES_WORKING_GROUPS_SLIDE_TITLE="Scaling to 50-100 Technical Members"
    ADMINBOT_SLIDES_WRITE=0
    # ADMINBOT_SLIDES_ALLOW_REMOVALS=0
+   # ADMINBOT_SLIDES_AUTO_APPLY=0
    ```
 
 5. **Check the preview before enabling writes.** Restart AdminBot and open
@@ -195,7 +209,9 @@ is no separate service account or key file.
    - nothing unexpected appears under `would_remove`.
 6. **Enable writes.** Set `ADMINBOT_SLIDES_WRITE=1` and restart. While it is `0`, approved proposals
    are validated but nothing is written.
-7. **Register the cron job.** Run `scripts/adminbot-cron-sync.sh`.
+7. **Turn on unattended runs.** Set `ADMINBOT_SLIDES_AUTO_APPLY=1` (needs `ADMINBOT_SLIDES_WRITE=1`
+   and `ADMINBOT_SLIDES_FACE_FOLDER_ID`; AdminBot refuses to start otherwise) and restart.
+8. **Register the cron job.** Run `scripts/adminbot-cron-sync.sh`.
 
 ## Limits
 

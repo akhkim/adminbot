@@ -8,8 +8,8 @@
   "jobs": [
     {
       "name": "adminbot-active-channels",
-      "description": "Remove ineligible accounts from active Slack channels, the Monday meeting, and lab calendar subscriptions",
-      "cron": "0 8 * * 0",
+      "description": "Daily: remove ineligible accounts from active Slack channels, the Monday meeting, and lab calendar subscriptions",
+      "cron": "0 8 * * *",
       "argv": ["bash", "scripts/adminbot-active-channels-cron.sh"],
       "timeoutSeconds": 1800
     },
@@ -352,6 +352,26 @@
       "timeoutSeconds": 900
     },
     {
+      "name": "adminbot-openreview-results",
+      "description": "Snapshot decisions on the PI's own OpenReview submissions, daily",
+      "cron": "35 7 * * *",
+      "argv": [
+        "bash",
+        "scripts/adminbot-openreview-results-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
+      "name": "adminbot-paper-openreview-sync",
+      "description": "Update paper submissions and decisions from OpenReview (snapshot and the PI's notification export), daily",
+      "cron": "55 8 * * *",
+      "argv": [
+        "bash",
+        "scripts/adminbot-paper-openreview-sync-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
       "name": "adminbot-paper-stages",
       "description": "Verify paper evidence, advance each paper on it, and queue the ones at the PI's gate",
       "cron": "45 * * * *",
@@ -423,8 +443,8 @@
     },
     {
       "name": "adminbot-local-event-audience",
-      "description": "Reconcile the Zurich lunch guest list with where members are",
-      "cron": "40 7 * * 1",
+      "description": "Automatically invite local members to all upcoming lab lunches, without removing guests",
+      "cron": "40 7 * * *",
       "argv": [
         "bash",
         "scripts/adminbot-local-event-audience-cron.sh"
@@ -473,6 +493,13 @@
         "discover"
       ],
       "timeoutSeconds": 1800
+    },
+    {
+      "name": "adminbot-automation-health",
+      "description": "Hourly check that every job still runs and its actions still succeed; tells the admins once per issue",
+      "cron": "50 * * * *",
+      "argv": ["bash", "scripts/adminbot-automation-health-cron.sh"],
+      "timeoutSeconds": 300
     }
   ]
 }

@@ -9,6 +9,7 @@ import type {
   SlackDirectoryReader,
   SlackDirectoryUser,
 } from "../workflows/members/slack-roster-sync.js";
+import { isSlackDefaultAvatar } from "../workflows/members/slack-avatar.js";
 import { adminBotSlackBotToken } from "./slack-admin.js";
 
 /** The fetch this reader needs: SlackAdminFetch plus response headers, for Retry-After. */
@@ -51,6 +52,8 @@ type RawSlackUser = {
     image_512?: unknown;
     image_192?: unknown;
     image_72?: unknown;
+    /** False when the person never uploaded a photo and Slack serves its default silhouette. */
+    is_custom_image?: unknown;
   };
 };
 
@@ -70,7 +73,15 @@ export function normalizeSlackUser(raw: RawSlackUser): SlackDirectoryUser {
     email: text(profile.email)?.toLowerCase(),
     title: text(profile.title),
     tz: text(raw.tz),
-    image: text(profile.image_512) ?? text(profile.image_192) ?? text(profile.image_72),
+    // Slack's silhouette is not a photo: offering it would overwrite nothing useful at best and
+    // put a placeholder on the slide and the map at worst. The URL check covers payloads that
+    // omit the flag.
+    image:
+      profile.is_custom_image === false
+        ? undefined
+        : [text(profile.image_512), text(profile.image_192), text(profile.image_72)].find(
+            (url) => url && !isSlackDefaultAvatar(url),
+          ),
   };
   return {
     id,
