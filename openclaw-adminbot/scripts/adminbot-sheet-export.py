@@ -274,16 +274,21 @@ notifications_total notifications_unread notifications_last_at notification_kind
 tab_visits_count logistics_requests paper_weekly_updates conference_attendances name
 password_resets feedback_submitted active_sessions paper_slots_provided paper_slots_waived
 papers_authored_count papers_authored papers_submitted_count papers_submitted
-audit_events_as_actor update_events_as_actor update_events_as_subject calendar_group'''.split())
+audit_events_as_actor update_events_as_actor update_events_as_subject calendar_group search'''.split())
 
 
+# Name first and frozen: it is what the PI scans and searches for, on a phone as much as on a laptop.
 PEOPLE_PRIORITY = (
-    'id', 'join_date', 'status', 'member_type', 'slack_active', 'membership_review', 'privilege_level',
+    'name', 'id', 'join_date', 'status', 'member_type', 'slack_active', 'membership_review', 'privilege_level',
     'collaborator_subgroup', 'role', 'location', 'current_city', 'timezone',
     'slack_messages_7d', 'receives_nudges', 'hours_per_week', 'affiliation',
     'calendar_group', 'last_login_at', 'compute_access', 'availability',
-    'papers_authored_count',
+    'papers_authored_count', 'search',
 )
+# Text the 'search' column joins, so one filter or Ctrl-F hit finds a person by any of them.
+PEOPLE_SEARCH_FIELDS = ('name', 'preferred_name', 'id', 'email', 'correspondence_email', 'member_type', 'role',
+                        'affiliation', 'current_city', 'location', 'research_branch', 'research_topics', 'projects')
+SEARCH_LIMIT = 4000
 
 
 def ordered_people_columns(columns):
@@ -1088,6 +1093,19 @@ def people_review_fields(record):
             'Status unknown' if not status else 'Recorded ' + status}
 
 
+def people_search_text(record, papers):
+    """Name, aliases, contacts, topics, projects and authored papers with venues, deduplicated, in one cell."""
+    parts = [cell(record.get(field)) for field in PEOPLE_SEARCH_FIELDS]
+    parts += [' '.join(filter(None, (cell(p.get('title')), cell(p.get('venue'))))) for p in papers]
+    seen, terms = set(), []
+    for part in parts:
+        part = ' '.join(part.split())
+        if part and part.casefold() not in seen:
+            seen.add(part.casefold())
+            terms.append(part)
+    return ' | '.join(terms)[:SEARCH_LIMIT]
+
+
 def full_people_values(connection, members, papers, timestamp):
     """Export recorded fields and ID-linked aggregates; never read auth secrets."""
     tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
@@ -1122,6 +1140,7 @@ def full_people_values(connection, members, papers, timestamp):
         submitted = [p['id'] for p in papers if p.get('submitted_by_member_id') == record['id']]
         record.update(papers_authored=authored, papers_authored_count=len(authored),
                       papers_submitted=submitted, papers_submitted_count=len(submitted))
+        record['search'] = people_search_text(record, [p for p in papers if p['id'] in authored])
 
     # Missing tables stay unknown; zero is only used when the table exists.
     for table, key, output in [

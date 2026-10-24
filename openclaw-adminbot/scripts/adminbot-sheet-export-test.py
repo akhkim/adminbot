@@ -85,7 +85,7 @@ assert c.total_changes == before
 print('PASS: allowlist, missing status, venue fallback, RAW formula safety, read-only snapshot')
 
 headers = ['name', 'id', 'notes', 'member_type', 'join_date', 'status', 'other']
-expected = ['id', 'join_date', 'status', 'member_type', 'name', 'notes', 'other']
+expected = ['name', 'id', 'join_date', 'status', 'member_type', 'notes', 'other']
 assert exporter.ordered_people_columns(headers) == expected
 requests = exporter.people_layout_requests(headers, 123)
 for request in requests[:-1]:
@@ -98,9 +98,9 @@ print('PASS: requested column order, remaining-column preservation, repeat-safe 
 
 full = [['name', 'id', 'status', 'calendar_group', 'extra'], ['=SUM(1)', 'p1', 'active', 'lab'], ['Person 2', 'p2']]
 ordered = exporter.order_people_values(full)
-assert ordered[0] == ['id', 'status', 'calendar_group', 'name', 'extra']
-assert ordered[1] == ['p1', 'active', 'lab', '=SUM(1)', '']
-assert ordered[2] == ['p2', '', '', 'Person 2', '']
+assert ordered[0] == ['name', 'id', 'status', 'calendar_group', 'extra']
+assert ordered[1] == ['=SUM(1)', 'p1', 'active', 'lab', '']
+assert ordered[2] == ['Person 2', 'p2', '', '', '']
 assert exporter.order_people_values(ordered) == ordered
 assert exporter.snapshot(c, '', full)['data'][0]['values'] == ordered
 for invalid in [[], [['name']], [['id', 'id']], [['id'], ['p', 'extra']]]:
@@ -165,7 +165,31 @@ assert {r['range']['sheetId'] for r in clears} == {1, 2}
 assert len([r for r in requests if 'addTable' in r]) == 2
 assert [r['range']['startRowIndex'] for r in clears] == [1, 0]
 assert clears[1]['fields'] == 'userEnteredValue,userEnteredFormat'
-assert len([r for r in requests if 'addFilterView' in r]) == 13
+assert len([r for r in requests if 'addFilterView' in r]) == 14
+full_view = next(r['addFilterView']['filter'] for r in requests
+                 if r.get('addFilterView', {}).get('filter', {}).get('title') == 'Full members')
+people_headers = direct['data'][0]['values'][0]
+assert full_view['criteria'] == {str(people_headers.index('member_type')): {'condition': {
+    'type': 'TEXT_CONTAINS', 'values': [{'userEnteredValue': 'full'}]}}}
+assert people_headers[0] == 'name'
+# Search joins name, ids and authored papers; secondary columns sit behind one collapsed group per tab.
+assert 'New person' in new['search'] and 'new' in new['search'].split(' | ')
+groups = [r for r in requests if 'addDimensionGroup' in r]
+assert [g['addDimensionGroup']['range']['sheetId'] for g in groups] == [1, 2]
+assert groups[0]['addDimensionGroup']['range']['startIndex'] == len(exporter.PEOPLE_PRIORITY)
+assert groups[1]['addDimensionGroup']['range'] == {'sheetId': 2, 'dimension': 'COLUMNS',
+    'startIndex': len(refresh.PAPER_CORE), 'endIndex': len(exporter.PAPERS)}
+assert sum('updateDimensionGroup' in r for r in requests) == 2
+existing = {**properties, 'PeopleList': {**properties['PeopleList'], 'columnGroups': [
+    {'range': {'sheetId': 1, 'dimension': 'COLUMNS', 'startIndex': len(exporter.PEOPLE_PRIORITY),
+               'endIndex': len(people_headers)}, 'depth': 1, 'collapsed': False}]}}
+again = refresh.refresh_requests(direct, existing)
+assert sum('addDimensionGroup' in r for r in again) == 1  # people group kept, expanded state untouched
+stale = {**properties, 'PaperList': {**properties['PaperList'], 'columnGroups': [
+    {'range': {'sheetId': 2, 'dimension': 'COLUMNS', 'startIndex': 3, 'endIndex': 9}, 'depth': 1}]}}
+regrouped = refresh.refresh_requests(direct, stale)
+assert any(r.get('deleteDimensionGroup', {}).get('range', {}).get('startIndex') == 3 for r in regrouped)
+print('PASS: name-first people, search column, Full members view, collapsible secondary columns')
 incomplete_view = next(r['addFilterView']['filter'] for r in requests
                        if r.get('addFilterView', {}).get('filter', {}).get('title') == 'Incomplete')
 assert incomplete_view['criteria'] == {str(exporter.PAPERS.index('Incomplete')): {'condition': {'type': 'NOT_BLANK'}}}
@@ -212,8 +236,11 @@ properties['PaperList']['filterViews'][0].pop('tableId')
 recreated = refresh.refresh_requests(direct, properties)
 assert {'deleteFilterView': {'filterId': 43}} in recreated
 assert any(r.get('addFilterView', {}).get('filter', {}).get('title') == 'By stage' for r in recreated)
+# Only PaperList wipes formats; PeopleList keeps hand formatting and gets targeted styling only.
 assert all(r.get('repeatCell', {}).get('range', {}).get('sheetId') == 2 for r in restyled
-           if r.get('repeatCell', {}).get('fields', '').startswith('userEnteredFormat'))
+           if r.get('repeatCell', {}).get('fields', '') == 'userEnteredValue,userEnteredFormat')
+assert all(r['repeatCell']['fields'].startswith('userEnteredFormat.') for r in restyled
+           if r.get('repeatCell', {}).get('range', {}).get('sheetId') == 1 and 'userEnteredFormat' in r['repeatCell']['fields'])
 paper_write = next(r['updateCells'] for r in requests if 'updateCells' in r and r['updateCells']['range']['sheetId'] == 2)
 assert paper_write['rows'][1]['values'][0] == {'userEnteredValue': {'stringValue': '=IMPORTXML("private")'}}
 invalid = json.loads(json.dumps(direct))
