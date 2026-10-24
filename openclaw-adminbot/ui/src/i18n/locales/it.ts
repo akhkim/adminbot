@@ -598,7 +598,7 @@ export const it: TranslationMap = {
     gettingStarted: "Getting Started",
     myWork: "My Projects & Papers",
     labSharing: "Lab Sharing",
-    labTravel: "Travel",
+    labTravel: "Events",
     events: "Eventi",
     agents: "Agenti",
     adminbot: "Pending Actions",
@@ -1840,7 +1840,7 @@ export const it: TranslationMap = {
       lookupNone: "No one from the lab will be in {place} then.",
     },
     notice: {
-      signIn: "Sign in to use Travel.",
+      signIn: "Sign in to use Events.",
       rsvpSaved: "Saved your RSVP for {conference}.",
       rsvpWithdrawn: "You are no longer going to {conference}.",
       plansSaved: "Saved your travel plans.",
@@ -1850,12 +1850,12 @@ export const it: TranslationMap = {
       citySaved: "Sharing that you are in {city}.",
     },
     paperCard: {
-      none: "Going to this conference? RSVP on the Travel tab.",
+      none: "Going to this conference? Say so on the Events tab.",
       going: "You are going to this conference.",
       goingAirbnb: "You are going, and staying in the lab Airbnb.",
       undecided: "You said maybe for this conference.",
-      rsvp: "RSVP on Travel",
-      change: "Change on Travel",
+      rsvp: "RSVP on Events",
+      change: "Change on Events",
     },
   },
   events: {
