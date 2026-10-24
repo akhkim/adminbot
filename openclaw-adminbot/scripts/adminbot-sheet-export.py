@@ -45,7 +45,7 @@ VENUE_NOTES = {
 # Plain-language layout: what the PI acts on first, links next, record-keeping detail last.
 PAPERS = ('Paper', 'Urgency', 'PI review', 'Review for', 'Review link', 'Due (Toronto)', 'Authors',
           'Requested by', 'Requested on', 'Request note', 'Venue', 'Venue deadline (Toronto)',
-          'OpenReview', 'Stage', 'Lead', 'Blocker / next step', 'Link problems', 'Still missing', 'Mentor review', 'Co-author feedback', 'Accepted',
+          'OpenReview', 'Stage', 'Lead', 'Incomplete', 'Blocker / next step', 'Link problems', 'Still missing', 'Mentor review', 'Co-author feedback', 'Accepted',
           'Going to conference', 'Started', 'Last updated', 'Feedback givers', 'Checks',
           'Venue (as entered)', 'All artifact statuses', PAPER_ID)
 LINK_COLUMNS = ('Review link',)
@@ -500,6 +500,69 @@ def urgency(hard, soft, waiting_since, now, prefix='Due', soft_name='soft target
     return '', 9
 
 
+# The closed set of 'PI review' values, first match wins. Every paper gets exactly one; a paper none
+# of these rules describes reads 'Other: <reason>' and is counted in the sheet, which is the cue to
+# add a rule here rather than a value nobody filters for. Accepted / Rejected / Withdrawn come only
+# from the PI's OpenReview, never from what AdminBot's record claims.
+# A paper before submission needs the PI's review this long before its venue's hard deadline.
+REVIEW_LEAD_DAYS = 21
+# A paper before submission with no update for this long counts as stuck.
+STUCK_DAYS = 30
+PI_REVIEW_RULES = (
+    ('Blocked: link access', 'A review is pending but the link sent for it does not open for the PI'),
+    ('Needs PI review', 'A review request is pending and its deadline is ahead or it has none'),
+    ('Accepted', 'OpenReview: accepted'),
+    ('Rejected', 'OpenReview: rejected or desk rejected'),
+    ('Withdrawn', 'OpenReview: withdrawn'),
+    ('Submitted on OpenReview', 'OpenReview: under review, or an ARR submission settled the request'),
+    ('Past deadline', 'The only pending request is ARR feedback whose cycle has closed'),
+    ('Approved', 'PI approval recorded after every request; shown as "Approved <date>"'),
+    ('Waiting on author', f'Before submission, a hard venue deadline within {REVIEW_LEAD_DAYS} days, nothing sent for PI review'),
+    ('No PI review needed', f'Nothing requested and no deadline asks for one: past submission, or no deadline in {REVIEW_LEAD_DAYS} days'),
+    ('Accepted elsewhere', 'Accepted per AdminBot at a venue the PI\'s OpenReview does not show'),
+    ('Other', 'None of the above; the reason follows the colon'),
+)
+PI_REVIEW_VALUES = tuple(value for value, _ in PI_REVIEW_RULES)
+
+
+def pi_review_status(top, requests, approved_at, review, record, stage, deadline, locked_review, now):
+    """One value from PI_REVIEW_RULES for a paper (with '<date>' / '<reason>' filled in)."""
+    outcome = (review or {}).get('status')
+    if top and top['rank'] < 50:
+        return 'Blocked: link access' if locked_review else 'Needs PI review'
+    if outcome == 'accepted':
+        return 'Accepted'
+    if outcome in ('rejected', 'desk_rejected'):
+        return 'Rejected'
+    if outcome == 'withdrawn':
+        return 'Withdrawn'
+    if outcome == 'under_review' or any(r.get('submitted') for r in requests):
+        return 'Submitted on OpenReview'
+    if top:
+        return 'Past deadline'
+    if approved_at:
+        return 'Approved ' + toronto(approved_at, False)
+    if outcome:
+        return f'Other: OpenReview status {outcome}'
+    if record.get('venue_decision') == 'accept' or record.get('accepted_venue'):
+        return 'Accepted elsewhere'
+    if not stage:
+        return 'Other: no stage recorded'
+    if stage not in STAGES:
+        return f'Other: unknown stage {stage}'
+    hard = deadline and not deadline.get('soft_only') and deadline.get('at')
+    if stage in PRE_SUBMISSION and not record.get('under_review') and hard and 0 <= days_until(hard, now) <= REVIEW_LEAD_DAYS:
+        return 'Waiting on author'
+    return 'No PI review needed'
+
+
+def status_kind(status):
+    """'Approved Thu Oct 1, 2026' -> 'Approved', 'Other: x' -> 'Other'."""
+    # Longest first, so 'Accepted elsewhere' is not read as 'Accepted'.
+    return next((value for value in sorted(PI_REVIEW_VALUES, key=len, reverse=True) if status == value
+                 or value == 'Approved' and status.startswith('Approved ')), 'Other')
+
+
 def due_text(request):
     hard, soft = request.get('hard'), request.get('soft')
     if hard and soft and soft < hard:
@@ -841,10 +904,8 @@ def paper_row(record, members, slots, deadlines, now, access=None, openreview=()
     pending = sorted((r for r in requests if r['pending']),
                      key=lambda r: (r['rank'], r['effective_due'] or far, priority(r), r['at'] or now))
     top = pending[0] if pending else None
-    if top and top['rank'] == 50:
-        label, rank, status = top['label'], top['rank'], 'Past ARR deadline'
-    elif top:
-        label, rank, status = top['label'], top['rank'], 'Needs PI review'
+    if top:
+        label, rank = top['label'], top['rank']
     else:
         deadline = deadline or {}
         soft = deadline if deadline.get('soft_only') else deadline.get('soft')
@@ -854,8 +915,6 @@ def paper_row(record, members, slots, deadlines, now, access=None, openreview=()
         deadline = deadline or None
         rank = 10 + rank if label and rank <= 2 else 99
         label = label if rank < 99 else ''
-        status = ('Approved ' + toronto(approved_at, False)) if approved_at else (
-            'Submitted on OpenReview' if any(r.get('submitted') for r in requests) else '')
     # Every link in one cell, most useful first, each under its real name. The request's own link
     # leads as 'Sent for review' only when it is not already one of the paper's links.
     review_links = []
@@ -875,6 +934,24 @@ def paper_row(record, members, slots, deadlines, now, access=None, openreview=()
                      if r['status'] == 'invalid' and not links.get(LINK_OF_SLOT.get(r['slot']))]
     link_problems += [f'{label}: {problem}' for label, problem in locked.items()
                       if not (can_open and problem.startswith('project'))]
+    # The review is blocked when the link it was sent with (else every Overleaf link) is one the PI
+    # cannot open and no other Overleaf link of the paper opens instead.
+    locked_urls = {links.get(c) for c in locked} | ({top['url']} if top and 'Sent for review' in locked else set())
+    locked_review = bool(top) and (
+        top['url'] in locked_urls and not (can_open and overleaf_kind(top['url'])) if top['url']
+        else bool(locked) and not can_open)
+    status = pi_review_status(top, requests, approved_at, review, record, stage, deadline, locked_review, now)
+    updated = parse_time(record.get('updated_at') or '')
+    incomplete = []
+    if status.startswith('Blocked:'):
+        incomplete.append('PI cannot open the link sent for review')
+    if link_problems:
+        incomplete.append('Fix link' + ('s' if len(link_problems) > 1 else '') + ': ' + '; '.join(link_problems))
+    if stage in PRE_SUBMISSION and status_kind(status) in ('Waiting on author', 'No PI review needed') and updated and (
+            now - updated).days >= STUCK_DAYS:
+        incomplete.append(f'Stuck: no update for {(now - updated).days} days in {STAGES[stage]}')
+    if status_kind(status) == 'Other':
+        incomplete.append('Status unclassified: ' + status.partition(': ')[2])
     owner_id = record.get('lead_owner_member_id')
     name = lambda member_id: members.get(member_id, {}).get('name', member_id or '')
     row = {
@@ -895,6 +972,7 @@ def paper_row(record, members, slots, deadlines, now, access=None, openreview=()
         'OpenReview': openreview_text(review),
         'Stage': STAGES.get(stage, stage or ''),
         'Lead': record.get('lead_owner') or name(owner_id),
+        'Incomplete': '\n'.join(incomplete),
         'Blocker / next step': '\n'.join(str(x) for x in [artifacts.get('blocker_title'), artifacts.get('blocker_note'),
                                                          record.get('next_action')] if x),
         'Link problems': '\n'.join(link_problems),
@@ -911,7 +989,7 @@ def paper_row(record, members, slots, deadlines, now, access=None, openreview=()
         'All artifact statuses': '\n'.join(sorted(f"{r['slot']}: {r['status']}" for r in slots)),
         PAPER_ID: record['id'],
     }
-    updated = parse_time(record.get('updated_at') or '')
+    row['_link_problems'] = link_problems
     row['_sort'] = (0 if top and rank < 50 else 1, rank, (top or {}).get('effective_due') or (deadline or {}).get('at') or far,
                     priority(top) if top else 0, (top or {}).get('at') or now, -(updated.timestamp() if updated else 0), row['Paper'], record['id'])
     return row
@@ -1133,6 +1211,7 @@ def snapshot(connection, timestamp, people_values=None, full_people=False, link_
         openreview = list(openreview or []) + citation_check_results(connection)
         now = parse_time(timestamp) or datetime.datetime.now(datetime.timezone.utc)
         paper_links = None
+        link_problems, status_counts = {}, Counter()
         for table, tab, fields in (
             ('adminbot_lab_members', 'PeopleList', ordered_people_columns(PEOPLE)),
             ('adminbot_papers', 'PaperList', PAPERS),
@@ -1146,11 +1225,17 @@ def snapshot(connection, timestamp, people_values=None, full_people=False, link_
                 if tab == 'PaperList':
                     record['going_attendees'] = '\n'.join(sorted(
                         going_by_paper[record['id']].values(), key=str.casefold))
-                    rows.append(paper_row(record, member_index, slots_by_paper[record['id']], deadlines, now, link_access, openreview))
+                    row = paper_row(record, member_index, slots_by_paper[record['id']], deadlines, now, link_access, openreview)
+                    if row['_link_problems']:
+                        link_problems[record['id']] = row['_link_problems']
+                    status_counts[status_kind(row['PI review'])] += 1
+                    rows.append(row)
                 else:
                     rows.append([cell(record.get(field)) for field in fields])
             if tab == 'PaperList':
                 rows.sort(key=lambda row: row.pop('_sort'))
+                for row in rows:
+                    row.pop('_link_problems')
                 # Cells show labels; (label, url) pairs travel separately and become per-label hyperlinks.
                 paper_links = [[[] for _ in fields], *[
                     [[list(pair) for pair in row[f]] if f in LINK_COLUMNS else [] for f in fields] for row in rows]]
@@ -1166,7 +1251,9 @@ def snapshot(connection, timestamp, people_values=None, full_people=False, link_
     finally:
         connection.rollback()
     # RAW is mandatory: a name/title beginning with '=' must remain text, not a formula.
-    return {'valueInputOption': 'RAW', 'data': data, 'paperLinks': paper_links}
+    return {'valueInputOption': 'RAW', 'data': data, 'paperLinks': paper_links,
+            'statusCounts': {value: status_counts[value] for value in PI_REVIEW_VALUES if status_counts[value]},
+            'linkProblems': link_problems}
 
 
 def main():
@@ -1187,7 +1274,8 @@ def main():
         if args.people_export and args.full_people:
             parser.error('--people-export and --full-people are mutually exclusive')
         payload = snapshot(connection, datetime.datetime.now(datetime.timezone.utc).isoformat(), people_values, args.full_people)
-        payload.pop('paperLinks')
+        for key in ('paperLinks', 'statusCounts', 'linkProblems'):
+            payload.pop(key)
     # Keep freeze requests separate from the values API payload.
     if args.people_sheet_id is not None or args.papers_sheet_id is not None:
         payload = {'valuesBatch': payload, 'layoutRequests': [

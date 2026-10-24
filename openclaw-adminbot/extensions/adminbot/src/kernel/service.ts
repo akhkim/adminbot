@@ -1246,6 +1246,13 @@ export type AdminBotServiceOptions = {
    */
   paperflowPriorityMemberId?: string;
   /**
+   * Paper links the PI cannot open (restricted or "request access" Overleaf projects, Drive
+   * files that do not resolve), keyed by paper id. Only the sheet export can probe them, and it
+   * runs as another Unix user, so it leaves a file next to the database and the persistence layer
+   * reads it here; no reader, or a stale file, means no link nudges rather than wrong ones.
+   */
+  paperLinkProblems?: () => ReadonlyMap<string, readonly string[]>;
+  /**
    * Asks Google whether a Drive file a paper points at is really there.
    *
    * Injected rather than imported, like every other outward-facing read: a deployment with no
@@ -8543,6 +8550,7 @@ export class AdminBotService {
       Map<string, { venue?: string; deadline?: string; items: NudgeItem[] }>
     >();
     const stamped: Array<{ item: NudgeItem; memberId: string }> = [];
+    const linkProblemsByPaper = this.options.paperLinkProblems?.() ?? new Map<string, string[]>();
 
     const enqueue = (memberId: string, paper: AdminBotPaperRecord, item: NudgeItem) => {
       const key = `${item.domain}|${item.subjectId}|${memberId}`;
@@ -8577,6 +8585,22 @@ export class AdminBotService {
       )) {
         for (const memberId of this.resolvePaperSlotOwner(paper, item.owner)) {
           enqueue(memberId, paper, item);
+        }
+      }
+
+      // The sheet marks these Incomplete; the first author is the one who can share the project.
+      const linkProblems = linkProblemsByPaper.get(paper.id);
+      if (linkProblems?.length) {
+        for (const memberId of this.resolvePaperSlotOwner(paper, "first_author")) {
+          enqueue(memberId, paper, {
+            domain: "paper_slot",
+            subjectId: `${paper.id}:link_access`,
+            owner: "first_author",
+            label: "Fix the paper link the PI cannot open",
+            detail: linkProblems.join("; "),
+            priority: adminBotPaperSlotBranchPriority.core,
+            deadlineBearing: false,
+          });
         }
       }
 
