@@ -12,6 +12,7 @@
 import { html, nothing } from "lit";
 import { live } from "lit/directives/live.js";
 import { t } from "../../../i18n/index.ts";
+import { pathForTab } from "../../navigation.ts";
 import {
   isRecLetterEligibility,
   type RecLetterAdminEligibility,
@@ -19,7 +20,6 @@ import {
   type RecLetterAttestationCriterion,
   type RecLetterAttested,
   type RecLetterEligibility,
-  type RecLetterEligibilityGap,
   type RecLetterEligibilityStatus,
   type RecLetterEligibilitySummary,
   type RecLetterFreezeIncident,
@@ -114,30 +114,6 @@ export function renderRecLetterBadge(summary: RecLetterEligibilitySummary | unde
     title=${t("logistics.eligibility.advisory")}
     >${label}</span
   >`;
-}
-
-function gapText(gap: RecLetterEligibilityGap, result: RecLetterEligibility): string {
-  switch (gap.code) {
-    case "frozen":
-      return t("logistics.eligibility.frozenUntil", { date: formatRecLetterDay(gap.frozen_until) });
-    case "hours_short":
-      return t("logistics.eligibility.gap.hours_short", {
-        count: String(gap.qualifying_months),
-        required: String(gap.required_months),
-      });
-    case "hours_not_enough_history":
-      return t("logistics.eligibility.gap.hours_not_enough_history", {
-        count: String(gap.qualifying_months),
-        required: String(gap.required_months),
-      });
-    case "attendance_below_threshold":
-      return t("logistics.eligibility.gap.attendance_below_threshold", {
-        window: String(result.attendance.window_months),
-        rate: percent(result.attendance.min_rate),
-      });
-    default:
-      return t(`logistics.eligibility.gap.${gap.code}`);
-  }
 }
 
 function renderAttested(
@@ -424,94 +400,178 @@ export type RecLetterAdvisoryProps = {
   value: RecLetterEligibility | null;
   loading: boolean;
   error: string | null;
+  /** Where the app is mounted, so "add past months" reaches the availability page. */
+  basePath?: string;
 };
 
+type ReadinessMark = "met" | "todo" | "unknown" | "paused" | "off";
+
+function renderReadinessItem(mark: ReadinessMark, body: unknown, testId?: string) {
+  const glyph = mark === "met" ? "✓" : mark === "paused" ? "‖" : "";
+  return html`<li
+    class="rec-readiness__item rec-readiness__item--${mark}"
+    data-testid=${testId ?? nothing}
+  >
+    <span class="rec-readiness__mark" aria-hidden="true">${glyph}</span>
+    <span class="rec-readiness__body">${body}</span>
+  </li>`;
+}
+
 /**
- * The note on the member's own letters form.
+ * One segment per required month: filled for a qualifying month, hatched for a month with no
+ * record (unknown, not zero), empty for the rest. Purely a picture -- the checklist says it in words.
+ */
+function renderReadinessBar(result: RecLetterEligibility, unknown: number) {
+  const required = Math.max(1, result.hours.required_months);
+  const met = Math.min(result.hours.qualifying_months, required);
+  const hatched = Math.min(unknown, required - met);
+  return html`<div class="rec-readiness__bar" aria-hidden="true">
+    ${Array.from({ length: required }, (_, index) => {
+      const kind = index < met ? "met" : index < met + hatched ? "unknown" : "open";
+      return html`<i class="rec-readiness__segment rec-readiness__segment--${kind}"></i>`;
+    })}
+  </div>`;
+}
+
+function readinessChip(result: RecLetterEligibility): string {
+  if (result.status === "frozen" && result.freeze.frozen_until) {
+    return t("logistics.eligibility.readiness.chipFrozen", {
+      date: formatRecLetterDay(result.freeze.frozen_until),
+    });
+  }
+  if (result.status === "not_yet") {
+    const left = Math.max(0, result.hours.required_months - result.hours.qualifying_months);
+    if (left > 0) {
+      return t(
+        left === 1
+          ? "logistics.eligibility.readiness.chipMonthLeft"
+          : "logistics.eligibility.readiness.chipMonthsLeft",
+        { count: String(left) },
+      );
+    }
+  }
+  return t(`logistics.eligibility.readiness.chip.${result.status}`);
+}
+
+/** Whole days from the result's own date to the end of the freeze, so the count never drifts. */
+function daysUntil(asOf: string, until: string): number | null {
+  const from = Date.parse(`${asOf}T12:00:00Z`);
+  const to = Date.parse(`${until}T12:00:00Z`);
+  return Number.isNaN(from) || Number.isNaN(to)
+    ? null
+    : Math.max(0, Math.round((to - from) / 864e5));
+}
+
+/**
+ * The readiness card on the member's own letters form.
  *
- * It states the policy whatever the read returned, so a member whose read failed still learns what
- * the lab looks at. A failure, or a result missing its parts, gets one muted line and nothing
- * more: the form is the member's to submit either way.
+ * It reads as progress, not as a verdict: a headline, a bar of the months, and a checklist where
+ * every open item says what the member can do about it. Nothing here is red and nothing disables
+ * Submit -- the policy guides the letter writer, it does not gate the request, and a member who is
+ * short of it is usually just early. A failed read still states the policy in one line, so the
+ * member learns what the lab looks at either way.
  */
 export function renderRecLetterAdvisory(props: RecLetterAdvisoryProps) {
   const result = isRecLetterEligibility(props.value) ? props.value : null;
   const counted = result ? attendanceCounted(result) : false;
-  const remaining = result
-    ? result.missing.filter(
-        (gap) => gap.code !== "frozen" && (counted || !gap.code.startsWith("attendance_")),
-      )
-    : [];
   const unknown = result ? monthsWithoutData(result) : [];
-  return html`
-    <aside
-      class="rec-eligibility rec-eligibility--advisory"
+  const availability = pathForTab("adminbotTimeAvailability", props.basePath ?? "");
+  const policy = t("logistics.eligibility.memberNote", {
+    months: String(result?.hours.required_months ?? 5),
+    hours: String(result?.hours.min_weekly_hours ?? 20),
+  });
+  if (!result) {
+    return html`<aside
+      class="rec-eligibility rec-readiness"
       role="note"
       data-testid="rec-eligibility-advisory"
-      data-status=${result?.status ?? "unknown"}
+      data-status="unknown"
     >
-      <div class="rec-eligibility__head">
-        <h4>${t("logistics.eligibility.title")}</h4>
-        ${result ? renderStatusPill(result.status) : nothing}
-      </div>
-      <p>
-        ${t("logistics.eligibility.memberNote", {
-          months: String(result?.hours.required_months ?? 5),
-          hours: String(result?.hours.min_weekly_hours ?? 20),
-        })}
-        ${counted && result
-          ? t("logistics.eligibility.memberNoteAttendance", {
-              window: String(result.attendance.window_months),
-              rate: percent(result.attendance.min_rate),
-            })
-          : nothing}
-      </p>
-      ${counted
-        ? nothing
-        : html`<p
-            class="muted rec-eligibility__aside"
-            data-testid="rec-eligibility-attendance-note"
-          >
-            ${t("logistics.eligibility.attendanceNotTracked")}
-          </p>`}
-      ${result
-        ? nothing
-        : props.loading
-          ? html`<p class="muted">${t("logistics.eligibility.loading")}</p>`
-          : html`<p class="muted" data-testid="rec-eligibility-unavailable">
-              ${unavailableText()}
-            </p>`}
-      ${result?.freeze.frozen && result.freeze.frozen_until
-        ? html`<p class="rec-eligibility__frozen" data-testid="rec-eligibility-frozen">
-            <strong
-              >${t("logistics.eligibility.frozenUntil", {
-                date: formatRecLetterDay(result.freeze.frozen_until),
-              })}</strong
+      <div class="rec-readiness__head"><h4>${t("logistics.eligibility.title")}</h4></div>
+      <p class="muted">${policy}</p>
+      ${props.loading
+        ? html`<p class="muted">${t("logistics.eligibility.loading")}</p>`
+        : html`<p class="muted" data-testid="rec-eligibility-unavailable">${unavailableText()}</p>`}
+    </aside>`;
+  }
+
+  const hours = result.hours;
+  const frozenUntil = result.freeze.frozen ? result.freeze.frozen_until : undefined;
+  const addMonths = html`<a href=${availability}
+    >${t("logistics.eligibility.readiness.addMonths")}</a
+  >`;
+  const hoursLine = t("logistics.eligibility.readiness.hours", {
+    // "6 of 5" reads as a typo; past the bar the count only needs to say the bar is cleared.
+    count: String(Math.min(hours.qualifying_months, hours.required_months)),
+    required: String(hours.required_months),
+    hours: String(hours.min_weekly_hours),
+  });
+  // Each open item carries one short next step, and that is the only place it is said.
+  const hoursItem = hours.attested
+    ? renderReadinessItem("met", renderAttested(hours.attested, "hours", false))
+    : hours.status === "met"
+      ? renderReadinessItem("met", hoursLine)
+      : renderReadinessItem(
+          hours.status === "insufficient_data" ? "unknown" : "todo",
+          html`${hoursLine}
+            <span
+              class="rec-readiness__hint"
+              data-testid=${hours.status === "insufficient_data"
+                ? "rec-eligibility-hours-unknown"
+                : nothing}
             >
-          </p>`
-        : nothing}
-      ${result?.status === "not_yet" && remaining.length
-        ? html`<p>
-            ${t("logistics.eligibility.memberNotYet", {
-              items: remaining.map((gap) => gapText(gap, result)).join("; "),
+              ${hours.status === "insufficient_data"
+                ? t("logistics.eligibility.readiness.blankMonths", {
+                    months: formatMonthRuns(unknown),
+                  })
+                : t("logistics.eligibility.readiness.workedMore")}
+              ${addMonths}
+            </span>`,
+        );
+  // Attendance gets a row only once it counts; until then it is not the member's concern.
+  const attendanceItem = !counted
+    ? nothing
+    : result.attendance.attested
+      ? renderReadinessItem("met", renderAttested(result.attendance.attested, "attendance", false))
+      : renderReadinessItem(
+          result.attendance.status === "met"
+            ? "met"
+            : result.attendance.status === "insufficient_data"
+              ? "unknown"
+              : "todo",
+          t("logistics.eligibility.memberNoteAttendance", {
+            window: String(result.attendance.window_months),
+            rate: percent(result.attendance.min_rate),
+          }),
+        );
+  const days = frozenUntil ? daysUntil(result.as_of, frozenUntil) : null;
+
+  return html`
+    <aside
+      class="rec-eligibility rec-readiness rec-readiness--${result.status}"
+      role="note"
+      data-testid="rec-eligibility-advisory"
+      data-status=${result.status}
+    >
+      <div class="rec-readiness__head">
+        <h4>${t(`logistics.eligibility.readiness.title.${result.status}`)}</h4>
+        <span class="rec-readiness__chip">
+          ${frozenUntil && days !== null
+            ? t("logistics.eligibility.readiness.chipDaysLeft", { count: String(days) })
+            : readinessChip(result)}
+        </span>
+      </div>
+      ${frozenUntil
+        ? html`<p class="rec-eligibility__frozen" data-testid="rec-eligibility-frozen">
+            ${t("logistics.eligibility.readiness.frozenExplain", {
+              date: formatRecLetterDay(frozenUntil),
             })}
           </p>`
-        : nothing}
-      ${result?.status === "insufficient_data"
-        ? html`<p data-testid="rec-eligibility-insufficient">
-              ${t("logistics.eligibility.memberInsufficient")}
-            </p>
-            ${unknown.length
-              ? html`<p class="muted" data-testid="rec-eligibility-hours-unknown">
-                  ${t("logistics.eligibility.memberUnknownMonths", {
-                    months: formatMonthRuns(unknown),
-                  })}
-                </p>`
-              : nothing}`
-        : nothing}
-      ${result?.hours.attested ? renderAttested(result.hours.attested, "hours", false) : nothing}
-      ${counted && result?.attendance.attested
-        ? renderAttested(result.attendance.attested, "attendance", false)
-        : nothing}
+        : html`${renderReadinessBar(result, unknown.length)}
+            <ul class="rec-readiness__list">
+              ${renderReadinessItem("met", t("logistics.eligibility.readiness.noFreeze"))}
+              ${hoursItem} ${attendanceItem}
+            </ul>`}
     </aside>
   `;
 }

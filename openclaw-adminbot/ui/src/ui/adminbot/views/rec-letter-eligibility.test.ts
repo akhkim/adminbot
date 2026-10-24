@@ -394,17 +394,14 @@ describe("data gaps, attestations and the attendance flag", () => {
       renderRecLetterAdvisory({ value: thinHistory(), loading: false, error: null }),
     );
     const text = byTestId(root, "rec-eligibility-advisory")?.textContent ?? "";
-    expect(byTestId(root, "rec-eligibility-insufficient")?.textContent).toContain(
-      "Not enough history yet",
-    );
+    expect(text).toContain("We can't tell yet");
     expect(byTestId(root, "rec-eligibility-hours-unknown")?.textContent).toContain(
       "2025-01 to 2025-03",
     );
-    expect(text).toContain("Time Availability");
+    expect(text).toContain("Add past months");
     expect(text).not.toContain("meeting rosters");
-    expect(byTestId(root, "rec-eligibility-attendance-note")?.textContent).toContain(
-      "Meeting attendance isn't tracked yet and isn't counted",
-    );
+    // Attendance is not counted, so the member is not told about it at all.
+    expect(text).not.toContain("attendance");
   });
 
   it("leaves attendance out of the member's 'Still to reach' while it is not counted", () => {
