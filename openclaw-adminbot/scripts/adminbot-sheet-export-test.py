@@ -465,3 +465,24 @@ live = exporter.paper_row({'id': 'l', 'title': 'L', 'venue': 'ICLR 2027', 'curre
 assert sorted([missed['_sort'], live['_sort']])[0] == live['_sort']
 assert exporter.PAPERS.index('Authors') == exporter.PAPERS.index('Due (Toronto)') + 1
 print('PASS: ARR feedback settled by an OpenReview submission, past-deadline ARR requests sink, Authors beside Due')
+
+# The PI's OpenReview is the ground truth for decisions.
+paper = lambda **extra: dict({'id': 'g', 'title': 'Ground', 'current_step': 'arxiv_polish'}, **extra)
+on_or = lambda **extra: [dict({'id': 'g1', 'title': 'Ground'}, **extra)]
+findings = exporter.paper_row(paper(venue='ARR May 2026'), members, [], [], LATER, openreview=on_or(
+    venue_id='EMNLP/2026/Conference', status='accepted', track='findings', presentation='poster'))
+assert findings['Accepted'] == 'EMNLP 2026 · Findings · Poster', findings['Accepted']
+assert findings['Venue'].endswith('→ EMNLP 2026 Findings'), findings['Venue']
+claimed = exporter.paper_row(paper(venue='ICLR 2026', venue_decision='accept', accepted_venue='ICLR', accepted_year=2026),
+                             members, [], [], LATER, openreview=on_or(venue_id='ICLR.cc/2026/Conference/Rejected_Submission',
+                                                                      status='rejected'))
+assert claimed['Accepted'] == '' and claimed['OpenReview'].startswith('❌ Rejected'), claimed['Accepted']
+moved_on = exporter.paper_row(paper(venue='COLM 2027', venue_decision='accept', accepted_venue='COLM', accepted_year=2027),
+                              members, [], [], LATER, openreview=on_or(venue_id='ICLR.cc/2026/Conference/Rejected_Submission',
+                                                                       status='rejected'))
+assert moved_on['Accepted'] == 'COLM 2027', moved_on['Accepted']
+waiting = exporter.paper_row(paper(venue='a NeurIPS workshop', current_step='overleaf_writing'), members, [], [], LATER,
+                             openreview=on_or(venue_id='ICLR.cc/2027/Conference/Submission', status='under_review'))
+assert waiting['Venue'] == 'ICLR 2027' and waiting['Stage'] == '2 · Writing (Overleaf)', waiting
+assert exporter.as_on_openreview(paper(), None) == paper()
+print("PASS: the PI's OpenReview sets acceptance, track and venue; a later off-OpenReview acceptance survives")

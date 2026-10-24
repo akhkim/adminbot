@@ -146,7 +146,7 @@ def venue_info(record, slots, deadlines, now):
     if year and year not in name:
         name += ' ' + year
     is_arr = base in ARR_FAMILY or bool(re.search(r'\barr\b', raw, re.I))
-    pre_submission = record.get('current_step') in PRE_SUBMISSION
+    pre_submission = record.get('current_step') in PRE_SUBMISSION and not record.get('under_review')
     camera_ready = venue_deadline(base, year, deadlines, now, camera_ready=True) if accepted else None
     if not is_arr:
         deadline = venue_deadline(base, year, deadlines, now) if pre_submission else camera_ready
@@ -582,6 +582,47 @@ def arr_cycle_deadline(entry, cycles):
     return cycles.get(f'{month[:3].capitalize()} {year}')
 
 
+def as_on_openreview(record, review):
+    """The paper's venue and decision as the PI's OpenReview has them.
+
+    OpenReview is the ground truth for what came of a submission: an acceptance there sets the
+    venue, year and track; a rejection or withdrawal there clears an acceptance the record claims;
+    a submission under review there names the venue and means the paper is past submitting. The
+    record keeps its own venue after a rejection (that is the next plan) and its own acceptance
+    when it is from a later year than the OpenReview submission (accepted somewhere off OpenReview).
+    """
+    if not review or not review.get('status'):
+        return record
+    venue = venue_from_id(review.get('venue_id')) or review.get('venue') or ''
+    year = (re.search(r'\b20\d{2}\b', venue) or [''])[0]
+    if record.get('venue_decision') == 'accept' and str(record.get('accepted_year') or '') > year:
+        return record
+    record = dict(record, artifacts=dict(record.get('artifacts') or {}))
+    if review['status'] == 'accepted':
+        record.update(venue_decision='accept', accepted_venue=venue, accepted_year=year)
+        if review.get('track'):
+            record['artifacts']['publication_track'] = review['track']
+    elif review['status'] == 'under_review':
+        record.update(venue=venue, venue_decision=None, accepted_venue=None, accepted_year=None, under_review=True)
+    else:
+        record.update(venue_decision='reject', accepted_venue=None, accepted_year=None)
+    return record
+
+
+def accepted_text(record, review):
+    """'EMNLP 2026 · Findings · Poster' for an accepted paper, else ''."""
+    if record.get('venue_decision') != 'accept' and not record.get('accepted_venue'):
+        return ''
+    name, year = str(record.get('accepted_venue') or ''), str(record.get('accepted_year') or '')
+    parts = [name + (' ' + year if year and year not in name else '')]
+    if (record.get('artifacts') or {}).get('publication_track') == 'findings' and 'findings' not in name.lower():
+        parts.append('Findings')
+    if review and review.get('status') == 'accepted' and review.get('presentation') and (
+            review['presentation'] not in name.lower()):
+        parts.append(review['presentation'].capitalize())
+    return ' · '.join(p for p in parts if p.strip())
+
+
 def overall(scores):
     return next((scores[k] for k in OVERALL_KEYS if k in (scores or {})), None)
 
@@ -643,9 +684,11 @@ def paper_row(record, members, slots, deadlines, now, access=None, openreview=()
                        else 'read link does not open (link sharing is off or the link was reset)')
               for column, url in links.items() if url and (overleaf_kind(url) == 'project' or access.get(url) == 'restricted')}
     requests, approved_at = pi_requests(slots, links)
+    review = openreview_match(record, slots, openreview)
+    stage = record.get('current_step')
+    record = as_on_openreview(record, review)
     venue, deadline = venue_info(record, slots, deadlines, now)
     venue = venue or VENUE_NOTES.get(record['id'], '')
-    review = openreview_match(record, slots, openreview)
     cycles = arr_calendar(deadlines)[0]
     submitted_cycle = arr_cycle_deadline(review, cycles)
     for request in requests:
@@ -715,9 +758,6 @@ def paper_row(record, members, slots, deadlines, now, access=None, openreview=()
                       if not (can_open and problem.startswith('project'))]
     owner_id = record.get('lead_owner_member_id')
     name = lambda member_id: members.get(member_id, {}).get('name', member_id or '')
-    accepted = ' '.join(str(record.get(k) or '') for k in ('accepted_venue', 'accepted_year')).strip()
-    if not accepted and review and review.get('status') == 'accepted':
-        accepted = review.get('venue') or ''
     row = {
         'Paper': record.get('title', ''),
         'Urgency': label,
@@ -734,7 +774,7 @@ def paper_row(record, members, slots, deadlines, now, access=None, openreview=()
             deadline.get('soft'), deadline) if d) if deadline else '',
         'Venue (as entered)': ' '.join(str(record.get('venue') or artifacts.get('conference') or '').split()),
         'OpenReview': openreview_text(review),
-        'Stage': STAGES.get(record.get('current_step'), record.get('current_step') or ''),
+        'Stage': STAGES.get(stage, stage or ''),
         'Lead': record.get('lead_owner') or name(owner_id),
         'Blocker / next step': '\n'.join(str(x) for x in [artifacts.get('blocker_title'), artifacts.get('blocker_note'),
                                                          record.get('next_action')] if x),
@@ -742,7 +782,7 @@ def paper_row(record, members, slots, deadlines, now, access=None, openreview=()
         'Still missing': ', '.join(sorted(slot_label(r['slot']) for r in slots if r['status'] == 'missing')),
         'Mentor review': by_slot.get('papermentor_review', {}).get('status', ''),
         'Co-author feedback': by_slot.get('coauthor_feedback', {}).get('status', ''),
-        'Accepted': accepted,
+        'Accepted': accepted_text(record, review),
         'Going to conference': record.get('going_attendees', ''),
         'Started': record.get('started_on', ''),
         'Last updated': toronto(parse_time(record.get('updated_at') or ''), False),
