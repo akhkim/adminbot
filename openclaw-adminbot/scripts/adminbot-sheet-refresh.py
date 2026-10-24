@@ -15,6 +15,8 @@ spec = importlib.util.spec_from_file_location('exporter', Path(__file__).with_na
 exporter = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(exporter)
 
+# openreview-notifications.csv on the AdminBot Drive (the same export notification drafts read).
+NOTIFICATIONS_FILE_ID = '1M88hLvN6WvWIthUPTnHilWbsmOz2DZg7'
 
 URGENCY_COLOURS = {'⛔': {'red': .96, 'green': .73, 'blue': .73}, '🔴': {'red': .99, 'green': .87, 'blue': .87}, '🟠': {'red': 1, 'green': .92, 'blue': .82},
                    '🟡': {'red': 1, 'green': .97, 'blue': .80}, '🟢': {'red': .89, 'green': .96, 'blue': .89}}
@@ -221,9 +223,9 @@ def main():
     if writer != 'jinesis.adminbot@gmail.com':
         raise ValueError('Unexpected Google writer identity')
 
-    def gog(arguments):
+    def gog(arguments, timeout=60):
         result = subprocess.run([args.gog, '--no-input', '--json', *arguments], env=env,
-                                capture_output=True, text=True, timeout=60)
+                                capture_output=True, text=True, timeout=timeout)
         if result.returncode:
             # CLI stderr may contain credentials or fetched content; never log it.
             raise RuntimeError('Google CLI exit ' + str(result.returncode))
@@ -262,10 +264,22 @@ def main():
                                           exporter.parse_time(timestamp))
     except OSError:
         access = {}
+    # The PI's OpenReview notification emails, exported to Drive daily. A failed download keeps the
+    # previous copy, so a Drive hiccup leaves yesterday's outcomes rather than none.
+    notifications = Path(args.status).with_name('openreview-notifications.csv')
+    try:
+        partial = notifications.with_suffix('.partial')
+        gog(['--readonly', 'drive', 'download', config.get('notifications_file_id', NOTIFICATIONS_FILE_ID),
+             '--out', str(partial), '--overwrite'], timeout=180)
+        partial.replace(notifications)
+    except (RuntimeError, OSError, ValueError, subprocess.TimeoutExpired):
+        pass
     with sqlite3.connect(Path(args.database).resolve().as_uri() + '?mode=ro', uri=True, timeout=15) as connection:
         connection.execute('PRAGMA query_only=ON')
         # Written by the OpenReview results job under the account that holds the login; absent is fine.
+        # Its entries carry scores, so they come first and win ties with the notification outcomes.
         openreview = exporter.load_openreview_results(Path(args.database).with_name('openreview-author-results.json'))
+        openreview += exporter.load_notification_results(notifications)
         batch = exporter.snapshot(connection, timestamp, full_people=True, link_access=access, openreview=openreview)
     requests = refresh_requests(batch, properties)
     with tempfile.NamedTemporaryFile(mode='w', suffix='.json') as body:

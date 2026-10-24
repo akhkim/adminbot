@@ -5,6 +5,7 @@ import datetime
 import json
 import re
 import sqlite3
+import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qsl
@@ -530,7 +531,9 @@ def venue_from_id(venue_id):
     if not parts or year is None:
         return str(venue_id or '')
     rest = [p.replace('_', ' ') for p in parts[year + 1:] if p != 'Conference' and not p.endswith('Submission')]
-    return ' '.join([parts[0].split('.')[0], parts[year], *rest])
+    # 'aclweb.org/ACL/2026' and 'eacl.org/EACL/2027' name the venue just before the year.
+    name = parts[year - 1] if year > 1 and '.' not in parts[year - 1] else parts[0].split('.')[0]
+    return ' '.join([name, parts[year], *rest])
 
 
 def cycle_key(entry):
@@ -558,7 +561,8 @@ def citation_check_results(connection):
                   else 'rejected' if 'reject' in lowered else 'under_review' if lowered.endswith('/submission') else None)
         if status:
             entries[submission_id] = {'id': submission_id, 'forum': submission_id, 'title': title,
-                                      'venue': venue_from_id(venue_id), 'venue_id': venue_id, 'status': status}
+                                      'venue': venue_from_id(venue_id), 'venue_id': venue_id, 'status': status,
+                                      'source': 'citation_check'}
     return list(entries.values())
 
 
@@ -569,8 +573,9 @@ def openreview_match(record, slots, results):
     by_forum = [e for e in results if forums & {e.get('id'), e.get('forum'), e.get('review_forum')}]
     title = normalized_title(record.get('title'))
     candidates = by_forum or [e for e in results if title and normalized_title(e.get('title')) == title]
-    # Results snapshot entries come before citation-check fallbacks, so ties keep the richer one.
-    return max(candidates, key=cycle_key, default=None)
+    # Citation checks are a stale fallback; among the rest the latest cycle wins, and ties keep the
+    # earlier (richer) entry: the results snapshot comes before the notification outcomes.
+    return max(candidates, key=lambda e: (e.get('source') != 'citation_check', cycle_key(e)), default=None)
 
 
 def arr_cycle_deadline(entry, cycles):
@@ -582,20 +587,32 @@ def arr_cycle_deadline(entry, cycles):
     return cycles.get(f'{month[:3].capitalize()} {year}')
 
 
+def same_venue(record, venue):
+    """Whether the record's acceptance is at this OpenReview venue: same series, and same year when both say."""
+    accepted = str(record.get('accepted_venue') or '')
+    series = re.findall(r'[a-z]+', accepted.lower())[:1]
+    year = str(record.get('accepted_year') or (re.search(r'\b20\d{2}\b', accepted) or [''])[0])
+    venue_year = (re.search(r'\b20\d{2}\b', venue) or [''])[0]
+    return bool(series) and venue.lower().startswith(series[0]) and (not year or not venue_year or year == venue_year)
+
+
 def as_on_openreview(record, review):
     """The paper's venue and decision as the PI's OpenReview has them.
 
     OpenReview is the ground truth for what came of a submission: an acceptance there sets the
-    venue, year and track; a rejection or withdrawal there clears an acceptance the record claims;
-    a submission under review there names the venue and means the paper is past submitting. The
-    record keeps its own venue after a rejection (that is the next plan) and its own acceptance
-    when it is from a later year than the OpenReview submission (accepted somewhere off OpenReview).
+    venue, year and track; a rejection, desk rejection or withdrawal there clears an acceptance the
+    record claims at that same venue; a submission under review there names the venue and means
+    the paper is past submitting. An acceptance elsewhere stands (a workshop paper resubmitted to
+    a conference, or accepted at a venue not on OpenReview), and so does one from a later year than
+    the OpenReview submission. The record keeps its own venue after a rejection: that is the next plan.
     """
     if not review or not review.get('status'):
         return record
     venue = venue_from_id(review.get('venue_id')) or review.get('venue') or ''
     year = (re.search(r'\b20\d{2}\b', venue) or [''])[0]
-    if record.get('venue_decision') == 'accept' and str(record.get('accepted_year') or '') > year:
+    accepted = record.get('venue_decision') == 'accept' or (
+        bool(record.get('accepted_venue')) and record.get('venue_decision') != 'reject')
+    if accepted and str(record.get('accepted_year') or '') > year:
         return record
     record = dict(record, artifacts=dict(record.get('artifacts') or {}))
     if review['status'] == 'accepted':
@@ -603,8 +620,10 @@ def as_on_openreview(record, review):
         if review.get('track'):
             record['artifacts']['publication_track'] = review['track']
     elif review['status'] == 'under_review':
-        record.update(venue=venue, venue_decision=None, accepted_venue=None, accepted_year=None, under_review=True)
-    else:
+        record.update(venue=venue, under_review=True)
+        if not accepted:
+            record.update(venue_decision=None, accepted_venue=None, accepted_year=None)
+    elif not accepted or same_venue(record, venue):
         record.update(venue_decision='reject', accepted_venue=None, accepted_year=None)
     return record
 
@@ -665,6 +684,106 @@ def load_openreview_results(path):
     try:
         return [e for e in json.loads(Path(path).read_text()).get('submissions', []) if isinstance(e, dict)]
     except (OSError, ValueError, AttributeError):
+        return []
+
+
+NOTIFICATIONS_DIR = Path(__file__).with_name('openreview-notifications')
+
+
+def use_notifications_parser():
+    """The notification parsers ship beside this script (scripts/openreview-notifications)."""
+    if str(NOTIFICATIONS_DIR) not in sys.path:
+        sys.path.insert(0, str(NOTIFICATIONS_DIR))
+
+
+RECEIVED_RE = re.compile(r'has received (?:your submission|a new revision of your submission) titled', re.I)
+ENDED_RE = re.compile(r'paper #?\d+ (withdrawn|desk-rejected) by', re.I)
+
+
+def notification_results(records):
+    """The PI's own submissions and their outcomes, from her OpenReview notification emails.
+
+    OpenReview mails her when a submission or revision of hers is posted, when it is withdrawn or
+    desk-rejected, and with each decision; this is the daily Drive export of that mailbox, so it
+    needs no OpenReview login. Every submission keeps the event that settles it (a decision or an ending
+    beats a later camera-ready revision), and a title keeps its latest settled venue, so a paper
+    rejected at ICLR and resubmitted to ARR reads as under review again and an ARR paper later
+    accepted at EMNLP reads as accepted (and stays so through a later workshop run). Messages to her as a reviewer or chair are ignored:
+    endings count only for forums she submitted, and decisions only when they say "your submission".
+    """
+    use_notifications_parser()
+    from openreview_notifications.acceptance import classify_acceptance
+    from openreview_notifications.messages import extract_links, paper_title, unquoted_body
+    from openreview_notifications.tweets import venue_details
+
+    def forum_of(record):
+        forums = set(extract_links(unquoted_body(record['content'].get('text', '')))[1])
+        return forums.pop() if len(forums) == 1 else None
+
+    def title_of(record):
+        try:
+            return paper_title(record)
+        except ValueError:
+            return None
+
+    events, mine = [], {}
+    for record in sorted(records, key=lambda r: r.get('cdate') or 0):
+        subject = record['content'].get('subject', '')
+        forum, ended = forum_of(record), ENDED_RE.search(subject)
+        if RECEIVED_RE.search(subject):
+            title = title_of(record)
+            if forum and title:
+                mine.setdefault(forum, title)
+                events.append((record, forum, title, 'under_review', None))
+        elif ended:
+            events.append((record, forum, None, 'withdrawn' if ended.group(1).lower() == 'withdrawn' else 'desk_rejected', None))
+        else:
+            decision = classify_acceptance(record)
+            if decision.status in ('accepted', 'rejected'):
+                events.append((record, forum, title_of(record), decision.status, decision))
+    forums = {}
+    for record, forum, title, status, decision in events:
+        if status in ('withdrawn', 'desk_rejected') and forum not in mine:
+            continue
+        title = title or mine.get(forum)
+        if not title:
+            continue
+        # Decision mails often carry no forum link, so a submission is its title at one venue.
+        domain = record.get('domain', '')
+        key = (normalized_title(title), domain)
+        settled = forums.get(key)
+        forum = forum or (settled or {}).get('forum')
+        if settled and settled['status'] != 'under_review' and status == 'under_review':
+            continue
+        if settled and settled['status'] == status:
+            continue
+        track = None
+        if status == 'accepted':
+            try:
+                track = {'Findings': 'findings', 'Main conference': 'main'}.get(venue_details(record)[1])
+            except ValueError:
+                pass
+        forums[key] = {'id': forum or ':'.join(key), 'forum': forum, 'title': title, 'venue': venue_from_id(domain),
+                       'venue_id': domain, 'status': status, 'track': track, 'presentation': None,
+                       'date': record.get('cdate') or 0, 'source': 'notifications'}
+    # A main-conference acceptance is where a paper ends up; a later workshop run does not replace it.
+    def rank(entry):
+        return entry['status'] == 'accepted' and 'workshop' not in entry['venue'].lower(), entry['date']
+    latest = {}
+    for entry in forums.values():
+        title = normalized_title(entry['title'])
+        if title not in latest or rank(entry) >= rank(latest[title]):
+            latest[title] = entry
+    return list(latest.values())
+
+
+def load_notification_results(path):
+    """Outcomes from the notifications CSV at path; [] when it is absent or unreadable."""
+    use_notifications_parser()
+    try:
+        from adminbot_csv import parse_notifications_csv
+        return notification_results(parse_notifications_csv(Path(path).read_text()))
+    except (OSError, ValueError, ImportError):
         return []
 
 
