@@ -654,9 +654,9 @@ What it does with what it finds is the whole design:
   External Collab Access Design matrix, and where that row names a standing Slack room the sync
   files a `slack.remove_from_channel` proposal. Nothing here executes: `slack.remove_from_channel`
   is T3/admin, and somebody losing a conversation they were part of is not a cron job's call.
-- **A type that makes somebody a full member or a major coauthor files their DCS roster row** as a
-  `dcs_roster.add_row` card left in Pending Actions, returned under `dcs_roster`. Never approved
-  here, for the same reason: it asks the department for an account.
+- **A type that makes somebody a full member or a major coauthor writes their DCS roster row**
+  directly (`dcs_roster.add_row`, auto-approved), returned under `dcs_roster`. The DCS sheet is a
+  derivative of this one; the Member Type it follows is the decision.
 - **Joiners and leavers are reported, not acted on.** A sheet row matching no member is far more
   often somebody mid-onboarding than a member to create -- and creating one is an access grant, which
   a sync must never make on its own. Use the Membership tab's Onboarding section for that. A member
@@ -1118,20 +1118,26 @@ ever meant "the click did not throw".
 - Giving a role up (`full` -> `alumni`, `coauthor-major` -> `coauthor-minor`) files nothing. Nothing
   here removes a row.
 
-Every way a role changes reaches it, as a typed `dcs_roster.add_row` action (T3, admin):
+Every way a role changes reaches it, as a typed `dcs_roster.add_row` action that is **written
+directly**: its policy is `autoPolicy("T1")`, so it is created approved and executed on the spot,
+with the usual `proposal.created`, `proposal.auto_approved` and execution audit rows. Nothing waits
+in Pending Actions.
 
-| Where the role changed                                     | Approved by                         |
-| ---------------------------------------------------------- | ----------------------------------- |
-| Lab Members tab: a Member Type save, or Add member         | the admin who saved                 |
-| Onboarding tab: Add row, onboard selected rows             | the admin who clicked               |
-| Approving a weekly-sweep joiner's `lab_member.enroll` card | the admin who approved it           |
-| Approving a member request or a portal sign-up             | the approving admin                 |
-| The spreadsheet itself, applied by the 06:10 roster sync   | nobody yet: left in Pending Actions |
+| Where the role changed                                     |
+| ---------------------------------------------------------- |
+| Lab Members tab: a Member Type save, or Add member         |
+| Onboarding tab: Add row, onboard selected rows             |
+| Approving a weekly-sweep joiner's `lab_member.enroll` card |
+| Approving a member request or a portal sign-up             |
+| The spreadsheet itself, applied by the 06:10 roster sync   |
+| `POST /members/dcs-roster/backfill` with `dry_run: false`  |
 
-The roster sync never approves its own card, whoever ran it: a spreadsheet edit is not an
-authorization, and the row asks the department for an account. `POST /members/roster-sync` returns
-the cards it filed under `dcs_roster`. On the save paths the step is reported as `dcs_roster` in
-the save notice (done, queued, skipped or failed), and like the other steps it never undoes the save.
+The DCS sheet is a derivative of the lab roster: the decision is the Member Type, which the roster
+already gates. The cost is that a wrong Member Type in the spreadsheet reaches the sysadmin without
+a second look -- fix the type, then delete the row before the department acts on it.
+`POST /members/roster-sync` returns what it wrote under `dcs_roster`. On the save paths the step is
+reported as `dcs_roster` in the save notice (done, skipped or failed), and like the other steps it
+never undoes the save.
 
 Point it at the spreadsheet with:
 
