@@ -106,10 +106,6 @@ escalation behaviour that a straight port could change:
 
 - meeting attendance, paper evidence slots, weekly paper updates, profile fields and term timeline,
   pre-registration, the onboarding ladder, never-signed-in, and the thesis and graduation nudges;
-- **paper-slot cron.** `POST /papers/slot-reminder/run` is admin-session-only, but
-  `scripts/adminbot-paper-slot-nudge-cron.sh` calls it with the service token, so the scheduled run
-  gets a 403.
-  Migrating it should make the route accept a scheduled run;
 - **photo review with no reviewer.** With no reviewer configured, the deterministic fallback can
   mark every member non-compliant. The preview now shows that count before anything is sent, but a
   confirmed run would still DM all of them; a cooldown or a "reviewer unavailable" refusal would

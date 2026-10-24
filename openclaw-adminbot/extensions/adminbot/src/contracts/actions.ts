@@ -2653,6 +2653,11 @@ export type AdminBotAuditEvent = {
     | "paper_slot.waived"
     | "paper_slots.nudged"
     | "paperflow_stages.nudged"
+    // One cron run, reported by scripts/lib/adminbot-cron-run.sh: job name, schedule, ok, and the
+    // last line of a failure. The automation health check reads staleness and failure from these.
+    | "automation_health.heartbeat"
+    // The health check told the admins about these issue keys (deduped by the ledger).
+    | "automation_health.alerted"
     | "paperflow_stage.evidenced"
     | "email_review.resolved"
     | "paper_social_draft.saved"
@@ -3202,7 +3207,9 @@ export type AdminBotMemberNotificationKind =
    * profile retraction would have marked an outstanding photo nudge as dealt with.
    */
   | "profile_photo"
-  | "workshop";
+  | "workshop"
+  /** An automation health issue, for the admins: a job stopped or failing, or an invite paused. */
+  | "automation";
 
 export type AdminBotMemberNotification = {
   id: string;

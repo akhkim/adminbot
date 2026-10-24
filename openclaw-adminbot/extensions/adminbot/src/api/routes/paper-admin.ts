@@ -317,6 +317,17 @@ export const paperAdminRoutes: readonly Route[] = [
       );
     }),
   ),
+  // The weekday schedule's door. Service-callable, unlike the button above, and deliberately
+  // without the recipient narrowing: the schedule sends every batch, recomputed from state, so the
+  // service token chooses nothing -- the same reason the paperflow-stage pass below takes it. The
+  // cron had been pointed at the session-only route and was refused with a 403 every weekday.
+  post(
+    "/papers/slot-reminder/scheduled-run",
+    privilegedOnly(async ({ res, principal, ctx }) => {
+      const { service } = ctx;
+      sendServiceResult(res, await service.sendPaperSlotNudges(principalActor(principal)));
+    }),
+  ),
   post(
     "/papers/paperflow-stages/run",
     privilegedOnly(async ({ res, principal, ctx }) => {

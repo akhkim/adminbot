@@ -493,6 +493,13 @@
         "discover"
       ],
       "timeoutSeconds": 1800
+    },
+    {
+      "name": "adminbot-automation-health",
+      "description": "Hourly check that every job still runs and its actions still succeed; tells the admins once per issue",
+      "cron": "50 * * * *",
+      "argv": ["bash", "scripts/adminbot-automation-health-cron.sh"],
+      "timeoutSeconds": 300
     }
   ]
 }

@@ -2,6 +2,7 @@
 // claim the same method and path, so the zone order only has to keep each zone's own order.
 
 import { assistantRoutes } from "./assistant.js";
+import { automationHealthRoutes } from "./automation-health.js";
 import { badgesRoutes } from "./badges.js";
 import { calendarRoutes } from "./calendar.js";
 import { conferencePapersRoutes } from "./conference-papers.js";
@@ -33,6 +34,7 @@ export const AUTHENTICATED_ROUTES: readonly Route[] = [
   ...reviewsRoutes,
   ...deadlinesRoutes,
   ...emailReviewRoutes,
+  ...automationHealthRoutes,
   ...directoryRoutes,
   ...conferencePapersRoutes,
   ...reimbursementsRoutes,
