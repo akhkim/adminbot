@@ -179,6 +179,15 @@ describe("opt-in", () => {
     expect(meetupIntrosAllowed(member, "city", "2026-10-15")).toBe(false);
   });
 
+  it("never allows an intro for a member who DMed AdminBot stop", () => {
+    const member = {
+      slack_stop_at: "2026-10-01T09:00:00.000Z",
+      meetup_intros: { events: true, city: true },
+    };
+    expect(meetupIntrosAllowed(member, "event", "2026-10-15")).toBe(false);
+    expect(meetupIntrosAllowed(member, "city", "2026-10-15")).toBe(false);
+  });
+
   it("respects an opt-out and a snooze, through its last day", () => {
     expect(meetupIntrosAllowed({ meetup_intros: { events: false } }, "event", "2026-10-15")).toBe(
       false,

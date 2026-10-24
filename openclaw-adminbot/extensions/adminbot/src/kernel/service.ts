@@ -338,6 +338,7 @@ import {
   type AdminBotWriteOrigin,
 } from "../workflows/members/adoption.js";
 import { validateBirthday } from "../workflows/members/birthday.js";
+import { slackStopReply, type SlackStopCommand } from "../workflows/members/slack-stop.js";
 import { collaboratorSubgroupAccess } from "../workflows/members/collaborator-subgroups.js";
 import {
   localEventAudience,
@@ -8147,6 +8148,52 @@ export class AdminBotService {
     return this.serializeIntros(() => this.meetups().sayHiNow(memberId, input));
   }
 
+  /**
+   * "stop" or "start" DMed to the bot, matched by the plugin before any model sees it
+   * (workflows/members/slack-stop.ts). Unknown Slack users get `matched: false` and the agent
+   * answers them as usual; the record is the member's own, so nothing here needs an approval.
+   */
+  applySlackStop(params: {
+    slackUserId: string;
+    command: SlackStopCommand;
+  }): AdminBotServiceResponse<{ matched: boolean; changed: boolean; reply?: string }> {
+    const slackUserId = params.slackUserId.trim();
+    if (!slackUserId || (params.command !== "stop" && params.command !== "start")) {
+      return serviceError(400, "slack_user_id and command (stop or start) are required");
+    }
+    const member = this.store
+      .listLabMembers()
+      .find((candidate) => candidate.slack_user_id?.trim() === slackUserId);
+    if (!member) {
+      return { ok: true, status: 200, payload: { matched: false, changed: false } };
+    }
+    const stopped = Boolean(member.slack_stop_at);
+    const nowIso = (this.options.now?.() ?? new Date()).toISOString();
+    const changed = params.command === "stop" ? !stopped : stopped;
+    if (changed) {
+      const { slack_stop_at: _cleared, ...rest } = member;
+      this.store.saveLabMember(
+        params.command === "stop"
+          ? { ...member, slack_stop_at: nowIso, updated_at: nowIso }
+          : { ...rest, updated_at: nowIso },
+      );
+      this.recordAudit({
+        type: params.command === "stop" ? "member.slack_stopped" : "member.slack_started",
+        actor: `slack:${slackUserId}`,
+        details: { member_id: member.id },
+      });
+    }
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        matched: true,
+        changed,
+        reply: slackStopReply(params.command, stopped),
+      },
+    };
+  }
+
   /** The member Events tab and the intros behind it. */
   meetups() {
     return new MeetupService(
@@ -11250,6 +11297,7 @@ export class AdminBotService {
             channel: "slack",
             recipient_member_ids: [member.id],
             message,
+            optional: true,
             kind: campaign.notification.kind,
             title: campaign.notification.title,
             ...(campaign.notification.tab ? { tab: campaign.notification.tab } : {}),
@@ -12809,6 +12857,11 @@ export class AdminBotService {
       }
       if (!adminBotReceivesNudges(member)) {
         skipped.push({ member_id: memberId, reason: "member is not on the nudge list" });
+        continue;
+      }
+      // The member's own "stop" (workflows/members/slack-stop.ts) covers the nice-to-haves only.
+      if (request.optional && member.slack_stop_at) {
+        skipped.push({ member_id: memberId, reason: "member replied stop" });
         continue;
       }
       // Filed before the send, and kept whatever the send does. Slack is where the lab talks, but
@@ -14770,6 +14823,7 @@ export class AdminBotService {
           channel: "slack",
           recipient_member_ids: [invite.member_id],
           message: buildCityChannelMessage(invite),
+          optional: true,
           kind: "nudge",
           title: `Added to #${invite.channel}`,
           tab: "adminbotMembers",

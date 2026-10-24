@@ -54,6 +54,13 @@ export class AdminBotClient {
     private readonly env: NodeJS.ProcessEnv = process.env,
   ) {}
 
+  async applySlackStop(
+    params: { slack_user_id: string; command: "stop" | "start" },
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    return this.request("POST", "/nudges/slack-stop", params, signal);
+  }
+
   async runEmailAutomation(signal?: AbortSignal): Promise<unknown> {
     return this.request("POST", "/automation/email/run", {}, signal);
   }

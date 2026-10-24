@@ -44,6 +44,27 @@ export const nudgesRoutes: readonly Route[] = [
       );
     }),
   ),
+  // "stop"/"start" DMed to the bot. The plugin matches the DM and calls this with the service
+  // token; the sender's Slack ID is what the gateway saw, never a value the message typed.
+  post(
+    "/nudges/slack-stop",
+    privilegedOnly(async ({ req, res, ctx }) => {
+      const body = readRecord(await readJson(req));
+      const command = body.command === "start" ? "start" : body.command === "stop" ? "stop" : null;
+      if (!command) {
+        sendServiceResult(res, {
+          ok: false,
+          status: 400,
+          error: { message: "command must be stop or start" },
+        });
+        return;
+      }
+      sendServiceResult(
+        res,
+        ctx.service.applySlackStop({ slackUserId: String(body.slack_user_id ?? ""), command }),
+      );
+    }),
+  ),
   post(
     "/nudges/snooze",
     memberOnly(async ({ req, res, principal, ctx }) => {
