@@ -44,7 +44,7 @@ VENUE_NOTES = {
 }
 # Plain-language layout: what the PI acts on first, links next, record-keeping detail last.
 PAPERS = ('Paper', 'Urgency', 'PI review', 'Review for', 'Review link', 'Due (Toronto)', 'Authors',
-          'Requested by', 'Requested on', 'Request note', 'Venue', 'Venue deadline (Toronto)',
+          'Requested by', 'Requested on', 'Request note', 'Conference', 'Venue', 'Venue deadline (Toronto)',
           'OpenReview', 'Stage', 'Lead', 'Incomplete', 'Blocker / next step', 'Link problems', 'Still missing', 'Mentor review', 'Co-author feedback', 'Accepted',
           'Going to conference', 'Started', 'Last updated', 'Feedback givers', 'Checks',
           'Venue (as entered)', 'All artifact statuses', PAPER_ID)
@@ -90,6 +90,34 @@ def toronto(moment, with_time=True):
     local = moment.astimezone(TORONTO)
     text = local.strftime('%a %b %-d, %Y')
     return text + local.strftime(', %-I:%M %p') if with_time else text
+
+
+def stamp(moment, with_time=True):
+    """Toronto time written year-first, so a column of them sorts by date as plain text:
+    '2026-10-13 08:00 (Tue)', or '2026-10-13 (Tue)' without the time."""
+    if not moment:
+        return ''
+    local = moment.astimezone(TORONTO)
+    return local.strftime('%Y-%m-%d %H:%M (%a)' if with_time else '%Y-%m-%d (%a)')
+
+
+# One standard conference name per paper, so the sheet filters and sorts by conference however the
+# venue was typed. Checked in order: a paper going through ARR is filed under the conference it
+# commits to when one is named. Anything unmatched is 'Other' and should get a rule here.
+CONFERENCES = (('Workshop', r'workshop|\bAI4GOOD\b'), ('EMNLP', r'\bEMNLP\b'), ('NAACL', r'\bNAACL\b'),
+               ('EACL', r'\bEACL\b'), ('AACL', r'\bAACL\b'), ('ACL', r'\bACL\b'), ('ICLR', r'\bICLR\b'),
+               ('NeurIPS', r'\bNeurIPS\b'), ('ICML', r'\bICML\b'), ('COLM', r'\bCOLM\b'), ('AAAI', r'\bAAAI\b'),
+               ('KDD', r'\bKDD\b'), ('AISTATS', r'\bAISTATS\b'), ('CogSci', r'\bCogSci\b'), ('IASEAI', r'\bIASEAI\b'), ('CLeaR', r'\bCLeaR\b'), ('ICSSI', r'\bICSSI\b'), ('DevAI', r'\bDevAI\b'),
+               ('Journal', r'\bJMLR\b|\bTMLR\b|journal'), ('ARR (conference not set)', r'\bARR\b'),
+               ('Preprint', r'preprint|arxiv'))
+
+
+def conference(*venues):
+    """'ARR · May 2026 → EMNLP 2026 Findings' -> 'EMNLP'; '' -> 'Not set'; unmatched -> 'Other'."""
+    text = ' '.join(v for v in venues if v)
+    if not text.strip():
+        return 'Not set'
+    return next((name for name, pattern in CONFERENCES if re.search(pattern, text, re.I)), 'Other')
 
 
 # ACL Rolling Review calendar (aclrollingreview.org/dates, checked 2026-10-11). Deadlines are 23:59 AoE.
@@ -246,16 +274,21 @@ notifications_total notifications_unread notifications_last_at notification_kind
 tab_visits_count logistics_requests paper_weekly_updates conference_attendances name
 password_resets feedback_submitted active_sessions paper_slots_provided paper_slots_waived
 papers_authored_count papers_authored papers_submitted_count papers_submitted
-audit_events_as_actor update_events_as_actor update_events_as_subject calendar_group'''.split())
+audit_events_as_actor update_events_as_actor update_events_as_subject calendar_group search'''.split())
 
 
+# Name first and frozen: it is what the PI scans and searches for, on a phone as much as on a laptop.
 PEOPLE_PRIORITY = (
-    'id', 'join_date', 'status', 'member_type', 'slack_active', 'membership_review', 'privilege_level',
+    'name', 'id', 'join_date', 'status', 'member_type', 'slack_active', 'membership_review', 'privilege_level',
     'collaborator_subgroup', 'role', 'location', 'current_city', 'timezone',
     'slack_messages_7d', 'receives_nudges', 'hours_per_week', 'affiliation',
     'calendar_group', 'last_login_at', 'compute_access', 'availability',
-    'papers_authored_count',
+    'papers_authored_count', 'search',
 )
+# Text the 'search' column joins, so one filter or Ctrl-F hit finds a person by any of them.
+PEOPLE_SEARCH_FIELDS = ('name', 'preferred_name', 'id', 'email', 'correspondence_email', 'member_type', 'role',
+                        'affiliation', 'current_city', 'location', 'research_branch', 'research_topics', 'projects')
+SEARCH_LIMIT = 4000
 
 
 def ordered_people_columns(columns):
@@ -506,6 +539,9 @@ def urgency(hard, soft, waiting_since, now, prefix='Due', soft_name='soft target
 # from the PI's OpenReview, never from what AdminBot's record claims.
 # A paper before submission needs the PI's review this long before its venue's hard deadline.
 REVIEW_LEAD_DAYS = 21
+# Papers whose venue deadline is this close lead the sheet, nearest deadline first, whatever their
+# review status: an approved EMNLP paper still sits with the other EMNLP papers while EMNLP is near.
+APPROACHING_DAYS = 30
 # A paper before submission with no update for this long counts as stuck.
 STUCK_DAYS = 30
 PI_REVIEW_RULES = (
@@ -566,8 +602,8 @@ def status_kind(status):
 def due_text(request):
     hard, soft = request.get('hard'), request.get('soft')
     if hard and soft and soft < hard:
-        return f'{toronto(hard)} (soft target {toronto(soft)})'
-    return toronto(hard) if hard else ('Soft target ' + toronto(soft)) if soft else ''
+        return f'{stamp(hard)} (soft target {stamp(soft)})'
+    return stamp(hard) if hard else ('Soft target ' + stamp(soft)) if soft else ''
 
 
 # --------------------------------------------------------------------------
@@ -963,10 +999,11 @@ def paper_row(record, members, slots, deadlines, now, access=None, openreview=()
         'Review link': review_links,
         'Due (Toronto)': due_text(top) if top else '',
         'Requested by': name(top['by']) if top else '',
-        'Requested on': toronto(top['at'], False) if top else '',
+        'Requested on': stamp(top['at'], False) if top else '',
         'Request note': '\n\n'.join(f"[{r['type']}] {r['note']}" for r in pending if r['note']),
         'Venue': venue,
-        'Venue deadline (Toronto)': '\n'.join(f"{deadline_name(d)}: {toronto(d['at'])}" for d in (
+        'Conference': conference(venue, record.get('venue') or artifacts.get('conference') or ''),
+        'Venue deadline (Toronto)': '\n'.join(f"{stamp(d['at'])} · {deadline_name(d)}" for d in (
             deadline.get('soft'), deadline) if d) if deadline else '',
         'Venue (as entered)': ' '.join(str(record.get('venue') or artifacts.get('conference') or '').split()),
         'OpenReview': openreview_text(review),
@@ -982,7 +1019,7 @@ def paper_row(record, members, slots, deadlines, now, access=None, openreview=()
         'Accepted': accepted_text(record, review),
         'Going to conference': record.get('going_attendees', ''),
         'Started': record.get('started_on', ''),
-        'Last updated': toronto(parse_time(record.get('updated_at') or ''), False),
+        'Last updated': stamp(parse_time(record.get('updated_at') or ''), False),
         'Feedback givers': record.get('feedback_givers', ''),
         'Checks': ', '.join(f'{k}: {v}' for k, v in sorted((record.get('checks') or {}).items())),
         'Authors': record.get('authors', ''),
@@ -990,7 +1027,10 @@ def paper_row(record, members, slots, deadlines, now, access=None, openreview=()
         PAPER_ID: record['id'],
     }
     row['_link_problems'] = link_problems
-    row['_sort'] = (0 if top and rank < 50 else 1, rank, (top or {}).get('effective_due') or (deadline or {}).get('at') or far,
+    upcoming = [d['at'] for d in ((deadline or {}).get('soft'), deadline) if d and d['at'] >= now]
+    approaching = bool(upcoming) and min(upcoming) <= now + datetime.timedelta(days=APPROACHING_DAYS)
+    row['_sort'] = (0 if approaching else 1, deadline['at'] if approaching else now, row['Conference'] if approaching else '',
+                    0 if top and rank < 50 else 1, rank, (top or {}).get('effective_due') or (deadline or {}).get('at') or far,
                     priority(top) if top else 0, (top or {}).get('at') or now, -(updated.timestamp() if updated else 0), row['Paper'], record['id'])
     return row
 
@@ -1059,6 +1099,19 @@ def people_review_fields(record):
             'Status unknown' if not status else 'Recorded ' + status}
 
 
+def people_search_text(record, papers):
+    """Name, aliases, contacts, topics, projects and authored papers with venues, deduplicated, in one cell."""
+    parts = [cell(record.get(field)) for field in PEOPLE_SEARCH_FIELDS]
+    parts += [' '.join(filter(None, (cell(p.get('title')), cell(p.get('venue'))))) for p in papers]
+    seen, terms = set(), []
+    for part in parts:
+        part = ' '.join(part.split())
+        if part and part.casefold() not in seen:
+            seen.add(part.casefold())
+            terms.append(part)
+    return ' | '.join(terms)[:SEARCH_LIMIT]
+
+
 def full_people_values(connection, members, papers, timestamp):
     """Export recorded fields and ID-linked aggregates; never read auth secrets."""
     tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
@@ -1093,6 +1146,7 @@ def full_people_values(connection, members, papers, timestamp):
         submitted = [p['id'] for p in papers if p.get('submitted_by_member_id') == record['id']]
         record.update(papers_authored=authored, papers_authored_count=len(authored),
                       papers_submitted=submitted, papers_submitted_count=len(submitted))
+        record['search'] = people_search_text(record, [p for p in papers if p['id'] in authored])
 
     # Missing tables stay unknown; zero is only used when the table exists.
     for table, key, output in [

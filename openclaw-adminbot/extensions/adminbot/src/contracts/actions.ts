@@ -1523,6 +1523,12 @@ export type AdminBotLabMemberInput = {
    * never list them as nearby. Not self-editable (a member turns intros off instead).
    */
   do_not_contact?: boolean;
+  /**
+   * When the member last DMed AdminBot "stop" (workflows/members/slack-stop.ts). While set, no
+   * intro names them and optional nudges skip them; "start", or turning an intro back on in the
+   * portal, clears it. Self-owned: the member's own word, so neither an admin nor an import sets it.
+   */
+  slack_stop_at?: string;
   // Governance-owned: the department directory address, required to be @cs.toronto.edu for
   // everyone except external_collaborator (see validateCsEmail in kernel/service.ts).
   email?: string;
@@ -2110,6 +2116,8 @@ export const adminBotPaperSteps = [
 
 export type AdminBotPaperStep = (typeof adminBotPaperSteps)[number];
 
+export type AdminBotPaperProgressUpdate = { current_step: AdminBotPaperStep };
+
 export type AdminBotPaperArtifactLinks = {
   /** Human confirmation that the paper has been presented; blank reopens it. */
   completed_at?: string;
@@ -2432,6 +2440,11 @@ export type AdminBotMemberNudgeRequest = {
    * that matter, which is the failure this flag exists to avoid.
    */
   important?: boolean;
+  /**
+   * A nice-to-have rather than lab work (a photo campaign, a channel welcome). A member who DMed
+   * "stop" is skipped; reminders about papers, reviews and onboarding still reach them.
+   */
+  optional?: boolean;
 };
 
 export type AdminBotMemberNudgeSkip = {
@@ -2811,6 +2824,8 @@ export type AdminBotAuditEvent = {
     | "auth.impersonation_ended"
     // Where members are. An observation is a fact about a person's whereabouts, and the answer to
     // the prompt is the only thing that turns one into a profile change, so both are recorded.
+    | "member.slack_stopped"
+    | "member.slack_started"
     | "member.location_observed"
     | "member.location_prompt_answered"
     | "member.location_checkin_answered"

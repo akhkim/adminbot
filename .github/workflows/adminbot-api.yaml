@@ -1,0 +1,66 @@
+# The AdminBot HTTP contract and the CLI built on it.
+#
+# Its own workflow, path-filtered, rather than a step in `pnpm build`: a stale contract is worth a
+# red check on the PR that made it stale, and worth nothing at all as a reason for a deploy to stop.
+# The contract is generated from the route table and the TypeScript types the handlers return, so
+# "the API changed" can come from anywhere under extensions/adminbot/src -- not only src/api. The
+# generator's output carries no line numbers or source hash, so a change that leaves the API alone
+# leaves the contract byte-identical and this stays green.
+#
+# Same safety rules as ci.yaml: `pull_request` (never `pull_request_target`), read-only token, no
+# secrets, and no credentials persisted by checkout.
+name: AdminBot API
+
+on:
+  pull_request:
+    paths:
+      - "openclaw-adminbot/extensions/adminbot/src/**"
+      - "openclaw-adminbot/extensions/adminbot/cli/**"
+      - "openclaw-adminbot/extensions/adminbot/tooling/**"
+      - "openclaw-adminbot/pnpm-lock.yaml"
+      - ".github/workflows/adminbot-api.yaml"
+  push:
+    branches: [main]
+    paths:
+      - "openclaw-adminbot/extensions/adminbot/src/**"
+      - "openclaw-adminbot/extensions/adminbot/cli/**"
+      - "openclaw-adminbot/extensions/adminbot/tooling/**"
+      - "openclaw-adminbot/pnpm-lock.yaml"
+      - ".github/workflows/adminbot-api.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: adminbot-api-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: openclaw-adminbot
+
+env:
+  # The generator builds a TypeScript program over src/api, which needs more than the default heap.
+  NODE_OPTIONS: --max-old-space-size=6144
+
+jobs:
+  contract:
+    name: API contract and CLI
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: The committed contract and SDK types are current
+        run: pnpm adminbot:api:check
+      - name: Generator tests
+        run: >
+          pnpm exec vitest run --config test/vitest/vitest.node.config.ts
+          extensions/adminbot/tooling
+      - name: CLI tests
+        run: pnpm --filter @adminbot/cli test
+      - name: SDK types compile for consumers
+        run: pnpm --filter @adminbot/cli check:types

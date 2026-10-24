@@ -58,19 +58,21 @@ done
 }
 
 # The store is read once. Asking the gateway per job turns a sixteen-job sync into sixteen round
-# trips, and a partial answer halfway through would leave the set half-applied.
-existing="$($OPENCLAW cron list --all --json)"
-
+# trips, and a partial answer halfway through would leave the set half-applied. It goes through a
+# file, not an argument: the listing outgrew Linux's 128 KB per-argument limit, and the first
+# deploy that ran this sync failed with "Argument list too long".
 PLAN="$(mktemp)"
-trap 'rm -f "$PLAN"' EXIT
+EXISTING="$(mktemp)"
+trap 'rm -f "$PLAN" "$EXISTING"' EXIT
+$OPENCLAW cron list --all --json > "$EXISTING"
 
-python3 - "$MANIFEST" "$REPO_ROOT" "$existing" "$DRY_RUN" "$ONLY" <<'PY' > "$PLAN"
+python3 - "$MANIFEST" "$REPO_ROOT" "$EXISTING" "$DRY_RUN" "$ONLY" <<'PY' > "$PLAN"
 import json, shlex, sys
 
-manifest_path, repo_root, existing_raw, dry_run, only = sys.argv[1:6]
+manifest_path, repo_root, existing_path, dry_run, only = sys.argv[1:6]
 manifest = json.load(open(manifest_path))
 
-parsed = json.loads(existing_raw)
+parsed = json.load(open(existing_path))
 rows = parsed.get("jobs", parsed) if isinstance(parsed, dict) else parsed
 if not isinstance(rows, list) or any(not isinstance(row, dict) or not row.get("name") or not row.get("id") for row in rows):
     raise SystemExit("Invalid cron listing; refusing to register jobs")

@@ -35,7 +35,7 @@ row = exporter.paper_row({'id': 'p', 'title': 'T', 'lead_owner_member_id': 'pers
         'submission_url': 'https://example.test/paper?id=12', 'arxiv_url': 'https://arxiv.org/abs/1234.5678',
         'blocker_title': 'Awaiting data', 'blocker_note': 'Need updated dataset'}},
     {'person': {'name': 'Ada'}}, [], [], NOW)
-assert row['Lead'] == 'Ada' and row['Last updated'] == 'Wed Sep 30, 2026'  # 8 PM Toronto the previous day
+assert row['Lead'] == 'Ada' and row['Last updated'] == '2026-09-30 (Wed)'  # 8 PM Toronto the previous day
 assert row['Blocker / next step'] == 'Awaiting data\nNeed updated dataset\nReview draft'
 assert row['Review link'] == [('Overleaf edit 🔒', 'https://www.overleaf.com/project/123'),
     ('arXiv', 'https://arxiv.org/abs/1234.5678'), ('Submission', 'https://example.test/paper?id=12')]
@@ -85,7 +85,7 @@ assert c.total_changes == before
 print('PASS: allowlist, missing status, venue fallback, RAW formula safety, read-only snapshot')
 
 headers = ['name', 'id', 'notes', 'member_type', 'join_date', 'status', 'other']
-expected = ['id', 'join_date', 'status', 'member_type', 'name', 'notes', 'other']
+expected = ['name', 'id', 'join_date', 'status', 'member_type', 'notes', 'other']
 assert exporter.ordered_people_columns(headers) == expected
 requests = exporter.people_layout_requests(headers, 123)
 for request in requests[:-1]:
@@ -98,9 +98,9 @@ print('PASS: requested column order, remaining-column preservation, repeat-safe 
 
 full = [['name', 'id', 'status', 'calendar_group', 'extra'], ['=SUM(1)', 'p1', 'active', 'lab'], ['Person 2', 'p2']]
 ordered = exporter.order_people_values(full)
-assert ordered[0] == ['id', 'status', 'calendar_group', 'name', 'extra']
-assert ordered[1] == ['p1', 'active', 'lab', '=SUM(1)', '']
-assert ordered[2] == ['p2', '', '', 'Person 2', '']
+assert ordered[0] == ['name', 'id', 'status', 'calendar_group', 'extra']
+assert ordered[1] == ['=SUM(1)', 'p1', 'active', 'lab', '']
+assert ordered[2] == ['Person 2', 'p2', '', '', '']
 assert exporter.order_people_values(ordered) == ordered
 assert exporter.snapshot(c, '', full)['data'][0]['values'] == ordered
 for invalid in [[], [['name']], [['id', 'id']], [['id'], ['p', 'extra']]]:
@@ -165,7 +165,31 @@ assert {r['range']['sheetId'] for r in clears} == {1, 2}
 assert len([r for r in requests if 'addTable' in r]) == 2
 assert [r['range']['startRowIndex'] for r in clears] == [1, 0]
 assert clears[1]['fields'] == 'userEnteredValue,userEnteredFormat'
-assert len([r for r in requests if 'addFilterView' in r]) == 12
+assert len([r for r in requests if 'addFilterView' in r]) == 14
+full_view = next(r['addFilterView']['filter'] for r in requests
+                 if r.get('addFilterView', {}).get('filter', {}).get('title') == 'Full members')
+people_headers = direct['data'][0]['values'][0]
+assert full_view['criteria'] == {str(people_headers.index('member_type')): {'condition': {
+    'type': 'TEXT_CONTAINS', 'values': [{'userEnteredValue': 'full'}]}}}
+assert people_headers[0] == 'name'
+# Search joins name, ids and authored papers; secondary columns sit behind one collapsed group per tab.
+assert 'New person' in new['search'] and 'new' in new['search'].split(' | ')
+groups = [r for r in requests if 'addDimensionGroup' in r]
+assert [g['addDimensionGroup']['range']['sheetId'] for g in groups] == [1, 2]
+assert groups[0]['addDimensionGroup']['range']['startIndex'] == len(exporter.PEOPLE_PRIORITY)
+assert groups[1]['addDimensionGroup']['range'] == {'sheetId': 2, 'dimension': 'COLUMNS',
+    'startIndex': len(refresh.PAPER_CORE), 'endIndex': len(exporter.PAPERS)}
+assert sum('updateDimensionGroup' in r for r in requests) == 2
+existing = {**properties, 'PeopleList': {**properties['PeopleList'], 'columnGroups': [
+    {'range': {'sheetId': 1, 'dimension': 'COLUMNS', 'startIndex': len(exporter.PEOPLE_PRIORITY),
+               'endIndex': len(people_headers)}, 'depth': 1, 'collapsed': False}]}}
+again = refresh.refresh_requests(direct, existing)
+assert sum('addDimensionGroup' in r for r in again) == 1  # people group kept, expanded state untouched
+stale = {**properties, 'PaperList': {**properties['PaperList'], 'columnGroups': [
+    {'range': {'sheetId': 2, 'dimension': 'COLUMNS', 'startIndex': 3, 'endIndex': 9}, 'depth': 1}]}}
+regrouped = refresh.refresh_requests(direct, stale)
+assert any(r.get('deleteDimensionGroup', {}).get('range', {}).get('startIndex') == 3 for r in regrouped)
+print('PASS: name-first people, search column, Full members view, collapsible secondary columns')
 incomplete_view = next(r['addFilterView']['filter'] for r in requests
                        if r.get('addFilterView', {}).get('filter', {}).get('title') == 'Incomplete')
 assert incomplete_view['criteria'] == {str(exporter.PAPERS.index('Incomplete')): {'condition': {'type': 'NOT_BLANK'}}}
@@ -198,7 +222,7 @@ assert updated_table['range']['endRowIndex'] == len(direct['data'][1]['values'])
 assert updated_table['columnProperties'][exporter.PAPERS.index('Stage')]['columnType'] == 'TEXT'  # No stage supplied in this synthetic row.
 assert not any('deleteBanding' in r for r in converted)
 paper_views = [r['addFilterView']['filter'] for r in converted if 'tableId' in r.get('addFilterView', {}).get('filter', {})]
-assert [v['title'] for v in paper_views] == ['PaperList sort and filter', 'PI review queue', 'Incomplete', 'By PI review status', 'By review type', 'By venue', 'By stage']
+assert [v['title'] for v in paper_views] == ['PaperList sort and filter', 'PI review queue', 'Incomplete', 'By PI review status', 'By review type', 'By conference', 'By venue', 'By stage']
 assert all(v['tableId'] == 'paper-table' and 'range' not in v for v in paper_views)
 properties['PaperList']['filterViews'] = [{'title': 'By stage', 'filterViewId': 43, 'tableId': 'paper-table'},
                                          {'title': 'Awaiting PI approval', 'filterViewId': 44, 'tableId': 'paper-table'}]
@@ -212,8 +236,11 @@ properties['PaperList']['filterViews'][0].pop('tableId')
 recreated = refresh.refresh_requests(direct, properties)
 assert {'deleteFilterView': {'filterId': 43}} in recreated
 assert any(r.get('addFilterView', {}).get('filter', {}).get('title') == 'By stage' for r in recreated)
+# Only PaperList wipes formats; PeopleList keeps hand formatting and gets targeted styling only.
 assert all(r.get('repeatCell', {}).get('range', {}).get('sheetId') == 2 for r in restyled
-           if r.get('repeatCell', {}).get('fields', '').startswith('userEnteredFormat'))
+           if r.get('repeatCell', {}).get('fields', '') == 'userEnteredValue,userEnteredFormat')
+assert all(r['repeatCell']['fields'].startswith('userEnteredFormat.') for r in restyled
+           if r.get('repeatCell', {}).get('range', {}).get('sheetId') == 1 and 'userEnteredFormat' in r['repeatCell']['fields'])
 paper_write = next(r['updateCells'] for r in requests if 'updateCells' in r and r['updateCells']['range']['sheetId'] == 2)
 assert paper_write['rows'][1]['values'][0] == {'userEnteredValue': {'stringValue': '=IMPORTXML("private")'}}
 invalid = json.loads(json.dumps(direct))
@@ -237,7 +264,7 @@ arr = exporter.paper_row({'id': 'a', 'title': 'A', 'venue': 'ACL 2027', 'current
     [slot('feedback_arr', url='https://www.overleaf.com/read/xyz', reason='Please check the intro',
           hard_deadline='2026-10-13T12:00:00Z')], [], NOW)
 assert arr['PI review'] == 'Needs PI review' and arr['Review for'] == 'ARR feedback'
-assert arr['Urgency'] == '🔴 Due in 2 days' and arr['Due (Toronto)'] == 'Tue Oct 13, 2026, 8:00 AM'
+assert arr['Urgency'] == '🔴 Due in 2 days' and arr['Due (Toronto)'] == '2026-10-13 08:00 (Tue)'
 assert arr['Review link'] == [('Sent for review', 'https://www.overleaf.com/read/xyz')] and arr['Requested by'] == 'Ada'
 assert arr['Request note'] == '[ARR feedback] Please check the intro', arr['Request note']
 # The request's link is a known link: it keeps its real name, and edit + share + view all show once each.
@@ -270,12 +297,13 @@ deadline = []
 pre = exporter.paper_row({'id': 'f', 'title': 'F', 'venue': 'NAACL 2027', 'current_step': 'overleaf_writing'},
                          members, [], deadline, NOW)
 assert pre['Urgency'] == '🔴 Venue deadline in 2 days'
-assert pre['Venue deadline (Toronto)'] == 'ARR Oct 2026: Tue Oct 13, 2026, 7:59 AM'
+assert pre['Venue deadline (Toronto)'] == '2026-10-13 07:59 (Tue) · ARR Oct 2026'
 post = exporter.paper_row({'id': 'g', 'title': 'G', 'venue': 'NAACL 2027', 'current_step': 'poster_making'},
                           members, [], deadline, NOW)
 assert post['Urgency'] == '' and post['Venue deadline (Toronto)'] == ''
 order = sorted([post, pre, done, ack, arr], key=lambda r: r['_sort'])
-assert [r['ID'] for r in order] == ['a', 'b', 'f', 'c', 'g'], [r['ID'] for r in order]
+# Venue deadline within APPROACHING_DAYS leads, nearest first, ahead of review requests with none.
+assert [r['ID'] for r in order] == ['a', 'f', 'b', 'c', 'g'], [r['ID'] for r in order]
 # ARR feedback with no date of its own inherits the ARR cycle deadline and outranks an older arXiv request.
 arr_nodate = exporter.paper_row({'id': 'h', 'title': 'H', 'venue': 'NAACL 2027', 'current_step': 'overleaf_writing'},
                                 members, [slot('feedback_arr', at='2026-10-10T00:00:00Z')], [], NOW)
@@ -292,13 +320,13 @@ hard_late = exporter.paper_row({'id': 'k', 'title': 'K'}, members, [slot('feedba
                                                                          hard_deadline='2026-10-09T16:00:00Z')], [], NOW)
 assert hard_late['Urgency'] == '⛔ Hard deadline overdue by 2 days', hard_late['Urgency']
 soft_only = exporter.paper_row({'id': 'l', 'title': 'L'}, members, [slot('feedback_other', soft_deadline='2026-10-13T16:00:00Z')], [], NOW)
-assert soft_only['Urgency'] == '◌ Soft target in 2 days' and soft_only['Due (Toronto)'] == 'Soft target Tue Oct 13, 2026, 12:00 PM'
+assert soft_only['Urgency'] == '◌ Soft target in 2 days' and soft_only['Due (Toronto)'] == 'Soft target 2026-10-13 12:00 (Tue)'
 soft_late = exporter.paper_row({'id': 'm', 'title': 'M'}, members, [slot('feedback_other', soft_deadline='2026-10-09T16:00:00Z')], [], NOW)
 assert soft_late['Urgency'] == '◌ Soft target passed 2 days ago'
 two = exporter.paper_row({'id': 'n', 'title': 'N'}, members, [slot('feedback_arxiv', soft_deadline='2026-10-12T16:00:00Z',
                                                                    hard_deadline='2026-10-20T16:00:00Z')], [], NOW)
 assert two['Urgency'] == '🟡 Due in 9 days · soft target tomorrow', two['Urgency']
-assert two['Due (Toronto)'] == 'Tue Oct 20, 2026, 12:00 PM (soft target Mon Oct 12, 2026, 12:00 PM)'
+assert two['Due (Toronto)'] == '2026-10-20 12:00 (Tue) (soft target 2026-10-12 12:00 (Mon))'
 ranked = sorted([soft_only, hard_late, two, soft_late], key=lambda r: r['_sort'])
 assert [r['ID'] for r in ranked] == ['k', 'n', 'l', 'm'], [r['ID'] for r in ranked]
 # arXiv feedback with no dates gets a review window before it counts as waiting.
@@ -313,8 +341,8 @@ iclr = [venue_d('2026-10-13', 'abstract', 'Abstract'), venue_d('2026-10-20', 'su
         venue_d('2026-10-12', 'notification_by', 'Notify authors by'), venue_d('2027-03-01', 'camera_ready', 'Camera-ready')]
 early = exporter.paper_row({'id': 'q', 'title': 'Q', 'venue': 'ICLR 2027', 'current_step': 'overleaf_writing'}, members, [], iclr, NOW)
 assert early['Urgency'] == '🟡 Venue deadline in 10 days · abstract in 3 days', early['Urgency']
-assert early['Venue deadline (Toronto)'] == ('ICLR 2027 (Abstract): Wed Oct 14, 2026, 7:59 AM\n'
-                                              'ICLR 2027: Wed Oct 21, 2026, 7:59 AM'), early['Venue deadline (Toronto)']
+assert early['Venue deadline (Toronto)'] == ('2026-10-14 07:59 (Wed) · ICLR 2027 (Abstract)\n'
+                                              '2026-10-21 07:59 (Wed) · ICLR 2027'), early['Venue deadline (Toronto)']
 missed = exporter.paper_row({'id': 'r', 'title': 'R', 'venue': 'ICLR 2027', 'current_step': 'submission'}, members, [],
                             [venue_d('2026-10-05', 'submission', 'Paper submission')], NOW)
 assert missed['Urgency'] == '⛔ Venue deadline overdue by 5 days', missed['Urgency']
@@ -322,7 +350,7 @@ camera = exporter.paper_row({'id': 's', 'title': 'S', 'venue': 'ICLR 2027', 'cur
                              'accepted_venue': 'ICLR', 'accepted_year': 2027}, members,
                             [slot('feedback_camera_ready', at='2026-10-10T00:00:00Z')], iclr, NOW)
 assert camera['Urgency'] == '🟢 Camera-ready in 142 days', camera['Urgency']
-assert camera['Venue deadline (Toronto)'] == 'ICLR 2027 (Camera-ready): Tue Mar 2, 2027, 6:59 AM'
+assert camera['Venue deadline (Toronto)'] == '2027-03-02 06:59 (Tue) · ICLR 2027 (Camera-ready)'
 for r in (hard_late, soft_only, soft_late, two, arxiv_new, early, missed, camera):
     r.pop('_sort')
 # Restricted Overleaf links: a read link that no longer opens is flagged and locked; an open one is not.
@@ -455,11 +483,11 @@ entropy = {'id': 'ent', 'title': 'Entropy', 'venue': 'ARR October 2026', 'curren
 done = exporter.paper_row(entropy, members, [slot('feedback_arr', at='2026-10-06T12:00:00Z')], [], LATER,
                           openreview=oct_submission)
 assert done['PI review'] == 'Submitted on OpenReview' and done['Urgency'] == '', done
-assert done['_sort'][0] == 1
+assert done['_sort'][3] == 1
 # A request for the next cycle, asked after the October one closed, is still open.
 resubmit = exporter.paper_row(dict(entropy, venue='ARR January 2027'), members,
                               [slot('feedback_arr', at='2026-10-20T12:00:00Z')], [], LATER, openreview=oct_submission)
-assert resubmit['PI review'] == 'Needs PI review' and resubmit['_sort'][0] == 0
+assert resubmit['PI review'] == 'Needs PI review' and resubmit['_sort'][3] == 0
 # Not on OpenReview, own ARR date gone: listed as past, sorted after live requests.
 missed = exporter.paper_row({'id': 'm', 'title': 'M', 'venue': 'ICLR 2027', 'current_step': 'overleaf_writing'}, members,
                             [slot('feedback_arr', hard_deadline='2026-10-13T12:00:00Z')], [], LATER)
@@ -472,7 +500,21 @@ live = exporter.paper_row({'id': 'l', 'title': 'L', 'venue': 'ICLR 2027', 'curre
                           [slot('feedback_other', at='2026-10-20T12:00:00Z')], [], LATER)
 assert sorted([missed['_sort'], live['_sort']])[0] == live['_sort']
 assert exporter.PAPERS.index('Authors') == exporter.PAPERS.index('Due (Toronto)') + 1
+# Approaching venue deadlines lead whatever the review status, grouped by deadline then conference;
+# a deadline beyond the window, or a paper with none, keeps the review order below them.
+def iclr_paper(pid, steps, deadlines):
+    return exporter.paper_row({'id': pid, 'title': pid, 'venue': 'ICLR 2027', 'current_step': 'overleaf_writing'},
+                              members, steps, deadlines, NOW)
+approved = iclr_paper('approved', [slot('feedback_arxiv', at='2026-10-01T00:00:00Z'), slot('pi_approval', at='2026-10-02T00:00:00Z')], iclr)
+plain = iclr_paper('plain', [], iclr)
+waiting = exporter.paper_row({'id': 'waiting', 'title': 'W'}, members, [slot('feedback_arxiv', at='2026-09-01T00:00:00Z')], [], NOW)
+far_off = iclr_paper('far', [], [venue_d('2027-01-28', 'submission', 'Paper submission')])
+assert approved['PI review'].startswith('Approved') and approved['Venue deadline (Toronto)']
+assert far_off['Venue deadline (Toronto)'] and not waiting['Venue deadline (Toronto)']
+assert [r['ID'] for r in sorted([far_off, waiting, plain, approved], key=lambda r: r['_sort'])] == \
+    ['approved', 'plain', 'waiting', 'far'], [r['ID'] for r in sorted([far_off, waiting, plain, approved], key=lambda r: r['_sort'])]
 print('PASS: ARR feedback settled by an OpenReview submission, past-deadline ARR requests sink, Authors beside Due')
+print('PASS: papers with a venue deadline within 30 days lead the sheet, approved or not, grouped by deadline')
 
 # The PI's OpenReview is the ground truth for decisions.
 paper = lambda **extra: dict({'id': 'g', 'title': 'Ground', 'current_step': 'arxiv_polish'}, **extra)
@@ -612,3 +654,23 @@ with tempfile.TemporaryDirectory() as directory:
     assert json.loads(target.read_text()) == {'generated_at': '2026-10-24T12:00:00Z', 'papers': snap['linkProblems']}
     assert oct(os.stat(target).st_mode & 0o777) == '0o640'
 print('PASS: closed PI review statuses from OpenReview and deadlines, Other counted, Incomplete reasons, link problems for nudges')
+
+wanted = ['a@x.com', 'b@x.com']
+tabs = [{'properties': {'title': 'Mine'}, 'protectedRanges': [
+            {'protectedRangeId': 1, 'editors': {'users': ['bot@x.com', 'a@x.com']}},
+            {'protectedRangeId': 2, 'warningOnly': True}]},
+        {'properties': {'title': 'Owner only'}, 'protectedRanges': [{'protectedRangeId': 3, 'editors': {}}]},
+        {'properties': {'title': 'Done'}, 'protectedRanges': [
+            {'protectedRangeId': 4, 'editors': {'users': ['bot@x.com', 'A@x.com', 'b@x.com']}}]}]
+granted, locked = refresh.editor_requests(tabs, 'bot@x.com', wanted)
+assert [r['updateProtectedRange']['protectedRange']['protectedRangeId'] for r in granted] == [1]
+assert granted[0]['updateProtectedRange']['protectedRange']['editors']['users'] == ['bot@x.com', 'a@x.com', 'b@x.com']
+assert locked == ['Owner only']
+print('PASS: approved editors are added to every protection the bot can edit; owner-only tabs are reported')
+
+for typed, expected in [('ARR · May 2026 → EMNLP 2026 Findings', 'EMNLP'), ('ARR · cycle not recorded', 'ARR (conference not set)'),
+                        ('NeurIPS', 'NeurIPS'), ('Child Safety in AI Workshop @ NeurIPS 2026', 'Workshop'), ('', 'Not set'),
+                        ('ICML 2027, ACL 2027', 'ACL'), ('JMLR (end of September)', 'Journal'), ('EU AI Act', 'Other')]:
+    assert exporter.conference(typed) == expected, (typed, exporter.conference(typed))
+assert exporter.stamp(exporter.parse_time('2026-10-01T00:30:00Z'), False) == '2026-09-30 (Wed)'
+print('PASS: one standard conference per paper and year-first dates that sort as text')

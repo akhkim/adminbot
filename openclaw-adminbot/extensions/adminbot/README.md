@@ -89,6 +89,14 @@ Keep vendor write tokens in the AdminBot service, not in OpenClaw prompts,
 workspace files, or model-visible memory. The plugin refuses non-loopback
 service URLs unless `allowInsecureRemoteService` is explicitly enabled.
 
+## Standalone CLI
+
+People and external LLM agents can use the OpenAPI-driven [AdminBot CLI](cli/README.md)
+without installing OpenClaw. Commands, input flags, and SDK types derive from the
+API handlers and existing TypeScript contracts. From the workspace root, run `pnpm adminbot:cli --help`
+or install it with `npm install --global ./extensions/adminbot/cli`. It wraps the
+existing service API and preserves server authorization and approval checks.
+
 ## Layout
 
 The package is grouped by **lifecycle role**, not by integration, and it uses the

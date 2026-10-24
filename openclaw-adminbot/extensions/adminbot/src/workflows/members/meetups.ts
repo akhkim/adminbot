@@ -365,11 +365,12 @@ export function meetupPreferences(
  * An admin's do-not-contact wins over everything, including the member's own Say hi.
  */
 export function meetupIntrosAllowed(
-  member: Pick<AdminBotLabMember, "meetup_intros" | "do_not_contact">,
+  member: Pick<AdminBotLabMember, "meetup_intros" | "do_not_contact" | "slack_stop_at">,
   kind: "event" | "city",
   today: string,
 ): boolean {
-  if (member.do_not_contact) {
+  // "stop" in a DM to the bot (slack-stop.ts) is the member's own no, and covers both kinds.
+  if (member.do_not_contact || member.slack_stop_at) {
     return false;
   }
   const prefs = meetupPreferences(member);

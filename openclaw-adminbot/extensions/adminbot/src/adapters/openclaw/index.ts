@@ -211,6 +211,8 @@ export function createAdminBotToolHandlers(
   const signal = options.signal;
   return {
     runEmailAutomation: () => client.runEmailAutomation(signal),
+    applySlackStop: (params: { slackUserId: string; command: "stop" | "start" }) =>
+      client.applySlackStop({ slack_user_id: params.slackUserId, command: params.command }, signal),
     converseReimbursement: (params: ReimbursementConversationParams) =>
       client.converseReimbursement(params, signal),
     generateReimbursement: (params: { draft: Record<string, unknown> }) =>

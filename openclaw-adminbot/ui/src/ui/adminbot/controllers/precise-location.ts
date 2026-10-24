@@ -48,8 +48,9 @@ export type PreciseLocationState = {
   /** The button's own reading is under way. */
   busy?: boolean;
   /**
-   * Why the button's reading came back empty. Only ever set from a press -- a silent refresh never
-   * touches it -- and shown as a short inline note beside the button, not a toast or banner.
+   * Why the button's reading came back empty, shown as a short inline note beside the button, not a
+   * toast or banner. Set from a press, and by the silent refresh only for "denied": a site the
+   * browser blocks can never be asked, so the note saying how to unblock it shows up front.
    */
   note?: "denied" | "unavailable" | null;
 };
@@ -159,7 +160,7 @@ export async function sharePreciseLocation(
 export async function refreshPreciseLocationSilently(
   deps: PreciseLocationDeps,
   visibility: MemberMapVisibility | null | undefined,
-  options: { ask?: boolean } = {},
+  options: { ask?: boolean; onBlocked?: () => void } = {},
 ): Promise<PreciseLocationPlace | undefined> {
   try {
     if (!preciseLocationAllowed(visibility)) {
@@ -176,6 +177,7 @@ export async function refreshPreciseLocationSilently(
     const reader = { ...deps, geolocation: deps.geolocation };
     if (permission === "denied") {
       deps.reportPermission?.("denied");
+      options.onBlocked?.();
       return undefined;
     }
     if (permission !== "granted") {
@@ -322,6 +324,12 @@ export function startAdminBotPreciseLocationRefresh(
     reading = true;
     void refreshPreciseLocationSilently(browserDeps(host, token), ownVisibility(host), {
       ask,
+      onBlocked: () => {
+        if (host.adminBotPreciseLocation?.note !== "denied") {
+          host.adminBotPreciseLocation = { ...host.adminBotPreciseLocation, note: "denied" };
+          requestUpdate();
+        }
+      },
     }).then((place) => {
       if (place && loadStoredMemberSession()?.sessionToken === token) {
         host.adminBotPreciseLocation = { ...host.adminBotPreciseLocation, place };
