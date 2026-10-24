@@ -123,10 +123,10 @@ for agent consistency. Text responses remain text. Binary responses require
 ## Contract and generation
 
 ```text
-Existing HTTP handlers + TypeScript contracts
+Route table (src/api/routes) + remaining dispatchers + TypeScript contracts
   → tooling/generate-openapi.ts
-  → ../openapi.generated.json + cli/openapi.generated.json
-      → server typed-request validation + GET /openapi.json
+  → cli/openapi.generated.json          (the one contract file)
+      → GET /openapi.json (authenticated)
       → generic CLI (openapi-fetch + Ajv)
       → openapi-typescript → openapi.generated.d.ts → typed SDK
 ```
@@ -142,18 +142,24 @@ pnpm --filter @adminbot/cli check:types
 pnpm test extensions/adminbot/src/api/server.openapi.test.ts
 ```
 
-`adminbot:api:check` detects stale OpenAPI copies and SDK types. It is also a hard
-lane in `pnpm check`. Regenerate after changing handlers or contracts; do not edit
-generated files. The generator reads the TypeScript AST and type checker, including
-nested method guards, parameterized routes, optional regex suffixes, and referenced
-API helpers. Unsupported route selectors fail generation. Schemas include their
-source location and the document includes a hash of the local source closure.
+`adminbot:api:check` fails when the committed contract or SDK types are stale. It runs in
+the **AdminBot API** workflow (`.github/workflows/adminbot-api.yaml`), only for changes under
+`src/api`, `src/contracts`, `cli` or `tooling` -- never in `pnpm build`, so a stale contract
+cannot stop a deploy. Regenerate after changing a route or a contract type, and commit the
+result; do not edit generated files.
+
+The output depends on the API alone: no source line numbers and no hash of the source tree,
+so a comment or an unrelated refactor leaves it byte-identical. The generator reads route-table
+entries directly (seeing through guard decorators to the handler) and walks the remaining
+if-chains -- the public and auth dispatchers, and the sub-routers a `"*"`, `under()` or
+`startingWith()` entry delegates to. A selector it does not understand fails generation.
 
 Legacy handlers accepting dynamic records are marked with `x-schema-coverage`;
 their semantic validators remain authoritative. A downstream cast or normalized
-parser result is not treated as proof of required input fields. Fully typed reads
-use the generated schemas at the server boundary. OpenAPI documents the current
-implementation; it does not replace approval or privacy policy with client checks.
+parser result is not treated as proof of required input fields. The service does not
+validate requests against the contract -- its handlers validate their own input and say
+what was wrong; the CLI validates against the contract before sending. OpenAPI documents
+the current implementation; it does not replace approval or privacy policy with client checks.
 
 SDK consumers use the same document and generated types:
 

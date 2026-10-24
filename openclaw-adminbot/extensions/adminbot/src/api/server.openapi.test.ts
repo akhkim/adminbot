@@ -4,7 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import openapi from "../../openapi.generated.json" with { type: "json" };
+import openapi from "../../cli/openapi.generated.json" with { type: "json" };
+import { withCompleteProfile } from "../contracts/profile-completion.test-helpers.js";
 import { createAdminBotMockService } from "./server.js";
 
 const active: { mock: ReturnType<typeof createAdminBotMockService>; directory: string }[] = [];
@@ -25,7 +26,6 @@ async function lab() {
     sensitiveInfoPath: path.join(directory, "sensitive.md"),
     calendarInviteRunner: async () => {},
     accountApprovedEmailRunner: async () => {},
-    dcsFormRunner: async () => {},
   });
   active.push({ mock, directory });
   await new Promise<void>((resolve) => {
@@ -42,14 +42,24 @@ async function lab() {
     ["other", "Other Member", "member"],
     ["admin", "Test Admin", "admin"],
   ] as const) {
-    expect(mock.service.upsertLabMember({ id, name, privilege_level: level }).ok).toBe(true);
-    mock.auth.claim({ member_id: id, email: `${id}@example.test`, password: "synthetic-password" });
-    const registration = mock.auth.listRegistrations().find((record) => record.member_id === id);
+    expect(
+      mock.service.upsertLabMember(withCompleteProfile({ id, name, privilege_level: level })).ok,
+    ).toBe(true);
+    await mock.auth.claim({
+      member_id: id,
+      email: `${id}@example.test`,
+      password: "synthetic-password",
+    });
+    const registrations = await mock.auth.listRegistrations();
+    const registration = registrations.find((record) => record.member_id === id);
     if (!registration) {
       throw new Error("missing registration");
     }
-    expect(mock.auth.approveRegistration(registration.id, "bootstrap-admin").ok).toBe(true);
-    const login = mock.auth.login({ email: `${id}@example.test`, password: "synthetic-password" });
+    expect((await mock.auth.approveRegistration(registration.id, "bootstrap-admin")).ok).toBe(true);
+    const login = await mock.auth.login({
+      email: `${id}@example.test`,
+      password: "synthetic-password",
+    });
     if (!login.ok) {
       throw new Error("login failed");
     }
@@ -97,12 +107,16 @@ function cli(url: string, directory: string, args: string[], token?: string, inp
 }
 
 describe("the generated OpenAPI surface", () => {
-  it("serves exactly the packaged contract without authentication", async () => {
-    const { url } = await lab();
-    const response = await fetch(`${url}/openapi.json`);
+  // It lists every route, admin-only ones included, and the service is reachable from the
+  // internet through the tunnel -- so a signed-in caller only.
+  it("serves exactly the packaged contract, and only to an authenticated caller", async () => {
+    const { url, tokens } = await lab();
+    expect((await fetch(`${url}/openapi.json`)).status).toBe(401);
+    const response = await fetch(`${url}/openapi.json`, {
+      headers: { Authorization: `Bearer ${tokens.author}` },
+    });
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual(openapi);
-    expect((await fetch(`${url}/audit`)).status).toBe(401);
   });
 
   it("runs CLI login, weekly notes, checklist updates, and stage changes against the actual service", async () => {
@@ -170,6 +184,12 @@ describe("the generated OpenAPI surface", () => {
     expect((await update(tokens.other, { current_step: "submission" })).status).toBe(403);
     expect((await update(tokens.author, { current_step: "invented" })).status).toBe(400);
     expect((await update(tokens.author, {})).status).toBe(400);
+    const missing = await fetch(`${url}/papers/no-such-paper/progress`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${tokens.author}` },
+      body: JSON.stringify({ current_step: "submission" }),
+    });
+    expect(missing.status).toBe(404);
     expect(
       (
         await update(tokens.admin, {
@@ -188,7 +208,9 @@ describe("the generated OpenAPI surface", () => {
     });
   });
 
-  it("uses generated request validation and still rejects execution without approval", async () => {
+  // The handlers validate their own input and say what was wrong; the contract does not stand in
+  // front of them with a generic refusal.
+  it("keeps the handlers' own validation and still rejects execution without approval", async () => {
     const { url, tokens, directory } = await lab();
     const invalid = await fetch(`${url}/proposals`, {
       method: "POST",

@@ -235,13 +235,16 @@ export async function run(
     stderr.write(
       `${JSON.stringify({ error: { code: known ? error.code : "CLI_ERROR", message: known ? error.message : "CLI failed; check input and local file permissions", ...(status ? { status } : {}) } })}\n`,
     );
+    // The service refusing the input is an input error, the same as the CLI refusing it.
     return [401, 403].includes(status)
       ? 3
       : status === 409
         ? 4
-        : status || ["CONNECTION_ERROR", "INVALID_RESPONSE", "SERVICE_ERROR"].includes(error.code)
-          ? 1
-          : 2;
+        : status === 400 || status === 422
+          ? 2
+          : status || ["CONNECTION_ERROR", "INVALID_RESPONSE", "SERVICE_ERROR"].includes(error.code)
+            ? 1
+            : 2;
   }
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(await realpath(process.argv[1])).href) {

@@ -89,7 +89,7 @@ function assign(target, path, value) {
     cursor = cursor[key] ??= {};
   }
   const key = keys.at(-1);
-  if (Object.hasOwn(target, key)) {
+  if (Object.hasOwn(cursor, key)) {
     throw new ApiError("INVALID_INPUT", `Duplicate body field: ${path}`);
   }
   cursor[key] = value;

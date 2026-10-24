@@ -151,7 +151,79 @@ await test("generic SDK validates the same schemas and public endpoints omit aut
     assert.equal(req.headers.authorization, undefined);
     res.end('{"items":[]}');
   });
-  await callOperation("get-deadlines-venues.json", { baseUrl, token: "secret" });
+  await callOperation("get-deadlines", { baseUrl, token: "secret" });
+});
+
+await test("a refusal carries the service's own reason, and a 400 exits as an input error", async (t) => {
+  const url = await service(t, (_req, res) => {
+    res.statusCode = 400;
+    res.end('{"error":{"message":"current_step must be one of the paper steps"}}');
+  });
+  const result = await invoke(["papers", "progress", "p1", "--step", "overleaf_writing"], {
+    env: { ADMINBOT_URL: url, ADMINBOT_TOKEN: "test" },
+  });
+  assert.equal(result.code, 2, result.err);
+  const { error } = JSON.parse(result.err);
+  assert.equal(error.status, 400);
+  assert.match(error.message, /current_step must be one of the paper steps/u);
+});
+
+await test("a refusal without a reason still says something, bounded", async () => {
+  await assert.rejects(
+    callOperation("get-deadlines", {
+      baseUrl: "http://127.0.0.1:1",
+      fetchImpl: async () =>
+        new Response("x".repeat(10), { status: 500, headers: { "content-type": "text/plain" } }),
+    }),
+    { code: "SERVICE_ERROR", status: 500, message: /check permissions, policy, and input/u },
+  );
+});
+
+await test("header parameters are read from the headers, not the query", async (t) => {
+  const seen = [];
+  const baseUrl = await service(t, (req, res) => {
+    seen.push({ url: req.url, key: req.headers["idempotency-key"] });
+    res.end("{}");
+  });
+  await callOperation("post-deadline-proposals", {
+    baseUrl,
+    token: "test",
+    header: { "idempotency-key": "once" },
+    body: {},
+  }).catch(() => {});
+  assert.equal(seen.at(-1)?.key, "once");
+  assert.ok(!seen.at(-1)?.url.includes("idempotency"));
+});
+
+await test("a nested --set may share a top-level field's name without being a duplicate", async (t) => {
+  const received = [];
+  const url = await service(t, (_req, res, body) => {
+    received.push(body);
+    res.end("{}");
+  });
+  const env = { ADMINBOT_URL: url, ADMINBOT_TOKEN: "test" };
+  const result = await invoke(
+    [
+      "proposals",
+      "create",
+      "--type",
+      "email.send",
+      "--summary",
+      "Synthetic draft",
+      "--set",
+      "proposed_payload.summary=nested",
+    ],
+    { env },
+  );
+  assert.equal(result.code, 0, result.err);
+  assert.equal(received.at(-1).summary, "Synthetic draft");
+  assert.equal(received.at(-1).proposed_payload.summary, "nested");
+  const twice = await invoke(
+    ["proposals", "create", "--set", "proposed_payload.to=a", "--set", "proposed_payload.to=b"],
+    { env },
+  );
+  assert.equal(twice.code, 2);
+  assert.match(twice.err, /Duplicate body field/u);
 });
 
 await test("input files, nested --set, query parameters and dry-run overrides use OpenAPI", async (t) => {
@@ -242,14 +314,18 @@ await test("HTTP failures remain nonzero and redirects never receive credentials
   for (const status of [401, 403, 409, 503]) {
     const url = await service(t, (_req, res) => {
       res.statusCode = status;
-      res.end('{"error":{"message":"private-data"}}');
+      res.end(`{"error":{"message":"refused: ${"r".repeat(800)}"}}`);
     });
     const result = await invoke(["papers", "list"], {
       env: { ADMINBOT_URL: url, ADMINBOT_TOKEN: "test" },
     });
     assert.equal(result.code, status === 409 ? 4 : status === 503 ? 1 : 3);
+    // The service's reason is the caller's to read -- on stderr, as JSON, and bounded -- and
+    // never on stdout, where a script would take it for a result.
     assert.equal(result.out, "");
-    assert.ok(!result.err.includes("private-data"));
+    const { error } = JSON.parse(result.err);
+    assert.match(error.message, /^AdminBot rejected the request: refused: r+$/u);
+    assert.ok(error.message.length < 600);
   }
   let forwarded = 0;
   const target = await service(t, (_req, res) => {

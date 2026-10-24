@@ -22,6 +22,9 @@ const visit = (node: ts.Node, fn: (child: ts.Node) => void) => {
 const isRead = (node: ts.Node) =>
   ts.isCallExpression(node) && ["readJson", "readJsonOrEmpty"].includes(node.expression.getText());
 
+const TRANSPORT_HEADERS =
+  /^(authorization|cookie|origin|host|content-type|content-length|accept|user-agent|x-forwarded-.+|x-real-ip|cf-.+)$/iu;
+
 /** The one contract file. The CLI package ships it and the service serves it. */
 export const OPENAPI_OUTPUT = join(extensionRoot, "cli/openapi.generated.json");
 
@@ -76,7 +79,12 @@ export function buildOpenApi(root = extensionRoot) {
       seen.add(rootNode);
       visit(rootNode, (node) => {
         nodes.push(node);
-        if (!ts.isCallExpression(node) || !node.arguments.some((arg) => arg.getText() === "req")) {
+        // Follow the request into the helpers it is handed to -- and the URL, since list routes
+        // read their query through helpers such as readListPage(url).
+        if (
+          !ts.isCallExpression(node) ||
+          !node.arguments.some((arg) => ["req", "url"].includes(arg.getText()))
+        ) {
           return;
         }
         let symbol = checker.getSymbolAtLocation(node.expression);
@@ -279,12 +287,28 @@ export function buildOpenApi(root = extensionRoot) {
     );
     const query = new Set<string>();
     const headers = new Set<string>();
+    // `url.searchParams.get("x")`, or the same through a local alias:
+    // `const params = url.searchParams; params.get("x")`.
+    const isSearchParams = (expression: ts.Expression): boolean => {
+      if (expression.getText() === "url.searchParams") {
+        return true;
+      }
+      if (!ts.isIdentifier(expression)) {
+        return false;
+      }
+      const declaration = checker.getSymbolAtLocation(expression)?.valueDeclaration;
+      return Boolean(
+        declaration &&
+          ts.isVariableDeclaration(declaration) &&
+          declaration.initializer?.getText() === "url.searchParams",
+      );
+    };
     for (const node of nodes) {
       if (
         ts.isCallExpression(node) &&
         ts.isPropertyAccessExpression(node.expression) &&
-        ["get", "getAll"].includes(node.expression.name.text) &&
-        node.expression.expression.getText() === "url.searchParams" &&
+        ["get", "getAll", "has"].includes(node.expression.name.text) &&
+        isSearchParams(node.expression.expression) &&
         node.arguments[0] &&
         ts.isStringLiteral(node.arguments[0])
       ) {
@@ -305,7 +329,9 @@ export function buildOpenApi(root = extensionRoot) {
     }
     [...headers]
       .toSorted()
-      .filter((name) => !["authorization", "cookie", "origin", "host"].includes(name.toLowerCase()))
+      // Credentials, and the headers a proxy or the HTTP stack sets, are not caller parameters:
+      // a CLI flag for X-Forwarded-For would only be an invitation to spoof it.
+      .filter((name) => !TRANSPORT_HEADERS.test(name))
       .forEach((name) => parameters.push({ name, in: "header", schema: { type: "string" } }));
     [...query]
       .toSorted()

@@ -1,6 +1,6 @@
 // Narrow stage edits use the same ownership rules as the paper form, without a
 // client-side GET/PUT that can overwrite a concurrent title or author edit.
-import type { AdminBotPaperProgressUpdate } from "../contracts/actions.js";
+import { adminBotPaperSteps, type AdminBotPaperProgressUpdate } from "../contracts/actions.js";
 import type { AdminBotMemberPrincipal } from "../workflows/identity/auth.js";
 import { isPrivileged } from "./routes/guards.js";
 import type { RouteRequest } from "./routes/router.js";
@@ -25,6 +25,14 @@ export async function handlePaperProgress({
   const body = (await readJson(req)) as Partial<AdminBotPaperProgressUpdate> | null;
   if (!body || typeof body.current_step !== "string") {
     sendJson(res, 400, { error: { message: "current_step is required" } });
+    return;
+  }
+  // The paper write paths store whatever step they are given, so the one route that exists only
+  // to move the step checks it.
+  if (!(adminBotPaperSteps as readonly string[]).includes(body.current_step)) {
+    sendJson(res, 400, {
+      error: { message: `current_step must be one of: ${adminBotPaperSteps.join(", ")}` },
+    });
     return;
   }
   if (!isPrivileged(principal)) {

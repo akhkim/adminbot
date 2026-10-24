@@ -86,6 +86,27 @@ export function createAdminBotClient(options = {}) {
   });
 }
 
+/**
+ * The service's own reason for refusing, when it gave one.
+ *
+ * Handlers answer `{ error: { message } }` naming what was wrong -- the missing field, the
+ * permission, the policy -- and a caller (a person, or an agent correcting itself) needs that
+ * sentence, not a generic one. Bounded so a misbehaving server cannot flood the terminal.
+ */
+function rejectionMessage(raw) {
+  let message;
+  try {
+    const text = Buffer.isBuffer(raw) || raw instanceof ArrayBuffer ? Buffer.from(raw).toString("utf8") : raw;
+    const parsed = typeof text === "string" ? JSON.parse(text) : text;
+    message = parsed?.error?.message ?? parsed?.message;
+  } catch {
+    message = undefined;
+  }
+  return typeof message === "string" && message.trim()
+    ? `AdminBot rejected the request: ${message.trim().slice(0, 500)}`
+    : "AdminBot rejected the request; check permissions, policy, and input";
+}
+
 export async function callOperation(
   operationId,
   {
@@ -104,7 +125,7 @@ export async function callOperation(
     throw new ApiError("UNKNOWN_OPERATION", "Unknown operation; run adminbot operations");
   }
   for (const parameter of operation.parameters ?? []) {
-    const value = (parameter.in === "path" ? path : query)[parameter.name];
+    const value = { path, header, query }[parameter.in]?.[parameter.name];
     if (value === undefined && parameter.required) {
       throw new ApiError("INVALID_INPUT", `Missing ${parameter.in} parameter: ${parameter.name}`);
     }
@@ -140,11 +161,7 @@ export async function callOperation(
   }
   const { response } = result;
   if (!response.ok) {
-    throw new ApiError(
-      "SERVICE_ERROR",
-      "AdminBot rejected the request; check permissions, policy, and input",
-      response.status,
-    );
+    throw new ApiError("SERVICE_ERROR", rejectionMessage(result.error), response.status);
   }
   if (response.status === 204 || result.data === undefined) {
     return null;
