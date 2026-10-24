@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import type { AdminBotCalendarEvent, CalendarEventsReader } from "../workflows/calendar/events.js";
 import { inviteAddressFor } from "../workflows/members/local-event-audience.js";
 import {
+  buildMemberMap,
   gazetteerPlaces,
   resolvePlace,
   type AdminBotMapPlace,
@@ -58,6 +59,16 @@ export async function inviteLocalLunches(
     throw new Error("Lunch calendar result may be truncated; no invitations sent");
   const map = service.memberMap({ loginCity: true });
   if (!map.ok) throw new Error(map.error.message);
+  // The public member map deliberately excludes departed members. Lunches also
+  // include alumni, using their stated location while retaining map privacy rules.
+  const alumniMap = buildMemberMap(
+    store.listLabMembers()
+      .filter((member) => member.status === "alumni")
+      .map((member) => ({ ...member, status: undefined })),
+    new Map(),
+    { now },
+  );
+  const places = [...map.payload.places, ...alumniMap.places];
   const invited: Array<{ event_id: string; member_id: string; proposal_id: string }> = [];
   const skipped: Array<{ event_id: string; reason: string }> = [];
   const failed: Array<{ event_id: string; member_id: string; reason: string }> = [];
@@ -66,12 +77,12 @@ export async function inviteLocalLunches(
     if (!Number.isFinite(start) || start < now.getTime() || start >= until.getTime()) continue;
     if (event.calendar_id && event.calendar_id !== calendarId) continue;
     if (!/\blunch(?:es)?\b/iu.test(event.summary)) continue;
-    const city = lunchCity(event, [...gazetteerPlaces(), ...map.payload.places]);
+    const city = lunchCity(event, [...gazetteerPlaces(), ...places]);
     if (!city) {
       skipped.push({ event_id: event.id, reason: "Not a timed lunch with one identifiable city" });
       continue;
     }
-    const locals = map.payload.places.find((p) => p.key === city)?.members ?? [];
+    const locals = places.filter((p) => p.key === city).flatMap((p) => p.members);
     const attendees = new Set((event.attendees ?? []).map((email) => email.trim().toLowerCase()));
     for (const local of locals) {
       // A timezone can cover several cities. Automatic invitations require a city placement.

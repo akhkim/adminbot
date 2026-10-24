@@ -30,6 +30,7 @@ function lab() {
       email: `${id}@example.test`,
       location,
       member_type,
+      ...(["alum", "hidden"].includes(id) ? { status: "alumni" } : {}),
       ...(id === "hidden" ? { map_visibility: "hidden" } : {}),
     });
   }
