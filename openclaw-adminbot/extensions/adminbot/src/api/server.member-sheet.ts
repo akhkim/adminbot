@@ -587,9 +587,23 @@ export async function approveAndExecute(
   if (!approved.ok) {
     return { ok: false, reason: approved.error.message };
   }
+  return executeApproved(service, proposal, `add-row-${proposal.id}`);
+}
+
+/**
+ * Execute a proposal that is already approved -- by an admin above, or by its own auto policy.
+ *
+ * Reported as done only when a connector carried it out, which is the half of approveAndExecute an
+ * auto-approved proposal still needs.
+ */
+export async function executeApproved(
+  service: AdminBotService,
+  proposal: AdminBotStoredProposal,
+  idempotencyKey: string,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
   const executed = await service.execute(proposal.id, {
     dry_run: false,
-    idempotency_key: `add-row-${proposal.id}`,
+    idempotency_key: idempotencyKey,
   });
   if (!executed.ok) {
     return { ok: false, reason: executed.error.message };
