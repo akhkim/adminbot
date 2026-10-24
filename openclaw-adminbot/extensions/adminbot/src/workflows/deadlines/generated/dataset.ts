@@ -3,6 +3,143 @@
 
 export const DEADLINE_VENUES = [
   {
+    "id": "colm2026_abstract",
+    "name": "COLM 2026",
+    "venue_type": "conference",
+    "venue_group": "COLM 2026",
+    "track": "main",
+    "deadline_label": "abstract deadline",
+    "deadline_aoe": "2026-03-26 23:59:00",
+    "notification_aoe": "",
+    "link": "https://colm.cc/Conferences/2026",
+    "venue_family": "COLM",
+    "submission_type": "",
+    "entry_type": "main_conference",
+    "archival_status": "archival",
+    "venue_priority": "primary",
+    "archival": true,
+    "source_url": "https://colm.cc/Conferences/2026/Dates",
+    "source_checked_at": "2026-10-24T00:00:00Z",
+    "deadline_source_kind": "official",
+    "deadline_source_status": "portal_unverified",
+    "deadline_source_precision": "date_only",
+    "deadline_source_evidence": "COLM 2026 Dates (Anywhere on Earth): Abstract Submission Deadline Mar 26 '26; Full Paper Submission Deadline Mar 31 '26. Rebuttal Period Begins May 22 '26; Rebuttal Period Ends Jun 08 '26; Paper Decision Notifications Jul 08 '26; Main Conference Begins Oct 06 '26; Main Conference Ends Oct 08 '26.",
+    "deadline_official_url": "https://colm.cc/Conferences/2026/Dates",
+    "deadline_official_evidence": "COLM 2026 Dates (Anywhere on Earth): Abstract Submission Deadline Mar 26 '26; Full Paper Submission Deadline Mar 31 '26. Rebuttal Period Begins May 22 '26; Rebuttal Period Ends Jun 08 '26; Paper Decision Notifications Jul 08 '26; Main Conference Begins Oct 06 '26; Main Conference Ends Oct 08 '26.",
+    "deadline_extended": false,
+    "deadline_history_status": "not_extended",
+    "milestone": "abstract",
+    "deadline_id": "colm2026_abstract",
+    "venue_id": "COLM",
+    "venue_aliases": [
+      "COLM",
+      "colm2026_abstract"
+    ],
+    "revisions": [
+      {
+        "observed_at": "2026-10-24T00:00:00Z",
+        "deadline_aoe": "2026-03-26 23:59:59",
+        "notification_aoe": "",
+        "deadline_label": "abstract deadline",
+        "link": "https://colm.cc/Conferences/2026/Dates"
+      }
+    ],
+    "stale": false,
+    "schedule": [
+      {
+        "milestone": "rebuttal",
+        "label": "Rebuttal period",
+        "starts": "2026-05-22",
+        "ends": "2026-06-08",
+        "kind": "period"
+      },
+      {
+        "milestone": "notification",
+        "label": "Paper decision notifications",
+        "date": "2026-07-08",
+        "kind": "date"
+      },
+      {
+        "milestone": "conference",
+        "label": "Conference",
+        "starts": "2026-10-06",
+        "ends": "2026-10-08",
+        "kind": "period"
+      }
+    ],
+    "conference_location": "San Francisco, USA",
+    "workshop_location": ""
+  },
+  {
+    "id": "colm2026_paper",
+    "name": "COLM 2026",
+    "venue_type": "conference",
+    "venue_group": "COLM 2026",
+    "track": "main",
+    "deadline_label": "full paper",
+    "deadline_aoe": "2026-03-31 23:59:00",
+    "notification_aoe": "",
+    "link": "https://colm.cc/Conferences/2026",
+    "venue_family": "COLM",
+    "submission_type": "",
+    "entry_type": "main_conference",
+    "archival_status": "archival",
+    "venue_priority": "primary",
+    "archival": true,
+    "source_url": "https://colm.cc/Conferences/2026/Dates",
+    "source_checked_at": "2026-10-24T00:00:00Z",
+    "deadline_source_kind": "official",
+    "deadline_source_status": "portal_unverified",
+    "deadline_source_precision": "date_only",
+    "deadline_source_evidence": "COLM 2026 Dates (Anywhere on Earth): Abstract Submission Deadline Mar 26 '26; Full Paper Submission Deadline Mar 31 '26. Rebuttal Period Begins May 22 '26; Rebuttal Period Ends Jun 08 '26; Paper Decision Notifications Jul 08 '26; Main Conference Begins Oct 06 '26; Main Conference Ends Oct 08 '26.",
+    "deadline_official_url": "https://colm.cc/Conferences/2026/Dates",
+    "deadline_official_evidence": "COLM 2026 Dates (Anywhere on Earth): Abstract Submission Deadline Mar 26 '26; Full Paper Submission Deadline Mar 31 '26. Rebuttal Period Begins May 22 '26; Rebuttal Period Ends Jun 08 '26; Paper Decision Notifications Jul 08 '26; Main Conference Begins Oct 06 '26; Main Conference Ends Oct 08 '26.",
+    "deadline_extended": false,
+    "deadline_history_status": "not_extended",
+    "milestone": "full_paper",
+    "deadline_id": "colm2026_paper",
+    "venue_id": "COLM",
+    "venue_aliases": [
+      "COLM",
+      "colm2026_paper"
+    ],
+    "revisions": [
+      {
+        "observed_at": "2026-10-24T00:00:00Z",
+        "deadline_aoe": "2026-03-31 23:59:59",
+        "notification_aoe": "",
+        "deadline_label": "full paper",
+        "link": "https://colm.cc/Conferences/2026/Dates"
+      }
+    ],
+    "stale": false,
+    "schedule": [
+      {
+        "milestone": "rebuttal",
+        "label": "Rebuttal period",
+        "starts": "2026-05-22",
+        "ends": "2026-06-08",
+        "kind": "period"
+      },
+      {
+        "milestone": "notification",
+        "label": "Paper decision notifications",
+        "date": "2026-07-08",
+        "kind": "date"
+      },
+      {
+        "milestone": "conference",
+        "label": "Conference",
+        "starts": "2026-10-06",
+        "ends": "2026-10-08",
+        "kind": "period"
+      }
+    ],
+    "conference_location": "San Francisco, USA",
+    "workshop_location": "",
+    "abstract_deadline_id": "colm2026_abstract"
+  },
+  {
     "id": "arr_2026_may",
     "name": "ARR — May 2026 cycle (direct submission)",
     "venue_type": "conference",
