@@ -539,6 +539,9 @@ def urgency(hard, soft, waiting_since, now, prefix='Due', soft_name='soft target
 # from the PI's OpenReview, never from what AdminBot's record claims.
 # A paper before submission needs the PI's review this long before its venue's hard deadline.
 REVIEW_LEAD_DAYS = 21
+# Papers whose venue deadline is this close lead the sheet, nearest deadline first, whatever their
+# review status: an approved EMNLP paper still sits with the other EMNLP papers while EMNLP is near.
+APPROACHING_DAYS = 30
 # A paper before submission with no update for this long counts as stuck.
 STUCK_DAYS = 30
 PI_REVIEW_RULES = (
@@ -1024,7 +1027,10 @@ def paper_row(record, members, slots, deadlines, now, access=None, openreview=()
         PAPER_ID: record['id'],
     }
     row['_link_problems'] = link_problems
-    row['_sort'] = (0 if top and rank < 50 else 1, rank, (top or {}).get('effective_due') or (deadline or {}).get('at') or far,
+    upcoming = [d['at'] for d in ((deadline or {}).get('soft'), deadline) if d and d['at'] >= now]
+    approaching = bool(upcoming) and min(upcoming) <= now + datetime.timedelta(days=APPROACHING_DAYS)
+    row['_sort'] = (0 if approaching else 1, deadline['at'] if approaching else now, row['Conference'] if approaching else '',
+                    0 if top and rank < 50 else 1, rank, (top or {}).get('effective_due') or (deadline or {}).get('at') or far,
                     priority(top) if top else 0, (top or {}).get('at') or now, -(updated.timestamp() if updated else 0), row['Paper'], record['id'])
     return row
 

@@ -302,7 +302,8 @@ post = exporter.paper_row({'id': 'g', 'title': 'G', 'venue': 'NAACL 2027', 'curr
                           members, [], deadline, NOW)
 assert post['Urgency'] == '' and post['Venue deadline (Toronto)'] == ''
 order = sorted([post, pre, done, ack, arr], key=lambda r: r['_sort'])
-assert [r['ID'] for r in order] == ['a', 'b', 'f', 'c', 'g'], [r['ID'] for r in order]
+# Venue deadline within APPROACHING_DAYS leads, nearest first, ahead of review requests with none.
+assert [r['ID'] for r in order] == ['a', 'f', 'b', 'c', 'g'], [r['ID'] for r in order]
 # ARR feedback with no date of its own inherits the ARR cycle deadline and outranks an older arXiv request.
 arr_nodate = exporter.paper_row({'id': 'h', 'title': 'H', 'venue': 'NAACL 2027', 'current_step': 'overleaf_writing'},
                                 members, [slot('feedback_arr', at='2026-10-10T00:00:00Z')], [], NOW)
@@ -482,11 +483,11 @@ entropy = {'id': 'ent', 'title': 'Entropy', 'venue': 'ARR October 2026', 'curren
 done = exporter.paper_row(entropy, members, [slot('feedback_arr', at='2026-10-06T12:00:00Z')], [], LATER,
                           openreview=oct_submission)
 assert done['PI review'] == 'Submitted on OpenReview' and done['Urgency'] == '', done
-assert done['_sort'][0] == 1
+assert done['_sort'][3] == 1
 # A request for the next cycle, asked after the October one closed, is still open.
 resubmit = exporter.paper_row(dict(entropy, venue='ARR January 2027'), members,
                               [slot('feedback_arr', at='2026-10-20T12:00:00Z')], [], LATER, openreview=oct_submission)
-assert resubmit['PI review'] == 'Needs PI review' and resubmit['_sort'][0] == 0
+assert resubmit['PI review'] == 'Needs PI review' and resubmit['_sort'][3] == 0
 # Not on OpenReview, own ARR date gone: listed as past, sorted after live requests.
 missed = exporter.paper_row({'id': 'm', 'title': 'M', 'venue': 'ICLR 2027', 'current_step': 'overleaf_writing'}, members,
                             [slot('feedback_arr', hard_deadline='2026-10-13T12:00:00Z')], [], LATER)
@@ -499,7 +500,21 @@ live = exporter.paper_row({'id': 'l', 'title': 'L', 'venue': 'ICLR 2027', 'curre
                           [slot('feedback_other', at='2026-10-20T12:00:00Z')], [], LATER)
 assert sorted([missed['_sort'], live['_sort']])[0] == live['_sort']
 assert exporter.PAPERS.index('Authors') == exporter.PAPERS.index('Due (Toronto)') + 1
+# Approaching venue deadlines lead whatever the review status, grouped by deadline then conference;
+# a deadline beyond the window, or a paper with none, keeps the review order below them.
+def iclr_paper(pid, steps, deadlines):
+    return exporter.paper_row({'id': pid, 'title': pid, 'venue': 'ICLR 2027', 'current_step': 'overleaf_writing'},
+                              members, steps, deadlines, NOW)
+approved = iclr_paper('approved', [slot('feedback_arxiv', at='2026-10-01T00:00:00Z'), slot('pi_approval', at='2026-10-02T00:00:00Z')], iclr)
+plain = iclr_paper('plain', [], iclr)
+waiting = exporter.paper_row({'id': 'waiting', 'title': 'W'}, members, [slot('feedback_arxiv', at='2026-09-01T00:00:00Z')], [], NOW)
+far_off = iclr_paper('far', [], [venue_d('2027-01-28', 'submission', 'Paper submission')])
+assert approved['PI review'].startswith('Approved') and approved['Venue deadline (Toronto)']
+assert far_off['Venue deadline (Toronto)'] and not waiting['Venue deadline (Toronto)']
+assert [r['ID'] for r in sorted([far_off, waiting, plain, approved], key=lambda r: r['_sort'])] == \
+    ['approved', 'plain', 'waiting', 'far'], [r['ID'] for r in sorted([far_off, waiting, plain, approved], key=lambda r: r['_sort'])]
 print('PASS: ARR feedback settled by an OpenReview submission, past-deadline ARR requests sink, Authors beside Due')
+print('PASS: papers with a venue deadline within 30 days lead the sheet, approved or not, grouped by deadline')
 
 # The PI's OpenReview is the ground truth for decisions.
 paper = lambda **extra: dict({'id': 'g', 'title': 'Ground', 'current_step': 'arxiv_polish'}, **extra)
