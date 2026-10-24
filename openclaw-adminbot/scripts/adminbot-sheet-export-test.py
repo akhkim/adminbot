@@ -3,6 +3,7 @@
 import datetime
 import importlib.util
 import json
+from collections import defaultdict
 import sqlite3
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -165,7 +166,10 @@ assert {r['range']['sheetId'] for r in clears} == {1, 2}
 assert len([r for r in requests if 'addTable' in r]) == 2
 assert [r['range']['startRowIndex'] for r in clears] == [1, 0]
 assert clears[1]['fields'] == 'userEnteredValue,userEnteredFormat'
-assert len([r for r in requests if 'addFilterView' in r]) == 14
+assert len([r for r in requests if 'addFilterView' in r]) == 18
+paper_table = [r['addTable']['table'] for r in requests if 'addTable' in r and r['addTable']['table']['name'] == 'PaperList'][0]
+dropdowns = {c['columnName'] for c in paper_table['columnProperties'] if c['columnType'] == 'DROPDOWN'}
+assert dropdowns <= set(refresh.PAPER_DROPDOWNS), dropdowns
 full_view = next(r['addFilterView']['filter'] for r in requests
                  if r.get('addFilterView', {}).get('filter', {}).get('title') == 'Full members')
 people_headers = direct['data'][0]['values'][0]
@@ -199,7 +203,7 @@ assert note['rows'][0]['values'][0]['note'].startswith('Papers by PI review stat
 stage_view = next(r['addFilterView']['filter'] for r in requests
                   if r.get('addFilterView', {}).get('filter', {}).get('title') == 'By stage')
 assert stage_view['sortSpecs'][0]['dimensionIndex'] == exporter.PAPERS.index('Stage')
-assert exporter.PAPERS[:6] == ('Paper', 'Urgency', 'PI review', 'Review for', 'Review link', 'Due (Toronto)')
+assert exporter.PAPERS[:7] == ('Paper', 'Urgency', 'PI review', 'Paper state', 'Review for', 'Review link', 'Due (Toronto)')
 queue = next(r['addFilterView']['filter'] for r in requests
              if r.get('addFilterView', {}).get('filter', {}).get('title') == 'PI review queue')
 assert queue['criteria'] == {str(exporter.PAPERS.index('PI review')): {'condition': {
@@ -222,7 +226,7 @@ assert updated_table['range']['endRowIndex'] == len(direct['data'][1]['values'])
 assert updated_table['columnProperties'][exporter.PAPERS.index('Stage')]['columnType'] == 'TEXT'  # No stage supplied in this synthetic row.
 assert not any('deleteBanding' in r for r in converted)
 paper_views = [r['addFilterView']['filter'] for r in converted if 'tableId' in r.get('addFilterView', {}).get('filter', {})]
-assert [v['title'] for v in paper_views] == ['PaperList sort and filter', 'PI review queue', 'Incomplete', 'By PI review status', 'By review type', 'By conference', 'By venue', 'By stage']
+assert [v['title'] for v in paper_views] == ['PaperList sort and filter', 'PI review queue', 'Incomplete', 'By PI review status', 'By review type', 'By conference', 'By venue', 'By stage', 'Blocked', 'By paper state', 'By year', 'By track']
 assert all(v['tableId'] == 'paper-table' and 'range' not in v for v in paper_views)
 properties['PaperList']['filterViews'] = [{'title': 'By stage', 'filterViewId': 43, 'tableId': 'paper-table'},
                                          {'title': 'Awaiting PI approval', 'filterViewId': 44, 'tableId': 'paper-table'}]
@@ -364,7 +368,9 @@ assert opened['Review link'] == [('Overleaf view', read_ok)] and opened['Link pr
 for r in (locked, opened):
     r.pop('_sort')
 assert [exporter.overleaf_kind(u) for u in ('https://www.overleaf.com/project/64ab', 'https://www.overleaf.com/read/ab12#x',
-        'https://www.overleaf.com/3587461615abcdef', 'https://example.test/read/ab')] == ['project', 'read', 'edit', None]
+        'https://www.overleaf.com/3587461615abcdef', 'https://example.test/read/ab',
+        'https://www.overleaf.com/project/64ab/share#' + 'e9' * 20, 'https://www.overleaf.com/project/64ab/share')] == [
+    'project', 'read', 'edit', None, 'edit', 'project']
 import tempfile
 with tempfile.TemporaryDirectory() as folder:
     cache = Path(folder) / 'cache.json'
@@ -436,8 +442,12 @@ results = [
 ]
 entropy = {'title': 'Entropy collapse in agentic social-media!'}
 assert exporter.openreview_match(entropy, [], results)['id'] == 'octRun'
+# A link to the first cycle's forum joins that submission to the paper's history; the resubmission is where it stands.
 linked = [{'slot': 'submission', 'url': 'https://openreview.net/forum?id=mayRun&noteId=x'}]
-assert exporter.openreview_match(entropy, linked, results)['id'] == 'mayRun'
+assert [e['id'] for e in exporter.openreview_history({'title': 'Renamed since'}, linked, results)] == ['mayRun']
+assert exporter.openreview_match(entropy, linked, results)['id'] == 'octRun'
+history = exporter.openreview_history(entropy, linked, results)
+assert exporter.history_text(history, history[-1]) == '❌ ARR May 2026 → ⏳ ARR October 2026'
 assert exporter.openreview_match({'title': 'x', 'artifacts': {'submission_url': 'https://openreview.net/forum?id=arr1'}},
                                  [], results)['id'] == 'emnlp1'
 assert exporter.openreview_match({'title': 'Unknown'}, [], results) is None
@@ -483,11 +493,11 @@ entropy = {'id': 'ent', 'title': 'Entropy', 'venue': 'ARR October 2026', 'curren
 done = exporter.paper_row(entropy, members, [slot('feedback_arr', at='2026-10-06T12:00:00Z')], [], LATER,
                           openreview=oct_submission)
 assert done['PI review'] == 'Submitted on OpenReview' and done['Urgency'] == '', done
-assert done['_sort'][3] == 1
+assert done['_sort'][4] == 1
 # A request for the next cycle, asked after the October one closed, is still open.
 resubmit = exporter.paper_row(dict(entropy, venue='ARR January 2027'), members,
                               [slot('feedback_arr', at='2026-10-20T12:00:00Z')], [], LATER, openreview=oct_submission)
-assert resubmit['PI review'] == 'Needs PI review' and resubmit['_sort'][3] == 0
+assert resubmit['PI review'] == 'Needs PI review' and resubmit['_sort'][4] == 0
 # Not on OpenReview, own ARR date gone: listed as past, sorted after live requests.
 missed = exporter.paper_row({'id': 'm', 'title': 'M', 'venue': 'ICLR 2027', 'current_step': 'overleaf_writing'}, members,
                             [slot('feedback_arr', hard_deadline='2026-10-13T12:00:00Z')], [], LATER)
@@ -574,8 +584,14 @@ mails = [
     mail(54, '[ARR - October 2026]: Paper #77 withdrawn by paper authors',
          'The paper "Someone Else" has been withdrawn.\nhttps://openreview.net/forum?id=notMine'),
 ]
-outcomes = {e['title']: e for e in exporter.notification_results(mails)}
+found = exporter.notification_results(mails)
+by_title = defaultdict(list)
+for entry in found:
+    by_title[entry['title']].append(entry)
+outcomes = {title: exporter.openreview_best(entries) for title, entries in by_title.items()}
 assert set(outcomes) == {'Debate Paper', 'Findings Paper', 'Tutor Paper'}, outcomes
+debate = exporter.openreview_history({'title': 'Debate Paper'}, [], found)
+assert exporter.history_text(debate, outcomes['Debate Paper']) == '❌ ICLR 2026 → ⏳ ARR February 2026'
 assert (outcomes['Debate Paper']['status'], outcomes['Debate Paper']['venue']) == ('under_review', 'ARR February 2026')
 assert (outcomes['Findings Paper']['status'], outcomes['Findings Paper']['track'], outcomes['Findings Paper']['venue']) == (
     'accepted', 'findings', 'EMNLP 2026')
@@ -669,8 +685,63 @@ assert locked == ['Owner only']
 print('PASS: approved editors are added to every protection the bot can edit; owner-only tabs are reported')
 
 for typed, expected in [('ARR · May 2026 → EMNLP 2026 Findings', 'EMNLP'), ('ARR · cycle not recorded', 'ARR (conference not set)'),
-                        ('NeurIPS', 'NeurIPS'), ('Child Safety in AI Workshop @ NeurIPS 2026', 'Workshop'), ('', 'Not set'),
+                        ('NeurIPS', 'NeurIPS'), ('Child Safety in AI Workshop @ NeurIPS 2026', 'NeurIPS'), ('AI4GOOD Workshop 2026', 'Workshop'), ('', 'Not set'),
                         ('ICML 2027, ACL 2027', 'ACL'), ('JMLR (end of September)', 'Journal'), ('EU AI Act', 'Other')]:
     assert exporter.conference(typed) == expected, (typed, exporter.conference(typed))
 assert exporter.stamp(exporter.parse_time('2026-10-01T00:30:00Z'), False) == '2026-09-30 (Wed)'
 print('PASS: one standard conference per paper and year-first dates that sort as text')
+
+# Renamed, shortened and subtitle-kept titles still find their OpenReview submission; a title
+# another paper claims exactly is never taken.
+assert exporter.same_title('Fluid Representations in Reasoning Models', 'Fluid Reasoning Representations')
+assert exporter.same_title('Do LLMs Rewrite History? Detecting Historical Revisionism in Large Language Models',
+                           'Preserving Historical Truth: Detecting Historical Revisionism in Large Language Models')
+assert exporter.same_title('Do Models Use What They Write? Causal Computation Graph Recovery for CoT',
+                           'Do Models Use What They Write? Causal Computation Graph Recovery for CoT Faithfulness')
+assert not exporter.same_title('Linear Probes in Vision', 'Sparse Probes in Language')
+fluid = {'id': 'fl', 'forum': 'fl', 'title': 'Fluid Reasoning Representations', 'venue_id': 'EMNLP/2026/Conference',
+         'venue': 'EMNLP 2026', 'status': 'accepted', 'track': 'findings', 'source': 'notifications'}
+assert exporter.openreview_match({'id': 'fluid', 'title': 'Fluid Representations in Reasoning Models'}, [], [fluid])['id'] == 'fl'
+assert exporter.openreview_match({'id': 'fluid', 'title': 'Fluid Representations in Reasoning Models'}, [],
+                                 [dict(fluid, papers={'other-paper'})]) is None
+print('PASS: renamed and shortened titles match OpenReview unless another paper claims the submission')
+
+# Columns OpenReview fills: Conference, Year, Track, Presentation, Paper state, history, source.
+def emnlp(**fields):
+    return exporter.paper_row({'id': 'p', 'title': 'Demo Library', 'current_step': 'google_drive_pdf', **fields},
+                              members, [], [], NOW, openreview=OPENREVIEW)
+OPENREVIEW = [{'id': 'demo', 'forum': 'demo', 'title': 'Demo Library', 'status': 'under_review',
+               'venue_id': 'EMNLP/2026/System_Demonstration', 'venue': 'EMNLP 2026 System Demonstration'}]
+demo = emnlp(venue='ARR', venue_decision='accept', accepted_venue='EMNLP', accepted_year=2026)
+assert (demo['Conference'], demo['Year'], demo['Track'], demo['PI review'], demo['Paper state']) == (
+    'EMNLP', '2026', 'Demo', 'Accepted', 'Accepted'), demo
+assert demo['Accepted'] == 'EMNLP 2026 System Demonstration', demo['Accepted']
+assert emnlp(presentation_type='poster', venue='EMNLP 2026')['Presentation'] == ''
+assert 'decision from AdminBot' in demo['OpenReview'] and demo['Source'] == 'OpenReview + AdminBot decision', demo['Source']
+# Under review with nothing AdminBot knows: OpenReview still files it, and no PI review was ever asked.
+plain = emnlp()
+assert (plain['Conference'], plain['Year'], plain['Track'], plain['Paper state'], plain['Source']) == (
+    'EMNLP', '2026', 'Demo', 'Under review (no PI review)', 'OpenReview'), plain
+# Desk rejected at EMNLP, resubmitted to ARR: AdminBot's EMNLP acceptance is cleared.
+OPENREVIEW = [{'id': 'desk', 'forum': 'desk', 'title': 'Demo Library', 'status': 'desk_rejected',
+               'venue_id': 'EMNLP/2026/Conference', 'venue': 'EMNLP 2026', 'date': 1791331200000},
+              {'id': 'oct', 'forum': 'oct', 'title': 'Demo Library', 'status': 'under_review',
+               'venue_id': 'aclweb.org/ACL/ARR/2026/October/Submission', 'date': 1791676800000}]
+resub = emnlp(venue='EMNLP 2026', venue_decision='accept', accepted_venue='EMNLP', accepted_year=2026,
+              artifacts={'publication_track': 'main'})
+assert (resub['Paper state'], resub['Accepted'], resub['Submission history']) == (
+    'Resubmitted after rejection', '', '❌ desk EMNLP 2026 → ⏳ ARR October 2026'), resub
+# Now at an ARR cycle that names no conference yet: filed as ARR until it commits.
+assert (resub['Conference'], resub['Track']) == ('ARR (conference not set)', ''), (resub['Conference'], resub['Track'])
+# Before submission AdminBot's stage decides; AdminBot's oral/poster fills Presentation.
+OPENREVIEW = []
+assert emnlp(current_step='overleaf_writing')['Paper state'] == 'Writing'
+assert emnlp(current_step=None)['Paper state'] == 'Not started'
+assert emnlp(current_step='arxiv_polish')['Paper state'] == 'arXiv planned'
+assert emnlp(artifacts={'arxiv_url': 'https://arxiv.org/abs/2601.00001'})['Paper state'] == 'On arXiv'
+assert emnlp()['Paper state'] == 'Unknown'
+poster = emnlp(venue_decision='accept', accepted_venue='ICLR', accepted_year=2027, presentation_type='poster')
+assert (poster['Conference'], poster['Year'], poster['Track'], poster['Presentation'], poster['Source']) == (
+    'ICLR', '2027', 'Main', 'Poster', 'AdminBot'), poster
+assert set(exporter.PAPER_STATE_VALUES) >= {emnlp()['Paper state'], demo['Paper state']}
+print('PASS: Conference, Year, Track, Presentation and Paper state fill from OpenReview, then AdminBot')
