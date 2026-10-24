@@ -42,11 +42,11 @@ VENUE_NOTES = {
     'uka-clinical-post-training': 'Not ARR (per PI, Oct 11 2026)',
 }
 # Plain-language layout: what the PI acts on first, links next, record-keeping detail last.
-PAPERS = ('Paper', 'Urgency', 'PI review', 'Review for', 'Review link', 'Due (Toronto)',
+PAPERS = ('Paper', 'Urgency', 'PI review', 'Review for', 'Review link', 'Due (Toronto)', 'Authors',
           'Requested by', 'Requested on', 'Request note', 'Venue', 'Venue deadline (Toronto)',
           'OpenReview', 'Stage', 'Lead', 'Blocker / next step', 'Link problems', 'Still missing', 'Mentor review', 'Co-author feedback', 'Accepted',
           'Going to conference', 'Started', 'Last updated', 'Feedback givers', 'Checks',
-          'Authors', 'Venue (as entered)', 'All artifact statuses', PAPER_ID)
+          'Venue (as entered)', 'All artifact statuses', PAPER_ID)
 LINK_COLUMNS = ('Review link',)
 LINK_SEPARATOR = ' · '
 # When nothing sets a due date, more deadline-bound review types come first.
@@ -573,6 +573,15 @@ def openreview_match(record, slots, results):
     return max(candidates, key=cycle_key, default=None)
 
 
+def arr_cycle_deadline(entry, cycles):
+    """Deadline of the ARR cycle an OpenReview submission went to ('.../ARR/2026/October/...'), else None."""
+    parts = str((entry or {}).get('venue_id') or '').split('/')
+    if 'ARR' not in parts or len(parts) < parts.index('ARR') + 3:
+        return None
+    year, month = parts[parts.index('ARR') + 1:parts.index('ARR') + 3]
+    return cycles.get(f'{month[:3].capitalize()} {year}')
+
+
 def overall(scores):
     return next((scores[k] for k in OVERALL_KEYS if k in (scores or {})), None)
 
@@ -636,7 +645,15 @@ def paper_row(record, members, slots, deadlines, now, access=None, openreview=()
     requests, approved_at = pi_requests(slots, links)
     venue, deadline = venue_info(record, slots, deadlines, now)
     venue = venue or VENUE_NOTES.get(record['id'], '')
+    review = openreview_match(record, slots, openreview)
+    cycles = arr_calendar(deadlines)[0]
+    submitted_cycle = arr_cycle_deadline(review, cycles)
     for request in requests:
+        # The paper sits on the PI's OpenReview in an ARR cycle that closed after this request: she
+        # already saw it before it went in, so the request is done.
+        if request['pending'] and request['type'] == 'ARR feedback' and submitted_cycle and request['at'] and (
+                submitted_cycle >= request['at'] - datetime.timedelta(days=1)):
+            request['pending'], request['submitted'] = False, True
         # ARR / camera-ready feedback without its own dates is due by the paper's ARR cycle or camera-ready deadline.
         inherited = deadline and not deadline.get('soft_only') and not (request['hard'] or request['soft']) and (
             request['type'] == 'ARR feedback' and 'camera' not in deadline_name(deadline).lower()
@@ -650,12 +667,21 @@ def paper_row(record, members, slots, deadlines, now, access=None, openreview=()
             request['hard'], request['soft'], request['at'], now,
             'ARR deadline' if inherited and request['type'] == 'ARR feedback' else 'Camera-ready' if inherited else 'Due',
             window=ARXIV_REVIEW_DAYS if request['type'] == 'arXiv feedback' else None)
+        # ARR feedback whose deadline went by (its own date, else an ARR cycle that closed since it
+        # was asked) can no longer change that submission: still listed, but below live work.
+        due = max((d for d in (request['hard'], request['soft']) if d), default=None)
+        closed = due if due and due < now else None if due else max(
+            (at for at in cycles.values() if request['at'] and request['at'] <= at < now), default=None)
+        if request['type'] == 'ARR feedback' and closed:
+            request['label'], request['rank'] = f"⌛ ARR deadline passed {toronto(closed, False)}", 50
     far = datetime.datetime.max.replace(tzinfo=datetime.timezone.utc)
     priority = lambda r: REVIEW_PRIORITY.index(r['type']) if r['type'] in REVIEW_PRIORITY else len(REVIEW_PRIORITY)
     pending = sorted((r for r in requests if r['pending']),
                      key=lambda r: (r['rank'], r['effective_due'] or far, priority(r), r['at'] or now))
     top = pending[0] if pending else None
-    if top:
+    if top and top['rank'] == 50:
+        label, rank, status = top['label'], top['rank'], 'Past ARR deadline'
+    elif top:
         label, rank, status = top['label'], top['rank'], 'Needs PI review'
     else:
         deadline = deadline or {}
@@ -666,7 +692,8 @@ def paper_row(record, members, slots, deadlines, now, access=None, openreview=()
         deadline = deadline or None
         rank = 10 + rank if label and rank <= 2 else 99
         label = label if rank < 99 else ''
-        status = ('Approved ' + toronto(approved_at, False)) if approved_at else ''
+        status = ('Approved ' + toronto(approved_at, False)) if approved_at else (
+            'Submitted on OpenReview' if any(r.get('submitted') for r in requests) else '')
     # Every link in one cell, most useful first, each under its real name. The request's own link
     # leads as 'Sent for review' only when it is not already one of the paper's links.
     review_links = []
@@ -689,7 +716,6 @@ def paper_row(record, members, slots, deadlines, now, access=None, openreview=()
     owner_id = record.get('lead_owner_member_id')
     name = lambda member_id: members.get(member_id, {}).get('name', member_id or '')
     accepted = ' '.join(str(record.get(k) or '') for k in ('accepted_venue', 'accepted_year')).strip()
-    review = openreview_match(record, slots, openreview)
     if not accepted and review and review.get('status') == 'accepted':
         accepted = review.get('venue') or ''
     row = {
@@ -727,7 +753,7 @@ def paper_row(record, members, slots, deadlines, now, access=None, openreview=()
         PAPER_ID: record['id'],
     }
     updated = parse_time(record.get('updated_at') or '')
-    row['_sort'] = (0 if top else 1, rank, (top or {}).get('effective_due') or (deadline or {}).get('at') or far,
+    row['_sort'] = (0 if top and rank < 50 else 1, rank, (top or {}).get('effective_due') or (deadline or {}).get('at') or far,
                     priority(top) if top else 0, (top or {}).get('at') or now, -(updated.timestamp() if updated else 0), row['Paper'], record['id'])
     return row
 

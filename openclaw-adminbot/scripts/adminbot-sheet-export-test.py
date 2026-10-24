@@ -437,3 +437,31 @@ assert rows['Entropy Collapse in Agentic Social Media'][header.index('OpenReview
 assert rows['Oral paper'][header.index('OpenReview')].startswith('✅ Accepted · Main · 🎤 Oral')
 assert rows['Oral paper'][header.index('Accepted')] == 'ICLR 2026 Oral'
 print('PASS: OpenReview column matches by forum then title, prefers the latest cycle, fills Accepted, falls back to citation checks')
+
+# ARR feedback: done once the paper sits on the PI's OpenReview in a cycle closing after the request;
+# a request whose ARR deadline went by stays listed but drops below live work.
+LATER = exporter.parse_time('2026-10-24T12:00:00Z')
+oct_submission = [{'id': 'octRun', 'title': 'Entropy', 'venue_id': 'aclweb.org/ACL/ARR/2026/October/Submission',
+                   'status': 'under_review'}]
+entropy = {'id': 'ent', 'title': 'Entropy', 'venue': 'ARR October 2026', 'current_step': 'submission'}
+done = exporter.paper_row(entropy, members, [slot('feedback_arr', at='2026-10-06T12:00:00Z')], [], LATER,
+                          openreview=oct_submission)
+assert done['PI review'] == 'Submitted on OpenReview' and done['Urgency'] == '', done
+assert done['_sort'][0] == 1
+# A request for the next cycle, asked after the October one closed, is still open.
+resubmit = exporter.paper_row(dict(entropy, venue='ARR January 2027'), members,
+                              [slot('feedback_arr', at='2026-10-20T12:00:00Z')], [], LATER, openreview=oct_submission)
+assert resubmit['PI review'] == 'Needs PI review' and resubmit['_sort'][0] == 0
+# Not on OpenReview, own ARR date gone: listed as past, sorted after live requests.
+missed = exporter.paper_row({'id': 'm', 'title': 'M', 'venue': 'ICLR 2027', 'current_step': 'overleaf_writing'}, members,
+                            [slot('feedback_arr', hard_deadline='2026-10-13T12:00:00Z')], [], LATER)
+assert missed['PI review'] == 'Past ARR deadline' and missed['Urgency'] == '⌛ ARR deadline passed Tue Oct 13, 2026'
+# Dateless and the cycle closed since it was asked.
+dateless = exporter.paper_row(dict(entropy, title='Other'), members, [slot('feedback_arr', at='2026-10-06T12:00:00Z')],
+                              [], LATER)
+assert dateless['PI review'] == 'Past ARR deadline', dateless['Urgency']
+live = exporter.paper_row({'id': 'l', 'title': 'L', 'venue': 'ICLR 2027', 'current_step': 'overleaf_writing'}, members,
+                          [slot('feedback_other', at='2026-10-20T12:00:00Z')], [], LATER)
+assert sorted([missed['_sort'], live['_sort']])[0] == live['_sort']
+assert exporter.PAPERS.index('Authors') == exporter.PAPERS.index('Due (Toronto)') + 1
+print('PASS: ARR feedback settled by an OpenReview submission, past-deadline ARR requests sink, Authors beside Due')
