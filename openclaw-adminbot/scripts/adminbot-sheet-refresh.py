@@ -27,7 +27,10 @@ PAPER_WIDTHS = {'Paper': 260, 'Urgency': 190, 'PI review': 150, 'Review for': 17
                 'Due (Toronto)': 170, 'Requested by': 150, 'Requested on': 130, 'Request note': 320,
                 'Venue deadline (Toronto)': 260, 'OpenReview': 300, 'Stage': 170, 'Lead': 150,
                 'Incomplete': 260, 'Blocker / next step': 280, 'Link problems': 240, 'Still missing': 260, 'Authors': 360,
-                'All artifact statuses': 300, 'Venue (as entered)': 220, 'Venue': 230, 'Conference': 150, 'Checks': 240, exporter.PAPER_ID: 160}
+                'All artifact statuses': 300, 'Venue (as entered)': 220, 'Venue': 230, 'Conference': 150, 'Checks': 240, exporter.PAPER_ID: 160,
+                'Paper state': 190, 'Year': 70, 'Track': 100, 'Presentation': 110, 'Submission history': 280, 'Source': 200}
+# Columns with a closed set of values get a dropdown of the values in use, so each filters by picking one.
+PAPER_DROPDOWNS = ('Stage', 'Paper state', 'Conference', 'Year', 'Track', 'Presentation', 'Source')
 
 
 # PI review values drawn in bold red: the PI acts, or somebody must fix the link or the category.
@@ -238,11 +241,12 @@ def refresh_requests(batch, properties):
             raise ValueError('Unexpected export table identity')
         columns = [{'columnIndex': i, 'columnName': name, 'columnType': 'TEXT'}
                    for i, name in enumerate(headers)]
-        stage = headers.index('Stage' if title == 'PaperList' else 'status')
-        options = sorted({row[stage] for row in values[1:] if row[stage]})
-        if options:
-            columns[stage].update(columnType='DROPDOWN', dataValidationRule={'condition': {
-                'type': 'ONE_OF_LIST', 'values': [{'userEnteredValue': value} for value in options]}})
+        for name in PAPER_DROPDOWNS if title == 'PaperList' else ('status',):
+            index = headers.index(name)
+            options = sorted({row[index] for row in values[1:] if row[index]})
+            if options:
+                columns[index].update(columnType='DROPDOWN', dataValidationRule={'condition': {
+                    'type': 'ONE_OF_LIST', 'values': [{'userEnteredValue': value} for value in options]}})
         table = {'name': title, 'range': table_range, 'columnProperties': columns,
                  'rowsProperties': {
                      'headerColorStyle': {'rgbColor': {'red': .18, 'green': .29, 'blue': .40}},
@@ -264,7 +268,9 @@ def refresh_requests(batch, properties):
             # The export is already ordered by urgency, so the queue view only filters.
             views += [('PI review queue', None, ('PI review', 'Needs PI review')), ('Incomplete', None, ('Incomplete', None)),
                       ('By PI review status', 'PI review', None), ('By review type', 'Review for', None),
-                      ('By conference', 'Conference', None), ('By venue', 'Venue', None), ('By stage', 'Stage', None)]
+                      ('By conference', 'Conference', None), ('By venue', 'Venue', None), ('By stage', 'Stage', None),
+                      ('Blocked', None, ('PI review', 'Blocked: link access')), ('By paper state', 'Paper state', None),
+                      ('By year', 'Year', None), ('By track', 'Track', None)]
         else:
             views += [('Full members', None, ('member_type', 'full', 'TEXT_CONTAINS')),
                       ('By joined date', 'join_date', None),
