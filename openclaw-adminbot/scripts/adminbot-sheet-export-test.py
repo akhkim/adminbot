@@ -142,6 +142,7 @@ new = next(row for row in rows if row['id'] == 'new')
 assert len(columns) == len(set(columns)) == len(exporter.PEOPLE_COLUMNS)
 # 1:1 folders are private Drive links; the link-shared sheet must never carry them.
 assert not any("one_on_one" in c for c in columns)
+assert not {"preferred_name", "birthday", "slack_active"} & set(columns)
 assert columns[:len(exporter.PEOPLE_PRIORITY)] == list(exporter.PEOPLE_PRIORITY)
 assert len(rows) == 2
 assert new['join_date'] == '2026-09' and new['join_date_basis'] == 'joined_month'
@@ -168,7 +169,7 @@ assert {r['range']['sheetId'] for r in clears} == {1, 2}
 assert len([r for r in requests if 'addTable' in r]) == 2
 assert [r['range']['startRowIndex'] for r in clears] == [1, 0]
 assert clears[1]['fields'] == 'userEnteredValue,userEnteredFormat'
-assert len([r for r in requests if 'addFilterView' in r]) == 18
+assert len([r for r in requests if 'addFilterView' in r]) == 17
 paper_table = [r['addTable']['table'] for r in requests if 'addTable' in r and r['addTable']['table']['name'] == 'PaperList'][0]
 dropdowns = {c['columnName'] for c in paper_table['columnProperties'] if c['columnType'] == 'DROPDOWN'}
 assert dropdowns <= set(refresh.PAPER_DROPDOWNS), dropdowns

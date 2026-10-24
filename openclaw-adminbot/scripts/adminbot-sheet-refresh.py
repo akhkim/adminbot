@@ -348,7 +348,9 @@ def refresh_requests(batch, properties):
             views += [('Full members', None, ('member_type', 'full', 'TEXT_CONTAINS')),
                       ('By joined date', 'join_date', None),
                       ('Review inactive members', 'membership_review', ('membership_review', 'Review inactive')),
-                      ('By membership type', 'member_type', None), ('By Slack active channel', 'slack_active', None)]
+                      ('By membership type', 'member_type', None)]
+            requests.extend({'deleteFilterView': {'filterId': v['filterViewId']}}
+                            for v in p.get('filterViews', []) if v['title'] == 'By Slack active channel')
         for view_title, sort_column, criterion in views:
             view = next((v for v in p.get('filterViews', []) if v['title'] == view_title), None)
             if view and tables and view.get('tableId') != tables[0]['tableId']:
