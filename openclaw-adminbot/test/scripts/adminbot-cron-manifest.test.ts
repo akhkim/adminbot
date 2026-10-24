@@ -73,4 +73,19 @@ describe("config/adminbot-cron.json", () => {
       hourOf("adminbot-paper-slot-nudges"),
     );
   });
+
+  it("reads OpenReview before the paper nudges ask for a submission it already shows", () => {
+    const minuteOfDay = (name: string) => {
+      const job = manifest.jobs.find((entry) => entry.name === name);
+      const [minute, hour] = (job?.cron ?? "").split(/\s+/u).map(Number);
+      return hour * 60 + minute;
+    };
+    // The snapshot first, the sync on it second, and both before the weekday nudge pass.
+    expect(minuteOfDay("adminbot-openreview-results")).toBeLessThan(
+      minuteOfDay("adminbot-paper-openreview-sync"),
+    );
+    expect(minuteOfDay("adminbot-paper-openreview-sync")).toBeLessThan(
+      minuteOfDay("adminbot-paper-slot-nudges"),
+    );
+  });
 });

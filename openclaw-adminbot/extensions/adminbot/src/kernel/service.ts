@@ -487,6 +487,14 @@ import {
 } from "../workflows/papers/papermentor-nudges.js";
 import { paperFeedbackQueue } from "../workflows/papers/pi-review.js";
 import {
+  evidenceFromCitationChecks,
+  matchPaperEvidence,
+  normalizedTitle,
+  planOpenReviewSync,
+  type OpenReviewEvidence,
+  type OpenReviewFieldChange,
+} from "../workflows/papers/openreview-paper-sync.js";
+import {
   buildPiReviewNotice,
   isAwaitingPiReview,
   piReviewLedgerSubject,
@@ -1673,6 +1681,29 @@ export type AdminBotRosterSyncResult = RosterSyncPlan & {
   /** Set when the size guard stopped the pass; nothing was applied. See rosterSyncRefusal. */
   refused?: string;
   synced_at: string;
+};
+
+/** What one OpenReview sync pass did, or in a dry run would do. */
+export type OpenReviewPaperSyncReport = {
+  dry_run: boolean;
+  /** Reports read across every source. */
+  evidence: number;
+  /** Papers some report spoke for. */
+  matched: number;
+  applied: Array<{
+    paper_id: string;
+    title: string;
+    status: string;
+    venue: string;
+    source: string;
+    changes: OpenReviewFieldChange[];
+    slots: string[];
+  }>;
+  /** Papers whose current observation was applied on an earlier pass. */
+  unchanged: number;
+  kept: Array<{ paper_id: string; reason: string }>;
+  /** Snapshot or e-mail reports that matched no paper on file. */
+  unmatched_submissions: number;
 };
 
 export class AdminBotService {
@@ -6342,6 +6373,9 @@ export class AdminBotService {
     const stored: AdminBotPaperRecord = {
       ...(existing ? withoutTimeline(existing) : {}),
       ...withoutTimeline(paper),
+      // Written only by syncPapersFromOpenReview, after this write. A client echoing a record
+      // back must not be able to forge or reset what the sync last applied.
+      openreview_sync: existing?.openreview_sync,
       // Both name lists are trimmed and de-blanked on write rather than on read. The stage sweep
       // matches authors by name and an empty row would look like an author nobody can resolve,
       // which reads as "this paper has no lab member on it" -- the one state that stops the chase.
@@ -6875,6 +6909,145 @@ export class AdminBotService {
       status: 200,
       payload: { advanced, pi_review_requested: requested, waiting_on_pi: waiting },
     };
+  }
+
+  /**
+   * Bring paper records in line with the PI's OpenReview submissions.
+   *
+   * OpenReview is the ground truth for whether a paper was submitted and what the venue decided,
+   * so each paper is matched to the newest evidence about it (forum id first, then title; see
+   * openreview-paper-sync.ts) and the record follows: under review fills the submission slots and
+   * the venue, an acceptance fills the decision, venue, year, track and presentation, and a
+   * rejection withdraws a claimed acceptance.
+   *
+   * Applied once per observation. The record keeps the fingerprint of what was applied, and an
+   * unchanged fingerprint is skipped, so a person who corrects a field afterwards keeps their
+   * correction until OpenReview says something new. `dryRun` plans the same changes and writes
+   * nothing, which is the report mode.
+   */
+  syncPapersFromOpenReview(options: {
+    evidence: readonly OpenReviewEvidence[];
+    dryRun: boolean;
+    nowIso?: string;
+  }): AdminBotServiceResponse<OpenReviewPaperSyncReport> {
+    const nowIso = options.nowIso ?? new Date().toISOString();
+    // The citation-watch table is the fallback: the snapshot and the e-mails speak first, and
+    // match() prefers the newer report anyway.
+    const evidence = [
+      ...options.evidence,
+      ...evidenceFromCitationChecks(this.store.listOpenReviewCitationChecks()),
+    ];
+    const report: OpenReviewPaperSyncReport = {
+      dry_run: options.dryRun,
+      evidence: evidence.length,
+      matched: 0,
+      applied: [],
+      unchanged: 0,
+      kept: [],
+      unmatched_submissions: 0,
+    };
+    const matchedEvidence = new Set<OpenReviewEvidence>();
+    const ledger = this.nudgeLedgerIndex();
+    for (const paper of this.store.listPapers()) {
+      const slots = this.store.listPaperSlots(paper.id);
+      const match = matchPaperEvidence(paper, slots, evidence);
+      if (!match) {
+        continue;
+      }
+      matchedEvidence.add(match);
+      report.matched += 1;
+      const plan = planOpenReviewSync(paper, slots, match, nowIso);
+      if (plan.unchanged) {
+        report.unchanged += 1;
+        continue;
+      }
+      if (plan.kept) {
+        report.kept.push({ paper_id: paper.id, reason: plan.kept });
+      }
+      const slotNames = [...plan.slotWrites, ...plan.feedbackClosures].map((write) => write.slot);
+      if (plan.changes.length || slotNames.length) {
+        report.applied.push({
+          paper_id: paper.id,
+          title: paper.title,
+          status: plan.sync.status,
+          venue: plan.sync.venue,
+          source: plan.sync.source,
+          changes: plan.changes,
+          slots: slotNames,
+        });
+      }
+      if (options.dryRun) {
+        continue;
+      }
+      if (Object.keys(plan.patch).length) {
+        const written = this.upsertPaper({
+          ...paper,
+          ...plan.patch,
+          artifacts: { ...plan.patch.artifacts },
+        });
+        if (!written.ok) {
+          report.kept.push({ paper_id: paper.id, reason: `write refused: ${written.error.message}` });
+          continue;
+        }
+      }
+      for (const write of plan.slotWrites) {
+        const check = write.url ? validateAdminBotPaperSlotUrl(write.slot, write.url) : { ok: true as const };
+        this.store.savePaperSlot({
+          paper_id: paper.id,
+          slot: write.slot,
+          status: check.ok ? "provided" : "invalid",
+          ...(write.url ? { url: write.url } : {}),
+          ...(write.value_text ? { value_text: write.value_text } : {}),
+          provided_at: nowIso,
+          ...(check.ok
+            ? {
+                validated_at: nowIso,
+                verified_by: "openreview" as const,
+                verified_at: nowIso,
+                ...(write.verified_title ? { verified_title: write.verified_title } : {}),
+              }
+            : { invalid_reason: check.reason }),
+        });
+      }
+      for (const closure of plan.feedbackClosures) {
+        const existing = slots.find((row) => row.slot === closure.slot);
+        if (existing) {
+          this.store.savePaperSlot({ ...existing, value_text: closure.value_text });
+        }
+      }
+      // Recorded last, on the record as it now stands, so a refused write is retried next pass.
+      const current = this.store.getPaper(paper.id) ?? paper;
+      this.store.savePaper({ ...current, openreview_sync: plan.sync });
+      if (plan.changes.length || slotNames.length) {
+        this.recordAudit({
+          type: "paper.openreview_synced",
+          actor: "openreview",
+          details: {
+            paper_id: paper.id,
+            status: plan.sync.status,
+            venue: plan.sync.venue,
+            source: plan.sync.source,
+            ...(plan.sync.submission_id ? { submission_id: plan.sync.submission_id } : {}),
+            ...(plan.sync.reference ? { reference: plan.sync.reference } : {}),
+            changes: plan.changes,
+            slots: slotNames,
+          },
+        });
+      }
+      if (plan.slotWrites.length) {
+        this.syncOnePaperStage(current, "openreview", nowIso, ledger);
+      }
+    }
+    // Counted per submission, not per report: one paper is usually several e-mails.
+    const keyOf = (item: OpenReviewEvidence) => normalizedTitle(item.title) || item.forums[0] || "";
+    const matchedKeys = new Set([...matchedEvidence].map(keyOf));
+    report.unmatched_submissions = new Set(
+      evidence
+        .filter((item) => item.source !== "citation_checks")
+        .map(keyOf)
+        .filter((key) => key && !matchedKeys.has(key)),
+    ).size;
+    return { ok: true, status: 200, payload: report };
   }
 
   /**

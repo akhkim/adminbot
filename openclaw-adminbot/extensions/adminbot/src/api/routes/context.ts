@@ -36,6 +36,7 @@ import { IclrIntegrityWatch } from "../../workflows/papers/iclr-integrity-watch.
 import type { ImportColumnMapper } from "../../workflows/papers/import-columns.js";
 import type { PublicationMailingRunner } from "../../workflows/papers/mailing-list-email.js";
 import { OpenReviewCitationWatch } from "../../workflows/papers/openreview-citation-watch.js";
+import type { OpenReviewPaperSyncSourceDeps } from "../../workflows/papers/openreview-paper-sync-sources.js";
 import type { AdminBotOpenReviewWorkflow } from "../../workflows/papers/openreview-workflow.js";
 import type { AdminBotReimbursementWorkflow } from "../../workflows/reimbursements/workflow.js";
 import type { CallSheetSource } from "../call-sheet-config.js";
@@ -66,6 +67,8 @@ export type AdminBotRouteContext = {
   runEmailAutomation?: () => Promise<unknown>;
   reimbursementWorkflow?: AdminBotReimbursementWorkflow;
   openReviewWorkflow?: AdminBotOpenReviewWorkflow;
+  /** Where the paper OpenReview sync reads its evidence; absent reads only what a call sends. */
+  openReviewPaperSources?: OpenReviewPaperSyncSourceDeps;
   fetchSlackLocations?: (slackUserIds: string[]) => Promise<ReadonlyMap<string, string>>;
   cvScanDeps?: AdminBotCvScanDeps;
   cvDigestPublisher?: AdminBotCvDigestPublisher;
@@ -359,6 +362,11 @@ export type AdminBotMockServiceOptions = {
   notificationDraftScriptPath?: string;
   openReviewScriptPath?: string;
   openReviewPythonCommand?: string;
+  // The paper OpenReview sync's two sources: the author-results snapshot written by
+  // scripts/adminbot-openreview-results-cron.sh, and the notification adapter
+  // (scripts/openreview-notifications/adminbot_decisions.py) run over the Drive export.
+  openReviewResultsPath?: string;
+  notificationDecisionsScriptPath?: string;
   // Reads each member's location from their Slack profile. Injected from the repo-root
   // composition layer, which owns how Slack is reached; absent here means the map falls
   // back to roster locations for everyone.

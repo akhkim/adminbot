@@ -352,6 +352,26 @@
       "timeoutSeconds": 900
     },
     {
+      "name": "adminbot-openreview-results",
+      "description": "Snapshot decisions on the PI's own OpenReview submissions, daily",
+      "cron": "35 7 * * *",
+      "argv": [
+        "bash",
+        "scripts/adminbot-openreview-results-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
+      "name": "adminbot-paper-openreview-sync",
+      "description": "Update paper submissions and decisions from OpenReview (snapshot and the PI's notification export), daily",
+      "cron": "55 8 * * *",
+      "argv": [
+        "bash",
+        "scripts/adminbot-paper-openreview-sync-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
       "name": "adminbot-paper-stages",
       "description": "Verify paper evidence, advance each paper on it, and queue the ones at the PI's gate",
       "cron": "45 * * * *",

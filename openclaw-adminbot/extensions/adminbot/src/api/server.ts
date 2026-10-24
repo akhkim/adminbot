@@ -59,7 +59,12 @@ import { createAdminBotOpenReviewWorkflow } from "../workflows/papers/openreview
 import { createLocalWorkshopMatcher } from "../workflows/papers/workshop-match-llm.js";
 import { defaultCallSheet } from "./call-sheet-config.js";
 import { memberSheetSource, resolveMemberSheetConfig } from "./member-sheet-config.js";
-import { createNotificationDraftHandler } from "./notification-drafts.js";
+import type { OpenReviewPaperSyncSourceDeps } from "../workflows/papers/openreview-paper-sync-sources.js";
+import {
+  createNotificationDraftHandler,
+  downloadNotificationsCsv,
+  runNotificationsScript,
+} from "./notification-drafts.js";
 import {
   warnIfLabCalendarUnconfigured,
   type SlackConnectOnboardingInviter,
@@ -432,7 +437,19 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
         store,
       })
     : undefined;
+  const openReviewPaperSources: OpenReviewPaperSyncSourceDeps = {
+    ...(options.openReviewResultsPath ? { snapshotPath: options.openReviewResultsPath } : {}),
+    ...(options.notificationDecisionsScriptPath
+      ? {
+          decisionsScriptPath: options.notificationDecisionsScriptPath,
+          downloadNotificationsCsv,
+          runDecisionsScript: (scriptPath, input, signal) =>
+            runNotificationsScript(scriptPath, [], input, signal),
+        }
+      : {}),
+  };
   const ctx: AdminBotRouteContext = {
+    openReviewPaperSources,
     notificationDrafts: createNotificationDraftHandler(
       options.notificationDraftScriptPath,
       () => store.listLabMembers(),

@@ -2259,6 +2259,19 @@ export function adminBotProjectChannelName(alias: string): string {
   return `proj-${alias}`;
 }
 
+/** What the OpenReview sync applied to a paper; see `openreview_sync` on the record. */
+export type AdminBotPaperOpenReviewSync = {
+  /** Submission, status, venue, track and presentation, joined: changes when OpenReview does. */
+  fingerprint: string;
+  status: "accepted" | "under_review" | "rejected" | "desk_rejected" | "withdrawn";
+  source: "author_results" | "notifications" | "citation_checks";
+  venue: string;
+  submission_id?: string;
+  observed_at?: string;
+  reference?: string;
+  applied_at: string;
+};
+
 export type AdminBotPaperRecordInput = {
   id: string;
   title: string;
@@ -2360,6 +2373,14 @@ export type AdminBotPaperRecordInput = {
   };
   reminder?: AdminBotPaperReminderState;
   notes?: string;
+  /**
+   * The OpenReview observation last applied to this record by the OpenReview sync.
+   *
+   * Set only by the sync (upsertPaper ignores it on input). The sync re-applies a submission's
+   * status only when this fingerprint changes, so a field a person corrects afterwards stays
+   * corrected until OpenReview itself reports something new.
+   */
+  openreview_sync?: AdminBotPaperOpenReviewSync;
   // Member who filed this paper themselves. Set by the service on a member-authored create, never
   // accepted from request input, and it is one of the two ways a member is recognized as an owner
   // allowed to edit the record (the other is being named in `authors`).
@@ -2626,6 +2647,8 @@ export type AdminBotAuditEvent = {
     | "lab_member_request.rejected"
     | "lab_member_request.withdrawn"
     | "paper.upserted"
+    // A paper record brought in line with the PI's OpenReview submissions, field by field.
+    | "paper.openreview_synced"
     | "paper_slot.updated"
     | "paper_slot.waived"
     | "paper_slots.nudged"
