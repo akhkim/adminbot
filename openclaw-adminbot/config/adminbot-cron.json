@@ -272,6 +272,13 @@
       "timeoutSeconds": 900
     },
     {
+      "name": "adminbot-personal-website",
+      "description": "Weekly reminder to add a personal webpage to your profile",
+      "cron": "25 9 * * 1",
+      "argv": ["bash", "scripts/adminbot-personal-website-cron.sh"],
+      "timeoutSeconds": 900
+    },
+    {
       "name": "adminbot-mandatory-fields",
       "description": "Chase profiles and term timelines that are still blank",
       "cron": "20 9 * * 1-5",

@@ -2506,6 +2506,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/members/personal-website-reminder/run": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** POST /members/personal-website-reminder/run */
+    post: operations["post-members-personal-website-reminder-run"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/members/profile-overview": {
     parameters: {
       query?: never;
@@ -18542,6 +18559,41 @@ export interface operations {
       };
     };
   };
+  "post-members-personal-website-reminder-run": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          [key: string]: unknown;
+        };
+      };
+    };
+    responses: {
+      /** @description Success; response shape is validated by the server */
+      "2XX": {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
   "get-members-profile-overview": {
     parameters: {
       query?: {
@@ -19489,6 +19541,7 @@ export interface operations {
               /** @enum {string} */
               key:
                 | "paper_slot"
+                | "personal_website"
                 | "profile_photo"
                 | "paperflow_stage"
                 | "social_consent"
@@ -24050,6 +24103,7 @@ export interface operations {
             /** @enum {string} */
             campaign:
               | "paper_slot"
+              | "personal_website"
               | "profile_photo"
               | "paperflow_stage"
               | "social_consent"

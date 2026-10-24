@@ -57,9 +57,22 @@ Postgres migration script copies the table as it is.
 `GET /nudges/campaigns` (admin or service token) lists each campaign with `members_reached` and
 `last_sent_at`, read from the ledger. The admin dashboard shows this listing.
 
-| Campaign                 | Key             | Route                            | Cooldown | Runs              |
-| ------------------------ | --------------- | -------------------------------- | -------- | ----------------- |
-| Profile photo guidelines | `profile_photo` | `POST /profile-photo/review/run` | none     | manual, confirmed |
+| Campaign                 | Key                | Route                                         | Cooldown | Runs              |
+| ------------------------ | ------------------ | --------------------------------------------- | -------- | ----------------- |
+| Profile photo guidelines | `profile_photo`    | `POST /profile-photo/review/run`              | none     | manual, confirmed |
+| Personal webpage         | `personal_website` | `POST /members/personal-website-reminder/run` | 7 days   | Monday 09:25 UTC  |
+
+The personal webpage campaign checks current members with a Slack identity and no URL-shaped
+`personal_website` value. It respects nudge opt-outs and Slack STOP, excludes the PI, alumni and
+external contacts, and stops once a link is added. Bare domains are accepted; links are not fetched.
+The message asks members to create a simple page if needed and add its link to their profile.
+Only successful deliveries start the seven-day cooldown. Overlapping runs share one in-flight
+pass. This campaign does not escalate to the PI. Scheduled generic profile reminders omit the
+website field so their three-day cadence cannot duplicate this weekly request; explicit admin
+profile reminders remain unchanged.
+
+The cron wrapper sends the fixed campaign using the service token. Admin sessions must preview
+and confirm the recipient count. Neither caller-supplied message text nor recipient lists are used.
 
 There is no location nudge. AdminBot never asks members where they are; the member map is filled
 from automatic sources only.

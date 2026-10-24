@@ -1327,6 +1327,7 @@ whether somebody was ever told.
 | PaperFlow venue stage          | weekdays 09:00      | email          | no        |
 | Weekly paper updates           | Mondays 10:00       | Slack          | no        |
 | Meeting attendance             | Mondays 09:30       | Slack          | no        |
+| Personal webpage               | Mondays 09:25       | Slack          | no        |
 | Profile photo                  | on demand           | Slack          | no        |
 | Onboarding step                | admin-triggered     | Slack or email | no        |
 | Workshop matches               | admin presses Nudge | Slack          | no        |
@@ -1436,6 +1437,7 @@ a job that was never registered is silent: nobody is nudged and nothing errors.
 | `adminbot-paperflow-nudges`         | `0 9 * * 1`          | PaperFlow venue-stage nudges, once a week                                                   |
 | `adminbot-paper-slot-nudges`        | `10 9 * * 1-5`       | Chase the evidence each paper still owes                                                    |
 | `adminbot-mandatory-fields`         | `20 9 * * 1-5`       | Chase profiles and term timelines that are still blank                                      |
+| `adminbot-personal-website`         | `25 9 * * 1`         | Weekly webpage reminder for eligible current members without a profile link                 |
 | `adminbot-onboarding-chase`         | `40 9 * * 1-5`       | Chase setup checklists still open after ten days, then every two months                     |
 | `adminbot-thesis-milestones`        | `50 9 * * 1-5`       | Guidebook nudge before a thesis deadline, grading reminder five days after                  |
 | `adminbot-paper-stages`             | `45 * * * *`         | Verify the evidence, advance each paper on it, and queue the PI's gate                      |

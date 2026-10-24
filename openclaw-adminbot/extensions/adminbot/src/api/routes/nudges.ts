@@ -1,15 +1,34 @@
+import type { AdminBotMemberNudgeRequest } from "../../contracts/actions.js";
 // Escalated and snoozed nudges, and the nudge sends.
 //
 // Cut from server.ts's handleAuthenticatedRoute. Each route states its audience with a guard
 // decorator from guards.ts; the order below is the order the old if-chain tried them in.
-import type { AdminBotMemberNudgeRequest } from "../../contracts/actions.js";
-import { readJson, readRecord, sendServiceResult } from "../server.http.js";
+import { campaignModeFromBody, isCampaignRefusal } from "../../workflows/nudges/campaign.js";
+import {
+  readJson,
+  readJsonOrEmpty,
+  readRecord,
+  sendServiceResult,
+  sendJson,
+} from "../server.http.js";
 import { pageOf, readPageQuery } from "../server.paging.js";
 import { mapPayload } from "../server.paper-lists.wire.js";
 import { adminSessionOnly, memberOnly, principalActor, privilegedOnly } from "./guards.js";
 import { get, post, type Route } from "./router.js";
 
 export const nudgesRoutes: readonly Route[] = [
+  post(
+    "/members/personal-website-reminder/run",
+    privilegedOnly(async ({ req, res, principal, ctx }) => {
+      const body = readRecord(await readJsonOrEmpty(req));
+      const mode = campaignModeFromBody(body);
+      const result = await ctx.service.sendPersonalWebsiteReminders(principalActor(principal), {
+        ...mode,
+        ...(principal.kind === "service" ? { scheduled: true } : {}),
+      });
+      sendJson(res, isCampaignRefusal(result) ? 409 : 200, result);
+    }),
+  ),
   // The nudge campaigns (workflows/nudges/campaign.ts), with how many members each has reached.
   get(
     "/nudges/campaigns",

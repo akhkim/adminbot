@@ -14931,6 +14931,47 @@
         }
       }
     },
+    "/members/personal-website-reminder/run": {
+      "post": {
+        "operationId": "post-members-personal-website-reminder-run",
+        "summary": "POST /members/personal-website-reminder/run",
+        "tags": [
+          "members"
+        ],
+        "x-source": "src/api/routes/nudges.ts",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": true,
+                "x-schema-coverage": "inferred from property access or downstream casts; semantic validation remains server-side"
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success; response shape is validated by the server"
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/members/profile-overview": {
       "get": {
         "operationId": "get-members-profile-overview",
@@ -16504,6 +16545,7 @@
                             "type": "string",
                             "enum": [
                               "paper_slot",
+                              "personal_website",
                               "profile_photo",
                               "paperflow_stage",
                               "social_consent",
@@ -24131,6 +24173,7 @@
                       "type": "string",
                       "enum": [
                         "paper_slot",
+                        "personal_website",
                         "profile_photo",
                         "paperflow_stage",
                         "social_consent",

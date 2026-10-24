@@ -195,6 +195,7 @@ export const adminBotNudgeDomains = [
   // `profile_photo` keeps its original no-cooldown behaviour and stamps only so the listing can
   // show when it last went out.
   "profile_photo",
+  "personal_website",
 ] as const;
 
 /**

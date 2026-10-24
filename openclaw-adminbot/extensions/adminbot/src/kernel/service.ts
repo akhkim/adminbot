@@ -406,6 +406,7 @@ import {
   runNudgeCampaign,
 } from "../workflows/nudges/campaign.js";
 import { ADMINBOT_NUDGE_CAMPAIGNS } from "../workflows/nudges/campaigns.js";
+import { PERSONAL_WEBSITE_NUDGE } from "../workflows/nudges/personal-website.js";
 import { profilePhotoCampaign } from "../workflows/nudges/profile-photo-nudge.js";
 import { templateForMemberType } from "../workflows/onboarding/member-type-template.js";
 import {
@@ -11665,6 +11666,22 @@ export class AdminBotService {
     });
   }
 
+  private websiteReminderRun:
+    | Promise<AdminBotNudgeCampaignResult | AdminBotNudgeCampaignRefusal>
+    | undefined;
+
+  async sendPersonalWebsiteReminders(actor: string, mode: AdminBotNudgeCampaignMode) {
+    if (mode.dry_run) return this.runNudgeCampaign(PERSONAL_WEBSITE_NUDGE, mode, actor);
+    if (!this.websiteReminderRun) {
+      this.websiteReminderRun = this.runNudgeCampaign(PERSONAL_WEBSITE_NUDGE, mode, actor).finally(
+        () => {
+          this.websiteReminderRun = undefined;
+        },
+      );
+    }
+    return this.websiteReminderRun;
+  }
+
   /** Every nudge campaign, with how many members it has reached and when it last sent. */
   listNudgeCampaigns(): AdminBotServiceResponse<{
     campaigns: Array<
@@ -12586,6 +12603,8 @@ export class AdminBotService {
       include?: AdminBotProfileReminderScope;
       /** Narrows to people an admin picked out of the page. Only ever subtracts. */
       recipientIds?: string[];
+      /** Scheduled website reminders use their own seven-day campaign. */
+      excludePersonalWebsite?: boolean;
     } = {},
   ): Promise<AdminBotServiceResponse<AdminBotMemberNudgeResult>> {
     const include = options.include ?? "both";
@@ -12597,14 +12616,22 @@ export class AdminBotService {
     for (const member of this.store.listLabMembers()) {
       this.retractSettledProfileNudges(member.id);
     }
-    const attention = this.membersNeedingProfileAttention().filter((row) => {
-      if (chosen && !chosen.has(row.id)) {
-        return false;
-      }
-      const wantsProfile = include !== "timeline" && row.missing_fields.length > 0;
-      const wantsTimeline = include !== "profile" && row.timeline_short;
-      return wantsProfile || wantsTimeline;
-    });
+    const attention = this.membersNeedingProfileAttention()
+      // Websites have their own weekly campaign, rather than the three-day profile cadence.
+      .map((row) => ({
+        ...row,
+        missing_fields: row.missing_fields.filter(
+          (field) => !options.excludePersonalWebsite || field !== "personal_website",
+        ),
+      }))
+      .filter((row) => {
+        if (chosen && !chosen.has(row.id)) {
+          return false;
+        }
+        const wantsProfile = include !== "timeline" && row.missing_fields.length > 0;
+        const wantsTimeline = include !== "profile" && row.timeline_short;
+        return wantsProfile || wantsTimeline;
+      });
     // Who was reminded recently, so the cadence is a property of the product rather than of
     // whatever schedule happens to invoke the cron script. A misconfigured crontab, a manual run,
     // or two hosts running the same job cannot turn this into a daily nag.

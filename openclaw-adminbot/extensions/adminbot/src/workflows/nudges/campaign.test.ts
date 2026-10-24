@@ -237,6 +237,8 @@ describe("firstName", () => {
 describe("registered campaigns", () => {
   it("runs the profile-photo campaign only by hand, never on a schedule", () => {
     expect(PROFILE_PHOTO_NUDGE.scheduled).toBe(false);
-    expect(ADMINBOT_NUDGE_CAMPAIGNS.filter((c) => c.scheduled)).toEqual([]);
+    expect(ADMINBOT_NUDGE_CAMPAIGNS.filter((c) => c.scheduled).map((c) => c.key)).toEqual([
+      "personal_website",
+    ]);
   });
 });

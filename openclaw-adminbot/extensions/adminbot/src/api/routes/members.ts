@@ -665,6 +665,7 @@ export const membersRoutes: readonly Route[] = [
       sendServiceResult(
         res,
         await service.sendMandatoryFieldsReminders(principalActor(principal), {
+          excludePersonalWebsite: principal.kind === "service",
           ...(include ? { include } : {}),
           ...(reminderRecipients?.length ? { recipientIds: reminderRecipients } : {}),
         }),
