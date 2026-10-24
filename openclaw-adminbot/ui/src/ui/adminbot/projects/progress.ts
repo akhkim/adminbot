@@ -5,6 +5,10 @@
 // save the rest of the page uses, so Active Papers and the project page can never disagree about
 // where something is.
 import { html, nothing } from "lit";
+import {
+  adminBotPaperAcceptanceNeedsOverleafReason,
+  isAdminBotPaperAcceptanceUnblocked,
+} from "../../../../../extensions/adminbot/src/contracts/paper-slots.js";
 import { t } from "../../../i18n/index.ts";
 import { icons } from "../../icons.ts";
 import type { PaperSlotOverviewRow } from "../api/paper-admin.ts";
@@ -195,6 +199,14 @@ export function renderNextStep(paper: AdminBotPaperRecord) {
 export function renderAcceptance(paper: AdminBotPaperRecord, props: PaperWorkspaceProps) {
   const decision = paper.venue_decision ?? "pending";
   const save = (fields: Partial<AdminBotPaperSaveInput>) => savePaperFields(props, paper, fields);
+  // Mirrors the service's refusal so the option is shut before it is chosen rather than bounced
+  // after. Only once the slots are loaded: an unread cycle is not evidence of a missing link, and
+  // the service is the check that holds either way.
+  const slotRows = props.slots[paper.id]?.slots;
+  const acceptBlocked =
+    decision !== "accept" &&
+    slotRows !== undefined &&
+    !isAdminBotPaperAcceptanceUnblocked(slotRows);
   return html`
     <div
       class="paper-acceptance"
@@ -216,7 +228,11 @@ export function renderAcceptance(paper: AdminBotPaperRecord, props: PaperWorkspa
         >
           ${["pending", "accept", "reject"].map(
             (value) => html`
-              <option value=${value} ?selected=${value === decision}>
+              <option
+                value=${value}
+                ?selected=${value === decision}
+                ?disabled=${value === "accept" && acceptBlocked}
+              >
                 ${value === "pending"
                   ? "Not heard yet"
                   : value === "accept"
@@ -227,6 +243,14 @@ export function renderAcceptance(paper: AdminBotPaperRecord, props: PaperWorkspa
           )}
         </select>
       </label>
+      ${acceptBlocked
+        ? html`<p
+            class="paper-acceptance__note"
+            data-testid=${`paper-decision-needs-overleaf-${paper.id}`}
+          >
+            ${adminBotPaperAcceptanceNeedsOverleafReason}
+          </p>`
+        : nothing}
       ${decision === "accept"
         ? html`
             <label class="paper-acceptance__field">

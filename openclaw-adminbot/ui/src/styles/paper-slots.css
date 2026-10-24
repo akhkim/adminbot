@@ -501,6 +501,14 @@
   min-width: 0;
 }
 
+/* Why "Accepted" is shut. Spans the grid so it reads as being about the decision, not a field. */
+.paper-acceptance__note {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted);
+}
+
 /* "Mark as presented and completed", and the reason it is refused when it is refused. Spans the
    whole grid rather than sitting in a column: it acts on the paper, not on one of the fields. */
 .paper-completion {

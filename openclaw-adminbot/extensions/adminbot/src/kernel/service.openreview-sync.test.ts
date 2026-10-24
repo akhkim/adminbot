@@ -64,7 +64,7 @@ const accepted: OpenReviewEvidence = {
 function writeUp(service: AdminBotService) {
   const links: Record<string, string | undefined> = {
     project_folder: "https://docs.google.com/document/d/brainstorm",
-    overleaf_edit: `https://${ADMINBOT_LAB_OVERLEAF_HOST}/project/65f2a1c9d4e3b7a801f6`,
+    overleaf_share: `https://${ADMINBOT_LAB_OVERLEAF_HOST}/1234567890abcdefghijkl`,
     papermentor_review: undefined,
     fixes_merged: undefined,
     pdf_ready: undefined,

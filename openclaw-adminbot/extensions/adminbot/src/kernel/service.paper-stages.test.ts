@@ -16,12 +16,16 @@ function unwrap<T>(
 
 const LINKS: Partial<Record<AdminBotPaperSlot, string>> = {
   project_folder: "https://docs.google.com/document/d/brainstorm",
-  overleaf_edit: `https://${ADMINBOT_LAB_OVERLEAF_HOST}/project/65f2a1c9d4e3b7a801f6`,
+  overleaf_share: `https://${ADMINBOT_LAB_OVERLEAF_HOST}/1234567890abcdefghijkl`,
   submission: "https://openreview.net/forum?id=Ax7Kq2Lm9P",
   drive_pdf_arxiv: "https://drive.google.com/file/d/1PdF9x",
 };
 
-function lab() {
+/**
+ * `legacyProject` gives the paper the Overleaf project id a PaperMentor review is matched by. Only
+ * papers filed before the project-link slot was retired carry one, on the artifact.
+ */
+function lab(options: { legacyProject?: boolean } = {}) {
   const service = new AdminBotService();
   unwrap(
     service.upsertLabMember({
@@ -46,6 +50,13 @@ function lab() {
       current_step: "brainstorming_docs",
       first_author_member_id: "ada",
       venue: "ICLR 2027",
+      ...(options.legacyProject
+        ? {
+            artifacts: {
+              overleaf_edit_url: `https://${ADMINBOT_LAB_OVERLEAF_HOST}/project/65f2a1c9d4e3b7a801f6`,
+            },
+          }
+        : {}),
     }),
   );
   return service;
@@ -79,7 +90,7 @@ describe("advancing a paper on its own evidence", () => {
     give(service, "project_folder");
     expect(stepOf(service)).toBe("overleaf_writing");
 
-    give(service, "overleaf_edit");
+    give(service, "overleaf_share");
     give(service, "papermentor_review");
     give(service, "fixes_merged");
     // Three of the four: still writing.
@@ -93,7 +104,7 @@ describe("advancing a paper on its own evidence", () => {
     const service = lab();
     for (const slot of [
       "project_folder",
-      "overleaf_edit",
+      "overleaf_share",
       "papermentor_review",
       "fixes_merged",
       "pdf_ready",
@@ -108,7 +119,7 @@ describe("advancing a paper on its own evidence", () => {
       paper_id: "p1",
       from: "overleaf_writing",
       to: "submission",
-      evidence: ["overleaf_edit", "papermentor_review", "fixes_merged", "pdf_ready"],
+      evidence: ["overleaf_share", "papermentor_review", "fixes_merged", "pdf_ready"],
       next: "google_drive_pdf",
     });
   });
@@ -132,9 +143,9 @@ describe("advancing a paper on its own evidence", () => {
   });
 
   it("advances on a PaperMentor run, which is evidence with no member behind it", () => {
-    const service = lab();
+    const service = lab({ legacyProject: true });
     give(service, "project_folder");
-    give(service, "overleaf_edit");
+    give(service, "overleaf_share");
     give(service, "fixes_merged");
     give(service, "pdf_ready");
     expect(stepOf(service)).toBe("overleaf_writing");
@@ -168,7 +179,7 @@ describe("signing a paper up for the PI's decision", () => {
   function prepare(service: AdminBotService) {
     for (const slot of [
       "project_folder",
-      "overleaf_edit",
+      "overleaf_share",
       "papermentor_review",
       "fixes_merged",
       "pdf_ready",
