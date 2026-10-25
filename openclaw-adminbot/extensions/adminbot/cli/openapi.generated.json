@@ -21503,6 +21503,9 @@
                   "pdf_base64": {
                     "type": "string"
                   },
+                  "abstract": {
+                    "type": "string"
+                  },
                   "paper_id": {
                     "type": "string"
                   },
@@ -23709,6 +23712,9 @@
                   "announcement": {},
                   "credits": {},
                   "pdf_base64": {
+                    "type": "string"
+                  },
+                  "abstract": {
                     "type": "string"
                   },
                   "paper_id": {

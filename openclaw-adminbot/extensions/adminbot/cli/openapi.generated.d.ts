@@ -22496,6 +22496,7 @@ export interface operations {
           announcement?: unknown;
           credits?: unknown;
           pdf_base64?: string;
+          abstract?: string;
           paper_id?: string;
           url?: string;
           venue?: string;
@@ -23774,6 +23775,7 @@ export interface operations {
           announcement?: unknown;
           credits?: unknown;
           pdf_base64?: string;
+          abstract?: string;
           paper_id?: string;
           url?: string;
           venue?: string;
