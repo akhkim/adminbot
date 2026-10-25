@@ -12,6 +12,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
+const repoRoot = path.resolve(import.meta.dirname, "../..");
 const dirs: string[] = [];
 
 afterEach(() => {
@@ -35,6 +36,7 @@ function cronEnv(dir: string, extra: Record<string, string>): NodeJS.ProcessEnv 
   delete env.ADMINBOT_PYTHON;
   delete env.ADMINBOT_PAPERMENTOR_CACHE_DIR;
   delete env.ADMINBOT_OPENREVIEW_RESULTS_JSON;
+  delete env.ADMINBOT_DB_PATH;
   env.PYTHONNOUSERSITE = "1";
   return env;
 }
@@ -111,14 +113,15 @@ describe("openreview results cron", () => {
   });
 });
 
-function runSync(sources: string[]) {
+function runSync(sources: string[], { pinSnapshot = true } = {}) {
   const dir = tempDir("adminbot-paper-openreview-sync-");
   mkdirSync(path.join(dir, "home"), { recursive: true });
   const envFile = path.join(dir, "env");
   const snapshot = path.join(dir, "openreview-author-results.json");
   writeFileSync(
     envFile,
-    `ADMINBOT_SERVICE_TOKEN=synthetic-test-token\nADMINBOT_OPENREVIEW_RESULTS_JSON=${snapshot}\n`,
+    "ADMINBOT_SERVICE_TOKEN=synthetic-test-token\n" +
+      (pinSnapshot ? `ADMINBOT_OPENREVIEW_RESULTS_JSON=${snapshot}\n` : ""),
   );
   writeFileSync(
     path.join(dir, "response.json"),
@@ -160,11 +163,56 @@ describe("paper openreview sync cron", () => {
     );
   });
 
+  it("looks for the snapshot in the release's state dir, not ~/.openclaw/state", () => {
+    // On Aurora ~/.openclaw/state is a separate directory the sheet export cannot read, so a
+    // snapshot found or written there is one the paper sheet never sees.
+    const run = runSync([], { pinSnapshot: false });
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain(
+      `no OpenReview snapshot to read at ${path.join(repoRoot, "state/openreview-author-results.json")};`,
+    );
+    expect(run.stderr).not.toContain(".openclaw/state");
+  });
+
   it("passes when the service read the snapshot", () => {
     const run = runSync(["author_results"]);
     expect(run.stderr).toBe("");
     expect(run.status).toBe(0);
     expect(run.stdout).toContain("paper openreview sync: read author_results; 0 items");
+  });
+});
+
+function serviceStateDir(env: Record<string, string>): string {
+  const result = spawnSync(
+    "bash",
+    ["-c", ". scripts/lib/adminbot-cron-env.sh && adminbot_service_state_dir"],
+    { encoding: "utf8", env: { PATH: process.env.PATH, HOME: os.tmpdir(), ...env } },
+  );
+  expect(result.stderr).toBe("");
+  return result.stdout.trim();
+}
+
+describe("cron service state dir", () => {
+  it("is the directory the service host keeps its database and snapshot in", () => {
+    // Read the host's defaults rather than restating them, so moving either one fails here instead
+    // of silently splitting the cron jobs from the service again.
+    const host = readFileSync(path.join(repoRoot, "extensions/adminbot/host/main.ts"), "utf8");
+    const database = host.match(/databasePath:\s*path\.join\(repoRoot,\s*"([^"]+)"\)/)?.[1];
+    const results = host.match(
+      /openReviewResultsPath:[^;]*?path\.join\(repoRoot,\s*"([^"]+)"\)/,
+    )?.[1];
+    expect(database).toBeDefined();
+    expect(results).toBeDefined();
+    const stateDir = serviceStateDir({});
+    expect(stateDir).toBe(path.dirname(path.join(repoRoot, database!)));
+    expect(path.join(stateDir, "openreview-author-results.json")).toBe(
+      path.join(repoRoot, results!),
+    );
+  });
+
+  it("honors ADMINBOT_DB_PATH, ignoring a blank one", () => {
+    expect(serviceStateDir({ ADMINBOT_DB_PATH: "/srv/state/x.sqlite" })).toBe("/srv/state");
+    expect(serviceStateDir({ ADMINBOT_DB_PATH: "  " })).toBe(path.join(repoRoot, "state"));
   });
 });
 
