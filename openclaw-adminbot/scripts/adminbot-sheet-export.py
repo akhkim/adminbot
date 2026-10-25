@@ -42,7 +42,7 @@ VENUE_NOTES = {
     'uka-clinical-post-training': 'Not ARR (per PI, Oct 11 2026)',
 }
 # Plain-language layout: what the PI acts on first, links next, record-keeping detail last.
-PAPERS = ('Paper', 'Urgency', 'PI review', 'Paper state', 'Review for', 'Review link', 'Due (Toronto)', 'Authors',
+PAPERS = ('Paper', 'Urgency', 'PI review', 'Paper state', 'Review for', 'Review link', 'Due (Toronto)', 'Authors', 'tweet tags to copy',
           'Requested by', 'Requested on', 'Request note', 'Conference', 'Year', 'Track', 'Presentation', 'Venue',
           'Venue deadline (Toronto)', 'OpenReview', 'Submission history', 'Source', 'Stage', 'Lead', 'Incomplete', 'Blocker / next step', 'Link problems', 'Still missing', 'Mentor review', 'Co-author feedback', 'Accepted',
           'Going to conference', 'Started', 'Last updated', 'Feedback givers', 'Checks',
@@ -396,6 +396,64 @@ def safe_link(value):
         return ''
     # Overleaf share/read links are exported by operator decision (2026-10-11).
     return value
+
+
+# PI-supplied affiliation credits, not a claim that these organizations funded every paper.
+TWEET_AFFILIATIONS = {'zhijing jin': (
+    '@MPI_IS', '@ELLISforEurope', '@UofTCompSci', '@VectorInst', '@TorontoSRI',
+    '@CIFAR_News', '@JinesisLab', '@EuroSafeAI', '@ELLISInst_Tue',
+)}
+X_RESERVED_PATHS = frozenset('home i intent share search settings explore notifications messages compose '
+                             'tos privacy login signup hashtag'.split())
+
+
+def x_handle(value):
+    """Only a stored handle or profile URL; a post, email or X action is not a person."""
+    if not isinstance(value, str):
+        return ''
+    value = value.strip()
+    match = re.fullmatch(r'(?:https?://)?(?:www\.)?(?:x|twitter)\.com/(?:#!/)?@?([A-Za-z0-9_]{1,15})/?', value)
+    match = match or re.fullmatch(r'@?([A-Za-z0-9_]{1,15})', value)
+    return '@' + match[1] if match and match[1].casefold() not in X_RESERVED_PATHS else ''
+
+
+def tweet_tags(record, members, links):
+    """Copyable public links and complete credits, derived without model calls or social posting."""
+    author_links = [a for a in (record.get('author_links') or []) if isinstance(a, dict)]
+    authors = record.get('authors') or [a.get('name', '') for a in author_links]
+    if isinstance(authors, str):
+        authors = authors.split(';')
+    names = [name.strip() for name in authors if isinstance(name, str) and name.strip()]
+    key = lambda name: ' '.join(str(name or '').split()).casefold()
+    credits, affiliations = [], []
+    for name in names:
+        if re.search(r'[^\s@]+@[^\s@]+\.[^\s@]+', name):
+            credits.append('[author name missing]')
+            continue
+        choices = [a for a in author_links if key(a.get('name')) == key(name)]
+        author = choices[0] if len(choices) == 1 else {}
+        member = members.get(author.get('member_id'))
+        if not member and not author.get('member_id') and len(choices) <= 1:
+            matches = [m for m in members.values() if key(m.get('name')) == key(name)]
+            member = matches[0] if len(matches) == 1 else None
+        # An explicit author ID wins over name matching; missing/ambiguous handles stay names.
+        handle = (x_handle((member or {}).get('twitter_url')) or x_handle(author.get('twitter'))) if len(choices) <= 1 else ''
+        credits.append(handle or name)
+        affiliations.extend(TWEET_AFFILIATIONS.get(key(name), ()))
+    lines = []
+    for label in ('arXiv', 'Submission'):
+        url = safe_link(links.get(label))
+        if url and urlsplit(url).hostname in ('arxiv.org', 'www.arxiv.org', 'openreview.net', 'www.openreview.net'):
+            lines.append('Paper Link: ' + url)
+            break
+    github = safe_link(links.get('GitHub'))
+    if github and urlsplit(github).hostname in ('github.com', 'www.github.com'):
+        lines.append('GitHub Link: ' + github)
+    if credits:
+        lines.append('Authors: ' + ' '.join(credits))
+    if affiliations:
+        lines.append('Affiliations: ' + ' '.join(dict.fromkeys(affiliations)))
+    return '\n\n'.join(lines)
 
 
 def overleaf_kind(url):
@@ -1197,6 +1255,7 @@ def paper_row(record, members, slots, deadlines, now, access=None, openreview=()
         'Feedback givers': record.get('feedback_givers', ''),
         'Checks': ', '.join(f'{k}: {v}' for k, v in sorted((record.get('checks') or {}).items())),
         'Authors': record.get('authors', ''),
+        'tweet tags to copy': tweet_tags(record, members, links),
         'All artifact statuses': '\n'.join(sorted(f"{r['slot']}: {r['status']}" for r in slots)),
         PAPER_ID: record['id'],
     }
