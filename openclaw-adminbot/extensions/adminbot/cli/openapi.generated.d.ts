@@ -6968,6 +6968,17 @@ export interface components {
     AdminBotMemberNudgeResult: {
       created: components["schemas"]["AdminBotStoredProposal"][];
       skipped: components["schemas"]["AdminBotMemberNudgeSkip"][];
+      portal_notified?: string[];
+      deliveries?: components["schemas"]["AdminBotMemberNudgeDelivery"][];
+    } & {
+      [key: string]: unknown;
+    };
+    AdminBotMemberNudgeDelivery: {
+      member_id: string;
+      /** @enum {string} */
+      outcome: "executed" | "failed" | "unknown" | "not_delivered";
+      action_id: string;
+      reason?: string;
     } & {
       [key: string]: unknown;
     };
@@ -23027,6 +23038,8 @@ export interface operations {
           "application/json": {
             created: components["schemas"]["AdminBotStoredProposal"][];
             skipped: components["schemas"]["AdminBotMemberNudgeSkip"][];
+            portal_notified?: string[];
+            deliveries?: components["schemas"]["AdminBotMemberNudgeDelivery"][];
             papers_considered: number;
             unroutable: string[];
           } & {
@@ -23266,6 +23279,8 @@ export interface operations {
           "application/json": {
             created: components["schemas"]["AdminBotStoredProposal"][];
             skipped: components["schemas"]["AdminBotMemberNudgeSkip"][];
+            portal_notified?: string[];
+            deliveries?: components["schemas"]["AdminBotMemberNudgeDelivery"][];
             skipped_reason?: string;
             asked: string[];
           } & {
@@ -23426,6 +23441,8 @@ export interface operations {
           "application/json": {
             created: components["schemas"]["AdminBotStoredProposal"][];
             skipped: components["schemas"]["AdminBotMemberNudgeSkip"][];
+            portal_notified?: string[];
+            deliveries?: components["schemas"]["AdminBotMemberNudgeDelivery"][];
             papers_considered: number;
           } & {
             [key: string]: unknown;
@@ -23463,6 +23480,8 @@ export interface operations {
           "application/json": {
             created: components["schemas"]["AdminBotStoredProposal"][];
             skipped: components["schemas"]["AdminBotMemberNudgeSkip"][];
+            portal_notified?: string[];
+            deliveries?: components["schemas"]["AdminBotMemberNudgeDelivery"][];
             papers_considered: number;
           } & {
             [key: string]: unknown;
@@ -23742,6 +23761,8 @@ export interface operations {
           "application/json": {
             created: components["schemas"]["AdminBotStoredProposal"][];
             skipped: components["schemas"]["AdminBotMemberNudgeSkip"][];
+            portal_notified?: string[];
+            deliveries?: components["schemas"]["AdminBotMemberNudgeDelivery"][];
             week_start: string;
             asked: string[];
           } & {

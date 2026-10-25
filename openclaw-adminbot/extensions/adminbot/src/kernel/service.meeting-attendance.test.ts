@@ -159,6 +159,29 @@ describe("sendMeetingAttendanceNudges", () => {
     expect(sent.slack_skipped.map((skip) => skip.member_id)).toEqual(["mei"]);
     expect(unwrap(service.listMemberNotifications("mei")).notifications).toHaveLength(1);
   });
+
+  // Issue #536: "told" has to mean a notification was filed. Somebody sendMemberNudge refuses
+  // outright gets none, and counting them made the summary claim people nothing had reached.
+  it("does not count somebody off the nudge list as told", async () => {
+    const service = serviceWithMembers();
+    unwrap(
+      service.upsertLabMember({
+        receives_nudges: false,
+        id: "kai",
+        name: "Kai Off-List",
+        member_type: "full",
+        slack_user_id: "U-KAI",
+      } as never),
+    );
+    fileMeetings(service, [["ada"], ["ada"]]);
+
+    const sent = unwrap(await service.sendMeetingAttendanceNudges("admin"));
+    expect(sent.notified).toEqual(["mei"]);
+    expect(sent.slack_skipped).toEqual([
+      { member_id: "kai", reason: "member is not on the nudge list" },
+    ]);
+    expect(unwrap(service.listMemberNotifications("kai")).notifications).toEqual([]);
+  });
 });
 
 describe("member notifications", () => {
