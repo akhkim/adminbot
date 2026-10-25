@@ -64,8 +64,8 @@ if [[ "$status" != "200" ]]; then
 fi
 
 # Each paper OpenReview changed is named, so a change can be found without reading the ledger.
-python3 - "$body" <<'PY'
-import json, sys
+SNAPSHOT="$SNAPSHOT" python3 - "$body" <<'PY'
+import json, os, sys
 
 try:
     result = json.loads(sys.argv[1])
@@ -91,6 +91,15 @@ for entry in result.get("kept", []):
 for warning in result.get("warnings", []):
     print(f"  warning: {warning}", file=sys.stderr)
 
-# No source at all is worth a failed run: the job is doing nothing.
-raise SystemExit(0 if result.get("sources") else 1)
+# No source at all is worth a failed run: the job is doing nothing. Nearly always that is because
+# the results job upstream has not written a snapshot, so the run names that job and the path
+# rather than leaving "read no source" for somebody to decode.
+if not result.get("sources"):
+    print(
+        f"paper openreview sync: no OpenReview snapshot to read at {os.environ['SNAPSHOT']}; it is"
+        " written by the adminbot-openreview-results cron job, so check that job's latest run"
+        " (OpenReview login, openreview-py) and re-run it before this one",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
 PY
