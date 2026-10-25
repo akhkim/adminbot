@@ -14,7 +14,7 @@ set -euo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/lib/adminbot-cron-env.sh"
 adminbot_load_cron_env "openreview results" || exit 1
 
-TARGET="${ADMINBOT_OPENREVIEW_RESULTS_JSON:-$(dirname "${ADMINBOT_DB_PATH:-$HOME/.openclaw/state/adminbot.sqlite}")/openreview-author-results.json}"
+TARGET="${ADMINBOT_OPENREVIEW_RESULTS_JSON:-$(adminbot_service_state_dir)/openreview-author-results.json}"
 PYTHON="${ADMINBOT_PYTHON:-/usr/bin/python3}"
 # openreview-py is installed by deploy/aurora/install-user-services.sh into this directory, not into
 # the interpreter's site-packages. The AdminBot service unit puts it on PYTHONPATH, but this job runs

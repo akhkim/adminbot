@@ -27,7 +27,7 @@ PORT="${ADMINBOT_PORT:-8765}"
 # The snapshot the results cron writes, at the path that cron uses. It is posted with the request
 # so the service reads the same file even when its own default path differs; when it is missing
 # the service falls back to its own path, and with no snapshot at all the run fails.
-SNAPSHOT="${ADMINBOT_OPENREVIEW_RESULTS_JSON:-$(dirname "${ADMINBOT_DB_PATH:-$HOME/.openclaw/state/adminbot.sqlite}")/openreview-author-results.json}"
+SNAPSHOT="${ADMINBOT_OPENREVIEW_RESULTS_JSON:-$(adminbot_service_state_dir)/openreview-author-results.json}"
 request_file="$(mktemp)"
 trap 'rm -f "$request_file"' EXIT
 python3 - "$SNAPSHOT" "${ADMINBOT_OPENREVIEW_SYNC_DRY_RUN:-0}" >"$request_file" <<'REQUEST'
