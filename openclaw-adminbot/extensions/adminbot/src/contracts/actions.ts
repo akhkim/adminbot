@@ -2453,9 +2453,40 @@ export type AdminBotMemberNudgeSkip = {
   reason: string;
 };
 
+/**
+ * What became of one channel send (the Slack DM or the email), as far as AdminBot can know.
+ *
+ * - `executed`: the connector returned without error. That is AdminBot's side of the send; it is
+ *   not a provider receipt and not proof the member saw it, so it is never called "delivered".
+ * - `not_delivered`: the connector recognized the send and declined it (a delivery kill switch).
+ *   Nothing left the building.
+ * - `failed`: refused before any send was attempted (no connector, not approved, bad payload).
+ * - `unknown`: the connector raised part-way through. The message may or may not have gone out,
+ *   so this is a thing to reconcile against the provider, not something to send again blindly.
+ */
+export type AdminBotMemberNudgeDeliveryOutcome = "executed" | "not_delivered" | "failed" | "unknown";
+
+export type AdminBotMemberNudgeDelivery = {
+  member_id: string;
+  outcome: AdminBotMemberNudgeDeliveryOutcome;
+  /** The `member_nudge.send` proposal, for reconciling against the execution ledger. */
+  action_id: string;
+  reason?: string;
+};
+
 export type AdminBotMemberNudgeResult = {
+  /** Proposals whose execution returned, including any the connector declined to deliver. */
   created: AdminBotStoredProposal[];
   skipped: AdminBotMemberNudgeSkip[];
+  /**
+   * Members a portal notification was filed for. Separate from the channel send on purpose: the
+   * portal copy is written before the DM is tried and kept whatever the DM does, so "told in the
+   * portal" and "sent on Slack" are two different counts. Absent from older services and from
+   * sweeps that merge several sends into one result.
+   */
+  portal_notified?: string[];
+  /** One row per channel send that was attempted, with its outcome. Absent as above. */
+  deliveries?: AdminBotMemberNudgeDelivery[];
 };
 
 // --- OpenReview reviewing cycles ---

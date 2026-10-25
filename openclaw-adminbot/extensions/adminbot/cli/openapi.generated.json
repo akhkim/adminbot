@@ -22461,6 +22461,18 @@
                         "$ref": "#/components/schemas/AdminBotMemberNudgeSkip"
                       }
                     },
+                    "portal_notified": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "deliveries": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AdminBotMemberNudgeDelivery"
+                      }
+                    },
                     "papers_considered": {
                       "type": "number"
                     },
@@ -22882,6 +22894,18 @@
                         "$ref": "#/components/schemas/AdminBotMemberNudgeSkip"
                       }
                     },
+                    "portal_notified": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "deliveries": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AdminBotMemberNudgeDelivery"
+                      }
+                    },
                     "skipped_reason": {
                       "type": "string"
                     },
@@ -23141,6 +23165,18 @@
                         "$ref": "#/components/schemas/AdminBotMemberNudgeSkip"
                       }
                     },
+                    "portal_notified": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "deliveries": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AdminBotMemberNudgeDelivery"
+                      }
+                    },
                     "papers_considered": {
                       "type": "number"
                     }
@@ -23197,6 +23233,18 @@
                       "type": "array",
                       "items": {
                         "$ref": "#/components/schemas/AdminBotMemberNudgeSkip"
+                      }
+                    },
+                    "portal_notified": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "deliveries": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AdminBotMemberNudgeDelivery"
                       }
                     },
                     "papers_considered": {
@@ -23655,6 +23703,18 @@
                       "type": "array",
                       "items": {
                         "$ref": "#/components/schemas/AdminBotMemberNudgeSkip"
+                      }
+                    },
+                    "portal_notified": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "deliveries": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AdminBotMemberNudgeDelivery"
                       }
                     },
                     "week_start": {
@@ -34553,11 +34613,52 @@
             "items": {
               "$ref": "#/components/schemas/AdminBotMemberNudgeSkip"
             }
+          },
+          "portal_notified": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "deliveries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminBotMemberNudgeDelivery"
+            }
           }
         },
         "required": [
           "created",
           "skipped"
+        ],
+        "additionalProperties": true
+      },
+      "AdminBotMemberNudgeDelivery": {
+        "type": "object",
+        "properties": {
+          "member_id": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "executed",
+              "failed",
+              "unknown",
+              "not_delivered"
+            ]
+          },
+          "action_id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "member_id",
+          "outcome",
+          "action_id"
         ],
         "additionalProperties": true
       },

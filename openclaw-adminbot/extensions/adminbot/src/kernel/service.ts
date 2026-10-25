@@ -54,6 +54,7 @@ import type {
   AdminBotOnboardingCycleReason,
   AdminBotMemberNudgeRequest,
   AdminBotMemberNudgeResult,
+  AdminBotMemberNudgeDelivery,
   AdminBotMemberNudgeSkip,
   AdminBotMemberOnboarding,
   AdminBotLocationDrift,
@@ -10820,7 +10821,12 @@ export class AdminBotService {
       } else {
         slackSkipped.push(...sent.payload.skipped);
       }
-      notified.push(row.member_id);
+      // Told only if the portal notification was actually filed. sendMemberNudge files none for
+      // somebody it refuses outright (alumni, off the nudge list), and counting them here is how a
+      // summary comes to say "told" about people nothing reached.
+      if (sent.ok && sent.payload.portal_notified?.includes(row.member_id)) {
+        notified.push(row.member_id);
+      }
       this.recordAudit({
         type: "meeting_attendance.nudged",
         actor,
@@ -13159,6 +13165,8 @@ export class AdminBotService {
     }
     const created: AdminBotStoredProposal[] = [];
     const skipped: AdminBotMemberNudgeSkip[] = [];
+    const portalNotified: string[] = [];
+    const deliveries: AdminBotMemberNudgeDelivery[] = [];
     const nowIso = new Date().toISOString();
     const headProfessorMemberId = this.resolveSettings().head_professor_member_id?.trim();
     // Every nudge asks the member to go and do something in the portal, and until now none of them
@@ -13230,6 +13238,7 @@ export class AdminBotService {
         ...(request.important ? { important: true } : {}),
         created_at: nowIso,
       });
+      portalNotified.push(member.id);
       // The correspondence address when the member nominated one, their login address otherwise.
       // `email` is the departmental identity the account is keyed by; it is not necessarily a
       // mailbox anybody reads, and four members on the roster have no departmental address at all
@@ -13289,13 +13298,29 @@ export class AdminBotService {
         skipped.push({ member_id: memberId, reason: created_.error.message });
         continue;
       }
-      const executed = await this.execute(created_.payload.id, { dry_run: false });
+      const actionId = created_.payload.id;
+      const executed = await this.execute(actionId, { dry_run: false });
       if (!executed.ok) {
         skipped.push({ member_id: memberId, reason: executed.error.message });
+        // A 502 is the connector raising mid-send (executeOnce's catch), so the DM may or may not
+        // have gone out. Everything else was refused before any send was attempted.
+        deliveries.push({
+          member_id: memberId,
+          outcome: executed.status === 502 ? "unknown" : "failed",
+          action_id: actionId,
+          reason: executed.error.message,
+        });
         continue;
       }
-      created.push(this.store.getProposal(created_.payload.id) ?? created_.payload);
+      deliveries.push({
+        member_id: memberId,
+        outcome: executed.payload.status === "executed" ? "executed" : "not_delivered",
+        action_id: actionId,
+      });
+      created.push(this.store.getProposal(actionId) ?? created_.payload);
     }
+    const outcomeCount = (outcome: AdminBotMemberNudgeDelivery["outcome"]) =>
+      deliveries.filter((entry) => entry.outcome === outcome).length;
     this.recordAudit({
       type: "member_nudge.sent",
       actor,
@@ -13304,15 +13329,32 @@ export class AdminBotService {
         requested: request.recipient_member_ids.length,
         created: created.length,
         skipped: skipped.length,
-        // Every recipient that resolved to a member was notified in the portal, whether or not the
-        // channel send worked, so the audit distinguishes "told" from "delivered".
-        notified:
-          request.recipient_member_ids.length -
-          skipped.filter((entry) => entry.reason === "member not found").length,
+        // Told in the portal: a notification was actually filed. It used to be everyone who
+        // resolved to a member, which counted alumni, the off-list and the opted-out -- none of
+        // whom get a notification -- and read as "ten notified" beside two executed Slack sends.
+        notified: portalNotified.length,
+        portal_notified: portalNotified.length,
+        // The channel send, counted apart from the portal. `executed` is AdminBot's side of the
+        // send, not a provider receipt; `unknown` needs reconciling, not resending.
+        executed: outcomeCount("executed"),
+        not_delivered: outcomeCount("not_delivered"),
+        failed: outcomeCount("failed"),
+        unknown: outcomeCount("unknown"),
+        ...(outcomeCount("unknown") > 0
+          ? {
+              unknown_action_ids: deliveries
+                .filter((entry) => entry.outcome === "unknown")
+                .map((entry) => entry.action_id),
+            }
+          : {}),
         important: Boolean(request.important),
       },
     });
-    return { ok: true, status: 200, payload: { created, skipped } };
+    return {
+      ok: true,
+      status: 200,
+      payload: { created, skipped, portal_notified: portalNotified, deliveries },
+    };
   }
 
   /**
