@@ -73,6 +73,8 @@ export async function draftXPost(
     pdfBase64?: string;
     paperId: string;
     url?: string;
+    /** Pasted by hand when the paper has no PDF the service can read; skips PDF extraction. */
+    abstract?: string;
     credits?: import("../../../../../extensions/adminbot/src/workflows/papers/x-draft.js").XCreditSelection;
     announcement?: import("../../../../../extensions/adminbot/src/workflows/papers/x-draft.js").XAnnouncementDetails;
   },
@@ -84,6 +86,7 @@ export async function draftXPost(
     ...(request.announcement ? { announcement: request.announcement } : {}),
     ...(request.credits ? { credits: request.credits } : {}),
     ...(request.pdfBase64 ? { pdf_base64: request.pdfBase64 } : {}),
+    ...(request.abstract ? { abstract: request.abstract } : {}),
     ...(request.url ? { url: request.url } : {}),
   });
   if ("unreachable" in result) {
@@ -105,7 +108,14 @@ export type LinkedInDraft = {
 };
 
 export async function draftLinkedInPost(
-  request: { pdfBase64?: string; paperId?: string; url?: string; venue?: string; note?: string },
+  request: {
+    pdfBase64?: string;
+    paperId?: string;
+    url?: string;
+    venue?: string;
+    note?: string;
+    abstract?: string;
+  },
   sessionToken: string,
   baseUrl: string,
 ): Promise<AuthResult<LinkedInDraft>> {
@@ -114,6 +124,7 @@ export async function draftLinkedInPost(
     // paper already names, which the card has been chasing the author for anyway.
     ...(request.pdfBase64 ? { pdf_base64: request.pdfBase64 } : {}),
     ...(request.paperId ? { paper_id: request.paperId } : {}),
+    ...(request.abstract ? { abstract: request.abstract } : {}),
     ...(request.url ? { url: request.url } : {}),
     ...(request.venue ? { venue: request.venue } : {}),
     ...(request.note ? { note: request.note } : {}),

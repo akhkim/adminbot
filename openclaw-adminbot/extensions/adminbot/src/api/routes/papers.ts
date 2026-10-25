@@ -427,15 +427,26 @@ async function draftAnnouncement({ req, res, url, ctx, principal }: Parameters<R
     }
   }
   let pdfBase64 = typeof body.pdf_base64 === "string" ? body.pdf_base64 : "";
-  // An upload is no longer required. The author has usually already given the lab this exact
-  // file -- `drive_pdf_arxiv` is the Drive copy of the PDF they intend to post, and the card
-  // chases them for it -- so asking them to find it again was asking for their own homework.
-  // An uploaded file still wins: it is the one the person in front of the dialog chose.
-  if (!pdfBase64) {
+  // A pasted abstract is the way out for a paper with no PDF anywhere AdminBot can read. The card
+  // supplies the title and the author order, so nothing else has to be retyped.
+  const pastedAbstract = typeof body.abstract === "string" ? body.abstract.trim() : "";
+  let source: { title: string; authors: string[]; abstract: string } | undefined;
+  if (pastedAbstract && !pdfBase64) {
     const paperId = typeof body.paper_id === "string" ? body.paper_id : "";
     if (!paperId) {
       sendJson(res, 400, {
-        error: { message: "attach a PDF, or send paper_id so the Drive copy can be used" },
+        error: {
+          message: "send paper_id with a pasted abstract so the title and authors are known",
+        },
+      });
+      return;
+    }
+    if (pastedAbstract.length < 200) {
+      sendJson(res, 400, {
+        error: {
+          message:
+            "the pasted abstract is too short to ground a post (under 200 characters); paste the whole abstract",
+        },
       });
       return;
     }
@@ -444,7 +455,49 @@ async function draftAnnouncement({ req, res, url, ctx, principal }: Parameters<R
       sendServiceResult(res, cycle);
       return;
     }
-    const source = resolvePaperPdfSource(cycle.payload.slots, isX);
+    const { title, authors } = cycle.payload.paper;
+    if (!title?.trim() || !authors?.length) {
+      sendJson(res, 400, {
+        error: {
+          message:
+            "the paper card needs a title and an author list before a draft can be written from a pasted abstract",
+        },
+      });
+      return;
+    }
+    source = { title: title.trim(), authors, abstract: pastedAbstract };
+    const arxiv = resolvePaperPdfSource(
+      cycle.payload.slots,
+      true,
+      cycle.payload.paper.artifacts ?? {},
+    );
+    if (typeof body.url !== "string" && arxiv.kind === "arxiv") body.url = arxiv.url;
+  }
+  // An upload is no longer required. The author has usually already given the lab this exact
+  // file -- `drive_pdf_arxiv` is the Drive copy of the PDF they intend to post, and the card
+  // chases them for it -- so asking them to find it again was asking for their own homework.
+  // An uploaded file still wins: it is the one the person in front of the dialog chose.
+  if (!pdfBase64 && !source) {
+    const paperId = typeof body.paper_id === "string" ? body.paper_id : "";
+    if (!paperId) {
+      sendJson(res, 400, {
+        error: {
+          message:
+            "attach a PDF, paste the abstract, or send paper_id so the arXiv or Drive copy can be used",
+        },
+      });
+      return;
+    }
+    const cycle = service.listPaperSlots(paperId);
+    if (!cycle.ok) {
+      sendServiceResult(res, cycle);
+      return;
+    }
+    const source = resolvePaperPdfSource(
+      cycle.payload.slots,
+      isX,
+      cycle.payload.paper.artifacts ?? {},
+    );
     if (source.kind === "none") {
       sendJson(res, 400, { error: { message: source.reason } });
       return;
@@ -491,6 +544,7 @@ async function draftAnnouncement({ req, res, url, ctx, principal }: Parameters<R
       ...(announcement ? { announcement } : {}),
       ...(credits ? { credits } : {}),
       pdfBase64,
+      ...(source ? { source } : {}),
       members,
       ...(typeof body.url === "string" ? { url: body.url } : {}),
       ...(typeof body.venue === "string" ? { venue: body.venue } : {}),

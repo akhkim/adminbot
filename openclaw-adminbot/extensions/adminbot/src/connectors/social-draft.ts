@@ -304,7 +304,14 @@ export async function generateLinkedInDraft(
  * only authoritative version ends up on LinkedIn, so this returns and forgets.
  */
 export type LinkedInDraftRequest = {
+  /** Empty when `source` is given. */
   pdfBase64: string;
+  /**
+   * Title, authors and abstract already in hand -- the author pasted the abstract and the card
+   * supplied the rest. Skips PDF extraction entirely: 75 papers have no PDF anywhere AdminBot can
+   * reach, and a pasted abstract is the same grounding the extraction step would have produced.
+   */
+  source?: AdminBotPaperSource;
   members: AdminBotLabMember[];
   filename?: string;
   url?: string;
@@ -377,10 +384,12 @@ export function createXDraftRunner(options: AdminBotSocialDraftOptions = {}): XD
   return async (request) => {
     const announcement = request.announcement ?? { stage: "arxiv" as const };
     const system = xAnnouncementPrompt(announcement);
-    const extracted = await extractPaperFromPdf(request.pdfBase64, {
-      ...options,
-      signal: request.signal,
-    });
+    const extracted =
+      request.source ??
+      (await extractPaperFromPdf(request.pdfBase64, {
+        ...options,
+        signal: request.signal,
+      }));
     const paper = { ...extracted, ...(request.url ? { url: request.url } : {}) };
     const env = options.env ?? process.env;
     const model = modelFor(env);
@@ -412,11 +421,15 @@ export function createXDraftRunner(options: AdminBotSocialDraftOptions = {}): XD
     const posts = (parsed as { posts?: unknown })?.posts;
     if (
       !Array.isArray(posts) ||
-      posts.length < 2 ||
+      // One post is a complete thread for the invitation stages, whose prompt asks for "one or
+      // two short posts"; demanding two refused exactly the output that prompt asks for.
+      posts.length < 1 ||
       posts.length > 20 ||
       posts.some((post) => !post || typeof post.text !== "string" || !post.text.trim())
     ) {
-      throw new Error("X draft returned an invalid thread.");
+      throw new Error(
+        "X draft returned an invalid thread (no posts, or an empty one). Press Generate again; nothing was saved.",
+      );
     }
     // Model output cannot smuggle media IDs or credits into the structured thread.
     const finished = finishXThread({
@@ -439,11 +452,13 @@ export function createLinkedInDraftRunner(
   options: AdminBotSocialDraftOptions = {},
 ): LinkedInDraftRunner {
   return async (request) => {
-    const extracted = await extractPaperFromPdf(request.pdfBase64, {
-      ...options,
-      ...(request.filename ? { filename: request.filename } : {}),
-      ...(request.signal ? { signal: request.signal } : {}),
-    });
+    const extracted =
+      request.source ??
+      (await extractPaperFromPdf(request.pdfBase64, {
+        ...options,
+        ...(request.filename ? { filename: request.filename } : {}),
+        ...(request.signal ? { signal: request.signal } : {}),
+      }));
     // The roster is the authority on spelling and on whether we can tag someone. An author it
     // does not know is reported, never dropped.
     const authorsVerified = verifyAuthorsAgainstMembers(extracted.authors, request.members);

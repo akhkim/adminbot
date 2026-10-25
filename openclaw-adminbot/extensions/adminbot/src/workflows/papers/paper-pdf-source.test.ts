@@ -79,3 +79,53 @@ describe("resolvePaperPdfSource", () => {
     expect(source.kind).toBe("none");
   });
 });
+
+describe("resolvePaperPdfSource card fallbacks", () => {
+  it("uses the arXiv link on the card when no slot holds one (PruneGround's case)", () => {
+    expect(
+      resolvePaperPdfSource([], true, { arxiv_url: "https://arxiv.org/abs/2610.01234" }),
+    ).toEqual({ kind: "arxiv", id: "2610.01234", url: "https://arxiv.org/abs/2610.01234" });
+  });
+
+  it("uses the card's Drive PDF link when no slot holds one", () => {
+    expect(
+      resolvePaperPdfSource([], false, {
+        google_drive_pdf_url: "https://drive.google.com/file/d/1CardPdfXyZ9/view",
+      }),
+    ).toEqual({
+      kind: "drive",
+      fileId: "1CardPdfXyZ9",
+      url: "https://drive.google.com/file/d/1CardPdfXyZ9/view",
+    });
+  });
+
+  it("lets LinkedIn fall back to arXiv rather than refuse for want of a Drive copy", () => {
+    expect(
+      resolvePaperPdfSource([slot({ slot: "arxiv", url: "https://arxiv.org/abs/2608.27510" })]),
+    ).toMatchObject({ kind: "arxiv", id: "2608.27510" });
+  });
+
+  it("still prefers the Drive copy for LinkedIn when both exist", () => {
+    expect(
+      resolvePaperPdfSource([], false, {
+        arxiv_url: "https://arxiv.org/abs/2608.27510",
+        google_drive_pdf_url: "https://drive.google.com/file/d/1CardPdfXyZ9/view",
+      }),
+    ).toMatchObject({ kind: "drive", fileId: "1CardPdfXyZ9" });
+  });
+
+  it("prefers the slot over the card when both are filled", () => {
+    expect(
+      resolvePaperPdfSource(
+        [slot({ slot: "arxiv", url: "https://arxiv.org/abs/2608.27510v2" })],
+        true,
+        { arxiv_url: "https://arxiv.org/abs/2608.27510v1" },
+      ),
+    ).toMatchObject({ id: "2608.27510v2" });
+  });
+
+  it("names the abstract as a way out when nothing is on file", () => {
+    const source = resolvePaperPdfSource([], true, {});
+    expect(source.kind === "none" && source.reason).toContain("paste the abstract");
+  });
+});
