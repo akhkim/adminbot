@@ -1854,10 +1854,37 @@ export class AdminBotService {
       // Every caller already treats a refused proposal as a skip, which is what this is.
       return serviceError(409, blocked);
     }
+    if (proposal.type === "slack.invite_to_channel") {
+      // Every channel sweep re-files the invites it still thinks are owed, and a failed invite stays
+      // approved, so each run used to add another copy of the same effect. The outstanding one is
+      // handed back instead; callers execute it as they would have executed the copy.
+      const outstanding = this.outstandingProposalLike(proposal);
+      if (outstanding) {
+        return { ok: true, status: 200, payload: outstanding };
+      }
+    }
     const stored = this.prepareProposal(proposal);
     this.store.saveProposal(stored);
     this.auditProposalCreation(stored);
     return { ok: true, status: 200, payload: stored };
+  }
+
+  /**
+   * A proposal of the same type and exact payload that is still waiting to run: pending approval,
+   * or approved with no successful execution yet. Executed and rejected ones are settled, so they
+   * never stand in for a new proposal.
+   */
+  private outstandingProposalLike(
+    proposal: AdminBotActionProposal,
+  ): AdminBotStoredProposal | undefined {
+    const hash = payloadHash(proposal.proposed_payload);
+    return this.store
+      .listProposalsByType(proposal.type)
+      .find(
+        (stored) =>
+          (stored.status === "pending" || stored.status === "approved") &&
+          payloadHash(stored.proposed_payload) === hash,
+      );
   }
 
   /**
@@ -2046,13 +2073,7 @@ export class AdminBotService {
     });
     // An invitation awaiting approval must not become a fresh card every morning.
     const proposeOnce = (proposal: AdminBotActionProposal) => {
-      const previous = this.store
-        .listProposalsByType(proposal.type)
-        .find(
-          (stored) =>
-            (stored.status === "pending" || stored.status === "approved") &&
-            payloadHash(stored.proposed_payload) === payloadHash(proposal.proposed_payload),
-        );
+      const previous = this.outstandingProposalLike(proposal);
       return previous
         ? { ok: true as const, status: 200, payload: previous }
         : this.createProposal(proposal);
