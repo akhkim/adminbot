@@ -26,7 +26,8 @@ PAPER_WIDTHS = {'Paper': 260, 'Urgency': 190, 'PI review': 150, 'Review for': 17
                 'Venue deadline (Toronto)': 260, 'OpenReview': 300, 'Stage': 170, 'Lead': 150,
                 'Incomplete': 260, 'Blocker / next step': 280, 'Link problems': 240, 'Still missing': 260, 'Authors': 360,
                 'All artifact statuses': 300, 'Venue (as entered)': 220, 'Venue': 230, 'Conference': 150, 'Checks': 240, exporter.PAPER_ID: 160,
-                'Paper state': 190, 'Year': 70, 'Track': 100, 'Presentation': 110, 'Submission history': 280, 'Source': 200}
+                'Paper state': 190, 'Year': 70, 'Track': 100, 'Presentation': 110, 'Submission history': 280, 'Source': 200,
+                'tweet tags to copy': 420}
 # Columns with a closed set of values get a dropdown of the values in use, so each filters by picking one.
 PAPER_DROPDOWNS = ('Stage', 'Paper state', 'Conference', 'Year', 'Track', 'Presentation', 'Source')
 
@@ -246,6 +247,11 @@ def paper_style_requests(properties, values, links, counts=None):
     requests.append({'updateCells': {'range': {**area, 'startRowIndex': 0, 'endRowIndex': 1,
                                                'startColumnIndex': review, 'endColumnIndex': review + 1},
         'rows': [{'values': [{'note': status_note(counts or {})}]}], 'fields': 'note'}})
+    requests.append({'updateCells': {'range': column_range(area, 'tweet tags to copy', 0) | {'endRowIndex': 1},
+        'rows': [{'values': [{'note': 'Copyable public links and credits, not a complete tweet. '
+            'Author order is preserved. Untagged names have no unambiguous stored X handle. '
+            'Affiliations are PI-supplied and are not funding/support credits. '
+            'Review before posting; split long credits across posts.'}]}], 'fields': 'note'}})
     return requests
 
 

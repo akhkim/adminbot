@@ -103,3 +103,21 @@ They are not treated as invite-only project links.
 
 Views `Blocked`, `By paper state`, `By year` and `By track` are added. Blocked reviews sort
 first within their deadline or conference group.
+
+## Tweet links and credits
+
+PaperList's `tweet tags to copy` column sits immediately after Authors. Each refresh derives a
+copyable block from the same read-only snapshot: the recorded public arXiv/OpenReview link,
+GitHub link, and authors in their recorded order. Explicit author member IDs use the current
+roster X profile; external authors can use their recorded author-link handle. Otherwise only
+an exact, unique roster name is matched. Unknown or ambiguous handles stay as author names.
+No username is guessed, and no email address or Overleaf capability link is put in this block.
+
+The PI-supplied institution tags appear as **Affiliations** only on papers naming that PI as an
+author. They are not a claim of paper-level funding or support. This column is a links/credits
+block, not a generated scientific summary or a promise that the whole cell fits one tweet.
+Review it before posting and split long credits across posts. Nothing posts automatically.
+Edit the source profile/author links in AdminBot; protected PaperList cells are overwritten
+by the next export. The refresh preserves the existing two-tab atomic write and protections.
+
+Regression: `python3 scripts/adminbot-sheet-tweet-tags-test.py` and `python3 scripts/adminbot-sheet-export-test.py`.
