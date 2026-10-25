@@ -52,6 +52,50 @@ describe("X PDF draft runner", () => {
       createXDraftRunner({ env, fetchImpl })({ pdfBase64: "cGRm", members: [] }),
     ).rejects.toThrow("invalid thread");
   });
+  it("accepts a one-post invitation thread", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(
+        completion(JSON.stringify({ title: "Paper", authors: [], abstract: "Evidence." })),
+      )
+      .mockResolvedValueOnce(
+        completion(JSON.stringify({ posts: [{ text: "Come chat at our talk!" }] })),
+      ) as unknown as SocialDraftFetch;
+    const result = await createXDraftRunner({ env, fetchImpl })({
+      pdfBase64: "cGRm",
+      members: [],
+      announcement: {
+        stage: "poster",
+        venue: "EMNLP 2026 (Oral)",
+        session: "Nov 5, 10:30, Hall B",
+      },
+    });
+    expect(result.posts).toEqual([{ text: "1/1 Come chat at our talk!" }]);
+  });
+  it("skips PDF extraction when the abstract was pasted", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(
+        completion(JSON.stringify({ posts: [{ text: "A question." }, { text: "An answer." }] })),
+      ) as unknown as SocialDraftFetch;
+    const result = await createXDraftRunner({ env, fetchImpl })({
+      pdfBase64: "",
+      source: { title: "PruneGround", authors: [], abstract: "Pasted abstract." },
+      members: [],
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(result.paper.title).toBe("PruneGround");
+    const linkedInFetch = vi.fn(async () =>
+      completion("A LinkedIn post."),
+    ) as unknown as SocialDraftFetch;
+    const linkedIn = await createLinkedInDraftRunner({ env, fetchImpl: linkedInFetch })({
+      pdfBase64: "",
+      source: { title: "PruneGround", authors: [], abstract: "Pasted abstract." },
+      members: [],
+    });
+    expect(linkedInFetch).toHaveBeenCalledTimes(1);
+    expect(linkedIn.text).toBe("A LinkedIn post.");
+  });
 });
 
 function completion(content: string, ok = true, status = 200) {

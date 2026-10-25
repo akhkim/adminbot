@@ -44,35 +44,45 @@ export type PaperPdfSource =
 /**
  * Where to get this paper's PDF from, given what the card has on file.
  *
- * X drafting can prefer the versioned arXiv record. Other callers retain their Drive
- * default. Overleaf is deliberately not attempted: there is no supported way to
- * ask it for a compiled PDF without driving a browser session as the author, and a draft that
- * silently produced last month's build would be worse than one that says it needs the Drive copy.
+ * X drafting prefers the versioned arXiv record; LinkedIn prefers the Drive copy and falls back
+ * to arXiv. Slots win over the card's own links. Overleaf is deliberately not attempted: there is
+ * no supported way to ask it for a compiled PDF without driving a browser session as the author,
+ * and a draft that silently produced last month's build would be worse than one that says it
+ * needs the Drive copy.
  * The message names that, so the answer is a step the author can actually take.
  */
 export function resolvePaperPdfSource(
   slots: readonly AdminBotPaperSlotRecord[],
   preferArxiv = false,
+  /**
+   * The card's own links. Most cards were imported before slots existed, so their arXiv or Drive
+   * link sits here and nowhere else; ignoring it told 91 papers that had a PDF that they had none.
+   */
+  artifacts: { arxiv_url?: string; google_drive_pdf_url?: string } = {},
 ): PaperPdfSource {
-  const arxiv = slots.find((slot) => slot.slot === "arxiv")?.url;
-  const id = arxiv ? adminBotArxivId(arxiv) : undefined;
-  if (preferArxiv && id) return { kind: "arxiv", id, url: `https://arxiv.org/abs/${id}` };
-  const drive = slots.find((slot) => slot.slot === "drive_pdf_arxiv");
-  const url = drive?.url?.trim() ?? "";
-  if (!url) {
-    return {
-      kind: "none",
-      reason:
-        "No PDF on this paper yet. Fill in the Drive copy of the paper PDF on the card, or attach one here.",
-    };
+  const arxiv = [slots.find((slot) => slot.slot === "arxiv")?.url, artifacts.arxiv_url]
+    .map((url) => (url ? adminBotArxivId(url) : undefined))
+    .find(Boolean);
+  const arxivSource = arxiv
+    ? ({ kind: "arxiv", id: arxiv, url: `https://arxiv.org/abs/${arxiv}` } as const)
+    : undefined;
+  if (preferArxiv && arxivSource) return arxivSource;
+  const driveUrls = [
+    slots.find((slot) => slot.slot === "drive_pdf_arxiv")?.url,
+    artifacts.google_drive_pdf_url,
+  ]
+    .map((url) => url?.trim() ?? "")
+    .filter(Boolean);
+  for (const url of driveUrls) {
+    const fileId = driveFileIdFromUrl(url);
+    if (fileId) return { kind: "drive", fileId, url };
   }
-  const fileId = driveFileIdFromUrl(url);
-  if (!fileId) {
-    return {
-      kind: "none",
-      reason:
-        "The Drive link on this paper does not point at a file (a folder or a Doc cannot be read as the paper PDF). Attach the PDF here, or correct the link on the card.",
-    };
-  }
-  return { kind: "drive", fileId, url };
+  // A public arXiv PDF is the same paper; better than refusing a LinkedIn draft for want of Drive.
+  if (arxivSource) return arxivSource;
+  return {
+    kind: "none",
+    reason: driveUrls.length
+      ? "The Drive link on this paper does not point at a file (a folder or a Doc cannot be read as the paper PDF). Drop the PDF here, paste the abstract, or correct the link on the card."
+      : "No PDF on this paper yet (no arXiv link and no Drive copy). Drop the PDF here or paste the abstract into the draft settings.",
+  };
 }

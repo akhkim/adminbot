@@ -2,7 +2,7 @@
 // Pure: the service still owns the paper lookup, the ownership check and every store write.
 import { randomUUID } from "node:crypto";
 import type { AdminBotSocialDraftRecord } from "../contracts/paper-cycle.js";
-import { readXThreadDraft } from "../workflows/papers/x-draft.js";
+import { readXThreadDraft, xThreadFromText } from "../workflows/papers/x-draft.js";
 
 /**
  * Validate a save request and build the new draft record. A thread is the source of truth for
@@ -26,6 +26,17 @@ export function prepareSocialDraft(params: {
     }
     try {
       xThread = readXThreadDraft(params.xThread);
+    } catch (error) {
+      return { ok: false, message: (error as Error).message };
+    }
+  }
+  // Hand-written X text arrives without a thread. Saved as a bare body it could never be opened in
+  // the thread editor, previewed or copied post by post, and a long paste silently became one
+  // 900-character "post" X would refuse -- what happened to the PruneGround drafts. Blank lines
+  // become posts; the stage is the default every body-only X draft has always been filed under.
+  if (!xThread && params.platform === "x" && params.body.trim()) {
+    try {
+      xThread = readXThreadDraft({ stage: "arxiv", posts: xThreadFromText(params.body) });
     } catch (error) {
       return { ok: false, message: (error as Error).message };
     }
