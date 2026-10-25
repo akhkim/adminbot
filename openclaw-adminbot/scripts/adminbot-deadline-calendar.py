@@ -105,6 +105,16 @@ def build_event(item):
     }
 
 
+def create_args(event):
+    return [
+        "calendar", "create", CALENDAR_ID,
+        "--summary", event["summary"],
+        "--description", event["description"],
+        "--from", event["start"], "--to", event["end"], "--all-day=false",
+        "--send-updates", SEND_UPDATES,
+    ]
+
+
 def existing_events(window_start, window_end):
     """Map marker -> event for AdminBot-managed events already on the calendar."""
     result = gog(
@@ -143,6 +153,16 @@ def _instant(value):
         return datetime.datetime.fromisoformat(stamp.replace("Z", "+00:00"))
     except ValueError:
         return None
+
+
+def is_all_day(existing):
+    """True for an event left over from when deadlines were written as all-day entries.
+
+    Google patches `start`/`end` field by field, and `gog calendar update` sends only `dateTime`, so
+    the old `date` survives the patch and Google rejects the event with "Invalid start time.".
+    """
+    start = existing.get("start")
+    return isinstance(start, dict) and bool(start.get("date")) and not start.get("dateTime")
 
 
 def is_current(existing, event):
@@ -211,6 +231,12 @@ def main():
         event_id = current.get("id") if current else None
         if event_id and is_current(current, event):
             unchanged += 1
+        elif event_id and is_all_day(current):
+            # Created before the old one is removed, so a failure leaves a duplicate, not a gap.
+            gog(create_args(event))
+            gog(["--force", "calendar", "delete", CALENDAR_ID, event_id, "--send-updates", SEND_UPDATES])
+            updated += 1
+            print(f"  replaced all-day  {event['start']}  {event['summary'][:58]}")
         elif event_id:
             gog([
                 "calendar", "update", CALENDAR_ID, event_id,
@@ -222,13 +248,7 @@ def main():
             updated += 1
             print(f"  updated  {event['start']}  {event['summary'][:66]}")
         else:
-            gog([
-                "calendar", "create", CALENDAR_ID,
-                "--summary", event["summary"],
-                "--description", event["description"],
-                "--from", event["start"], "--to", event["end"], "--all-day=false",
-                "--send-updates", SEND_UPDATES,
-            ])
+            gog(create_args(event))
             created += 1
             print(f"  created  {event['start']}  {event['summary'][:66]}")
 

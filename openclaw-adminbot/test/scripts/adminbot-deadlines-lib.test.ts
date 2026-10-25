@@ -127,6 +127,47 @@ print(json.dumps(calls))`) as string[][];
     expect(calls[3]).toEqual(calls[1]);
   });
 
+  // Google keeps an all-day event's start.date through a patch that only sends dateTime, and then
+  // rejects it with "Invalid start time.", so the old entry is replaced rather than updated.
+  it("replaces a leftover all-day event instead of patching it", () => {
+    const calls = runPython(`${setup}
+calls = []
+def gog(args, check=True):
+    calls.append(args)
+    return SimpleNamespace(returncode=0, stdout=json.dumps({'events': [{
+        'id': 'all-day-event',
+        'description': m.marker_for(item['id']),
+        'start': {'date': '2026-09-30'},
+        'end': {'date': '2026-10-01'},
+    }]}))
+with patch.object(m.DeadlineDataset, 'venues', return_value=[item]), \
+     patch.object(m, 'gog', side_effect=gog), \
+     patch.dict(os.environ, {'ADMINBOT_DEADLINE_NOW': '2026-10-01T10:00:00+00:00'}), \
+     patch.object(sys, 'argv', ['calendar', '--send']):
+    m.main()
+print(json.dumps(calls))`) as string[][];
+    expect(calls.map((call) => call.slice(0, 3))).toEqual([
+      ["calendar", "events", "calendar@example.test"],
+      ["calendar", "create", "calendar@example.test"],
+      ["--force", "calendar", "delete"],
+    ]);
+    expect(calls[1].slice(-7)).toEqual([
+      "--from",
+      "2026-10-01T10:59:59+00:00",
+      "--to",
+      "2026-10-01T11:59:59+00:00",
+      "--all-day=false",
+      "--send-updates",
+      "none",
+    ]);
+    expect(calls[2].slice(3)).toEqual([
+      "calendar@example.test",
+      "all-day-event",
+      "--send-updates",
+      "none",
+    ]);
+  });
+
   it("leaves an event that already matches untouched", () => {
     const calls = runPython(`${setup}
 event = m.build_event(item)
@@ -1374,8 +1415,20 @@ print(json.dumps({
 `),
   ).toEqual({
     rows: {
-      colm2026_abstract: ["2026-03-26 23:59:00", "main_conference", "primary", "archival", "https://colm.cc/Conferences/2026/Dates"],
-      colm2026_paper: ["2026-03-31 23:59:00", "main_conference", "primary", "archival", "https://colm.cc/Conferences/2026/Dates"],
+      colm2026_abstract: [
+        "2026-03-26 23:59:00",
+        "main_conference",
+        "primary",
+        "archival",
+        "https://colm.cc/Conferences/2026/Dates",
+      ],
+      colm2026_paper: [
+        "2026-03-31 23:59:00",
+        "main_conference",
+        "primary",
+        "archival",
+        "https://colm.cc/Conferences/2026/Dates",
+      ],
     },
     seeded: ["colm2026_abstract", "colm2026_paper"],
     schedule: [
