@@ -861,6 +861,14 @@ export type PaperGridProps = {
   onSaveSlots?: (writes: SlotWrite[]) => void;
   /** The signed-in member's name, for a blocker filed from a cell. */
   viewerName?: string;
+  /**
+   * The rows to draw, when the host shows a window of a long list (a search, or the first fifty).
+   *
+   * Paste, fill and evidence loading follow what is drawn, since their row numbers are the drawn
+   * ones. Counts, saves and imports keep reading `papers`, so an import never treats an undrawn
+   * paper as a new one.
+   */
+  rows?: AdminBotPaperRecord[];
 };
 
 /**
@@ -922,7 +930,8 @@ function startFill(
   fromRow: number,
 ): void {
   event.preventDefault();
-  const { state, papers } = props;
+  const { state } = props;
+  const papers = props.rows ?? props.papers;
   let toRow = fromRow;
 
   const rowUnder = (clientX: number, clientY: number): number | undefined => {
@@ -1201,7 +1210,8 @@ function bandsOf(
  * resolves synchronously in a test would otherwise re-enter Lit mid-template.
  */
 function requestEvidence(props: PaperGridProps): void {
-  const { state, papers } = props;
+  const { state } = props;
+  const papers = props.rows ?? props.papers;
   if (!props.onLoadSlots || !state.groups.includes("evidence")) {
     return;
   }
@@ -1221,8 +1231,45 @@ function requestEvidence(props: PaperGridProps): void {
   });
 }
 
+// What each unedited paper's stored cells fail on, kept until the paper record, its evidence or
+// the columns shown change. Checking every cell of fifteen hundred papers on each redraw was most
+// of the sheet's cost; only rows with pending edits need checking again.
+const storedErrors = new WeakMap<
+  AdminBotPaperRecord,
+  { columns: string; cycle: unknown; count: number }
+>();
+
+function countCellErrors(
+  state: PaperGridState,
+  papers: AdminBotPaperRecord[],
+  columns: Column[],
+): number {
+  // By key, not identity: `visibleColumns` builds a new array on every call.
+  const columnsKey = columns.map((column) => String(column.key)).join(",");
+  let total = 0;
+  for (const paper of papers) {
+    const count = (target: AdminBotPaperRecord) =>
+      columns.filter((column) => cellError(column, cellValue(state, target, column))).length;
+    if (state.edits.get(paper.id)?.size) {
+      total += count(paper);
+      continue;
+    }
+    const cycle = state.cycles[paper.id];
+    const cached = storedErrors.get(paper);
+    if (cached && cached.columns === columnsKey && cached.cycle === cycle) {
+      total += cached.count;
+      continue;
+    }
+    const fresh = count(paper);
+    storedErrors.set(paper, { columns: columnsKey, cycle, count: fresh });
+    total += fresh;
+  }
+  return total;
+}
+
 export function renderPaperGrid(props: PaperGridProps): TemplateResult {
   const { state, papers } = props;
+  const rows = props.rows ?? papers;
   // Refreshed every render: the host owns the evidence, the sheet only draws it. See the note on
   // `PaperGridState.cycles` for why it is copied rather than passed to every reader.
   state.cycles = props.slots ?? {};
@@ -1232,11 +1279,7 @@ export function renderPaperGrid(props: PaperGridProps): TemplateResult {
   const changedRows = new Set(
     [...state.edits.entries()].filter(([, row]) => row.size > 0).map(([id]) => id),
   ).size;
-  const errorCount = papers.reduce(
-    (total, paper) =>
-      total + columns.filter((column) => cellError(column, cellValue(state, paper, column))).length,
-    0,
-  );
+  const errorCount = countCellErrors(state, papers, columns);
   const evidenceOn = state.groups.includes("evidence");
   const evidenceLoading =
     evidenceOn && papers.some((paper) => !state.cycles[paper.id]) && Boolean(props.onLoadSlots);
@@ -1448,7 +1491,7 @@ export function renderPaperGrid(props: PaperGridProps): TemplateResult {
             </tr>
           </thead>
           <tbody>
-            ${papers.map(
+            ${rows.map(
               (paper, rowIndex) => html`
                 <tr data-row=${rowIndex}>
                   <td class="paper-grid__rownum">${rowIndex + 1}</td>
@@ -1500,7 +1543,7 @@ export function renderPaperGrid(props: PaperGridProps): TemplateResult {
                           return;
                         }
                         event.preventDefault();
-                        const filled = applyPaste(state, papers, rowIndex, columnIndex, text);
+                        const filled = applyPaste(state, rows, rowIndex, columnIndex, text);
                         state.notice = `Pasted ${filled} cell(s). Nothing is saved until you press Update.`;
                         props.onChange();
                       }}

@@ -6,6 +6,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SlackChannelCheck } from "../controllers/admin.ts";
 import { loadHistory, recordHistory } from "../paper-grid.ts";
+import { projectsListMode } from "./full-views.ts";
 import {
   drawOverview,
   drawPage,
@@ -125,7 +126,7 @@ describe("the card list", () => {
 describe("papers the active list leaves out", () => {
   const done = { completed_at: "2026-07-14T18:03:11.000Z" };
 
-  it("keeps finished papers off the cards, in their own counted disclosure", () => {
+  it("keeps finished papers off the cards, in their own open list", () => {
     const shipped = paper({ id: "p2", title: "Shipped last summer", artifacts: done });
     const { container } = drawOverview({
       papers: [paper(), shipped],
@@ -136,7 +137,9 @@ describe("papers the active list leaves out", () => {
     expect(container.querySelector('[data-testid="project-card-p2"]')).toBeNull();
     const bucket = container.querySelector('[data-testid="my-work-completed"]');
     expect(bucket?.querySelector('[data-testid="my-work-item-p2"]')).not.toBeNull();
-    expect(bucket?.querySelector("summary")?.textContent).toContain("(1)");
+    // Open like its neighbour: one list folded and the next open made readers guess the rule.
+    expect(bucket?.querySelector("details")).toBeNull();
+    expect(bucket?.textContent).toContain("Completed");
   });
 
   it("lists a rejected paper with what to do about it, never as finished", () => {
@@ -751,13 +754,29 @@ describe("the sheet", () => {
       expect(onSheet(drawOverview({ papers: list }).container)).toBe(true);
     });
 
+    it("remembers the reader's choice on the next visit", () => {
+      const list = papers(6);
+      drawOverview({ papers: list })
+        .container.querySelector<HTMLButtonElement>(".paper-grid__tools .btn:last-of-type")!
+        .click();
+      resetProjectsSessionState();
+      expect(onSheet(drawOverview({ papers: list }).container)).toBe(false);
+    });
+
     it("starts over for the next member on this browser", () => {
       const list = papers(6);
       drawOverview({ papers: list })
         .container.querySelector<HTMLButtonElement>(".paper-grid__tools .btn:last-of-type")!
         .click();
       resetProjectsSessionState();
-      expect(onSheet(drawOverview({ papers: list }).container)).toBe(true);
+      // Ada's stored choice is hers: another member with as many papers still lands on the sheet.
+      expect(projectsListMode({ count: 6, admin: false, memberId: "ben" })).toBe("sheet");
+    });
+
+    it("lands a phone on the cards even with many papers", () => {
+      vi.stubGlobal("matchMedia", (query: string) => ({ matches: query.includes("768px") }));
+      expect(onSheet(drawOverview({ papers: papers(6) }).container)).toBe(false);
+      vi.unstubAllGlobals();
     });
   });
 
@@ -799,5 +818,46 @@ describe("the sheet", () => {
     drawn.rerender();
     expect(onSheet(drawn.container)).toBe(true);
     expect(drawn.container.querySelector('[data-testid="decision-banner-p1"]')).not.toBeNull();
+  });
+});
+
+describe("a long list", () => {
+  const many = (count: number) =>
+    Array.from({ length: count }, (_, index) =>
+      paper({ id: `p${index}`, title: index === 77 ? "Needle in the haystack" : `Paper ${index}` }),
+    );
+
+  it("draws the first fifty cards, then fifty more on request", () => {
+    const drawn = drawOverview({ papers: many(120) });
+    drawn.container.querySelector<HTMLButtonElement>('[data-testid="my-work-open-cards"]')!.click();
+    drawn.rerender();
+    expect(drawn.container.querySelectorAll(".project-card")).toHaveLength(50);
+    drawn.container.querySelector<HTMLButtonElement>('[data-testid="my-work-show-more"]')!.click();
+    drawn.rerender();
+    expect(drawn.container.querySelectorAll(".project-card")).toHaveLength(100);
+  });
+
+  it("draws fifty sheet rows but still counts every paper", () => {
+    const drawn = drawOverview({ papers: many(120) });
+    expect(drawn.container.querySelectorAll(".paper-grid tbody tr")).toHaveLength(50);
+    expect(drawn.container.textContent).toContain("120 papers");
+  });
+
+  it("finds a paper past the window by searching", () => {
+    const drawn = drawOverview({ papers: many(120) });
+    const search = drawn.container.querySelector<HTMLInputElement>(
+      '[data-testid="my-work-search"]',
+    )!;
+    search.value = "needle";
+    search.dispatchEvent(new Event("input"));
+    drawn.rerender();
+    const rows = drawn.container.querySelectorAll(".paper-grid tbody tr");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.textContent).toContain("Needle in the haystack");
+  });
+
+  it("offers no search for a handful of papers", () => {
+    const { container } = drawOverview({ papers: many(5) });
+    expect(container.querySelector('[data-testid="my-work-search"]')).toBeNull();
   });
 });

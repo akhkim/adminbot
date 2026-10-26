@@ -595,9 +595,16 @@
     height: 44px;
   }
 
+  /* A 16px gutter keeps cards off the screen edge; chat alone runs nearly edge to edge. The bottom
+     leaves room for the fixed feedback button (44px at 16px), so the last row can scroll clear of
+     it instead of sitting underneath. */
   .content {
-    padding: 4px 4px 16px;
+    padding: 8px 16px calc(76px + env(safe-area-inset-bottom, 0px));
     gap: 12px;
+  }
+
+  .content.content--chat {
+    padding: 4px 4px 16px;
   }
 
   .content.content--deadlines,
@@ -846,8 +853,12 @@
   }
 
   .content {
-    padding: 4px 4px 12px;
+    padding: 8px 16px calc(76px + env(safe-area-inset-bottom, 0px));
     gap: 10px;
+  }
+
+  .content.content--chat {
+    padding: 4px 4px 12px;
   }
 
   .content.content--deadlines,
