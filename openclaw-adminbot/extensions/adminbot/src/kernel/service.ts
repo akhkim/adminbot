@@ -452,6 +452,7 @@ import {
   evidenceFromCitationChecks,
   matchPaperEvidence,
   normalizedTitle,
+  openReviewStageProofs,
   planOpenReviewSync,
   type OpenReviewEvidence,
   type OpenReviewFieldChange,
@@ -1037,7 +1038,7 @@ export type AdminBotPaperflowStageView = {
   closed_at?: string;
   /** The bcc'd mail's subject, so a closed rung says what closed it. */
   closed_by_subject?: string;
-  closed_by?: "email_bcc" | "admin";
+  closed_by?: AdminBotPaperflowEvidenceRecord["recorded_by"];
 };
 
 /**
@@ -1748,6 +1749,8 @@ export type OpenReviewPaperSyncReport = {
   kept: Array<{ paper_id: string; reason: string }>;
   /** Snapshot or e-mail reports that matched no paper on file. */
   unmatched_submissions: number;
+  /** PaperFlow stages a visible OpenReview reply closed (or, in a dry run, would close). */
+  stages_closed: Array<{ paper_id: string; stage: string }>;
 };
 
 export class AdminBotService {
@@ -7315,6 +7318,7 @@ export class AdminBotService {
       unchanged: 0,
       kept: [],
       unmatched_submissions: 0,
+      stages_closed: [],
     };
     const matchedEvidence = new Set<OpenReviewEvidence>();
     const ledger = this.nudgeLedgerIndex();
@@ -7326,6 +7330,9 @@ export class AdminBotService {
       }
       matchedEvidence.add(match);
       report.matched += 1;
+      // Ahead of the fingerprint check: a stage proof is idempotent per (paper, stage), and a
+      // paper whose fields were applied long ago still needs its rebuttal rung closed.
+      this.closeOpenReviewProvenStages(paper.id, match, options.dryRun, report);
       const plan = planOpenReviewSync(paper, slots, match, nowIso);
       if (plan.unchanged) {
         report.unchanged += 1;
@@ -7423,6 +7430,41 @@ export class AdminBotService {
         .filter((key) => key && !matchedKeys.has(key)),
     ).size;
     return { ok: true, status: 200, payload: report };
+  }
+
+  /**
+   * Close the PaperFlow stages a reply on the author's OpenReview view proves.
+   *
+   * Strict on purpose: a stage closes on a reply that exists (a released review, an author
+   * response, a meta-review, a decision), never because a deadline passed or an invitation is
+   * missing. A missed close costs one more nudge; a false close silences the reminder for a
+   * rebuttal nobody wrote.
+   */
+  private closeOpenReviewProvenStages(
+    paperId: string,
+    evidence: OpenReviewEvidence,
+    dryRun: boolean,
+    report: OpenReviewPaperSyncReport,
+  ): void {
+    const evidenced = new Set(this.store.listPaperflowEvidence(paperId).map((row) => row.stage));
+    for (const proof of openReviewStageProofs(evidence)) {
+      if (evidenced.has(proof.stage)) {
+        continue;
+      }
+      if (!dryRun) {
+        const recorded = this.recordPaperflowEvidence({
+          paperId,
+          stage: proof.stage,
+          subject: proof.subject,
+          recordedBy: "openreview",
+          actor: "openreview",
+        });
+        if (!recorded.ok || !recorded.payload.recorded) {
+          continue;
+        }
+      }
+      report.stages_closed.push({ paper_id: paperId, stage: proof.stage });
+    }
   }
 
   /**

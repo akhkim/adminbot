@@ -218,6 +218,15 @@ describe("renderPaperSlots", () => {
       expect(reviews?.textContent).toContain("ARR reviews available");
     });
 
+    it("says when OpenReview, not a forwarded mail, closed a rung", async () => {
+      const closedByOpenReview = stages.map((rung) =>
+        rung.stage === "rebuttal" ? { ...rung, closed_by: "openreview" as const } : rung,
+      );
+      const { container } = await draw([], false, { stages: closedByOpenReview });
+      const rebuttal = container.querySelector('[data-testid="paper-stage-p1-rebuttal"]');
+      expect(rebuttal?.textContent).toContain("Seen on OpenReview");
+    });
+
     it("names the one rung anybody can act on, and what the action is", async () => {
       const { container } = await draw([], false, { stages });
       const decision = container.querySelector('[data-testid="paper-stage-p1-decision"]');
@@ -797,8 +806,12 @@ describe("paper feedback requests", () => {
 
 it("starts checklist branches collapsed without hiding their headings", async () => {
   const { container } = await draw([row({ slot: "overleaf_share", status: "missing" })]);
-  const branches = [...container.querySelectorAll<HTMLDetailsElement>("details.paper-slots__group")];
+  const branches = [
+    ...container.querySelectorAll<HTMLDetailsElement>("details.paper-slots__group"),
+  ];
   expect(branches.length).toBeGreaterThan(0);
   expect(branches.every((branch) => !branch.open)).toBe(true);
-  expect(branches.every((branch) => branch.querySelector("summary")?.textContent?.trim())).toBe(true);
+  expect(branches.every((branch) => branch.querySelector("summary")?.textContent?.trim())).toBe(
+    true,
+  );
 });

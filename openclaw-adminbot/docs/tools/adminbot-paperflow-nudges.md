@@ -23,6 +23,29 @@ not the author, so the trusted-sender gate deliberately files it under `AdminBot
 instead of silently closing a stage. Forwarding the message from an address saved on the author's
 profile makes the visible instruction and the security rule agree.
 
+## OpenReview closes what it can see
+
+The paper sync (`scripts/adminbot-paper-openreview-sync-cron.sh`) already reads every submission
+the PI authored. The author's own OpenReview view is first-hand evidence for three stages, so the
+sync records them itself (`recorded_by: "openreview"`) and nobody is asked to forward anything:
+
+| Stage         | Closed when the author's view shows                                                                     |
+| ------------- | ------------------------------------------------------------------------------------------------------- |
+| `reviews_out` | A released `Official_Review`                                                                            |
+| `rebuttal`    | A `Rebuttal`/`Author_Response` reply, a comment signed by the paper's `Authors` group, or a meta-review |
+| `decision`    | A `Decision` reply                                                                                      |
+
+For an ARR commitment the sync reads the ARR forum the commitment links to as well, which is where
+the reviews and the author response live.
+
+The rule is strict: a stage closes on a reply that exists, never because a deadline passed or a
+rebuttal invitation is missing. A missed close costs one more weekly email, which the author can
+still answer by forwarding; a false close silently stops the reminder for a rebuttal nobody wrote.
+So "no rebuttal is due" still comes from the author. Only the paper's newest matched submission
+speaks, so an earlier venue's reviews do not close the resubmission's stages. The sync's report
+lists what it closed under `stages_closed`, and a dry run lists what it would close. The paper
+card labels such a rung "Seen on OpenReview" and shows the forum id.
+
 ## Who gets the email
 
 The **first full member in the author list**, walking the authors in order:
@@ -62,13 +85,13 @@ One at a time, in order. A paper waiting on reviews is never simultaneously aske
 decision came out — asking both in one mail is how an author learns the sender does not know where
 their paper is.
 
-| Stage          | PaperFlow node | Opens when                                 | Closed by                                                   |
-| -------------- | -------------- | ------------------------------------------ | ----------------------------------------------------------- |
-| `reviews_out`  | `RV`           | The submission page is on file             | A forwarded review notification                             |
-| `rebuttal`     | `RB`           | Reviews evidenced, no rebuttal doc on file | A forwarded rebuttal, or an author reply saying none is due |
-| `decision`     | `DC`           | Rebuttal accounted for                     | A forwarded decision mail                                   |
-| `camera_ready` | `CM`           | `venue_decision` is `accept`               | A forwarded camera-ready confirmation                       |
-| `conference`   | `CA`           | `venue_decision` is `accept`               | A forwarded registration or booking confirmation            |
+| Stage          | PaperFlow node | Opens when                                 | Closed by                                                                                                    |
+| -------------- | -------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| `reviews_out`  | `RV`           | The submission page is on file             | A forwarded review notification, or a review visible on OpenReview                                           |
+| `rebuttal`     | `RB`           | Reviews evidenced, no rebuttal doc on file | A forwarded rebuttal, an author reply saying none is due, or an author response or meta-review on OpenReview |
+| `decision`     | `DC`           | Rebuttal accounted for                     | A forwarded decision mail, or a decision on OpenReview                                                       |
+| `camera_ready` | `CM`           | `venue_decision` is `accept`               | A forwarded camera-ready confirmation                                                                        |
+| `conference`   | `CA`           | `venue_decision` is `accept`               | A forwarded registration or booking confirmation                                                             |
 
 Recording a `venue_decision` closes the early stages too — an admin recording an accept has told us
 the decision came out by a route at least as good as a bcc. A `reject` ends the cycle; the paper's

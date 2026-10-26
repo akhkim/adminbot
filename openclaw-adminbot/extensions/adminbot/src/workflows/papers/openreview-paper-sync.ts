@@ -40,6 +40,13 @@ export type OpenReviewOutcome =
 
 export type OpenReviewEvidenceSource = "author_results" | "citation_checks";
 
+/**
+ * The PaperFlow stages a reply on the author's own OpenReview view can prove. Camera ready and
+ * the conference are not here: OpenReview has no reply that says either happened.
+ */
+export const openReviewProvableStages = ["reviews_out", "rebuttal", "decision"] as const;
+export type OpenReviewProvableStage = (typeof openReviewProvableStages)[number];
+
 export type OpenReviewEvidence = {
   source: OpenReviewEvidenceSource;
   status: OpenReviewOutcome;
@@ -63,6 +70,11 @@ export type OpenReviewEvidence = {
   observed_at?: string;
   /** The submission note id, for the audit trail. */
   reference?: string;
+  /**
+   * Stages a visible reply proves, with when it was posted ("" when the reply is undated). Absent
+   * means nothing proves the stage yet, never that the stage was skipped.
+   */
+  stages?: Partial<Record<OpenReviewProvableStage, string>>;
 };
 
 const OUTCOMES = new Set<OpenReviewOutcome>([
@@ -174,6 +186,16 @@ function presentationOf(value: unknown): OpenReviewEvidence["presentation"] {
   return text === "oral" || text === "spotlight" || text === "poster" ? text : undefined;
 }
 
+function stagesOf(value: unknown): OpenReviewEvidence["stages"] {
+  const raw = asRecord(value);
+  const stages = Object.fromEntries(
+    openReviewProvableStages
+      .filter((stage) => stage in raw)
+      .map((stage) => [stage, asText(raw[stage])]),
+  );
+  return Object.keys(stages).length ? stages : undefined;
+}
+
 function compact(evidence: OpenReviewEvidence): OpenReviewEvidence {
   return Object.fromEntries(
     Object.entries(evidence).filter(([, value]) => value !== undefined && value !== ""),
@@ -210,9 +232,35 @@ export function evidenceFromAuthorResults(snapshot: unknown): OpenReviewEvidence
         arr_venue_id: asText(entry.arr_venue_id) || undefined,
         observed_at: fetchedAt,
         reference: asText(entry.id) || undefined,
+        stages: stagesOf(entry.stages),
       }),
     ];
   });
+}
+
+/**
+ * The PaperFlow stages one paper's matched evidence closes, earliest first.
+ *
+ * Only the matched report speaks: it is the paper's newest attempt, so an old venue's reviews do
+ * not close the stages of the resubmission. The subject names the forum because it is what the
+ * paper card shows under the closed rung, and a person checking it needs somewhere to look.
+ */
+export function openReviewStageProofs(
+  evidence: OpenReviewEvidence,
+): Array<{ stage: OpenReviewProvableStage; at: string; subject: string }> {
+  const forum = evidence.submission_id ?? evidence.forums[0];
+  const what: Record<OpenReviewProvableStage, string> = {
+    reviews_out: "reviews visible",
+    rebuttal: "author response or meta-review posted",
+    decision: "decision posted",
+  };
+  return openReviewProvableStages
+    .filter((stage) => evidence.stages?.[stage] !== undefined)
+    .map((stage) => ({
+      stage,
+      at: evidence.stages?.[stage] ?? "",
+      subject: `OpenReview: ${what[stage]}${forum ? ` (forum ${forum})` : ""}`,
+    }));
 }
 
 /** Rows of the citation-watch table. Its venue id is the only outcome it carries. */
