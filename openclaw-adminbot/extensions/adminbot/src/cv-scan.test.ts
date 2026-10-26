@@ -15,6 +15,7 @@ import {
   normalizeCvDownloadUrl,
   resolveStartIso,
   runAdminBotCvScan,
+  sanitizeCvEntries,
   type AdminBotCvScanDeps,
 } from "./cv-scan.js";
 import { AdminBotMemoryStore } from "./persistence/memory.js";
@@ -635,5 +636,37 @@ describe("talks and media", () => {
       'Ada — gave a talk, "Probing refusal circuits", at Stanford NLP Seminar',
     );
     expect(draft).toContain('Alan — was featured in Wired: "Why chatbots refuse"');
+  });
+});
+
+describe("sanitizeCvEntries", () => {
+  it("keeps well-formed entries and drops malformed ones one at a time", () => {
+    expect(
+      sanitizeCvEntries([
+        { kind: "publication", title: "  Sparse probes ", organization: "NeurIPS 2026 (Oral)" },
+        { kind: "talk", title: "Probing", organization: "MIT", start: "2026", invited: true },
+        { kind: "position", title: "Intern", organization: "Lab", invited: true },
+        { kind: "talk", title: "Untitled", organization: "X", invited: "yes" },
+        { kind: "blog", title: "Not a kind", organization: "X" },
+        { kind: "award", title: "   ", organization: "X" },
+        { kind: "media", title: "Interview" },
+        "not an entry",
+        null,
+      ]),
+    ).toEqual([
+      { kind: "publication", title: "Sparse probes", organization: "NeurIPS 2026 (Oral)" },
+      { kind: "talk", title: "Probing", organization: "MIT", start: "2026", invited: true },
+      { kind: "position", title: "Intern", organization: "Lab" },
+      { kind: "talk", title: "Untitled", organization: "X" },
+      { kind: "media", title: "Interview", organization: "" },
+    ]);
+  });
+
+  it("caps a runaway field and treats a non-list as no entries", () => {
+    const [entry] = sanitizeCvEntries([
+      { kind: "other", title: "x".repeat(5000), organization: "" },
+    ]);
+    expect(entry?.title).toHaveLength(500);
+    expect(sanitizeCvEntries({ entries: [] })).toEqual([]);
   });
 });
