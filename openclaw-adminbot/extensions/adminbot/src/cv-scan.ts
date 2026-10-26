@@ -39,6 +39,9 @@ export type AdminBotCvScanDeps = {
   extractText: (pdf: Uint8Array, signal?: AbortSignal) => Promise<AdminBotCvExtraction>;
   extractEntries: (text: string, signal?: AbortSignal) => Promise<AdminBotCvEntry[]>;
   now: () => Date;
+  // Told how many linked CVs have been dealt with so far, so a long sweep can say how far along it
+  // is. Called before each linked CV and once when all are done.
+  onProgress?: (done: number, total: number) => void;
 };
 
 export type AdminBotCvScanOutcome = {
@@ -67,11 +70,10 @@ export async function runAdminBotCvScan(
   const results: AdminBotCvScanMemberResult[] = [];
   const snapshots = new Map<string, AdminBotCvSnapshot>();
 
-  for (const member of members) {
-    const cvUrl = member.cv_url?.trim();
-    if (!cvUrl) {
-      continue;
-    }
+  const linked = members.filter((member) => member.cv_url?.trim());
+  for (const [done, member] of linked.entries()) {
+    deps.onProgress?.(done, linked.length);
+    const cvUrl = member.cv_url!.trim();
     const base = { member_id: member.id, member_name: member.name, added: [], removed: [] };
     let parsed: URL;
     try {
@@ -89,19 +91,28 @@ export async function runAdminBotCvScan(
 
     try {
       const pdf = await deps.fetchPdf(cvUrl);
+      const previous = member.cv_snapshot;
+      const current = (previous?.extractor_version ?? 1) >= CV_EXTRACTOR_VERSION;
+      // The cheapest check first: the very same file as last time cannot read differently, so it
+      // costs a download and a hash -- no PDF parsing, no model call.
+      const pdfHash = createHash("sha256").update(pdf).digest("hex");
+      if (current && previous?.pdf_hash === pdfHash) {
+        results.push({ ...base, status: "unchanged" });
+        continue;
+      }
       const extraction = await deps.extractText(pdf);
       if (!extraction.ok) {
         results.push({ ...base, status: "failed", reason: extraction.reason });
         continue;
       }
       const contentHash = createHash("sha256").update(extraction.text).digest("hex");
-      const previous = member.cv_snapshot;
-      // An unchanged document cannot have produced changed facts, so the model call is skipped
-      // outright. Re-running the scan over a settled roster costs one fetch per member -- unless
-      // the snapshot was read by an older prompt that could not see everything this one can.
+      // A new file with the same text (re-exported, or metadata touched) cannot have produced
+      // changed facts either, so the model call is skipped -- unless the snapshot was read by an
+      // older prompt that could not see everything this one can. The new file hash is kept, so
+      // tomorrow's check stops at the bytes.
       const sameText = previous?.content_hash === contentHash;
-      const current = (previous?.extractor_version ?? 1) >= CV_EXTRACTOR_VERSION;
-      if (sameText && current) {
+      if (sameText && current && previous) {
+        snapshots.set(member.id, { ...previous, pdf_hash: pdfHash });
         results.push({ ...base, status: "unchanged" });
         continue;
       }
@@ -110,6 +121,7 @@ export async function runAdminBotCvScan(
       snapshots.set(member.id, {
         fetched_at: scannedAt,
         content_hash: contentHash,
+        pdf_hash: pdfHash,
         extractor_version: CV_EXTRACTOR_VERSION,
         entries,
       });
@@ -151,6 +163,7 @@ export async function runAdminBotCvScan(
       results.push({ ...base, status: "failed", reason: errorMessage(error) });
     }
   }
+  deps.onProgress?.(linked.length, linked.length);
 
   return {
     result: { scanned_at: scannedAt, results, newsletter_draft: draftFromResults(results) },

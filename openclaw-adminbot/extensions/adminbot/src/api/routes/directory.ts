@@ -239,7 +239,7 @@ export const directoryRoutes: readonly Route[] = [
       sendJson(res, 500, { error: { message: "could not read the lab roster" } });
       return;
     }
-    sendJson(res, 200, board);
+    sendJson(res, 200, { ...board, sweep: cvSweepStatus(ctx, new Date()) });
   }),
   post(
     /^\/cv\/blurb\/([^/]+)$/u,
@@ -411,6 +411,7 @@ export type CvScanOutcome =
 export async function scanAndRecordCvs(
   ctx: AdminBotRouteContext,
   service: AdminBotService,
+  onProgress?: AdminBotCvScanDeps["onProgress"],
 ): Promise<CvScanOutcome> {
   const members = service.listLabMembers();
   if (!members.ok) {
@@ -422,7 +423,7 @@ export async function scanAndRecordCvs(
   const { result, snapshots } = await runAdminBotCvScan(
     members.payload.members,
     // Callers check this before calling; asserted here so the helper has one contract.
-    ctx.cvScanDeps as AdminBotCvScanDeps,
+    { ...(ctx.cvScanDeps as AdminBotCvScanDeps), onProgress },
     cvSettings.ok ? cvSettings.payload.cv_recency_window_months : undefined,
   );
   // Snapshots are written through upsertLabMember rather than straight to the store so the scan
@@ -590,6 +591,84 @@ export type CvDailySweepOutcome =
 let cvSweepRunning = false;
 
 /**
+ * Where the daily CV read stands, for the leaderboard to say "reading 40 of 230, about 25 minutes
+ * left" instead of looking finished while half the CVs are unread.
+ */
+export type CvSweepStatus =
+  | {
+      state: "reading";
+      started_at: string;
+      done: number;
+      total: number;
+      // From the pace so far; null until the first CV is through and there is a pace to go on.
+      eta_seconds: number | null;
+    }
+  | {
+      state: "idle";
+      last_completed_at: string | null;
+      last_failed_at: string | null;
+      // When the next read is due. A past or null time means it starts at the next hourly check.
+      next_due_at: string | null;
+    };
+
+type CvSweepState = {
+  progress?: { started_at: number; done: number; total: number };
+  // Read once from the audit log, then kept current here, so the leaderboard does not scan the
+  // whole audit log on every page load.
+  lastCompletedAt?: string | null;
+  lastFailedAt?: string | null;
+};
+
+// Keyed by store so test servers, each with their own store, do not see one another's sweeps.
+const cvSweepStates = new WeakMap<object, CvSweepState>();
+
+function cvSweepState(ctx: AdminBotRouteContext): CvSweepState {
+  let state = cvSweepStates.get(ctx.store);
+  if (!state) {
+    state = {};
+    cvSweepStates.set(ctx.store, state);
+  }
+  if (state.lastCompletedAt === undefined || state.lastFailedAt === undefined) {
+    const latest = (type: string) =>
+      ctx.store
+        .listAuditEvents()
+        .filter((event) => event.type === type)
+        .reduce<string | null>(
+          (last, event) => (!last || event.timestamp > last ? event.timestamp : last),
+          null,
+        );
+    state.lastCompletedAt = latest(CV_SWEEP_EVENT);
+    state.lastFailedAt = latest(CV_SWEEP_FAILED_EVENT);
+  }
+  return state;
+}
+
+export function cvSweepStatus(ctx: AdminBotRouteContext, now: Date): CvSweepStatus {
+  const state = cvSweepState(ctx);
+  const progress = state.progress;
+  if (progress) {
+    const elapsed = now.getTime() - progress.started_at;
+    return {
+      state: "reading",
+      started_at: new Date(progress.started_at).toISOString(),
+      done: progress.done,
+      total: progress.total,
+      eta_seconds:
+        progress.done > 0
+          ? Math.round(((elapsed / progress.done) * (progress.total - progress.done)) / 1000)
+          : null,
+    };
+  }
+  const last = state.lastCompletedAt ?? null;
+  return {
+    state: "idle",
+    last_completed_at: last,
+    last_failed_at: state.lastFailedAt ?? null,
+    next_due_at: last ? new Date(Date.parse(last) + CV_SWEEP_PERIOD_MS).toISOString() : null,
+  };
+}
+
+/**
  * The once-a-day CV pass: re-scan every linked CV and, when anything new landed on the ledger,
  * refresh the CV Updates doc. Nothing is messaged; the doc and the ledger are the only output.
  *
@@ -611,14 +690,13 @@ export async function runCvDailySweep(
   if (cvSweepRunning) {
     return { status: "skipped", reason: "running" };
   }
-  const last = ctx.store
-    .listAuditEvents()
-    .filter((event) => event.type === CV_SWEEP_EVENT)
-    .reduce((latest, event) => (event.timestamp > latest ? event.timestamp : latest), "");
+  const state = cvSweepState(ctx);
+  const last = state.lastCompletedAt;
   if (last && now.getTime() - Date.parse(last) < CV_SWEEP_PERIOD_MS) {
     return { status: "skipped", reason: "not_due" };
   }
   cvSweepRunning = true;
+  const startedAt = Date.now();
   // The host fires this from a timer that discards the promise, so a sweep that fails has to say
   // so here or nobody learns why CVs stopped being read. A failure is its own event type: it must
   // not count as the day's sweep, or a broken model would only be retried tomorrow.
@@ -630,12 +708,15 @@ export async function runCvDailySweep(
       actor: CV_SWEEP_ACTOR,
       details: { reason },
     });
+    state.lastFailedAt = now.toISOString();
     return { status: "failed", reason };
   };
   try {
     let scan: CvScanOutcome;
     try {
-      scan = await scanAndRecordCvs(ctx, service);
+      scan = await scanAndRecordCvs(ctx, service, (done, total) => {
+        state.progress = { started_at: startedAt, done, total };
+      });
     } catch (error) {
       return recordFailure(error instanceof Error ? error.message : String(error));
     }
@@ -674,8 +755,10 @@ export async function runCvDailySweep(
         ...summarizeCvScan(scan.result.results),
       },
     });
+    state.lastCompletedAt = now.toISOString();
     return { status: "done", changed_members: changed, published };
   } finally {
     cvSweepRunning = false;
+    state.progress = undefined;
   }
 }

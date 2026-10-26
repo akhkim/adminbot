@@ -1437,6 +1437,10 @@ export type AdminBotCvSnapshot = {
   // Hash of the extracted CV text. A re-scan whose hash is unchanged skips the model call
   // entirely, so repeat scans over an unchanged roster cost one fetch each and nothing more.
   content_hash: string;
+  // Hash of the downloaded PDF bytes. Checked before the text is even extracted: a file that is
+  // byte-for-byte the one already read skips parsing and the model. Absent on older snapshots, which
+  // fall back to the text hash and gain this field on their next read.
+  pdf_hash?: string;
   // Which version of the extraction prompt produced `entries`. Absent on snapshots written before
   // versioning. When the prompt learns to read something new, an unchanged CV is read once more
   // despite its hash, or the new field would only ever appear on CVs their owners happen to edit.

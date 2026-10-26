@@ -121,7 +121,75 @@ describe("runAdminBotCvScan", () => {
     );
     expect(result.results[0]?.status).toBe("unchanged");
     expect(extractEntries).not.toHaveBeenCalled();
+    // Same text from a file it had not fingerprinted yet: the entries stay, and the file hash is
+    // kept so the next scan can stop at the bytes.
+    expect(snapshots.get("same")).toEqual({
+      ...snapshotOf("cv text", [POSITION]),
+      pdf_hash: createHash("sha256")
+        .update(new Uint8Array([1]))
+        .digest("hex"),
+    });
+  });
+
+  it("stops at the bytes when the file is the one already read: no parsing, no model", async () => {
+    const extractText = vi.fn(async () => ({ ok: true as const, text: "cv text" }));
+    const extractEntries = vi.fn(async () => [POSITION]);
+    const { result, snapshots } = await runAdminBotCvScan(
+      [
+        member({
+          id: "same",
+          cv_url: "https://drive.google.com/file/d/abc",
+          cv_snapshot: {
+            ...snapshotOf("cv text", [POSITION]),
+            pdf_hash: createHash("sha256")
+              .update(new Uint8Array([1]))
+              .digest("hex"),
+          },
+        }),
+      ],
+      deps({ extractText, extractEntries }),
+    );
+    expect(result.results[0]?.status).toBe("unchanged");
+    expect(extractText).not.toHaveBeenCalled();
+    expect(extractEntries).not.toHaveBeenCalled();
     expect(snapshots.size).toBe(0);
+  });
+
+  it("still re-reads a byte-identical file once when an older prompt read it", async () => {
+    const extractEntries = vi.fn(async () => [POSITION]);
+    await runAdminBotCvScan(
+      [
+        member({
+          id: "old",
+          cv_url: "https://drive.google.com/file/d/abc",
+          cv_snapshot: {
+            ...snapshotOf("cv text", [POSITION], CV_EXTRACTOR_VERSION - 1),
+            pdf_hash: createHash("sha256")
+              .update(new Uint8Array([1]))
+              .digest("hex"),
+          },
+        }),
+      ],
+      deps({ extractEntries }),
+    );
+    expect(extractEntries).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports progress over linked CVs only, ending at the total", async () => {
+    const onProgress = vi.fn();
+    await runAdminBotCvScan(
+      [
+        member({ id: "a", cv_url: "https://drive.google.com/file/d/a" }),
+        member({ id: "none" }),
+        member({ id: "b", cv_url: "https://drive.google.com/file/d/b" }),
+      ],
+      deps({ onProgress }),
+    );
+    expect(onProgress.mock.calls).toEqual([
+      [0, 2],
+      [1, 2],
+      [2, 2],
+    ]);
   });
 
   it("re-reads an unchanged CV once when an older prompt read it, without announcing it", async () => {

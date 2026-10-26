@@ -284,9 +284,48 @@ describe("daily CV sweep", () => {
         { rank: 1, member_id: "m-jane", member_name: "Jane Doe", invited: 1, orals: 0, total: 1 },
       ],
       unscanned: [],
+      sweep: {
+        state: "idle",
+        last_completed_at: "2026-08-22T09:00:00.000Z",
+        last_failed_at: null,
+        next_due_at: "2026-08-23T09:00:00.000Z",
+      },
     });
     const bad = await fetch(`${baseUrl}/cv/talk-leaderboard?year=26x`, { headers: headers() });
     expect(bad.status).toBe(400);
+  });
+
+  it("shows a sweep in progress on the leaderboard, and goes back to idle when it ends", async () => {
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const deps = stubScanDeps([RECENT_POSITION]);
+    const { baseUrl, mock } = await startService({
+      cvScanDeps: {
+        ...deps,
+        extractEntries: async (text) => {
+          await gate;
+          return deps.extractEntries(text);
+        },
+      },
+    });
+    seedMember(mock);
+    const sweep = mock.runCvSweep(new Date("2026-08-20T09:00:00.000Z"));
+    const during = await fetch(`${baseUrl}/cv/talk-leaderboard?year=2026`, { headers: headers() });
+    expect(((await during.json()) as { sweep: unknown }).sweep).toMatchObject({
+      state: "reading",
+      done: 0,
+      total: 1,
+      eta_seconds: null,
+    });
+    release();
+    await sweep;
+    const after = await fetch(`${baseUrl}/cv/talk-leaderboard?year=2026`, { headers: headers() });
+    expect(((await after.json()) as { sweep: unknown }).sweep).toMatchObject({
+      state: "idle",
+      last_completed_at: "2026-08-20T09:00:00.000Z",
+    });
   });
 
   it("records the scan without a doc when no digest document is configured", async () => {
