@@ -1396,6 +1396,12 @@ export type AdminBotCvEntryKind =
   // field: it is the thing that identifies the work alongside its title, which is exactly what
   // `organization` does for every other kind, and cvEntryKey already keys on it.
   | "publication"
+  // A talk the member gave: invited talk, keynote, seminar, panel. `organization` is the host or
+  // venue ("Stanford NLP Seminar", "ICML 2026 workshop").
+  | "talk"
+  // Press about the member or their work: an interview, article, podcast. `organization` is the
+  // outlet ("Wired", "The Gradient podcast").
+  | "media"
   | "other";
 
 export type AdminBotCvEntry = {
@@ -2464,7 +2470,11 @@ export type AdminBotMemberNudgeSkip = {
  * - `unknown`: the connector raised part-way through. The message may or may not have gone out,
  *   so this is a thing to reconcile against the provider, not something to send again blindly.
  */
-export type AdminBotMemberNudgeDeliveryOutcome = "executed" | "not_delivered" | "failed" | "unknown";
+export type AdminBotMemberNudgeDeliveryOutcome =
+  | "executed"
+  | "not_delivered"
+  | "failed"
+  | "unknown";
 
 export type AdminBotMemberNudgeDelivery = {
   member_id: string;
@@ -2882,6 +2892,8 @@ export type AdminBotAuditEvent = {
     // the document changed and who changed it.
     | "cv.digest_published"
     | "cv.digest_failed"
+    // The daily CV sweep finished a scan; its timestamp is what decides when the next one is due.
+    | "cv.sweep_completed"
     // Rebuilding the conference paper indexes. It spends a few minutes of an external API's quota
     // and replaces what every member then searches, so who triggered one is worth keeping.
     | "venue_index.rebuilt"

@@ -901,6 +901,7 @@ export function createAdminBotHost(deps: AdminBotHostDeps) {
     // else wants a city-level lookup.
     slackChannelNamingSweepIntervalMs: 60 * 60 * 1000,
     meetupSweepIntervalMs: 60 * 60 * 1000,
+    cvSweepCheckIntervalMs: 60 * 60 * 1000,
     deviceTokenIssuer: createDeviceTokenIssuer(deps),
     devicePairingApprover: createDevicePairingApprover(deps),
   });

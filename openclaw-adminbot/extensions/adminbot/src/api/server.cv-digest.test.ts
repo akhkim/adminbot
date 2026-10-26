@@ -202,3 +202,55 @@ describe("POST /cv/publish-digest", () => {
     expect(published?.details?.change_count).toBe(1);
   });
 });
+
+describe("daily CV sweep", () => {
+  it("scans once a day and refreshes the doc only when something new appeared", async () => {
+    const publish = vi.fn(async () => {});
+    const extractEntries = vi.fn(async () => [RECENT_POSITION]);
+    const { mock } = await startService({
+      cvScanDeps: { ...stubScanDeps([RECENT_POSITION]), extractEntries },
+      cvDigestPublisher: { documentUrl: "https://docs.example/doc", publish },
+    });
+    seedMember(mock);
+
+    const day1 = new Date("2026-08-20T09:00:00.000Z");
+    expect(await mock.runCvSweep(day1)).toEqual({
+      status: "done",
+      changed_members: 1,
+      published: true,
+    });
+    expect(publish).toHaveBeenCalledTimes(1);
+    expect(publish.mock.calls[0]?.[0]).toContain("NVIDIA");
+
+    // An hour later the sweep is not due, so nothing is fetched at all.
+    expect(await mock.runCvSweep(new Date("2026-08-20T10:00:00.000Z"))).toEqual({
+      status: "skipped",
+      reason: "not_due",
+    });
+
+    // A day later the CV is unchanged: the hash match skips the model and the doc is left alone.
+    expect(await mock.runCvSweep(new Date("2026-08-21T09:00:00.000Z"))).toEqual({
+      status: "done",
+      changed_members: 0,
+      published: false,
+    });
+    expect(extractEntries).toHaveBeenCalledTimes(1);
+    expect(publish).toHaveBeenCalledTimes(1);
+  });
+
+  it("records the scan without a doc when no digest document is configured", async () => {
+    const { mock } = await startService({ cvScanDeps: stubScanDeps([RECENT_POSITION]) });
+    seedMember(mock);
+    expect(await mock.runCvSweep(new Date("2026-08-20T09:00:00.000Z"))).toEqual({
+      status: "done",
+      changed_members: 1,
+      published: false,
+    });
+    expect(mock.store.listCvChangesSince("1970-01-01T00:00:00.000Z")).toHaveLength(1);
+  });
+
+  it("does nothing when CV scanning is not configured", async () => {
+    const { mock } = await startService();
+    expect(await mock.runCvSweep()).toEqual({ status: "skipped", reason: "not_configured" });
+  });
+});

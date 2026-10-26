@@ -4,7 +4,6 @@ import { createArxivProbe } from "../connectors/arxiv.js";
 import { createOllamaEmbedder } from "../connectors/embeddings.js";
 import { appendGogSheetRows, readGogSheetRows } from "../connectors/gog.js";
 import { selectIpGeolocator } from "../connectors/ip-geolocation.js";
-import { createGeoNamesGeocoder, GEONAMES_ATTRIBUTION } from "../connectors/reverse-geocode.js";
 import {
   createOpenReviewForumProbe,
   createOpenReviewNotesReader,
@@ -13,6 +12,7 @@ import {
   createGptZeroBibliographyScanner,
   createPublicOpenReviewPdfReader,
 } from "../connectors/reference-scan.js";
+import { createGeoNamesGeocoder, GEONAMES_ATTRIBUTION } from "../connectors/reverse-geocode.js";
 import { createInterviewChannelProvisioner } from "../connectors/slack-interview.js";
 import {
   createLinkedInDraftRunner,
@@ -55,11 +55,11 @@ import {
 } from "../workflows/onboarding/guide-sender.js";
 import { createImportColumnMapper } from "../workflows/papers/import-columns.js";
 import { createPublicationMailingRunner } from "../workflows/papers/mailing-list-email.js";
+import type { OpenReviewPaperSyncSourceDeps } from "../workflows/papers/openreview-paper-sync-sources.js";
 import { createAdminBotOpenReviewWorkflow } from "../workflows/papers/openreview-workflow.js";
 import { createLocalWorkshopMatcher } from "../workflows/papers/workshop-match-llm.js";
 import { defaultCallSheet } from "./call-sheet-config.js";
 import { memberSheetSource, resolveMemberSheetConfig } from "./member-sheet-config.js";
-import type { OpenReviewPaperSyncSourceDeps } from "../workflows/papers/openreview-paper-sync-sources.js";
 import { createNotificationDraftHandler } from "./notification-drafts.js";
 import {
   warnIfLabCalendarUnconfigured,
@@ -78,6 +78,7 @@ import type {
   AdminBotRouteContext,
 } from "./routes/context.js";
 import type { AdminBotMockServiceOptions } from "./routes/context.js";
+import { runCvDailySweep } from "./routes/directory.js";
 import { AUTHENTICATED_ROUTES } from "./routes/index.js";
 import { memberEnrollmentContext } from "./routes/onboarding.js";
 import { DEFAULT_ALLOWED_ORIGINS, applyCors, parseOrigins, remoteIp } from "./routes/origin.js";
@@ -569,6 +570,16 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
         }, meetupSweepIntervalMs)
       : undefined;
   meetupSweepTimer?.unref();
+  // Re-scans linked CVs once a day and refreshes the CV Updates doc when something new appeared.
+  // Checked on this cadence; runCvDailySweep decides from the audit log whether a day has passed.
+  const cvSweepCheckIntervalMs = options.cvSweepCheckIntervalMs;
+  const cvSweepTimer =
+    typeof cvSweepCheckIntervalMs === "number" && cvSweepCheckIntervalMs > 0
+      ? setInterval(() => {
+          void runCvDailySweep(ctx, service).catch(() => {});
+        }, cvSweepCheckIntervalMs)
+      : undefined;
+  cvSweepTimer?.unref();
   const server = createServer(async (req, res) => {
     try {
       await routeRequest(req, res, ctx);
@@ -590,6 +601,8 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     // directly to set up state that has no HTTP route, such as an observation dated three days
     // ago. Nothing in production reaches for it.
     store,
+    // The hourly timer's body, callable directly so a test can run a day's sweep on demand.
+    runCvSweep: (now?: Date) => runCvDailySweep(ctx, service, now),
     async listen(port = 8765, host = "127.0.0.1") {
       await listen(server, port, host);
       return `http://${host}:${port}`;
@@ -600,6 +613,9 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       }
       if (meetupSweepTimer) {
         clearInterval(meetupSweepTimer);
+      }
+      if (cvSweepTimer) {
+        clearInterval(cvSweepTimer);
       }
       closeDurable();
     },
