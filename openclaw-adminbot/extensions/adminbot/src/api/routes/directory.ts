@@ -3,7 +3,7 @@
 // Cut from server.ts's handleAuthenticatedRoute. Each route states its audience with a guard
 // decorator from guards.ts; the order below is the order the old if-chain tried them in.
 
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { AdminBotCvScanResult } from "../../contracts/actions.js";
 import {
   type AdminBotCvScanDeps,
@@ -17,6 +17,10 @@ import {
   type AdminBotSlackChannelNamingEvent,
 } from "../../kernel/service.js";
 import { renderCvDigestDocument } from "../../workflows/cv/digest-doc.js";
+import {
+  buildTalkLeaderboard,
+  type AdminBotTalkLeaderboard,
+} from "../../workflows/cv/talk-leaderboard.js";
 import {
   memberMapHour,
   toPrivilegedMemberMap,
@@ -189,6 +193,7 @@ export const directoryRoutes: readonly Route[] = [
         published_at: scan.result.scanned_at,
         day_count: published.day_count,
         change_count: published.change_count,
+        talk_leaderboard: published.talk_leaderboard,
         scan: scan.result,
       });
     }),
@@ -213,6 +218,31 @@ export const directoryRoutes: readonly Route[] = [
         ),
       });
     }),
+  ),
+  get(
+    "/cv/talk-leaderboard",
+    ({ res, url, ctx, principal }) => {
+      // Any signed-in member, not just admins: the list used to sit in the lab meeting doc every
+      // member reads, and it carries names and counts only -- never a talk title or a CV.
+      if (principal.kind === "anonymous") {
+        sendJson(res, 401, { error: { message: "member session required" } });
+        return;
+      }
+      // Defaults to this year, the one the guidebook's travel perk is decided on; ?year= reads back
+      // a past one from the same CVs.
+      const raw = url.searchParams.get("year")?.trim();
+      const year = raw ? Number(raw) : new Date().getUTCFullYear();
+      if (!Number.isInteger(year) || year < 1900 || year > 2100) {
+        sendJson(res, 400, { error: { message: "year must be a four-digit year" } });
+        return;
+      }
+      const board = currentTalkLeaderboard(ctx.service, new Date(), year);
+      if (!board) {
+        sendJson(res, 500, { error: { message: "could not read the lab roster" } });
+        return;
+      }
+      sendJson(res, 200, board);
+    },
   ),
   post(
     /^\/cv\/blurb\/([^/]+)$/u,
@@ -434,7 +464,12 @@ export async function scanAndRecordCvs(
 }
 
 type CvDigestPublishOutcome =
-  | { ok: true; day_count: number; change_count: number }
+  | {
+      ok: true;
+      day_count: number;
+      change_count: number;
+      talk_leaderboard: AdminBotTalkLeaderboard | null;
+    }
   | { ok: false; message: string };
 
 /**
@@ -450,7 +485,7 @@ async function publishCvDigest(
   actor: string,
   scannedAt: string,
 ): Promise<CvDigestPublishOutcome> {
-  const document = renderCvDigestDocument(ctx.store.listCvChangesSince(LEDGER_EPOCH), new Date());
+  const { document, talkLeaderboard, body_hash } = renderCvDigest(ctx);
   try {
     await publisher.publish(document.markdown);
   } catch (error) {
@@ -474,9 +509,58 @@ async function publishCvDigest(
       day_count: document.day_count,
       change_count: document.change_count,
       scanned_at: scannedAt,
+      body_hash,
     },
   });
-  return { ok: true, day_count: document.day_count, change_count: document.change_count };
+  return {
+    ok: true,
+    day_count: document.day_count,
+    change_count: document.change_count,
+    talk_leaderboard: talkLeaderboard,
+  };
+}
+
+/**
+ * The CV Updates doc as it would be published now, with a hash of everything but its "Updated"
+ * date so two renders of the same content compare equal on different days.
+ */
+function renderCvDigest(ctx: AdminBotRouteContext) {
+  const now = new Date();
+  const talkLeaderboard = currentTalkLeaderboard(ctx.service, now);
+  const document = renderCvDigestDocument(
+    ctx.store.listCvChangesSince(LEDGER_EPOCH),
+    now,
+    talkLeaderboard ?? undefined,
+  );
+  const body_hash = createHash("sha256")
+    .update(document.markdown.replace(/^_Updated .*_$/mu, ""))
+    .digest("hex");
+  return { document, talkLeaderboard, body_hash };
+}
+
+/** The body hash of the last doc that was actually written, from the audit log. */
+function lastPublishedDigestHash(ctx: AdminBotRouteContext): string | undefined {
+  let latest: { timestamp: string; hash?: unknown } | undefined;
+  for (const event of ctx.store.listAuditEvents()) {
+    if (event.type === "cv.digest_published" && (!latest || event.timestamp > latest.timestamp)) {
+      latest = { timestamp: event.timestamp, hash: event.details?.body_hash };
+    }
+  }
+  return typeof latest?.hash === "string" ? latest.hash : undefined;
+}
+
+/**
+ * This calendar year's talk leaderboard from the roster as it stands, or null when the roster
+ * cannot be read -- the doc is then published without the section rather than with an empty one
+ * that would read as "nobody gave a talk".
+ */
+function currentTalkLeaderboard(
+  service: AdminBotService,
+  now: Date,
+  year: number = now.getUTCFullYear(),
+): AdminBotTalkLeaderboard | null {
+  const members = service.listLabMembers();
+  return members.ok ? buildTalkLeaderboard(members.payload.members, year) : null;
 }
 
 export const CV_SWEEP_ACTOR = "system:cv-sweep";
@@ -529,11 +613,13 @@ export async function runCvDailySweep(
       (entry) =>
         (entry.status === "changed" || entry.status === "first_scan") && entry.added.length > 0,
     ).length;
-    // Only rewritten when the ledger grew: an unchanged doc would just gain a fresh "Updated"
-    // date, and a failed write is retried tomorrow by the same rule because nothing is lost --
-    // the ledger already holds the change and the doc is rendered from all of it.
+    // Rewritten only when the document would read differently from the last one published: an
+    // unchanged doc would just gain a fresh "Updated" date. Compared on the rendered body rather
+    // than on this run's diff, because the talk leaderboard can move with no ledger change (a CV
+    // re-read by a newer prompt surfaces talks that were always there), and because a write that
+    // failed yesterday must still go out today even though today's scan found nothing new.
     const published =
-      changed > 0 && ctx.cvDigestPublisher
+      ctx.cvDigestPublisher && renderCvDigest(ctx).body_hash !== lastPublishedDigestHash(ctx)
         ? (
             await publishCvDigest(
               ctx,

@@ -73,6 +73,7 @@ describe("iconForTab", () => {
       adminbotMembers: "folder",
       adminbotProfileOverview: "check",
       adminbotArrReviewers: "check",
+      adminbotTalkLeaderboard: "mic",
       adminbotTabUsage: "barChart",
       adminbotGrantReport: "scrollText",
       adminbotMailingList: "send",
@@ -137,6 +138,7 @@ describe("titleForTab", () => {
       adminbotMembers: "Lab Members",
       adminbotProfileOverview: "Profile Completeness",
       adminbotArrReviewers: "ARR Eligible Reviewers",
+      adminbotTalkLeaderboard: "Talk Leaderboard",
       adminbotTabUsage: "Tab Usage",
       adminbotGrantReport: "Grant Report",
       adminbotMailingList: "Mailing List",
@@ -198,6 +200,7 @@ describe("subtitleForTab", () => {
       adminbotMembers: "Privilege levels and access profiles.",
       adminbotProfileOverview: "Who has filled in their profile and planned their term.",
       adminbotArrReviewers: "Self-reported ARR reviewer qualification and capacity.",
+      adminbotTalkLeaderboard: "This year's invited talks, counted from members' CVs.",
       adminbotTabUsage: "Which parts of AdminBot the lab actually opens.",
       adminbotGrantReport:
         "Every paper mapped to a safety area, and the track record behind each ask.",

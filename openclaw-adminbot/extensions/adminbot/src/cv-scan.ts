@@ -24,6 +24,12 @@ const execFileAsync = promisify(execFile);
 // enormous from being pulled into memory before anyone looks at its type.
 const MAX_PDF_BYTES = 25 * 1024 * 1024;
 
+/**
+ * Bumped whenever the extraction prompt or schema learns to read something new. 2 added talks,
+ * press and the invited flag on talks; snapshots without a version came from the first prompt.
+ */
+export const CV_EXTRACTOR_VERSION = 2;
+
 export type AdminBotCvExtraction = { ok: true; text: string } | { ok: false; reason: string };
 
 export type AdminBotCvScanDeps = {
@@ -89,14 +95,31 @@ export async function runAdminBotCvScan(
       const contentHash = createHash("sha256").update(extraction.text).digest("hex");
       const previous = member.cv_snapshot;
       // An unchanged document cannot have produced changed facts, so the model call is skipped
-      // outright. Re-running the scan over a settled roster costs one fetch per member.
-      if (previous?.content_hash === contentHash) {
+      // outright. Re-running the scan over a settled roster costs one fetch per member -- unless
+      // the snapshot was read by an older prompt that could not see everything this one can.
+      const sameText = previous?.content_hash === contentHash;
+      const current = (previous?.extractor_version ?? 1) >= CV_EXTRACTOR_VERSION;
+      if (sameText && current) {
         results.push({ ...base, status: "unchanged" });
         continue;
       }
 
       const entries = await deps.extractEntries(extraction.text);
-      snapshots.set(member.id, { fetched_at: scannedAt, content_hash: contentHash, entries });
+      snapshots.set(member.id, {
+        fetched_at: scannedAt,
+        content_hash: contentHash,
+        extractor_version: CV_EXTRACTOR_VERSION,
+        entries,
+      });
+
+      if (sameText) {
+        // Same document, better reader: whatever the new prompt finds was on the CV all along, so
+        // it refreshes the snapshot (and the talk leaderboard counted from it) without reaching
+        // the ledger. Otherwise this year's talks would all be announced as news the day the
+        // prompt changed.
+        results.push({ ...base, status: "unchanged" });
+        continue;
+      }
 
       if (!previous) {
         // A first scan reports only what is *recent*, not everything it found.
@@ -649,7 +672,10 @@ async function extractCvEntries(
             "appeared in -- 'NeurIPS 2026', 'Nature' -- in `organization`. " +
             "For a talk (invited talk, keynote, seminar, panel), put the talk's title in `title` " +
             "and the host or event -- 'Stanford NLP Seminar', 'ICML 2026 workshop' -- in " +
-            "`organization`; use kind `talk`. " +
+            "`organization`; use kind `talk`. Set `invited` to true when the CV presents the " +
+            "talk as invited -- listed under invited talks, or a keynote, seminar or panel the " +
+            "person was asked to give -- and to false for a contributed talk or an oral " +
+            "presentation of their own paper; omit `invited` when the CV does not say. " +
             "For press or media coverage (interview, article, podcast, news feature), put the " +
             "piece's headline or topic in `title` and the outlet -- 'Wired', 'BBC' -- in " +
             "`organization`; use kind `media`. " +
@@ -844,6 +870,7 @@ function cvEntriesSchema(): Record<string, unknown> {
               start: { type: "string" },
               end: { type: "string" },
               start_iso: { type: "string" },
+              invited: { type: "boolean" },
             },
           },
         },

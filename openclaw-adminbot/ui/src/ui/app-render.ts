@@ -619,6 +619,10 @@ const lazyNotificationDrafts = createLazyView(
   () => import("./adminbot/views/notification-drafts.ts"),
   notifyLazyViewHost,
 );
+const lazyTalkLeaderboard = createLazyView(
+  () => import("./adminbot/views/talk-leaderboard.ts"),
+  notifyLazyViewHost,
+);
 const lazyPublicShell = createLazyView(
   () => import("./adminbot/views/public-shell.ts"),
   notifyLazyViewHost,
@@ -3554,6 +3558,15 @@ export function renderApp(state: AppViewState) {
               }),
             )
           : nothing}
+        ${state.tab === "adminbotTalkLeaderboard"
+          ? renderLazyView(lazyTalkLeaderboard, (m) =>
+              m.renderTalkLeaderboard(
+                resolveAdminBotBaseUrl(state.settings),
+                loadStoredMemberSession()?.sessionToken ?? "",
+                state.memberId ?? "",
+              ),
+            )
+          : nothing}
         ${state.tab === "adminbotNotificationDrafts" && adminBotMode === "admin"
           ? renderLazyView(lazyNotificationDrafts, (m) =>
               m.renderNotificationDrafts(
@@ -3848,7 +3861,7 @@ export function renderApp(state: AppViewState) {
                     id: "cv-digest",
                     name: "CV digest",
                     description:
-                      "Runs on its own once a day: re-reads every member's linked CV (unchanged ones are skipped), records new positions, papers, awards, talks and press, and rewrites the CV Updates doc when something changed. Press Run to do it now.",
+                      "Runs on its own once a day: re-reads every member's linked CV (unchanged ones are skipped), records new positions, papers, awards, talks and press, and rewrites the CV Updates doc when something changed. The doc opens with this year's invited-talk leaderboard. Press Run to do it now.",
                     status: state.adminBotCvDigestJob.status,
                     ...(state.adminBotCvDigestJob.detail
                       ? { detail: state.adminBotCvDigestJob.detail }

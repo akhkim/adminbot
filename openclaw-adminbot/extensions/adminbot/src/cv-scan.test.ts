@@ -10,6 +10,7 @@ import {
   assertPublicHost,
   buildNewsletterDraft,
   classifyRecency,
+  CV_EXTRACTOR_VERSION,
   isPublicIpAddress,
   normalizeCvDownloadUrl,
   resolveStartIso,
@@ -31,10 +32,16 @@ function member(overrides: Partial<AdminBotLabMember> & { id: string }): AdminBo
   };
 }
 
-function snapshotOf(text: string, entries: AdminBotCvEntry[]): AdminBotCvSnapshot {
+function snapshotOf(
+  text: string,
+  entries: AdminBotCvEntry[],
+  // null stands for a snapshot written before extractor versions existed.
+  extractorVersion: number | null = CV_EXTRACTOR_VERSION,
+): AdminBotCvSnapshot {
   return {
     fetched_at: "2026-01-01T00:00:00.000Z",
     content_hash: createHash("sha256").update(text).digest("hex"),
+    ...(extractorVersion === null ? {} : { extractor_version: extractorVersion }),
     entries,
   };
 }
@@ -114,6 +121,35 @@ describe("runAdminBotCvScan", () => {
     expect(result.results[0]?.status).toBe("unchanged");
     expect(extractEntries).not.toHaveBeenCalled();
     expect(snapshots.size).toBe(0);
+  });
+
+  it("re-reads an unchanged CV once when an older prompt read it, without announcing it", async () => {
+    // A 2026 talk the first prompt could not see: it belongs on the leaderboard, but it was on the
+    // CV all along, so it must not reach the ledger as news.
+    const talk: AdminBotCvEntry = {
+      kind: "talk",
+      title: "Probing refusals",
+      organization: "Stanford NLP Seminar",
+      start: "2026",
+      invited: true,
+    };
+    const extractEntries = vi.fn(async () => [POSITION, talk]);
+    const { result, snapshots } = await runAdminBotCvScan(
+      [
+        member({
+          id: "old-read",
+          cv_url: "https://drive.google.com/file/d/abc",
+          cv_snapshot: snapshotOf("cv text", [POSITION], null),
+        }),
+      ],
+      deps({ extractEntries }),
+    );
+    expect(extractEntries).toHaveBeenCalledTimes(1);
+    expect(result.results[0]).toMatchObject({ status: "unchanged", added: [] });
+    expect(snapshots.get("old-read")).toMatchObject({
+      extractor_version: CV_EXTRACTOR_VERSION,
+      entries: [POSITION, talk],
+    });
   });
 
   it("drafts newsletter copy from newsworthy additions", async () => {

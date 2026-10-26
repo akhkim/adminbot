@@ -22,6 +22,12 @@ export type AdminBotCvDigestPublishResult = {
   published_at: string;
   day_count: number;
   change_count: number;
+  // This year's invited-talk leaderboard as published at the top of the doc; null when the
+  // service could not read the roster.
+  talk_leaderboard?: {
+    year: number;
+    rows: Array<{ member_name: string; invited: number; total: number }>;
+  } | null;
 };
 
 /**
@@ -155,12 +161,29 @@ export async function runAdminBotCvDigestJob(host: AdminBotHost): Promise<void> 
 // A run that published nothing is still a run: the document was rewritten with a fresh date, and
 // saying "0 updates" is what stops an admin pressing the button again to check.
 function describeDigestRun(published: AdminBotCvDigestPublishResult): string {
+  const leaders = describeTalkLeaders(published.talk_leaderboard);
   if (published.change_count === 0) {
-    return "No CV updates recorded yet — the document was refreshed with today's date.";
+    return `No CV updates recorded yet — the document was refreshed with today's date.${leaders}`;
   }
   const updates = `${published.change_count} update${published.change_count === 1 ? "" : "s"}`;
   const days = `${published.day_count} day${published.day_count === 1 ? "" : "s"}`;
-  return `Published ${updates} across ${days}.`;
+  return `Published ${updates} across ${days}.${leaders}`;
+}
+
+// The top three, so the card answers "who is ahead" without opening the doc; the full board is
+// in the doc.
+function describeTalkLeaders(board: AdminBotCvDigestPublishResult["talk_leaderboard"]): string {
+  if (!board) {
+    return "";
+  }
+  if (!board.rows.length) {
+    return ` No ${board.year} talks on any CV yet.`;
+  }
+  const top = board.rows
+    .slice(0, 3)
+    .map((row) => `${row.member_name} ${row.invited}`)
+    .join(", ");
+  return ` Invited talks ${board.year}: ${top}.`;
 }
 
 /**

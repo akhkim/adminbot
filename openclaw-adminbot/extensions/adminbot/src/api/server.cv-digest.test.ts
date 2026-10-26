@@ -238,6 +238,55 @@ describe("daily CV sweep", () => {
     expect(publish).toHaveBeenCalledTimes(1);
   });
 
+  it("puts this year's invited talks on the doc and retries a write that failed", async () => {
+    const invited: AdminBotCvEntry = {
+      kind: "talk",
+      title: "Probing refusals",
+      organization: "Stanford NLP Seminar",
+      start: "2026",
+      invited: true,
+    };
+    const publish = vi
+      .fn<(markdown: string) => Promise<void>>()
+      .mockRejectedValueOnce(new Error("gog keyring locked"))
+      .mockResolvedValue(undefined);
+    const { baseUrl, mock } = await startService({
+      cvScanDeps: stubScanDeps([invited]),
+      cvDigestPublisher: { documentUrl: "https://docs.example/doc", publish },
+    });
+    seedMember(mock);
+
+    // Day one: the write fails, so nothing counts as published.
+    expect(await mock.runCvSweep(new Date("2026-08-20T09:00:00.000Z"))).toMatchObject({
+      published: false,
+    });
+    // Day two: the CV is unchanged and the ledger did not grow, but the doc never went out, so
+    // it is written now.
+    expect(await mock.runCvSweep(new Date("2026-08-21T09:00:00.000Z"))).toEqual({
+      status: "done",
+      changed_members: 0,
+      published: true,
+    });
+    expect(publish.mock.calls[1]?.[0]).toContain("- #1 **Jane Doe** — 1 invited");
+    // Day three: same content as what went out, so it is left alone.
+    expect(await mock.runCvSweep(new Date("2026-08-22T09:00:00.000Z"))).toMatchObject({
+      published: false,
+    });
+    expect(publish).toHaveBeenCalledTimes(2);
+
+    const response = await fetch(`${baseUrl}/cv/talk-leaderboard?year=2026`, {
+      headers: headers(),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      year: 2026,
+      rows: [{ rank: 1, member_id: "m-jane", member_name: "Jane Doe", invited: 1, total: 1 }],
+      unscanned: [],
+    });
+    const bad = await fetch(`${baseUrl}/cv/talk-leaderboard?year=26x`, { headers: headers() });
+    expect(bad.status).toBe(400);
+  });
+
   it("records the scan without a doc when no digest document is configured", async () => {
     const { mock } = await startService({ cvScanDeps: stubScanDeps([RECENT_POSITION]) });
     seedMember(mock);
@@ -252,5 +301,44 @@ describe("daily CV sweep", () => {
   it("does nothing when CV scanning is not configured", async () => {
     const { mock } = await startService();
     expect(await mock.runCvSweep()).toEqual({ status: "skipped", reason: "not_configured" });
+  });
+});
+
+describe("GET /cv/talk-leaderboard", () => {
+  // The leaderboard page is open to the whole lab, as the list in the meeting doc was, so a plain
+  // member's session has to be enough -- and a visitor's absence of one has to not be.
+  it("answers a signed-in member who is not an admin, and refuses a visitor", async () => {
+    const { baseUrl, mock } = await startService({
+      calendarInviteRunner: async () => {},
+      accountApprovedEmailRunner: async () => {},
+    });
+    seedMember(mock, { ...MEMBER, email: "jane@example.test" });
+    const email = "jane@example.test";
+    await fetch(`${baseUrl}/auth/claim`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ member_id: MEMBER.id, email, password: "correcthorse" }),
+    });
+    const pending = (await (
+      await fetch(`${baseUrl}/auth/registrations?status=pending`, { headers: headers() })
+    ).json()) as { registrations: Array<{ id: string; member_id?: string }> };
+    const registration = pending.registrations.find((entry) => entry.member_id === MEMBER.id);
+    expect(registration).toBeDefined();
+    await mock.auth.approveRegistration(registration?.id ?? "", "seed-admin");
+    const login = await fetch(`${baseUrl}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password: "correcthorse" }),
+    });
+    const token = ((await login.json()) as { session_token: string }).session_token;
+
+    const member = await fetch(`${baseUrl}/cv/talk-leaderboard?year=2026`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(member.status).toBe(200);
+    expect(await member.json()).toMatchObject({ year: 2026, rows: [], unscanned: ["Jane Doe"] });
+
+    const visitor = await fetch(`${baseUrl}/cv/talk-leaderboard`);
+    expect(visitor.status).toBe(401);
   });
 });
