@@ -219,31 +219,28 @@ export const directoryRoutes: readonly Route[] = [
       });
     }),
   ),
-  get(
-    "/cv/talk-leaderboard",
-    ({ res, url, ctx, principal }) => {
-      // Any signed-in member, not just admins: the list used to sit in the lab meeting doc every
-      // member reads, and it carries names and counts only -- never a talk title or a CV.
-      if (principal.kind === "anonymous") {
-        sendJson(res, 401, { error: { message: "member session required" } });
-        return;
-      }
-      // Defaults to this year, the one the guidebook's travel perk is decided on; ?year= reads back
-      // a past one from the same CVs.
-      const raw = url.searchParams.get("year")?.trim();
-      const year = raw ? Number(raw) : new Date().getUTCFullYear();
-      if (!Number.isInteger(year) || year < 1900 || year > 2100) {
-        sendJson(res, 400, { error: { message: "year must be a four-digit year" } });
-        return;
-      }
-      const board = currentTalkLeaderboard(ctx.service, new Date(), year);
-      if (!board) {
-        sendJson(res, 500, { error: { message: "could not read the lab roster" } });
-        return;
-      }
-      sendJson(res, 200, board);
-    },
-  ),
+  get("/cv/talk-leaderboard", ({ res, url, ctx, principal }) => {
+    // Any signed-in member, not just admins: the list used to sit in the lab meeting doc every
+    // member reads, and it carries names and counts only -- never a talk title or a CV.
+    if (principal.kind === "anonymous") {
+      sendJson(res, 401, { error: { message: "member session required" } });
+      return;
+    }
+    // Defaults to this year, the one the guidebook's travel perk is decided on; ?year= reads back
+    // a past one from the same CVs.
+    const raw = url.searchParams.get("year")?.trim();
+    const year = raw ? Number(raw) : new Date().getUTCFullYear();
+    if (!Number.isInteger(year) || year < 1900 || year > 2100) {
+      sendJson(res, 400, { error: { message: "year must be a four-digit year" } });
+      return;
+    }
+    const board = currentTalkLeaderboard(ctx.service, new Date(), year);
+    if (!board) {
+      sendJson(res, 500, { error: { message: "could not read the lab roster" } });
+      return;
+    }
+    sendJson(res, 200, board);
+  }),
   post(
     /^\/cv\/blurb\/([^/]+)$/u,
     privilegedOnly(async ({ res, ctx, params }) => {
@@ -565,7 +562,25 @@ function currentTalkLeaderboard(
 
 export const CV_SWEEP_ACTOR = "system:cv-sweep";
 const CV_SWEEP_EVENT = "cv.sweep_completed";
+const CV_SWEEP_FAILED_EVENT = "cv.sweep_failed";
 const CV_SWEEP_PERIOD_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * How a sweep went, member by member, without naming anyone: counts per outcome and per failure
+ * reason. Enough to tell "35 Drive links are private" from "the model is down" in the audit log.
+ */
+export function summarizeCvScan(results: AdminBotCvScanResult["results"]) {
+  const statuses: Record<string, number> = {};
+  const failures: Record<string, number> = {};
+  for (const entry of results) {
+    statuses[entry.status] = (statuses[entry.status] ?? 0) + 1;
+    if ((entry.status === "failed" || entry.status === "skipped") && entry.reason) {
+      const reason = entry.reason.slice(0, 160);
+      failures[reason] = (failures[reason] ?? 0) + 1;
+    }
+  }
+  return { statuses, failures };
+}
 
 export type CvDailySweepOutcome =
   | { status: "skipped"; reason: "not_configured" | "not_due" | "running" }
@@ -604,10 +619,28 @@ export async function runCvDailySweep(
     return { status: "skipped", reason: "not_due" };
   }
   cvSweepRunning = true;
+  // The host fires this from a timer that discards the promise, so a sweep that fails has to say
+  // so here or nobody learns why CVs stopped being read. A failure is its own event type: it must
+  // not count as the day's sweep, or a broken model would only be retried tomorrow.
+  const recordFailure = (reason: string): CvDailySweepOutcome => {
+    ctx.store.recordAudit({
+      id: `aud_${randomUUID()}`,
+      timestamp: now.toISOString(),
+      type: CV_SWEEP_FAILED_EVENT,
+      actor: CV_SWEEP_ACTOR,
+      details: { reason },
+    });
+    return { status: "failed", reason };
+  };
   try {
-    const scan = await scanAndRecordCvs(ctx, service);
+    let scan: CvScanOutcome;
+    try {
+      scan = await scanAndRecordCvs(ctx, service);
+    } catch (error) {
+      return recordFailure(error instanceof Error ? error.message : String(error));
+    }
     if (!scan.ok) {
-      return { status: "failed", reason: scan.failure.error.message };
+      return recordFailure(scan.failure.error.message);
     }
     const changed = scan.result.results.filter(
       (entry) =>
@@ -634,7 +667,12 @@ export async function runCvDailySweep(
       timestamp: now.toISOString(),
       type: CV_SWEEP_EVENT,
       actor: CV_SWEEP_ACTOR,
-      details: { scanned_at: scan.result.scanned_at, changed_members: changed, published },
+      details: {
+        scanned_at: scan.result.scanned_at,
+        changed_members: changed,
+        published,
+        ...summarizeCvScan(scan.result.results),
+      },
     });
     return { status: "done", changed_members: changed, published };
   } finally {

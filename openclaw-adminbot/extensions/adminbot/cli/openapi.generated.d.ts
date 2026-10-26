@@ -5077,6 +5077,7 @@ export interface components {
         | "cv.digest_published"
         | "cv.digest_failed"
         | "cv.sweep_completed"
+        | "cv.sweep_failed"
         | "venue_index.rebuilt"
         | "publication_digest.sent"
         | "publication_digest.failed";
