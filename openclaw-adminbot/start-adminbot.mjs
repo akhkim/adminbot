@@ -18,6 +18,7 @@ import {
   resolveSharedGatewayAuthIssuer,
 } from "./dist/plugin-sdk/device-bootstrap.js";
 import { readSlackConnectInviteResult } from "./scripts/slack-connect-invite-result.mjs";
+import { tsxChildEnv } from "./scripts/tsx-child-env.mjs";
 
 const execFileAsync = promisify(execFile);
 const repoRoot = path.dirname(fileURLToPath(import.meta.url));
@@ -31,7 +32,7 @@ async function runEmailAutomation() {
   const script = path.join(repoRoot, "scripts", "adminbot-email-automation.ts");
   const { stdout } = await execFileAsync(executable, [script], {
     cwd: repoRoot,
-    env: { ...process.env, ADMINBOT_EMAIL_ALLOW_PARTIAL: "1" },
+    env: { ...tsxChildEnv(), ADMINBOT_EMAIL_ALLOW_PARTIAL: "1" },
     timeout: 30 * 60 * 1000,
     maxBuffer: 16 * 1024 * 1024,
   });
@@ -65,7 +66,11 @@ async function inviteToSlackConnect({ email, channelId }) {
   // loads the email-automation module for its Slack resolver, reads the config and then waits on
   // Slack. A minute was enough by hand and not always enough under the service, and a timeout kill
   // leaves no stdout -- indistinguishable, before the reporting below, from the script failing.
-  const child = execFile(executable, [script], { cwd: repoRoot, timeout: 5 * 60_000 });
+  const child = execFile(executable, [script], {
+    cwd: repoRoot,
+    env: tsxChildEnv(),
+    timeout: 5 * 60_000,
+  });
   child.stdin.end(JSON.stringify({ email, channelId }));
   const { stdout, stderr, code, signal, spawnError } = await new Promise((resolve) => {
     let out = "";
