@@ -10,6 +10,7 @@
 // per-session view state: it changes nothing about the papers and nobody needs it after a reload.
 import { html, nothing } from "lit";
 import { isPaperFeedbackSlot } from "../../../../../extensions/adminbot/src/contracts/paper-feedback.js";
+import { isPaperImpactSlot } from "../../../../../extensions/adminbot/src/contracts/paper-impact.js";
 import type { AppViewState } from "../../app-view-state.ts";
 import { mapImportColumns } from "../api/paper-admin.ts";
 import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
@@ -28,6 +29,7 @@ import {
   type PaperGridState,
 } from "../paper-grid.ts";
 import { renderPaperFeedback } from "../views/paper-feedback.ts";
+import { renderPaperImpact } from "../views/paper-impact.ts";
 import {
   cancelPaperLegacyAutosave,
   emptyPaperLegacyState,
@@ -115,6 +117,20 @@ function renderFlatFeedback(paper: AdminBotPaperRecord, props: PaperWorkspacePro
   });
 }
 
+/** The impact-statement form, drawn in the flat view for the same reason as the feedback one. */
+function renderFlatImpact(paper: AdminBotPaperRecord, props: PaperWorkspaceProps) {
+  const slots = props.slots[paper.id]?.slots ?? [];
+  if (!slots.some((row) => isPaperImpactSlot(row.slot))) {
+    return nothing;
+  }
+  return renderPaperImpact({
+    slots,
+    paper,
+    loading: props.slotsBusyId === paper.id,
+    onSaveSlot: (slot, input) => props.onSaveSlot(paper.id, slot, input),
+  });
+}
+
 /**
  * What a project page has that the flat view's fields do not: everything that is not one answer
  * on the record or one evidence slot, drawn with the same renderers and handlers. The project
@@ -139,7 +155,7 @@ function renderFlatExtras(
         slots: props.slots[paper.id]?.slots ?? [],
         paper,
       })}
-      ${renderNextStep(paper)} ${renderFlatFeedback(paper, props)}
+      ${renderNextStep(paper)} ${renderFlatFeedback(paper, props)} ${renderFlatImpact(paper, props)}
     `,
     bottom: html`
       ${renderCompletion(paper, props)} ${renderWeeklyUpdates(paper, props)}

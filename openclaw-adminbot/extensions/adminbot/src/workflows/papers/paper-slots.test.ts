@@ -79,7 +79,7 @@ function upTo(last: AdminBotPaperSlot): AdminBotPaperSlotRecord[] {
 
 describe("the registry", () => {
   it("declares every slot, so a read can never meet one it has no rules for", () => {
-    expect(adminBotPaperSlots).toHaveLength(27);
+    expect(adminBotPaperSlots).toHaveLength(28);
     for (const slot of [...adminBotPaperSlots, ...adminBotRetiredPaperSlots]) {
       expect(adminBotPaperSlotRegistry[slot]).toBeDefined();
     }
@@ -158,7 +158,7 @@ describe("the registry", () => {
 describe("paperSlotRows", () => {
   it("returns every slot, blanks included -- the card is a checklist, not a list of answers", () => {
     const rows = paperSlotRows("p1", [provided("overleaf_share")]);
-    expect(rows).toHaveLength(27);
+    expect(rows).toHaveLength(28);
     expect(rows.find((row) => row.slot === "overleaf_share")?.status).toBe("provided");
     expect(rows.find((row) => row.slot === "arxiv")?.status).toBe("missing");
   });

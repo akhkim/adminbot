@@ -15,6 +15,13 @@ import {
 } from "../../contracts/paper-cycle.js";
 import { parsePaperFeedback } from "../../contracts/paper-feedback.js";
 import {
+  hasPaperImpactText,
+  isEmptyPaperImpactStatement,
+  isPaperImpactSlot,
+  paperImpactMissingFields,
+  parsePaperImpactStatement,
+} from "../../contracts/paper-impact.js";
+import {
   adminBotPaperSlotBranchPriority,
   adminBotPaperSlotEscalateAfterNudges,
   adminBotPaperSlotRegistry,
@@ -108,7 +115,11 @@ export function redactPaperSlots(
     return rows;
   }
   return rows.map((row) => {
-    if (!isConfidentialPaperSlot(row.slot) && !row.slot.startsWith("feedback_")) {
+    if (
+      !isConfidentialPaperSlot(row.slot) &&
+      !row.slot.startsWith("feedback_") &&
+      !isPaperImpactSlot(row.slot)
+    ) {
       return row;
     }
     const { value_text: _dropped, ...rest } = row;
@@ -188,6 +199,40 @@ export function applyPaperSlotWrite(params: {
         };
       }
       return { ok: true, record: provided({ value_text: JSON.stringify(feedback) }) };
+    }
+    case "impact": {
+      // The service has already merged this write into the stored statement and checked who may
+      // change what (mergePaperImpactWrite), so this only decides the status the value earns.
+      const value = (input.value_text ?? "").trim();
+      const statement = value ? parsePaperImpactStatement(value) : null;
+      if (value && !statement) {
+        return { ok: false, error: "The impact statement could not be read." };
+      }
+      if (!statement || isEmptyPaperImpactStatement(statement)) {
+        return { ok: true, record: clearedSlot(existing) };
+      }
+      const stored = JSON.stringify(statement);
+      if (!hasPaperImpactText(statement)) {
+        // Only a correction or a note so far: nothing has been written, so it is still missing,
+        // but the correction has to survive or the classifier's guess comes back.
+        return { ok: true, record: { ...clearedSlot(existing), value_text: stored } };
+      }
+      const missing = paperImpactMissingFields(statement);
+      if (missing.length > 0) {
+        // A saved draft. Kept rather than refused, so an unfinished statement is not lost.
+        return {
+          ok: true,
+          record: {
+            ...existing,
+            status: "invalid",
+            value_text: stored,
+            provided_by_member_id: memberId,
+            provided_at: nowIso,
+            invalid_reason: `Still needed: ${missing.join(", ")}`,
+          },
+        };
+      }
+      return { ok: true, record: provided({ value_text: stored }) };
     }
     case "secret6": {
       const value = (input.value_text ?? "").trim();

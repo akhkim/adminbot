@@ -36,6 +36,7 @@ export const adminBotPaperSlots = [
   "feedback_arr",
   "feedback_arxiv",
   "feedback_camera_ready",
+  "impact_statement",
   "project_folder",
   "overleaf_view",
   "overleaf_share",
@@ -88,7 +89,14 @@ export type AdminBotPaperSlot =
  * `adminBotConfidentialPaperSlots`). `enum` carries a closed status plus a free-text note about
  * the physical world, which is why `paper_slots` has both `value_text` and `value_note`.
  */
-export type AdminBotPaperSlotKind = "link" | "bool" | "text" | "secret6" | "enum" | "feedback";
+export type AdminBotPaperSlotKind =
+  | "link"
+  | "bool"
+  | "text"
+  | "secret6"
+  | "enum"
+  | "feedback"
+  | "impact";
 
 /** Who is asked for it. Resolved to a person by the service, never named here. */
 export type AdminBotPaperSlotOwner = "first_author" | "coauthors" | "pi" | "admin";
@@ -296,6 +304,19 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     gates: null,
     branch: "core",
     label: "Camera-ready feedback",
+    upstream: [],
+    required: false,
+    deadlineBearing: false,
+  },
+  // Whether this one is owed depends on what the paper is about (contracts/paper-impact.ts), so it
+  // is advisory here and the safety check decides, rather than the registry asking every paper.
+  impact_statement: {
+    kind: "impact",
+    node: "impact_statement",
+    owner: "first_author",
+    gates: null,
+    branch: "core",
+    label: "Impact statement",
     upstream: [],
     required: false,
     deadlineBearing: false,

@@ -30,6 +30,7 @@ import {
   type AdminBotPaperStep,
 } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import { isPaperFeedbackSlot } from "../../../../../extensions/adminbot/src/contracts/paper-feedback.js";
+import { isPaperImpactSlot } from "../../../../../extensions/adminbot/src/contracts/paper-impact.js";
 import {
   adminBotPaperSlotChartOrder,
   adminBotPaperSlotRegistry,
@@ -283,9 +284,12 @@ function slotGroups(): LegacyGroup[] {
       label: BRANCH_LABELS[branch],
       icon: BRANCH_ICONS[branch],
       fields: adminBotPaperSlots
-        // Drawn by the feedback form in the extras instead; see isPaperFeedbackSlot.
+        // Drawn by the feedback and impact forms in the extras instead; see isPaperFeedbackSlot.
         .filter(
-          (slot) => adminBotPaperSlotRegistry[slot].branch === branch && !isPaperFeedbackSlot(slot),
+          (slot) =>
+            adminBotPaperSlotRegistry[slot].branch === branch &&
+            !isPaperFeedbackSlot(slot) &&
+            !isPaperImpactSlot(slot),
         )
         .map((slot) => {
           const definition = adminBotPaperSlotRegistry[slot];

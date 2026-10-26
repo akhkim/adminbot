@@ -21194,6 +21194,7 @@
                               "feedback_arr",
                               "feedback_arxiv",
                               "feedback_camera_ready",
+                              "impact_statement",
                               "project_folder",
                               "overleaf_view",
                               "overleaf_share",
@@ -21243,6 +21244,7 @@
                               "feedback_arr",
                               "feedback_arxiv",
                               "feedback_camera_ready",
+                              "impact_statement",
                               "project_folder",
                               "overleaf_view",
                               "overleaf_share",
@@ -21292,6 +21294,7 @@
                               "feedback_arr",
                               "feedback_arxiv",
                               "feedback_camera_ready",
+                              "impact_statement",
                               "project_folder",
                               "overleaf_view",
                               "overleaf_share",
@@ -21345,6 +21348,7 @@
                               "feedback_arr",
                               "feedback_arxiv",
                               "feedback_camera_ready",
+                              "impact_statement",
                               "project_folder",
                               "overleaf_view",
                               "overleaf_share",
@@ -38523,6 +38527,7 @@
               "feedback_arr",
               "feedback_arxiv",
               "feedback_camera_ready",
+              "impact_statement",
               "project_folder",
               "overleaf_view",
               "overleaf_share",
@@ -39673,6 +39678,56 @@
             ],
             "additionalProperties": true
           },
+          "impact": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "string",
+                "enum": [
+                  "override",
+                  "classifier"
+                ]
+              },
+              "statement": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/PaperImpactStatement"
+                  }
+                ]
+              },
+              "verdict": {
+                "type": "string",
+                "enum": [
+                  "related",
+                  "unrelated",
+                  "uncertain"
+                ]
+              },
+              "reasons": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "override": {
+                "$ref": "#/components/schemas/PaperImpactSafetyOverride"
+              }
+            },
+            "required": [
+              "source",
+              "statement",
+              "verdict",
+              "reasons"
+            ],
+            "additionalProperties": true
+          },
+          "priority": {
+            "type": "string",
+            "const": "high"
+          },
           "paper_id": {
             "type": "string"
           },
@@ -39703,6 +39758,54 @@
           "title",
           "authors",
           "package_complete"
+        ],
+        "additionalProperties": true
+      },
+      "PaperImpactStatement": {
+        "type": "object",
+        "properties": {
+          "safety": {
+            "$ref": "#/components/schemas/PaperImpactSafetyOverride"
+          },
+          "reviewed": {
+            "type": "boolean"
+          },
+          "review_note": {
+            "type": "string"
+          },
+          "reviewed_by": {
+            "type": "string"
+          },
+          "reviewed_at": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "PaperImpactSafetyOverride": {
+        "type": "object",
+        "properties": {
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "related",
+              "unrelated"
+            ]
+          },
+          "by": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "verdict",
+          "by",
+          "at"
         ],
         "additionalProperties": true
       },
@@ -39737,6 +39840,7 @@
                 "feedback_arr",
                 "feedback_arxiv",
                 "feedback_camera_ready",
+                "impact_statement",
                 "project_folder",
                 "overleaf_view",
                 "overleaf_share",
