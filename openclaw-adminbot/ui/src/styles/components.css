@@ -1029,6 +1029,49 @@
   transform: rotate(225deg);
 }
 
+/* The fold's small inline cousin, for a disclosure that reads as one of a panel's own quiet actions
+   ("Already done (3)", "Recent edits", "Add a deadline", the sidebar's "Papers") rather than a
+   section row: each keeps its own type, and gets the same chevron in place of the browser's
+   triangle, so no fold anywhere in the app is drawn two ways. */
+.my-work__done-summary,
+.recent-edits__summary,
+.adminbot-time-availability__deadline-add-summary,
+.projects-nav__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 32px;
+  list-style: none;
+}
+
+.my-work__done-summary::-webkit-details-marker,
+.recent-edits__summary::-webkit-details-marker,
+.adminbot-time-availability__deadline-add-summary::-webkit-details-marker,
+.projects-nav__toggle::-webkit-details-marker {
+  display: none;
+}
+
+.my-work__done-summary::after,
+.recent-edits__summary::after,
+.adminbot-time-availability__deadline-add-summary::after,
+.projects-nav__toggle::after {
+  content: "";
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg) translateY(-2px);
+  transition: transform 0.15s ease;
+}
+
+details[open] > .my-work__done-summary::after,
+details[open] > .recent-edits__summary::after,
+details[open] > .adminbot-time-availability__deadline-add-summary::after,
+details[open] > .projects-nav__toggle::after {
+  transform: rotate(225deg);
+}
+
 .adminbot-fold > summary:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -2004,6 +2047,10 @@
 
 .adminbot-member-sheet {
   display: grid;
+  /* One column that never grows past the card: an auto track took the width of the longest
+     unbreakable thing inside (a sheet URL in an error), and the hidden overflow then cut the
+     heading and the error off at the right on a phone. */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-4);
   margin-top: var(--space-4);
   padding: var(--space-4);
@@ -2830,11 +2877,19 @@
   background: transparent;
 }
 
+/* Two lines, not one, and never wider than the column. The tag is inline-flex, where
+   text-overflow does nothing, so the old one-line cut showed no ellipsis and clipped the pill's own
+   edge -- and papers in a series share a long prefix, so every tag read the same. */
 .adminbot-tag--paper {
-  max-width: 220px;
+  display: -webkit-box;
+  max-width: min(220px, 100%);
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  border-radius: var(--radius-md);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
 .adminbot-paper-gantt__missing {
@@ -4979,6 +5034,8 @@
   font-size: var(--control-ui-text-sm);
   letter-spacing: var(--tracking-normal);
   line-height: 1.55;
+  /* Errors quote ids and URLs verbatim; they break rather than widen whatever holds them. */
+  overflow-wrap: anywhere;
   position: relative;
 }
 
@@ -10608,7 +10665,8 @@ details[open] > .ov-expandable-toggle::after {
    an existing one. */
 .adminbot-calendar__chip {
   display: flex;
-  gap: var(--space-1, 4px);
+  flex-wrap: wrap;
+  gap: 0 var(--space-1, 4px);
   align-items: baseline;
   width: 100%;
   padding: 2px var(--space-1, 4px);
@@ -10642,10 +10700,17 @@ details[open] > .ov-expandable-toggle::after {
   font-variant-numeric: tabular-nums;
 }
 
+/* At least a few letters of the name, or it drops under the time: a narrow day cell otherwise kept
+   the time whole and cut every name to "T…", so a week of events read as a column of times. */
 .adminbot-calendar__chip-name {
+  display: -webkit-box;
+  flex: 1 1 6ch;
+  min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
 /* The event the invites would go to. A statement, not a control — the month above is the picker. */
@@ -12137,11 +12202,6 @@ select.input:focus {
   font-size: var(--control-ui-text-sm);
   font-weight: 600;
   color: var(--text);
-  list-style-position: inside;
-}
-
-.adminbot-time-availability__deadline-add-summary::marker {
-  color: var(--muted);
 }
 
 .adminbot-time-availability__deadline-add-summary:hover {
@@ -12207,7 +12267,6 @@ select.input:focus {
   font-size: var(--control-ui-text-sm);
   font-weight: 600;
   color: var(--muted);
-  list-style-position: inside;
 }
 
 .recent-edits__summary:hover {

@@ -475,7 +475,7 @@ function renderFileForm(props: AdminBotMeetingsProps) {
     form.reset();
   };
   return html`
-    <details class="card adminbot-card adminbot-card--wide meetings__file">
+    <details class="card adminbot-card adminbot-card--wide adminbot-fold meetings__file">
       <summary>${t("adminbotMeetings.fileManually")}</summary>
       <p class="card-sub">${t("adminbotMeetings.fileManuallyHint")}</p>
       <form class="adminbot-form" @submit=${submit}>
@@ -521,7 +521,7 @@ function renderNudgePanel(nudge: NonNullable<AdminBotMeetingsProps["nudge"]>) {
     Boolean(preview) && (preview?.meetings.length ?? 0) < (preview?.streak ?? 2);
   return html`
     <details
-      class="card adminbot-card adminbot-card--wide meetings__nudge"
+      class="card adminbot-card adminbot-card--wide adminbot-fold meetings__nudge"
       data-testid="meetings-nudge"
       @toggle=${(event: Event) => {
         // Loaded on first open only. Re-reading on every toggle would re-shell to the calendar

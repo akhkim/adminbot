@@ -2677,7 +2677,7 @@ function board(label: string, content: unknown, options: { open?: boolean } = {}
     return nothing;
   }
   return html`
-    <details class="paper-overview__board" ?open=${options.open ?? false}>
+    <details class="paper-overview__board adminbot-fold" ?open=${options.open ?? false}>
       <summary class="paper-overview__board-summary">${label}</summary>
       <div class="paper-overview__board-body">${content}</div>
     </details>
