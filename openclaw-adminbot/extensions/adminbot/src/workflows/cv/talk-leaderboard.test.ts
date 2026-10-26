@@ -44,10 +44,10 @@ describe("buildTalkLeaderboard", () => {
       ],
       2026,
     );
-    expect(board.rows.map((row) => [row.member_name, row.invited, row.total])).toEqual([
-      ["BEN", 2, 2],
-      ["ADA", 1, 2],
-      ["CY", 1, 1],
+    expect(board.rows.map((row) => [row.rank, row.member_name, row.invited, row.total])).toEqual([
+      [1, "BEN", 2, 2],
+      [2, "ADA", 1, 2],
+      [3, "CY", 1, 1],
     ]);
   });
 

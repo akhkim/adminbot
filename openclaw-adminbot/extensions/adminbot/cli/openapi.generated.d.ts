@@ -5642,6 +5642,7 @@ export interface components {
       [key: string]: unknown;
     };
     AdminBotTalkLeaderboardRow: {
+      rank: number;
       member_id: string;
       member_name: string;
       invited: number;
@@ -12868,6 +12869,23 @@ export interface operations {
       };
       /** @description Server response */
       400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Server response */
+      401: {
         headers: {
           [name: string]: unknown;
         };

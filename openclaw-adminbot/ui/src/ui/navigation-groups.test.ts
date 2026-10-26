@@ -90,7 +90,12 @@ describe("TAB_GROUPS", () => {
     // guidebook surface, which the sidebar footer renders.
     expect(TAB_GROUPS.flatMap((group) => group.tabs as readonly string[])).not.toContain("chat");
     // The roster is part of the lab's shared surface, not a tool you operate.
-    expect(byLabel("labSharing")).toEqual(["labSharing", "adminbotMeetings", "adminbotMembers"]);
+    expect(byLabel("labSharing")).toEqual([
+      "labSharing",
+      "adminbotMeetings",
+      "adminbotMembers",
+      "adminbotTalkLeaderboard",
+    ]);
     // Six entries, not eleven: Lab Overview, Nudges and Membership are each one page with a tab
     // bar inside it (TAB_PAGES), and only the landing tab is listed here. Badges rides on
     // Membership and the Grant Report on Lab Overview, so neither is a sidebar entry of its own.

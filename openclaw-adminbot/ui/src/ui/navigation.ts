@@ -30,7 +30,11 @@ export const TAB_GROUPS = [
   },
   // Lab Members sits with Lab Sharing, not in the shared tools: the roster is who the lab is,
   // which is what someone browsing the lab's shared surface came to look at.
-  { label: "labSharing", tabs: ["labSharing", "adminbotMeetings", "adminbotMembers"] },
+  // The talk leaderboard follows the roster: it ranks the same people, on what their CVs say.
+  {
+    label: "labSharing",
+    tabs: ["labSharing", "adminbotMeetings", "adminbotMembers", "adminbotTalkLeaderboard"],
+  },
   // The three logistics templates, each with its own heading. They used to be one "Logistics
   // Requests" tab whose first screen was a picker between them, which meant every request started
   // with a step that carried no information -- the member already knew which of the three they
@@ -229,6 +233,7 @@ export type Tab =
   | "adminbotConferencePapers"
   | "adminbotReferenceChecker"
   | "adminbotArrReviewers"
+  | "adminbotTalkLeaderboard"
   | "adminbotCalendar"
   | "adminbotGrantReport"
   | "adminbotMailingList"
@@ -321,6 +326,7 @@ const TAB_PATHS: Record<Tab, string> = {
   adminbotConferencePapers: "/conference-papers",
   adminbotReferenceChecker: "/reference-checker",
   adminbotArrReviewers: "/arr-eligible-reviewers",
+  adminbotTalkLeaderboard: "/talk-leaderboard",
   adminbotCalendar: "/calendar",
   adminbotGrantReport: "/grant-report",
   adminbotMailingList: "/mailing-list",
@@ -586,6 +592,8 @@ export function iconForTab(tab: Tab): IconName {
       return "send";
     case "adminbotMembers":
       return "folder";
+    case "adminbotTalkLeaderboard":
+      return "mic";
     case "adminbotTimeAvailability":
       return "clock";
     case "adminbotMeetings":

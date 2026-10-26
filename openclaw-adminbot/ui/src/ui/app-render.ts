@@ -619,6 +619,10 @@ const lazyNotificationDrafts = createLazyView(
   () => import("./adminbot/views/notification-drafts.ts"),
   notifyLazyViewHost,
 );
+const lazyTalkLeaderboard = createLazyView(
+  () => import("./adminbot/views/talk-leaderboard.ts"),
+  notifyLazyViewHost,
+);
 const lazyPublicShell = createLazyView(
   () => import("./adminbot/views/public-shell.ts"),
   notifyLazyViewHost,
@@ -3552,6 +3556,15 @@ export function renderApp(state: AppViewState) {
                   return state.adminBotNotice?.kind === "success";
                 },
               }),
+            )
+          : nothing}
+        ${state.tab === "adminbotTalkLeaderboard"
+          ? renderLazyView(lazyTalkLeaderboard, (m) =>
+              m.renderTalkLeaderboard(
+                resolveAdminBotBaseUrl(state.settings),
+                loadStoredMemberSession()?.sessionToken ?? "",
+                state.memberId ?? "",
+              ),
             )
           : nothing}
         ${state.tab === "adminbotNotificationDrafts" && adminBotMode === "admin"

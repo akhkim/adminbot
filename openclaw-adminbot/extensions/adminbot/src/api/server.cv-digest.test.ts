@@ -280,7 +280,7 @@ describe("daily CV sweep", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
       year: 2026,
-      rows: [{ member_id: "m-jane", member_name: "Jane Doe", invited: 1, total: 1 }],
+      rows: [{ rank: 1, member_id: "m-jane", member_name: "Jane Doe", invited: 1, total: 1 }],
       unscanned: [],
     });
     const bad = await fetch(`${baseUrl}/cv/talk-leaderboard?year=26x`, { headers: headers() });
@@ -301,5 +301,44 @@ describe("daily CV sweep", () => {
   it("does nothing when CV scanning is not configured", async () => {
     const { mock } = await startService();
     expect(await mock.runCvSweep()).toEqual({ status: "skipped", reason: "not_configured" });
+  });
+});
+
+describe("GET /cv/talk-leaderboard", () => {
+  // The leaderboard page is open to the whole lab, as the list in the meeting doc was, so a plain
+  // member's session has to be enough -- and a visitor's absence of one has to not be.
+  it("answers a signed-in member who is not an admin, and refuses a visitor", async () => {
+    const { baseUrl, mock } = await startService({
+      calendarInviteRunner: async () => {},
+      accountApprovedEmailRunner: async () => {},
+    });
+    seedMember(mock, { ...MEMBER, email: "jane@example.test" });
+    const email = "jane@example.test";
+    await fetch(`${baseUrl}/auth/claim`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ member_id: MEMBER.id, email, password: "correcthorse" }),
+    });
+    const pending = (await (
+      await fetch(`${baseUrl}/auth/registrations?status=pending`, { headers: headers() })
+    ).json()) as { registrations: Array<{ id: string; member_id?: string }> };
+    const registration = pending.registrations.find((entry) => entry.member_id === MEMBER.id);
+    expect(registration).toBeDefined();
+    await mock.auth.approveRegistration(registration?.id ?? "", "seed-admin");
+    const login = await fetch(`${baseUrl}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password: "correcthorse" }),
+    });
+    const token = ((await login.json()) as { session_token: string }).session_token;
+
+    const member = await fetch(`${baseUrl}/cv/talk-leaderboard?year=2026`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(member.status).toBe(200);
+    expect(await member.json()).toMatchObject({ year: 2026, rows: [], unscanned: ["Jane Doe"] });
+
+    const visitor = await fetch(`${baseUrl}/cv/talk-leaderboard`);
+    expect(visitor.status).toBe(401);
   });
 });

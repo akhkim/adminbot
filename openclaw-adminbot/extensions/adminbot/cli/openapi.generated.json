@@ -5074,6 +5074,34 @@
               }
             }
           },
+          "401": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
           "500": {
             "description": "Server response",
             "content": {
@@ -30443,6 +30471,9 @@
       "AdminBotTalkLeaderboardRow": {
         "type": "object",
         "properties": {
+          "rank": {
+            "type": "number"
+          },
           "member_id": {
             "type": "string"
           },
@@ -30457,6 +30488,7 @@
           }
         },
         "required": [
+          "rank",
           "member_id",
           "member_name",
           "invited",

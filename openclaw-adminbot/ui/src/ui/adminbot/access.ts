@@ -60,6 +60,9 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   // to AdminBot at all.
   adminbotMembers: "member",
   adminbotArrReviewers: "member",
+  // Names and counts from the lab's own CVs, for the whole lab to read -- it replaces a list kept in
+  // the meeting doc. The service never sends a talk title or a CV with it.
+  adminbotTalkLeaderboard: "member",
   // Every member has a schedule page, but it is only ever their own: holidays, courses, other jobs
   // and the note they wrote for the admins are planning data for the people who plan, so reading
   // someone else's is an admin act. The tab is member-level because your own schedule is yours; the

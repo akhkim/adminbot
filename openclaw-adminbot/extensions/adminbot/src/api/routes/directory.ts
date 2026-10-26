@@ -221,7 +221,13 @@ export const directoryRoutes: readonly Route[] = [
   ),
   get(
     "/cv/talk-leaderboard",
-    privilegedOnly(({ res, url, ctx }) => {
+    ({ res, url, ctx, principal }) => {
+      // Any signed-in member, not just admins: the list used to sit in the lab meeting doc every
+      // member reads, and it carries names and counts only -- never a talk title or a CV.
+      if (principal.kind === "anonymous") {
+        sendJson(res, 401, { error: { message: "member session required" } });
+        return;
+      }
       // Defaults to this year, the one the guidebook's travel perk is decided on; ?year= reads back
       // a past one from the same CVs.
       const raw = url.searchParams.get("year")?.trim();
@@ -236,7 +242,7 @@ export const directoryRoutes: readonly Route[] = [
         return;
       }
       sendJson(res, 200, board);
-    }),
+    },
   ),
   post(
     /^\/cv\/blurb\/([^/]+)$/u,

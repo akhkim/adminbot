@@ -625,6 +625,7 @@ export const en: TranslationMap = {
     adminbotSettings: "Settings",
     adminbotMembers: "Lab Members",
     adminbotArrReviewers: "ARR Eligible Reviewers",
+    adminbotTalkLeaderboard: "Talk Leaderboard",
     adminbotProfileOverview: "Profile Completeness",
     adminbotTabUsage: "Tab Usage",
     adminbotProfessor: "My Desk",
@@ -669,6 +670,7 @@ export const en: TranslationMap = {
   },
   subtitles: {
     adminbotArrReviewers: "Self-reported ARR reviewer qualification and capacity.",
+    adminbotTalkLeaderboard: "This year's invited talks, counted from members' CVs.",
     dashboard: "What needs you, and where the lab stands.",
     profile: "Your details, and anything still blank.",
     gettingStarted: "Your setup checklist — what is left, and what you have already done.",

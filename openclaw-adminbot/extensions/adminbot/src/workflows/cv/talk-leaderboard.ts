@@ -10,6 +10,9 @@ import type { AdminBotCvEntry, AdminBotLabMember } from "../../contracts/actions
 import { adminBotIsAlumniMember, cvEntryKey } from "../../contracts/actions.js";
 
 export type AdminBotTalkLeaderboardRow = {
+  // 1-based, shared by members level on both counts (1, 1, 3), so the doc and the page read ties
+  // the same way.
+  rank: number;
   member_id: string;
   member_name: string;
   // Talks the CV marks as invited (invited talk, keynote, seminar or panel the member was asked to
@@ -68,6 +71,7 @@ export function buildTalkLeaderboard(
       continue;
     }
     rows.push({
+      rank: 0,
       member_id: member.id,
       member_name: member.name,
       invited: [...talks.values()].filter(Boolean).length,
@@ -78,6 +82,14 @@ export function buildTalkLeaderboard(
     (a, b) =>
       b.invited - a.invited || b.total - a.total || a.member_name.localeCompare(b.member_name),
   );
+  // Ranked after sorting: a member level with the one above takes their rank, else their position.
+  rows.forEach((row, index) => {
+    const previous = rows[index - 1];
+    row.rank =
+      previous && previous.invited === row.invited && previous.total === row.total
+        ? previous.rank
+        : index + 1;
+  });
   return { year, rows, unscanned: unscanned.toSorted((a, b) => a.localeCompare(b)) };
 }
 
@@ -91,20 +103,13 @@ export function renderTalkLeaderboardMarkdown(board: AdminBotTalkLeaderboard): s
       "Counted from each member's linked CV once a day. Ranked by invited talks, then all talks.",
       "",
     );
-    let rank = 0;
-    let previous: AdminBotTalkLeaderboardRow | undefined;
-    board.rows.forEach((row, index) => {
-      // Ties share a rank, so two people level on the count read as level on the page. Written as
-      // bullets with the rank in the text because a markdown ordered list renumbers 1, 1 as 1, 2.
-      if (!previous || previous.invited !== row.invited || previous.total !== row.total) {
-        rank = index + 1;
-      }
-      previous = row;
+    for (const row of board.rows) {
+      // Bullets with the rank in the text, because a markdown ordered list renumbers 1, 1 as 1, 2.
       const other = row.total - row.invited;
       lines.push(
-        `- #${rank} **${row.member_name}** — ${row.invited} invited${other ? ` (+${other} other)` : ""}`,
+        `- #${row.rank} **${row.member_name}** — ${row.invited} invited${other ? ` (+${other} other)` : ""}`,
       );
-    });
+    }
     lines.push("");
   }
   if (board.unscanned.length) {
