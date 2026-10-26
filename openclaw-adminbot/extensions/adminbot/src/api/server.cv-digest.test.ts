@@ -238,6 +238,55 @@ describe("daily CV sweep", () => {
     expect(publish).toHaveBeenCalledTimes(1);
   });
 
+  it("puts this year's invited talks on the doc and retries a write that failed", async () => {
+    const invited: AdminBotCvEntry = {
+      kind: "talk",
+      title: "Probing refusals",
+      organization: "Stanford NLP Seminar",
+      start: "2026",
+      invited: true,
+    };
+    const publish = vi
+      .fn<(markdown: string) => Promise<void>>()
+      .mockRejectedValueOnce(new Error("gog keyring locked"))
+      .mockResolvedValue(undefined);
+    const { baseUrl, mock } = await startService({
+      cvScanDeps: stubScanDeps([invited]),
+      cvDigestPublisher: { documentUrl: "https://docs.example/doc", publish },
+    });
+    seedMember(mock);
+
+    // Day one: the write fails, so nothing counts as published.
+    expect(await mock.runCvSweep(new Date("2026-08-20T09:00:00.000Z"))).toMatchObject({
+      published: false,
+    });
+    // Day two: the CV is unchanged and the ledger did not grow, but the doc never went out, so
+    // it is written now.
+    expect(await mock.runCvSweep(new Date("2026-08-21T09:00:00.000Z"))).toEqual({
+      status: "done",
+      changed_members: 0,
+      published: true,
+    });
+    expect(publish.mock.calls[1]?.[0]).toContain("- #1 **Jane Doe** — 1 invited");
+    // Day three: same content as what went out, so it is left alone.
+    expect(await mock.runCvSweep(new Date("2026-08-22T09:00:00.000Z"))).toMatchObject({
+      published: false,
+    });
+    expect(publish).toHaveBeenCalledTimes(2);
+
+    const response = await fetch(`${baseUrl}/cv/talk-leaderboard?year=2026`, {
+      headers: headers(),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      year: 2026,
+      rows: [{ member_id: "m-jane", member_name: "Jane Doe", invited: 1, total: 1 }],
+      unscanned: [],
+    });
+    const bad = await fetch(`${baseUrl}/cv/talk-leaderboard?year=26x`, { headers: headers() });
+    expect(bad.status).toBe(400);
+  });
+
   it("records the scan without a doc when no digest document is configured", async () => {
     const { mock } = await startService({ cvScanDeps: stubScanDeps([RECENT_POSITION]) });
     seedMember(mock);

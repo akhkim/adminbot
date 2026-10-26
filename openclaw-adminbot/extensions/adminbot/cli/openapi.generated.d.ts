@@ -941,6 +941,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/cv/talk-leaderboard": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** GET /cv/talk-leaderboard */
+    get: operations["get-cv-talk-leaderboard"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/deadline-proposals": {
     parameters: {
       query?: never;
@@ -5338,6 +5355,7 @@ export interface components {
     AdminBotCvSnapshot: {
       fetched_at: string;
       content_hash: string;
+      extractor_version?: number;
       entries: components["schemas"]["AdminBotCvEntry"][];
     } & {
       [key: string]: unknown;
@@ -5350,6 +5368,7 @@ export interface components {
       start?: string;
       end?: string;
       start_iso?: string;
+      invited?: boolean;
     } & {
       [key: string]: unknown;
     };
@@ -5612,6 +5631,21 @@ export interface components {
       /** @enum {string} */
       recency: "recent" | "backfilled" | "undated";
       entry: components["schemas"]["AdminBotCvEntry"];
+    } & {
+      [key: string]: unknown;
+    };
+    AdminBotTalkLeaderboard: {
+      year: number;
+      rows: components["schemas"]["AdminBotTalkLeaderboardRow"][];
+      unscanned: string[];
+    } & {
+      [key: string]: unknown;
+    };
+    AdminBotTalkLeaderboardRow: {
+      member_id: string;
+      member_name: string;
+      invited: number;
+      total: number;
     } & {
       [key: string]: unknown;
     };
@@ -12692,6 +12726,7 @@ export interface operations {
             published_at: string;
             day_count: number;
             change_count: number;
+            talk_leaderboard: null | components["schemas"]["AdminBotTalkLeaderboard"];
             scan: components["schemas"]["AdminBotCvScanResult"];
           } & {
             [key: string]: unknown;
@@ -12796,6 +12831,73 @@ export interface operations {
         };
         content: {
           "application/json": unknown;
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "get-cv-talk-leaderboard": {
+    parameters: {
+      query?: {
+        year?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AdminBotTalkLeaderboard"];
+        };
+      };
+      /** @description Server response */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Server response */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
+          } & {
+            [key: string]: unknown;
+          };
         };
       };
       /** @description Authentication, authorization, validation, policy, or connector error */

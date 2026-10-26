@@ -1417,6 +1417,11 @@ export type AdminBotCvEntry = {
   // means "unknown", never "old", so an undated entry is reported for a human rather than
   // silently dropped or silently announced.
   start_iso?: string;
+  // Talks only: true when the CV marks the talk as invited (an invited talk, keynote, seminar or
+  // panel the member was asked to give), false for a contributed talk or an oral presentation of
+  // their own paper. Absent when the CV does not say, which the talk leaderboard counts as not
+  // invited rather than guessing.
+  invited?: boolean;
 };
 
 // Why an added entry is, or is not, news.
@@ -1432,6 +1437,10 @@ export type AdminBotCvSnapshot = {
   // Hash of the extracted CV text. A re-scan whose hash is unchanged skips the model call
   // entirely, so repeat scans over an unchanged roster cost one fetch each and nothing more.
   content_hash: string;
+  // Which version of the extraction prompt produced `entries`. Absent on snapshots written before
+  // versioning. When the prompt learns to read something new, an unchanged CV is read once more
+  // despite its hash, or the new field would only ever appear on CVs their owners happen to edit.
+  extractor_version?: number;
   entries: AdminBotCvEntry[];
 };
 

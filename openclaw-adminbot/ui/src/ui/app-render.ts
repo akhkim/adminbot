@@ -3848,7 +3848,7 @@ export function renderApp(state: AppViewState) {
                     id: "cv-digest",
                     name: "CV digest",
                     description:
-                      "Runs on its own once a day: re-reads every member's linked CV (unchanged ones are skipped), records new positions, papers, awards, talks and press, and rewrites the CV Updates doc when something changed. Press Run to do it now.",
+                      "Runs on its own once a day: re-reads every member's linked CV (unchanged ones are skipped), records new positions, papers, awards, talks and press, and rewrites the CV Updates doc when something changed. The doc opens with this year's invited-talk leaderboard. Press Run to do it now.",
                     status: state.adminBotCvDigestJob.status,
                     ...(state.adminBotCvDigestJob.detail
                       ? { detail: state.adminBotCvDigestJob.detail }

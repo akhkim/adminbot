@@ -4840,6 +4840,16 @@
                     "change_count": {
                       "type": "number"
                     },
+                    "talk_leaderboard": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "$ref": "#/components/schemas/AdminBotTalkLeaderboard"
+                        }
+                      ]
+                    },
                     "scan": {
                       "$ref": "#/components/schemas/AdminBotCvScanResult"
                     }
@@ -4849,6 +4859,7 @@
                     "published_at",
                     "day_count",
                     "change_count",
+                    "talk_leaderboard",
                     "scan"
                   ],
                   "additionalProperties": true
@@ -4988,6 +4999,106 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cv/talk-leaderboard": {
+      "get": {
+        "operationId": "get-cv-talk-leaderboard",
+        "summary": "GET /cv/talk-leaderboard",
+        "tags": [
+          "cv"
+        ],
+        "x-source": "src/api/routes/directory.ts",
+        "parameters": [
+          {
+            "name": "year",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminBotTalkLeaderboard"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
               }
             }
           },
@@ -29399,6 +29510,9 @@
           "content_hash": {
             "type": "string"
           },
+          "extractor_version": {
+            "type": "number"
+          },
           "entries": {
             "type": "array",
             "items": {
@@ -29442,6 +29556,9 @@
           },
           "start_iso": {
             "type": "string"
+          },
+          "invited": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -30294,6 +30411,56 @@
           "detected_at",
           "recency",
           "entry"
+        ],
+        "additionalProperties": true
+      },
+      "AdminBotTalkLeaderboard": {
+        "type": "object",
+        "properties": {
+          "year": {
+            "type": "number"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminBotTalkLeaderboardRow"
+            }
+          },
+          "unscanned": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "year",
+          "rows",
+          "unscanned"
+        ],
+        "additionalProperties": true
+      },
+      "AdminBotTalkLeaderboardRow": {
+        "type": "object",
+        "properties": {
+          "member_id": {
+            "type": "string"
+          },
+          "member_name": {
+            "type": "string"
+          },
+          "invited": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "member_id",
+          "member_name",
+          "invited",
+          "total"
         ],
         "additionalProperties": true
       },

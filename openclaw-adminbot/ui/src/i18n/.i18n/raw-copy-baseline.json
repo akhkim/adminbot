@@ -9449,7 +9449,7 @@
       "kind": "object-property",
       "name": "description",
       "path": "ui/src/ui/app-render.ts",
-      "text": "Runs on its own once a day: re-reads every member's linked CV (unchanged ones are skipped), records new positions, papers, awards, talks and press, and rewrites the CV Updates doc when something changed. Press Run to do it now."
+      "text": "Runs on its own once a day: re-reads every member's linked CV (unchanged ones are skipped), records new positions, papers, awards, talks and press, and rewrites the CV Updates doc when something changed. The doc opens with this year's invited-talk leaderboard. Press Run to do it now."
     },
     {
       "count": 1,
