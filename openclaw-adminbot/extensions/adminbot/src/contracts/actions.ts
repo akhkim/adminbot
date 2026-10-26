@@ -3210,8 +3210,12 @@ export type AdminBotMeetingRecordInput = {
   summary?: AdminBotMeetingSummary;
   snapshots?: AdminBotMeetingSnapshotState;
   attendees?: AdminBotMeetingAttendee[];
-  /** How the record got here: parsed from a forwarded notice, or filed by hand in the Control UI. */
-  source: "zoom_email" | "manual";
+  /**
+   * How the record got here: parsed from a forwarded notice, filed by hand in the Control UI, or
+   * filed from Zoom's own usage report for a meeting no notice described (which may have no
+   * recording at all -- see validateMeeting).
+   */
+  source: "zoom_email" | "manual" | "participant_report";
   notes?: string;
 };
 
