@@ -39,7 +39,6 @@ export class TalkLeaderboardView extends LitElement {
     :host {
       display: block;
       max-width: 860px;
-      margin: 24px auto;
       color: var(--text);
     }
     section {
@@ -50,12 +49,41 @@ export class TalkLeaderboardView extends LitElement {
     header {
       display: flex;
       flex-wrap: wrap;
-      align-items: baseline;
+      align-items: center;
       justify-content: space-between;
       gap: 12px;
     }
-    h2 {
+    header .hint {
       margin: 0;
+      flex: 1 1 18rem;
+    }
+    details {
+      margin-top: 16px;
+    }
+    summary {
+      cursor: pointer;
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      font-weight: 600;
+      list-style: none;
+    }
+    summary::-webkit-details-marker {
+      display: none;
+    }
+    /* The same chevron as the light DOM's .adminbot-fold, so every fold in the app reads alike. */
+    summary::after {
+      content: "";
+      width: 7px;
+      height: 7px;
+      margin-left: 10px;
+      border-right: 2px solid var(--muted);
+      border-bottom: 2px solid var(--muted);
+      transform: rotate(45deg);
+      transition: transform 0.15s ease;
+    }
+    details[open] > summary::after {
+      transform: rotate(225deg);
     }
     p {
       line-height: 1.6;
@@ -232,7 +260,10 @@ export class TalkLeaderboardView extends LitElement {
     const board = this.board;
     return html`<section>
       <header>
-        <h2>Talks and orals ${this.year}</h2>
+        <p class="hint">
+          Ranked by all talks, then invited ones. The top two at the end of the year get the
+          guidebook's extra free trip.
+        </p>
         <div class="controls">
           <select aria-label="Year" @change=${this.chooseYear} ?disabled=${this.loading}>
             ${[thisYear, thisYear - 1, thisYear - 2].map(
@@ -245,10 +276,6 @@ export class TalkLeaderboardView extends LitElement {
           </button>
         </div>
       </header>
-      <p class="hint">
-        Counted once a day from each member's linked CV and ranked by all talks, then invited ones.
-        The top two at the end of the year get the guidebook's extra free trip.
-      </p>
       ${this.error ? html`<p class="error" role="alert">${this.error}</p>` : nothing}
       ${board ? this.renderRows(board) : nothing}
       ${board?.unscanned.length
@@ -256,12 +283,16 @@ export class TalkLeaderboardView extends LitElement {
             Not counted yet, because their CV has not been read: ${board.unscanned.join(", ")}.
           </p>`
         : nothing}
-      <p class="hint">
-        Counted generously: invited talks, keynotes, seminars, panels and guest lectures;
-        contributed talks; and any paper the CV marks as an oral or spotlight. A talk listed twice
-        counts once. If one of yours is missing, make it clear on the CV (for example "(Oral)" after
-        the venue) and link it from My Profile; the next daily read picks it up.
-      </p>
+      <details>
+        <summary>What counts as a talk</summary>
+        <p class="hint">
+          Counted once a day from each member's linked CV, generously: invited talks, keynotes,
+          seminars, panels and guest lectures; contributed talks; and any paper the CV marks as an
+          oral or spotlight. A talk listed twice counts once. If one of yours is missing, make it
+          clear on the CV (for example "(Oral)" after the venue) and link it from My Profile; the
+          next daily read picks it up.
+        </p>
+      </details>
     </section>`;
   }
 }

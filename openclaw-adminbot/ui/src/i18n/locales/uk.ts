@@ -589,6 +589,7 @@ export const uk: TranslationMap = {
     labOverview: "Lab Overview",
     nudges: "Nudges",
     membership: "Membership",
+    people: "Lab Members",
     myDesk: "My Desk",
   },
   tabs: {
@@ -667,7 +668,7 @@ export const uk: TranslationMap = {
     adminbotOnboarding: "Send a member or collaborator their onboarding guide.",
     adminbotReimbursements: "Upload receipts, answer questions, and generate expense forms.",
     adminbotSettings: "Lab defaults and escalation policy.",
-    adminbotMembers: "Privilege levels and access profiles.",
+    adminbotMembers: "Who is in the lab, what they work on, and their access.",
     adminbotProfileOverview: "Who has filled in their profile and planned their term.",
     adminbotTabUsage: "Which parts of AdminBot the lab actually opens.",
     adminbotProfessor: "What is waiting on you, across every queue.",

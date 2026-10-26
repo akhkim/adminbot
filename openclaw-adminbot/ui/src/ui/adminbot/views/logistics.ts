@@ -1349,13 +1349,17 @@ function renderLettersRequest(props: LettersProps) {
             ${t("logistics.lettersGuide.open")}
           </a>
         </p>
-        <ul>
-          <li>${t("logistics.lettersGuide.folder")}</li>
-          <li>${t("logistics.lettersGuide.schools")}</li>
-          <li>${t("logistics.lettersGuide.materials")}</li>
-          <li>${t("logistics.lettersGuide.facts")}</li>
-        </ul>
-        <p class="card-sub">${t("logistics.lettersGuide.reminders")}</p>
+        <!-- The checklist is reference for the first request; the confirmation below stays out. -->
+        <details class="adminbot-fold" data-testid="logistics-letters-checklist">
+          <summary>What to prepare</summary>
+          <ul>
+            <li>${t("logistics.lettersGuide.folder")}</li>
+            <li>${t("logistics.lettersGuide.schools")}</li>
+            <li>${t("logistics.lettersGuide.materials")}</li>
+            <li>${t("logistics.lettersGuide.facts")}</li>
+          </ul>
+          <p class="card-sub">${t("logistics.lettersGuide.reminders")}</p>
+        </details>
         <p>
           <label style="display:flex;gap:12px;align-items:flex-start;cursor:pointer">
             <input

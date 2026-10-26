@@ -52,6 +52,7 @@ import { DEADLINE_VENUES, type DeadlineMilestone, type DeadlineVenue } from "../
 import { milestoneEndInstant } from "../data/milestone-time.ts";
 import { AOE_TIMEZONE, timezoneOptions } from "../data/timezones.ts";
 import { renderDateControl } from "../date-control.ts";
+import { LIST_WINDOW } from "../projects/list-window.ts";
 import { renderDeadlineDate, renderDeadlineDateLabel } from "./deadline-date.ts";
 import { renderDeadlineParentConferenceSelect } from "./deadline-parent-conference-select.ts";
 import { wrapSeparator } from "./deadline-separator.ts";
@@ -1245,6 +1246,11 @@ class AdminbotDeadlinesView extends LitElement {
   }
   private period: DeadlineBoardPeriod = "upcoming";
   private view: DeadlineBoardView = "groups";
+  // Cards and rows drawn before "Show more", reset whenever what is being filtered changes -- the
+  // same window My Work uses, so "Show more" means one thing across the app. Groups are already
+  // folded per venue group, so they are drawn whole.
+  private shownLimit = LIST_WINDOW;
+  private shownKey = "";
   private displayZone = loadDeadlineTimezone();
   private venues: DeadlineVenue[] = [];
   private proposals: DeadlineProposal[] = [];
@@ -2814,7 +2820,7 @@ class AdminbotDeadlinesView extends LitElement {
     const busy = this.timelineBusyId === venue.deadline_id;
     return html`<button
         type="button"
-        class="btn primary deadline-card__timeline-button"
+        class="btn deadline-card__timeline-button"
         title=${busy ? "Adding to my timeline…" : "Add to my timeline"}
         data-testid="deadline-add-to-timeline"
         aria-busy=${busy}
@@ -2897,6 +2903,26 @@ class AdminbotDeadlinesView extends LitElement {
           >`
         : html`<span class="deadline-card__missing">CFP not found yet</span>`}
     </span>`;
+  }
+
+  private renderShowMore(matched: number) {
+    if (this.shownLimit >= matched) {
+      return nothing;
+    }
+    return html`<p class="projects__more">
+      <span>Showing ${this.shownLimit} of ${matched}</span>
+      <button
+        type="button"
+        class="btn btn--sm"
+        data-testid="deadline-show-more"
+        @click=${() => {
+          this.shownLimit += LIST_WINDOW;
+          this.requestUpdate();
+        }}
+      >
+        Show ${Math.min(LIST_WINDOW, matched - this.shownLimit)} more
+      </button>
+    </p>`;
   }
 
   private renderTable(entries: readonly DeadlineBoardEntry[]) {
@@ -3427,6 +3453,18 @@ class AdminbotDeadlinesView extends LitElement {
       this.activeGroup = "";
     }
     const filtered = filterDeadlineBoardEntries(matching, this.activeGroup, "", filters);
+    const shownKey = JSON.stringify([
+      this.period,
+      this.stageFilter,
+      this.query,
+      filters,
+      this.activeGroup,
+      this.view,
+    ]);
+    if (shownKey !== this.shownKey) {
+      this.shownKey = shownKey;
+      this.shownLimit = LIST_WINDOW;
+    }
     this.recommendationIds = [
       ...new Set(filtered.map((entry) => entry.venue.deadline_id || entry.venue.id)),
     ];
@@ -3536,11 +3574,13 @@ class AdminbotDeadlinesView extends LitElement {
         ${filtered.length
           ? this.view === "cards"
             ? html`<div class="deadline-board__grid">
-                ${filtered.map((entry) => this.renderCard(entry))}
-              </div>`
+                  ${filtered.slice(0, this.shownLimit).map((entry) => this.renderCard(entry))}
+                </div>
+                ${this.renderShowMore(filtered.length)}`
             : this.view === "groups"
               ? this.renderGroups(filtered)
-              : this.renderTable(filtered)
+              : html`${this.renderTable(filtered.slice(0, this.shownLimit))}
+                ${this.renderShowMore(filtered.length)}`
           : html`<p class="deadline-board__empty">
               ${recent.length
                 ? "No upcoming deadlines match your filter."

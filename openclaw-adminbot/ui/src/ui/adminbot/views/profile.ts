@@ -1767,24 +1767,32 @@ function renderPhotoCompliance(state: AppViewState, member: LabMember, props: Pr
         We directly link member photos from Slack on team/collaborator pages and the lab public
         website, so a professional profile photo is strongly recommended.
       </p>
-      <ul>
-        <li>Big enough headshot.</li>
-        <li>Face clearly visible, preferably front-facing.</li>
-        <li>
-          Clean background (blurred, single color, or at least easy to convert with a background
-          remover).
-        </li>
-      </ul>
-      <p>
-        How-To: use portrait mode with a high-quality back camera and have someone take the photo.
-        You can blur/change the background in phone editors, or use
-        <a
-          href="https://www.remove.bg/"
-          target=${EXTERNAL_LINK_TARGET}
-          rel=${buildExternalLinkRel()}
-          >remove.bg</a
-        >. Chest-up framing with shoulders usually works best.
-      </p>
+      <!-- The rules are reference; they open by themselves when the last look found a problem. -->
+      <details
+        class="adminbot-fold"
+        data-testid="profile-photo-rules"
+        ?open=${Boolean(assessment && !assessment.compliant)}
+      >
+        <summary>What makes a good photo</summary>
+        <ul>
+          <li>Big enough headshot.</li>
+          <li>Face clearly visible, preferably front-facing.</li>
+          <li>
+            Clean background (blurred, single color, or at least easy to convert with a background
+            remover).
+          </li>
+        </ul>
+        <p>
+          How-To: use portrait mode with a high-quality back camera and have someone take the photo.
+          You can blur/change the background in phone editors, or use
+          <a
+            href="https://www.remove.bg/"
+            target=${EXTERNAL_LINK_TARGET}
+            rel=${buildExternalLinkRel()}
+            >remove.bg</a
+          >. Chest-up framing with shoulders usually works best.
+        </p>
+      </details>
       ${assessment
         ? html`
             <p>

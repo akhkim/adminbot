@@ -339,7 +339,7 @@ describe("renderAdminBotMeetings", () => {
       },
     });
     const dropdown = view.querySelector("[data-testid='meetings-series']");
-    expect(dropdown?.querySelector(".notice--error")?.textContent).toContain("Synthetic outage");
+    expect(dropdown?.querySelector(".callout.danger")?.textContent).toContain("Synthetic outage");
   });
 
   it("shows the request error instead of claiming that no recordings exist", () => {

@@ -2027,35 +2027,6 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
 
   return html`
     <div class="card adminbot-card adminbot-card--wide adminbot-time-availability">
-      ${!props.viewerIsAdmin && props.onLoadCollaborators
-        ? html` <section class="adminbot-form" aria-label="See my collaborator's time availability">
-            <h3>See my collaborator's time availability</h3>
-            <p class="muted">
-              Coauthors on projects with unfinished paper slots. Schedules are read-only; private
-              notes and links are not shared.
-            </p>
-            <button
-              class="btn"
-              ?disabled=${props.collaboratorsLoading}
-              @click=${props.onLoadCollaborators}
-            >
-              ${props.collaboratorsLoading
-                ? "Loading collaborator schedules…"
-                : "Load / refresh collaborator schedules"}
-            </button>
-            ${props.collaboratorsError
-              ? html`<p role="alert">${props.collaboratorsError}</p>`
-              : nothing}
-            ${renderMemberSelect({
-              options: readableMembers.map((m) => ({ id: m.id, name: m.name ?? m.id })),
-              value: selectedMember?.id ?? "",
-              label: "Whose timeline to view",
-              placeholder: "Choose a collaborator",
-              disabled: Boolean(props.collaboratorsLoading),
-              onPick: props.onMemberChange,
-            })}
-          </section>`
-        : nothing}
       <div class="adminbot-form adminbot-time-availability__controls">
         ${props.viewerIsAdmin
           ? html`<label class="adminbot-form__field">
@@ -2074,14 +2045,14 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
                 onHighlight: props.onMemberHighlight,
               })}
             </label>`
-          : html`<p
-              class="adminbot-time-availability__own-only"
-              data-testid="time-availability-own-only"
-            >
-              ${props.onLoadCollaborators
-                ? "You can edit your own schedule. Collaborator schedules are read-only."
-                : t("adminbotTimeAvailability.ownScheduleOnly")}
-            </p>`}
+          : props.onLoadCollaborators
+            ? nothing
+            : html`<p
+                class="adminbot-time-availability__own-only"
+                data-testid="time-availability-own-only"
+              >
+                ${t("adminbotTimeAvailability.ownScheduleOnly")}
+              </p>`}
         ${renderRangeSwitch(props)}
         ${props.onRefresh
           ? html`<button
@@ -2254,6 +2225,39 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
                 `
               : nothing}
           </div>`
+        : nothing}
+      ${!props.viewerIsAdmin && props.onLoadCollaborators
+        ? html`<details
+            class="adminbot-fold adminbot-time-availability__collaborators"
+            data-testid="time-availability-collaborators"
+            ?open=${Boolean(selectedMember && selectedMember.id !== props.viewerMemberId)}
+          >
+            <summary>Collaborators' schedules</summary>
+            <p class="muted">
+              Coauthors on projects with unfinished paper slots. Read-only; private notes and links
+              are not shared.
+            </p>
+            <div class="adminbot-time-availability__collaborators-row">
+              ${renderMemberSelect({
+                options: readableMembers.map((m) => ({ id: m.id, name: m.name ?? m.id })),
+                value: selectedMember?.id ?? "",
+                label: "Whose timeline to view",
+                placeholder: "Choose a collaborator",
+                disabled: Boolean(props.collaboratorsLoading),
+                onPick: props.onMemberChange,
+              })}
+              <button
+                class="btn btn--sm"
+                ?disabled=${props.collaboratorsLoading}
+                @click=${props.onLoadCollaborators}
+              >
+                ${props.collaboratorsLoading ? "Loading…" : "Load collaborators"}
+              </button>
+            </div>
+            ${props.collaboratorsError
+              ? html`<p role="alert">${props.collaboratorsError}</p>`
+              : nothing}
+          </details>`
         : nothing}
     </div>
   `;

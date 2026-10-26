@@ -10,11 +10,15 @@
   min-width: 0;
 }
 
-.events__intro,
-.events__settings {
+.events__intro {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+}
+
+/* A <details>: flex on it is uneven across Safari versions, so its rows space themselves. */
+.events__settings > * + * {
+  margin-top: var(--space-2);
 }
 
 .events__where,
@@ -166,10 +170,8 @@
 }
 
 .events__past > summary {
-  cursor: pointer;
   color: var(--muted-strong);
-  min-height: var(--control-h-sm, 32px);
-  display: list-item;
+  font-weight: 500;
 }
 
 .events__past > .events__list {

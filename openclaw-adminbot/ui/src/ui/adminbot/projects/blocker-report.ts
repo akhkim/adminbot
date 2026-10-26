@@ -278,6 +278,9 @@ export function renderPaperBlockers(
   `;
 }
 
+/** Blockers listed before the rest fold away; a member with many projects can have dozens. */
+const BLOCKER_PREVIEW = 5;
+
 /**
  * Every open blocker across the viewer's own papers.
  *
@@ -291,26 +294,29 @@ export function renderBlockerBoard(state: AppViewState, items: AdminBotPaperReco
   if (!blockers.length) {
     return nothing;
   }
+  const row = ({ paper, blocker }: (typeof blockers)[number]) => html`
+    <article class="my-work-blocker">
+      <span class="my-work-blocker__icon" aria-hidden="true">${icons.alertTriangle}</span>
+      <div class="my-work-blocker__copy">
+        <p class="my-work-blocker__text">${blocker.title}</p>
+        <p class="my-work-blocker__meta">
+          ${paper.title} · ${stepLabel(blocker.stage as AdminBotPaperStep)} ·
+          ${t("myWork.blockers.reviewer", { name: reviewerName(state) })}
+        </p>
+      </div>
+      <span class="pill my-work-blocker__status">${t("myWork.blockers.pending")}</span>
+    </article>
+  `;
   return html`
     <section class="my-work__section" data-testid="my-work-blockers">
       <h2 class="my-work__section-title">${t("myWork.blockers.title")}</h2>
-      <div class="my-work__blockers">
-        ${blockers.map(
-          ({ paper, blocker }) => html`
-            <article class="my-work-blocker">
-              <span class="my-work-blocker__icon" aria-hidden="true">${icons.alertTriangle}</span>
-              <div class="my-work-blocker__copy">
-                <p class="my-work-blocker__text">${blocker.title}</p>
-                <p class="my-work-blocker__meta">
-                  ${paper.title} · ${stepLabel(blocker.stage as AdminBotPaperStep)} ·
-                  ${t("myWork.blockers.reviewer", { name: reviewerName(state) })}
-                </p>
-              </div>
-              <span class="pill my-work-blocker__status">${t("myWork.blockers.pending")}</span>
-            </article>
-          `,
-        )}
-      </div>
+      <div class="my-work__blockers">${blockers.slice(0, BLOCKER_PREVIEW).map(row)}</div>
+      ${blockers.length > BLOCKER_PREVIEW
+        ? html`<details class="adminbot-fold" data-testid="my-work-more-blockers">
+            <summary>Show ${blockers.length - BLOCKER_PREVIEW} more</summary>
+            <div class="my-work__blockers">${blockers.slice(BLOCKER_PREVIEW).map(row)}</div>
+          </details>`
+        : nothing}
     </section>
   `;
 }
