@@ -247,4 +247,11 @@ describe("aliasCandidates", () => {
     expect(aliasCandidates("X. Priya Raman", ROSTER).map((m) => m.id)).toEqual(["m-priya"]);
     expect(aliasCandidates("Room W1160", ROSTER)).toEqual([]);
   });
+
+  // An empty preferred name once matched every one-word display name against every member.
+  it("does not suggest everyone for a one-word name", () => {
+    const roster = [...ROSTER, member({ id: "m-zed", name: "Zed Example", preferred_name: "" })];
+    expect(aliasCandidates("Priya", roster).map((m) => m.id)).toEqual(["m-priya"]);
+    expect(aliasCandidates("Jacob", roster)).toEqual([]);
+  });
 });

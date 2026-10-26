@@ -245,15 +245,17 @@ export function aliasCandidates(
   if (!first) {
     return [];
   }
+  const withoutInitial = tokens.slice(1).join(" ");
   return members.filter((member) => {
-    const names = [member.name, member.preferred_name ?? ""].map(normalizeName);
+    // A member with no preferred name would contribute "", which every prefix test passes.
+    const names = [member.name, member.preferred_name ?? ""].map(normalizeName).filter(Boolean);
     return names.some((name) => {
       const parts = name.split(" ");
       // "andrew k" -> "andrew kim", "zhijing" -> "zhijing jin", "x angelo huang" -> "angelo huang".
       return (
         parts[0] === first ||
         tokens.every((token) => parts.some((part) => part.startsWith(token))) ||
-        tokens.slice(1).join(" ") === name
+        (withoutInitial !== "" && withoutInitial === name)
       );
     });
   });
