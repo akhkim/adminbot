@@ -103,19 +103,30 @@ describe("renderAdminBotMeetings", () => {
     });
     expect(view.textContent).toContain("You attended.");
     expect(view.textContent).toContain("7 present");
-    expect(view.querySelector("input[type=checkbox]")).toBeNull();
+    expect(view.querySelector(".meetings__attendees")).toBeNull();
+    expect(view.querySelector(".meetings__add-attendee")).toBeNull();
     // The recovery form is an admin affordance and must not render for a member.
     expect(view.querySelector(".meetings__file")).toBeNull();
   });
 
-  // The whole point of the editor: the person who was there and whom no import detected has to be
-  // tickable, so every member is listed rather than only the detected ones.
-  it("lists every member in the admin editor, not only detected attendees", () => {
+  const attendeeNames = (view: HTMLElement) =>
+    [...view.querySelectorAll(".meetings__attendee > span:first-child")].map(
+      (el) => el.textContent,
+    );
+  const searchOptions = (view: HTMLElement) =>
+    [...view.querySelectorAll<HTMLOptionElement>(".meetings__add-attendee datalist option")].map(
+      (option) => option.value,
+    );
+
+  // A checklist of the whole lab made a forty-person meeting a scroll to find the one person an
+  // import missed. The editor lists who was there; everyone else is one search away.
+  it("lists only the attendees, and offers everyone else in the search", () => {
     const view = renderView({
       viewerIsAdmin: true,
       members: [
         { id: "m-ada", name: "Ada Attendee" },
         { id: "m-bo", name: "Bo Quiet" },
+        { id: "m-cy", name: "Cy Absent" },
       ],
       meetings: [
         {
@@ -127,15 +138,43 @@ describe("renderAdminBotMeetings", () => {
               source: "transcript",
               present: true,
             },
+            // Marked absent by an admin: not an attendee, and addable again.
+            { member_id: "m-cy", display_name: "Cy Absent", source: "manual", present: false },
           ],
         },
       ],
     });
-    const ticks = view.querySelectorAll<HTMLInputElement>("input[type=checkbox]");
-    expect(ticks).toHaveLength(2);
-    expect(ticks[0]?.checked).toBe(true);
-    expect(ticks[1]?.checked).toBe(false);
+    expect(view.querySelector("input[type=checkbox]")).toBeNull();
+    expect(attendeeNames(view)).toEqual(["Ada Attendee"]);
     expect(view.textContent).toContain("spoke on the transcript");
+    expect(searchOptions(view)).toEqual(["Bo Quiet", "Cy Absent"]);
+  });
+
+  it("says so when nobody is recorded yet, and still offers the search", () => {
+    const view = renderView({
+      viewerIsAdmin: true,
+      members: [{ id: "m-bo", name: "Bo Quiet" }],
+      rosters: { "zoom-812-2026-08-12": { attendees: [] } },
+    });
+    expect(view.textContent).toContain("Nobody is recorded as attending yet.");
+    expect(searchOptions(view)).toEqual(["Bo Quiet"]);
+  });
+
+  it("tells same-named members apart in the search", () => {
+    const view = renderView({
+      viewerIsAdmin: true,
+      members: [
+        { id: "m-yara", name: "Yara Allam" },
+        { id: "m-yara-2", name: "Yara Allam" },
+        { id: "m-bo", name: "Bo Quiet" },
+      ],
+      rosters: { "zoom-812-2026-08-12": { attendees: [] } },
+    });
+    expect(searchOptions(view)).toEqual([
+      "Yara Allam (m-yara)",
+      "Yara Allam (m-yara-2)",
+      "Bo Quiet",
+    ]);
   });
 
   it("says which names came off the gallery recording, and which model read them", () => {
@@ -162,14 +201,22 @@ describe("renderAdminBotMeetings", () => {
         },
       ],
     });
-    expect(view.querySelector<HTMLInputElement>("input[type=checkbox]")?.checked).toBe(true);
+    expect(attendeeNames(view)).toEqual(["Bo Quiet"]);
     expect(view.textContent).toContain("seen on the gallery recording");
     expect(view.textContent).toContain(
       "Attendance read from the gallery recording by Qwen/Qwen3.5-27B: 2 of 3 sampled frames showed participant tiles.",
     );
   });
 
-  it("sends a correction for the member whose box was clicked", () => {
+  function searchAndAdd(view: HTMLElement, typed: string) {
+    const form = view.querySelector<HTMLFormElement>(".meetings__add-attendee");
+    const input = form?.querySelector<HTMLInputElement>("input[name=member]");
+    input!.value = typed;
+    form!.dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true }));
+    return input!;
+  }
+
+  it("adds the member the search names, whatever its case, and clears the box", () => {
     const onToggleAttendance = vi.fn();
     const view = renderView({
       viewerIsAdmin: true,
@@ -177,24 +224,69 @@ describe("renderAdminBotMeetings", () => {
       rosters: { "zoom-812-2026-08-12": { attendees: [] } },
       onToggleAttendance,
     });
-    view.querySelector<HTMLInputElement>("input[type=checkbox]")?.click();
+    const input = searchAndAdd(view, "  bo quiet ");
     expect(onToggleAttendance).toHaveBeenCalledWith("zoom-812-2026-08-12", {
       member_id: "m-bo",
       display_name: "Bo Quiet",
       source: "manual",
       present: true,
     });
+    expect(input.value).toBe("");
   });
 
-  // An admin's rows arrive without a roster. Drawing every member unticked until it lands would
-  // read as "nobody came", and a tick on that would save a roster built from nothing.
+  it("adds nobody for a name that is no member, and says to pick one from the list", () => {
+    const onToggleAttendance = vi.fn();
+    const view = renderView({
+      viewerIsAdmin: true,
+      members: [{ id: "m-bo", name: "Bo Quiet" }],
+      rosters: { "zoom-812-2026-08-12": { attendees: [] } },
+      onToggleAttendance,
+    });
+    const input = searchAndAdd(view, "Bo");
+    expect(onToggleAttendance).not.toHaveBeenCalled();
+    expect(input.validationMessage).toBe("Choose a member from the list.");
+  });
+
+  it("removes an attendee as an absent manual correction", () => {
+    const onToggleAttendance = vi.fn();
+    const view = renderView({
+      viewerIsAdmin: true,
+      members: [{ id: "m-ada", name: "Ada Attendee" }],
+      rosters: {
+        "zoom-812-2026-08-12": {
+          attendees: [
+            {
+              member_id: "m-ada",
+              display_name: "Ada A.",
+              source: "participant_report",
+              present: true,
+            },
+          ],
+        },
+      },
+      onToggleAttendance,
+    });
+    const remove = view.querySelector<HTMLButtonElement>(".meetings__attendee button");
+    expect(remove?.getAttribute("aria-label")).toBe("Remove Ada Attendee from this meeting");
+    remove?.click();
+    expect(onToggleAttendance).toHaveBeenCalledWith("zoom-812-2026-08-12", {
+      member_id: "m-ada",
+      display_name: "Ada A.",
+      source: "manual",
+      present: false,
+    });
+  });
+
+  // An admin's rows arrive without a roster. Saying "nobody is recorded" until it lands would read
+  // as "nobody came", and an add on that would save a roster built from nothing.
   it("draws the admin editor from the roster read for that meeting, and nothing before it", () => {
     const members = [
       { id: "m-ada", name: "Ada Attendee" },
       { id: "m-bo", name: "Bo Quiet" },
     ];
     const before = renderView({ viewerIsAdmin: true, members, rosters: {} });
-    expect(before.querySelectorAll("input[type=checkbox]")).toHaveLength(0);
+    expect(before.querySelector(".meetings__add-attendee")).toBeNull();
+    expect(before.textContent).not.toContain("Nobody is recorded");
     document.body.innerHTML = "";
     const after = renderView({
       viewerIsAdmin: true,
@@ -205,8 +297,8 @@ describe("renderAdminBotMeetings", () => {
         },
       },
     });
-    const ticks = after.querySelectorAll<HTMLInputElement>("input[type=checkbox]");
-    expect([...ticks].map((tick) => tick.checked)).toEqual([true, false]);
+    expect(attendeeNames(after)).toEqual(["Ada Attendee"]);
+    expect(searchOptions(after)).toEqual(["Bo Quiet"]);
   });
 
   it("asks for an admin's roster on hover, focus and open", () => {

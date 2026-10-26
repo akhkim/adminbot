@@ -214,27 +214,31 @@ node --import tsx scripts/adminbot-meeting-attendance-import.ts \
 ## 6. Who sees what
 
 The tab groups recordings by meeting: one dropdown per title (case and spacing ignored, so
-"Weekly Lab Meeting" and "weekly lab meeting " are one series), newest series first, each showing
-how many recordings it holds and when it last met. Opening a dropdown lists every recording of that
-meeting, newest first, ten at a time. The newest series opens on arrival with its newest recording
-unfolded. Behind it: `GET /meetings/series` is the index (titles and counts only, the same for
+"Weekly Lab Meeting" and "weekly lab meeting " are one series). The lab's weekly meeting
+(`ADMINBOT_GROUP_MEETING_TOPIC`, default "Weekly Jinesis Meeting") is always listed first; the
+rest follow newest series first. Each dropdown shows how many recordings it holds and when it last
+met. Opening a dropdown lists every recording of that meeting, newest first, ten at a time. The
+first series opens on arrival with its newest recording unfolded. Behind it: `GET /meetings/series` is the index (titles and counts only, the same for
 every viewer), and `GET /meetings?series=<key>` pages one series with the usual per-viewer
 redaction. A title is the only grouping key, so a meeting renamed in Zoom starts a new dropdown.
 
 The tab is member-level. A member sees the recording, the summary, their own attendance line and a
-headcount. The roster itself is admin-only, and the service enforces that
-(`listMeetingsForMember`), not the tab.
+headcount. The roster itself is admin-only: an admin sees the members recorded as present, each
+with a **Remove** button, and adds anyone missing by searching the member list and pressing
+**Add**. Both write a manual correction, which no later import overrides. The service, not the
+tab, keeps the roster from members (`listMeetingsForMember`).
 
 ## Environment
 
-| Variable                            | Purpose                                                         |
-| ----------------------------------- | --------------------------------------------------------------- |
-| `ADMINBOT_MEETING_DROP_FOLDER_ID`   | Drive folder hosts drop transcripts and participant CSVs into   |
-| `ADMINBOT_BOT_EMAIL`                | Account Gmail and Drive are read as (already required)          |
-| `ADMINBOT_LOCAL_BASE_URL`           | Loopback model endpoint for the summary; must be loopback       |
-| `ADMINBOT_LOCAL_MODEL`              | Model id to summarize with                                      |
-| `ADMINBOT_MEETING_VISION_BASE_URL`  | Loopback vision server for gallery snapshots; unset = deferred  |
-| `ADMINBOT_MEETING_VISION_MODEL`     | Vision model id (required when the base URL is set)             |
-| `ADMINBOT_MEETING_VISION_API_KEY`   | Optional; defaults to `VLLM_API_KEY`                            |
-| `ADMINBOT_MEETING_SNAPSHOT_MINUTES` | Minutes between sampled frames (default 30)                     |
-| `ADMINBOT_FFMPEG_BIN`               | `ffmpeg` used to read the recording (default: `ffmpeg` on PATH) |
+| Variable                            | Purpose                                                           |
+| ----------------------------------- | ----------------------------------------------------------------- |
+| `ADMINBOT_MEETING_DROP_FOLDER_ID`   | Drive folder hosts drop transcripts and participant CSVs into     |
+| `ADMINBOT_BOT_EMAIL`                | Account Gmail and Drive are read as (already required)            |
+| `ADMINBOT_LOCAL_BASE_URL`           | Loopback model endpoint for the summary; must be loopback         |
+| `ADMINBOT_LOCAL_MODEL`              | Model id to summarize with                                        |
+| `ADMINBOT_MEETING_VISION_BASE_URL`  | Loopback vision server for gallery snapshots; unset = deferred    |
+| `ADMINBOT_MEETING_VISION_MODEL`     | Vision model id (required when the base URL is set)               |
+| `ADMINBOT_MEETING_VISION_API_KEY`   | Optional; defaults to `VLLM_API_KEY`                              |
+| `ADMINBOT_MEETING_SNAPSHOT_MINUTES` | Minutes between sampled frames (default 30)                       |
+| `ADMINBOT_FFMPEG_BIN`               | `ffmpeg` used to read the recording (default: `ffmpeg` on PATH)   |
+| `ADMINBOT_GROUP_MEETING_TOPIC`      | Series listed first on the tab (default "Weekly Jinesis Meeting") |

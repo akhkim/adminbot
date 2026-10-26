@@ -9,6 +9,7 @@ import {
   mergeMeeting,
   normalizedMeetingStartedAt,
   redactMeetingForMember,
+  summarizeMeetingSeries,
   validateMeeting,
 } from "./records.js";
 
@@ -75,6 +76,49 @@ describe("validateMeeting", () => {
         recording: { drive_url: "https://drive.google.com/file/d/abc" },
       }),
     ).toBeUndefined();
+  });
+});
+
+describe("summarizeMeetingSeries", () => {
+  const head = (id: string, topic: string, started_at: string, duration_minutes = 60) => ({
+    id,
+    topic,
+    started_at,
+    duration_minutes,
+  });
+  const heads = [
+    head("w1", "Weekly Lab Meeting", "2026-10-19T13:30:00.000Z"),
+    head("w2", "weekly lab meeting ", "2026-10-26T13:30:00.000Z"),
+    head("r1", "Reading Group", "2026-10-27T15:00:00.000Z"),
+    head("c1", "Causality Weekly", "2026-10-23T15:00:00.000Z"),
+    head("x1", "Reading Group", "2026-10-28T15:00:00.000Z", 5),
+  ];
+
+  it("lists series newest first, counting only meetings above the floor", () => {
+    expect(
+      summarizeMeetingSeries(heads, 10).map((s) => [s.key, s.count, s.latest_started_at]),
+    ).toEqual([
+      ["reading group", 1, "2026-10-27T15:00:00.000Z"],
+      ["weekly lab meeting", 2, "2026-10-26T13:30:00.000Z"],
+      ["causality weekly", 1, "2026-10-23T15:00:00.000Z"],
+    ]);
+  });
+
+  // The tab opens its first series on arrival, and the weekly meeting is what people come for.
+  it("puts the pinned series first however recently the others met, matching its title loosely", () => {
+    expect(summarizeMeetingSeries(heads, 10, "Weekly  LAB Meeting").map((s) => s.key)).toEqual([
+      "weekly lab meeting",
+      "reading group",
+      "causality weekly",
+    ]);
+  });
+
+  it("leaves the order alone when the pinned series has nothing listed", () => {
+    expect(summarizeMeetingSeries(heads, 10, "Weekly Jinesis Meeting").map((s) => s.key)).toEqual([
+      "reading group",
+      "weekly lab meeting",
+      "causality weekly",
+    ]);
   });
 });
 
