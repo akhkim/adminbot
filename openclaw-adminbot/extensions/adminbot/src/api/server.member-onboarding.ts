@@ -36,7 +36,7 @@ import {
   newMemberRecord,
   privilegeForMemberTypeChange,
 } from "../workflows/members/member-type-access.js";
-import { templateForMemberType } from "../workflows/onboarding/member-type-template.js";
+import { memberGuideProvidesSlackConnect } from "../workflows/onboarding/member-type-template.js";
 import {
   type MemberSheetApprover,
   type MemberSheetSource,
@@ -87,7 +87,7 @@ export async function enrollNewMember(
       // The guide step below is this person's one onboarding mail; the guide inside a type change
       // would be a second copy of it.
       skipGuide: true,
-      guideSendsSlackConnect: templateForMemberType(member.member_type).ok,
+      guideSendsSlackConnect: memberGuideProvidesSlackConnect(member.member_type),
       skipGroupMeeting: options.skipGroupMeeting,
       skipSheet:
         options.skipSheet ??
@@ -117,7 +117,8 @@ export type NewMemberGuideStep =
  * Queued through `queueOnboardingGuideForMember`, which refuses a second copy of a guide already
  * sent or waiting -- so a person reached by two paths is mailed once. With an approver it is also
  * approved and sent now. Standard full-member guides use the enrollment admin’s approval
- * automatically; unattended imports still wait in Pending Actions.
+ * automatically. Other approved members receive the basic welcome while a fuller guide awaits
+ * setup or review; unattended imports still wait in Pending Actions.
  */
 export async function queueNewMemberGuide(
   deps: Pick<NewMemberOnboardingDeps, "service" | "approver" | "actor">,
@@ -127,6 +128,8 @@ export async function queueNewMemberGuide(
     values?: Record<string, string>;
     slackChannels?: readonly string[];
     send?: boolean;
+    /** Internal fallback; never substitutes for completing the role-specific guide. */
+    basicWelcome?: boolean;
     /** See `queueOnboardingGuideForMember`: an admin mailing the guide again on purpose. */
     resend?: boolean;
   } = {},
@@ -134,30 +137,60 @@ export async function queueNewMemberGuide(
   const queued = deps.service.queueOnboardingGuideForMember({
     memberId,
     actor: deps.actor,
+    ...(options.basicWelcome ? { basicWelcome: true } : {}),
     ...(options.email ? { email: options.email } : {}),
     ...(options.values ? { values: options.values } : {}),
     ...(options.slackChannels ? { slackChannels: options.slackChannels } : {}),
     ...(options.resend ? { resend: true } : {}),
   });
   if (!queued.ok) {
-    // 422 is a Member Type the design does not mail, or nobody to mail: a decision, not a fault.
+    if (queued.status === 422 && deps.approver && !options.basicWelcome) {
+      // An approved person can be welcomed while their role is clarified, without guessing access.
+      return queueNewMemberGuide(deps, memberId, {
+        basicWelcome: true,
+        ...(options.email ? { email: options.email } : {}),
+      });
+    }
+    // Without an approver an unresolved type stays for review; a missing address is never guessed.
     return queued.status === 422
       ? { status: "skipped", reason: queued.error.message }
       : { status: "failed", reason: queued.error.message, http_status: queued.status };
   }
   const { proposal_id: proposalId, template_id: templateId, email } = queued.payload;
-  // Full-member enrollment already has a human admin's approval. Reuse it for the standard
-  // guide; never let an unattended spreadsheet import supply that approval for itself.
-  if ((!options.send && templateId !== "member") || !deps.approver) {
+  const guide = deps.service.getProposal(proposalId);
+  if (options.basicWelcome && guide?.status === "executed") {
+    return {
+      status: "done",
+      proposal_id: proposalId,
+      template_id: templateId,
+      email,
+      detail: `already sent to ${email}`,
+    };
+  }
+  const basicWelcomeStatus = async (): Promise<string> => {
+    if (templateId === "welcome" || !deps.approver) {
+      return "";
+    }
+    const welcome = await queueNewMemberGuide(deps, memberId, { basicWelcome: true, email });
+    if (welcome.status === "done") {
+      return "; basic welcome sent";
+    }
+    if (welcome.status === "failed" && welcome.http_status === 409) {
+      return "; basic welcome already queued or sent";
+    }
+    return `; basic welcome ${welcome.status}: ${"reason" in welcome ? welcome.reason : welcome.detail}`;
+  };
+  // Reuse the admin's approval for the standard full guide or minimal welcome. An unattended
+  // spreadsheet import never supplies that approval for itself.
+  if ((!options.send && templateId !== "member" && templateId !== "welcome") || !deps.approver) {
     return {
       status: "queued",
       proposal_id: proposalId,
       template_id: templateId,
       email,
-      detail: `waiting for approval to send to ${email}`,
+      detail: `waiting for approval to send to ${email}${await basicWelcomeStatus()}`,
     };
   }
-  const guide = deps.service.getProposal(proposalId);
   const sent = guide
     ? await approveAndExecute(deps.service, guide, deps.approver)
     : { ok: false as const, reason: `proposal ${proposalId} vanished` };
@@ -169,7 +202,12 @@ export async function queueNewMemberGuide(
         email,
         detail: `sent to ${email}`,
       }
-    : { status: "failed", reason: sent.reason, proposal_id: proposalId, template_id: templateId };
+    : {
+        status: "failed",
+        reason: `${sent.reason}${await basicWelcomeStatus()}`,
+        proposal_id: proposalId,
+        template_id: templateId,
+      };
 }
 
 export type NewMemberOnboardingResult = {
@@ -286,6 +324,17 @@ export async function executeMemberEnrollment(
     enrolled,
     { skipSheet: "the member was read from the sheet" },
   );
+  const welcome = await queueNewMemberGuide(
+    { ...deps, approver, actor: approval.approver_id },
+    memberId,
+    { basicWelcome: true },
+  );
+  result.steps.push({
+    step: "guide",
+    status: welcome.status,
+    detail: "reason" in welcome ? welcome.reason : welcome.detail,
+    ...("proposal_id" in welcome ? { proposal_id: welcome.proposal_id } : {}),
+  });
   const incomplete = result.steps.filter(
     (step) => step.status === "failed" || step.status === "queued",
   );

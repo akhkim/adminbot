@@ -17,6 +17,7 @@ import {
   adminBotExternalCollaboratorSubgroups,
   type AdminBotExternalCollaboratorSubgroup,
 } from "../../contracts/actions.js";
+import { adminBotOutreachEmail } from "../../contracts/member-outreach-email.js";
 import { adminBotSlackConnectInviteIsFresh } from "../../kernel/service.js";
 import { collaboratorSubgroupAccess } from "../members/collaborator-subgroups.js";
 import { dcsCredentialsEmail, type DcsRosterRowRecorder } from "./dcs-roster-sheet.js";
@@ -282,7 +283,7 @@ const ACTIVE_CHANNELS_ACCESS_ITEM = "active_channels";
  *
  * The same channel, invite and reuse window as the guide's `{slack_connect_link}`, so somebody
  * reached by both is invited once: a fresh cached invite is reported as reused rather than minted
- * again. For the Member Types the access design gives the channel but no onboarding mail.
+ * again. Used when the basic welcome does not provision Slack itself.
  */
 export function createSlackConnectOnboardingInviter(
   options: Pick<
@@ -772,13 +773,20 @@ export function createAdminBotOnboardingSender(
       guide.body = guide.body.replace(INTERVIEW_TASK_MARKER, () => interview!.task);
     }
     const html = htmlOf(guide.body);
+    const replyTo =
+      request.reply_to?.trim() ||
+      (template.id === "welcome"
+        ? adminBotOutreachEmail({
+            correspondence_email: configuredEnvValue(env.ADMINBOT_CONTACT_EMAILS),
+          })
+        : "");
     await sendEmail({
       to: email,
       subject: guide.subject,
       body: guide.body,
       ...html,
       ...(request.cc?.length ? { cc: request.cc } : {}),
-      ...(request.reply_to?.trim() ? { reply_to: request.reply_to.trim() } : {}),
+      ...(replyTo ? { reply_to: replyTo } : {}),
     });
 
     // After the mail, and reported rather than thrown: the guide has already been delivered, so a

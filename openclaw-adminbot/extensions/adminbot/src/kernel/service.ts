@@ -14175,6 +14175,8 @@ export class AdminBotService {
   queueOnboardingGuideForMember(params: {
     memberId: string;
     actor: string;
+    /** A minimal contact email while the role-specific guide still needs setup or review. */
+    basicWelcome?: boolean;
     slackChannels?: readonly string[];
     /** The Onboarding tab's per-row address override; the record's email otherwise. */
     email?: string;
@@ -14197,11 +14199,36 @@ export class AdminBotService {
         `${member.name || member.id} has no email address, so there is nowhere to send an onboarding guide`,
       );
     }
-    const template = templateForMemberType(member.member_type);
+    const template = params.basicWelcome
+      ? { ok: true as const, templateId: "welcome" }
+      : templateForMemberType(member.member_type);
     if (!template.ok) {
       return serviceError(422, template.reason);
     }
     const recipient = email.toLowerCase();
+    if (params.basicWelcome && !params.resend) {
+      // Only reuse the unedited standard welcome for this exact person. Enrollment approval
+      // must not approve a manually rewritten email or somebody else's pending proposal.
+      const matching = this.store.listProposalsByType("onboarding.send_guide").filter((stored) => {
+        const payload = (stored.proposed_payload ?? {}) as Record<string, unknown>;
+        return (
+          ["pending", "approved", "executed"].includes(stored.status) &&
+          Object.keys(payload).length === 4 &&
+          payload.template_id === "welcome" &&
+          payload.member_id === member.id &&
+          payload.name === member.name &&
+          payload.email === email
+        );
+      });
+      const existing = matching.find((stored) => stored.status === "executed") ?? matching[0];
+      if (existing) {
+        return {
+          ok: true,
+          status: 200,
+          payload: { proposal_id: existing.id, template_id: "welcome", email },
+        };
+      }
+    }
     // The same two ledgers `sweepOnboardingMail` keys on -- a guide already sent, and one already
     // waiting for an approver. Pressing Add member twice on one id, or adding somebody the weekly
     // sweep has already picked up, must not put a second copy of the same mail in front of them.

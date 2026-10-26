@@ -32,14 +32,19 @@ afterEach(async () => {
   }
 });
 
-async function startService(options: { sheetRows?: string[][]; connectError?: string } = {}) {
+async function startService(
+  options: { sheetRows?: string[][]; connectError?: string; failTemplate?: string } = {},
+) {
   const executed: AdminBotStoredProposal[] = [];
   const guides: Array<Record<string, unknown>> = [];
   const calendarShares: string[] = [];
   const connectInvites: string[] = [];
   const onboardingSender = (async (request: Record<string, unknown>) => {
     guides.push(request);
-    return { ok: true, payload: { template_id: "member", subject: "Hi", body: "Hi" } };
+    if (request.template_id === options.failTemplate) {
+      return { ok: false, error: { status: 503, message: "role-specific setup unavailable" } };
+    }
+    return { ok: true, payload: { template_id: request.template_id, subject: "Hi", body: "Hi" } };
   }) as unknown as AdminBotOnboardingSender;
   const mock = createAdminBotMockService({
     serviceToken: SERVICE_TOKEN,
@@ -313,8 +318,8 @@ describe("approving a sweep joiner's enrollment", () => {
     expect(calendarShares).toEqual([]);
   });
 
-  it("invites a no-mail joiner through Slack Connect once, and not again while it is fresh", async () => {
-    const { baseUrl, mock, connectInvites } = await startService({
+  it("welcomes a basic-role joiner and invites them through Slack Connect once", async () => {
+    const { baseUrl, mock, connectInvites, guides } = await startService({
       sheetRows: [["Acq Person", "acquaintance", "acq@example.org", ""]],
     });
     await runSweep(baseUrl);
@@ -325,6 +330,7 @@ describe("approving a sweep joiner's enrollment", () => {
       await approveAndRun(baseUrl, token, enroll!);
       expect(connectInvites).toEqual(["acq@example.org"]);
       expect(mock.service.getProposal(enroll!.id)?.status).toBe("executed");
+      expect(guides.map((guide) => guide.template_id)).toEqual(["welcome"]);
 
       // The same person reached again: the cached link is reused rather than a second invite.
       const again = mock.service.createProposal({
@@ -345,6 +351,100 @@ describe("approving a sweep joiner's enrollment", () => {
 });
 
 describe("the guide action", () => {
+  it("welcomes an approved person whose member type still needs clarification", async () => {
+    const { mock, guides } = await startService();
+    mock.service.upsertLabMember(
+      withCompleteProfile({
+        id: "new-person",
+        name: "New Person",
+        email: "new@lab.test",
+      } as AdminBotLabMemberInput),
+    );
+    const result = await queueNewMemberGuide(
+      {
+        service: mock.service,
+        actor: "admin",
+        approver: { approver_id: "admin", approver_role: "admin" },
+      },
+      "new-person",
+    );
+    expect(result).toMatchObject({ status: "done", template_id: "welcome" });
+    expect(guides.map((guide) => guide.template_id)).toEqual(["welcome"]);
+    expect(rosterEntry(mock, "new-person")?.privilege_level).toBe("external_collaborator");
+  });
+
+  it("does not automatically approve an edited welcome waiting in the queue", async () => {
+    const { mock, guides } = await startService();
+    mock.service.upsertLabMember(
+      withCompleteProfile({
+        id: "new-person",
+        name: "New Person",
+        email: "new@lab.test",
+      } as AdminBotLabMemberInput),
+    );
+    const edited = mock.service.createProposal({
+      type: "onboarding.send_guide",
+      summary: "Edited welcome for manual review",
+      target: { service: "google", channel: "email", target: "new@lab.test" },
+      proposed_payload: {
+        template_id: "welcome",
+        name: "New Person",
+        email: "new@lab.test",
+        member_id: "new-person",
+        body_override: "A custom message that needs its own approval.",
+      },
+    });
+    expect(edited.ok).toBe(true);
+    const result = await queueNewMemberGuide(
+      {
+        service: mock.service,
+        actor: "admin",
+        approver: { approver_id: "admin", approver_role: "admin" },
+      },
+      "new-person",
+      { basicWelcome: true },
+    );
+    expect(result).toMatchObject({ status: "failed", http_status: 409 });
+    expect(guides).toHaveLength(0);
+    expect(pending(mock)).toHaveLength(1);
+  });
+
+  it("sends the minimum welcome when the full-member guide cannot complete", async () => {
+    const { mock, guides } = await startService({ failTemplate: "member" });
+    mock.service.upsertLabMember(
+      withCompleteProfile({
+        id: "full-joiner",
+        name: "Full Joiner",
+        email: "joiner@lab.test",
+        member_type: "full",
+      } as AdminBotLabMemberInput),
+    );
+    const deps = {
+      service: mock.service,
+      actor: "admin",
+      approver: { approver_id: "admin", approver_role: "admin" as const },
+    };
+    const result = await queueNewMemberGuide(deps, "full-joiner");
+    expect(result).toMatchObject({
+      status: "failed",
+      reason: expect.stringContaining("basic welcome sent"),
+    });
+    expect(guides.map((guide) => guide.template_id)).toEqual(["member", "welcome"]);
+    const again = await queueNewMemberGuide(deps, "full-joiner", { basicWelcome: true });
+    expect(again).toMatchObject({
+      status: "done",
+      detail: expect.stringContaining("already sent"),
+    });
+    expect(guides).toHaveLength(2);
+    const full = mock.store
+      .listProposalsByType("onboarding.send_guide")
+      .find(
+        (proposal) =>
+          (proposal.proposed_payload as Record<string, unknown>).template_id === "member",
+      );
+    expect(full?.status).toBe("approved");
+  });
+
   it("leaves an unattended full-member import pending without an approving admin", async () => {
     const { mock, guides } = await startService();
     mock.service.upsertLabMember(
@@ -425,8 +525,9 @@ describe("the guide action", () => {
     const guide = pending(mock).find((proposal) => proposal.type === "onboarding.send_guide");
     await approveAndRun(baseUrl, token, guide!);
 
-    expect(guides).toHaveLength(1);
-    expect(guides[0]).toMatchObject({
+    expect(guides).toHaveLength(2);
+    expect(guides[0]).toMatchObject({ template_id: "welcome" });
+    expect(guides[1]).toMatchObject({
       email: "cora@lab.test",
       slack_project_channels: ["proj-alg-circuit"],
     });

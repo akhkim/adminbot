@@ -40,7 +40,10 @@ import {
   dcsRosterUsernameCandidates,
   findDcsRosterRowForPerson,
 } from "../workflows/onboarding/dcs-roster-entry.js";
-import { templateForMemberType } from "../workflows/onboarding/member-type-template.js";
+import {
+  memberGuideProvidesSlackConnect,
+  templateForMemberType,
+} from "../workflows/onboarding/member-type-template.js";
 import {
   approveAndExecute,
   executeApproved,
@@ -225,7 +228,9 @@ export async function applyMemberTypeChange(
     ADMINBOT_FRIENDS_CHANNELS.includes(channel),
   );
   const connectAddress = calendarAddress(after);
-  if (!slackUserId && gainsFriendsChannel && !deps.guideSendsSlackConnect && !guideDue) {
+  const guideSendsSlackConnect =
+    deps.guideSendsSlackConnect || (guideDue && memberGuideProvidesSlackConnect(after.member_type));
+  if (!slackUserId && gainsFriendsChannel && !guideSendsSlackConnect) {
     steps.push(
       connectAddress
         ? await runAction(deps, "slack", "#friends-and-collaborators", {
@@ -375,7 +380,9 @@ export async function applyMemberTypeChange(
       // this step always sent -- go out on the saving admin's approval. Every other template
       // carries per-person copy an approver should read first, so it waits in Pending Actions.
       const approver =
-        templateId === "member" || templateId === "alumni" ? deps.approver : undefined;
+        templateId === "member" || templateId === "alumni" || templateId === "welcome"
+          ? deps.approver
+          : undefined;
       const guide = deps.service.getProposal(proposalId);
       const sent = !approver
         ? ({ ok: "queued" } as const)

@@ -31,10 +31,13 @@ access proposals.
 
 The one invite the service does send is the Slack Connect invite to
 #friends-and-collaborators. It goes out with the onboarding guide
-(`workflows/onboarding/guide-sender.ts`), or, for the subgroups the access
-design onboards without a mail, as its own approved `slack.connect_invite` when
+(`workflows/onboarding/guide-sender.ts`), or, for subgroups receiving the basic
+welcome, as its own approved `slack.connect_invite` when
 the member is added. Both are part of onboarding a new member, not something to
-propose by hand.
+propose by hand. Every collaboration role receives at least the basic welcome with a
+contact route. An admin's enrollment approval permits that standard email; unattended
+imports still require approval. A fuller guide may remain pending without blocking the
+basic welcome. Access grants continue to follow the subgroup matrix.
 
 ## External Collaborator Subgroups
 
@@ -79,9 +82,9 @@ guessing. Ordered least to most engaged:
 - `benefit_partner` — a partner organisation rather than a collaborator: follow
   and newsletter welcomes, Slack Connect, #discussion-xxx, and physical office
   access (Vector fob, ETH OAT building, MPI guest contract), which a person
-  arranges outside AdminBot. No onboarding email, no portal.
+  arranges outside AdminBot. Basic welcome email, no portal.
 - `benefit_direct_relative` — a member's direct relative: follow and newsletter
-  welcomes and Slack Connect. No onboarding email, no portal.
+  welcomes and Slack Connect. Basic welcome email, no portal.
 
 ## Vector Sponsor Roster
 
