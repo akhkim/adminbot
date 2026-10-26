@@ -57,9 +57,18 @@ export function validateMeeting(
   }
   // A record with neither link is not a recording anyone can open, and filing one would put a dead
   // row on the tab that nothing later can repair -- the ingest keys on the share URL.
+  //
+  // Zoom's usage report is the exception. It proves the meeting happened and who was in it whether
+  // or not anyone pressed record, and attendance is the whole point of filing it. Such a record is
+  // filed under `zoom-<meeting id>-<date>`, the id a notice carrying both would produce, so a
+  // recording that does turn up later merges onto it rather than landing beside it.
   const hasLink = (recording?: AdminBotMeetingRecordInput["recording"]) =>
     Boolean(recording?.share_url?.trim() || recording?.drive_url?.trim());
-  if (!hasLink(input.recording) && !hasLink(existing?.recording)) {
+  if (
+    input.source !== "participant_report" &&
+    !hasLink(input.recording) &&
+    !hasLink(existing?.recording)
+  ) {
     return "recording.share_url or recording.drive_url is required";
   }
   return undefined;
