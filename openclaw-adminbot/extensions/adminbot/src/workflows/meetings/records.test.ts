@@ -27,6 +27,14 @@ describe("validateMeeting", () => {
 
   it("refuses a record nobody could open", () => {
     expect(validateMeeting({ ...NOTICE, recording: {} })).toMatch(/share_url/u);
+    expect(validateMeeting({ ...NOTICE, recording: {}, source: "manual" })).toMatch(/share_url/u);
+  });
+
+  // Zoom's usage report proves an unrecorded meeting happened, and its roster is the point.
+  it("files a participant-report meeting that has no recording", () => {
+    expect(
+      validateMeeting({ ...NOTICE, recording: {}, source: "participant_report" }),
+    ).toBeUndefined();
   });
 
   // The artifact pass's transcript, participant and gallery updates all carry `recording: {}`.
