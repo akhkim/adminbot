@@ -6,6 +6,11 @@ import {
   type PaperFeedback,
   parsePaperFeedback,
 } from "../../../../../extensions/adminbot/src/contracts/paper-feedback.js";
+import {
+  parsePaperImpactStatement,
+  type PaperImpactStatement,
+  type PaperSafetyVerdict,
+} from "../../../../../extensions/adminbot/src/contracts/paper-impact.js";
 import { authedJson, type AuthResult, calendarFailure, mapErrorResponse } from "../auth/session.ts";
 
 /**
@@ -146,6 +151,15 @@ export async function mapImportColumns(
 /** One paper waiting on the head professor's yes to post. */
 export type PiReviewRow = {
   feedback?: PaperFeedback & { label: string; slot: string };
+  /** A safety-related impact statement waiting on the PI's read. */
+  impact?: {
+    statement: PaperImpactStatement | null;
+    verdict: PaperSafetyVerdict;
+    source: "classifier" | "override";
+    reasons: string[];
+  };
+  /** Rows the PI asked to see first. */
+  priority?: "high";
   paperId: string;
   title: string;
   authors: string[];
@@ -157,6 +171,30 @@ export type PiReviewRow = {
   /** Whether everything else the arXiv package needs is on file. */
   packageComplete: boolean;
 };
+
+/** The impact half of a queue row, re-read through the same parser the service stores with. */
+function readImpact(value: unknown): Pick<PiReviewRow, "impact"> {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+  const raw = value as Record<string, unknown>;
+  if (
+    (raw.verdict !== "related" && raw.verdict !== "uncertain" && raw.verdict !== "unrelated") ||
+    (raw.source !== "classifier" && raw.source !== "override")
+  ) {
+    return {};
+  }
+  return {
+    impact: {
+      statement: raw.statement ? parsePaperImpactStatement(JSON.stringify(raw.statement)) : null,
+      verdict: raw.verdict,
+      source: raw.source,
+      reasons: Array.isArray(raw.reasons)
+        ? raw.reasons.filter((reason): reason is string => typeof reason === "string")
+        : [],
+    },
+  };
+}
 
 /**
  * The papers at the PI gate (GET /papers/pi-review).
@@ -225,6 +263,8 @@ export async function fetchPiReviewQueue(
         typeof (row.feedback as Record<string, unknown>).slot === "string"
           ? { feedback: row.feedback as PiReviewRow["feedback"] }
           : {}),
+        ...readImpact(row.impact),
+        ...(row.priority === "high" ? { priority: "high" as const } : {}),
         packageComplete: row.package_complete === true,
       },
     ];
@@ -382,10 +422,12 @@ export async function fetchPaperNudgeBatches(
     return { ok: false, ...calendarFailure(result.response, result.body) };
   }
   const body = result.body as {
-    batches?: Array<Omit<PaperNudgeBatch, "paper_count"> & {
-      paper_count?: number;
-      paper_titles?: string[];
-    }>;
+    batches?: Array<
+      Omit<PaperNudgeBatch, "paper_count"> & {
+        paper_count?: number;
+        paper_titles?: string[];
+      }
+    >;
   } | null;
   return {
     ok: true,

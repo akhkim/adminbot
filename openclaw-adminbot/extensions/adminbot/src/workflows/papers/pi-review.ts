@@ -20,6 +20,12 @@ import {
   type PaperFeedback,
 } from "../../contracts/paper-feedback.js";
 import {
+  isPaperImpactSlot,
+  paperImpactStatus,
+  parsePaperImpactStatement,
+  type PaperImpactStatus,
+} from "../../contracts/paper-impact.js";
+import {
   isAdminBotPaperAtPiGate,
   isAdminBotPaperSlotSettled,
   type AdminBotPaperSlotRecord,
@@ -28,6 +34,10 @@ import {
 /** One paper waiting on the PI, with the evidence that says it is ready to be looked at. */
 export type PiReviewRow = {
   feedback?: PaperFeedback & { label: string; slot: string };
+  /** A safety-related impact statement waiting on the PI's read. */
+  impact?: Pick<PaperImpactStatus, "statement" | "verdict" | "source" | "reasons" | "override">;
+  /** Rows the PI asked to see first. Absent is ordinary priority. */
+  priority?: "high";
   paper_id: string;
   title: string;
   authors: string[];
@@ -155,5 +165,46 @@ export function paperFeedbackQueue(candidates: readonly PiReviewCandidate[]): Pi
       (a, b) =>
         (a.feedback?.hard_deadline ?? "9999").localeCompare(b.feedback?.hard_deadline ?? "9999") ||
         (a.waiting_since ?? "").localeCompare(b.waiting_since ?? ""),
+    );
+}
+
+/**
+ * Safety-related impact statements that are written and not yet reviewed, oldest first.
+ *
+ * Only `related` papers: an uncertain classification is a question for a person, not an entry in
+ * the PI's queue, and an optional statement on an unrelated paper is the author's own business.
+ * Reviewing one here does not approve publication or compute; those stay where they were.
+ */
+export function paperImpactQueue(candidates: readonly PiReviewCandidate[]): PiReviewRow[] {
+  return candidates
+    .flatMap(({ paper, slots }) => {
+      const row = slots.find((entry) => isPaperImpactSlot(entry.slot));
+      const status = paperImpactStatus(paper, parsePaperImpactStatement(row?.value_text));
+      if (status.state !== "awaiting_review") {
+        return [];
+      }
+      return [
+        {
+          paper_id: paper.id,
+          title: paper.title,
+          authors: paper.authors,
+          ...(paper.venue ? { venue: paper.venue } : {}),
+          ...(row?.provided_at ? { waiting_since: row.provided_at } : {}),
+          package_complete: true,
+          priority: "high" as const,
+          impact: {
+            statement: status.statement,
+            verdict: status.verdict,
+            source: status.source,
+            reasons: status.reasons,
+            ...(status.override ? { override: status.override } : {}),
+          },
+        },
+      ];
+    })
+    .toSorted(
+      (left, right) =>
+        (left.waiting_since ?? "9999").localeCompare(right.waiting_since ?? "9999") ||
+        left.paper_id.localeCompare(right.paper_id),
     );
 }

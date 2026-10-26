@@ -779,30 +779,43 @@ export function renderProfessorView(props: ProfessorViewProps) {
                         : props.onOpen("adminbotPapers"),
                     body: html`<strong>${row.title}</strong>
                       <span class="muted">${row.authors.join(", ")}</span>
-                      ${row.feedback
-                        ? html`<strong>${row.feedback.label}</strong
-                            ><span>${row.feedback.reason}</span>
-                            <span
-                              >Feedback by (soft):
-                              ${row.feedback.soft_deadline
-                                ? new Date(row.feedback.soft_deadline).toLocaleString(undefined, {
-                                    timeZoneName: "short",
-                                  })
-                                : "Not specified"}</span
+                      ${row.impact
+                        ? html`<strong
+                              ><span class="pill" data-testid="pi-review-high-priority"
+                                >High priority</span
+                              >
+                              Safety impact statement</strong
                             >
-                            <span
-                              >Submission cutoff (hard):
-                              ${row.feedback.hard_deadline
-                                ? new Date(row.feedback.hard_deadline).toLocaleString(undefined, {
-                                    timeZoneName: "short",
-                                  })
-                                : "Not specified"}</span
-                            >
-                            ${row.feedback.hard_deadline &&
-                            Date.parse(row.feedback.hard_deadline) < Date.now()
-                              ? html`<strong>Past submission cutoff — soft submission</strong>`
-                              : nothing} `
-                        : html`<span>Publication approval</span>`}
+                            <span>${row.impact.statement?.risk ?? ""}</span>
+                            <span class="muted"
+                              >${row.impact.source === "override"
+                                ? "Marked AI-safety related by hand"
+                                : `Looks AI-safety related: ${row.impact.reasons.join(", ")}`}</span
+                            >`
+                        : row.feedback
+                          ? html`<strong>${row.feedback.label}</strong
+                              ><span>${row.feedback.reason}</span>
+                              <span
+                                >Feedback by (soft):
+                                ${row.feedback.soft_deadline
+                                  ? new Date(row.feedback.soft_deadline).toLocaleString(undefined, {
+                                      timeZoneName: "short",
+                                    })
+                                  : "Not specified"}</span
+                              >
+                              <span
+                                >Submission cutoff (hard):
+                                ${row.feedback.hard_deadline
+                                  ? new Date(row.feedback.hard_deadline).toLocaleString(undefined, {
+                                      timeZoneName: "short",
+                                    })
+                                  : "Not specified"}</span
+                              >
+                              ${row.feedback.hard_deadline &&
+                              Date.parse(row.feedback.hard_deadline) < Date.now()
+                                ? html`<strong>Past submission cutoff — soft submission</strong>`
+                                : nothing} `
+                          : html`<span>Publication approval</span>`}
                       ${row.packageComplete
                         ? nothing
                         : html`<span class="muted">${t("professor.piReview.incomplete")}</span>`}

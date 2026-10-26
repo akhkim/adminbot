@@ -8226,6 +8226,7 @@ export interface components {
         | "feedback_arr"
         | "feedback_arxiv"
         | "feedback_camera_ready"
+        | "impact_statement"
         | "project_folder"
         | "overleaf_view"
         | "overleaf_share"
@@ -8600,6 +8601,19 @@ export interface components {
       } & {
         [key: string]: unknown;
       };
+      impact?: {
+        /** @enum {string} */
+        source: "override" | "classifier";
+        statement: null | components["schemas"]["PaperImpactStatement"];
+        /** @enum {string} */
+        verdict: "related" | "unrelated" | "uncertain";
+        reasons: string[];
+        override?: components["schemas"]["PaperImpactSafetyOverride"];
+      } & {
+        [key: string]: unknown;
+      };
+      /** @constant */
+      priority?: "high";
       paper_id: string;
       title: string;
       authors: string[];
@@ -8607,6 +8621,24 @@ export interface components {
       waiting_since?: string;
       drive_pdf_url?: string;
       package_complete: boolean;
+    } & {
+      [key: string]: unknown;
+    };
+    PaperImpactStatement: {
+      safety?: components["schemas"]["PaperImpactSafetyOverride"];
+      reviewed?: boolean;
+      review_note?: string;
+      reviewed_by?: string;
+      reviewed_at?: string;
+    } & {
+      [key: string]: unknown;
+    };
+    PaperImpactSafetyOverride: {
+      /** @enum {string} */
+      verdict: "related" | "unrelated";
+      by: string;
+      at: string;
+      reason?: string;
     } & {
       [key: string]: unknown;
     };
@@ -8623,6 +8655,7 @@ export interface components {
         | "feedback_arr"
         | "feedback_arxiv"
         | "feedback_camera_ready"
+        | "impact_statement"
         | "project_folder"
         | "overleaf_view"
         | "overleaf_share"
@@ -22296,6 +22329,7 @@ export interface operations {
                 | "feedback_arr"
                 | "feedback_arxiv"
                 | "feedback_camera_ready"
+                | "impact_statement"
                 | "project_folder"
                 | "overleaf_view"
                 | "overleaf_share"
@@ -22331,6 +22365,7 @@ export interface operations {
                 | "feedback_arr"
                 | "feedback_arxiv"
                 | "feedback_camera_ready"
+                | "impact_statement"
                 | "project_folder"
                 | "overleaf_view"
                 | "overleaf_share"
@@ -22366,6 +22401,7 @@ export interface operations {
                 | "feedback_arr"
                 | "feedback_arxiv"
                 | "feedback_camera_ready"
+                | "impact_statement"
                 | "project_folder"
                 | "overleaf_view"
                 | "overleaf_share"
@@ -22402,6 +22438,7 @@ export interface operations {
                 | "feedback_arr"
                 | "feedback_arxiv"
                 | "feedback_camera_ready"
+                | "impact_statement"
                 | "project_folder"
                 | "overleaf_view"
                 | "overleaf_share"

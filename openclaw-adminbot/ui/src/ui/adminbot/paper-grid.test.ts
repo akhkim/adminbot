@@ -4,6 +4,7 @@ import {
   isPaperFeedbackSlot,
   paperFeedbackSlots,
 } from "../../../../extensions/adminbot/src/contracts/paper-feedback.js";
+import { isPaperImpactSlot } from "../../../../extensions/adminbot/src/contracts/paper-impact.js";
 import { adminBotPaperSlots } from "../../../../extensions/adminbot/src/contracts/paper-slots.js";
 import type { AdminBotPaperRecord } from "./controllers/admin.ts";
 import {
@@ -685,7 +686,11 @@ describe("evidence columns", () => {
   it("gives every evidence slot in the registry a column, once", () => {
     const slotted = gridColumns().flatMap((column) => (column.slot ? [column.slot] : []));
     expect(new Set(slotted).size, "no slot may appear twice").toBe(slotted.length);
-    for (const slot of adminBotPaperSlots.filter((entry) => !isPaperFeedbackSlot(entry))) {
+    // The impact statement is a structured answer with its own form, so a cell would only mangle it.
+    const evidence = adminBotPaperSlots.filter(
+      (entry) => !isPaperFeedbackSlot(entry) && !isPaperImpactSlot(entry),
+    );
+    for (const slot of evidence) {
       expect(slotted, `${slot} should be reachable from the sheet`).toContain(slot);
     }
   });

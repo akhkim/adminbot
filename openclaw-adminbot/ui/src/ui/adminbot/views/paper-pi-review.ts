@@ -5,6 +5,7 @@ import {
 } from "../../../../../extensions/adminbot/src/contracts/paper-feedback.js";
 import type { AdminBotPaperRecord } from "../controllers/admin.ts";
 import type { PaperWorkspaceProps } from "../projects/workspace.ts";
+import { readPaperImpact, renderPaperImpactReview } from "./paper-impact.ts";
 
 function manuscriptLink(url: string | undefined, label: string) {
   if (!url) {
@@ -36,7 +37,10 @@ function formatDeadline(value: string) {
 
 /** A PI decision, not the author's entire publication checklist. */
 export function renderPaperPiReview(
-  paper: Pick<AdminBotPaperRecord, "id" | "title" | "authors" | "artifacts">,
+  paper: Pick<
+    AdminBotPaperRecord,
+    "id" | "title" | "authors" | "artifacts" | "alias" | "venue" | "notes" | "author_roles"
+  >,
   props: PaperWorkspaceProps,
 ) {
   const cycle = props.slots[paper.id];
@@ -62,6 +66,12 @@ export function renderPaperPiReview(
       )}
       ${manuscriptLink(url("drive_pdf_arxiv") || paper.artifacts?.google_drive_pdf_url, "Read PDF")}
     </p>
+    ${renderPaperImpactReview({
+      status: readPaperImpact(paper, cycle.slots),
+      busy,
+      onSave: (valueText) =>
+        props.onSaveSlot(paper.id, "impact_statement", { value_text: valueText }),
+    })}
     ${Object.entries(paperFeedbackSlots).map(([slot, label]) => {
       const row = cycle.slots.find((entry) => entry.slot === slot);
       const request = row?.status === "provided" ? parsePaperFeedback(row.value_text ?? "") : null;

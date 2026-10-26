@@ -23,6 +23,10 @@
 import { html, nothing, type TemplateResult } from "lit";
 import { adminBotOpenReviewForumId } from "../../../../../extensions/adminbot/src/contracts/paper-artifact-links.js";
 import {
+  isPaperImpactSlot,
+  type PaperSafetyInput,
+} from "../../../../../extensions/adminbot/src/contracts/paper-impact.js";
+import {
   adminBotPaperFlowBranchNumber,
   adminBotPaperSlotChartOrder,
   adminBotPaperSlotRegistry,
@@ -40,6 +44,7 @@ import type { MemberOption } from "./member-select.ts";
 import { renderPaperCoauthors, type PaperAuthorLink } from "./paper-coauthors.ts";
 import "./paper-slot-deck.ts";
 import { renderPaperFeedback } from "./paper-feedback.ts";
+import { renderPaperImpact } from "./paper-impact.ts";
 
 export type PaperDetailsProps = {
   authors: string[];
@@ -71,6 +76,11 @@ export type PaperDetailsProps = {
 export type PaperSlotsProps = {
   paperId: string;
   paperTitle?: string;
+  /**
+   * The record the safety check reads. Absent falls back to the title alone, which can only
+   * under-call a paper -- the service's own check, on the full record, is the one that blocks.
+   */
+  paper?: PaperSafetyInput;
   slots: PaperSlotRow[];
   /** The venue ladder. Empty for a card whose paper has not been fetched with stages. */
   stages?: PaperflowStageRow[];
@@ -889,7 +899,9 @@ export function visibleSlots(
   limit = VISIBLE_SLOT_LIMIT,
 ): AdminBotPaperSlot[] {
   const open = adminBotPaperSlots.filter(
-    (slot) => !isAdminBotPaperSlotSettled(rowFor(slots, slot)?.status ?? "missing"),
+    (slot) =>
+      !isPaperImpactSlot(slot) &&
+      !isAdminBotPaperSlotSettled(rowFor(slots, slot)?.status ?? "missing"),
   );
   const rank = (slot: AdminBotPaperSlot): number => {
     if ((rowFor(slots, slot)?.status ?? "missing") === "invalid") {
@@ -1036,9 +1048,17 @@ export function renderPaperSlots(props: PaperSlotsProps) {
       props.slots.some((row) => row.slot.startsWith("feedback_"))
         ? renderPaperFeedback(props)
         : nothing}
+      ${(!props.branch || props.branch === "core") &&
+      props.slots.some((row) => isPaperImpactSlot(row.slot))
+        ? renderPaperImpact({ ...props, paper: props.paper ?? { title: props.paperTitle ?? "" } })
+        : nothing}
       <div class="paper-slots__filter">
         <span class="paper-slots__filter-text">
-          All ${adminBotPaperSlots.length - 3} fields are available at any project stage.
+          All
+          ${adminBotPaperSlots.filter(
+            (slot) => !slot.startsWith("feedback_") && !isPaperImpactSlot(slot),
+          ).length}
+          fields are available at any project stage.
         </span>
       </div>
       ${adminBotPaperSlotChartOrder.map((branch) => {
@@ -1047,7 +1067,10 @@ export function renderPaperSlots(props: PaperSlotsProps) {
         }
         // Every field stays in the deck once shown -- settled ones keep rendering with their
         // done pill rather than vanishing, so flipping through reviews history too.
-        const slots = topLevelSlots(branch).filter((slot) => !slot.startsWith("feedback_"));
+        // The feedback requests and the impact statement have their own forms above.
+        const slots = topLevelSlots(branch).filter(
+          (slot) => !slot.startsWith("feedback_") && !isPaperImpactSlot(slot),
+        );
         const branchNumber = adminBotPaperFlowBranchNumber[branch];
         // The venue section still draws when it has no open field left: the ladder below it is
         // the half of that branch nobody fills in, and hiding it would hide the paper's position

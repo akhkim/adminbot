@@ -291,7 +291,9 @@ export async function saveAdminBotPaperSlot(
     host.adminBotPaperSlotsError = t("paperSlots.error.signIn");
     return;
   }
-  const feedbackRequest = slot.startsWith("feedback_") || slot === "pi_approval";
+  // The impact statement joins them: a PI review of it changes the queue the same way.
+  const feedbackRequest =
+    slot.startsWith("feedback_") || slot === "pi_approval" || slot === "impact_statement";
   if (feedbackRequest && host.adminBotPaperSlotsBusyId) {
     return;
   }

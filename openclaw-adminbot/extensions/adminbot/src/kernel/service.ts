@@ -236,6 +236,7 @@ import {
   type AdminBotSocialDraftRecord,
   type AdminBotWorkshopMatchRun,
 } from "../contracts/paper-cycle.js";
+import { isPaperImpactSlot } from "../contracts/paper-impact.js";
 import type { PaperAiTextCheckStore } from "../contracts/paper-integrity-checks.js";
 import {
   adminBotPaperAcceptanceNeedsOverleafReason,
@@ -280,6 +281,7 @@ import type { ReferenceScanStore } from "../contracts/reference-scans.js";
 import type { AdminBotReimbursementFunder } from "../contracts/reimbursement-rules.js";
 import { paperTargetsVenue } from "../contracts/venue-targets.js";
 import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
+import type { CalendarEventsReader } from "../workflows/calendar/events.js";
 import { resolveLabCalendar } from "../workflows/calendar/lab-calendar.js";
 import { memberAddresses } from "../workflows/calendar/standing-meetings.js";
 import {
@@ -342,7 +344,6 @@ import {
   type AdminBotWriteOrigin,
 } from "../workflows/members/adoption.js";
 import { validateBirthday } from "../workflows/members/birthday.js";
-import { slackStopReply, type SlackStopCommand } from "../workflows/members/slack-stop.js";
 import { collaboratorSubgroupAccess } from "../workflows/members/collaborator-subgroups.js";
 import {
   localEventAudience,
@@ -385,6 +386,7 @@ import {
   type ThemeMatch,
 } from "../workflows/members/research-themes.js";
 import type { SlackDirectoryReader } from "../workflows/members/slack-roster-sync.js";
+import { slackStopReply, type SlackStopCommand } from "../workflows/members/slack-stop.js";
 import {
   type AdminBotThemedMeeting,
   matchMeetingsForChannel,
@@ -447,6 +449,14 @@ import {
   textMatchesNeedles,
 } from "../workflows/papers/openreview-matching.js";
 import {
+  evidenceFromCitationChecks,
+  matchPaperEvidence,
+  normalizedTitle,
+  planOpenReviewSync,
+  type OpenReviewEvidence,
+  type OpenReviewFieldChange,
+} from "../workflows/papers/openreview-paper-sync.js";
+import {
   memberOwnsPaper,
   paperIdsByOwner,
   rosterNameCounts,
@@ -490,15 +500,7 @@ import {
   reviewProvesFixesMerged,
   type PaperMentorContext,
 } from "../workflows/papers/papermentor-nudges.js";
-import { paperFeedbackQueue } from "../workflows/papers/pi-review.js";
-import {
-  evidenceFromCitationChecks,
-  matchPaperEvidence,
-  normalizedTitle,
-  planOpenReviewSync,
-  type OpenReviewEvidence,
-  type OpenReviewFieldChange,
-} from "../workflows/papers/openreview-paper-sync.js";
+import { paperFeedbackQueue, paperImpactQueue } from "../workflows/papers/pi-review.js";
 import {
   buildPiReviewNotice,
   isAwaitingPiReview,
@@ -521,8 +523,6 @@ import {
   isActiveChannelEligible,
   type ActiveChannelReader,
 } from "./service.active-channels.js";
-import { inviteLocalLunches } from "./service.local-lunches.js";
-import type { CalendarEventsReader } from "../workflows/calendar/events.js";
 import {
   automationHealthIssues,
   slackInviteBlockFor,
@@ -549,8 +549,13 @@ import {
 import { LabSharingInvites } from "./service.lab-sharing-invites.js";
 import { LabSharingService } from "./service.lab-sharing.js";
 import { LabTravelService } from "./service.lab-travel.js";
+import { inviteLocalLunches } from "./service.local-lunches.js";
 import { type IntroRunResult, MeetupService } from "./service.meetups.js";
-import { piReviewSlotDenial } from "./service.pi-review.js";
+import {
+  paperImpactSlotWrite,
+  piApprovalImpactDenial,
+  piReviewSlotDenial,
+} from "./service.pi-review.js";
 import { RecLetterEligibilityService } from "./service.rec-letter-eligibility.js";
 import { runSlackRosterSync, type SlackRosterSyncOptions } from "./service.slack-roster-sync.js";
 import {
@@ -3779,9 +3784,11 @@ export class AdminBotService {
 
   syncLocalLunchInvites(calendarId: string, read: CalendarEventsReader) {
     if (!this.localLunchInvites) {
-      this.localLunchInvites = inviteLocalLunches(this, this.store, calendarId, read).finally(() => {
-        this.localLunchInvites = undefined;
-      });
+      this.localLunchInvites = inviteLocalLunches(this, this.store, calendarId, read).finally(
+        () => {
+          this.localLunchInvites = undefined;
+        },
+      );
     }
     return this.localLunchInvites;
   }
@@ -6977,9 +6984,35 @@ export class AdminBotService {
     if (piDenial) {
       return serviceError(403, piDenial);
     }
+    const impactDenial = piApprovalImpactDenial({
+      slot: params.slot,
+      done: params.input.done,
+      paper: context.paper,
+      impactValueText: this.paperRows()
+        .listPaperSlots(params.paperId)
+        .find((row) => isPaperImpactSlot(row.slot))?.value_text,
+    });
+    if (impactDenial) {
+      return serviceError(409, impactDenial);
+    }
+    let input = params.input;
+    if (isPaperImpactSlot(params.slot)) {
+      const impact = paperImpactSlotWrite({
+        existingValueText: context.existing.value_text,
+        valueText: params.input.value_text,
+        memberId: params.memberId,
+        headProfessorMemberId: this.resolveSettings().head_professor_member_id,
+        privileged: params.privileged,
+        now: new Date().toISOString(),
+      });
+      if (!impact.ok) {
+        return serviceError(impact.status, impact.error);
+      }
+      input = { value_text: impact.valueText };
+    }
     const result = applyPaperSlotWrite({
       existing: context.existing,
-      input: params.input,
+      input,
       memberId: params.memberId,
       now: new Date(),
     });
@@ -7323,12 +7356,17 @@ export class AdminBotService {
           artifacts: { ...plan.patch.artifacts },
         });
         if (!written.ok) {
-          report.kept.push({ paper_id: paper.id, reason: `write refused: ${written.error.message}` });
+          report.kept.push({
+            paper_id: paper.id,
+            reason: `write refused: ${written.error.message}`,
+          });
           continue;
         }
       }
       for (const write of plan.slotWrites) {
-        const check = write.url ? validateAdminBotPaperSlotUrl(write.slot, write.url) : { ok: true as const };
+        const check = write.url
+          ? validateAdminBotPaperSlotUrl(write.slot, write.url)
+          : { ok: true as const };
         this.store.savePaperSlot({
           paper_id: paper.id,
           slot: write.slot,
@@ -7862,6 +7900,8 @@ export class AdminBotService {
       status: 200,
       payload: {
         papers: [
+          // Safety-related impact statements come first: the head professor asked for them at high priority.
+          ...paperImpactQueue(candidates.filter(({ paper }) => !isPaperClosed(paper))),
           // A previous venue rejection does not cancel an explicit request to review a revision.
           ...paperFeedbackQueue(candidates),
           ...piReviewQueue(candidates.filter(({ paper }) => !isPaperClosed(paper))),

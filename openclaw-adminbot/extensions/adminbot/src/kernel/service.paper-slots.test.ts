@@ -72,11 +72,11 @@ function giveOverleaf(service: AdminBotService, slot: string, url: string): void
 }
 
 describe("listPaperSlots", () => {
-  it("answers with all 27 rows, so the card renders a checklist rather than a list of answers", () => {
+  it("answers with all 28 rows, so the card renders a checklist rather than a list of answers", () => {
     const service = new AdminBotService();
     seed(service);
     const { slots } = unwrap(service.listPaperSlots("p1"));
-    expect(slots).toHaveLength(27);
+    expect(slots).toHaveLength(28);
     expect(slots.every((slot) => slot.status === "missing")).toBe(true);
   });
 
@@ -1071,4 +1071,134 @@ it("keeps resubmission feedback visible after rejection without reopening public
     }),
   );
   expect(unwrap(service.listPiReviewQueue()).papers).toEqual([]);
+});
+
+describe("impact statements", () => {
+  const statement = {
+    risk: "Disguised harmful requests get answered.",
+    intervention: "A refusal probe flags the disguise.",
+    users: "Release reviewers would gate on it.",
+  };
+
+  /** A synthetic safety-looking paper, a PI named in settings, and Ada as first author. */
+  function safetyService(): AdminBotService {
+    const service = new AdminBotService();
+    seed(service);
+    unwrap(
+      service.upsertLabMember({
+        id: "pi",
+        name: "Head Professor",
+        privilege_level: "admin",
+      } as never),
+    );
+    unwrap(service.updateSettings({ head_professor_member_id: "pi" }));
+    unwrap(
+      service.upsertPaper({
+        id: "p1",
+        title: "Jailbreak probes for chat models",
+        authors: ["Ada Lovelace", "Bob Coauthor"],
+        current_step: "overleaf_writing",
+        first_author_member_id: "ada",
+      }),
+    );
+    return service;
+  }
+
+  function write(
+    service: AdminBotService,
+    memberId: string,
+    value: Record<string, unknown>,
+    privileged = memberId === "pi",
+  ) {
+    return service.setPaperSlot({
+      paperId: "p1",
+      slot: "impact_statement",
+      input: { value_text: JSON.stringify(value) },
+      memberId,
+      privileged,
+    });
+  }
+
+  function approve(service: AdminBotService) {
+    return service.setPaperSlot({
+      paperId: "p1",
+      slot: "pi_approval",
+      input: { done: true },
+      memberId: "pi",
+      privileged: true,
+    });
+  }
+
+  it("holds publication approval with a 409 until a required statement is written", () => {
+    const service = safetyService();
+    expect(approve(service)).toMatchObject({ ok: false, status: 409 });
+    unwrap(write(service, "ada", { risk: statement.risk }));
+    expect(approve(service)).toMatchObject({ ok: false, status: 409 });
+    unwrap(write(service, "ada", statement));
+    expect(approve(service).ok).toBe(true);
+  });
+
+  it("never holds approval on a paper the check calls unrelated", () => {
+    const service = new AdminBotService();
+    seed(service);
+    unwrap(service.updateSettings({ head_professor_member_id: "ada" }));
+    expect(
+      service.setPaperSlot({
+        paperId: "p1",
+        slot: "pi_approval",
+        input: { done: true },
+        memberId: "ada",
+        privileged: true,
+      }).ok,
+    ).toBe(true);
+  });
+
+  it("stores a draft as invalid with what is still needed, and a full one as provided", () => {
+    const service = safetyService();
+    const draft = unwrap(write(service, "ada", { risk: statement.risk })).slot;
+    expect(draft.status).toBe("invalid");
+    expect(draft.invalid_reason).toMatch(/Still needed/);
+    expect(unwrap(write(service, "ada", statement)).slot.status).toBe("provided");
+  });
+
+  it("puts a written, unreviewed statement first in the PI queue at high priority", () => {
+    const service = safetyService();
+    unwrap(write(service, "ada", statement));
+    const [first] = unwrap(service.listPiReviewQueue()).papers;
+    expect(first).toMatchObject({
+      paper_id: "p1",
+      priority: "high",
+      impact: { verdict: "related", source: "classifier", reasons: ["jailbreak"] },
+    });
+  });
+
+  it("lets only the head professor review it, and drops it from the queue once reviewed", () => {
+    const service = safetyService();
+    unwrap(write(service, "ada", statement));
+    expect(write(service, "ada", { ...statement, reviewed: true }).status).toBe(403);
+    expect(write(service, "bob", { ...statement, reviewed: true }, true).status).toBe(403);
+    unwrap(write(service, "pi", { ...statement, reviewed: true, review_note: "Clear." }));
+    expect(unwrap(service.listPiReviewQueue()).papers.some((row) => row.priority)).toBe(false);
+    // An author editing the argument sends it back for another read.
+    unwrap(write(service, "ada", { ...statement, users: "Auditors." }));
+    expect(unwrap(service.listPiReviewQueue()).papers[0]?.priority).toBe("high");
+  });
+
+  it("lets an admin correct the classification, which lifts the requirement", () => {
+    const service = safetyService();
+    expect(write(service, "ada", { safety: { verdict: "unrelated" } }).status).toBe(403);
+    unwrap(write(service, "pi", { safety: { verdict: "unrelated", reason: "Not about models" } }));
+    expect(approve(service).ok).toBe(true);
+  });
+
+  it("hides the statement text from readers who do not own the paper", () => {
+    const service = safetyService();
+    unwrap(write(service, "ada", statement));
+    const row = (viewer?: { memberId: string; isAdmin: boolean }) =>
+      unwrap(service.listPaperSlots("p1", viewer)).slots.find(
+        (slot) => slot.slot === "impact_statement",
+      );
+    expect(row({ memberId: "ada", isAdmin: false })?.value_text).toContain("refusal probe");
+    expect(row({ memberId: "stranger", isAdmin: false })?.value_text).toBeUndefined();
+  });
 });

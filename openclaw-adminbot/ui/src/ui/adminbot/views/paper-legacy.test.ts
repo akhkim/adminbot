@@ -7,6 +7,7 @@ import {
   isPaperFeedbackSlot,
   paperFeedbackSlots,
 } from "../../../../../extensions/adminbot/src/contracts/paper-feedback.js";
+import { isPaperImpactSlot } from "../../../../../extensions/adminbot/src/contracts/paper-impact.js";
 import { adminBotPaperSlots } from "../../../../../extensions/adminbot/src/contracts/paper-slots.js";
 import type { PaperCycle } from "../api/papers.ts";
 import type { AdminBotPaperRecord, AdminBotPaperSaveInput } from "../controllers/admin.ts";
@@ -116,9 +117,11 @@ describe("legacyGroups", () => {
         .filter((field) => field.kind === "slot")
         .map((field) => field.key),
     );
-    // Feedback requests are the exception: their value is a request only the feedback form can
-    // build, and My Projects draws that form beside this list instead.
-    const evidence = adminBotPaperSlots.filter((slot) => !isPaperFeedbackSlot(slot));
+    // Feedback requests and the impact statement are the exceptions: each value is something only
+    // its own form can build, and My Projects draws those forms beside this list instead.
+    const evidence = adminBotPaperSlots.filter(
+      (slot) => !isPaperFeedbackSlot(slot) && !isPaperImpactSlot(slot),
+    );
     expect(keys.size).toBe(evidence.length);
     for (const slot of evidence) {
       expect(keys.has(slot)).toBe(true);
