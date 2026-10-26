@@ -88,6 +88,9 @@ for entry in applied:
     print(f"  {entry.get('paper_id')}: {entry.get('status')} at {entry.get('venue')} ({detail})")
 for entry in result.get("kept", []):
     print(f"  kept {entry.get('paper_id')}: {entry.get('reason')}")
+stage_mode = "would close" if result.get("dry_run") else "closed"
+for entry in result.get("stages_closed", []):
+    print(f"  {entry.get('paper_id')}: {stage_mode} PaperFlow stage {entry.get('stage')} (seen on OpenReview)")
 for warning in result.get("warnings", []):
     print(f"  warning: {warning}", file=sys.stderr)
 

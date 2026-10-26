@@ -110,7 +110,8 @@ export const adminBotPaperflowStageRegistry: Record<
  * Keyed by (paper, stage) rather than by message: a stage closes once, and a second bcc on the
  * same stage is a duplicate rather than a second fact. `message_id` is kept so the row can be
  * traced back to the mail a human can still read, and `recorded_by` distinguishes the classifier
- * from an admin who closed it by hand.
+ * from an admin who closed it by hand and from the OpenReview sync, which closes a stage only on a
+ * reply the author's account can see (a released review, an author response, a decision).
  */
 export type AdminBotPaperflowEvidenceRecord = {
   paper_id: string;
@@ -122,7 +123,7 @@ export type AdminBotPaperflowEvidenceRecord = {
   /** Who the bcc came from, normalized. */
   sender?: string;
   recorded_at: string;
-  recorded_by: "email_bcc" | "admin";
+  recorded_by: "email_bcc" | "admin" | "openreview";
   /** The classifier's confidence, for the admin reviewing a stage that closed itself. */
   confidence?: number;
 };

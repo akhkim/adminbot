@@ -19,10 +19,18 @@ const NOW = "2026-10-24T08:55:00.000Z";
 function lab() {
   const service = new AdminBotService();
   unwrap(
-    service.upsertLabMember({ id: "ada", name: "Ada Lovelace", privilege_level: "member" } as never),
+    service.upsertLabMember({
+      id: "ada",
+      name: "Ada Lovelace",
+      privilege_level: "member",
+    } as never),
   );
   unwrap(
-    service.upsertLabMember({ id: "zhijing", name: "Zhijing Jin", privilege_level: "admin" } as never),
+    service.upsertLabMember({
+      id: "zhijing",
+      name: "Zhijing Jin",
+      privilege_level: "admin",
+    } as never),
   );
   unwrap(service.updateSettings({ head_professor_member_id: "zhijing" } as never));
   unwrap(
@@ -187,9 +195,51 @@ describe("syncing papers from OpenReview", () => {
     expect(paperOf(service)?.presentation_type).toBe("spotlight");
   });
 
+  it("closes only the stages a visible reply proves, so the reminder moves on", () => {
+    const service = lab();
+    writeUp(service);
+    const reviewed: OpenReviewEvidence = {
+      ...submitted,
+      stages: { reviews_out: "2026-10-20T09:00:00+00:00" },
+    };
+    const evidenced = () =>
+      service.listAuditEvents().filter((event) => event.type === "paperflow_stage.evidenced");
+    const openStage = () =>
+      unwrap(service.collectPaperflowStageNudges(NOW)).items.find((item) => item.paper_id === "p1")
+        ?.stage;
+
+    const preview = unwrap(
+      service.syncPapersFromOpenReview({ evidence: [reviewed], dryRun: true, nowIso: NOW }),
+    );
+    expect(preview.stages_closed).toEqual([{ paper_id: "p1", stage: "reviews_out" }]);
+    expect(evidenced()).toEqual([]);
+
+    // Reviews alone say nothing about the rebuttal: that rung stays open until a reply proves it.
+    unwrap(service.syncPapersFromOpenReview({ evidence: [reviewed], dryRun: false, nowIso: NOW }));
+    expect(openStage()).toBe("rebuttal");
+    expect(evidenced().map((event) => event.details)).toEqual([
+      { paper_id: "p1", stage: "reviews_out", recorded_by: "openreview" },
+    ]);
+
+    const responded: OpenReviewEvidence = {
+      ...reviewed,
+      stages: { ...reviewed.stages, rebuttal: "2026-10-22T09:00:00+00:00" },
+    };
+    const next = unwrap(
+      service.syncPapersFromOpenReview({ evidence: [responded], dryRun: false, nowIso: NOW }),
+    );
+    expect(next.stages_closed).toEqual([{ paper_id: "p1", stage: "rebuttal" }]);
+    expect(openStage()).toBe("decision");
+  });
+
   it("counts reports that match no paper on file once per submission", () => {
     const service = lab();
-    const stranger = { ...submitted, title: "Not Ours", submission_id: "Zzz999", forums: ["Zzz999"] };
+    const stranger = {
+      ...submitted,
+      title: "Not Ours",
+      submission_id: "Zzz999",
+      forums: ["Zzz999"],
+    };
     const report = unwrap(
       service.syncPapersFromOpenReview({
         evidence: [stranger, { ...stranger, status: "rejected" }],

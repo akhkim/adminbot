@@ -282,7 +282,7 @@ export type PaperflowStageRow = {
   state: "closed" | "waiting" | "upcoming";
   closed_at?: string;
   closed_by_subject?: string;
-  closed_by?: "email_bcc" | "admin";
+  closed_by?: "email_bcc" | "admin" | "openreview";
 };
 
 export type PaperSocialDraft = {

@@ -764,7 +764,31 @@ def reply_kind(invitations):
             return "meta_review"
         if tail in ("official_review", "review"):
             return "review"
+        if tail in REBUTTAL_TAILS:
+            return "rebuttal"
     return None
+
+
+# Invitations that exist only for the authors' response to their reviews. Most venues take that
+# response as an Official_Comment instead, which is_author_response() recognizes by its signature.
+REBUTTAL_TAILS = ("rebuttal", "author_rebuttal", "author_response", "rebuttal_comment")
+COMMENT_TAILS = ("official_comment", "comment", "public_comment")
+
+
+def is_author_response(reply, forum_ids):
+    """Whether a reply is the authors answering their reviews.
+
+    The submission note itself is signed by the Authors group too, and so are its revisions, so a
+    signature alone is not enough: the reply has to be a comment, posted under the submission.
+    """
+    invitations = getattr(reply, "invitations", None) or []
+    if reply_kind(invitations) == "rebuttal":
+        return True
+    if getattr(reply, "id", None) in forum_ids:
+        return False
+    tails = {invitation.rsplit("/-/", 1)[-1].lower().replace("-", "_") for invitation in invitations}
+    signed = any(str(signature).endswith("/Authors") for signature in getattr(reply, "signatures", None) or [])
+    return signed and bool(tails & set(COMMENT_TAILS))
 
 
 def score_of(value):
@@ -817,12 +841,32 @@ def outcome_of(venue_label, venue_id, decision):
 PRESENTATION_FIELD_RE = re.compile(r"presentation|format|mode", re.I)
 
 
-def summarize_forum(replies):
-    """Reviews, meta-review, decision and presentation among one forum's visible replies."""
+def earliest(current, reply):
+    stamp = iso_time(getattr(reply, "cdate", None)) or ""
+    return stamp if current is None or (stamp and (not current or stamp < current)) else current
+
+
+def summarize_forum(replies, forum_ids=()):
+    """Reviews, meta-review, decision, presentation and stage proofs among a forum's visible replies.
+
+    The stage proofs are what the author's own account can see, which is the point: a review an
+    author can read has been released, so "reviews are out" is a fact and not a guess from the
+    venue's calendar. Each maps a PaperFlow stage to when its earliest proof was posted ("" when
+    the reply carries no date). Nothing here infers a stage from a deadline or a missing reply.
+    """
     reviews, meta_review, decision, presentation = [], None, None, None
+    stages = {}
     for reply in replies:
         kind = reply_kind(getattr(reply, "invitations", None))
         content = getattr(reply, "content", None) or {}
+        if kind == "review":
+            stages["reviews_out"] = earliest(stages.get("reviews_out"), reply)
+        elif kind == "decision":
+            stages["decision"] = earliest(stages.get("decision"), reply)
+        # A meta-review is written after the author-response period closes, so it accounts for
+        # the rebuttal window as surely as a response does.
+        if kind == "meta_review" or is_author_response(reply, forum_ids):
+            stages["rebuttal"] = earliest(stages.get("rebuttal"), reply)
         if kind == "review":
             scores = scores_of(content)
             if scores:
@@ -834,7 +878,7 @@ def summarize_forum(replies):
             presentation = " ".join(str(value_of(content, key)) for key in content
                                     if PRESENTATION_FIELD_RE.search(key)
                                     and isinstance(value_of(content, key), str)) or None
-    return reviews, meta_review, decision, presentation
+    return reviews, meta_review, decision, presentation, stages
 
 
 def titles_of(client, note):
@@ -909,7 +953,8 @@ def cmd_author_results(args):
             error = None
         except Exception as exc:
             replies, error = [], str(exc)[:200]
-        reviews, meta_review, decision, presentation = summarize_forum(replies)
+        reviews, meta_review, decision, presentation, stages = summarize_forum(
+            replies, {note.id, note.forum or note.id, review_forum})
         entry = {
             "id": note.id,
             "forum": note.forum or note.id,
@@ -924,6 +969,7 @@ def cmd_author_results(args):
             **outcome_of(venue_label, venue_id, " ".join(filter(None, (decision, presentation)))),
             "reviews": reviews,
             "meta_review": meta_review,
+            "stages": stages,
         }
         if error:
             entry["error"] = error

@@ -799,7 +799,9 @@ function renderStages(props: PaperSlotsProps) {
                 ? html`<span class="paper-stage__detail"
                     >${stage.closed_by === "admin"
                       ? "Recorded by an admin"
-                      : "Received"}${stage.closed_at
+                      : stage.closed_by === "openreview"
+                        ? "Seen on OpenReview"
+                        : "Received"}${stage.closed_at
                       ? ` · ${new Date(stage.closed_at).toLocaleDateString()}`
                       : ""}${stage.closed_by_subject ? ` · "${stage.closed_by_subject}"` : ""}</span
                   >`

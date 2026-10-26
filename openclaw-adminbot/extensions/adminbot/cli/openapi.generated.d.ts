@@ -8387,7 +8387,7 @@ export interface components {
       closed_at?: string;
       closed_by_subject?: string;
       /** @enum {string} */
-      closed_by?: "admin" | "email_bcc";
+      closed_by?: "admin" | "openreview" | "email_bcc";
     } & {
       [key: string]: unknown;
     };
@@ -8575,7 +8575,7 @@ export interface components {
       sender?: string;
       recorded_at: string;
       /** @enum {string} */
-      recorded_by: "admin" | "email_bcc";
+      recorded_by: "admin" | "openreview" | "email_bcc";
       confidence?: number;
     } & {
       [key: string]: unknown;
@@ -23075,6 +23075,12 @@ export interface operations {
               [key: string]: unknown;
             })[];
             unmatched_submissions: number;
+            stages_closed: ({
+              paper_id: string;
+              stage: string;
+            } & {
+              [key: string]: unknown;
+            })[];
           } & {
             [key: string]: unknown;
           };

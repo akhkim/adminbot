@@ -22405,6 +22405,25 @@
                     },
                     "unmatched_submissions": {
                       "type": "number"
+                    },
+                    "stages_closed": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "paper_id": {
+                            "type": "string"
+                          },
+                          "stage": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "paper_id",
+                          "stage"
+                        ],
+                        "additionalProperties": true
+                      }
                     }
                   },
                   "required": [
@@ -22416,7 +22435,8 @@
                     "applied",
                     "unchanged",
                     "kept",
-                    "unmatched_submissions"
+                    "unmatched_submissions",
+                    "stages_closed"
                   ],
                   "additionalProperties": true
                 }
@@ -39092,6 +39112,7 @@
             "type": "string",
             "enum": [
               "admin",
+              "openreview",
               "email_bcc"
             ]
           }
@@ -39681,6 +39702,7 @@
             "type": "string",
             "enum": [
               "admin",
+              "openreview",
               "email_bcc"
             ]
           },
