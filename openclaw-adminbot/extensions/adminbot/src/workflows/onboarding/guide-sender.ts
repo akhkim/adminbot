@@ -17,7 +17,6 @@ import {
   adminBotExternalCollaboratorSubgroups,
   type AdminBotExternalCollaboratorSubgroup,
 } from "../../contracts/actions.js";
-import { adminBotOutreachEmail } from "../../contracts/member-outreach-email.js";
 import { adminBotSlackConnectInviteIsFresh } from "../../kernel/service.js";
 import { collaboratorSubgroupAccess } from "../members/collaborator-subgroups.js";
 import { dcsCredentialsEmail, type DcsRosterRowRecorder } from "./dcs-roster-sheet.js";
@@ -28,6 +27,7 @@ import {
   configuredEnvValue,
   driveWorkspaceFolderName,
   firstNameOf,
+  onboardingWelcomeReplyTo,
   unfilledPlaceholders,
   type AdminBotComposedGuide,
   type AdminBotGuideComposeResult,
@@ -774,12 +774,7 @@ export function createAdminBotOnboardingSender(
     }
     const html = htmlOf(guide.body);
     const replyTo =
-      request.reply_to?.trim() ||
-      (template.id === "welcome"
-        ? adminBotOutreachEmail({
-            correspondence_email: configuredEnvValue(env.ADMINBOT_CONTACT_EMAILS),
-          })
-        : "");
+      request.reply_to?.trim() || (template.id === "welcome" ? onboardingWelcomeReplyTo(env) : "");
     await sendEmail({
       to: email,
       subject: guide.subject,

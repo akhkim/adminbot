@@ -29,7 +29,7 @@ import {
   type RosterSheetParse,
   sameMemberType,
 } from "../workflows/members/roster-sync.js";
-import { composeOnboardingGuide } from "../workflows/onboarding/guide.js";
+import { composeOnboardingGuide, onboardingWelcomeReplyTo } from "../workflows/onboarding/guide.js";
 import { templateForMemberType } from "../workflows/onboarding/member-type-template.js";
 import { memberIdForRow } from "../workflows/onboarding/onboarding-sweep.js";
 import type { NewMemberGuideStep, NewMemberOnboardingResult } from "./server.member-onboarding.js";
@@ -407,7 +407,10 @@ async function planOnboardFromMemberSheet(
       subject: composed.guide.subject ?? "",
       body: composed.guide.body,
       // AdminBot sends from a mailbox nobody reads, and these mails invite a reply.
-      reply_to: env.ADMINBOT_REPLY_TO?.trim() || "akim@cs.toronto.edu",
+      reply_to:
+        template.templateId === "welcome"
+          ? onboardingWelcomeReplyTo(env)
+          : env.ADMINBOT_REPLY_TO?.trim() || "akim@cs.toronto.edu",
     });
   }
 

@@ -233,7 +233,10 @@ function onboardRows(
 }
 
 describe("previewing an onboarding", () => {
-  const env = { ADMINBOT_SLACK_INVITE_URL: "https://join.slack.example" } as NodeJS.ProcessEnv;
+  const env = {
+    ADMINBOT_SLACK_INVITE_URL: "https://join.slack.example",
+    ADMINBOT_CONTACT_EMAILS: "help@lab.example",
+  } as NodeJS.ProcessEnv;
 
   // The preview is the mail, not a summary of it: both routes run the same plan over the same
   // sheet, so what the admin read in the panel is what confirming queues.
@@ -246,7 +249,7 @@ describe("previewing an onboarding", () => {
     }
     expect(pending()).toHaveLength(0);
 
-    expect(preview.planned).toHaveLength(1);
+    expect(preview.planned).toHaveLength(2);
     const mail = preview.planned[0]!;
     expect(mail).toMatchObject({
       sheet_row: 2,
@@ -256,8 +259,12 @@ describe("previewing an onboarding", () => {
       reply_to: "akim@cs.toronto.edu",
     });
     expect(mail.body.length).toBeGreaterThan(0);
-    // A no-mail type is not skipped: its onboarding is the access its type grants.
-    expect(preview.access_only).toMatchObject([{ sheet_row: 3, name: "Rauno Arike" }]);
+    expect(preview.planned[1]).toMatchObject({
+      sheet_row: 3,
+      template_id: "welcome",
+      reply_to: "help@lab.example",
+    });
+    expect(preview.access_only).toEqual([]);
 
     const executed = await onboardRows(service, source(), request, env);
     if ("error" in executed) {
@@ -274,7 +281,10 @@ describe("previewing an onboarding", () => {
 });
 
 describe("onboarding from the roster", () => {
-  const env = { ADMINBOT_SLACK_INVITE_URL: "https://join.slack.example" } as NodeJS.ProcessEnv;
+  const env = {
+    ADMINBOT_SLACK_INVITE_URL: "https://join.slack.example",
+    ADMINBOT_CONTACT_EMAILS: "help@lab.example",
+  } as NodeJS.ProcessEnv;
 
   it("creates the member and queues their guide, the same steps as every other path", async () => {
     const { service, pending } = realService();
@@ -330,18 +340,22 @@ describe("onboarding from the roster", () => {
     expect(again.skipped[0]!.reason).toContain("already queued or sent");
   });
 
-  // Their onboarding is the backend access grant, so they are enrolled rather than skipped.
-  it("enrolls a row whose member type sends no mail, and mails nothing", async () => {
+  it("enrolls a basic-role row and sends its welcome alongside the Slack invitation", async () => {
     const { service, executed, pending } = realService();
     const result = await onboardRows(service, source(), { sheet_rows: [3] }, env);
     if ("error" in result) {
       throw new Error(result.error.message);
     }
-    expect(result.created).toEqual([]);
+    expect(result.created).toMatchObject([
+      { sheet_row: 3, template_id: "welcome", status: "sent" },
+    ]);
     expect(result.skipped).toEqual([]);
     expect(result.enrolled.map((entry) => entry.member_id)).toEqual(["rauno-arike"]);
     // The #friends-and-collaborators row, which no guide will mint for them.
-    expect(executed.map((proposal) => proposal.type)).toEqual(["slack.connect_invite"]);
+    expect(executed.map((proposal) => proposal.type)).toEqual([
+      "slack.connect_invite",
+      "onboarding.send_guide",
+    ]);
     expect(pending()).toEqual([]);
   });
 

@@ -1,3 +1,4 @@
+import { adminBotOutreachEmail } from "../../contracts/member-outreach-email.js";
 // Composes an onboarding guide email and says what is still missing.
 //
 // Split from the send so the decision "may this go out yet" is pure and testable: the tab calls
@@ -10,6 +11,14 @@ import { findOnboardingTemplate, type AdminBotOnboardingTemplate } from "./email
 // Written into the DCS-address example in the member template as literal copy, not as a value the
 // sender fills. Substitution must leave them alone.
 const LITERAL_TOKENS = new Set(["first_letter_of_first_name", "full_last_name"]);
+
+/** The basic welcome's preview and actual Reply-To must name the same human contact. */
+export function onboardingWelcomeReplyTo(env: NodeJS.ProcessEnv): string {
+  return adminBotOutreachEmail({
+    correspondence_email: configuredEnvValue(env.ADMINBOT_REPLY_TO),
+    email: configuredEnvValue(env.ADMINBOT_CONTACT_EMAILS),
+  });
+}
 
 // Placeholders filled from deployment configuration rather than from the operator's form. These
 // identify the workspace, so they live in the environment and not in the tracked copy.
