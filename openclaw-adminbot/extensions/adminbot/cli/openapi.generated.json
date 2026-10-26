@@ -33870,7 +33870,8 @@
             "type": "string",
             "enum": [
               "manual",
-              "zoom_email"
+              "zoom_email",
+              "participant_report"
             ]
           },
           "started_at": {
@@ -34104,7 +34105,8 @@
             "type": "string",
             "enum": [
               "manual",
-              "zoom_email"
+              "zoom_email",
+              "participant_report"
             ]
           },
           "notes": {
@@ -34286,7 +34288,8 @@
             "type": "string",
             "enum": [
               "manual",
-              "zoom_email"
+              "zoom_email",
+              "participant_report"
             ]
           },
           "notes": {

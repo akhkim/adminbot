@@ -6691,7 +6691,7 @@ export interface components {
       id: string;
       notes?: string;
       /** @enum {string} */
-      source: "manual" | "zoom_email";
+      source: "manual" | "zoom_email" | "participant_report";
       started_at: string;
       topic: string;
       duration_minutes?: number;
@@ -6767,7 +6767,7 @@ export interface components {
       snapshots?: components["schemas"]["AdminBotMeetingSnapshotState"];
       attendees?: components["schemas"]["AdminBotMeetingAttendee"][];
       /** @enum {string} */
-      source: "manual" | "zoom_email";
+      source: "manual" | "zoom_email" | "participant_report";
       notes?: string;
       created_at: string;
       updated_at: string;
@@ -6823,7 +6823,7 @@ export interface components {
       snapshots?: components["schemas"]["AdminBotMeetingSnapshotState"];
       attendees?: components["schemas"]["AdminBotMeetingAttendee"][];
       /** @enum {string} */
-      source: "manual" | "zoom_email";
+      source: "manual" | "zoom_email" | "participant_report";
       notes?: string;
     } & {
       [key: string]: unknown;
