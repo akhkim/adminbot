@@ -200,7 +200,7 @@ describe("subtitleForTab", () => {
       adminbotMembers: "Privilege levels and access profiles.",
       adminbotProfileOverview: "Who has filled in their profile and planned their term.",
       adminbotArrReviewers: "Self-reported ARR reviewer qualification and capacity.",
-      adminbotTalkLeaderboard: "This year's invited talks, counted from members' CVs.",
+      adminbotTalkLeaderboard: "This year's talks and orals, counted from members' CVs.",
       adminbotTabUsage: "Which parts of AdminBot the lab actually opens.",
       adminbotGrantReport:
         "Every paper mapped to a safety area, and the track record behind each ask.",

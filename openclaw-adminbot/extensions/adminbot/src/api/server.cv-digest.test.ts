@@ -267,7 +267,7 @@ describe("daily CV sweep", () => {
       changed_members: 0,
       published: true,
     });
-    expect(publish.mock.calls[1]?.[0]).toContain("- #1 **Jane Doe** — 1 invited");
+    expect(publish.mock.calls[1]?.[0]).toContain("- #1 **Jane Doe** — 1 talk (1 invited)");
     // Day three: same content as what went out, so it is left alone.
     expect(await mock.runCvSweep(new Date("2026-08-22T09:00:00.000Z"))).toMatchObject({
       published: false,
@@ -280,7 +280,9 @@ describe("daily CV sweep", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
       year: 2026,
-      rows: [{ rank: 1, member_id: "m-jane", member_name: "Jane Doe", invited: 1, total: 1 }],
+      rows: [
+        { rank: 1, member_id: "m-jane", member_name: "Jane Doe", invited: 1, orals: 0, total: 1 },
+      ],
       unscanned: [],
     });
     const bad = await fetch(`${baseUrl}/cv/talk-leaderboard?year=26x`, { headers: headers() });

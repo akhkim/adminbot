@@ -5647,6 +5647,7 @@ export interface components {
       member_id: string;
       member_name: string;
       invited: number;
+      orals: number;
       total: number;
     } & {
       [key: string]: unknown;
