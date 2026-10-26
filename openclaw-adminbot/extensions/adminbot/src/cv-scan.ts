@@ -26,9 +26,11 @@ const MAX_PDF_BYTES = 25 * 1024 * 1024;
 
 /**
  * Bumped whenever the extraction prompt or schema learns to read something new. 2 added talks,
- * press and the invited flag on talks; snapshots without a version came from the first prompt.
+ * press and the invited flag on talks; 3 keeps oral and spotlight marks on papers and lists
+ * contributed talks, guest lectures and tutorials. Snapshots without a version came from the
+ * first prompt.
  */
-export const CV_EXTRACTOR_VERSION = 2;
+export const CV_EXTRACTOR_VERSION = 3;
 
 export type AdminBotCvExtraction = { ok: true; text: string } | { ok: false; reason: string };
 
@@ -670,7 +672,10 @@ async function extractCvEntries(
             "media appearances it states. " +
             "For a publication, put the paper's title in `title` and the venue or journal it " +
             "appeared in -- 'NeurIPS 2026', 'Nature' -- in `organization`. " +
-            "For a talk (invited talk, keynote, seminar, panel), put the talk's title in `title` " +
+            "If the CV marks a paper as an oral, spotlight or plenary presentation, keep that " +
+            "mark in `organization` -- 'NeurIPS 2026 (Oral)'. " +
+            "For a talk (invited talk, keynote, seminar, colloquium, panel, guest lecture, " +
+            "tutorial, contributed or workshop talk), put the talk's title in `title` " +
             "and the host or event -- 'Stanford NLP Seminar', 'ICML 2026 workshop' -- in " +
             "`organization`; use kind `talk`. Set `invited` to true when the CV presents the " +
             "talk as invited -- listed under invited talks, or a keynote, seminar or panel the " +
@@ -713,11 +718,65 @@ async function extractCvEntries(
     throw new Error("the local CV model returned no content");
   }
   try {
-    const parsed = JSON.parse(content) as { entries?: AdminBotCvEntry[] };
-    return Array.isArray(parsed.entries) ? parsed.entries : [];
+    const parsed = JSON.parse(content) as { entries?: unknown };
+    return sanitizeCvEntries(parsed.entries);
   } catch {
     throw new Error("the local CV model returned malformed JSON for the entry list");
   }
+}
+
+const CV_ENTRY_KINDS = new Set<string>([
+  "position",
+  "education",
+  "award",
+  "publication",
+  "talk",
+  "media",
+  "other",
+]);
+const CV_FIELD_MAX = 500;
+
+/**
+ * The model's entry list, checked one entry at a time. Constrained decoding makes a bad shape
+ * unlikely, not impossible -- an endpoint that ignores `response_format`, or a model swapped in
+ * by config, answers with whatever it likes -- so each entry is verified rather than cast. A
+ * malformed entry is dropped alone instead of failing the whole CV, and text fields are trimmed
+ * and capped so one runaway field cannot bloat the roster.
+ */
+export function sanitizeCvEntries(raw: unknown): AdminBotCvEntry[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  const text = (value: unknown) =>
+    typeof value === "string" && value.trim() ? value.trim().slice(0, CV_FIELD_MAX) : undefined;
+  const entries: AdminBotCvEntry[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+    const record = item as Record<string, unknown>;
+    const kind = typeof record.kind === "string" ? record.kind : "";
+    const title = text(record.title);
+    if (!CV_ENTRY_KINDS.has(kind) || !title) {
+      continue;
+    }
+    const entry: AdminBotCvEntry = {
+      kind: kind as AdminBotCvEntry["kind"],
+      title,
+      organization: text(record.organization) ?? "",
+    };
+    for (const field of ["start", "end", "start_iso"] as const) {
+      const value = text(record[field]);
+      if (value) {
+        entry[field] = value;
+      }
+    }
+    if (kind === "talk" && typeof record.invited === "boolean") {
+      entry.invited = record.invited;
+    }
+    entries.push(entry);
+  }
+  return entries;
 }
 
 export const DEFAULT_LOCAL_MODEL = "nvidia/Qwen3.5-122B-A10B-NVFP4";
