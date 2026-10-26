@@ -610,9 +610,25 @@ export async function executeApproved(
   }
   // A connector that recognized the action but did not perform it answers `simulated`: nothing
   // reached the outside world, so the step must not be reported as done.
-  return executed.payload.status === "executed"
-    ? { ok: true }
-    : { ok: false, reason: "approved, but the connector did not carry it out; see the audit log" };
+  if (executed.payload.status === "executed") {
+    return { ok: true };
+  }
+  const delivery = service
+    .listAuditEvents()
+    .findLast(
+      (event) =>
+        event.action_id === proposal.id &&
+        event.type === "execution.simulated" &&
+        event.details?.idempotency_key === idempotencyKey,
+    );
+  const reason = delivery?.details?.not_delivered_reason;
+  return {
+    ok: false,
+    reason:
+      typeof reason === "string" && reason.trim()
+        ? reason
+        : "approved, but the connector did not carry it out; see the audit log",
+  };
 }
 
 function hasAddress(cell: string | undefined, addresses: ReadonlySet<string>): boolean {

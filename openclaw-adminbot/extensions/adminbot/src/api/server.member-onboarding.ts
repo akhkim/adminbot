@@ -252,7 +252,11 @@ export async function executeMemberEnrollment(
     };
   }
   if (deps.alreadyEnrolled(memberId)) {
-    return { handled: true, delivered: false, reason: `${memberId} has already been enrolled` };
+    return {
+      handled: true,
+      delivered: false,
+      reason: `${memberId}'s enrollment was already attempted; inspect its recorded steps and repair existing actions instead of repeating enrollment`,
+    };
   }
   const approver = { approver_role: approval.approver_role, approver_id: approval.approver_id };
   let enrolled = member;
@@ -282,9 +286,22 @@ export async function executeMemberEnrollment(
     enrolled,
     { skipSheet: "the member was read from the sheet" },
   );
+  const incomplete = result.steps.filter(
+    (step) => step.status === "failed" || step.status === "queued",
+  );
   return {
     handled: true,
-    delivered: true,
+    delivered: incomplete.length === 0,
+    ...(incomplete.length > 0
+      ? {
+          reason: `Enrollment incomplete: ${incomplete
+            .map(
+              (step) =>
+                `${step.step}${step.target ? ` (${step.target})` : ""}: ${step.detail ?? step.status}${step.proposal_id ? ` [${step.proposal_id}]` : ""}`,
+            )
+            .join("; ")}. Repair the existing actions instead of repeating enrollment.`,
+        }
+      : {}),
     artifacts: {
       privilege_level: result.privilege_level.to,
       steps: result.steps.map((step) => `${step.step}:${step.status}`).join(", "),

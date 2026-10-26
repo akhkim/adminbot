@@ -32,7 +32,7 @@ afterEach(async () => {
   }
 });
 
-async function startService(options: { sheetRows?: string[][] } = {}) {
+async function startService(options: { sheetRows?: string[][]; connectError?: string } = {}) {
   const executed: AdminBotStoredProposal[] = [];
   const guides: Array<Record<string, unknown>> = [];
   const calendarShares: string[] = [];
@@ -49,6 +49,9 @@ async function startService(options: { sheetRows?: string[][] } = {}) {
     accountApprovedEmailRunner: async () => {},
     inviteToSlackConnect: async ({ email }) => {
       connectInvites.push(email);
+      if (options.connectError) {
+        throw new Error(options.connectError);
+      }
       return { url: `https://join.slack.example/${email}` };
     },
     executor: {
@@ -218,6 +221,40 @@ describe("the weekly sheet sweep", () => {
 });
 
 describe("approving a sweep joiner's enrollment", () => {
+  it("does not mark enrollment executed when its Slack invitation fails", async () => {
+    const { baseUrl, mock, connectInvites } = await startService({
+      sheetRows: [["Acq Person", "acquaintance", "acq@example.org", ""]],
+      connectError: "Slack connector unavailable",
+    });
+    await runSweep(baseUrl);
+    const token = await adminToken(mock, baseUrl);
+    process.env.ADMINBOT_ONBOARDING_CHANNEL_ID = "CFRIENDS";
+    try {
+      const enroll = pending(mock).find((proposal) => proposal.type === "lab_member.enroll");
+      if (!enroll) {
+        throw new Error("missing enrollment proposal");
+      }
+      await approveAndRun(baseUrl, token, enroll);
+
+      expect(connectInvites).toEqual(["acq@example.org"]);
+      expect(mock.service.getProposal(enroll.id)?.status).toBe("approved");
+      const result = mock.store
+        .listAuditEvents()
+        .find((event) => event.action_id === enroll.id && event.type === "execution.simulated");
+      expect(result?.details?.not_delivered_reason).toContain("Slack connector unavailable");
+      expect(result?.details?.not_delivered_reason).toContain("#friends-and-collaborators");
+      const child = mock.store.listProposalsByType("slack.connect_invite")[0];
+      expect(child?.status).toBe("approved");
+      expect(result?.details?.not_delivered_reason).toContain(child.id);
+      // An enrollment retry must not file another invitation after partially provisioning access.
+      await approveAndRun(baseUrl, token, enroll);
+      expect(connectInvites).toEqual(["acq@example.org"]);
+      expect(mock.store.listProposalsByType("slack.connect_invite")).toHaveLength(1);
+    } finally {
+      delete process.env.ADMINBOT_ONBOARDING_CHANNEL_ID;
+    }
+  });
+
   it("sets the level their type implies and runs the same enrollment, approved by that admin", async () => {
     const { baseUrl, mock, executed, calendarShares } = await startService({
       // The Slack column's Gmail is the Google account the share has to name.
@@ -287,6 +324,7 @@ describe("approving a sweep joiner's enrollment", () => {
       const enroll = pending(mock).find((proposal) => proposal.type === "lab_member.enroll");
       await approveAndRun(baseUrl, token, enroll!);
       expect(connectInvites).toEqual(["acq@example.org"]);
+      expect(mock.service.getProposal(enroll!.id)?.status).toBe("executed");
 
       // The same person reached again: the cached link is reused rather than a second invite.
       const again = mock.service.createProposal({
