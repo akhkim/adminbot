@@ -192,6 +192,31 @@ describe("runAdminBotCvScan", () => {
     ]);
   });
 
+  it("reads several CVs at once but reports them in roster order", async () => {
+    // The slowest CV comes first: with one at a time nothing else could start until it finished.
+    const delays: Record<string, number> = { a: 30, b: 0, c: 10 };
+    let inFlight = 0;
+    let peak = 0;
+    const scanned: string[] = [];
+    const { result } = await runAdminBotCvScan(
+      ["a", "b", "c"].map((id) => member({ id, cv_url: `https://drive.google.com/file/d/${id}` })),
+      deps({
+        concurrency: 2,
+        fetchPdf: async (url) => {
+          inFlight += 1;
+          peak = Math.max(peak, inFlight);
+          await new Promise((resolve) => setTimeout(resolve, delays[url.at(-1)!]));
+          inFlight -= 1;
+          return Buffer.from(url);
+        },
+        onMemberScanned: (entry) => void scanned.push(entry.member_id),
+      }),
+    );
+    expect(peak).toBe(2);
+    expect(scanned).toEqual(["b", "c", "a"]);
+    expect(result.results.map((entry) => entry.member_id)).toEqual(["a", "b", "c"]);
+  });
+
   it("re-reads an unchanged CV once when an older prompt read it, without announcing it", async () => {
     // A 2026 talk the first prompt could not see: it belongs on the leaderboard, but it was on the
     // CV all along, so it must not reach the ledger as news.

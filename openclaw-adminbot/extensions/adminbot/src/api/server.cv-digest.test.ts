@@ -398,6 +398,41 @@ describe("daily CV sweep", () => {
     expect(recordChanges).toHaveBeenCalledTimes(2);
   });
 
+  it("keeps the CVs a crashed sweep already read, and rereads only the one it lost", async () => {
+    // A restart or crash mid-sweep used to throw away every CV read so far; now each one is saved
+    // as it lands, so the retry only spends the model on what is still missing.
+    const extractEntries = vi.fn(async () => [RECENT_POSITION]);
+    const { mock } = await startService({
+      cvScanDeps: { ...stubScanDeps([RECENT_POSITION]), extractEntries },
+    });
+    seedMember(mock);
+    seedMember(mock, {
+      ...MEMBER,
+      id: "m-sam",
+      name: "Sam Roe",
+      cv_url: "https://example.com/s.pdf",
+    });
+    vi.spyOn(mock.store, "recordCvChanges")
+      .mockImplementationOnce((events) => events)
+      .mockImplementationOnce(() => {
+        throw new Error("database is locked");
+      });
+
+    expect(await mock.runCvSweep(new Date("2026-08-20T09:00:00.000Z"))).toMatchObject({
+      status: "failed",
+    });
+    const saved = ["m-jane", "m-sam"].map((id) =>
+      Boolean(mock.store.getLabMember(id)?.cv_snapshot),
+    );
+    expect(saved.filter(Boolean)).toHaveLength(1);
+
+    extractEntries.mockClear();
+    expect(await mock.runCvSweep(new Date("2026-08-20T10:00:00.000Z"))).toMatchObject({
+      status: "done",
+    });
+    expect(extractEntries).toHaveBeenCalledTimes(1);
+  });
+
   it("does nothing when CV scanning is not configured", async () => {
     const { mock } = await startService();
     expect(await mock.runCvSweep()).toEqual({ status: "skipped", reason: "not_configured" });
