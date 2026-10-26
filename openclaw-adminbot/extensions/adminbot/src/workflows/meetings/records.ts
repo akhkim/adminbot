@@ -195,17 +195,24 @@ export function meetingSeriesKey(topic: string): string {
 }
 
 /**
- * The listed meetings folded into one row per series, newest series first.
+ * The listed meetings folded into one row per series, newest series first -- except
+ * `pinnedTopic`'s series, which leads whenever it has a listed recording.
  *
  * Takes the lightweight head rather than the record so the tab's index never parses a roster.
  * Meetings under the duration floor are left out, so a count here is always the number of
  * recordings the series' own list will show. The display title is the newest recording's, as it
  * was written.
+ *
+ * The pin is the lab's weekly meeting. Ordered by recency alone, it slid below whichever reading
+ * group met on Tuesday, and the tab opens its first series on arrival -- so the meeting most people
+ * came to catch up on was the one they had to scroll for.
  */
 export function summarizeMeetingSeries(
   heads: readonly AdminBotMeetingHead[],
   minimumMinutes: number,
+  pinnedTopic?: string,
 ): AdminBotMeetingSeries[] {
+  const pinned = pinnedTopic ? meetingSeriesKey(pinnedTopic) : undefined;
   const series = new Map<string, AdminBotMeetingSeries & { latestTime: number }>();
   for (const head of heads) {
     if (!meetsDurationFloor(head, minimumMinutes)) {
@@ -233,7 +240,10 @@ export function summarizeMeetingSeries(
   }
   return [...series.values()]
     .toSorted(
-      (left, right) => right.latestTime - left.latestTime || left.key.localeCompare(right.key),
+      (left, right) =>
+        Number(right.key === pinned) - Number(left.key === pinned) ||
+        right.latestTime - left.latestTime ||
+        left.key.localeCompare(right.key),
     )
     .map(({ latestTime: _latest, ...row }) => row);
 }

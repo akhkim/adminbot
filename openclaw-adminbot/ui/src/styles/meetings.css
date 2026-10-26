@@ -111,24 +111,38 @@
   margin-top: var(--space-3);
 }
 
-.meetings__roster {
-  width: 100%;
-  margin-top: var(--space-2);
-  border-collapse: collapse;
+.meetings__attendees {
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
 }
 
-.meetings__roster td {
-  padding: var(--space-1) 0;
-  vertical-align: baseline;
-}
-
-/* The whole label is the hit target, not just the box: ticking the wrong person off a roster is
-   easy to do and slow to notice. */
-.meetings__tick {
-  display: inline-flex;
-  align-items: center;
+.meetings__attendee {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
   gap: var(--space-2);
-  cursor: pointer;
+  padding: var(--space-1) 0;
+}
+
+/* Remove sits at the far edge, away from the name: taking the wrong person off a roster is easy
+   to do and slow to notice. */
+.meetings__attendee .btn {
+  margin-left: auto;
+}
+
+/* Field skin comes from .adminbot-form; this lays the search and its button out on one row. */
+.meetings__add-attendee {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  max-width: 28rem;
+  margin-top: var(--space-3);
+}
+
+.meetings__add-attendee input {
+  flex: 1;
+  min-width: 0;
 }
 
 /* Field layout and control skin come from .adminbot-form; this only sizes and seats the form. */

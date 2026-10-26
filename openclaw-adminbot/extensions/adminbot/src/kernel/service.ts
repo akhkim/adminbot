@@ -176,6 +176,7 @@ import {
   adminBotGroupMeetingNudgeWindowHours,
   hoursUntilGroupMeeting,
   isGroupMeetingNudgeDue,
+  resolveGroupMeetingTopic,
   type GroupMeetingSchedule,
 } from "../contracts/group-meeting.js";
 import type { DiscoveryPosition } from "../contracts/lab-sharing-discovery-cursor.js";
@@ -10660,7 +10661,8 @@ export class AdminBotService {
   }
 
   /**
-   * The Meetings tab's index: one row per recurring meeting, newest first.
+   * The Meetings tab's index: one row per recurring meeting, the lab's weekly meeting first and the
+   * rest newest first.
    *
    * Every listed meeting is counted, not a page of them, so a series' row says how many recordings
    * its dropdown holds before anyone opens it. Built from heads, never rosters, and the same for
@@ -10680,6 +10682,7 @@ export class AdminBotService {
         series: summarizeMeetingSeries(
           this.store.listMeetingHeads(),
           this.resolveSettings().meeting_minimum_minutes ?? 0,
+          resolveGroupMeetingTopic(),
         ),
       },
     };
