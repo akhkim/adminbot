@@ -5059,6 +5059,7 @@ export interface components {
         | "slack.channel_naming_swept"
         | "cv.digest_published"
         | "cv.digest_failed"
+        | "cv.sweep_completed"
         | "venue_index.rebuilt"
         | "publication_digest.sent"
         | "publication_digest.failed";
@@ -5343,7 +5344,7 @@ export interface components {
     };
     AdminBotCvEntry: {
       /** @enum {string} */
-      kind: "other" | "position" | "education" | "award" | "publication";
+      kind: "other" | "position" | "education" | "award" | "publication" | "talk" | "media";
       title: string;
       organization: string;
       start?: string;
@@ -7634,7 +7635,7 @@ export interface components {
       id: string;
       label: string;
       /** @enum {string} */
-      lane: "social" | "core" | "venue" | "archive" | "talk";
+      lane: "talk" | "social" | "core" | "venue" | "archive";
       ready: boolean;
     } & {
       [key: string]: unknown;

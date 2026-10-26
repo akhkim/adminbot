@@ -28565,6 +28565,7 @@
               "slack.channel_naming_swept",
               "cv.digest_published",
               "cv.digest_failed",
+              "cv.sweep_completed",
               "venue_index.rebuilt",
               "publication_digest.sent",
               "publication_digest.failed"
@@ -29422,7 +29423,9 @@
               "position",
               "education",
               "award",
-              "publication"
+              "publication",
+              "talk",
+              "media"
             ]
           },
           "title": {
@@ -36712,11 +36715,11 @@
           "lane": {
             "type": "string",
             "enum": [
+              "talk",
               "social",
               "core",
               "venue",
-              "archive",
-              "talk"
+              "archive"
             ]
           },
           "ready": {

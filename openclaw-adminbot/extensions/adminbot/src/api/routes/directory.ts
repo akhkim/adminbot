@@ -172,44 +172,23 @@ export const directoryRoutes: readonly Route[] = [
         sendServiceResult(res, scan.failure);
         return;
       }
-      // Rendered from the whole ledger, not from the scan that just ran: a scan consumes its own
-      // diff, so a quiet week returns nothing and would otherwise blank the document. See
-      // workflows/cv/digest-doc.ts.
-      const document = renderCvDigestDocument(
-        ctx.store.listCvChangesSince(LEDGER_EPOCH),
-        new Date(),
+      const published = await publishCvDigest(
+        ctx,
+        publisher,
+        principalActor(principal),
+        scan.result.scanned_at,
       );
-      try {
-        await publisher.publish(document.markdown);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        ctx.store.recordAudit({
-          id: `aud_${randomUUID()}`,
-          timestamp: new Date().toISOString(),
-          type: "cv.digest_failed",
-          actor: principalActor(principal),
-          details: { document_url: publisher.documentUrl, reason: message },
+      if (!published.ok) {
+        sendJson(res, 502, {
+          error: { message: `could not write the CV digest doc: ${published.message}` },
         });
-        sendJson(res, 502, { error: { message: `could not write the CV digest doc: ${message}` } });
         return;
       }
-      ctx.store.recordAudit({
-        id: `aud_${randomUUID()}`,
-        timestamp: new Date().toISOString(),
-        type: "cv.digest_published",
-        actor: principalActor(principal),
-        details: {
-          document_url: publisher.documentUrl,
-          day_count: document.day_count,
-          change_count: document.change_count,
-          scanned_at: scan.result.scanned_at,
-        },
-      });
       sendJson(res, 200, {
         document_url: publisher.documentUrl,
         published_at: scan.result.scanned_at,
-        day_count: document.day_count,
-        change_count: document.change_count,
+        day_count: published.day_count,
+        change_count: published.change_count,
         scan: scan.result,
       });
     }),
@@ -452,4 +431,127 @@ export async function scanAndRecordCvs(
       ),
   );
   return { ok: true, result };
+}
+
+type CvDigestPublishOutcome =
+  | { ok: true; day_count: number; change_count: number }
+  | { ok: false; message: string };
+
+/**
+ * Rewrites the CV Updates doc from the whole ledger and audits the attempt either way.
+ *
+ * Rendered from the whole ledger, not from the scan that just ran: a scan consumes its own diff,
+ * so a quiet week returns nothing and would otherwise blank the document. See
+ * workflows/cv/digest-doc.ts.
+ */
+async function publishCvDigest(
+  ctx: AdminBotRouteContext,
+  publisher: NonNullable<AdminBotRouteContext["cvDigestPublisher"]>,
+  actor: string,
+  scannedAt: string,
+): Promise<CvDigestPublishOutcome> {
+  const document = renderCvDigestDocument(ctx.store.listCvChangesSince(LEDGER_EPOCH), new Date());
+  try {
+    await publisher.publish(document.markdown);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    ctx.store.recordAudit({
+      id: `aud_${randomUUID()}`,
+      timestamp: new Date().toISOString(),
+      type: "cv.digest_failed",
+      actor,
+      details: { document_url: publisher.documentUrl, reason: message },
+    });
+    return { ok: false, message };
+  }
+  ctx.store.recordAudit({
+    id: `aud_${randomUUID()}`,
+    timestamp: new Date().toISOString(),
+    type: "cv.digest_published",
+    actor,
+    details: {
+      document_url: publisher.documentUrl,
+      day_count: document.day_count,
+      change_count: document.change_count,
+      scanned_at: scannedAt,
+    },
+  });
+  return { ok: true, day_count: document.day_count, change_count: document.change_count };
+}
+
+export const CV_SWEEP_ACTOR = "system:cv-sweep";
+const CV_SWEEP_EVENT = "cv.sweep_completed";
+const CV_SWEEP_PERIOD_MS = 24 * 60 * 60 * 1000;
+
+export type CvDailySweepOutcome =
+  | { status: "skipped"; reason: "not_configured" | "not_due" | "running" }
+  | { status: "failed"; reason: string }
+  | { status: "done"; changed_members: number; published: boolean };
+
+let cvSweepRunning = false;
+
+/**
+ * The once-a-day CV pass: re-scan every linked CV and, when anything new landed on the ledger,
+ * refresh the CV Updates doc. Nothing is messaged; the doc and the ledger are the only output.
+ *
+ * Called hourly by the host and runs only once 24 hours have passed since the last completed
+ * sweep, read from the audit log. A plain 24-hour timer would restart its countdown on every
+ * deploy, and the host is redeployed more often than daily, so it would never fire.
+ *
+ * Unchanged CVs cost a download and a hash, not a model call: runAdminBotCvScan skips extraction
+ * when the text hash matches the stored snapshot. Extraction stays on the loopback model.
+ */
+export async function runCvDailySweep(
+  ctx: AdminBotRouteContext,
+  service: AdminBotService,
+  now: Date = new Date(),
+): Promise<CvDailySweepOutcome> {
+  if (!ctx.cvScanDeps) {
+    return { status: "skipped", reason: "not_configured" };
+  }
+  if (cvSweepRunning) {
+    return { status: "skipped", reason: "running" };
+  }
+  const last = ctx.store
+    .listAuditEvents()
+    .filter((event) => event.type === CV_SWEEP_EVENT)
+    .reduce((latest, event) => (event.timestamp > latest ? event.timestamp : latest), "");
+  if (last && now.getTime() - Date.parse(last) < CV_SWEEP_PERIOD_MS) {
+    return { status: "skipped", reason: "not_due" };
+  }
+  cvSweepRunning = true;
+  try {
+    const scan = await scanAndRecordCvs(ctx, service);
+    if (!scan.ok) {
+      return { status: "failed", reason: scan.failure.error.message };
+    }
+    const changed = scan.result.results.filter(
+      (entry) =>
+        (entry.status === "changed" || entry.status === "first_scan") && entry.added.length > 0,
+    ).length;
+    // Only rewritten when the ledger grew: an unchanged doc would just gain a fresh "Updated"
+    // date, and a failed write is retried tomorrow by the same rule because nothing is lost --
+    // the ledger already holds the change and the doc is rendered from all of it.
+    const published =
+      changed > 0 && ctx.cvDigestPublisher
+        ? (
+            await publishCvDigest(
+              ctx,
+              ctx.cvDigestPublisher,
+              CV_SWEEP_ACTOR,
+              scan.result.scanned_at,
+            )
+          ).ok
+        : false;
+    ctx.store.recordAudit({
+      id: `aud_${randomUUID()}`,
+      timestamp: now.toISOString(),
+      type: CV_SWEEP_EVENT,
+      actor: CV_SWEEP_ACTOR,
+      details: { scanned_at: scan.result.scanned_at, changed_members: changed, published },
+    });
+    return { status: "done", changed_members: changed, published };
+  } finally {
+    cvSweepRunning = false;
+  }
 }

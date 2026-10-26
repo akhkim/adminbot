@@ -240,11 +240,14 @@ const BARE_YEAR = /^(\d{4})$/u;
  * The effect is that the current year's papers read as news and previous years' do not, which is
  * the distinction a reader of the newsletter would draw anyway.
  *
- * Restricted to publications. Positions and degrees are dated by month on a CV, so a bare year
- * there means the model failed to read one, and guessing would announce a job nobody started.
+ * Restricted to publications, talks and press, which CVs list by year in the same way. Positions
+ * and degrees are dated by month on a CV, so a bare year there means the model failed to read one,
+ * and guessing would announce a job nobody started.
  */
+const YEAR_DATED_KINDS = new Set<AdminBotCvEntry["kind"]>(["publication", "talk", "media"]);
+
 function resolvePublicationYear(entry: AdminBotCvEntry): string | undefined {
-  if (entry.kind !== "publication") {
+  if (!YEAR_DATED_KINDS.has(entry.kind)) {
     return undefined;
   }
   const year = BARE_YEAR.exec(entry.start?.trim() ?? "")?.[1];
@@ -287,7 +290,14 @@ export function classifyRecency(
 // Only additions become copy, and only the kinds that describe a career event. A removal is
 // almost always someone trimming an old CV rather than a job ending, so removals are reported in
 // the table for a human to read but never drafted into a newsletter sentence.
-const NEWSWORTHY_KINDS = new Set(["position", "education", "award", "publication"]);
+const NEWSWORTHY_KINDS = new Set([
+  "position",
+  "education",
+  "award",
+  "publication",
+  "talk",
+  "media",
+]);
 
 /** True when an added entry is both the right kind and recent enough to announce. */
 export function isNewsworthy(change: AdminBotCvChange): boolean {
@@ -361,6 +371,10 @@ export function describeCvEntry(entry: AdminBotCvEntry): string {
       return `received ${entry.title}${entry.organization ? ` from ${entry.organization}` : ""}${when}`;
     case "publication":
       return `published "${entry.title}"${entry.organization ? ` at ${entry.organization}` : ""}${when}`;
+    case "talk":
+      return `gave a talk, "${entry.title}"${entry.organization ? `, at ${entry.organization}` : ""}${when}`;
+    case "media":
+      return `was featured${entry.organization ? ` in ${entry.organization}` : ""}: "${entry.title}"${when}`;
     default:
       return `joined ${entry.organization} as ${entry.title}${when}`;
   }
@@ -629,9 +643,16 @@ async function extractCvEntries(
         {
           role: "system",
           content:
-            "You read a CV and list the positions, degrees, awards, and publications it states. " +
+            "You read a CV and list the positions, degrees, awards, publications, talks, and " +
+            "media appearances it states. " +
             "For a publication, put the paper's title in `title` and the venue or journal it " +
             "appeared in -- 'NeurIPS 2026', 'Nature' -- in `organization`. " +
+            "For a talk (invited talk, keynote, seminar, panel), put the talk's title in `title` " +
+            "and the host or event -- 'Stanford NLP Seminar', 'ICML 2026 workshop' -- in " +
+            "`organization`; use kind `talk`. " +
+            "For press or media coverage (interview, article, podcast, news feature), put the " +
+            "piece's headline or topic in `title` and the outlet -- 'Wired', 'BBC' -- in " +
+            "`organization`; use kind `media`. " +
             "Copy titles, organizations, and dates exactly as printed into `title`, " +
             "`organization`, `start` and `end`; do not expand abbreviations. " +
             "Additionally set `start_iso` to the start date as YYYY-MM. Omit `start_iso` " +
@@ -816,7 +837,7 @@ function cvEntriesSchema(): Record<string, unknown> {
             properties: {
               kind: {
                 type: "string",
-                enum: ["position", "education", "award", "publication", "other"],
+                enum: ["position", "education", "award", "publication", "talk", "media", "other"],
               },
               title: { type: "string" },
               organization: { type: "string" },
