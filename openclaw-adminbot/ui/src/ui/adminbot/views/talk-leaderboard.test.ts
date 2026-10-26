@@ -36,10 +36,10 @@ it("asks for this year's board and marks both members tied in the top two, and t
     Response.json(
       board(
         [
-          { rank: 1, member_id: "m-ada", member_name: "Ada", invited: 2, total: 3 },
-          { rank: 2, member_id: "m-ben", member_name: "Ben", invited: 1, total: 1 },
-          { rank: 2, member_id: "m-cy", member_name: "Cy", invited: 1, total: 1 },
-          { rank: 4, member_id: "m-dee", member_name: "Dee", invited: 0, total: 2 },
+          { rank: 1, member_id: "m-ada", member_name: "Ada", invited: 2, orals: 1, total: 4 },
+          { rank: 2, member_id: "m-ben", member_name: "Ben", invited: 1, orals: 0, total: 1 },
+          { rank: 2, member_id: "m-cy", member_name: "Cy", invited: 1, orals: 0, total: 1 },
+          { rank: 4, member_id: "m-dee", member_name: "Dee", invited: 0, orals: 0, total: 1 },
         ],
         ["Eve"],
       ),
@@ -51,15 +51,12 @@ it("asks for this year's board and marks both members tied in the top two, and t
   );
   const rows = [...el.shadowRoot!.querySelectorAll("tbody tr")];
   expect(rows.map((row) => row.querySelector(".rank")?.textContent)).toEqual(["1", "2", "2", "4"]);
-  expect(rows.map((row) => Boolean(row.querySelector(".pill")))).toEqual([
-    true,
-    true,
-    true,
-    false,
-  ]);
+  expect(rows.map((row) => Boolean(row.querySelector(".pill")))).toEqual([true, true, true, false]);
   expect(rows[2]?.classList.contains("you")).toBe(true);
   expect(rows[2]?.textContent).toContain("Cy (you)");
-  expect(rows[0]?.querySelector(".other")?.textContent).toBe("1");
+  expect(rows[0]?.querySelector(".total")?.textContent).toBe("4");
+  expect(rows[0]?.querySelector(".orals")?.textContent).toBe("1");
+  expect(rows[0]?.querySelector(".rest")?.textContent).toBe("1");
   expect(
     el.shadowRoot!.querySelector('[data-testid="talk-leaderboard-unscanned"]')?.textContent,
   ).toContain("Eve");

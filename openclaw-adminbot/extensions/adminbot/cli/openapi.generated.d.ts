@@ -5077,6 +5077,7 @@ export interface components {
         | "cv.digest_published"
         | "cv.digest_failed"
         | "cv.sweep_completed"
+        | "cv.sweep_failed"
         | "venue_index.rebuilt"
         | "publication_digest.sent"
         | "publication_digest.failed";
@@ -5646,6 +5647,7 @@ export interface components {
       member_id: string;
       member_name: string;
       invited: number;
+      orals: number;
       total: number;
     } & {
       [key: string]: unknown;

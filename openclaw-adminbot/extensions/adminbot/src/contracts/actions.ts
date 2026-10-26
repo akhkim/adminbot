@@ -2903,6 +2903,7 @@ export type AdminBotAuditEvent = {
     | "cv.digest_failed"
     // The daily CV sweep finished a scan; its timestamp is what decides when the next one is due.
     | "cv.sweep_completed"
+    | "cv.sweep_failed"
     // Rebuilding the conference paper indexes. It spends a few minutes of an external API's quota
     // and replaces what every member then searches, so who triggered one is worth keeping.
     | "venue_index.rebuilt"

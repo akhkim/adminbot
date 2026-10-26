@@ -28705,6 +28705,7 @@
               "cv.digest_published",
               "cv.digest_failed",
               "cv.sweep_completed",
+              "cv.sweep_failed",
               "venue_index.rebuilt",
               "publication_digest.sent",
               "publication_digest.failed"
@@ -30483,6 +30484,9 @@
           "invited": {
             "type": "number"
           },
+          "orals": {
+            "type": "number"
+          },
           "total": {
             "type": "number"
           }
@@ -30492,6 +30496,7 @@
           "member_id",
           "member_name",
           "invited",
+          "orals",
           "total"
         ],
         "additionalProperties": true

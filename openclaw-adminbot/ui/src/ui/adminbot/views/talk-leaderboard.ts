@@ -1,4 +1,4 @@
-// The lab's invited-talk leaderboard, counted by the service from members' linked CVs.
+// The lab's talks-and-orals leaderboard, counted by the service from members' linked CVs.
 //
 // It replaces the list kept by hand in the lab meeting doc, which is why every member can open it:
 // the doc was the whole lab's to read. The service ranks the rows (ties share a rank), so this view
@@ -15,6 +15,7 @@ export type TalkLeaderboard = {
     member_id: string;
     member_name: string;
     invited: number;
+    orals: number;
     total: number;
   }>;
   unscanned: string[];
@@ -97,6 +98,9 @@ export class TalkLeaderboardView extends LitElement {
     td.num,
     th.num {
       text-align: right;
+    }
+    td.total {
+      font-weight: 600;
     }
     td.rank {
       width: 3em;
@@ -196,8 +200,10 @@ export class TalkLeaderboardView extends LitElement {
         <tr>
           <th>#</th>
           <th>Member</th>
+          <th class="num">Talks</th>
           <th class="num">Invited</th>
-          <th class="num other">Other talks</th>
+          <th class="num other">Orals</th>
+          <th class="num other">Other</th>
         </tr>
       </thead>
       <tbody>
@@ -211,8 +217,10 @@ export class TalkLeaderboardView extends LitElement {
                   ? html`<span class="pill">Top two</span>`
                   : nothing}
               </td>
+              <td class="num total">${row.total}</td>
               <td class="num">${row.invited}</td>
-              <td class="num other">${row.total - row.invited}</td>
+              <td class="num other orals">${row.orals}</td>
+              <td class="num other rest">${row.total - row.invited - row.orals}</td>
             </tr>`,
         )}
       </tbody>
@@ -224,11 +232,12 @@ export class TalkLeaderboardView extends LitElement {
     const board = this.board;
     return html`<section>
       <header>
-        <h2>Invited talks ${this.year}</h2>
+        <h2>Talks and orals ${this.year}</h2>
         <div class="controls">
           <select aria-label="Year" @change=${this.chooseYear} ?disabled=${this.loading}>
             ${[thisYear, thisYear - 1, thisYear - 2].map(
-              (year) => html`<option value=${year} ?selected=${year === this.year}>${year}</option>`,
+              (year) =>
+                html`<option value=${year} ?selected=${year === this.year}>${year}</option>`,
             )}
           </select>
           <button type="button" @click=${() => void this.load()} ?disabled=${this.loading}>
@@ -237,7 +246,7 @@ export class TalkLeaderboardView extends LitElement {
         </div>
       </header>
       <p class="hint">
-        Counted once a day from each member's linked CV and ranked by invited talks, then all talks.
+        Counted once a day from each member's linked CV and ranked by all talks, then invited ones.
         The top two at the end of the year get the guidebook's extra free trip.
       </p>
       ${this.error ? html`<p class="error" role="alert">${this.error}</p>` : nothing}
@@ -248,9 +257,10 @@ export class TalkLeaderboardView extends LitElement {
           </p>`
         : nothing}
       <p class="hint">
-        A talk counts as invited when the CV presents it that way — under an "Invited talks"
-        heading, or as a keynote, seminar or panel. If yours is missing or in the wrong column, make
-        that clear on the CV and link it from My Profile; the next daily read picks it up.
+        Counted generously: invited talks, keynotes, seminars, panels and guest lectures;
+        contributed talks; and any paper the CV marks as an oral or spotlight. A talk listed twice
+        counts once. If one of yours is missing, make it clear on the CV (for example "(Oral)" after
+        the venue) and link it from My Profile; the next daily read picks it up.
       </p>
     </section>`;
   }

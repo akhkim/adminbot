@@ -267,7 +267,7 @@ describe("daily CV sweep", () => {
       changed_members: 0,
       published: true,
     });
-    expect(publish.mock.calls[1]?.[0]).toContain("- #1 **Jane Doe** — 1 invited");
+    expect(publish.mock.calls[1]?.[0]).toContain("- #1 **Jane Doe** — 1 talk (1 invited)");
     // Day three: same content as what went out, so it is left alone.
     expect(await mock.runCvSweep(new Date("2026-08-22T09:00:00.000Z"))).toMatchObject({
       published: false,
@@ -280,7 +280,9 @@ describe("daily CV sweep", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
       year: 2026,
-      rows: [{ rank: 1, member_id: "m-jane", member_name: "Jane Doe", invited: 1, total: 1 }],
+      rows: [
+        { rank: 1, member_id: "m-jane", member_name: "Jane Doe", invited: 1, orals: 0, total: 1 },
+      ],
       unscanned: [],
     });
     const bad = await fetch(`${baseUrl}/cv/talk-leaderboard?year=26x`, { headers: headers() });
@@ -296,6 +298,65 @@ describe("daily CV sweep", () => {
       published: false,
     });
     expect(mock.store.listCvChangesSince("1970-01-01T00:00:00.000Z")).toHaveLength(1);
+  });
+
+  it("counts each member's outcome and failure reason on the audit log, without names", async () => {
+    const { baseUrl, mock } = await startService({
+      cvScanDeps: {
+        ...stubScanDeps([RECENT_POSITION]),
+        fetchPdf: async (url: string) => {
+          if (url.includes("private")) {
+            throw new Error("cv fetch failed: 403");
+          }
+          return new Uint8Array([0x25, 0x50, 0x44, 0x46]);
+        },
+      },
+    });
+    seedMember(mock);
+    seedMember(mock, {
+      ...MEMBER,
+      id: "m-sam",
+      name: "Sam Roe",
+      cv_url: "https://example.com/private.pdf",
+    });
+    await mock.runCvSweep(new Date("2026-08-20T09:00:00.000Z"));
+
+    const audit = await fetch(`${baseUrl}/audit`, { headers: headers() });
+    const events = (await audit.json()) as {
+      events: Array<{ type: string; details?: Record<string, unknown> }>;
+    };
+    const completed = events.events.find((event) => event.type === "cv.sweep_completed");
+    expect(completed?.details).toMatchObject({
+      statuses: { first_scan: 1, failed: 1 },
+      failures: { "cv fetch failed: 403": 1 },
+    });
+    expect(JSON.stringify(completed?.details)).not.toContain("Sam");
+  });
+
+  it("records a sweep that crashed and tries again at the next check", async () => {
+    const { baseUrl, mock } = await startService({ cvScanDeps: stubScanDeps([RECENT_POSITION]) });
+    seedMember(mock);
+    const recordChanges = vi.spyOn(mock.store, "recordCvChanges").mockImplementationOnce(() => {
+      throw new Error("database is locked");
+    });
+
+    expect(await mock.runCvSweep(new Date("2026-08-20T09:00:00.000Z"))).toEqual({
+      status: "failed",
+      reason: "database is locked",
+    });
+    const audit = await fetch(`${baseUrl}/audit`, { headers: headers() });
+    const events = (await audit.json()) as {
+      events: Array<{ type: string; details?: Record<string, unknown> }>;
+    };
+    expect(events.events.find((event) => event.type === "cv.sweep_failed")?.details).toEqual({
+      reason: "database is locked",
+    });
+
+    // A failure is not the day's sweep: an hour later it runs again instead of waiting a day.
+    expect(await mock.runCvSweep(new Date("2026-08-20T10:00:00.000Z"))).toMatchObject({
+      status: "done",
+    });
+    expect(recordChanges).toHaveBeenCalledTimes(2);
   });
 
   it("does nothing when CV scanning is not configured", async () => {
