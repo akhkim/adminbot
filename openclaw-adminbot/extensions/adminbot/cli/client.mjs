@@ -305,27 +305,10 @@ function connectionError(error, operation, origin, timeout) {
   });
 }
 
-export async function callOperation(
-  operationId,
-  {
-    baseUrl,
-    token,
-    path = {},
-    query = {},
-    header = {},
-    body,
-    timeout = 30000,
-    fetchImpl = globalThis.fetch,
-  } = {},
-) {
-  const operation = operations[operationId];
-  if (!operation) {
-    const suggestions = suggest(operationId, Object.keys(operations));
-    throw new ApiError("UNKNOWN_OPERATION", `Unknown operation: ${operationId}`, undefined, {
-      hint: suggestions[0] ? `adminbot call ${suggestions[0]} --help` : "adminbot operations",
-      details: { suggestions },
-    });
-  }
+// Checks parameters and body against the contract, so input mistakes surface before sign-in
+// or the network matter.
+export function validateInput(operation, { path = {}, query = {}, header = {}, body } = {}) {
+  const operationId = operation.operationId;
   for (const parameter of operation.parameters ?? []) {
     const value = { path, header, query }[parameter.in]?.[parameter.name];
     if (value === undefined && parameter.required) {
@@ -349,6 +332,30 @@ export async function callOperation(
   if (operation.requestBody) {
     validate(requestSchema(operation), body ?? {}, "body");
   }
+}
+
+export async function callOperation(
+  operationId,
+  {
+    baseUrl,
+    token,
+    path = {},
+    query = {},
+    header = {},
+    body,
+    timeout = 30000,
+    fetchImpl = globalThis.fetch,
+  } = {},
+) {
+  const operation = operations[operationId];
+  if (!operation) {
+    const suggestions = suggest(operationId, Object.keys(operations));
+    throw new ApiError("UNKNOWN_OPERATION", `Unknown operation: ${operationId}`, undefined, {
+      hint: suggestions[0] ? `adminbot call ${suggestions[0]} --help` : "adminbot operations",
+      details: { suggestions },
+    });
+  }
+  validateInput(operation, { path, query, header, body });
   const client = createAdminBotClient({ baseUrl, fetch: fetchImpl });
   const origin = serviceOrigin(baseUrl ?? document.servers[0].url);
   let result;

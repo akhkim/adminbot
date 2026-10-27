@@ -253,6 +253,28 @@ await test("every error is one JSON envelope an agent can act on", async (t) => 
   assert.ok(invalid.details.problems[0].allowed.includes("overleaf_writing"));
 });
 
+await test("--version prints the version, and a bare flag says where flags go", async () => {
+  const version = await invoke(["--version"]);
+  assert.equal(version.code, 0);
+  assert.match(version.out, /^adminbot \d+\.\d+\.\d+\n$/u);
+  const stray = await invoke(["--verbose"]);
+  assert.equal(stray.code, 2);
+  const { error } = JSON.parse(stray.err);
+  assert.match(error.message, /--verbose is not a top-level option/u);
+  assert.equal(error.hint, "adminbot --help");
+});
+
+await test("input errors come before sign-in, and logout without a login succeeds", async () => {
+  const offline = { ADMINBOT_URL: "http://127.0.0.1:9", ADMINBOT_TOKEN: "" };
+  const bad = await invoke(["papers", "progress", "p1", "--step", "invented"], { env: offline });
+  assert.equal(bad.code, 2);
+  assert.equal(JSON.parse(bad.err).error.code, "INVALID_INPUT");
+  const out = await invoke(["logout"], { env: offline });
+  assert.equal(out.code, 0);
+  assert.equal(JSON.parse(out.out).authenticated, false);
+  assert.match((await invoke(["help"])).out, /^AdminBot CLI/u);
+});
+
 await test("header parameters are read from the headers, not the query", async (t) => {
   const seen = [];
   const baseUrl = await service(t, (req, res) => {

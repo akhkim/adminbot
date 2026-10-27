@@ -10,6 +10,7 @@ import {
   ApiError,
   bodyFields,
   callOperation,
+  validateInput,
   document,
   operations,
   serviceOrigin,
@@ -56,7 +57,8 @@ Examples:
 Input fields become --kebab-case flags; arrays accept repeated flags.
 Nested/dynamic fields: --set FIELD.PATH=VALUE; dynamic query: --query NAME=VALUE. Optional JSON: --file PATH or --file -.
 Booleans: --done / --no-done. Dry-run operations need --live for real execution.
-Global options: --url ORIGIN, --timeout MS, --output PATH, --json, --help.
+Global options (after the command): --url ORIGIN, --timeout MS, --output PATH, --json, --help.
+adminbot --version prints the CLI version.
 Default: ${document.servers[0].url}; ADMINBOT_URL overrides it.
 Auth: saved login (macOS Keychain, else a private file) or ADMINBOT_TOKEN; never put secrets in argv.
 Exit codes: 0 success, 1 service/network, 2 input, 3 auth/permission, 4 conflict.
@@ -134,6 +136,14 @@ function findCommand(argv) {
     }
   }
   const typed = argv.filter((arg) => !arg.startsWith("-")).join(" ");
+  if (!typed) {
+    throw new ApiError(
+      "UNKNOWN_COMMAND",
+      `${argv[0]} is not a top-level option. The only top-level options are --help and --version; every other flag goes after a command (adminbot COMMAND --flag)`,
+      undefined,
+      { hint: "adminbot --help" },
+    );
+  }
   const suggestions = suggest(typed, [
     ...[...commandIndex.keys()].filter((words) => commandIndex.get(words)),
     ...Object.keys(operations),
@@ -299,8 +309,15 @@ export async function run(
     const argv = Object.hasOwn(TOP_LEVEL, rawArgv[0] ?? "")
       ? ["auth", TOP_LEVEL[rawArgv[0]], ...rawArgv.slice(1)]
       : rawArgv;
-    if (!argv.length || ["--help", "-h"].includes(argv[0])) {
+    if (!argv.length || ["--help", "-h", "help"].includes(argv[0])) {
       stdout.write(help);
+      return 0;
+    }
+    if (["--version", "-V", "version"].includes(argv[0])) {
+      const { version } = JSON.parse(
+        await readFile(new URL("package.json", import.meta.url), "utf8"),
+      );
+      stdout.write(`adminbot ${version}\n`);
       return 0;
     }
     if (argv[0] === "schema") {
@@ -442,6 +459,7 @@ export async function run(
         throw new ApiError("INPUT_REQUIRED", "The password piped on stdin is empty");
       }
     }
+    validateInput(operation, { ...parsed, body });
     const token =
       operation.security?.length === 0
         ? undefined
@@ -451,6 +469,13 @@ export async function run(
       (operation.security ?? document.security).every(
         (requirement) => Object.keys(requirement).length > 0,
       );
+    if (operation.operationId === "post-auth-logout" && !token) {
+      // Nothing to revoke: logging out is already done, which is what the caller wanted.
+      stdout.write(
+        `${JSON.stringify({ authenticated: false, note: `No saved login for ${baseUrl}` }, null, 2)}\n`,
+      );
+      return 0;
+    }
     if (requiresAuth && !token) {
       throw new ApiError(
         "AUTH_REQUIRED",
