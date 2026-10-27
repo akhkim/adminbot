@@ -46,35 +46,55 @@ API tokens are for admins by default, so the skill is only useful to admins.
 ## Authenticate
 
 ```bash
-adminbot auth login               # opens AdminBot in the browser; approve the code shown
-adminbot auth whoami
+adminbot login                    # opens AdminBot in the browser; click Approve
+adminbot whoami
+adminbot auth token               # prints the saved token, for scripts that need it
 adminbot auth tokens list
 adminbot auth tokens revoke TOKEN_ID
-adminbot auth logout              # revokes this machine's token
+adminbot logout                   # revokes this machine's token
 ```
 
-`auth login` signs this machine in with a personal API token, following the OAuth device
-flow (RFC 8628) that `gh`, `modal` and `gcloud` use. The CLI prints a URL and a code. You
-open the URL in a browser where you are already signed in to AdminBot, check that the
-code matches, and approve with your password. No password passes through the terminal.
-Options: `--name NAME` (default "adminbot CLI on HOST"), `--days 1-90` (default 30),
-`--no-browser`, `--url ORIGIN`. Set `ADMINBOT_NO_BROWSER=1` to stop the CLI opening a
-browser. Personal API tokens are available to admins.
+`login`, `whoami` and `logout` are shortcuts for `auth login`, `auth whoami` and
+`auth logout`.
 
-On macOS the token is stored in the login Keychain (service `adminbot`, account = the
-service origin), and `~/.config/adminbot/credentials.json` holds only the origin, token id
-and expiry. Elsewhere, or with `ADMINBOT_KEYCHAIN=0`, the token is stored in that file
-instead, written atomically with mode `0600`. `ADMINBOT_CREDENTIALS_FILE` moves the file.
-A saved credential is bound to the exact service origin and port.
+`adminbot login` signs this machine in with a personal API token, following the OAuth device
+flow (RFC 8628) that `gh`, `modal` and `gcloud` use. The CLI prints a URL and a code. You open
+the URL in a browser where you are already signed in to AdminBot, check that the code matches,
+and click **Approve**. No password is asked for. The token lasts until you revoke it or it goes
+unused for 90 days.
 
-A token acts as you, but it cannot change your password or email, impersonate anyone,
-pair devices, approve another login, or create more tokens. It expires on its own date,
-after 30 idle days, and when your password changes. Every action it takes is recorded in
-the audit log with the token's name. See `docs/adminbot/api-tokens.md`.
+Options:
 
-For an AI agent or a CI job, create a token under **My Profile → API tokens** and put it
-in that process's environment as `ADMINBOT_TOKEN`. That variable overrides the saved
-credential. Do not paste it into prompts, files in a repository, or process arguments.
+- `--name NAME`: defaults to "adminbot CLI on HOST".
+- `--days 1-365`: gives the token a fixed expiry. By default it has none.
+- `--no-browser`: prints the link without opening it. `ADMINBOT_NO_BROWSER=1` does the same.
+- `--insecure-storage`: skips the Keychain.
+- `--url ORIGIN`
+
+Personal API tokens are available to admins.
+
+On macOS the token is stored in the login Keychain, under service `adminbot` with the service
+origin as the account. `~/.config/adminbot/credentials.json` then holds only the origin, token
+id and expiry. In the following cases the token goes in that file instead, written atomically
+with mode `0600`:
+
+- on another platform,
+- with `--insecure-storage` or `ADMINBOT_KEYCHAIN=0`,
+- when the Keychain refuses the write, as it does in some agent sandboxes.
+
+`ADMINBOT_CREDENTIALS_FILE` moves the file. A saved credential is bound to the exact service
+origin and port.
+
+A token acts as you. It may create more tokens and approve a CLI sign-in. It cannot change your
+password or email, or impersonate anyone. It is revoked when it goes 90 days unused, when your
+password changes, or on the date set by `--days`. Every action it takes is recorded in the audit
+log with the token's name. See `docs/adminbot/api-tokens.md`.
+
+Codex, Claude Code and other agents use the saved login as is. For a CI job, create a token
+under **My Profile → API tokens** and put it in that process's environment as `ADMINBOT_TOKEN`.
+That variable overrides the saved credential. Do not paste it into prompts, files in a
+repository, or process arguments. Errors in JSON output carry a `hint` with the command that
+fixes them, for example `adminbot login`.
 
 The older password login still works for scripts that need a browser-equivalent session:
 
@@ -162,6 +182,34 @@ for agent consistency. Text responses remain text. Binary responses require
 | 2    | Invalid input or local CLI error            |
 | 3    | Authentication or permission failure        |
 | 4    | HTTP conflict                               |
+
+Every failure writes exactly one JSON line to stderr and nothing to stdout:
+
+```json
+{
+  "error": {
+    "code": "SERVICE_ERROR",
+    "message": "AdminBot rejected the request: …",
+    "exit_code": 3,
+    "retryable": false,
+    "hint": "adminbot whoami",
+    "operation": "get-papers",
+    "status": 403,
+    "details": { "request": "GET /papers", "meaning": "…", "server_code": "FORBIDDEN" }
+  }
+}
+```
+
+- `message` says what went wrong and why; `hint` is the next command to run.
+- `retryable: true` means repeating the same command is safe (reads, 429, timeouts on
+  reads). `details.retry_after_seconds` says how long to wait.
+- `details.may_have_applied: true` marks a write whose outcome is unknown (timeout, 5xx,
+  dropped connection): re-read state before repeating it.
+- Input errors list `details.suggestions` (closest commands, operations or flags),
+  `details.valid_flags`, and `details.problems` (field, problem, allowed values).
+- `details.reason` classifies network failures: `TIMEOUT`, `DNS_ERROR`,
+  `CONNECTION_REFUSED`, `TLS_ERROR`, `REDIRECTED`, `CONNECTION_ERROR`.
+- Anything shaped like a token is redacted from the whole envelope.
 
 ## Contract and generation
 

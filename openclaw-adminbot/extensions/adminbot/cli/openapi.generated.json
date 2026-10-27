@@ -460,8 +460,7 @@
                 "type": "object",
                 "properties": {
                   "name": {},
-                  "expires_in_days": {},
-                  "password": {}
+                  "expires_in_days": {}
                 },
                 "additionalProperties": true,
                 "x-schema-coverage": "inferred from property access or downstream casts; semantic validation remains server-side"
@@ -804,8 +803,7 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "user_code": {},
-                  "password": {}
+                  "user_code": {}
                 },
                 "additionalProperties": true,
                 "x-schema-coverage": "inferred from property access or downstream casts; semantic validation remains server-side"

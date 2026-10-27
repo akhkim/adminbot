@@ -85,7 +85,6 @@ async function handleMemberRoute(
       await ctx.apiTokens.create(principal, {
         name: body.name,
         expires_in_days: body.expires_in_days,
-        password: body.password,
         ...(ip ? { remoteIp: ip } : {}),
       }),
       secure,
@@ -110,10 +109,7 @@ async function handleMemberRoute(
     const body = readRecord(await readJson(req, 4096));
     sendAuthResult(
       res,
-      await ctx.apiTokens.approveDeviceLogin(principal, {
-        user_code: body.user_code,
-        password: body.password,
-      }),
+      await ctx.apiTokens.approveDeviceLogin(principal, { user_code: body.user_code }),
       secure,
     );
     return;
@@ -127,9 +123,10 @@ async function handleMemberRoute(
 }
 
 /**
- * Refuses a request made with an API token, for the routes a token must never reach: changing the
- * owner's password or email, impersonation, and pairing gateway devices. A leaked token can then
- * neither lock its owner out nor turn itself into a longer-lived credential.
+ * Refuses a request made with an API token, for the three routes a token must never reach: changing
+ * the owner's password or email, and impersonation. A leaked token can then neither lock its owner
+ * out of their account nor act as somebody else; everything else a signed-in browser can do, a
+ * token can do too (see docs/adminbot/api-tokens.md).
  */
 export function refuseApiToken(res: ServerResponse, principal: AdminBotMemberPrincipal): boolean {
   if (!principal.apiToken) {

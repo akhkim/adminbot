@@ -14,12 +14,12 @@ resulting 7-day browser session in a plaintext file. That has four problems:
 - A copied credentials file, or one pasted into a log or commit, works for anybody.
 
 This design follows what Modal, GitHub and Stripe do for their CLIs: a browser approves the
-sign-in, and the server issues a named, expiring, revocable personal access token.
+sign-in with one click, and the server issues a named, revocable personal access token.
 
 ## What a member gets
 
 ```
-$ adminbot auth login --name claude-laptop
+$ adminbot login --name claude-laptop
 To sign in, open https://adminbot.example/profile?cliLogin=WDJB-MJHT
 and check that it shows this code: WDJB-MJHT
 Approve it only if you started this login. Waiting…
@@ -28,12 +28,20 @@ Approve it only if you started this login. Waiting…
 $ adminbot get-papers --limit 5        # every API operation, as before
 $ adminbot auth tokens list
 $ adminbot auth tokens revoke tok_…    # or: adminbot auth tokens revoke-all
-$ adminbot auth logout                 # revokes this token and removes it from the Keychain
+$ adminbot logout                      # revokes this token and removes it from the Keychain
 ```
 
-Options: `--name` (default "adminbot CLI on <host>"), `--days 1..90`, `--no-browser` (print the
-link only), `--url`, `--timeout`. `adminbot auth login --email … --password-stdin` still signs in
-with a password and a browser session, for older setups.
+Options:
+
+- `--name`: defaults to "adminbot CLI on <host>".
+- `--days 1..365`: gives the token a fixed expiry. By default it has none.
+- `--no-browser`: prints the link only.
+- `--insecure-storage`: uses the private file, not the Keychain.
+- `--url`, `--timeout`
+
+`login`, `whoami` and `logout` are top-level shortcuts for the `auth` commands, as in `gh`.
+`adminbot auth token` prints the saved token for a script. `adminbot auth login --email …
+--password-stdin` still signs in with a password and a browser session, for older setups.
 
 The **API tokens** section of **My Profile** lists every token with:
 
@@ -68,22 +76,22 @@ and again on every request, so demoting a member stops their tokens at once.
 ## Rights
 
 A token acts as its owner, with the owner's full rights. Approve-then-execute governance is
-unchanged. A token cannot:
+unchanged. A token may also create tokens, approve a CLI sign-in and pair gateway devices, so an
+agent never has to hand anything back to a person. It cannot:
 
-- create or approve another token, or approve a CLI sign-in,
 - change the owner's password or email,
 - start or stop impersonation.
 
-So a leaked token cannot make itself permanent or lock its owner out. Impersonation sessions
-cannot create tokens either.
+So a leaked token cannot lock its owner out or act as somebody else, and changing the password
+revokes every token, including any it created. Impersonation sessions cannot create tokens.
 
 ## Lifetime
 
 | Rule           | Value                                                                                         |
 | -------------- | --------------------------------------------------------------------------------------------- |
-| Default expiry | 30 days                                                                                       |
-| Maximum expiry | 90 days                                                                                       |
-| Revoked when   | unused for 30 days                                                                            |
+| Default expiry | none                                                                                          |
+| Maximum expiry | 365 days, when one is asked for with `--days`                                                 |
+| Revoked when   | unused for 90 days                                                                            |
 | Revoked when   | the password is changed or reset, the member is deleted or merged, or "Revoke all" is pressed |
 | Rate limit     | 600 requests a minute per token (429 above it)                                                |
 
@@ -98,16 +106,19 @@ call. Paths added later cannot forget this.
 2. The CLI opens `/profile?cliLogin=WDJB-MJHT`. The app reads the code out of the URL (and drops
    it from the address bar), and My Profile shows the approval card. The page requires a
    signed-in browser. `POST /auth/device/lookup {user_code}` gives it the token name, expiry and
-   the IP of the request, and it asks for the member's password again.
-3. `POST /auth/device/approve {user_code, password}` creates the token, which is held for the CLI.
+   the IP of the request, and it shows **Approve** and **Deny**.
+3. `POST /auth/device/approve {user_code}` creates the token, which is held for the CLI.
    `POST /auth/device/deny {user_code}` cancels the request.
 4. The CLI polls `POST /auth/device/poll {device_code}`. It gets the token exactly once, after
    which the request is deleted.
 
-**Why the password is asked for again.** Somebody who sends a member a link cannot get a token
-from a browser that is merely signed in. The `device_code` never leaves the CLI, so only the
-process that started the sign-in can collect the token. User codes avoid ambiguous letters, and
-a guessed code still needs the victim's password.
+**Why one click is enough.** The `device_code` never leaves the CLI, so only the process that
+started the sign-in can collect the token. Visiting a link does nothing on its own: the member
+has to press Approve. The remaining risk is the one every device flow has: an attacker starts a
+sign-in and talks a member into approving the attacker's code. The card shows the token name and
+the requesting IP, the CLI tells the member to approve only a code they started, and the token
+is revocable and audited. This trades a password prompt for fewer interruptions, as `gh` and
+Modal do. User codes avoid ambiguous letters and expire after 10 minutes.
 
 Pending sign-ins are kept in memory. The service runs as one process, and a restart just asks
 the CLI user to try again. `DeviceLoginStore` is an interface, so a shared table can replace it if
@@ -135,7 +146,10 @@ the service is ever scaled out.
   - service `adminbot`, account = server origin;
   - it is written through `security -i` on stdin, so it never appears in `ps`;
   - the credentials file then holds only metadata (id, name, expiry), no secret.
-- Elsewhere, or with `ADMINBOT_KEYCHAIN=0`, the token goes in the existing 0600 file.
+- The token goes in the existing 0600 file in three cases: on another platform, with
+  `--insecure-storage` or `ADMINBOT_KEYCHAIN=0`, and when the Keychain refuses the write. The
+  CLI reads the item back to check the write, because `security -i` exits 0 even when the
+  command inside it fails.
 - The token is never printed.
 - The CLI refuses plain `http://` except for localhost, and only opens an `https:` (or loopback)
   approval link in the browser.
@@ -145,8 +159,8 @@ the service is ever scaled out.
 **Agents.** An agent runs `adminbot …` and never has to read or handle the token.
 
 This keeps the token out of prompts, transcripts, files and commits. It does not stop a hostile
-process running as the same macOS user: such a process can ask the Keychain too. Short expiry,
-revocation, new-IP flags and the audit trail cover that case.
+process running as the same macOS user: such a process can ask the Keychain too. The 90-day
+idle revocation, revocation, new-IP flags and the audit trail cover that case.
 
 **Repository.** `scripts/check-secrets.mjs` (`pnpm check:secrets`) finds `abt_` tokens whose
 checksum matches, so test fixtures and doc examples with a made-up checksum never trip it. It
@@ -163,8 +177,7 @@ commit stays in history: revoke it, which is what makes it harmless.
 - Tokens are accepted only as `Authorization: Bearer`, never in a cookie or the query string.
 - Responses that carry a secret (token creation, the approved poll) are `Cache-Control: no-store`.
 - `POST /auth/logout` with a token revokes that token.
-- A token is refused (403) on: creating a token, approving or looking up a CLI sign-in, changing
-  the password or email, impersonation, and gateway device pairing.
+- A token is refused (403) on changing the password or email, and on impersonation.
 
 ## Code map
 

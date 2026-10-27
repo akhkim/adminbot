@@ -25,7 +25,8 @@ export type DeviceLogin = {
   /** Normalised: eight letters, no dash. Shown to people as XXXX-XXXX. */
   user_code: string;
   name: string;
-  expires_in_days: number;
+  /** Undefined: no fixed expiry. */
+  expires_in_days?: number;
   requested_ip?: string;
   created_at: string;
   expires_at: string;

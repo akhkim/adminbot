@@ -1,8 +1,8 @@
 // Personal API tokens on My Profile, and the card that approves an `adminbot auth login`.
 //
 // Both talk to /auth/api-tokens* and /auth/device/* (extensions/adminbot/src/api/routes/
-// api-tokens.ts); the service decides who may hold a token and re-checks the password on every
-// mint and approval. A new token's secret is held in this element only until the member presses
+// api-tokens.ts); the service decides who may hold a token. Being signed in is enough to mint or
+// approve, as with gh and Modal: no password prompt. A new token's secret is held in this element only until the member presses
 // Done, and is never written to storage, the URL, or the offline read cache.
 // See docs/adminbot/api-tokens.md.
 import { css, html, LitElement, nothing } from "lit";
@@ -27,7 +27,8 @@ export type ApiTokenRow = {
 type PendingCliLogin = {
   user_code: string;
   name: string;
-  expires_in_days: number;
+  /** Absent: no fixed expiry, the token lives until it sits unused for 90 days. */
+  expires_in_days?: number;
   requested_ip?: string;
   expires_at: string;
 };
@@ -68,6 +69,9 @@ async function tokenRequest<T>(
 
 const day = (iso: string | undefined) =>
   iso ? new Date(iso).toLocaleDateString(undefined, { dateStyle: "medium" }) : "never";
+
+// The server stores "no fixed expiry" as the last instant of year 9999.
+const expiry = (iso: string) => (iso.startsWith("9999-") ? "When unused 90 days" : day(iso));
 
 const shared = css`
   :host {
@@ -191,14 +195,12 @@ export class ApiTokensSection extends LitElement {
     const form = event.currentTarget as HTMLFormElement;
     const data = new FormData(form);
     const name = String(data.get("name") ?? "").trim();
-    const password = String(data.get("password") ?? "");
-    // The password leaves the DOM before the request goes out, whatever the answer.
-    form.querySelector<HTMLInputElement>("input[name=password]")!.value = "";
+    const days = Number(data.get("days"));
     void this.run(async () => {
       const result = await tokenRequest<{ token: string; api_token: ApiTokenRow }>(
         "/auth/api-tokens",
         "POST",
-        { name, expires_in_days: Number(data.get("days")), password },
+        { name, ...(days > 0 ? { expires_in_days: days } : {}) },
       );
       this.issued = { name: result.api_token.name, token: result.token };
       this.creating = false;
@@ -276,12 +278,14 @@ export class ApiTokensSection extends LitElement {
       <p>
         Tokens let the AdminBot CLI and your AI agents act as you. Sign a terminal in with
         <code>adminbot auth login</code>, or create a token here for an agent's
-        <code>ADMINBOT_TOKEN</code>. A token cannot change your password or email, impersonate
-        anyone, or create more tokens.
+        <code>ADMINBOT_TOKEN</code>. Tokens last until you revoke them or leave them unused for 90
+        days. A token cannot change your password or email, or impersonate anyone.
       </p>
       ${this.issued
         ? html`<div class="issued" data-testid="api-token-issued">
-            <strong>Copy the token for "${this.issued.name}" now. It will not be shown again.</strong>
+            <strong
+              >Copy the token for "${this.issued.name}" now. It will not be shown again.</strong
+            >
             <p>Keep it out of prompts, chat messages and repositories.</p>
             <input readonly .value=${this.issued.token} aria-label="New API token" />
             <div class="row" style="margin-top: 8px">
@@ -314,7 +318,7 @@ export class ApiTokensSection extends LitElement {
                         ? html`<br /><small>${token.last_used_place}</small>`
                         : nothing}
                     </td>
-                    <td>${day(token.expires_at)}</td>
+                    <td>${expiry(token.expires_at)}</td>
                     <td>
                       <button
                         type="button"
@@ -339,15 +343,12 @@ export class ApiTokensSection extends LitElement {
             <label
               >Expires after
               <select name="days">
-                <option value="7">7 days</option>
-                <option value="30" selected>30 days</option>
-                <option value="90">90 days</option>
+                <option value="0" selected>When unused for 90 days</option>
+                <option value="7">After 7 days</option>
+                <option value="30">After 30 days</option>
+                <option value="365">After a year</option>
               </select></label
             >
-            <label
-              >Your AdminBot password
-              <input name="password" type="password" required autocomplete="current-password"
-            /></label>
             <div class="row">
               <button type="submit" class="primary" ?disabled=${this.busy}>
                 ${this.busy ? "Creating…" : "Create token"}
@@ -374,8 +375,8 @@ export class ApiTokensSection extends LitElement {
 }
 
 /**
- * The approval card for `adminbot auth login`. Shows what asked to sign in and from where, and
- * needs the member's password to approve; denying needs nothing. Fires `cli-login-done` when the
+ * The approval card for `adminbot auth login`. Shows what asked to sign in and from where; one click
+ * approves or denies, as with `gh auth login`. Fires `cli-login-done` when the
  * member has answered or dismissed it.
  */
 export class CliLoginApproval extends LitElement {
@@ -404,16 +405,10 @@ export class CliLoginApproval extends LitElement {
     this.dispatchEvent(new CustomEvent("cli-login-done", { bubbles: true, composed: true }));
   }
 
-  private approve(event: SubmitEvent) {
-    event.preventDefault();
-    const field = (event.currentTarget as HTMLFormElement).querySelector<HTMLInputElement>(
-      "input[name=password]",
-    )!;
-    const password = field.value;
-    field.value = "";
+  private approve() {
     this.busy = true;
     this.error = "";
-    void tokenRequest("/auth/device/approve", "POST", { user_code: this.code, password })
+    void tokenRequest("/auth/device/approve", "POST", { user_code: this.code })
       .then(() => {
         this.outcome = "approved";
       })
@@ -458,7 +453,9 @@ export class CliLoginApproval extends LitElement {
       ${this.pending
         ? html`<p>
               <strong>${this.pending.name}</strong> is asking for an API token that acts as you
-              for ${this.pending.expires_in_days} days${this.pending.requested_ip
+              ${this.pending.expires_in_days
+                ? `for ${this.pending.expires_in_days} days`
+                : "until you revoke it or leave it unused for 90 days"}${this.pending.requested_ip
                 ? html`, from <code>${this.pending.requested_ip}</code>`
                 : nothing}.
             </p>
@@ -466,21 +463,29 @@ export class CliLoginApproval extends LitElement {
               Check that your terminal shows <code>${this.pending.user_code}</code>. Approve only if
               you ran <code>adminbot auth login</code> yourself just now.
             </p>
-            <form @submit=${this.approve}>
-              <label
-                >Your AdminBot password
-                <input name="password" type="password" required autocomplete="current-password"
-              /></label>
-              <div class="row">
-                <button type="submit" class="primary" ?disabled=${this.busy}>Approve</button>
-                <button type="button" class="danger" ?disabled=${this.busy} @click=${this.deny}>
-                  Deny
-                </button>
-              </div>
-            </form>`
+            <div class="row">
+              <button
+                type="button"
+                class="primary"
+                ?disabled=${this.busy}
+                @click=${() => this.approve()}
+              >
+                Approve
+              </button>
+              <button
+                type="button"
+                class="danger"
+                ?disabled=${this.busy}
+                @click=${() => this.deny()}
+              >
+                Deny
+              </button>
+            </div>`
         : this.error
-          ? html`<p>This code has expired, was already used, or is not yours. Run
-                <code>adminbot auth login</code> again.</p>
+          ? html`<p>
+                This code has expired, was already used, or is not yours. Run
+                <code>adminbot auth login</code> again.
+              </p>
               <button type="button" @click=${() => this.finish()}>Dismiss</button>`
           : html`<p>Checking the code…</p>`}
       ${this.error && this.pending ? html`<div role="alert">${this.error}</div>` : nothing}

@@ -23,7 +23,12 @@ export async function installSkill(env = process.env) {
     if (existing && !existing.isSymbolicLink()) {
       const current = await readFile(join(dir, "SKILL.md"), "utf8").catch(() => "");
       if (!new RegExp(`^name: ${NAME}$`, "mu").test(current)) {
-        throw new ApiError("SKILL_CONFLICT", `${dir} holds something else; move it away and retry`);
+        throw new ApiError(
+          "SKILL_CONFLICT",
+          `${dir} holds a different skill (its SKILL.md is not name: ${NAME}); nothing was changed. Move or rename that folder, then install again`,
+          undefined,
+          { details: { path: dir } },
+        );
       }
     }
     targets.push({ dir, link: existing?.isSymbolicLink() });

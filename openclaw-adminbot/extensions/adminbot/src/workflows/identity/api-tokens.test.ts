@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { AdminBotLabMember } from "../../contracts/actions.js";
 import { AdminBotMemoryStore } from "../../kernel/service.js";
 import { runWithApiToken } from "./api-token-context.js";
-import { ApiTokenRateLimiter, isApiTokenShaped } from "./api-token-format.js";
+import { API_TOKEN_NO_EXPIRY, ApiTokenRateLimiter, isApiTokenShaped } from "./api-token-format.js";
 import { AdminBotApiTokenService } from "./api-tokens.js";
 import { hashPassword, type AdminBotMemberPrincipal } from "./auth.js";
 
@@ -80,7 +80,7 @@ async function mint(
   owner: AdminBotMemberPrincipal,
   name = "agent-laptop",
 ): Promise<string> {
-  const result = await tokens.create(owner, { name, expires_in_days: 30, password: PASSWORD });
+  const result = await tokens.create(owner, { name, expires_in_days: 30 });
   if (!result.ok) {
     throw new Error(result.error.message);
   }
@@ -99,7 +99,6 @@ describe("AdminBotApiTokenService: creating and resolving", () => {
     const result = await tokens.create(owner, {
       name: "  claude\u0007-laptop ",
       expires_in_days: 500,
-      password: PASSWORD,
       remoteIp: "198.51.100.7",
     });
     expect(result.ok).toBe(true);
@@ -110,9 +109,9 @@ describe("AdminBotApiTokenService: creating and resolving", () => {
     expect(isApiTokenShaped(token)).toBe(true);
     expect(api_token.name).toBe("claude-laptop");
     expect(api_token.hint).toBe(token.slice(-4));
-    // Clamped to the 90-day maximum.
+    // Clamped to the one-year maximum.
     expect(Date.parse(api_token.expires_at) - Date.parse(api_token.created_at)).toBe(
-      90 * 86_400_000,
+      365 * 86_400_000,
     );
     expect(JSON.stringify(api_token)).not.toContain(token);
     const stored = store.getApiToken(api_token.id)!;
@@ -130,37 +129,40 @@ describe("AdminBotApiTokenService: creating and resolving", () => {
     expect(store.listAuditEvents().map((e) => e.type)).toContain("auth.api_token.created");
   });
 
-  it("refuses a wrong password, and locks out after repeated failures", async () => {
-    const { tokens, principal } = setup();
-    const owner = principal("admin-a");
-    for (let i = 0; i < 5; i += 1) {
-      const wrong = await tokens.create(owner, { name: "x", expires_in_days: 1, password: "nope" });
-      expect(wrong).toMatchObject({ ok: false, status: 401 });
+  it("has no fixed expiry by default and lives as long as it keeps being used", async () => {
+    const { tokens, principal, clock } = setup();
+    const result = await tokens.create(principal("admin-a"), { name: "forever" });
+    if (!result.ok) {
+      throw new Error("mint failed");
     }
-    const locked = await tokens.create(owner, {
-      name: "x",
-      expires_in_days: 1,
-      password: PASSWORD,
-    });
-    expect(locked).toMatchObject({ ok: false, status: 429 });
+    expect(result.payload.api_token.expires_at).toBe(API_TOKEN_NO_EXPIRY);
+    // Used every 80 days for two years: never idle long enough to be revoked.
+    for (let i = 0; i < 9; i += 1) {
+      clock.advance(80 * 86_400_000);
+      expect((await tokens.resolve(result.payload.token, undefined)).ok).toBe(true);
+    }
   });
 
-  it("refuses minting from a token, while impersonating, and for ineligible members", async () => {
-    const { tokens, principal } = setup();
+  it("lets a token mint another, as a signed-in browser can, and audits it as such", async () => {
+    const { store, tokens, principal } = setup();
     const viaToken = principal("admin-a", { apiToken: { id: "tok_x", name: "x" } });
+    expect(await tokens.create(viaToken, { name: "y" })).toMatchObject({ ok: true, status: 201 });
     expect(
-      await tokens.create(viaToken, { name: "y", expires_in_days: 1, password: PASSWORD }),
-    ).toMatchObject({ ok: false, status: 403 });
+      store
+        .listAuditEvents()
+        .some((e) => e.type === "auth.api_token.created" && e.details?.via === "api_token"),
+    ).toBe(true);
+  });
+
+  it("refuses minting while impersonating, and for ineligible members", async () => {
+    const { tokens, principal } = setup();
     const viewing = principal("admin-a", { impersonator: member("admin-b") });
+    expect(await tokens.create(viewing, { name: "y", expires_in_days: 1 })).toMatchObject({
+      ok: false,
+      status: 403,
+    });
     expect(
-      await tokens.create(viewing, { name: "y", expires_in_days: 1, password: PASSWORD }),
-    ).toMatchObject({ ok: false, status: 403 });
-    expect(
-      await tokens.create(principal("plain-c"), {
-        name: "y",
-        expires_in_days: 1,
-        password: PASSWORD,
-      }),
+      await tokens.create(principal("plain-c"), { name: "y", expires_in_days: 1 }),
     ).toMatchObject({ ok: false, status: 403 });
     expect(tokens.allowedFor(principal("plain-c"))).toBe(false);
   });
@@ -192,15 +194,13 @@ describe("AdminBotApiTokenService: creating and resolving", () => {
 
   it("revokes a token left unused past the idle limit", async () => {
     const { store, tokens, principal, clock } = setup();
-    const result = await tokens.create(principal("admin-a"), {
-      name: "idle",
-      expires_in_days: 90,
-      password: PASSWORD,
-    });
+    const result = await tokens.create(principal("admin-a"), { name: "idle" });
     if (!result.ok) {
       throw new Error("mint failed");
     }
-    clock.advance(31 * 86_400_000);
+    clock.advance(89 * 86_400_000);
+    expect((await tokens.resolve(result.payload.token, undefined)).ok).toBe(true);
+    clock.advance(91 * 86_400_000);
     expect(await tokens.resolve(result.payload.token, undefined)).toEqual({
       ok: false,
       status: 401,
@@ -242,7 +242,6 @@ describe("AdminBotApiTokenService: use tracking", () => {
     const result = await tokens.create(principal("admin-a"), {
       name: "agent",
       expires_in_days: 30,
-      password: PASSWORD,
     });
     if (!result.ok) {
       throw new Error("mint failed");
@@ -293,7 +292,7 @@ describe("AdminBotApiTokenService: use tracking", () => {
       store.recordAudit({
         id: "aud_1",
         timestamp: "2026-10-01T12:00:00.000Z",
-        type: "auth.login",
+        type: "auth.logged_out",
         actor: "admin-a",
         details: { note: "kept" },
       }),
@@ -352,7 +351,7 @@ describe("AdminBotApiTokenService: revocation", () => {
 });
 
 describe("AdminBotApiTokenService: adminbot login", () => {
-  it("issues the token once, to the CLI that started the request, after a password approval", async () => {
+  it("issues the token once, to the CLI that started the request, after a one-click approval", async () => {
     const { tokens, principal, clock } = setup();
     const started = await tokens.startDeviceLogin({
       name: "claude-laptop",
@@ -379,24 +378,12 @@ describe("AdminBotApiTokenService: adminbot login", () => {
       ok: true,
       payload: { name: "claude-laptop", requested_ip: "198.51.100.7", expires_in_days: 7 },
     });
-    expect(await tokens.approveDeviceLogin(admin, { user_code, password: "wrong" })).toMatchObject({
-      ok: false,
-      status: 401,
-    });
     expect(
-      await tokens.approveDeviceLogin(
-        principal("admin-a", { apiToken: { id: "tok_x", name: "x" } }),
-        {
-          user_code,
-          password: PASSWORD,
-        },
-      ),
+      await tokens.approveDeviceLogin(principal("admin-a", { impersonator: member("admin-b") }), {
+        user_code,
+      }),
     ).toMatchObject({ ok: false, status: 403 });
-    expect(await tokens.approveDeviceLogin(admin, { user_code, password: PASSWORD })).toMatchObject(
-      {
-        ok: true,
-      },
-    );
+    expect(await tokens.approveDeviceLogin(admin, { user_code })).toMatchObject({ ok: true });
 
     clock.advance(5000);
     const polled = await tokens.pollDeviceLogin(device_code);
@@ -428,7 +415,6 @@ describe("AdminBotApiTokenService: adminbot login", () => {
     }
     await tokens.approveDeviceLogin(principal("admin-a"), {
       user_code: a.payload.user_code,
-      password: PASSWORD,
     });
     expect(await tokens.denyDeviceLogin(principal("admin-a"), b.payload.user_code)).toMatchObject({
       ok: true,
@@ -451,7 +437,6 @@ describe("AdminBotApiTokenService: adminbot login", () => {
     }
     await tokens.approveDeviceLogin(principal("admin-a"), {
       user_code: started.payload.user_code,
-      password: PASSWORD,
     });
     store.saveLabMember(member("admin-a", { privilege_level: "member" }));
     expect(await tokens.pollDeviceLogin(started.payload.device_code)).toMatchObject({

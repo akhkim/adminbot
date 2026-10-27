@@ -3,6 +3,7 @@
 export const aliases = {
   "auth login": { operation: "post-auth-login" },
   "auth whoami": { operation: "get-auth-session" },
+  "auth status": { operation: "get-auth-session" },
   "auth logout": { operation: "post-auth-logout" },
   "auth tokens list": { operation: "get-auth-api-tokens" },
   "auth tokens revoke": { operation: "delete-auth-api-tokens-by-api-tokens-id" },
