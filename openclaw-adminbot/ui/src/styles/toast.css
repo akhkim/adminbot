@@ -156,6 +156,10 @@
   border-color: var(--accent);
 }
 
+/* Out of the way until the member reaches for it: the toast is something to read first, and a
+   close button glaring from every card in a stack of five is the first thing the eye lands on.
+   Keyboard focus anywhere in the toast shows it too, and a touch screen, which has no hover to
+   reveal it with, always shows it. */
 .toast__close {
   flex: none;
   display: grid;
@@ -168,13 +172,34 @@
   background: transparent;
   color: var(--muted);
   cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+
+.toast:hover .toast__close,
+.toast:focus-within .toast__close {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .toast__close {
+    opacity: 1;
+  }
 }
 
 .toast__close:hover {
   color: var(--text);
 }
 
+/* The icon is two bare strokes and takes its look from CSS. The shared stroke rule is `.btn svg`,
+   which this button is not, so without these lines the X drew nothing at all: the button was
+   there and clickable, but invisible. */
 .toast__close svg {
   width: 14px;
   height: 14px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
