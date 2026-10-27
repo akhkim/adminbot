@@ -484,7 +484,7 @@ function renderSeries(props: AdminBotMeetingsProps, series: MeetingSeries, index
           · ${t("adminbotMeetings.seriesLatest", { date: formatDay(series.latest_started_at) })}
         </span>
       </summary>
-      ${page?.error ? html`<p class="notice notice--error">${page.error}</p>` : nothing}
+      ${page?.error ? html`<p class="callout danger" role="alert">${page.error}</p>` : nothing}
       ${!page || (page.loading && meetings.length === 0)
         ? html`<p class="muted">${t("adminbotMeetings.seriesLoading")}</p>`
         : nothing}
@@ -553,7 +553,7 @@ function renderFileForm(props: AdminBotMeetingsProps) {
     form.reset();
   };
   return html`
-    <details class="card adminbot-card adminbot-card--wide meetings__file">
+    <details class="card adminbot-card adminbot-card--wide adminbot-fold meetings__file">
       <summary>${t("adminbotMeetings.fileManually")}</summary>
       <p class="card-sub">${t("adminbotMeetings.fileManuallyHint")}</p>
       <form class="adminbot-form" @submit=${submit}>
@@ -599,7 +599,7 @@ function renderNudgePanel(nudge: NonNullable<AdminBotMeetingsProps["nudge"]>) {
     Boolean(preview) && (preview?.meetings.length ?? 0) < (preview?.streak ?? 2);
   return html`
     <details
-      class="card adminbot-card adminbot-card--wide meetings__nudge"
+      class="card adminbot-card adminbot-card--wide adminbot-fold meetings__nudge"
       data-testid="meetings-nudge"
       @toggle=${(event: Event) => {
         // Loaded on first open only. Re-reading on every toggle would re-shell to the calendar
@@ -611,7 +611,7 @@ function renderNudgePanel(nudge: NonNullable<AdminBotMeetingsProps["nudge"]>) {
     >
       <summary>${t("adminbotMeetings.nudge.title")}</summary>
       <p class="card-sub">${t("adminbotMeetings.nudge.sub")}</p>
-      ${nudge.error ? html`<p class="notice notice--error">${nudge.error}</p>` : nothing}
+      ${nudge.error ? html`<p class="callout danger" role="alert">${nudge.error}</p>` : nothing}
       ${nudge.busy && !preview
         ? html`<p class="muted">${t("adminbotMeetings.nudge.loading")}</p>`
         : nothing}
@@ -714,8 +714,7 @@ function renderArchiveLinks() {
 export function renderAdminBotMeetings(props: AdminBotMeetingsProps) {
   return html`
     <section class="meetings">
-      ${props.error ? html`<p class="notice notice--error">${props.error}</p>` : nothing}
-      ${renderArchiveLinks()}
+      ${props.error ? html`<p class="callout danger" role="alert">${props.error}</p>` : nothing}
       ${props.viewerIsAdmin && props.nudge ? renderNudgePanel(props.nudge) : nothing}
       ${props.viewerIsAdmin ? renderFileForm(props) : nothing}
       ${props.loading && props.series.length === 0
@@ -729,6 +728,8 @@ export function renderAdminBotMeetings(props: AdminBotMeetingsProps) {
         (series) => series.key,
         (series, index) => renderSeries(props, series, index),
       )}
+      <!-- Where older meetings live: a pointer for after the list, not a card ahead of it. -->
+      ${renderArchiveLinks()}
     </section>
   `;
 }

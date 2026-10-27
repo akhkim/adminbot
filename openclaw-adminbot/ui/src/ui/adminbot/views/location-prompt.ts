@@ -54,7 +54,7 @@ export function renderLocationPrompt(props: LocationPromptProps) {
           : nothing}.
         Meeting times and calendar invites are scheduled from what your profile says.
       </p>
-      ${props.error ? html`<p class="notice notice--error">${props.error}</p>` : nothing}
+      ${props.error ? html`<p class="callout danger" role="alert">${props.error}</p>` : nothing}
       <form class="location-prompt__form" @submit=${submit}>
         <label class="adminbot-form adminbot-form__field location-prompt__field">
           <span>Where you are now</span>

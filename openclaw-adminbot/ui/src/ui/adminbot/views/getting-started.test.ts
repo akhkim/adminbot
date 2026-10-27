@@ -152,6 +152,17 @@ describe("getting started step toggle", () => {
     ).toBeNull();
   });
 
+  it("makes only the first step the member can act on the primary button", () => {
+    const container = draw(createState(onboarding));
+    const primaries = [
+      ...container.querySelectorAll<HTMLButtonElement>(".onboarding-step-card__toggle.primary"),
+    ];
+    expect(primaries).toHaveLength(1);
+    expect(
+      container.querySelectorAll(".onboarding-step-card__toggle:not(.primary)").length,
+    ).toBeGreaterThan(0);
+  });
+
   it("keeps a way to undo a step that was marked done by mistake", () => {
     // Required only ever describes what the lab is waiting for -- never a one-way door on the
     // member's own answer.

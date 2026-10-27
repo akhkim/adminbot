@@ -3,13 +3,7 @@
 import { html, render } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { EventCard, EventsOverview } from "../data/events.ts";
-import {
-  countdownLabel,
-  renderEvents,
-  renderMeetupToggle,
-  renderNearbyNow,
-  type EventsProps,
-} from "./events.ts";
+import { countdownLabel, renderEvents, renderMeetupToggle, type EventsProps } from "./events.ts";
 
 afterEach(() => {
   document.body.innerHTML = "";
@@ -222,18 +216,18 @@ describe("renderEvents", () => {
     expect(props.onPreferences).toHaveBeenCalledWith({ snoozed_until: "2026-10-29" });
   });
 
-  // The Travel tab's "Find lab members nearby" card lives here now, under the lists it extends
-  // and above the intro settings.
-  it("draws the nearby card between the event lists and the meetup settings", () => {
+  // Where you are, who is around and location sharing sit together at the top, so nobody scrolls
+  // past the event lists to find them; the intro settings stay folded at the foot.
+  it("draws the nearby card under where you are, above the event lists and folded settings", () => {
     draw({ nearby: html`<section data-testid="lab-travel-nearby">Nearby</section>` });
+    const where = document.querySelector('[data-testid="events-where"]')!;
     const nearby = document.querySelector('[data-testid="lab-travel-nearby"]')!;
-    const settings = document.querySelector(".events__settings")!;
+    const settings = document.querySelector<HTMLDetailsElement>("details.events__settings")!;
     const lists = document.querySelector(".events__list, .events__empty")!;
-    expect(nearby).not.toBeNull();
-    expect(lists.compareDocumentPosition(nearby) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(
-      nearby.compareDocumentPosition(settings) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+    expect(where.compareDocumentPosition(nearby) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(nearby.compareDocumentPosition(lists) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(lists.compareDocumentPosition(settings) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(settings.open).toBe(false);
   });
 });
 
@@ -243,42 +237,6 @@ describe("countdownLabel", () => {
     expect(countdownLabel({ ...FAR, days_until: 1 })).toBe("Tomorrow");
     expect(countdownLabel(FAR)).toBe("In 9 days");
     expect(countdownLabel({ ...FAR, status: "past" })).toBeNull();
-  });
-});
-
-describe("renderNearbyNow", () => {
-  const nearby = {
-    locked: false as const,
-    place_label: "Boston",
-    people: [{ member_id: "dee", name: "Dee Member" }],
-    can_say_hi: true,
-  };
-  const drawStrip = (props: Partial<Parameters<typeof renderNearbyNow>[0]> = {}) => {
-    const onSayHi = vi.fn();
-    const container = document.createElement("div");
-    document.body.replaceChildren(container);
-    render(renderNearbyNow({ nearby, busy: null, notice: null, onSayHi, ...props }), container);
-    return onSayHi;
-  };
-
-  it("draws the faces around the viewer with a Say hi each", () => {
-    const onSayHi = drawStrip();
-    const strip = document.querySelector('[data-testid="nearby-now"]');
-    expect(strip?.textContent).toContain("Nearby now");
-    expect(strip?.textContent).toContain("Lab-mates around Boston this week");
-    strip!.querySelector<HTMLButtonElement>(".events__say-hi")!.click();
-    expect(onSayHi).toHaveBeenCalledWith({ member_id: "dee" });
-  });
-
-  it("draws nothing when nobody is around, when locked, or with no Slack link to say hi from", () => {
-    drawStrip({ nearby: { ...nearby, people: [] } });
-    expect(document.querySelector('[data-testid="nearby-now"]')).toBeNull();
-    drawStrip({ nearby: { locked: true } });
-    expect(document.querySelector('[data-testid="nearby-now"]')).toBeNull();
-    drawStrip({ nearby: undefined });
-    expect(document.querySelector('[data-testid="nearby-now"]')).toBeNull();
-    drawStrip({ nearby: { ...nearby, can_say_hi: false } });
-    expect(document.querySelector('[data-testid="nearby-now"] .events__say-hi')).toBeNull();
   });
 });
 

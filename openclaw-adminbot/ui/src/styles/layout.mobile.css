@@ -399,8 +399,22 @@
     font-size: 12px;
   }
 
-  /* Content */
+  /* Content: the page keeps its name on a phone -- without it, nothing on screen says which of
+     twenty tabs this is -- but drops the subtitle to a single compact row. The meta line stays: it
+     carries the page's load error. */
   .content-header {
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+    padding: 0 0 2px;
+    max-height: none;
+  }
+
+  .content-header .page-title {
+    font-size: 20px;
+  }
+
+  .content-header .page-sub {
     display: none;
   }
 

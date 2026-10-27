@@ -75,9 +75,29 @@ export class InterviewInvite extends LitElement {
       background: var(--card);
     }
     summary {
+      display: flex;
+      align-items: center;
+      min-height: 44px;
       font-weight: 600;
       cursor: pointer;
-      padding: 4px;
+      list-style: none;
+    }
+    summary::-webkit-details-marker {
+      display: none;
+    }
+    /* The same chevron as the light DOM's .adminbot-fold, so every fold in the app reads alike. */
+    summary::after {
+      content: "";
+      width: 7px;
+      height: 7px;
+      margin-left: auto;
+      border-right: 2px solid var(--muted);
+      border-bottom: 2px solid var(--muted);
+      transform: rotate(45deg);
+      transition: transform 0.15s ease;
+    }
+    details[open] > summary::after {
+      transform: rotate(225deg);
     }
     form,
     label {

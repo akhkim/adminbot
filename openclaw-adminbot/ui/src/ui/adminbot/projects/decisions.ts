@@ -23,6 +23,8 @@ import type { PaperWorkspaceProps } from "./workspace.ts";
  * an answer permanent. Module-level so a re-render mid-answer does not lose what was pressed.
  */
 const collapsedDecisions = new Set<string>();
+/** Decision banners drawn open before the rest fold away. */
+const DECISION_PREVIEW = 3;
 /** Papers whose answer was written in this session, so the button can say so before a reload. */
 const savedDecisions = new Set<string>();
 /**
@@ -76,7 +78,7 @@ export function renderDecisionBanners(
   if (waiting.length === 0) {
     return nothing;
   }
-  return html`${waiting.map((paper) => {
+  const banner = (paper: AdminBotPaperRecord) => {
     const decision = decisionOf(paper);
     if (!decision) {
       return nothing;
@@ -179,5 +181,15 @@ export function renderDecisionBanners(
         props.onRerender?.();
       },
     });
-  })}`;
+  };
+  // Each banner is a whole form; past a few the page is all forms. The rest wait one click down,
+  // in the order they were asked.
+  if (waiting.length <= DECISION_PREVIEW) {
+    return html`${waiting.map(banner)}`;
+  }
+  return html`${waiting.slice(0, DECISION_PREVIEW).map(banner)}
+    <details class="adminbot-fold" data-testid="my-work-more-decisions">
+      <summary>${waiting.length - DECISION_PREVIEW} more decisions to record</summary>
+      ${waiting.slice(DECISION_PREVIEW).map(banner)}
+    </details>`;
 }

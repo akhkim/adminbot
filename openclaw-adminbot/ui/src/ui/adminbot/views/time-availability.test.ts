@@ -209,12 +209,20 @@ describe("renderAdminBotTimeAvailability", () => {
       selectedMemberId: "peer",
       onLoadCollaborators: load,
     });
-    expect(view.textContent).toContain("See my collaborator's time availability");
+    // Your own schedule leads; collaborators' sit in one fold below, open while one is shown.
+    const fold = view.querySelector<HTMLDetailsElement>(
+      '[data-testid="time-availability-collaborators"]',
+    )!;
+    expect(fold.open).toBe(true);
+    expect(
+      view.querySelector(".adminbot-time-availability__body")!.compareDocumentPosition(fold) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect(view.textContent).toContain("Coauthor");
     expect(view.textContent).not.toContain("Secret");
     expect(view.textContent).not.toContain("Add commitment");
     const refresh = [...view.querySelectorAll("button")].find((b) =>
-      b.textContent?.includes("Load / refresh"),
+      b.textContent?.includes("Load collaborators"),
     );
     refresh?.click();
     expect(load).toHaveBeenCalledOnce();

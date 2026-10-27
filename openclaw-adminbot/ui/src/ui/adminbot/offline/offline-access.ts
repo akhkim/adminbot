@@ -83,7 +83,7 @@ export class OfflineAccess extends LitElement {
     if (quiet) {
       return nothing;
     }
-    return html`<details>
+    return html`<details class="adminbot-fold">
       <summary role="status">
         ${!this.online ? "Working offline" : "Offline access"} ·
         ${pending

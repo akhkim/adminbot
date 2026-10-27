@@ -63,13 +63,17 @@ function renderTabs(props: ConferencePapersProps, tab: ConferencePapersTab) {
     ["lab", "Ours"],
   ];
   return html`
-    <div class="conference-papers__tabs" role="tablist" data-testid="conference-papers-tabs">
+    <div
+      class="projects__modes conference-papers__tabs"
+      role="tablist"
+      data-testid="conference-papers-tabs"
+    >
       ${entries.map(
         ([key, label]) => html`
           <button
             type="button"
             role="tab"
-            class=${`btn btn--sm ${tab === key ? "primary" : ""}`}
+            class="projects__mode"
             aria-selected=${tab === key}
             data-testid=${`conference-papers-tab-${key}`}
             @click=${() => props.onTabChange?.(key)}

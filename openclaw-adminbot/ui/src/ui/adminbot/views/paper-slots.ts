@@ -21,6 +21,7 @@
 // one list that the server validates against and this form renders from -- so a field can never
 // offer a shape the service will refuse.
 import { html, nothing, type TemplateResult } from "lit";
+import { live } from "lit/directives/live.js";
 import { adminBotOpenReviewForumId } from "../../../../../extensions/adminbot/src/contracts/paper-artifact-links.js";
 import {
   isPaperImpactSlot,
@@ -234,7 +235,7 @@ function renderInput(
       <label class="paper-slot__check">
         <input
           type="checkbox"
-          ?checked=${row?.status === "provided" || row?.status === "waived"}
+          .checked=${live(row?.status === "provided" || row?.status === "waived")}
           ?disabled=${readOnly}
           data-testid=${`paper-slot-${props.paperId}-${slot}`}
           @change=${(event: Event) =>

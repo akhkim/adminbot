@@ -121,6 +121,24 @@ describe("the card list", () => {
       "OpenReview rejects the PDF",
     );
   });
+
+  it("lists five blockers and folds the rest", () => {
+    const blockers = Array.from({ length: 8 }, (_, i) => ({
+      stage: "submission",
+      title: `Blocker ${i}`,
+      note: "",
+      by: "Ada",
+      at: String(i),
+    }));
+    const blocked = paper({ artifacts: { blocker_log: JSON.stringify(blockers) } });
+    const { container } = drawOverview({ papers: [blocked] });
+    const board = container.querySelector('[data-testid="my-work-blockers"]')!;
+    expect(board.querySelectorAll(":scope > .my-work__blockers .my-work-blocker")).toHaveLength(5);
+    const fold = board.querySelector<HTMLDetailsElement>('[data-testid="my-work-more-blockers"]')!;
+    expect(fold.open).toBe(false);
+    expect(fold.querySelector("summary")?.textContent).toContain("Show 3 more");
+    expect(fold.querySelectorAll(".my-work-blocker")).toHaveLength(3);
+  });
 });
 
 describe("papers the active list leaves out", () => {
@@ -468,6 +486,19 @@ describe("the decision banners above the list", () => {
   it("draws the decision banner on the member's own list", () => {
     const { container } = drawOverview({ papers: [decided("d1")] });
     expect(container.querySelector('[data-testid="decision-banner-d1"]')).not.toBeNull();
+  });
+
+  it("opens three decisions and folds the rest", () => {
+    const { container } = drawOverview({
+      papers: ["a", "b", "c", "d", "e"].map((id) => decided(id)),
+    });
+    const fold = container.querySelector<HTMLDetailsElement>(
+      '[data-testid="my-work-more-decisions"]',
+    )!;
+    expect(fold.open).toBe(false);
+    expect(fold.querySelector("summary")?.textContent).toContain("2 more decisions");
+    expect(fold.querySelectorAll('[data-testid^="decision-banner-"]')).toHaveLength(2);
+    expect(container.querySelectorAll('[data-testid^="decision-banner-"]')).toHaveLength(5);
   });
 
   it("leaves out a decision answered before this session", () => {

@@ -4,7 +4,7 @@ import { render } from "lit";
 import { describe, expect, it } from "vitest";
 import type { AppViewState } from "../../app-view-state.ts";
 import type { LabSharingSnapshot } from "../data/lab-sharing.ts";
-import { renderLabSharing, resetLabSharingSessionState } from "./lab-sharing.ts";
+import { askProjectChoices, renderLabSharing, resetLabSharingSessionState } from "./lab-sharing.ts";
 
 // jsdom omits the browser scrolling API used when the compose dialog opens.
 HTMLElement.prototype.scrollIntoView ??= () => undefined;
@@ -392,9 +392,15 @@ describe("renderLabSharing states", () => {
     expect(retry?.textContent).toContain("Try again");
   });
 
-  it("says when there is no invitation yet rather than leaving a bare heading", () => {
-    const { container } = renderView({ labSharing: snapshot({ invites: [] }) });
-    expect(text(container, "lab-sharing-invites")).toContain("You have not asked anyone yet.");
+  // An empty card is clutter: the page leads with "Need help?", and the invitation and request
+  // cards appear once there is something in them.
+  it("leaves out the invitation and request cards while they are empty, behind asking for help", () => {
+    const { container } = renderView({
+      labSharing: snapshot({ invites: [], mine: [] }),
+    });
+    expect(container.querySelector('[data-testid="lab-sharing-invites"]')).toBeNull();
+    expect(container.querySelector(".lab-sharing-requests")).toBeNull();
+    expect(container.querySelector('[data-testid="lab-sharing-seek-help"]')).not.toBeNull();
   });
 
   // Both routes file against a paper; with none to pick they would send an empty id.
@@ -433,5 +439,26 @@ describe("renderLabSharing states", () => {
     const pill = container.querySelector('[data-testid="lab-sharing-invite-inv2"] .pill');
     expect(pill?.textContent).toContain("Rejected");
     expect(pill?.classList.contains("danger")).toBe(true);
+  });
+});
+
+describe("askProjectChoices", () => {
+  const many = Array.from({ length: 1500 }, (_, i) => ({
+    id: `p${i}`,
+    title: `Paper ${i}`,
+    tags: [],
+  }));
+
+  it("offers a short list rather than every project", () => {
+    expect(askProjectChoices(many, "p0", "")).toHaveLength(50);
+  });
+
+  it("narrows to the search and keeps the chosen project selectable", () => {
+    const choices = askProjectChoices(many, "p3", "Paper 149");
+    expect(choices[0]?.id).toBe("p3");
+    expect(choices.slice(1).map((project) => project.id)).toEqual([
+      "p149",
+      ...Array.from({ length: 10 }, (_, i) => `p149${i}`),
+    ]);
   });
 });

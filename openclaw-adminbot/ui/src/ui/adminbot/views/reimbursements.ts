@@ -180,6 +180,15 @@ function renderDraft(props: AdminBotReimbursementProps) {
  * every path into this tab (signed-in, guest, and public shell).
  */
 function renderComplianceWarning(funder: AdminBotReimbursementFunder | undefined) {
+  // Before an institute is chosen there are no forms to distrust yet: one quiet line says what to
+  // do first, and the warning proper arrives with the funder whose rules it states.
+  if (!funder) {
+    return html`<p class="muted adminbot-reimbursement-hint" role="note">
+      Choose your institute first so the assistant prepares the correct forms and checks the
+      applicable requirements. Generated forms are drafts: check every line against your receipts
+      before submitting them.
+    </p>`;
+  }
   if (funder !== "DCS") {
     return html`
       <section class="callout warning adminbot-reimbursement-warning" role="note">
@@ -187,9 +196,9 @@ function renderComplianceWarning(funder: AdminBotReimbursementFunder | undefined
           Read this before trusting the generated forms
         </div>
         <p class="adminbot-reimbursement-warning__lede">
-          ${funder === "MPI-IS"
-            ? "The assistant prepares the MPI IS travel reimbursement form and a signable copy. Check every amount, date and description against your receipts, and review the MPI IS pre-submission report before sending the package to the MPI IS secretariat."
-            : "Choose your institute first so the assistant prepares the correct forms and checks the applicable requirements. Generated forms are drafts: check every line against your receipts before submitting them."}
+          The assistant prepares the MPI IS travel reimbursement form and a signable copy. Check
+          every amount, date and description against your receipts, and review the MPI IS
+          pre-submission report before sending the package to the MPI IS secretariat.
         </p>
       </section>
     `;

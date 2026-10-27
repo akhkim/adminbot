@@ -92,6 +92,19 @@ function buttonNamed(container: HTMLElement, name: string): HTMLButtonElement {
   )!;
 }
 
+// Cards and Table draw fifty rows at a time; a case looking for one venue in the whole catalog
+// presses "Show more" until everything that matched is drawn.
+async function showAll(container: HTMLElement): Promise<void> {
+  for (
+    let more = container.querySelector<HTMLButtonElement>('[data-testid="deadline-show-more"]');
+    more;
+    more = container.querySelector<HTMLButtonElement>('[data-testid="deadline-show-more"]')
+  ) {
+    more.click();
+    await settle(container);
+  }
+}
+
 function proposalInput(): DeadlineProposalInput {
   return {
     name: "Example Workshop",
@@ -1014,6 +1027,7 @@ describe("renderDeadlines", () => {
       ),
     ).toBe(true);
     expect(container.textContent).toContain("Archival + non-archival");
+    await showAll(container);
     expect(container.querySelectorAll(".deadline-card").length).toBeGreaterThan(100);
     const boardChildren = [...container.querySelector(".deadline-board")!.children];
     expect(boardChildren.indexOf(container.querySelector(".deadline-board__modes")!)).toBeLessThan(
@@ -1083,6 +1097,7 @@ describe("renderDeadlines", () => {
     const container = await renderView();
     buttonNamed(container, "Cards").click();
     await settle(container);
+    await showAll(container);
     const cards = [...container.querySelectorAll<HTMLElement>(".deadline-card")];
 
     const workshop = cards.find(
@@ -1180,6 +1195,21 @@ describe("renderDeadlines", () => {
     expect(buttonNamed(container, "Past").getAttribute("aria-pressed")).toBe("true");
   });
 
+  it("draws fifty cards at a time and counts the rest", async () => {
+    const container = await renderView();
+    expect(container.querySelectorAll(".deadline-card")).toHaveLength(50);
+    const more = container.querySelector<HTMLElement>(".projects__more")!;
+    const matched = Number(/of (\d+)/u.exec(more.textContent ?? "")?.[1]);
+    expect(matched).toBeGreaterThan(100);
+    expect(more.querySelector('[data-testid="deadline-show-more"]')?.textContent).toContain(
+      "Show 50 more",
+    );
+
+    await showAll(container);
+    expect(container.querySelectorAll(".deadline-card")).toHaveLength(matched);
+    expect(container.querySelector(".projects__more")).toBeNull();
+  });
+
   it("filters directly to one workshop group", async () => {
     const container = await renderView();
     const button = [
@@ -1188,6 +1218,7 @@ describe("renderDeadlines", () => {
 
     button.click();
     await settle(container);
+    await showAll(container);
 
     const groups = [...container.querySelectorAll(".deadline-card")].map(
       (card) =>
@@ -1404,10 +1435,13 @@ describe("renderDeadlines", () => {
 
     buttonNamed(container, "Cards").click();
     await settle(container);
+    await showAll(container);
     expect(container.querySelectorAll(".deadline-card")).toHaveLength(count);
 
     buttonNamed(container, "Table").click();
     await settle(container);
+    expect(container.querySelectorAll(".deadline-table tbody tr")).toHaveLength(50);
+    await showAll(container);
 
     expect(container.querySelector(".deadline-board__grid")).toBeNull();
     expect(container.querySelectorAll(".deadline-table tbody tr")).toHaveLength(count);
@@ -1421,6 +1455,7 @@ describe("renderDeadlines", () => {
 
   it("shows the earliest upcoming prerequisite and keeps the whole timeline available", async () => {
     const container = await renderView();
+    await showAll(container);
     const iclr = [...container.querySelectorAll<HTMLElement>(".deadline-card")].find(
       (card) =>
         card.querySelector(".deadline-card__name")?.textContent?.trim() === "ICLR 2027" &&
@@ -1499,6 +1534,7 @@ describe("renderDeadlines", () => {
 
   it("keeps official conference titles linked across deadline surfaces", async () => {
     const container = await renderView();
+    await showAll(container);
     const conference = [...container.querySelectorAll<HTMLElement>(".deadline-card")].find(
       (card) => card.dataset.entryType === "main_conference",
     )!;

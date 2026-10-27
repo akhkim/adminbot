@@ -64,6 +64,33 @@ function row(fields: Partial<PaperSlotRow> & { slot: string }): PaperSlotRow {
 }
 
 describe("renderPaperSlots", () => {
+  it("unticks a box the service refused, rather than leaving it looking done", async () => {
+    const slots = [row({ slot: "pi_approval" })];
+    const { container, saved } = await draw(slots);
+    const box = container.querySelector<HTMLInputElement>(
+      '[data-testid="paper-slot-p1-pi_approval"]',
+    )!;
+    box.click();
+    expect(saved).toEqual([{ slot: "pi_approval", input: { done: true } }]);
+    // The refusal comes back as the same row, still missing; the redraw must put the box back.
+    render(
+      renderPaperSlots({
+        paperId: "p1",
+        paperTitle: "Causal Garden Planning",
+        slots: [...slots],
+        showAllSlots: true,
+        onToggleShowAll: () => {},
+        onSaveSlot: () => {},
+      }),
+      container,
+    );
+    const deck = container.querySelector("adminbot-paper-slot-deck") as HTMLElement & {
+      updateComplete: Promise<unknown>;
+    };
+    await deck.updateComplete;
+    expect(box.checked).toBe(false);
+  });
+
   it("shows candidate evidence without presenting similarity as confirmed resubmission", async () => {
     const { container } = await draw([
       row({

@@ -3111,8 +3111,34 @@
   cursor: pointer;
 }
 
+/* The small inline cousin of .adminbot-fold: same chevron, no native triangle, so "Why?" opens like
+   every other fold in the app. The padding gives a finger something to hit beside the button. */
 .precise-location__why summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 4px;
   cursor: pointer;
+  list-style: none;
+}
+
+.precise-location__why summary::-webkit-details-marker {
+  display: none;
+}
+
+.precise-location__why summary::after {
+  content: "";
+  width: 5px;
+  height: 5px;
+  margin-left: 6px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg) translateY(-2px);
+  transition: transform 0.15s ease;
+}
+
+.precise-location__why[open] summary::after {
+  transform: rotate(225deg);
 }
 
 .member-map__credit a {
@@ -3292,11 +3318,16 @@
   font-size: var(--control-ui-text-sm);
 }
 
+/* Two lines, not one: papers in a series share a long prefix, and a one-line cut left every row
+   reading the same. The clamp still bounds the row, so three rows stay three short rows. */
 .dashboard-summary__row-label {
+  display: -webkit-box;
   overflow: hidden;
   color: var(--text);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
 .dashboard-summary__bar {

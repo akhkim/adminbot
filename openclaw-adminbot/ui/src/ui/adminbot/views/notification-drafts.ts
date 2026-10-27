@@ -266,12 +266,10 @@ export class NotificationDrafts extends LitElement {
   }
   override render() {
     return html`<section>
-      <h2>OpenReview To Tweet</h2>
-      <p>Turn acceptance notifications into tweet drafts and paper-list images.</p>
+      <!-- The shell header names the tab; what is left is the one line a reader needs before using it. -->
       <p class="hint">
-        Author IDs are read from OpenReview and matched to member profiles to add saved X handles.
-        Nothing is posted or saved to the database. Review titles, tracks, and mentions before
-        sharing.
+        Nothing is posted or saved. Saved X handles are added from member profiles; review titles,
+        tracks and mentions before sharing.
       </p>
       <label
         class="drop"

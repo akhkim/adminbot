@@ -387,7 +387,9 @@
   cursor: pointer;
 }
 
-.projects__mode[aria-pressed="true"] {
+/* Pressed for a view switch, selected for real tabs (Conference Papers): one look for both. */
+.projects__mode[aria-pressed="true"],
+.projects__mode[aria-selected="true"] {
   background: var(--accent-subtle, color-mix(in srgb, var(--accent) 14%, transparent));
   color: var(--text-strong);
   font-weight: 600;

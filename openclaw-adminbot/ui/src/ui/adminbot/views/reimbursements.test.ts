@@ -44,10 +44,13 @@ describe("choosing the institute", () => {
   it("keeps guidance specific to the selected institute and does not call an empty draft complete", () => {
     const initial = draw().container;
     expect(initial.textContent).toContain("Choose your institute first");
+    // A hint, not an alarm: nothing has been generated to distrust yet.
+    expect(initial.querySelector(".callout.warning")).toBeNull();
     expect(initial.textContent).toContain("Awaiting trip details");
     expect(initial.textContent).not.toContain("0 details needed");
     const mpi = draw({ state: state({ funder: "MPI-IS" }) }).container;
     expect(mpi.textContent).toContain("MPI IS travel reimbursement form and a signable copy");
+    expect(mpi.querySelector(".adminbot-reimbursement-warning")).not.toBeNull();
     expect(mpi.textContent).not.toContain("gizelda.pereira");
     expect(mpi.textContent).not.toContain("DCS Expense Form");
     const generate = [...mpi.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
