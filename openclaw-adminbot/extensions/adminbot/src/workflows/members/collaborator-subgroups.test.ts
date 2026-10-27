@@ -101,9 +101,7 @@ describe("collaboratorSubgroupAccess", () => {
 
   it("puts coauthor_major and own_pace_advisee on the Vector sponsor roster row", () => {
     // The matrix row, not the sheet that actually goes to the sponsor. `vectorSponsorRoster`
-    // selects on `member_type` and still carries only `full` and `coauthor-major` -- the sheet's
-    // own row text says so while its own-pace-advisee cell says otherwise, and that contradiction
-    // is unresolved. See the comment on the item in collaborator-subgroups.ts.
+    // selects on `member_type`, and carries these two plus `full`.
     const onRow = new Set(["coauthor_major", "own_pace_advisee"]);
     for (const subgroup of adminBotExternalCollaboratorSubgroups) {
       const granted = grantedItems(subgroup).includes("vector_roster_share");
@@ -143,7 +141,7 @@ describe("vectorSponsorRoster", () => {
     };
   }
 
-  it("carries full members, admins, and coauthor-major collaborators", () => {
+  it("carries full members, admins, coauthor-major collaborators and own-pace advisees", () => {
     const roster = vectorSponsorRoster([
       member({ id: "ada", name: "Ada", email: "ada@utoronto.ca" }),
       member({ id: "zed", name: "Zed", privilege_level: "admin", email: "zed@utoronto.ca" }),
@@ -155,11 +153,18 @@ describe("vectorSponsorRoster", () => {
         collaborator_subgroup: "coauthor_major",
         email: "cora@example.edu",
       }),
+      member({
+        id: "otto",
+        name: "Otto",
+        member_type: "own-pace-advisee",
+        email: "otto@example.edu",
+      }),
     ]);
 
     expect(roster.entries).toEqual([
       { id: "ada", name: "Ada", email: "ada@utoronto.ca" },
       { id: "cora", name: "Cora", email: "cora@example.edu" },
+      { id: "otto", name: "Otto", email: "otto@example.edu" },
       { id: "zed", name: "Zed", email: "zed@utoronto.ca" },
     ]);
     expect(roster.missing_email).toEqual([]);
@@ -195,16 +200,20 @@ describe("vectorSponsorRoster", () => {
     expect(roster.entries).toEqual([]);
   });
 
-  // Dropping someone silently would read to the sponsor as an account to remove, so the gap is
-  // reported instead.
-  it("reports people who belong on the sheet but have no email", () => {
+  // Dropping someone would read to the sponsor as an account to remove, and the sheet carries no
+  // email anyway: they stay on, and the gap is reported.
+  it("keeps people with no email on the sheet and reports them", () => {
     const roster = vectorSponsorRoster([
       member({ id: "noemail", name: "No Email" }),
       member({ id: "blank", name: "Blank", email: "   " }),
       member({ id: "ok", name: "Ok", email: "ok@utoronto.ca" }),
     ]);
 
-    expect(roster.entries.map((entry) => entry.id)).toEqual(["ok"]);
+    expect(roster.entries).toEqual([
+      { id: "blank", name: "Blank" },
+      { id: "noemail", name: "No Email" },
+      { id: "ok", name: "Ok", email: "ok@utoronto.ca" },
+    ]);
     expect(roster.missing_email).toEqual(["blank", "noemail"]);
   });
 

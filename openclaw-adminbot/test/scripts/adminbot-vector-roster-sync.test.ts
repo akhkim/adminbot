@@ -66,13 +66,19 @@ describe("who the sponsor sheet carries", () => {
     expect(roster.entries.map((entry) => entry.id)).toEqual(["here"]);
   });
 
-  it("carries coauthor-major, and nobody the type column does not name", () => {
+  it("carries coauthor-major and own-pace-advisee, and nobody the type column does not name", () => {
     const roster = vectorSponsorRoster([
       member({
         id: "major",
         name: "Major",
         email: "m@x.test",
         member_type: "coauthor-major",
+      } as never),
+      member({
+        id: "advisee",
+        name: "Advisee",
+        email: "a@x.test",
+        member_type: "own-pace-advisee",
       } as never),
       member({
         id: "minor",
@@ -83,7 +89,7 @@ describe("who the sponsor sheet carries", () => {
       // privilege_level alone is what used to put 184 people on a sheet meant for 62.
       member({ id: "blank", name: "Blank", email: "b@x.test", member_type: "" } as never),
     ]);
-    expect(roster.entries.map((entry) => entry.id)).toEqual(["major"]);
+    expect(roster.entries.map((entry) => entry.id)).toEqual(["advisee", "major"]);
   });
 });
 
@@ -144,15 +150,16 @@ describe("vector roster sheet sync", () => {
     expect(summary).toMatchObject({ dry_run: true, written_rows: 2 });
   });
 
-  it("reports missing emails in the summary, and fails the run only under --strict", async () => {
+  it("keeps a member with no email on the sheet, reports them, and fails only under --strict", async () => {
     const gapped = vectorSponsorRoster([
       member({ id: "ada", name: "Ada", email: "ada@utoronto.ca" }),
       member({ id: "noemail", name: "No Email" }),
     ]);
     const { gog } = recordingGog();
 
+    expect(buildSheetValues(gapped).at(-1)).toEqual(["No Email", "noemail", ""]);
     expect(await syncVectorRoster({ roster: gapped, gog })).toMatchObject({
-      written_rows: 1,
+      written_rows: 2,
       missing_email: ["noemail"],
     });
     await expect(syncVectorRoster({ roster: gapped, gog, strict: true })).rejects.toThrow(
