@@ -17,6 +17,9 @@
     "login.mjs",
     "openapi.generated.json",
     "openapi.generated.d.ts",
+    "skill.mjs",
+    "skill/SKILL.md",
+    "skill/pages.md",
     "README.md"
   ],
   "engines": {
