@@ -20,6 +20,7 @@ import {
   readArxivPdfBase64,
 } from "../connectors/social-draft.js";
 import type { AdminBotStoredProposal } from "../contracts/actions.js";
+import { resolveAdminBotControlUiUrl } from "../contracts/control-ui.js";
 import { missingMandatoryProfileFields } from "../contracts/profile-completion.js";
 import { createLlmLoadRouter, parseLlmNodes } from "../kernel/llm-router.js";
 import { ReferenceScans } from "../kernel/reference-scans.js";
@@ -43,6 +44,8 @@ import { resolveLabCalendar } from "../workflows/calendar/lab-calendar.js";
 import { DEADLINE_VENUES } from "../workflows/deadlines/generated/dataset.js";
 import { readDeadlineDataset } from "../workflows/deadlines/runtime-dataset.js";
 import { createAccountApprovedEmailRunner } from "../workflows/identity/account-approved-email.js";
+import { runWithApiToken } from "../workflows/identity/api-token-context.js";
+import { AdminBotApiTokenService } from "../workflows/identity/api-tokens.js";
 import { AdminBotAuthService } from "../workflows/identity/auth.js";
 import { createPasswordResetEmailRunner } from "../workflows/identity/password-reset-email.js";
 import { createCalendarInviteRunner } from "../workflows/onboarding/calendar-invite.js";
@@ -84,7 +87,7 @@ import { memberEnrollmentContext } from "./routes/onboarding.js";
 import { DEFAULT_ALLOWED_ORIGINS, applyCors, parseOrigins, remoteIp } from "./routes/origin.js";
 import { createOpenReviewCitationWatch, createIclrIntegrityWatch } from "./routes/reviews.js";
 import { dispatchRoute } from "./routes/router.js";
-import { resolvePrincipal } from "./routes/session.js";
+import { ApiTokenRateLimitedError, resolvePrincipal } from "./routes/session.js";
 import { PayloadTooLargeError, sendJson } from "./server.http.js";
 import { executeMemberEnrollment } from "./server.member-onboarding.js";
 import {
@@ -256,6 +259,18 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     // An explicitly injected geolocator wins (tests inject their own); otherwise the local city
     // database when ADMINBOT_GEOIP_MMDB_PATH is set, then IPinfo when IPINFO_TOKEN is. With
     // neither, the option stays unset and the login path simply skips the stamp.
+    ...(options.geolocateIp
+      ? { geolocateIp: options.geolocateIp }
+      : ipGeolocation.geolocate
+        ? { geolocateIp: ipGeolocation.geolocate }
+        : {}),
+  });
+  // Personal API tokens for scripts and agents (docs/adminbot/api-tokens.md). Same store and the
+  // same geolocator as sign-in, so a token's "last used from" reads like a session's.
+  const apiTokens = new AdminBotApiTokenService({
+    store,
+    levels: process.env.ADMINBOT_API_TOKEN_LEVELS,
+    controlUiUrl: resolveAdminBotControlUiUrl(process.env),
     ...(options.geolocateIp
       ? { geolocateIp: options.geolocateIp }
       : ipGeolocation.geolocate
@@ -454,6 +469,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     store,
     memberDrafts,
     auth,
+    apiTokens,
     privacyBroker,
     localChat: options.localChat ?? createLocalChat(),
     sensitiveInfo,
@@ -588,6 +604,14 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
         sendJson(res, 413, { error: { message: error.message } });
         return;
       }
+      if (error instanceof ApiTokenRateLimitedError) {
+        res.setHeader("Retry-After", String(error.retryAfterSeconds));
+        sendJson(res, 429, {
+          error: { message: error.message },
+          retry_after_seconds: error.retryAfterSeconds,
+        });
+        return;
+      }
       sendJson(res, 500, {
         error: { message: error instanceof Error ? error.message : "mock service failed" },
       });
@@ -712,7 +736,10 @@ async function routeRequest(req: IncomingMessage, res: ServerResponse, ctx: Admi
     });
     return;
   }
-  await handleAuthenticatedRoute(req, res, ctx, url, principal);
+  // Audit lines written anywhere under this request name the token it came with, if any.
+  await runWithApiToken(principal.kind === "member" ? principal.apiToken : undefined, () =>
+    handleAuthenticatedRoute(req, res, ctx, url, principal),
+  );
 }
 
 async function handleAuthenticatedRoute(

@@ -363,6 +363,7 @@ export class OpenClawApp extends LitElement {
   @state() memberPasswordConfirm = "";
   @state() loginMode: LoginMode = "signin";
   @state() passwordResetToken = "";
+  @state() cliLoginCode = "";
   @state() passwordResetSent = false;
   @state() passwordResetDone = false;
   @state() loginShowMemberPassword = false;

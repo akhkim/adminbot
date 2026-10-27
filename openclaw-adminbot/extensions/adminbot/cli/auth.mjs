@@ -2,6 +2,11 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { ApiError } from "./client.mjs";
+import { keychainAvailable, keychainDelete, keychainRead, keychainSave } from "./keychain.mjs";
+
+// The file holds one credential for one origin: a member session from `auth login --email`, or a
+// personal API token from `auth login`. A token's secret lives in the macOS Keychain when there is
+// one ("keychain": true), and the file then holds only which origin, id and expiry it belongs to.
 
 export async function readSession(file) {
   try {
@@ -23,13 +28,36 @@ export async function saveSession(file, data) {
     await rm(temp, { force: true });
   }
 }
-export async function clearSession(file, url, token) {
+/** Before a new login replaces the file: drop the Keychain item the old record pointed at. */
+export async function forgetSavedSecret(file, env = process.env) {
+  const saved = await readSession(file).catch(() => undefined);
+  if (saved?.keychain && typeof saved.url === "string") {
+    await keychainDelete(saved.url, env);
+  }
+}
+export async function saveApiToken(file, url, token, apiToken, env = process.env) {
+  await forgetSavedSecret(file, env);
+  const record = { url, kind: "api_token", id: apiToken.id, expires_at: apiToken.expires_at };
+  if (keychainAvailable(env)) {
+    await keychainSave(url, token, env);
+    await saveSession(file, { ...record, keychain: true });
+  } else {
+    await saveSession(file, { ...record, token });
+  }
+}
+export async function clearSession(file, url, token, env = process.env) {
   const saved = await readSession(file);
-  if (saved?.url === url && saved.token === token) {
+  if (saved?.url === url && (await savedToken(saved, env)) === token) {
+    if (saved.keychain) {
+      await keychainDelete(url, env);
+    }
     await rm(file, { force: true });
   }
 }
-export async function sessionToken(file, url, override) {
+async function savedToken(saved, env) {
+  return saved.keychain ? keychainRead(saved.url, env) : saved.token;
+}
+export async function sessionToken(file, url, override, env = process.env) {
   if (override?.trim()) {
     return override.trim();
   }
@@ -43,5 +71,9 @@ export async function sessionToken(file, url, override) {
   ) {
     throw new ApiError("SESSION_EXPIRED", "Session expired; run auth login", 401);
   }
-  return saved.token;
+  const token = await savedToken(saved, env);
+  if (!token) {
+    throw new ApiError("CREDENTIALS_ERROR", "Saved token is missing from the Keychain; run auth login", 401);
+  }
+  return token;
 }

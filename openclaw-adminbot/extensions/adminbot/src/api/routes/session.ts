@@ -6,6 +6,7 @@
 import { timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { AdminBotAuthResponse } from "../../workflows/identity/auth.js";
+import { isApiTokenShaped } from "../../workflows/identity/api-token-format.js";
 import { sendJson } from "../server.http.js";
 import type { AdminBotRouteContext, AdminBotPrincipal } from "./context.js";
 import { deviceClock, remoteIp } from "./origin.js";
@@ -93,6 +94,19 @@ export async function resolvePrincipal(
     if (ctx.serviceToken && constantTimeEqual(bearer, ctx.serviceToken)) {
       return { kind: "service" };
     }
+    // A personal API token never falls through to the session table (or the cookie below): a
+    // revoked or expired one is simply unauthenticated. Bearer only, so a token cannot ride along
+    // in a cookie or a link.
+    if (isApiTokenShaped(bearer)) {
+      const resolved = await ctx.apiTokens.resolve(bearer, remoteIp(req, ctx.trustProxyHeaders));
+      if (resolved.ok) {
+        return resolved.principal;
+      }
+      if (resolved.status === 429) {
+        throw new ApiTokenRateLimitedError(resolved.retry_after_seconds);
+      }
+      return undefined;
+    }
     const member = await ctx.auth.resolveSession(bearer);
     if (member) {
       // Every authenticated member request lands here, which is what makes it the place for the
@@ -112,6 +126,17 @@ export async function resolvePrincipal(
     }
   }
   return undefined;
+}
+
+/**
+ * Thrown by resolvePrincipal when an API token is over its per-minute limit. The server answers it
+ * with 429 and Retry-After wherever principal resolution happened, so no caller has to.
+ */
+export class ApiTokenRateLimitedError extends Error {
+  constructor(readonly retryAfterSeconds: number) {
+    super("too many requests for this API token; slow down");
+    this.name = "ApiTokenRateLimitedError";
+  }
 }
 
 export function bearerToken(req: IncomingMessage): string | undefined {

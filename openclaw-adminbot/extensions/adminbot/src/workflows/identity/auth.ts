@@ -138,6 +138,13 @@ export type AdminBotMemberPrincipal = {
    * place that decides, so route handlers do not each have to remember.
    */
   impersonator?: AdminBotLabMember;
+  /**
+   * Set when the request carried a personal API token instead of a browser session. `session` is
+   * then a stand-in built from the token (same owner and expiry), so readers of the session need
+   * not care; routes that must refuse a token (minting tokens, password or email changes,
+   * impersonation) check this field. See docs/adminbot/api-tokens.md.
+   */
+  apiToken?: { id: string; name: string };
 };
 
 // `pending_approval` lets the login route render its distinct 403 body while every other
@@ -183,9 +190,12 @@ type AuthStoreMethod =
   | "getPasswordResetByTokenHash"
   | "getPendingRegistrationByEmail"
   | "getPendingRegistrationByMemberId"
+  | "getApiToken"
+  | "getApiTokenByHash"
   | "getSession"
   | "getSettings"
   | "listAccountRegistrations"
+  | "listApiTokensForMember"
   | "listAuditEvents"
   | "listCredentialMemberIds"
   | "listLabMembers"
@@ -194,15 +204,19 @@ type AuthStoreMethod =
   | "patchLabMemberAuthFields"
   | "pruneSessionsBefore"
   | "recordAudit"
+  | "revokeApiToken"
+  | "revokeApiTokensForMember"
   | "revokeSession"
   | "revokeSessionsForMember"
   | "saveAccountRegistration"
+  | "saveApiToken"
   | "saveCredential"
   | "saveLabMember"
   | "savePasswordReset"
   | "saveSession"
   | "saveSessionIfCredentialCurrent"
   | "searchUnclaimedRoster"
+  | "touchApiToken"
   | "touchSession"
   | "tryApproveRegistration"
   | "trySavePendingRegistration"

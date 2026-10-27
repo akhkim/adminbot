@@ -2,6 +2,7 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
+import type { AdminBotApiToken, AdminBotApiTokenUsage } from "../contracts/api-tokens.js";
 import { cvEntryKey } from "../contracts/actions.js";
 import type {
   AdminBotAccountRegistration,
@@ -142,6 +143,8 @@ import {
   getReferenceScan,
   saveReferenceScan,
 } from "./reference-scans.js";
+import { withApiTokenAttribution } from "../workflows/identity/api-token-context.js";
+import { SqliteApiTokens } from "./sqlite.api-tokens.js";
 import { SqliteAuditLog } from "./sqlite.audit.js";
 import { SqliteLabMemberCache } from "./sqlite.lab-members.js";
 import { listSqliteMeetingHeads, listSqliteMeetingsPage } from "./sqlite.meetings.js";
@@ -296,6 +299,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   private readonly members: SqliteLabMemberCache;
   private readonly versions: SqliteTableVersions;
   private readonly audit: SqliteAuditLog;
+  private readonly apiTokens: SqliteApiTokens;
   private readonly recLetterFreezes: SqliteRecLetterFreezeIncidents;
   private readonly recLetterAttestations: SqliteRecLetterAttestations;
 
@@ -308,6 +312,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     this.members = new SqliteLabMemberCache(this.db);
     this.versions = new SqliteTableVersions(this.db);
     this.audit = new SqliteAuditLog(this.db);
+    this.apiTokens = new SqliteApiTokens(this.db);
     this.recLetterFreezes = new SqliteRecLetterFreezeIncidents(this.db);
     this.recLetterAttestations = new SqliteRecLetterAttestations(this.db);
     // SQLite's built-in lower() only handles ASCII; use the same fold as the in-memory store.
@@ -3456,7 +3461,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   }
 
   recordAudit(event: AdminBotAuditEvent): void {
-    this.audit.record(event);
+    this.audit.record(withApiTokenAttribution(event));
   }
 
   listAuditEvents(): AdminBotAuditEvent[] {
@@ -3562,6 +3567,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
            WHERE member_id = ? AND revoked_at IS NULL`,
         )
         .run(usedAt, reset.member_id);
+      this.revokeApiTokensForMember(reset.member_id, usedAt, "password_reset");
       this.db.exec("COMMIT");
       return true;
     } catch (error) {
@@ -3637,6 +3643,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
            WHERE member_id = ? AND revoked_at IS NULL`,
         )
         .run(updatedAt, memberId);
+      this.revokeApiTokensForMember(memberId, updatedAt, "password_changed");
       this.db.exec("COMMIT");
       return true;
     } catch (error) {
@@ -4009,6 +4016,35 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         "UPDATE adminbot_sessions SET revoked_at = ? WHERE member_id = ? AND revoked_at IS NULL",
       )
       .run(revokedAt, memberId);
+    this.revokeApiTokensForMember(memberId, revokedAt, "signed_out_everywhere");
+  }
+
+  saveApiToken(token: AdminBotApiToken): void {
+    this.apiTokens.save(token);
+  }
+
+  getApiTokenByHash(tokenHash: string): AdminBotApiToken | undefined {
+    return this.apiTokens.byHash(tokenHash);
+  }
+
+  getApiToken(id: string): AdminBotApiToken | undefined {
+    return this.apiTokens.byId(id);
+  }
+
+  listApiTokensForMember(memberId: string): AdminBotApiToken[] {
+    return this.apiTokens.forMember(memberId);
+  }
+
+  touchApiToken(id: string, usage: AdminBotApiTokenUsage): void {
+    this.apiTokens.touch(id, usage);
+  }
+
+  revokeApiToken(id: string, revokedAt: string, reason: string): boolean {
+    return this.apiTokens.revoke(id, revokedAt, reason);
+  }
+
+  revokeApiTokensForMember(memberId: string, revokedAt: string, reason: string): number {
+    return this.apiTokens.revokeForMember(memberId, revokedAt, reason);
   }
 
   pruneSessionsBefore(cutoffIso: string): number {

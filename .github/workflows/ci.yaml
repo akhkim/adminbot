@@ -108,6 +108,8 @@ jobs:
       - run: pnpm run check:import-cycles
       - run: pnpm run check:layering
       - run: pnpm run check:dir-size
+      # A personal API token (abt_) committed anywhere; only checksum-valid tokens match.
+      - run: pnpm run check:secrets
 
   build:
     name: Build

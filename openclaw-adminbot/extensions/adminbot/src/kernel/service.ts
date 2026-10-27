@@ -5,6 +5,7 @@ import type {
 } from "../connectors/calendar-membership.js";
 import type { ReverseGeocoder } from "../connectors/reverse-geocode.js";
 import type { AdminBotExternalCollaboratorSubgroup } from "../contracts/actions.js";
+import type { AdminBotApiToken, AdminBotApiTokenUsage } from "../contracts/api-tokens.js";
 import {
   adminBotActionTypes,
   ADMINBOT_ONBOARDING_CATCH_UP_ROUND,
@@ -944,8 +945,18 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   getSession(tokenHash: string): AdminBotAuthSession | undefined;
   touchSession(tokenHash: string, lastSeenAt: string): void;
   revokeSession(tokenHash: string, revokedAt: string): void;
+  /** Also revokes the member's API tokens: every "sign them out everywhere" means tokens too. */
   revokeSessionsForMember(memberId: string, revokedAt: string): void;
   pruneSessionsBefore(cutoffIso: string): number;
+  saveApiToken(token: AdminBotApiToken): void;
+  getApiTokenByHash(tokenHash: string): AdminBotApiToken | undefined;
+  getApiToken(id: string): AdminBotApiToken | undefined;
+  listApiTokensForMember(memberId: string): AdminBotApiToken[];
+  touchApiToken(id: string, usage: AdminBotApiTokenUsage): void;
+  /** True when this call revoked it; false when it was missing or already revoked. */
+  revokeApiToken(id: string, revokedAt: string, reason: string): boolean;
+  /** How many live tokens were revoked. */
+  revokeApiTokensForMember(memberId: string, revokedAt: string, reason: string): number;
   /** Upserts one author's account of one week on one paper. Re-saving the same week replaces. */
   savePaperWeeklyUpdate(update: AdminBotPaperWeeklyUpdate): void;
   listPaperWeeklyUpdates(params?: {

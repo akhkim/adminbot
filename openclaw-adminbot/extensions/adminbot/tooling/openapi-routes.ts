@@ -38,6 +38,13 @@ const ROUTER_HELPERS = new Map<string, readonly string[]>([
 ]);
 /** Dispatchers that run before authentication; their routes need no bearer token. */
 const PUBLIC_DISPATCHERS = new Set(["routeRequest", "servePublicRoute"]);
+/**
+ * Route modules outside the table that the auth dispatcher hands requests to, walked like auth.ts.
+ * In api-tokens.ts only `handleApiTokenRoute`'s own branches (the two `adminbot login` steps a CLI
+ * makes before it holds a credential) are public; its member routes sit in a separate function.
+ */
+const AUTH_ROUTE_MODULES = /[/\\]routes[/\\](auth|api-tokens)\.ts$/u;
+const PUBLIC_AUTH_FUNCTIONS = new Set(["handleApiTokenRoute"]);
 const clean = (node: ts.Node) => node.getText().replace(/\?\./gu, ".");
 const where = (node: ts.Node) =>
   `${node.getSourceFile().fileName}:${node.getSourceFile().getLineAndCharacterOfPosition(node.getStart()).line + 1}`;
@@ -532,7 +539,7 @@ export function discoverRoutes(
   for (const source of sources) {
     if (
       /[/\\]routes[/\\]/u.test(source.fileName) &&
-      !/[/\\]routes[/\\]auth\.ts$/u.test(source.fileName)
+      !AUTH_ROUTE_MODULES.test(source.fileName)
     ) {
       continue;
     }
@@ -543,7 +550,7 @@ export function discoverRoutes(
       // and a contract calling it public would make the CLI drop the very token it needs.
       const body = node.thenStatement.getText();
       return (
-        (name !== undefined && PUBLIC_DISPATCHERS.has(name)) ||
+        (name !== undefined && (PUBLIC_DISPATCHERS.has(name) || PUBLIC_AUTH_FUNCTIONS.has(name))) ||
         (name === "handleAuthRoute" &&
           !["resolvePrincipal(", "requirePrivileged(", "bearerToken(", "cookieToken("].some(
             (call) => body.includes(call),

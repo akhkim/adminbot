@@ -120,6 +120,58 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/auth/api-tokens": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** GET /auth/api-tokens */
+    get: operations["get-auth-api-tokens"];
+    put?: never;
+    /** POST /auth/api-tokens */
+    post: operations["post-auth-api-tokens"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/auth/api-tokens/{api_tokens_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** DELETE /auth/api-tokens/{api_tokens_id} */
+    delete: operations["delete-auth-api-tokens-by-api-tokens-id"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/auth/api-tokens/revoke-all": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** POST /auth/api-tokens/revoke-all */
+    post: operations["post-auth-api-tokens-revoke-all"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/auth/claim": {
     parameters: {
       query?: never;
@@ -148,6 +200,91 @@ export interface paths {
     put?: never;
     /** POST /auth/device-token */
     post: operations["post-auth-device-token"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/auth/device/approve": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** POST /auth/device/approve */
+    post: operations["post-auth-device-approve"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/auth/device/deny": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** POST /auth/device/deny */
+    post: operations["post-auth-device-deny"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/auth/device/lookup": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** POST /auth/device/lookup */
+    post: operations["post-auth-device-lookup"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/auth/device/poll": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** POST /auth/device/poll */
+    post: operations["post-auth-device-poll"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/auth/device/start": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** POST /auth/device/start */
+    post: operations["post-auth-device-start"];
     delete?: never;
     options?: never;
     head?: never;
@@ -5060,6 +5197,12 @@ export interface components {
         | "auth.login_location_suspected_vpn"
         | "auth.impersonation_started"
         | "auth.impersonation_ended"
+        | "auth.api_token.created"
+        | "auth.api_token.revoked"
+        | "auth.api_token.revoked_all"
+        | "auth.api_token.new_ip"
+        | "auth.api_token.cli_login_started"
+        | "auth.api_token.cli_login_denied"
         | "member.slack_stopped"
         | "member.slack_started"
         | "member.location_observed"
@@ -5086,6 +5229,23 @@ export interface components {
       details?: {
         [key: string]: unknown;
       };
+    } & {
+      [key: string]: unknown;
+    };
+    AdminBotApiTokenView: {
+      id: string;
+      name: string;
+      hint: string;
+      created_at: string;
+      expires_at: string;
+      created_ip?: string;
+      last_used_at?: string;
+      last_used_ip?: string;
+      last_used_place?: string;
+      ip_count: number;
+      revoked_at?: string;
+      revoked_reason?: string;
+      current?: boolean;
     } & {
       [key: string]: unknown;
     };
@@ -5129,9 +5289,9 @@ export interface components {
       [key: string]: unknown;
     };
     AdminBotLabMember: {
+      name: string;
       email?: string;
       id: string;
-      name: string;
       preferred_name?: string;
       member_type?: string;
       test_onboard_batch?: number;
@@ -5474,8 +5634,8 @@ export interface components {
       [key: string]: unknown;
     };
     AdminBotBadgeDefinition: {
-      id: string;
       name: string;
+      id: string;
       category: string;
       description: string;
       criteria_url?: string;
@@ -5946,9 +6106,9 @@ export interface components {
       [key: string]: unknown;
     };
     AdminBotLabMemberView: {
+      name: string;
       email?: string;
       id: string;
-      name: string;
       preferred_name?: string;
       member_type?: string;
       test_onboard_batch?: number;
@@ -6085,11 +6245,11 @@ export interface components {
       [key: string]: unknown;
     };
     AdminBotLabMemberSummary: {
+      name: string;
       email?: string;
       /** @enum {string} */
       privilege_level: "member" | "admin" | "external_collaborator" | "trial";
       id: string;
-      name: string;
       preferred_name?: string;
       member_type?: string;
       test_onboard_batch?: number;
@@ -6296,8 +6456,8 @@ export interface components {
       [key: string]: unknown;
     };
     AdminBotMemberRequestProfile: {
-      email: string;
       name: string;
+      email: string;
     } & {
       [key: string]: unknown;
     };
@@ -7982,8 +8142,8 @@ export interface components {
       [key: string]: unknown;
     };
     OpportunityWire: {
-      id: string;
       name: string;
+      id: string;
       /** @enum {string} */
       status: "pending" | "approved" | "rejected";
       /** @enum {string} */
@@ -8431,8 +8591,8 @@ export interface components {
       [key: string]: unknown;
     };
     ConferenceRosterWirePerson: {
-      member_id?: string;
       name: string;
+      member_id?: string;
       avatar_url?: string;
       /** @enum {string} */
       attending: "unknown" | "yes" | "no";
@@ -9921,6 +10081,141 @@ export interface operations {
       };
     };
   };
+  "get-auth-api-tokens": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            allowed: boolean;
+            tokens: components["schemas"]["AdminBotApiTokenView"][];
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "post-auth-api-tokens": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          name?: unknown;
+          expires_in_days?: unknown;
+          password?: unknown;
+        } & {
+          [key: string]: unknown;
+        };
+      };
+    };
+    responses: {
+      /** @description Success; response shape is validated by the server */
+      "2XX": {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "delete-auth-api-tokens-by-api-tokens-id": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        api_tokens_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success; response shape is validated by the server */
+      "2XX": {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "post-auth-api-tokens-revoke-all": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success; response shape is validated by the server */
+      "2XX": {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
   "post-auth-claim": {
     parameters: {
       query?: never;
@@ -10048,6 +10343,193 @@ export interface operations {
             [key: string]: unknown;
           };
         };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "post-auth-device-approve": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          user_code?: unknown;
+          password?: unknown;
+        } & {
+          [key: string]: unknown;
+        };
+      };
+    };
+    responses: {
+      /** @description Success; response shape is validated by the server */
+      "2XX": {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "post-auth-device-deny": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          user_code?: unknown;
+        } & {
+          [key: string]: unknown;
+        };
+      };
+    };
+    responses: {
+      /** @description Success; response shape is validated by the server */
+      "2XX": {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "post-auth-device-lookup": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          user_code?: unknown;
+        } & {
+          [key: string]: unknown;
+        };
+      };
+    };
+    responses: {
+      /** @description Success; response shape is validated by the server */
+      "2XX": {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "post-auth-device-poll": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          device_code?: unknown;
+        } & {
+          [key: string]: unknown;
+        };
+      };
+    };
+    responses: {
+      /** @description Success; response shape is validated by the server */
+      "2XX": {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "post-auth-device-start": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          name?: unknown;
+          expires_in_days?: unknown;
+        } & {
+          [key: string]: unknown;
+        };
+      };
+    };
+    responses: {
+      /** @description Success; response shape is validated by the server */
+      "2XX": {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
       /** @description Authentication, authorization, validation, policy, or connector error */
       default: {
@@ -15720,8 +16202,8 @@ export interface operations {
         content: {
           "application/json": {
             members: ({
-              id: string;
               name: string;
+              id: string;
               hours_per_week?: number;
               availability?: components["schemas"]["AdminBotAvailabilityRow"][];
               time_off?: components["schemas"]["AdminBotTimeOffRow"][];
