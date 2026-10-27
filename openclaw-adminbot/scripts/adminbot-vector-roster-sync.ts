@@ -9,7 +9,6 @@
 // Membership is not decided here: `vectorSponsorRoster` owns that rule so the sheet and the access
 // matrix can never disagree about who belongs on it.
 import { execFile as execFileCallback } from "node:child_process";
-import { isMainModule } from "./lib/is-main-module.mjs";
 import { promisify } from "node:util";
 import { resolveGogExecutable } from "../extensions/adminbot/src/connectors/gog.js";
 import type { AdminBotLabMember } from "../extensions/adminbot/src/contracts/actions.js";
@@ -17,18 +16,31 @@ import {
   vectorSponsorRoster,
   type AdminBotVectorRoster,
 } from "../extensions/adminbot/src/workflows/members/collaborator-subgroups.js";
+import { isMainModule } from "./lib/is-main-module.mjs";
 
 const execFile = promisify(execFileCallback);
 
-// gid=0 of the sheet already shared with the sponsor. Hard-coded rather than configurable: it is a
-// single standing artifact with an external reader, not a per-deployment setting.
-const SPREADSHEET_ID = "1rllV-oGw26HY4K97LiF8qhW8NhXPvLZ0kbBioHiGATg";
-const HEADER = ["Name", "Email"] as const;
+// gid=0 of the sheet the sponsor reads. Hard-coded rather than configurable: it is a single
+// standing artifact with an external reader, not a per-deployment setting. The bot's own account
+// owns it -- the sheet this used to point at (1rllV-…) was shared with the bot read-only, so every
+// write since the job first ran was refused with a 403.
+const SPREADSHEET_ID = "1DFDiFTfhXGDb5S4EKWLVEcj-3_NaxyHHjoUwawizs88";
+// The sheet's own columns, which are the DCS roster's first three: the sponsor keys Vector accounts
+// by DCS username, and the AdminBot id lets a row be traced back to the member it came from.
+const HEADER = ["full_name", "adminbot_internal_id", "dcs_username"] as const;
+const LAST_COLUMN = "C";
 const GOG_TIMEOUT_MS = 60_000;
 
-/** Header plus one row per person; nothing about them beyond name and institutional email. */
+/**
+ * Header plus one row per person, and nothing about them beyond those three columns. A member with
+ * no DCS username still gets a row with that cell empty: leaving them off would read to the sponsor
+ * as "remove this account", which is not what a missing username means.
+ */
 export function buildSheetValues(roster: AdminBotVectorRoster): string[][] {
-  return [[...HEADER], ...roster.entries.map((entry) => [entry.name, entry.email])];
+  return [
+    [...HEADER],
+    ...roster.entries.map((entry) => [entry.name, entry.id, entry.dcs_username ?? ""]),
+  ];
 }
 
 export type SyncOptions = {
@@ -61,13 +73,19 @@ export async function syncVectorRoster(options: SyncOptions): Promise<Record<str
     "sheets",
     "update",
     SPREADSHEET_ID,
-    `A1:B${values.length}`,
+    `A1:${LAST_COLUMN}${values.length}`,
     "--input",
     "RAW",
     "--values-json",
     JSON.stringify(values),
   ]);
-  await options.gog(["sheets", "clear", SPREADSHEET_ID, `A${values.length + 1}:B`, "--force"]);
+  await options.gog([
+    "sheets",
+    "clear",
+    SPREADSHEET_ID,
+    `A${values.length + 1}:${LAST_COLUMN}`,
+    "--force",
+  ]);
 
   if (options.strict && roster.missing_email.length > 0) {
     throw new Error(
@@ -82,6 +100,10 @@ function summarize(roster: AdminBotVectorRoster) {
     spreadsheet_id: SPREADSHEET_ID,
     written_rows: roster.entries.length,
     missing_email: roster.missing_email,
+    // On the sheet with an empty DCS cell: a gap for the lab to fill, reported rather than failed.
+    missing_dcs_username: roster.entries
+      .filter((entry) => !entry.dcs_username)
+      .map((entry) => entry.id),
     synced_at: new Date().toISOString(),
   };
 }
