@@ -6170,6 +6170,129 @@ export class AdminBotService {
   }
 
   /**
+   * An admin's change of the address a member signs in with: the member's own `/auth/email`,
+   * without their password. It exists for the member who signed up with the wrong address or can
+   * no longer reach the old inbox, which is exactly when they cannot do it themselves.
+   *
+   * The credential row (what login looks up) and the roster email move together in one store
+   * transaction, as they do for the member's own change. A member who has not claimed an account
+   * yet has no credential, so only the roster email moves -- it is the address they will claim
+   * with. Sessions stay signed in, as for a rename: the same person at a new address. Any
+   * outstanding password-reset link is burned, because it went to the address being replaced.
+   *
+   * Two refusals the member's own change does not need, because this one skips the password:
+   * `self` -- an admin's own sign-in email changes in My Profile, behind their password.
+   * `head professor` -- moving the PI's sign-in moves where their password reset goes, so only the
+   * PI does it, in My Profile.
+   */
+  changeMemberLoginEmail(params: {
+    memberId: string;
+    newEmail: string;
+    actorId: string;
+  }): AdminBotServiceResponse<{
+    member: AdminBotLabMember;
+    email: string;
+    previous_email: string | null;
+    had_sign_in: boolean;
+  }> {
+    const email = params.newEmail.trim().toLowerCase();
+    if (!email) {
+      return serviceError(400, "a new email is required");
+    }
+    const formatError = validateEmailFormat(email, "email");
+    if (formatError) {
+      return serviceError(400, formatError);
+    }
+    if (params.memberId === params.actorId) {
+      return serviceError(403, "change your own sign-in email in My Profile, with your password");
+    }
+    if (params.memberId === this.headProfessorMemberId()) {
+      return serviceError(403, "only the head professor can change their own sign-in email");
+    }
+    const member = this.store.getLabMember(params.memberId);
+    if (!member) {
+      return serviceError(404, "member not found");
+    }
+    const credential = this.store.getCredentialByMemberId(params.memberId);
+    const previous = (credential?.email ?? member.email ?? "").trim().toLowerCase() || null;
+    if (email === previous) {
+      return serviceError(400, "that is already this member's sign-in email");
+    }
+    // Specific rather than the self-service path's generic "unavailable": that one hides which
+    // addresses have accounts from whoever is typing, and an admin can read the roster anyway.
+    const holder = this.store.getCredentialByEmail(email);
+    if (holder && holder.member_id !== params.memberId) {
+      return serviceError(
+        409,
+        `${email} is already the sign-in email of member ${holder.member_id}`,
+      );
+    }
+    if (this.store.getPendingRegistrationByEmail(email)) {
+      return serviceError(409, `${email} belongs to a pending sign-up; approve or reject it first`);
+    }
+    // Another record carrying the address on any of its email fields is the same person twice, or
+    // a typo that would route their mail to someone else. Either way it is a merge or a correction
+    // of that record first, as creating a member refuses it (member-create.ts).
+    const other = this.store
+      .listLabMembers()
+      .find(
+        (candidate) =>
+          candidate.id !== params.memberId &&
+          [candidate.email, candidate.correspondence_email, candidate.calendar_email].some(
+            (address) => address?.trim().toLowerCase() === email,
+          ),
+      );
+    if (other) {
+      return serviceError(409, `${email} is already on the roster for member ${other.id}`);
+    }
+    const now = new Date().toISOString();
+    if (credential) {
+      // The password hash is the guard the member's own change uses against a concurrent password
+      // change; here it only means "the account is still the one just read".
+      const changed = this.store.changeMemberLoginEmail(
+        params.memberId,
+        email,
+        credential.password_scrypt,
+        now,
+      );
+      if (changed === "stale") {
+        return serviceError(
+          409,
+          "this member's sign-in changed while saving; reload and try again",
+        );
+      }
+      if (changed === "taken") {
+        return serviceError(409, `${email} was just taken by another account`);
+      }
+      this.store.markPasswordResetsUsedForMember(params.memberId, now);
+    } else {
+      this.store.saveLabMember({ ...member, email, updated_at: now });
+    }
+    const updated = this.store.getLabMember(params.memberId) ?? { ...member, email };
+    this.recordAudit({
+      type: "lab_member.login_email_changed",
+      actor: params.actorId,
+      details: {
+        member_id: params.memberId,
+        name: member.name,
+        from_email: previous,
+        to_email: email,
+        had_sign_in: Boolean(credential),
+      },
+    });
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        member: updated,
+        email,
+        previous_email: previous,
+        had_sign_in: Boolean(credential),
+      },
+    };
+  }
+
+  /**
    * Remove one member's record and everything that named them.
    *
    * Distinct from a merge, which is the right tool whenever the person still exists somewhere on

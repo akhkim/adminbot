@@ -579,6 +579,28 @@ matched as a whole value everywhere, an ID that is also a word the records store
 such as `member` or `admin`, a status, a Member Type, an actor stamp such as `service`) can be
 neither renamed from nor renamed to; it has to be changed by hand.
 
+### Changing a member's sign-in email
+
+The member form never rewrites the email: it is the address the member signs in with, and a stray
+edit would move their account to an inbox they may not have. An admin moves it on purpose with
+**Change sign-in email** in the Edit member popover (`POST /lab/members/{id}/email` with
+`{ "new_email": ... }`) -- for the member who signed up with the wrong address or can no longer
+reach the old one, which is exactly when they cannot change it themselves in My Profile.
+
+The sign-in and the roster email move together in one transaction. The old address stops signing
+in, the new one starts, and the member stays signed in where they already are. A password reset
+then goes to the new address (or to their correspondence email, if they have one), and any reset
+link already sent to the old address stops working. A member who has not claimed an account yet
+has only a roster email, so that is what moves: it is the address they will claim with. The
+address is lowercased; it is refused if it is malformed or unchanged, or if it is another
+member's sign-in, a pending sign-up, or on another roster record. Each change is audited as
+`lab_member.login_email_changed` with the old and new address.
+
+It needs an admin signed in to the website, never an API token or a "view as" session. It is
+refused for your own account (change yours in My Profile, behind your password) and for the head
+professor's: moving the PI's sign-in moves where their password reset goes, so only the PI does
+that.
+
 ### Adding a member from the Members tab
 
 **Add member** on the Members tab creates the roster record and, unless the admin unticks **Start

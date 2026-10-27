@@ -2708,6 +2708,8 @@ export type AdminBotAuditEvent = {
     // Carries the whole retired record in `details`, because a merge has no undo.
     | "lab_member.merged"
     | "lab_member.id_changed"
+    // An admin moved a member's sign-in address; carries the old and new address.
+    | "lab_member.login_email_changed"
     | "lab_member.deleted"
     | "lab_members.purged_without_email"
     | "lab_member_request.submitted"

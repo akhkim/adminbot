@@ -144,6 +144,7 @@ Website: `/members` · Who: member (edits: admin)
 | `get-nudges-campaigns`                       | GET `/nudges/campaigns`                                 |
 | `get-nudges-escalated`                       | GET `/nudges/escalated`                                 |
 | `post-lab-members-backfill-calendar-invites` | POST `/lab/members/backfill-calendar-invites` (dry-run) |
+| `post-lab-members-by-members-id-email`       | POST `/lab/members/{members_id}/email`                  |
 | `post-lab-members-by-members-id-id`          | POST `/lab/members/{members_id}/id`                     |
 | `post-lab-members-merge`                     | POST `/lab/members/merge`                               |
 | `post-lab-members-without-email-purge`       | POST `/lab/members/without-email/purge` (dry-run)       |
