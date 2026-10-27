@@ -190,7 +190,8 @@ export function hasLabCalendarAccess(access: readonly CalendarAccessRule[], emai
   const address = email.trim().toLowerCase();
   return access.some(
     (rule) =>
-      ["reader", "writer", "owner"].includes(rule.role) &&
+      // A writer without private access still reads every non-private event, so no grant is due.
+      ["reader", "writerWithoutPrivateAccess", "writer", "owner"].includes(rule.role) &&
       (rule.scope.type === "default" ||
         (rule.scope.type === "user" && rule.scope.value?.trim().toLowerCase() === address)),
   );

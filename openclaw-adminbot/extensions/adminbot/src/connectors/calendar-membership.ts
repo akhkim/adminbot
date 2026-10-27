@@ -187,18 +187,35 @@ function aclArgs(method: string, params: Record<string, unknown>) {
   );
 }
 
+// Every role Google documents for a calendar ACL. `writerWithoutPrivateAccess` ("make changes to
+// events" without seeing private details) is newer than the others; until it was listed here, two
+// such shares on the lab calendar made every daily membership sync throw from October 2026 on. An
+// unknown role still fails the read: guessing whether it can see events would decide both
+// revocation and the "already has access" check.
+const CALENDAR_ACCESS_ROLES = new Set([
+  "none",
+  "freeBusyReader",
+  "reader",
+  "writerWithoutPrivateAccess",
+  "writer",
+  "owner",
+]);
+
 function parseAccessRule(value: unknown): CalendarAccessRule {
   const rule = value as CalendarAccessRule | undefined;
   if (
     !rule ||
     typeof rule.id !== "string" ||
     !rule.id ||
-    !["none", "freeBusyReader", "reader", "writer", "owner"].includes(rule.role) ||
+    !CALENDAR_ACCESS_ROLES.has(rule.role) ||
     !["user", "group", "domain", "default"].includes(rule.scope?.type) ||
     (rule.scope.type !== "default" &&
       (typeof rule.scope.value !== "string" || !rule.scope.value.trim()))
   ) {
-    throw new Error("Invalid calendar sharing rule");
+    // Name the role and scope type (never the rule ID or value: those carry the address) so the
+    // next unfamiliar shape is diagnosable from the cron run summary alone.
+    const shape = `role ${String(rule?.role).slice(0, 40)}, scope ${String(rule?.scope?.type).slice(0, 40)}`;
+    throw new Error(`Invalid calendar sharing rule (${shape})`);
   }
   return rule;
 }
