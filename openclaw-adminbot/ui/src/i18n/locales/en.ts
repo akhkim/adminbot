@@ -1471,6 +1471,9 @@ export const en: TranslationMap = {
       playlist: "Open the recordings playlist",
     },
     actionItems: "Action items",
+    addAttendee: "Add",
+    addAttendeeLabel: "Add someone who was there",
+    addAttendeePlaceholder: "Search members to add",
     attendance: "Attendance",
     decisions: "Decisions",
     empty:
@@ -1488,6 +1491,7 @@ export const en: TranslationMap = {
     // rounding to a minute count that is either 0 or wrong.
     duration: "{minutes}m {seconds}s",
     durationHours: "{hours}h {minutes}m",
+    noAttendees: "Nobody is recorded as attending yet.",
     noTranscript: "No transcript has been attached, so there is no summary.",
     nudge: {
       title: "Who has stopped coming",
@@ -1506,9 +1510,12 @@ export const en: TranslationMap = {
     openDrive: "Open in Drive",
     openZoom: "Open recording",
     passcode: "Passcode:",
+    pickMember: "Choose a member from the list.",
     shareUrl: "Recording link",
     sourceManual: "marked by an admin",
     recordingDetails: "Summary and attendance",
+    removeAttendee: "Remove",
+    removeAttendeeNamed: "Remove {name} from this meeting",
     seriesCount: "{count} recordings",
     seriesCountOne: "1 recording",
     seriesLatest: "latest {date}",

@@ -13,6 +13,8 @@
     "auth.mjs",
     "client.mjs",
     "client.d.mts",
+    "keychain.mjs",
+    "login.mjs",
     "openapi.generated.json",
     "openapi.generated.d.ts",
     "README.md"

@@ -5,6 +5,7 @@ import type {
 } from "../connectors/calendar-membership.js";
 import type { ReverseGeocoder } from "../connectors/reverse-geocode.js";
 import type { AdminBotExternalCollaboratorSubgroup } from "../contracts/actions.js";
+import type { AdminBotApiToken, AdminBotApiTokenUsage } from "../contracts/api-tokens.js";
 import {
   adminBotActionTypes,
   ADMINBOT_ONBOARDING_CATCH_UP_ROUND,
@@ -176,6 +177,7 @@ import {
   adminBotGroupMeetingNudgeWindowHours,
   hoursUntilGroupMeeting,
   isGroupMeetingNudgeDue,
+  resolveGroupMeetingTopic,
   type GroupMeetingSchedule,
 } from "../contracts/group-meeting.js";
 import type { DiscoveryPosition } from "../contracts/lab-sharing-discovery-cursor.js";
@@ -943,8 +945,18 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   getSession(tokenHash: string): AdminBotAuthSession | undefined;
   touchSession(tokenHash: string, lastSeenAt: string): void;
   revokeSession(tokenHash: string, revokedAt: string): void;
+  /** Also revokes the member's API tokens: every "sign them out everywhere" means tokens too. */
   revokeSessionsForMember(memberId: string, revokedAt: string): void;
   pruneSessionsBefore(cutoffIso: string): number;
+  saveApiToken(token: AdminBotApiToken): void;
+  getApiTokenByHash(tokenHash: string): AdminBotApiToken | undefined;
+  getApiToken(id: string): AdminBotApiToken | undefined;
+  listApiTokensForMember(memberId: string): AdminBotApiToken[];
+  touchApiToken(id: string, usage: AdminBotApiTokenUsage): void;
+  /** True when this call revoked it; false when it was missing or already revoked. */
+  revokeApiToken(id: string, revokedAt: string, reason: string): boolean;
+  /** How many live tokens were revoked. */
+  revokeApiTokensForMember(memberId: string, revokedAt: string, reason: string): number;
   /** Upserts one author's account of one week on one paper. Re-saving the same week replaces. */
   savePaperWeeklyUpdate(update: AdminBotPaperWeeklyUpdate): void;
   listPaperWeeklyUpdates(params?: {
@@ -1892,6 +1904,10 @@ export class AdminBotService {
       .find(
         (stored) =>
           (stored.status === "pending" || stored.status === "approved") &&
+          // Proposals filed before every action carried a payload (Aug-Sep 2026) have none to
+          // compare, so none can be "the same". Hashing that absence threw inside this find, and one
+          // such approved invite left every channel sweep that filed a new invite with a 500.
+          stored.proposed_payload !== undefined &&
           payloadHash(stored.proposed_payload) === hash,
       );
   }
@@ -10660,7 +10676,8 @@ export class AdminBotService {
   }
 
   /**
-   * The Meetings tab's index: one row per recurring meeting, newest first.
+   * The Meetings tab's index: one row per recurring meeting, the lab's weekly meeting first and the
+   * rest newest first.
    *
    * Every listed meeting is counted, not a page of them, so a series' row says how many recordings
    * its dropdown holds before anyone opens it. Built from heads, never rosters, and the same for
@@ -10680,6 +10697,7 @@ export class AdminBotService {
         series: summarizeMeetingSeries(
           this.store.listMeetingHeads(),
           this.resolveSettings().meeting_minimum_minutes ?? 0,
+          resolveGroupMeetingTopic(),
         ),
       },
     };

@@ -54,6 +54,18 @@ export function resolveGroupMeetingEventId(env: NodeJS.ProcessEnv = process.env)
   return groupMeetingSeriesId(configured || DEFAULT_GROUP_MEETING_EVENT_ID);
 }
 
+/**
+ * The title the weekly meeting's Zoom recordings carry, which is what the Meetings tab groups them
+ * by. Its series is listed first there, ahead of whichever group happened to meet most recently:
+ * the weekly meeting is what most people open the tab for.
+ */
+export const ADMINBOT_GROUP_MEETING_TOPIC_ENV = "ADMINBOT_GROUP_MEETING_TOPIC";
+export const DEFAULT_GROUP_MEETING_TOPIC = "Weekly Jinesis Meeting";
+
+export function resolveGroupMeetingTopic(env: NodeJS.ProcessEnv = process.env): string {
+  return env[ADMINBOT_GROUP_MEETING_TOPIC_ENV]?.trim() || DEFAULT_GROUP_MEETING_TOPIC;
+}
+
 /** How long before the meeting a reminder may go out. */
 export const adminBotGroupMeetingNudgeWindowHours = 20;
 

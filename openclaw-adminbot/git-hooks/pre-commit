@@ -34,6 +34,10 @@ if [ "${#files[@]}" -eq 0 ]; then
   exit 0
 fi
 
+# Refuse an AdminBot API token before anything is formatted or restaged. Found next to this hook,
+# not under ROOT_DIR, so it also runs when the package is a subdirectory of the git checkout.
+node "$(cd "$(dirname "$0")/.." && pwd)/scripts/check-secrets.mjs" --staged
+
 restage_files=()
 for file in "${files[@]}"; do
   if ! git check-ignore --no-index -q -- "$file"; then

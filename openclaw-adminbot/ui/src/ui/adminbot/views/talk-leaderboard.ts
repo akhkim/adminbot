@@ -19,7 +19,60 @@ export type TalkLeaderboard = {
     total: number;
   }>;
   unscanned: string[];
+  // Older services do not send it; the page then just omits the status line.
+  sweep?:
+    | {
+        state: "reading";
+        started_at: string;
+        done: number;
+        total: number;
+        eta_seconds: number | null;
+      }
+    | {
+        state: "idle";
+        last_completed_at: string | null;
+        last_failed_at: string | null;
+        next_due_at: string | null;
+      };
 };
+
+function minutes(seconds: number) {
+  const m = Math.max(1, Math.round(seconds / 60));
+  return m >= 90 ? `about ${Math.round(m / 60)} hours` : `about ${m} min`;
+}
+
+function when(iso: string) {
+  return new Date(iso).toLocaleString(undefined, {
+    weekday: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+/** One line on whether the counts are settled, being refreshed, or waiting for the first read. */
+export function sweepStatusText(sweep: TalkLeaderboard["sweep"], now = new Date()): string {
+  if (!sweep) {
+    return "";
+  }
+  if (sweep.state === "reading") {
+    const eta =
+      sweep.eta_seconds === null ? "working out how long" : `${minutes(sweep.eta_seconds)} left`;
+    return `Reading CVs now: ${sweep.done} of ${sweep.total} done, ${eta}. Counts update when it finishes.`;
+  }
+  const failed =
+    sweep.last_failed_at &&
+    (!sweep.last_completed_at || sweep.last_failed_at > sweep.last_completed_at)
+      ? " The last attempt failed and will be retried."
+      : "";
+  if (!sweep.last_completed_at) {
+    return `Waiting for the first full read of everyone's CVs; it starts within the hour.${failed}`;
+  }
+  const due =
+    sweep.next_due_at && Date.parse(sweep.next_due_at) > now.getTime()
+      ? `next read ${when(sweep.next_due_at)}`
+      : "next read starts within the hour";
+  return `Last read ${when(sweep.last_completed_at)}; ${due}.${failed}`;
+}
 
 // The guidebook's extra free trip goes to the top two. Ranks, not positions: two people level at
 // second are both in line for it, and the page should not pick between them.
@@ -34,6 +87,8 @@ export class TalkLeaderboardView extends LitElement {
   @state() private loading = false;
   @state() private error = "";
   private controller?: AbortController;
+  // While the service is reading CVs the counts and progress move, so the page re-asks each minute.
+  private refreshTimer?: ReturnType<typeof setTimeout>;
 
   static override styles = css`
     :host {
@@ -146,6 +201,12 @@ export class TalkLeaderboardView extends LitElement {
       border: 1px solid var(--accent, #486bdf);
       color: var(--accent, #486bdf);
     }
+    .status {
+      font-size: 13px;
+      padding: 8px 12px;
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--accent, #486bdf) 8%, transparent);
+    }
     .error {
       color: var(--danger, #c0392b);
     }
@@ -171,11 +232,13 @@ export class TalkLeaderboardView extends LitElement {
 
   override disconnectedCallback() {
     this.controller?.abort();
+    clearTimeout(this.refreshTimer);
     super.disconnectedCallback();
   }
 
   private async load() {
     this.controller?.abort();
+    clearTimeout(this.refreshTimer);
     if (!this.sessionToken) {
       this.board = null;
       this.error = "Sign in to see the leaderboard.";
@@ -199,6 +262,9 @@ export class TalkLeaderboardView extends LitElement {
         return;
       }
       this.board = body;
+      if (body.sweep?.state === "reading") {
+        this.refreshTimer = setTimeout(() => void this.load(), 60_000);
+      }
     } catch (error) {
       if (controller.signal.aborted) {
         return;
@@ -276,8 +342,17 @@ export class TalkLeaderboardView extends LitElement {
           </button>
         </div>
       </header>
+      ${board?.sweep
+        ? html`<p class="status" role="status" data-testid="talk-leaderboard-status">
+            ${sweepStatusText(board.sweep)}
+          </p>`
+        : nothing}
       ${this.error ? html`<p class="error" role="alert">${this.error}</p>` : nothing}
-      ${board ? this.renderRows(board) : nothing}
+      ${board
+        ? this.renderRows(board)
+        : this.loading
+          ? html`<p class="hint" data-testid="talk-leaderboard-loading">Loading the board…</p>`
+          : nothing}
       ${board?.unscanned.length
         ? html`<p class="hint" data-testid="talk-leaderboard-unscanned">
             Not counted yet, because their CV has not been read: ${board.unscanned.join(", ")}.

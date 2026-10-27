@@ -26,17 +26,31 @@ adminbot_load_cron_env "weekly update nudge" || exit 1
 }
 
 PORT="${ADMINBOT_PORT:-8765}"
+# The pass sends one Slack message per author and answers only when the last has gone: about seven
+# minutes in September 2026 and twelve by late October, growing with the paper count. It used to be
+# given two, so every Monday the service finished the nudges and the run was still marked failed.
+# Kept under the job's timeoutSeconds (config/adminbot-cron.json) so curl reports the timeout
+# rather than the cron killing it without a word.
+MAX_SECONDS=1740
 
+curl_status=0
 response="$(
-  curl --silent --show-error --max-time 120 \
+  curl --silent --show-error --max-time "$MAX_SECONDS" \
     --write-out '\n%{http_code}' \
     -X POST \
     -H "Authorization: Bearer ${ADMINBOT_SERVICE_TOKEN}" \
     "http://127.0.0.1:${PORT}/papers/weekly-updates/run"
-)" || {
+)" || curl_status=$?
+if ((curl_status == 28)); then
+  # Not "could not reach": the service took the request and is likely still sending. Each nudge is
+  # recorded as it goes and the pass will not ask anybody twice for the same week, so this is a slow
+  # run to look into, not a missed one.
+  printf 'weekly update nudge: no answer within %ss; the pass may still be running (look for paper_weekly_updates.nudged in the audit log)\n' "$MAX_SECONDS" >&2
+  exit 1
+elif ((curl_status != 0)); then
   printf 'weekly update nudge: could not reach the AdminBot service on 127.0.0.1:%s\n' "$PORT" >&2
   exit 1
-}
+fi
 
 status="${response##*$'\n'}"
 body="${response%$'\n'*}"

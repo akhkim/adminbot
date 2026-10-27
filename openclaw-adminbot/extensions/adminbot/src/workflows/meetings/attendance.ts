@@ -82,9 +82,10 @@ export function parseParticipantCsv(source: string): ZoomParticipantRow[] {
  *
  * Hand-rolled rather than pulled in: this parses exactly one vendor's export, the whole grammar is
  * the twenty lines below, and the plugin boundary rules make a new runtime dependency in
- * `extensions/adminbot` a heavier decision than the code it would save.
+ * `extensions/adminbot` a heavier decision than the code it would save. Shared with the dashboard
+ * export reader (zoom-dashboard.ts), which is the same vendor's CSV in a different shape.
  */
-function parseCsv(source: string): string[][] {
+export function parseCsv(source: string): string[][] {
   const rows: string[][] = [];
   let row: string[] = [];
   let cell = "";

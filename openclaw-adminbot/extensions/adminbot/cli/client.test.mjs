@@ -343,3 +343,108 @@ await test("HTTP failures remain nonzero and redirects never receive credentials
   );
   assert.equal(forwarded, 0);
 });
+
+const FAKE_TOKEN = `abt_${"A".repeat(43)}_0badc0de`;
+async function deviceService(t, polls) {
+  const seen = [];
+  const baseUrl = await service(t, (req, res, body) => {
+    seen.push({ path: req.url, authorization: req.headers.authorization, body });
+    if (req.url === "/auth/device/start") {
+      res.end(
+        JSON.stringify({
+          device_code: "d".repeat(43),
+          user_code: "BCDF-GHJK",
+          verification_uri: "http://127.0.0.1/profile",
+          verification_uri_complete: "http://127.0.0.1/profile?cliLogin=BCDF-GHJK",
+          expires_in: 600,
+          interval: 1,
+        }),
+      );
+    } else if (req.url === "/auth/device/poll") {
+      res.end(JSON.stringify(polls.shift()));
+    } else if (req.url === "/auth/session") {
+      res.end('{"member":{"id":"admin-a"}}');
+    } else if (req.url === "/auth/logout") {
+      res.end("{}");
+    } else {
+      res.statusCode = 404;
+      res.end("{}");
+    }
+  });
+  return { baseUrl, seen };
+}
+const approved = {
+  status: "approved",
+  token: FAKE_TOKEN,
+  member: { id: "admin-a" },
+  api_token: { id: `tok_${"0".repeat(20)}`, name: "laptop", expires_at: "2099-01-01T00:00:00.000Z" },
+};
+
+await test("auth login through the browser saves the token privately and never prints it", async (t) => {
+  const { baseUrl, seen } = await deviceService(t, [{ status: "authorization_pending" }, approved]);
+  const dir = await mkdtemp(join(tmpdir(), "adminbot-cli-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const credentials = join(dir, "credentials.json");
+  const env = { ADMINBOT_CREDENTIALS_FILE: credentials, ADMINBOT_KEYCHAIN: "0" };
+
+  const login = await invoke(
+    ["auth", "login", "--url", baseUrl, "--no-browser", "--name", "laptop", "--days", "7"],
+    { env },
+  );
+  assert.equal(login.code, 0, login.err);
+  assert.ok(login.err.includes("BCDF-GHJK"));
+  assert.ok(!login.out.includes(FAKE_TOKEN) && !login.err.includes(FAKE_TOKEN));
+  assert.equal(JSON.parse(login.out).api_token.id, approved.api_token.id);
+  assert.deepEqual(seen[0].body, { name: "laptop", expires_in_days: 7 });
+  assert.equal(seen[0].authorization, undefined);
+  assert.equal((await stat(credentials)).mode & 0o777, 0o600);
+  const saved = JSON.parse(await readFile(credentials, "utf8"));
+  assert.equal(saved.kind, "api_token");
+  assert.equal(saved.url, baseUrl);
+
+  const whoami = await invoke(["auth", "whoami", "--url", baseUrl], { env });
+  assert.equal(whoami.code, 0, whoami.err);
+  assert.equal(seen.at(-1).authorization, `Bearer ${FAKE_TOKEN}`);
+
+  const logout = await invoke(["auth", "logout", "--url", baseUrl], { env });
+  assert.equal(logout.code, 0, logout.err);
+  await assert.rejects(stat(credentials), { code: "ENOENT" });
+});
+
+await test("browser login slows down when asked and stops on denial", async (t) => {
+  const { deviceLogin } = await import("./login.mjs");
+  const { baseUrl } = await deviceService(t, [
+    { status: "slow_down" },
+    { status: "authorization_pending" },
+    { status: "access_denied" },
+  ]);
+  const dir = await mkdtemp(join(tmpdir(), "adminbot-cli-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const waits = [];
+  await assert.rejects(
+    deviceLogin({
+      baseUrl,
+      credentials: join(dir, "credentials.json"),
+      browser: false,
+      timeout: 5000,
+      env: { ADMINBOT_KEYCHAIN: "0" },
+      stderr: { write: () => {} },
+      sleep: async (ms) => {
+        waits.push(ms);
+      },
+    }),
+    { code: "ACCESS_DENIED", status: 403 },
+  );
+  // RFC 8628: slow_down raises the interval for every later poll, not just the next.
+  assert.deepEqual(waits, [1000, 6000, 6000]);
+  await assert.rejects(stat(join(dir, "credentials.json")), { code: "ENOENT" });
+});
+
+await test("browser login refuses unknown flags and redacts tokens from errors", async () => {
+  const bad = await invoke(["auth", "login", "--password", FAKE_TOKEN]);
+  assert.equal(bad.code, 2);
+  assert.ok(!bad.err.includes(FAKE_TOKEN));
+  const days = await invoke(["auth", "login", "--days", "365"]);
+  assert.equal(days.code, 2);
+  assert.match(days.err, /--days/u);
+});

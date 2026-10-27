@@ -175,30 +175,70 @@ If a host's filter was not set up, the meeting is simply absent. An admin can fi
 the tab — **File a meeting by hand**, with the topic, start time and share link — and then drop the
 transcript and CSV as usual.
 
+## 5a. Backfilling attendance from the Zoom dashboard
+
+For meetings that never got a participant CSV — from before the drop folder, or ones nobody
+exported — the host can download a month at a time from the Zoom web portal (**Reports → Usage**,
+or **Dashboard → Meetings → Past**, exported _with meeting details_). That file,
+`meetinglistdetails_<from>_<to>.csv`, holds one row per participant session for every meeting in
+the range, so it is a different shape from the per-meeting report the drop folder takes; don't drop
+it there. Import it on the deploy host instead:
+
+```bash
+cd /w/406/adminbot/current
+node --import tsx scripts/adminbot-meeting-attendance-import.ts \
+  meetinglistdetails_*.csv --topic "Weekly Jinesis Meeting" --min-participants 15 \
+  [--aliases aliases.json] [--apply]
+```
+
+- **Which meetings:** those with _more than_ `--min-participants` distinct people (rejoins
+  counted once). Every stray opening of the meeting room is its own meeting in the export, and this
+  is what leaves those out. `--topic` limits it to one series.
+- **Where it lands:** on the record a recording notice already filed, matched by series and
+  recording length, since a notice whose date line did not parse is filed at the time its mail
+  arrived. Otherwise it files a new record under `zoom-<meeting id>-<date>`, the id a recording
+  notice for the same meeting would produce. The new record has source `participant_report` and
+  needs no recording link, because Zoom's report alone proves the meeting happened. Either way the
+  record's start time and length are set from the report.
+- **Who:** attendance is written as `participant_report`, so a line an admin ticked by hand still
+  outranks it. Notetaker bots are dropped. A display name that matches no member by email or name
+  ("Andrew K", a first name alone) stays a guest unless `--aliases` maps it: a JSON object of
+  display name → member id, or `null` to drop the name (a room's account). The dry run lists every
+  unmatched name with the members it could be, so the alias file can be written from it. Keep the
+  alias file with the exports, outside the repo; it names lab members.
+- **Dry run first:** nothing is written without `--apply`, and re-running with `--apply` changes
+  nothing further. Review the unmatched names before applying: every meeting that gets a roster
+  counts toward the Monday "missed two meetings" reminder, and a member left as an unmatched guest
+  is counted absent.
+
 ## 6. Who sees what
 
 The tab groups recordings by meeting: one dropdown per title (case and spacing ignored, so
-"Weekly Lab Meeting" and "weekly lab meeting " are one series), newest series first, each showing
-how many recordings it holds and when it last met. Opening a dropdown lists every recording of that
-meeting, newest first, ten at a time. The newest series opens on arrival with its newest recording
-unfolded. Behind it: `GET /meetings/series` is the index (titles and counts only, the same for
+"Weekly Lab Meeting" and "weekly lab meeting " are one series). The lab's weekly meeting
+(`ADMINBOT_GROUP_MEETING_TOPIC`, default "Weekly Jinesis Meeting") is always listed first; the
+rest follow newest series first. Each dropdown shows how many recordings it holds and when it last
+met. Opening a dropdown lists every recording of that meeting, newest first, ten at a time. The
+first series opens on arrival with its newest recording unfolded. Behind it: `GET /meetings/series` is the index (titles and counts only, the same for
 every viewer), and `GET /meetings?series=<key>` pages one series with the usual per-viewer
 redaction. A title is the only grouping key, so a meeting renamed in Zoom starts a new dropdown.
 
 The tab is member-level. A member sees the recording, the summary, their own attendance line and a
-headcount. The roster itself is admin-only, and the service enforces that
-(`listMeetingsForMember`), not the tab.
+headcount. The roster itself is admin-only: an admin sees the members recorded as present, each
+with a **Remove** button, and adds anyone missing by searching the member list and pressing
+**Add**. Both write a manual correction, which no later import overrides. The service, not the
+tab, keeps the roster from members (`listMeetingsForMember`).
 
 ## Environment
 
-| Variable                            | Purpose                                                         |
-| ----------------------------------- | --------------------------------------------------------------- |
-| `ADMINBOT_MEETING_DROP_FOLDER_ID`   | Drive folder hosts drop transcripts and participant CSVs into   |
-| `ADMINBOT_BOT_EMAIL`                | Account Gmail and Drive are read as (already required)          |
-| `ADMINBOT_LOCAL_BASE_URL`           | Loopback model endpoint for the summary; must be loopback       |
-| `ADMINBOT_LOCAL_MODEL`              | Model id to summarize with                                      |
-| `ADMINBOT_MEETING_VISION_BASE_URL`  | Loopback vision server for gallery snapshots; unset = deferred  |
-| `ADMINBOT_MEETING_VISION_MODEL`     | Vision model id (required when the base URL is set)             |
-| `ADMINBOT_MEETING_VISION_API_KEY`   | Optional; defaults to `VLLM_API_KEY`                            |
-| `ADMINBOT_MEETING_SNAPSHOT_MINUTES` | Minutes between sampled frames (default 30)                     |
-| `ADMINBOT_FFMPEG_BIN`               | `ffmpeg` used to read the recording (default: `ffmpeg` on PATH) |
+| Variable                            | Purpose                                                           |
+| ----------------------------------- | ----------------------------------------------------------------- |
+| `ADMINBOT_MEETING_DROP_FOLDER_ID`   | Drive folder hosts drop transcripts and participant CSVs into     |
+| `ADMINBOT_BOT_EMAIL`                | Account Gmail and Drive are read as (already required)            |
+| `ADMINBOT_LOCAL_BASE_URL`           | Loopback model endpoint for the summary; must be loopback         |
+| `ADMINBOT_LOCAL_MODEL`              | Model id to summarize with                                        |
+| `ADMINBOT_MEETING_VISION_BASE_URL`  | Loopback vision server for gallery snapshots; unset = deferred    |
+| `ADMINBOT_MEETING_VISION_MODEL`     | Vision model id (required when the base URL is set)               |
+| `ADMINBOT_MEETING_VISION_API_KEY`   | Optional; defaults to `VLLM_API_KEY`                              |
+| `ADMINBOT_MEETING_SNAPSHOT_MINUTES` | Minutes between sampled frames (default 30)                       |
+| `ADMINBOT_FFMPEG_BIN`               | `ffmpeg` used to read the recording (default: `ffmpeg` on PATH)   |
+| `ADMINBOT_GROUP_MEETING_TOPIC`      | Series listed first on the tab (default "Weekly Jinesis Meeting") |

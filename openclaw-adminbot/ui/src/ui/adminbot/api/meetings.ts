@@ -94,7 +94,7 @@ export type MeetingRecord = {
   attendees?: MeetingAttendee[];
   /** Who was present, counted: on a member's row and an admin's list row, not the roster read. */
   attendee_count?: number;
-  source: "zoom_email" | "manual";
+  source: "zoom_email" | "manual" | "participant_report";
   notes?: string;
 };
 
