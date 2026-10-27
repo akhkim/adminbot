@@ -704,7 +704,7 @@ export function renderDashboard(state: AppViewState, role: AccessRole, onRetry?:
               ${ownProfile ? "Loading your papers…" : "Loading your dashboard…"}
             </p>`}
         ${profileItem
-          ? html`<div class="dashboard__stack">${renderAttentionCard(profileItem)}</div>`
+          ? html`<div class="dashboard__stack">${renderAttentionCard(profileItem, 0)}</div>`
           : nothing}
       </section>
       ${ownProfile ? renderNextDeadlines(state) : nothing}
