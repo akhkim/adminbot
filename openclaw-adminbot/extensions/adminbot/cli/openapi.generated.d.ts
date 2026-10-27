@@ -1953,6 +1953,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/lab/members/roster": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** GET /lab/members/roster */
+    get: operations["get-lab-members-roster"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/lab/members/self": {
     parameters: {
       query?: never;
@@ -6479,6 +6496,9 @@ export interface components {
     } & {
       [key: string]: unknown;
     };
+    MemberRosterOptions: {
+      [key: string]: unknown;
+    };
     CallSheetPush: {
       spreadsheet_id: string;
       tab: string;
@@ -7150,12 +7170,12 @@ export interface components {
       /** @enum {string} */
       step:
         | "slack"
+        | "meeting"
         | "lab_calendar"
         | "group_meeting"
         | "sheet"
         | "dcs_roster"
-        | "guide"
-        | "meeting";
+        | "guide";
       target?: string;
       /** @enum {string} */
       status: "failed" | "skipped" | "done" | "queued";
@@ -16640,6 +16660,224 @@ export interface operations {
         };
         content: {
           "application/json": unknown;
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "get-lab-members-roster": {
+    parameters: {
+      query?: {
+        limit?: string;
+        offset?: string;
+        q?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            members: ({
+              research_topics: string[];
+              projects: string[];
+              location: string;
+              joined_month: string;
+              name: string;
+              email?: string;
+              id: string;
+              preferred_name?: string;
+              member_type?: string;
+              test_onboard_batch?: number;
+              receives_nudges?: boolean;
+              meetup_intros?: {
+                events?: boolean;
+                city?: boolean;
+                snoozed_until?: string;
+              } & {
+                [key: string]: unknown;
+              };
+              do_not_contact?: boolean;
+              slack_stop_at?: string;
+              calendar_email?: string;
+              slack_user_id?: string;
+              merch_requests?: string;
+              next_position?: string;
+              personal_circumstances?: string;
+              slack_messages_7d?: number;
+              slack_activity_checked_at?: string;
+              slack_deactivated_at?: string;
+              /** @enum {string} */
+              collaborator_subgroup?:
+                | "interviewee"
+                | "slightly_better_than_emails"
+                | "acquaintance"
+                | "alumni"
+                | "own_pace_advisee"
+                | "coauthor_minor"
+                | "coauthor_major"
+                | "coauthor_discussant_designer"
+                | "disappearing_coauthor"
+                | "external_prof"
+                | "benefit_partner"
+                | "benefit_direct_relative";
+              access_overrides?: components["schemas"]["AdminBotAccessGrant"][];
+              notes?: string;
+              role?: string;
+              /** @enum {string} */
+              status?: "alumni" | "active" | "part_time" | "on_leave" | "external";
+              research_branch?: string;
+              elevator_pitch?: string;
+              hours_per_week?: number;
+              current_city?: string;
+              city_channel_invited_at?: string;
+              city_channels_invited?: string[];
+              affiliation?: string;
+              timezone?: string;
+              personal_website?: string;
+              openreview_id?: string;
+              cv_url?: string;
+              intake_form_url?: string;
+              intake_form_unavailable?: boolean;
+              arr_reviewer_qualified?: null | false | true;
+              arr_review_capacity?: null | number;
+              one_on_one_folder_url?: string;
+              linkedin_url?: string;
+              linkedin_urn?: string;
+              twitter_url?: string;
+              twitter_followers?: number;
+              linkedin_followers?: number;
+              github_url?: string;
+              scholar_url?: string;
+              acl_anthology_url?: string;
+              reviewer_exempt?: boolean;
+              graduated_month?: string;
+              birthday?: string;
+              whatsapp?: string;
+              correspondence_email?: string;
+              dcs_username?: string;
+              at_uoft?: boolean;
+              compute_access?: string[];
+              /** @enum {string} */
+              vector_role?: "phd" | "postdoc" | "other";
+              lesswrong_url?: string;
+              other_socials?: string;
+              avatar_url?: string;
+              slack_channels?: string[];
+              slack_location?: string;
+              slack_location_updated_at?: string;
+              profile_photo_review?: components["schemas"]["AdminBotProfilePhotoReviewState"];
+              last_login_at?: string;
+              last_login_country?: string;
+              last_login_continent?: string;
+              last_login_city?: string;
+              last_login_region?: string;
+              last_login_timezone?: string;
+              /** @enum {string} */
+              map_visibility?: "auto" | "stated" | "hidden";
+              location_prompt_answered_at?: string;
+              location_prompt_answered_country?: string;
+              location_checkin_at?: string;
+              location_checkin_city?: string;
+              location_checkin_snoozed_until?: string;
+              location_checkin_declined_at?: string;
+              slack_tz?: string;
+              slack_tz_observed_at?: string;
+              last_ip_observed_at?: string;
+              last_ip_suspected_vpn?: boolean;
+              last_device_tz?: string;
+              last_device_tz_at?: string;
+              device_city?: string;
+              device_region?: string;
+              device_country?: string;
+              device_located_at?: string;
+              /** @enum {string} */
+              location_permission?: "granted" | "denied" | "dismissed";
+              location_permission_at?: string;
+              last_seen_at?: string;
+              availability?: components["schemas"]["AdminBotAvailabilityRow"][];
+              time_off?: components["schemas"]["AdminBotTimeOffRow"][];
+              milestones?: components["schemas"]["AdminBotMemberMilestone"][];
+              trips?: components["schemas"]["AdminBotMemberTrip"][];
+              dismissed_deadlines?: string[];
+              availability_notes?: string;
+              availability_doc_url?: string;
+              cv_snapshot?: components["schemas"]["AdminBotCvSnapshot"];
+              availability_updated_at?: string;
+              /** @enum {string} */
+              privilege_level: "member" | "admin" | "external_collaborator" | "trial";
+              access: components["schemas"]["AdminBotAccessGrant"][];
+              onboarding?: components["schemas"]["AdminBotMemberOnboarding"];
+              field_provenance?: {
+                [key: string]: components["schemas"]["AdminBotFieldProvenance"];
+              };
+              created_at: string;
+              updated_at: string;
+              assigned_badges?: components["schemas"]["AdminBotAssignedBadge"][];
+            } & {
+              [key: string]: unknown;
+            })[];
+            total: number;
+            limit: number;
+            offset: number;
+            filters: {
+              [key: string]: unknown;
+            };
+            options: components["schemas"]["MemberRosterOptions"];
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Server response */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Server response */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
+          } & {
+            [key: string]: unknown;
+          };
         };
       };
       /** @description Authentication, authorization, validation, policy, or connector error */

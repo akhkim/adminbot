@@ -11372,6 +11372,610 @@
         }
       }
     },
+    "/lab/members/roster": {
+      "get": {
+        "operationId": "get-lab-members-roster",
+        "summary": "GET /lab/members/roster",
+        "tags": [
+          "lab"
+        ],
+        "x-source": "src/api/routes/members.roster.ts",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "members": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "research_topics": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "projects": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "location": {
+                            "type": "string"
+                          },
+                          "joined_month": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "email": {
+                            "type": "string"
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "preferred_name": {
+                            "type": "string"
+                          },
+                          "member_type": {
+                            "type": "string"
+                          },
+                          "test_onboard_batch": {
+                            "type": "number"
+                          },
+                          "receives_nudges": {
+                            "type": "boolean"
+                          },
+                          "meetup_intros": {
+                            "type": "object",
+                            "properties": {
+                              "events": {
+                                "type": "boolean"
+                              },
+                              "city": {
+                                "type": "boolean"
+                              },
+                              "snoozed_until": {
+                                "type": "string"
+                              }
+                            },
+                            "additionalProperties": true
+                          },
+                          "do_not_contact": {
+                            "type": "boolean"
+                          },
+                          "slack_stop_at": {
+                            "type": "string"
+                          },
+                          "calendar_email": {
+                            "type": "string"
+                          },
+                          "slack_user_id": {
+                            "type": "string"
+                          },
+                          "merch_requests": {
+                            "type": "string"
+                          },
+                          "next_position": {
+                            "type": "string"
+                          },
+                          "personal_circumstances": {
+                            "type": "string"
+                          },
+                          "slack_messages_7d": {
+                            "type": "number"
+                          },
+                          "slack_activity_checked_at": {
+                            "type": "string"
+                          },
+                          "slack_deactivated_at": {
+                            "type": "string"
+                          },
+                          "collaborator_subgroup": {
+                            "type": "string",
+                            "enum": [
+                              "interviewee",
+                              "slightly_better_than_emails",
+                              "acquaintance",
+                              "alumni",
+                              "own_pace_advisee",
+                              "coauthor_minor",
+                              "coauthor_major",
+                              "coauthor_discussant_designer",
+                              "disappearing_coauthor",
+                              "external_prof",
+                              "benefit_partner",
+                              "benefit_direct_relative"
+                            ]
+                          },
+                          "access_overrides": {
+                            "type": "array",
+                            "items": {
+                              "$ref": "#/components/schemas/AdminBotAccessGrant"
+                            }
+                          },
+                          "notes": {
+                            "type": "string"
+                          },
+                          "role": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "alumni",
+                              "active",
+                              "part_time",
+                              "on_leave",
+                              "external"
+                            ]
+                          },
+                          "research_branch": {
+                            "type": "string"
+                          },
+                          "elevator_pitch": {
+                            "type": "string"
+                          },
+                          "hours_per_week": {
+                            "type": "number"
+                          },
+                          "current_city": {
+                            "type": "string"
+                          },
+                          "city_channel_invited_at": {
+                            "type": "string"
+                          },
+                          "city_channels_invited": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "affiliation": {
+                            "type": "string"
+                          },
+                          "timezone": {
+                            "type": "string"
+                          },
+                          "personal_website": {
+                            "type": "string"
+                          },
+                          "openreview_id": {
+                            "type": "string"
+                          },
+                          "cv_url": {
+                            "type": "string"
+                          },
+                          "intake_form_url": {
+                            "type": "string"
+                          },
+                          "intake_form_unavailable": {
+                            "type": "boolean"
+                          },
+                          "arr_reviewer_qualified": {
+                            "anyOf": [
+                              {
+                                "type": "null"
+                              },
+                              {
+                                "type": "boolean",
+                                "const": false
+                              },
+                              {
+                                "type": "boolean",
+                                "const": true
+                              }
+                            ]
+                          },
+                          "arr_review_capacity": {
+                            "anyOf": [
+                              {
+                                "type": "null"
+                              },
+                              {
+                                "type": "number"
+                              }
+                            ]
+                          },
+                          "one_on_one_folder_url": {
+                            "type": "string"
+                          },
+                          "linkedin_url": {
+                            "type": "string"
+                          },
+                          "linkedin_urn": {
+                            "type": "string"
+                          },
+                          "twitter_url": {
+                            "type": "string"
+                          },
+                          "twitter_followers": {
+                            "type": "number"
+                          },
+                          "linkedin_followers": {
+                            "type": "number"
+                          },
+                          "github_url": {
+                            "type": "string"
+                          },
+                          "scholar_url": {
+                            "type": "string"
+                          },
+                          "acl_anthology_url": {
+                            "type": "string"
+                          },
+                          "reviewer_exempt": {
+                            "type": "boolean"
+                          },
+                          "graduated_month": {
+                            "type": "string"
+                          },
+                          "birthday": {
+                            "type": "string"
+                          },
+                          "whatsapp": {
+                            "type": "string"
+                          },
+                          "correspondence_email": {
+                            "type": "string"
+                          },
+                          "dcs_username": {
+                            "type": "string"
+                          },
+                          "at_uoft": {
+                            "type": "boolean"
+                          },
+                          "compute_access": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "vector_role": {
+                            "type": "string",
+                            "enum": [
+                              "phd",
+                              "postdoc",
+                              "other"
+                            ]
+                          },
+                          "lesswrong_url": {
+                            "type": "string"
+                          },
+                          "other_socials": {
+                            "type": "string"
+                          },
+                          "avatar_url": {
+                            "type": "string"
+                          },
+                          "slack_channels": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "slack_location": {
+                            "type": "string"
+                          },
+                          "slack_location_updated_at": {
+                            "type": "string"
+                          },
+                          "profile_photo_review": {
+                            "$ref": "#/components/schemas/AdminBotProfilePhotoReviewState"
+                          },
+                          "last_login_at": {
+                            "type": "string"
+                          },
+                          "last_login_country": {
+                            "type": "string"
+                          },
+                          "last_login_continent": {
+                            "type": "string"
+                          },
+                          "last_login_city": {
+                            "type": "string"
+                          },
+                          "last_login_region": {
+                            "type": "string"
+                          },
+                          "last_login_timezone": {
+                            "type": "string"
+                          },
+                          "map_visibility": {
+                            "type": "string",
+                            "enum": [
+                              "auto",
+                              "stated",
+                              "hidden"
+                            ]
+                          },
+                          "location_prompt_answered_at": {
+                            "type": "string"
+                          },
+                          "location_prompt_answered_country": {
+                            "type": "string"
+                          },
+                          "location_checkin_at": {
+                            "type": "string"
+                          },
+                          "location_checkin_city": {
+                            "type": "string"
+                          },
+                          "location_checkin_snoozed_until": {
+                            "type": "string"
+                          },
+                          "location_checkin_declined_at": {
+                            "type": "string"
+                          },
+                          "slack_tz": {
+                            "type": "string"
+                          },
+                          "slack_tz_observed_at": {
+                            "type": "string"
+                          },
+                          "last_ip_observed_at": {
+                            "type": "string"
+                          },
+                          "last_ip_suspected_vpn": {
+                            "type": "boolean"
+                          },
+                          "last_device_tz": {
+                            "type": "string"
+                          },
+                          "last_device_tz_at": {
+                            "type": "string"
+                          },
+                          "device_city": {
+                            "type": "string"
+                          },
+                          "device_region": {
+                            "type": "string"
+                          },
+                          "device_country": {
+                            "type": "string"
+                          },
+                          "device_located_at": {
+                            "type": "string"
+                          },
+                          "location_permission": {
+                            "type": "string",
+                            "enum": [
+                              "granted",
+                              "denied",
+                              "dismissed"
+                            ]
+                          },
+                          "location_permission_at": {
+                            "type": "string"
+                          },
+                          "last_seen_at": {
+                            "type": "string"
+                          },
+                          "availability": {
+                            "type": "array",
+                            "items": {
+                              "$ref": "#/components/schemas/AdminBotAvailabilityRow"
+                            }
+                          },
+                          "time_off": {
+                            "type": "array",
+                            "items": {
+                              "$ref": "#/components/schemas/AdminBotTimeOffRow"
+                            }
+                          },
+                          "milestones": {
+                            "type": "array",
+                            "items": {
+                              "$ref": "#/components/schemas/AdminBotMemberMilestone"
+                            }
+                          },
+                          "trips": {
+                            "type": "array",
+                            "items": {
+                              "$ref": "#/components/schemas/AdminBotMemberTrip"
+                            }
+                          },
+                          "dismissed_deadlines": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "availability_notes": {
+                            "type": "string"
+                          },
+                          "availability_doc_url": {
+                            "type": "string"
+                          },
+                          "cv_snapshot": {
+                            "$ref": "#/components/schemas/AdminBotCvSnapshot"
+                          },
+                          "availability_updated_at": {
+                            "type": "string"
+                          },
+                          "privilege_level": {
+                            "type": "string",
+                            "enum": [
+                              "member",
+                              "admin",
+                              "external_collaborator",
+                              "trial"
+                            ]
+                          },
+                          "access": {
+                            "type": "array",
+                            "items": {
+                              "$ref": "#/components/schemas/AdminBotAccessGrant"
+                            }
+                          },
+                          "onboarding": {
+                            "$ref": "#/components/schemas/AdminBotMemberOnboarding"
+                          },
+                          "field_provenance": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "$ref": "#/components/schemas/AdminBotFieldProvenance"
+                            }
+                          },
+                          "created_at": {
+                            "type": "string"
+                          },
+                          "updated_at": {
+                            "type": "string"
+                          },
+                          "assigned_badges": {
+                            "type": "array",
+                            "items": {
+                              "$ref": "#/components/schemas/AdminBotAssignedBadge"
+                            }
+                          }
+                        },
+                        "required": [
+                          "research_topics",
+                          "projects",
+                          "location",
+                          "joined_month",
+                          "name",
+                          "id",
+                          "privilege_level",
+                          "access",
+                          "created_at",
+                          "updated_at"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "total": {
+                      "type": "number"
+                    },
+                    "limit": {
+                      "type": "number"
+                    },
+                    "offset": {
+                      "type": "number"
+                    },
+                    "filters": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "options": {
+                      "$ref": "#/components/schemas/MemberRosterOptions"
+                    }
+                  },
+                  "required": [
+                    "members",
+                    "total",
+                    "limit",
+                    "offset",
+                    "filters",
+                    "options"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/lab/members/self": {
       "get": {
         "operationId": "get-lab-members-self",
@@ -33233,6 +33837,10 @@
         ],
         "additionalProperties": true
       },
+      "MemberRosterOptions": {
+        "type": "object",
+        "additionalProperties": true
+      },
       "CallSheetPush": {
         "type": "object",
         "properties": {
@@ -35352,12 +35960,12 @@
             "type": "string",
             "enum": [
               "slack",
+              "meeting",
               "lab_calendar",
               "group_meeting",
               "sheet",
               "dcs_roster",
-              "guide",
-              "meeting"
+              "guide"
             ]
           },
           "target": {
