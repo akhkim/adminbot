@@ -1904,6 +1904,10 @@ export class AdminBotService {
       .find(
         (stored) =>
           (stored.status === "pending" || stored.status === "approved") &&
+          // Proposals filed before every action carried a payload (Aug-Sep 2026) have none to
+          // compare, so none can be "the same". Hashing that absence threw inside this find, and one
+          // such approved invite left every channel sweep that filed a new invite with a 500.
+          stored.proposed_payload !== undefined &&
           payloadHash(stored.proposed_payload) === hash,
       );
   }
