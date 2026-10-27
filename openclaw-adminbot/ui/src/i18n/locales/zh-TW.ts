@@ -1497,6 +1497,7 @@ export const zh_TW: TranslationMap = {
       submit: "Add trip",
       edit: "Edit",
       remove: "Remove",
+      removeConfirm: "Remove this trip?",
       home: "Home is {location}.",
       empty: "No trips logged.",
       errorCity: "Where are you going?",
@@ -1824,6 +1825,9 @@ export const zh_TW: TranslationMap = {
       noSharers: "No other member shares their location yet, so only conference RSVPs are checked.",
       fewSharers:
         "Only members who share their location are checked ({count} besides you); everyone else shows up through conference RSVPs.",
+      statusOn: "Sharing · {place}",
+      statusOnNoFix: "Sharing",
+      statusOff: "Not sharing",
     },
     notice: {
       signIn: "Sign in to use Events.",
@@ -2052,6 +2056,7 @@ export const zh_TW: TranslationMap = {
       detailEarliestDeadline: "earliest deadline {date}",
       documents: "Documents to sign",
       withdraw: "Withdraw this request",
+      withdrawConfirm: "Withdraw this request? The lab stops working on it.",
       edit: "Correct this request",
       resolution: "The lab says: {note}",
       answerTitle: "Answer this request",

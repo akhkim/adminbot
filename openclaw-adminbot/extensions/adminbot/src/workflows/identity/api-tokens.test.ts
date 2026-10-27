@@ -316,6 +316,21 @@ describe("AdminBotApiTokenService: revocation", () => {
     expect((await tokens.resolve(token, undefined)).ok).toBe(true);
   });
 
+  it("lists only tokens that still work", async () => {
+    const { tokens, principal, clock } = setup();
+    await mint(tokens, principal("admin-a"), "kept");
+    await mint(tokens, principal("admin-a"), "revoked");
+    const short = await tokens.create(principal("admin-a"), {
+      name: "expired",
+      expires_in_days: 7,
+    });
+    expect(short.ok).toBe(true);
+    const id = (await tokens.list(principal("admin-a"))).find((t) => t.name === "revoked")!.id;
+    await tokens.revoke(principal("admin-a"), id);
+    clock.advance(8 * 86_400_000);
+    expect((await tokens.list(principal("admin-a"))).map((t) => t.name)).toEqual(["kept"]);
+  });
+
   it("revoke-all ends every token, and is allowed from a token", async () => {
     const { tokens, principal } = setup();
     const one = await mint(tokens, principal("admin-a"), "one");

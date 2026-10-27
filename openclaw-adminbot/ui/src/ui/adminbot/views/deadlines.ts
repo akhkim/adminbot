@@ -2500,7 +2500,7 @@ class AdminbotDeadlinesView extends LitElement {
                       (revision) => html`<li>
                         ${renderDeadlineDate(revision, this.displayZone)} ·
                         ${capitalize(revision.deadline_label || "deadline")} · recorded
-                        ${revision.observed_at.slice(0, 10)}
+                        ${plainDateLabel(revision.observed_at.slice(0, 10))}
                         ${revision.link
                           ? html` ·
                               <a href=${revision.link} target="_blank" rel="noopener noreferrer"

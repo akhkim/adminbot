@@ -7,6 +7,7 @@ import { html, nothing, type TemplateResult } from "lit";
 import { t } from "../../../i18n/index.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
 import { sayHiBusyKey, type EventsNotice } from "../controllers/events.ts";
+import { plainDateLabel } from "../data/deadline-time.ts";
 import type {
   EventCard,
   EventPerson,
@@ -343,7 +344,7 @@ function renderSettings(props: EventsProps, today: string, prefs: MeetupPreferen
     </label>
     <div class="events__snooze">
       ${snoozed
-        ? html`<span>${t("events.settings.snoozedUntil", { day: snoozed })}</span>
+        ? html`<span>${t("events.settings.snoozedUntil", { day: plainDateLabel(snoozed) })}</span>
             <button
               type="button"
               class="btn btn--sm"

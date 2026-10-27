@@ -212,6 +212,12 @@
   gap: var(--space-3);
 }
 
+/* Folded, the title row still says whether location sharing is on and where. */
+.lab-travel__status {
+  font-weight: 400;
+  font-size: 0.9em;
+}
+
 .lab-travel__conferences,
 .lab-travel__people,
 .lab-travel__matches {

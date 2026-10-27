@@ -1837,12 +1837,12 @@ describe("suggesting a new badge", () => {
     expect(row?.textContent).toContain("Added to the badge list.");
   });
 
-  it("says so when there is nothing suggested yet", () => {
+  it("shows no empty list when nothing has been suggested yet", () => {
     const container = renderPage(suggestState(), vi.fn());
 
-    expect(
-      container.querySelector('[data-testid="profile-badge-suggestions"]')?.textContent,
-    ).toContain("haven't suggested a badge yet");
+    const section = container.querySelector('[data-testid="profile-badge-suggestions"]');
+    expect(section?.textContent).not.toContain("haven't suggested a badge yet");
+    expect(section?.querySelector(".profile-badge-nominations")).toBeNull();
   });
 
   it("surfaces the service's own refusal rather than a generic failure", () => {

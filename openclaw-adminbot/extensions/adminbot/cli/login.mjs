@@ -77,7 +77,18 @@ export async function deviceLogin({
   const deadline = Date.now() + Math.max(1, Number(started.expires_in) || 600) * 1000;
   while (Date.now() < deadline) {
     await sleep(interval);
-    const polled = await call("post-auth-device-poll", { device_code });
+    let polled;
+    try {
+      polled = await call("post-auth-device-poll", { device_code });
+    } catch (error) {
+      // A poll only reads the code's state, so a dropped one (a 502 while the service restarts, a
+      // network blip) is simply asked again on the next tick instead of abandoning a login the
+      // person may be approving right now.
+      if (error instanceof ApiError && error.retryable) {
+        continue;
+      }
+      throw error;
+    }
     switch (polled?.status) {
       case "authorization_pending":
         continue;

@@ -282,8 +282,13 @@ export class AdminBotApiTokenService {
   // ---- Managing one's own tokens ------------------------------------------------------------
 
   async list(principal: AdminBotMemberPrincipal): Promise<AdminBotApiTokenView[]> {
+    // Revoked and expired rows stay in the store for the audit trail, but listing them made a
+    // revoked token look alive on My Profile and in `adminbot auth tokens list`.
+    const nowIso = this.now().toISOString();
     const tokens = await this.store.listApiTokensForMember(principal.member.id);
-    return tokens.map((token) => toView(token, principal.apiToken?.id));
+    return tokens
+      .filter((token) => !token.revoked_at && token.expires_at > nowIso)
+      .map((token) => toView(token, principal.apiToken?.id));
   }
 
   /**
