@@ -858,6 +858,9 @@ export function createAdminBotHost(deps: AdminBotHostDeps) {
       mpiScriptPath: path.join(repoRoot, "scripts/adminbot_mpi_reimbursement.py"),
     }),
     cvScanDeps: createAdminBotCvScanDeps({
+      // Four at a time cuts a full read of the roster to roughly a quarter of the one-by-one time,
+      // while leaving the shared local model room for everyone else's requests.
+      concurrency: 4,
       extractScriptPath: path.join(repoRoot, "scripts/adminbot-cv-extract.py"),
     }),
     ...(cvDigestPublisher ? { cvDigestPublisher } : {}),

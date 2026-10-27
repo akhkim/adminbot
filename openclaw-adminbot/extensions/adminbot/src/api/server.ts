@@ -95,6 +95,9 @@ import {
   handlePublicDeadlineProposal,
 } from "./server.public-deadline-proposals.js";
 import { servePublicRoute } from "./server.public.js";
+
+// Long enough that a deploy's restart has settled before CVs start downloading.
+const CV_SWEEP_FIRST_CHECK_MS = 2 * 60 * 1000;
 export type { AdminBotCvDigestPublisher } from "./routes/context.js";
 export type { AdminBotMemberSheetSource } from "./routes/context.js";
 export type { DeviceTokenIssuance } from "./routes/context.js";
@@ -596,6 +599,19 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
         }, cvSweepCheckIntervalMs)
       : undefined;
   cvSweepTimer?.unref();
+  // Also checked soon after start, not only an interval later. The host is redeployed more often
+  // than hourly on a busy day, and a first check an hour out was reset by every restart, so the
+  // sweep could go a whole day without ever running. runCvDailySweep is a no-op when not due.
+  const cvSweepFirstCheck =
+    typeof cvSweepCheckIntervalMs === "number" && cvSweepCheckIntervalMs > 0
+      ? setTimeout(
+          () => {
+            void runCvDailySweep(ctx, service).catch(() => {});
+          },
+          Math.min(cvSweepCheckIntervalMs, CV_SWEEP_FIRST_CHECK_MS),
+        )
+      : undefined;
+  cvSweepFirstCheck?.unref();
   const server = createServer(async (req, res) => {
     try {
       await routeRequest(req, res, ctx);
@@ -638,6 +654,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       if (meetupSweepTimer) {
         clearInterval(meetupSweepTimer);
       }
+      clearTimeout(cvSweepFirstCheck);
       if (cvSweepTimer) {
         clearInterval(cvSweepTimer);
       }

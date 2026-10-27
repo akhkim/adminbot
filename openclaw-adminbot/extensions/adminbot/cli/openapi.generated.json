@@ -5421,7 +5421,117 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AdminBotTalkLeaderboard"
+                  "type": "object",
+                  "properties": {
+                    "sweep": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "state": {
+                              "type": "string",
+                              "const": "reading"
+                            },
+                            "started_at": {
+                              "type": "string"
+                            },
+                            "done": {
+                              "type": "number"
+                            },
+                            "total": {
+                              "type": "number"
+                            },
+                            "eta_seconds": {
+                              "anyOf": [
+                                {
+                                  "type": "null"
+                                },
+                                {
+                                  "type": "number"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "state",
+                            "started_at",
+                            "done",
+                            "total",
+                            "eta_seconds"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "state": {
+                              "type": "string",
+                              "const": "idle"
+                            },
+                            "last_completed_at": {
+                              "anyOf": [
+                                {
+                                  "type": "null"
+                                },
+                                {
+                                  "type": "string"
+                                }
+                              ]
+                            },
+                            "last_failed_at": {
+                              "anyOf": [
+                                {
+                                  "type": "null"
+                                },
+                                {
+                                  "type": "string"
+                                }
+                              ]
+                            },
+                            "next_due_at": {
+                              "anyOf": [
+                                {
+                                  "type": "null"
+                                },
+                                {
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "state",
+                            "last_completed_at",
+                            "last_failed_at",
+                            "next_due_at"
+                          ],
+                          "additionalProperties": true
+                        }
+                      ]
+                    },
+                    "year": {
+                      "type": "number"
+                    },
+                    "rows": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AdminBotTalkLeaderboardRow"
+                      }
+                    },
+                    "unscanned": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "sweep",
+                    "year",
+                    "rows",
+                    "unscanned"
+                  ],
+                  "additionalProperties": true
                 }
               }
             }
@@ -29998,6 +30108,9 @@
           "content_hash": {
             "type": "string"
           },
+          "pdf_hash": {
+            "type": "string"
+          },
           "extractor_version": {
             "type": "number"
           },
@@ -38906,8 +39019,8 @@
             "type": "string",
             "enum": [
               "complete",
-              "blocked",
               "idle",
+              "blocked",
               "waiting_on_authors"
             ]
           },

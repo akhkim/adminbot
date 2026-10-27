@@ -5516,6 +5516,7 @@ export interface components {
     AdminBotCvSnapshot: {
       fetched_at: string;
       content_hash: string;
+      pdf_hash?: string;
       extractor_version?: number;
       entries: components["schemas"]["AdminBotCvEntry"][];
     } & {
@@ -8323,7 +8324,7 @@ export interface components {
     };
     AdminBotPaperReminderState: {
       /** @enum {string} */
-      status?: "complete" | "blocked" | "idle" | "waiting_on_authors";
+      status?: "complete" | "idle" | "blocked" | "waiting_on_authors";
       requested_step_at?: string;
       last_author_dm_at?: string;
       last_author_reply_at?: string;
@@ -13348,7 +13349,33 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["AdminBotTalkLeaderboard"];
+          "application/json": {
+            sweep:
+              | ({
+                  /** @constant */
+                  state: "reading";
+                  started_at: string;
+                  done: number;
+                  total: number;
+                  eta_seconds: null | number;
+                } & {
+                  [key: string]: unknown;
+                })
+              | ({
+                  /** @constant */
+                  state: "idle";
+                  last_completed_at: null | string;
+                  last_failed_at: null | string;
+                  next_due_at: null | string;
+                } & {
+                  [key: string]: unknown;
+                });
+            year: number;
+            rows: components["schemas"]["AdminBotTalkLeaderboardRow"][];
+            unscanned: string[];
+          } & {
+            [key: string]: unknown;
+          };
         };
       };
       /** @description Server response */

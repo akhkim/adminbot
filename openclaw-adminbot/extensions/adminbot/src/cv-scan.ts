@@ -39,6 +39,17 @@ export type AdminBotCvScanDeps = {
   extractText: (pdf: Uint8Array, signal?: AbortSignal) => Promise<AdminBotCvExtraction>;
   extractEntries: (text: string, signal?: AbortSignal) => Promise<AdminBotCvEntry[]>;
   now: () => Date;
+  // Told how many linked CVs have been dealt with so far, so a long sweep can say how far along it
+  // is. Called once before the first CV and again as each one finishes.
+  onProgress?: (done: number, total: number) => void;
+  // Given each member's outcome as soon as their CV is dealt with, with the snapshot to store if
+  // it was read. The result can still be marked failed here, before the scan reports it.
+  onMemberScanned?: (
+    result: AdminBotCvScanMemberResult,
+    snapshot: AdminBotCvSnapshot | undefined,
+  ) => void | Promise<void>;
+  // How many CVs to read at once. Defaults to one at a time.
+  concurrency?: number;
 };
 
 export type AdminBotCvScanOutcome = {
@@ -64,63 +75,65 @@ export async function runAdminBotCvScan(
   windowMonths: number = CV_RECENCY_WINDOW_MONTHS,
 ): Promise<AdminBotCvScanOutcome> {
   const scannedAt = deps.now().toISOString();
-  const results: AdminBotCvScanMemberResult[] = [];
-  const snapshots = new Map<string, AdminBotCvSnapshot>();
 
-  for (const member of members) {
-    const cvUrl = member.cv_url?.trim();
-    if (!cvUrl) {
-      continue;
-    }
+  type MemberScan = { result: AdminBotCvScanMemberResult; snapshot?: AdminBotCvSnapshot };
+  const scanOne = async (member: AdminBotLabMember): Promise<MemberScan> => {
+    const cvUrl = member.cv_url!.trim();
     const base = { member_id: member.id, member_name: member.name, added: [], removed: [] };
     let parsed: URL;
     try {
       parsed = new URL(cvUrl);
     } catch {
-      results.push({ ...base, status: "failed", reason: "cv url is not a valid URL" });
-      continue;
+      return { result: { ...base, status: "failed", reason: "cv url is not a valid URL" } };
     }
     // Cheap, synchronous, and member-fixable, so it is reported as skipped rather than failed.
     // The address-level check that actually stops SSRF lives in the fetch, where DNS is resolved.
     if (parsed.protocol !== "https:") {
-      results.push({ ...base, status: "skipped", reason: "cv url must use https" });
-      continue;
+      return { result: { ...base, status: "skipped", reason: "cv url must use https" } };
     }
 
     try {
       const pdf = await deps.fetchPdf(cvUrl);
+      const previous = member.cv_snapshot;
+      const current = (previous?.extractor_version ?? 1) >= CV_EXTRACTOR_VERSION;
+      // The cheapest check first: the very same file as last time cannot read differently, so it
+      // costs a download and a hash -- no PDF parsing, no model call.
+      const pdfHash = createHash("sha256").update(pdf).digest("hex");
+      if (current && previous?.pdf_hash === pdfHash) {
+        return { result: { ...base, status: "unchanged" } };
+      }
       const extraction = await deps.extractText(pdf);
       if (!extraction.ok) {
-        results.push({ ...base, status: "failed", reason: extraction.reason });
-        continue;
+        return { result: { ...base, status: "failed", reason: extraction.reason } };
       }
       const contentHash = createHash("sha256").update(extraction.text).digest("hex");
-      const previous = member.cv_snapshot;
-      // An unchanged document cannot have produced changed facts, so the model call is skipped
-      // outright. Re-running the scan over a settled roster costs one fetch per member -- unless
-      // the snapshot was read by an older prompt that could not see everything this one can.
+      // A new file with the same text (re-exported, or metadata touched) cannot have produced
+      // changed facts either, so the model call is skipped -- unless the snapshot was read by an
+      // older prompt that could not see everything this one can. The new file hash is kept, so
+      // tomorrow's check stops at the bytes.
       const sameText = previous?.content_hash === contentHash;
-      const current = (previous?.extractor_version ?? 1) >= CV_EXTRACTOR_VERSION;
-      if (sameText && current) {
-        results.push({ ...base, status: "unchanged" });
-        continue;
+      if (sameText && current && previous) {
+        return {
+          result: { ...base, status: "unchanged" },
+          snapshot: { ...previous, pdf_hash: pdfHash },
+        };
       }
 
       const entries = await deps.extractEntries(extraction.text);
-      snapshots.set(member.id, {
+      const snapshot: AdminBotCvSnapshot = {
         fetched_at: scannedAt,
         content_hash: contentHash,
+        pdf_hash: pdfHash,
         extractor_version: CV_EXTRACTOR_VERSION,
         entries,
-      });
+      };
 
       if (sameText) {
         // Same document, better reader: whatever the new prompt finds was on the CV all along, so
         // it refreshes the snapshot (and the talk leaderboard counted from it) without reaching
         // the ledger. Otherwise this year's talks would all be announced as news the day the
         // prompt changed.
-        results.push({ ...base, status: "unchanged" });
-        continue;
+        return { result: { ...base, status: "unchanged" }, snapshot };
       }
 
       if (!previous) {
@@ -133,22 +146,54 @@ export async function runAdminBotCvScan(
         const recent = entries
           .map((entry) => ({ entry, recency: classifyRecency(entry, deps.now(), windowMonths) }))
           .filter((change) => change.recency === "recent");
-        results.push({ ...base, status: "first_scan", added: recent });
-        continue;
+        return { result: { ...base, status: "first_scan", added: recent }, snapshot };
       }
       const added = entriesMissingFrom(entries, previous.entries).map((entry) => ({
         entry,
         recency: classifyRecency(entry, deps.now(), windowMonths),
       }));
       const removed = entriesMissingFrom(previous.entries, entries);
-      results.push({
-        ...base,
-        status: added.length || removed.length ? "changed" : "unchanged",
-        added,
-        removed,
-      });
+      return {
+        result: {
+          ...base,
+          status: added.length || removed.length ? "changed" : "unchanged",
+          added,
+          removed,
+        },
+        snapshot,
+      };
     } catch (error) {
-      results.push({ ...base, status: "failed", reason: errorMessage(error) });
+      return { result: { ...base, status: "failed", reason: errorMessage(error) } };
+    }
+  };
+
+  // CVs are read a few at a time: most of a CV's time is waiting on the download and the model,
+  // and the local model batches concurrent requests. Kept small because that model is shared.
+  const linked = members.filter((member) => member.cv_url?.trim());
+  const outcomes: MemberScan[] = [];
+  let next = 0;
+  let done = 0;
+  deps.onProgress?.(0, linked.length);
+  const worker = async () => {
+    while (next < linked.length) {
+      const index = next;
+      next += 1;
+      const outcome = await scanOne(linked[index]!);
+      outcomes[index] = outcome;
+      // Handed over as each CV finishes, so a restart mid-sweep keeps what was already read.
+      await deps.onMemberScanned?.(outcome.result, outcome.snapshot);
+      done += 1;
+      deps.onProgress?.(done, linked.length);
+    }
+  };
+  const workers = Math.max(1, Math.min(deps.concurrency ?? 1, linked.length));
+  await Promise.all(Array.from({ length: workers }, worker));
+  // In roster order, whatever order the reads finished in.
+  const results = outcomes.map((outcome) => outcome.result);
+  const snapshots = new Map<string, AdminBotCvSnapshot>();
+  for (const outcome of outcomes) {
+    if (outcome.snapshot) {
+      snapshots.set(outcome.result.member_id, outcome.snapshot);
     }
   }
 
@@ -497,6 +542,7 @@ export function createAdminBotCvScanDeps(options: {
   fetchImpl?: typeof globalThis.fetch;
   env?: NodeJS.ProcessEnv;
   pythonCommand?: string;
+  concurrency?: number;
 }): AdminBotCvScanDeps {
   const env = options.env ?? process.env;
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
@@ -504,6 +550,7 @@ export function createAdminBotCvScanDeps(options: {
   const extractScriptPath = options.extractScriptPath;
   return {
     now: () => new Date(),
+    concurrency: options.concurrency,
     fetchPdf: async (url, signal) => await fetchCvPdf(fetchImpl, url, signal),
     extractText: async (pdf) => {
       const directory = await mkdtemp(path.join(tmpdir(), "adminbot-cv-"));
