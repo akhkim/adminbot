@@ -284,6 +284,7 @@ describe("daily CV sweep", () => {
         { rank: 1, member_id: "m-jane", member_name: "Jane Doe", invited: 1, orals: 0, total: 1 },
       ],
       unscanned: [],
+      unread: [],
       sweep: {
         state: "idle",
         last_completed_at: "2026-08-22T09:00:00.000Z",
@@ -471,7 +472,10 @@ describe("GET /cv/talk-leaderboard", () => {
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(member.status).toBe(200);
-    expect(await member.json()).toMatchObject({ year: 2026, rows: [], unscanned: ["Jane Doe"] });
+    expect(await member.json()).toMatchObject({ year: 2026, rows: [],
+      unscanned: ["Jane Doe"],
+      unread: [{ member_name: "Jane Doe", reason: "pending" }],
+    });
 
     const visitor = await fetch(`${baseUrl}/cv/talk-leaderboard`);
     expect(visitor.status).toBe(401);

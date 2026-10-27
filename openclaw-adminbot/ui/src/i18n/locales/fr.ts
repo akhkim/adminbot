@@ -1828,7 +1828,7 @@ export const fr: TranslationMap = {
       citySubmit: "Set city",
       cityErrorEmpty: "Type a city first.",
       groupsEmpty: "Add a trip or RSVP to a conference to see who else will be there.",
-      nobody: "No one from the lab yet.",
+      nobody: "No one who shares their location yet.",
       basisLive: "Here now",
       basisLiveKm: "Here now, about {km} km away",
       basisTrip: "Visiting {dates}",
@@ -1842,7 +1842,10 @@ export const fr: TranslationMap = {
       lookupErrorPlace: "Type a city to look up.",
       lookupUnresolved:
         "AdminBot does not know where {place} is, so only trips naming it exactly are matched.",
-      lookupNone: "No one from the lab will be in {place} then.",
+      lookupNone: "No one who shares their location will be in {place} then.",
+      noSharers: "No other member shares their location yet, so only conference RSVPs are checked.",
+      fewSharers:
+        "Only members who share their location are checked ({count} besides you); everyone else shows up through conference RSVPs.",
     },
     notice: {
       signIn: "Sign in to use Events.",

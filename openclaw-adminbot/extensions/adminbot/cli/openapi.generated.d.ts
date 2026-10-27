@@ -5817,6 +5817,7 @@ export interface components {
       year: number;
       rows: components["schemas"]["AdminBotTalkLeaderboardRow"][];
       unscanned: string[];
+      unread: components["schemas"]["AdminBotTalkLeaderboardUnread"][];
     } & {
       [key: string]: unknown;
     };
@@ -5827,6 +5828,13 @@ export interface components {
       invited: number;
       orals: number;
       total: number;
+    } & {
+      [key: string]: unknown;
+    };
+    AdminBotTalkLeaderboardUnread: {
+      member_name: string;
+      /** @enum {string} */
+      reason: "pending" | "failed" | "not_pdf" | "refused";
     } & {
       [key: string]: unknown;
     };
@@ -9490,6 +9498,7 @@ export interface components {
       plans: components["schemas"]["AdminBotTravelPlan"][];
       home?: string;
       matches: components["schemas"]["AdminBotTravelMatchGroup"][];
+      sharing_members: number;
     } & {
       [key: string]: unknown;
     };
@@ -13391,6 +13400,7 @@ export interface operations {
             year: number;
             rows: components["schemas"]["AdminBotTalkLeaderboardRow"][];
             unscanned: string[];
+            unread: components["schemas"]["AdminBotTalkLeaderboardUnread"][];
           } & {
             [key: string]: unknown;
           };
@@ -26781,6 +26791,7 @@ export interface operations {
             from: string;
             to: string;
             people: components["schemas"]["AdminBotTravelMatch"][];
+            sharing_members: number;
           } & {
             [key: string]: unknown;
           };

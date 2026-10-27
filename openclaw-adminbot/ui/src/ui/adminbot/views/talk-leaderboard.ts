@@ -19,6 +19,8 @@ export type TalkLeaderboard = {
     total: number;
   }>;
   unscanned: string[];
+  // Why each of `unscanned` is unread. Older services do not send it; the page then lists names.
+  unread?: Array<{ member_name: string; reason: "not_pdf" | "refused" | "failed" | "pending" }>;
   // Older services do not send it; the page then just omits the status line.
   sweep?:
     | {
@@ -35,6 +37,30 @@ export type TalkLeaderboard = {
         next_due_at: string | null;
       };
 };
+
+// What each kind of unread CV needs, worded for the member who has to fix it.
+const UNREAD_TEXT: Record<NonNullable<TalkLeaderboard["unread"]>[number]["reason"], string> = {
+  not_pdf:
+    "Not counted, because their CV link does not open a PDF anyone with the link can download. Share the file as \u201canyone with the link\u201d, or link the PDF itself rather than a web page, on My Profile",
+  refused:
+    "Not counted, because the site their CV link points to refuses downloads. Link a PDF instead, on My Profile",
+  failed: "Not counted yet, because their CV could not be read; the next daily read tries again",
+  pending: "Not counted yet, because their CV has not been read",
+};
+
+/** One line per kind of unread CV, so each person can see what they need to do. */
+export function unreadLines(board: TalkLeaderboard): string[] {
+  if (!board.unread) {
+    return board.unscanned.length
+      ? [`${UNREAD_TEXT.pending}: ${board.unscanned.join(", ")}.`]
+      : [];
+  }
+  const unread = board.unread;
+  return (Object.keys(UNREAD_TEXT) as Array<keyof typeof UNREAD_TEXT>).flatMap((reason) => {
+    const names = unread.filter((entry) => entry.reason === reason).map((e) => e.member_name);
+    return names.length ? [`${UNREAD_TEXT[reason]}: ${names.join(", ")}.`] : [];
+  });
+}
 
 function minutes(seconds: number) {
   const m = Math.max(1, Math.round(seconds / 60));
@@ -353,10 +379,10 @@ export class TalkLeaderboardView extends LitElement {
         : this.loading
           ? html`<p class="hint" data-testid="talk-leaderboard-loading">Loading the board…</p>`
           : nothing}
-      ${board?.unscanned.length
-        ? html`<p class="hint" data-testid="talk-leaderboard-unscanned">
-            Not counted yet, because their CV has not been read: ${board.unscanned.join(", ")}.
-          </p>`
+      ${board && unreadLines(board).length
+        ? html`<div data-testid="talk-leaderboard-unscanned">
+            ${unreadLines(board).map((line) => html`<p class="hint">${line}</p>`)}
+          </div>`
         : nothing}
       <details>
         <summary>What counts as a talk</summary>

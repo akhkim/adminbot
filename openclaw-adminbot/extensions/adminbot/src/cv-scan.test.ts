@@ -10,7 +10,10 @@ import {
   assertPublicHost,
   buildNewsletterDraft,
   classifyRecency,
+  createAdminBotCvScanDeps,
+  createCvPinnedLookup,
   CV_EXTRACTOR_VERSION,
+  type CvHostAddress,
   isPublicIpAddress,
   normalizeCvDownloadUrl,
   resolveStartIso,
@@ -369,6 +372,23 @@ describe("runAdminBotCvScan", () => {
     expect(result.newsletter_draft).toContain("Ada");
   });
 
+  it("keeps the network cause fetch hides behind 'fetch failed'", async () => {
+    const { result } = await runAdminBotCvScan(
+      [member({ id: "offline", cv_url: "https://drive.google.com/file/d/abc" })],
+      deps({
+        fetchPdf: async () => {
+          throw new TypeError("fetch failed", {
+            cause: Object.assign(new Error("connect ENETUNREACH"), { code: "ENETUNREACH" }),
+          });
+        },
+      }),
+    );
+    expect(result.results[0]).toMatchObject({
+      status: "failed",
+      reason: "fetch failed (ENETUNREACH)",
+    });
+  });
+
   it("separates an unreadable scan from one with no changes", async () => {
     const { result } = await runAdminBotCvScan(
       [member({ id: "scanned-paper", cv_url: "https://drive.google.com/file/d/abc" })],
@@ -411,7 +431,9 @@ describe("isPublicIpAddress", () => {
 describe("assertPublicHost", () => {
   it("accepts a host that resolves entirely to public addresses", async () => {
     const lookup = vi.fn(async () => [{ address: "8.8.8.8" }]);
-    await expect(assertPublicHost("example.com", lookup as never)).resolves.toBeUndefined();
+    await expect(assertPublicHost("example.com", lookup as never)).resolves.toEqual([
+      { address: "8.8.8.8", family: 4 },
+    ]);
   });
 
   it("refuses a host whose addresses include a private one", async () => {
@@ -761,5 +783,82 @@ describe("sanitizeCvEntries", () => {
     ]);
     expect(entry?.title).toHaveLength(500);
     expect(sanitizeCvEntries({ entries: [] })).toEqual([]);
+  });
+});
+
+describe("createCvPinnedLookup", () => {
+  const pins = new Map<string, CvHostAddress[]>([
+    [
+      "drive.google.com",
+      [
+        { address: "2607:f8b0:400b:80f::200e", family: 6 },
+        { address: "142.250.65.206", family: 4 },
+        { address: "142.250.65.238", family: 4 },
+      ],
+    ],
+    ["v6only.example", [{ address: "2001:db8::1", family: 6 }]],
+  ]);
+  const ask = (host: string, options: object) =>
+    new Promise<{ error: NodeJS.ErrnoException | null; address: unknown; family?: number }>(
+      (resolve) => {
+        createCvPinnedLookup(pins)(host, options, (error, address, family) =>
+          resolve({ error, address, family }),
+        );
+      },
+    );
+
+  it("answers IPv4 only when the host has it, so an IPv6-less host still connects", async () => {
+    expect(await ask("drive.google.com", { all: true })).toMatchObject({
+      error: null,
+      address: [
+        { address: "142.250.65.206", family: 4 },
+        { address: "142.250.65.238", family: 4 },
+      ],
+    });
+    expect(await ask("Drive.Google.com", {})).toMatchObject({
+      address: "142.250.65.206",
+      family: 4,
+    });
+  });
+
+  it("falls back to IPv6 for a host without IPv4", async () => {
+    expect(await ask("v6only.example", {})).toMatchObject({ address: "2001:db8::1", family: 6 });
+  });
+
+  it("refuses a host that was never validated", async () => {
+    const answer = await ask("169.254.169.254.nip.io", { all: true });
+    expect(answer.error?.code).toBe("ENOTFOUND");
+  });
+});
+
+describe("createAdminBotCvScanDeps fetchPdf", () => {
+  it("downloads through a dispatcher pinned to the validated host", async () => {
+    const downloadImpl = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      headers: { get: () => null },
+      arrayBuffer: async () => new TextEncoder().encode("%PDF-1.7 synthetic").buffer,
+    }));
+    const scanDeps = createAdminBotCvScanDeps({ extractScriptPath: "/unused", downloadImpl });
+    // An IP literal, so the test never touches DNS.
+    const pdf = await scanDeps.fetchPdf("https://8.8.8.8/cv.pdf");
+    expect(new TextDecoder().decode(pdf)).toContain("%PDF");
+    const init = downloadImpl.mock.calls[0]?.[1] as { redirect: string; dispatcher?: object };
+    expect(init.redirect).toBe("manual");
+    expect(init.dispatcher).toBeDefined();
+  });
+
+  it("refuses a redirect to a private address before connecting", async () => {
+    const downloadImpl = vi.fn(async () => ({
+      ok: false,
+      status: 302,
+      statusText: "Found",
+      headers: { get: (name: string) => (name === "location" ? "https://10.0.0.1/x" : null) },
+      arrayBuffer: async () => new ArrayBuffer(0),
+    }));
+    const scanDeps = createAdminBotCvScanDeps({ extractScriptPath: "/unused", downloadImpl });
+    await expect(scanDeps.fetchPdf("https://8.8.8.8/cv.pdf")).rejects.toThrow(/non-public/u);
+    expect(downloadImpl).toHaveBeenCalledTimes(1);
   });
 });

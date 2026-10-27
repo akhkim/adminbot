@@ -1,6 +1,11 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { canAccessTab } from "../access.ts";
-import { sweepStatusText, type TalkLeaderboard, TalkLeaderboardView } from "./talk-leaderboard.ts";
+import {
+  sweepStatusText,
+  type TalkLeaderboard,
+  TalkLeaderboardView,
+  unreadLines,
+} from "./talk-leaderboard.ts";
 afterEach(() => {
   document.body.replaceChildren();
   vi.unstubAllGlobals();
@@ -122,4 +127,22 @@ it("tells a board that was never read from one that is settled, and flags a fail
       now,
     ),
   ).toContain("0 of 9 done, working out how long");
+});
+
+it("says why each CV is unread, so the right person fixes their link", () => {
+  const lines = unreadLines({
+    ...board([], ["Ann", "Bo", "Cal"]),
+    unread: [
+      { member_name: "Ann", reason: "not_pdf" },
+      { member_name: "Bo", reason: "pending" },
+      { member_name: "Cal", reason: "not_pdf" },
+    ],
+  });
+  expect(lines).toHaveLength(2);
+  expect(lines[0]).toMatch(/does not open a PDF anyone with the link can download.*: Ann, Cal\.$/u);
+  expect(lines[1]).toBe("Not counted yet, because their CV has not been read: Bo.");
+  // An older service sends names only.
+  expect(unreadLines(board([], ["Eve"]))).toEqual([
+    "Not counted yet, because their CV has not been read: Eve.",
+  ]);
 });

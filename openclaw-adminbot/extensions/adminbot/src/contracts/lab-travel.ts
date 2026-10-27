@@ -198,4 +198,9 @@ export type AdminBotTravelOverview = {
   home?: string;
   /** Empty unless sharing is on: matching reads other people's whereabouts. */
   matches: AdminBotTravelMatchGroup[];
+  /**
+   * How many other members share their location, so an empty match can say how few were checked.
+   * Everyone else is matched only by conference RSVPs. 0 unless the viewer shares.
+   */
+  sharing_members: number;
 };

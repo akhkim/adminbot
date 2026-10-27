@@ -5521,13 +5521,20 @@
                       "items": {
                         "type": "string"
                       }
+                    },
+                    "unread": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AdminBotTalkLeaderboardUnread"
+                      }
                     }
                   },
                   "required": [
                     "sweep",
                     "year",
                     "rows",
-                    "unscanned"
+                    "unscanned",
+                    "unread"
                   ],
                   "additionalProperties": true
                 }
@@ -28264,6 +28271,9 @@
                       "items": {
                         "$ref": "#/components/schemas/AdminBotTravelMatch"
                       }
+                    },
+                    "sharing_members": {
+                      "type": "number"
                     }
                   },
                   "required": [
@@ -28271,7 +28281,8 @@
                     "resolved",
                     "from",
                     "to",
-                    "people"
+                    "people",
+                    "sharing_members"
                   ],
                   "additionalProperties": true
                 }
@@ -31634,12 +31645,19 @@
             "items": {
               "type": "string"
             }
+          },
+          "unread": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminBotTalkLeaderboardUnread"
+            }
           }
         },
         "required": [
           "year",
           "rows",
-          "unscanned"
+          "unscanned",
+          "unread"
         ],
         "additionalProperties": true
       },
@@ -31672,6 +31690,28 @@
           "invited",
           "orals",
           "total"
+        ],
+        "additionalProperties": true
+      },
+      "AdminBotTalkLeaderboardUnread": {
+        "type": "object",
+        "properties": {
+          "member_name": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "failed",
+              "not_pdf",
+              "refused"
+            ]
+          }
+        },
+        "required": [
+          "member_name",
+          "reason"
         ],
         "additionalProperties": true
       },
@@ -43023,6 +43063,9 @@
             "items": {
               "$ref": "#/components/schemas/AdminBotTravelMatchGroup"
             }
+          },
+          "sharing_members": {
+            "type": "number"
           }
         },
         "required": [
@@ -43030,7 +43073,8 @@
           "conferences",
           "sharing",
           "plans",
-          "matches"
+          "matches",
+          "sharing_members"
         ],
         "additionalProperties": true
       },
