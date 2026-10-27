@@ -11,6 +11,9 @@ their DM with the bot and
   * re-nudges when the newest nudge is older than the cadence (or none exists),
   * otherwise leaves them alone until the next run.
 
+A member whose slack_user_id does not resolve to a reachable Slack user is reported as
+"unreachable" and the pass carries on with everyone else.
+
 Slack itself is the state store: "when did we last nudge" is the timestamp of the
 bot's newest nudge message in the DM, so there is no second database to drift out
 of sync with either Slack or the roster.
@@ -46,6 +49,28 @@ CONFIRM_REACTIONS = {
 # contains this phrase; it is how we tell nudges apart from the bot's other DMs
 # (deadline reminders share the same conversation).
 NUDGE_MARKER = "lab onboarding"
+
+# Slack errors that describe one member's account rather than our token or Slack itself: the
+# stored slack_user_id does not resolve to a reachable person. That is a roster problem for that
+# one member, so it must not abort the pass for everyone listed after them -- a single imported
+# email address in slack_user_id ("user_not_found") kept this cron red from 2026-10-02 on.
+# Token, scope and rate-limit errors are deliberately absent: they would hit every member the
+# same way, so they should still fail the run loudly.
+UNREACHABLE_MEMBER_ERRORS = {
+    "user_not_found",
+    "user_not_visible",
+    "user_disabled",
+    "cannot_dm_bot",
+}
+
+
+class SlackApiError(RuntimeError):
+    """A Slack Web API call answered ok=false; `code` is Slack's machine-readable error."""
+
+    def __init__(self, method: str, code: str) -> None:
+        super().__init__(f"slack {method} failed: {code}")
+        self.method = method
+        self.code = code
 
 
 def http_json(
@@ -97,9 +122,7 @@ class SlackDm:
             "POST", f"https://slack.com/api/{method}", self.headers, payload
         )
         if not result.get("ok"):
-            raise RuntimeError(
-                f"slack {method} failed: {result.get('error', 'unknown error')}"
-            )
+            raise SlackApiError(method, result.get("error", "unknown error"))
         return result
 
     def open_dm(self, user_id: str) -> str:
@@ -151,7 +174,21 @@ def process_member(
     slack_id = member.get("slack_user_id")
     if not slack_id:
         return {**outcome, "status": "skipped", "reason": "member has no slack_user_id"}
-    channel = slack.open_dm(slack_id)
+    # Only the DM open is guarded: it is the one call that resolves the member's identity, and
+    # past it every call addresses the channel, so a later failure is not about this member.
+    try:
+        channel = slack.open_dm(slack_id)
+    except SlackApiError as error:
+        if error.code not in UNREACHABLE_MEMBER_ERRORS:
+            raise
+        return {
+            **outcome,
+            "status": "unreachable",
+            "reason": (
+                f"slack {error.method}: {error.code}"
+                " (check this member's slack_user_id)"
+            ),
+        }
     nudge = newest_nudge(slack.history(channel))
     if nudge and reaction_confirms(nudge, slack_id):
         if live:
