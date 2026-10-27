@@ -1,5 +1,5 @@
 import { render } from "lit";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AccessRole } from "../access.ts";
 import {
   createFactRow,
@@ -1610,10 +1610,17 @@ describe("withdrawing a request", () => {
     );
   }
 
-  it("lets the requester call their own request off", () => {
+  it("lets the requester call their own request off, after confirming", () => {
+    vi.stubGlobal("confirm", () => false);
+    const kept = draw({ role: "member", mode: "view", openRequest: mine });
+    withdrawButton(kept.container)?.click();
+    expect(kept.withdrawn).toEqual([]);
+
+    vi.stubGlobal("confirm", () => true);
     const drawn = draw({ role: "member", mode: "view", openRequest: mine });
     withdrawButton(drawn.container)?.click();
     expect(drawn.withdrawn).toEqual(["logreq_mine"]);
+    vi.unstubAllGlobals();
   });
 
   it("is not offered on somebody else's request", () => {

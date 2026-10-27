@@ -695,7 +695,7 @@ export const en: TranslationMap = {
     adminbotRecLetters:
       "Ask for a recommendation letter, school by school and deadline by deadline.",
     adminbotMeetingRequests: "Ask for a slot, and say what the call is for.",
-    adminbotPapers: "PaperPublish records and current steps.",
+    adminbotPapers: "Every lab paper, its current step and timeline.",
     adminbotWorkshopNudges: "Review paper–workshop matches and send workshop nudges.",
     adminbotAnnouncements: "Nudge members or send a general announcement.",
     adminbotReferenceChecker: "Check PDF references against scholarly databases.",
@@ -1590,6 +1590,7 @@ export const en: TranslationMap = {
       submit: "Add trip",
       edit: "Edit",
       remove: "Remove",
+      removeConfirm: "Remove this trip?",
       home: "Home is {location}.",
       empty: "No trips logged.",
       errorCity: "Where are you going?",
@@ -1836,7 +1837,8 @@ export const en: TranslationMap = {
     nearby: {
       label: "Also nearby in {place}:",
       nobody: "nobody else right now.",
-      locked: "City intros are off, so nearby lab-mates are hidden. Turn them back on below.",
+      locked:
+        "City intros are off, so nearby lab-mates are hidden. Turn them back on under Meetup intros below.",
     },
     nearbyNow: {
       title: "Nearby now",
@@ -1971,6 +1973,9 @@ export const en: TranslationMap = {
       noSharers: "No other member shares their location yet, so only conference RSVPs are checked.",
       fewSharers:
         "Only members who share their location are checked ({count} besides you); everyone else shows up through conference RSVPs.",
+      statusOn: "Sharing · {place}",
+      statusOnNoFix: "Sharing",
+      statusOff: "Not sharing",
     },
     notice: {
       sharingOn: "Location sharing is on.",
@@ -2110,6 +2115,7 @@ export const en: TranslationMap = {
       detailEarliestDeadline: "earliest deadline {date}",
       documents: "Documents to sign",
       withdraw: "Withdraw this request",
+      withdrawConfirm: "Withdraw this request? The lab stops working on it.",
       edit: "Correct this request",
       resolution: "The lab says: {note}",
       answerTitle: "Answer this request",
@@ -2535,7 +2541,8 @@ export const en: TranslationMap = {
       stats: "Members needed: {members} · {hours} h/week",
       previous: "Previous project",
       next: "Next project",
-      empty: "No open projects right now.",
+      empty:
+        "No open projects right now. Ask for help on your own project above and it appears here.",
     },
     requests: {
       title: "Your requests",
@@ -2665,7 +2672,7 @@ export const en: TranslationMap = {
         approved: "Approved",
         rejected: "Rejected",
       },
-      suggestOpen: "Suggest a new badge",
+      suggestOpen: "Write a suggestion",
       suggestClose: "Cancel",
       suggestTitle: "Suggest a new badge",
       suggestHint:

@@ -1,7 +1,7 @@
 /* @vitest-environment jsdom */
 
 import { render } from "lit";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TripRow } from "../data/availability.ts";
 import {
   EMPTY_TRIP_DRAFT,
@@ -11,8 +11,13 @@ import {
   type TripDraft,
 } from "./time-availability.trip-editor.ts";
 
+beforeEach(() => {
+  vi.stubGlobal("confirm", () => true);
+});
+
 afterEach(() => {
   document.body.innerHTML = "";
+  vi.unstubAllGlobals();
 });
 
 const BERLIN: TripRow = {
@@ -132,6 +137,16 @@ describe("editing a logged trip", () => {
 
     expect(onSave).toHaveBeenCalledWith([BERLIN]);
     expect(onDraftChange).toHaveBeenCalledWith(EMPTY_TRIP_DRAFT);
+  });
+
+  it("keeps the trip when the removal is not confirmed", () => {
+    vi.stubGlobal("confirm", () => false);
+    const onSave = vi.fn();
+    const container = renderView({ trips: [BERLIN, TOKYO], onSave });
+
+    container.querySelector<HTMLButtonElement>('[data-testid="lab-travel-plan-remove-0"]')?.click();
+
+    expect(onSave).not.toHaveBeenCalled();
   });
 
   it("leaves the edit alone when a different row is removed", () => {

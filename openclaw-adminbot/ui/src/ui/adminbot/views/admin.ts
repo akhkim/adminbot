@@ -4066,8 +4066,6 @@ function renderPanel(props: AdminBotProps) {
       }
       return html`
         <div class="card adminbot-card adminbot-card--wide">
-          <div class="card-title">Settings</div>
-          <div class="card-sub">Lab defaults and private-routing policy used by AdminBot.</div>
           ${renderSettings(props, props.data.settings, props.data.sensitiveInfo)}
         </div>
       `;
@@ -4080,8 +4078,6 @@ function renderPanel(props: AdminBotProps) {
     case "papers":
       return html`
         <div class="card adminbot-card adminbot-card--wide">
-          <div class="card-title">Active papers</div>
-          <div class="card-sub">PaperPublish records, current steps, and estimated timelines.</div>
           ${renderPapers(props, props.data.papers)}
         </div>
       `;
@@ -4090,13 +4086,7 @@ function renderPanel(props: AdminBotProps) {
         return renderPanel({ ...props, panel: "papers" });
       }
       return html`
-        <div class="card adminbot-card adminbot-card--wide">
-          <div class="card-title">Announcements</div>
-          <div class="card-sub">
-            Nudge selected members or send a general announcement over Slack or email.
-          </div>
-          ${renderAnnouncements(props)}
-        </div>
+        <div class="card adminbot-card adminbot-card--wide">${renderAnnouncements(props)}</div>
       `;
   }
 }

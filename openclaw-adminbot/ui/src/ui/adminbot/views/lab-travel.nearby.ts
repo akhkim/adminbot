@@ -95,9 +95,7 @@ export function nobodyText(sharers: number | undefined, place?: string): string 
       : sharers === 0
         ? t("labTravel.nearby.noSharers")
         : t("labTravel.nearby.fewSharers", { count: String(sharers) });
-  const head = place
-    ? t("labTravel.nearby.lookupNone", { place })
-    : t("labTravel.nearby.nobody");
+  const head = place ? t("labTravel.nearby.lookupNone", { place }) : t("labTravel.nearby.nobody");
   return scope ? `${head} ${scope}` : head;
 }
 
@@ -262,14 +260,58 @@ function renderLookup(props: TravelNearbyProps) {
   `;
 }
 
+// Folded or open is remembered per browser: a member who has set this up once rarely needs the
+// whole card again, and it sits above the events list. Storage can be blocked; then it just opens.
+const OPEN_KEY = "adminbot.labTravel.nearbyOpen";
+
+function readOpen(): boolean {
+  try {
+    return window.localStorage.getItem(OPEN_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
+
+function saveOpen(open: boolean) {
+  try {
+    window.localStorage.setItem(OPEN_KEY, open ? "1" : "0");
+  } catch {
+    // Not remembered; the card still folds for this visit.
+  }
+}
+
+/** The folded card's one-line state, so closing it never hides whether you are sharing. */
+function statusText(props: TravelNearbyProps): string {
+  const sharing = props.sharing ?? props.overview?.sharing;
+  if (!sharing) {
+    return "";
+  }
+  if (!sharing.enabled) {
+    return t("labTravel.nearby.statusOff");
+  }
+  return sharing.location
+    ? t("labTravel.nearby.statusOn", { place: sharing.location.label })
+    : t("labTravel.nearby.statusOnNoFix");
+}
+
 export function renderTravelNearby(props: TravelNearbyProps) {
   const overview = props.overview;
+  const status = statusText(props);
   return html`
-    <section
-      class="card adminbot-card adminbot-card--wide lab-travel__card"
+    <details
+      class="card adminbot-card adminbot-card--wide adminbot-fold lab-travel__card"
       data-testid="lab-travel-nearby"
+      ?open=${readOpen()}
+      @toggle=${(event: Event) => saveOpen((event.currentTarget as HTMLDetailsElement).open)}
     >
-      <div class="card-title">${t("labTravel.nearby.title")}</div>
+      <summary>
+        ${t("labTravel.nearby.title")}
+        ${status
+          ? html`<span class="muted lab-travel__status" data-testid="lab-travel-status"
+              >${status}</span
+            >`
+          : nothing}
+      </summary>
       ${props.notice
         ? html`<div
             class="callout ${props.notice.kind === "error" ? "danger" : "success"}"
@@ -291,7 +333,7 @@ export function renderTravelNearby(props: TravelNearbyProps) {
         : props.loading
           ? html`<p class="muted">${t("labTravel.loading")}</p>`
           : nothing}
-    </section>
+    </details>
   `;
 }
 

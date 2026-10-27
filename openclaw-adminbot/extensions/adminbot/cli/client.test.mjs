@@ -457,7 +457,13 @@ async function deviceService(t, polls) {
         }),
       );
     } else if (req.url === "/auth/device/poll") {
-      res.end(JSON.stringify(polls.shift()));
+      const next = polls.shift();
+      if (typeof next === "number") {
+        res.statusCode = next;
+        res.end("{}");
+      } else {
+        res.end(JSON.stringify(next));
+      }
     } else if (req.url === "/auth/session") {
       res.end('{"member":{"id":"admin-a"}}');
     } else if (req.url === "/auth/logout") {
@@ -567,6 +573,23 @@ await test("browser login slows down when asked and stops on denial", async (t) 
   // RFC 8628: slow_down raises the interval for every later poll, not just the next.
   assert.deepEqual(waits, [1000, 6000, 6000]);
   await assert.rejects(stat(join(dir, "credentials.json")), { code: "ENOENT" });
+});
+
+await test("browser login keeps polling through a server error", async (t) => {
+  const { deviceLogin } = await import("./login.mjs");
+  const { baseUrl } = await deviceService(t, [502, { status: "authorization_pending" }, approved]);
+  const dir = await mkdtemp(join(tmpdir(), "adminbot-cli-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const result = await deviceLogin({
+    baseUrl,
+    credentials: join(dir, "credentials.json"),
+    browser: false,
+    timeout: 5000,
+    env: { ADMINBOT_KEYCHAIN: "0" },
+    stderr: { write: () => {} },
+    sleep: async () => {},
+  });
+  assert.equal(result.api_token.id, approved.api_token.id);
 });
 
 await test("browser login refuses unknown flags and redacts tokens from errors", async () => {

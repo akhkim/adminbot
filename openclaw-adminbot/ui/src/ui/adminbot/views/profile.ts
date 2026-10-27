@@ -1544,10 +1544,10 @@ function renderBadgeSuggestion(state: AppViewState, props: ProfileProps) {
             </div>
           </form>`
         : nothing}
-      <div class="profile-badge-nominations">
-        <h3 class="profile__group-title">${t("profile.badges.suggestionsTitle")}</h3>
-        ${mine.length
-          ? html`<ul class="profile-badge-nominations__list">
+      ${mine.length
+        ? html`<div class="profile-badge-nominations">
+            <h3 class="profile__group-title">${t("profile.badges.suggestionsTitle")}</h3>
+            <ul class="profile-badge-nominations__list">
               ${mine.map(
                 (suggestion) => html`<li
                   class="profile-badge-nominations__item"
@@ -1577,9 +1577,9 @@ function renderBadgeSuggestion(state: AppViewState, props: ProfileProps) {
                   </div>
                 </li>`,
               )}
-            </ul>`
-          : html`<p class="profile__badges-empty">${t("profile.badges.suggestionsEmpty")}</p>`}
-      </div>
+            </ul>
+          </div>`
+        : nothing}
     </section>
   `;
 }
@@ -1621,122 +1621,126 @@ function renderBadgeSelfNomination(state: AppViewState, member: LabMember, props
     .toSorted((left, right) => left.name.localeCompare(right.name));
   return html`
     <section class="profile__section" data-testid="profile-badge-nominations">
-      <h2 class="profile__section-title">${t("profile.badges.nominateTitle")}</h2>
-      <p class="profile__section-subtitle">${t("profile.badges.nominateHint")}</p>
-      <div class="profile__form-row" data-testid="profile-badge-nominee">
-        <span class="profile__form-label">${t("profile.badges.nominateWho")}</span>
-        <div class="profile-badge-nominee">
-          <button
-            class=${`btn btn--sm ${forSelf ? "primary" : ""}`}
-            type="button"
-            data-testid="profile-badge-nominee-self"
-            ?disabled=${state.profileBadgeBusy}
-            @click=${() => props.onPickBadgeNominee?.("")}
-          >
-            ${t("profile.badges.nominateSelf")}
-          </button>
-          ${renderMemberSelect({
-            options: rosterOptions,
-            value: forSelf ? "" : (nominee.id ?? ""),
-            placeholder: t("profile.badges.nominateSearch"),
-            label: t("profile.badges.nominateWho"),
-            disabled: state.profileBadgeBusy,
-            onPick: (memberId: string) => props.onPickBadgeNominee?.(memberId),
-            onOpen: () => props.onOpenBadgeNominee?.(),
-          })}
+      <!-- Folded like the suggestion form below: most visits are not to nominate. It opens by
+           itself when somebody else was picked, e.g. from a "nominate" link on their profile. -->
+      <details class="adminbot-fold" ?open=${!forSelf}>
+        <summary class="profile__section-title">${t("profile.badges.nominateTitle")}</summary>
+        <p class="profile__section-subtitle">${t("profile.badges.nominateHint")}</p>
+        <div class="profile__form-row" data-testid="profile-badge-nominee">
+          <span class="profile__form-label">${t("profile.badges.nominateWho")}</span>
+          <div class="profile-badge-nominee">
+            <button
+              class=${`btn btn--sm ${forSelf ? "primary" : ""}`}
+              type="button"
+              data-testid="profile-badge-nominee-self"
+              ?disabled=${state.profileBadgeBusy}
+              @click=${() => props.onPickBadgeNominee?.("")}
+            >
+              ${t("profile.badges.nominateSelf")}
+            </button>
+            ${renderMemberSelect({
+              options: rosterOptions,
+              value: forSelf ? "" : (nominee.id ?? ""),
+              placeholder: t("profile.badges.nominateSearch"),
+              label: t("profile.badges.nominateWho"),
+              disabled: state.profileBadgeBusy,
+              onPick: (memberId: string) => props.onPickBadgeNominee?.(memberId),
+              onOpen: () => props.onOpenBadgeNominee?.(),
+            })}
+          </div>
+          ${state.adminBotRosterLoading
+            ? html`<p class="profile__section-subtitle" role="status">Loading lab members…</p>`
+            : state.adminBotRosterError
+              ? html`<p class="profile__section-subtitle" role="alert">
+                  Could not load lab members.
+                  <button
+                    class="btn btn--sm"
+                    type="button"
+                    @click=${() => props.onOpenBadgeNominee?.()}
+                  >
+                    Try again
+                  </button>
+                </p>`
+              : nothing}
+          ${forSelf
+            ? nothing
+            : html`<p class="profile__section-subtitle" data-testid="profile-badge-nominee-name">
+                ${t("profile.badges.nominateFor", { name: nomineeName })}
+              </p>`}
         </div>
-        ${state.adminBotRosterLoading
-          ? html`<p class="profile__section-subtitle" role="status">Loading lab members…</p>`
-          : state.adminBotRosterError
-            ? html`<p class="profile__section-subtitle" role="alert">
-                Could not load lab members.
-                <button
-                  class="btn btn--sm"
-                  type="button"
-                  @click=${() => props.onOpenBadgeNominee?.()}
-                >
-                  Try again
-                </button>
-              </p>`
-            : nothing}
-        ${forSelf
-          ? nothing
-          : html`<p class="profile__section-subtitle" data-testid="profile-badge-nominee-name">
-              ${t("profile.badges.nominateFor", { name: nomineeName })}
-            </p>`}
-      </div>
-      ${state.profileBadgeNotice
-        ? html`<div
-            class="callout ${state.profileBadgeNotice.kind === "error" ? "danger" : "success"}"
-            role="status"
-          >
-            ${state.profileBadgeNotice.text}
-          </div>`
-        : nothing}
-      ${available.length
-        ? html`<form
-            class="profile-badge-form"
-            @submit=${(event: Event) => {
-              event.preventDefault();
-              const form = event.currentTarget as HTMLFormElement;
-              props.onSubmitBadgeNomination?.(
-                String(new FormData(form).get("badge_id") ?? ""),
-                String(new FormData(form).get("evidence") ?? ""),
-                forSelf ? undefined : nominee.id,
-              );
-            }}
-          >
-            <div class="profile__form-row">
-              <span class="profile__form-label">${t("profile.badges.nominateSelect")}</span>
-              <div class="profile-badge-picker">
-                ${available.map(
-                  (badge) => html`
-                    <label
-                      class="profile-badge-picker__card"
-                      data-testid="profile-badge-picker-card"
-                    >
-                      <input
-                        type="radio"
-                        name="badge_id"
-                        class="sr-only"
-                        value=${badge.id}
-                        ?disabled=${state.profileBadgeBusy}
-                        required
-                      />
-                      <span class="profile-badge-picker__title">
-                        ${assignedBadgeLabel(badge)}
-                      </span>
-                      <p class="profile-badge-picker__description">${badge.description}</p>
-                    </label>
-                  `,
-                )}
+        ${state.profileBadgeNotice
+          ? html`<div
+              class="callout ${state.profileBadgeNotice.kind === "error" ? "danger" : "success"}"
+              role="status"
+            >
+              ${state.profileBadgeNotice.text}
+            </div>`
+          : nothing}
+        ${available.length
+          ? html`<form
+              class="profile-badge-form"
+              @submit=${(event: Event) => {
+                event.preventDefault();
+                const form = event.currentTarget as HTMLFormElement;
+                props.onSubmitBadgeNomination?.(
+                  String(new FormData(form).get("badge_id") ?? ""),
+                  String(new FormData(form).get("evidence") ?? ""),
+                  forSelf ? undefined : nominee.id,
+                );
+              }}
+            >
+              <div class="profile__form-row">
+                <span class="profile__form-label">${t("profile.badges.nominateSelect")}</span>
+                <div class="profile-badge-picker">
+                  ${available.map(
+                    (badge) => html`
+                      <label
+                        class="profile-badge-picker__card"
+                        data-testid="profile-badge-picker-card"
+                      >
+                        <input
+                          type="radio"
+                          name="badge_id"
+                          class="sr-only"
+                          value=${badge.id}
+                          ?disabled=${state.profileBadgeBusy}
+                          required
+                        />
+                        <span class="profile-badge-picker__title">
+                          ${assignedBadgeLabel(badge)}
+                        </span>
+                        <p class="profile-badge-picker__description">${badge.description}</p>
+                      </label>
+                    `,
+                  )}
+                </div>
               </div>
-            </div>
-            <label class="profile__form-row">
-              <span class="profile__form-label"
-                >${t("profile.badges.nominateEvidence")}
-                <span class="profile__mandatory" aria-hidden="true"></span
-                ><span class="sr-only">${t("profile.basics.mandatory")}</span></span
-              >
-              <textarea
-                class="input adminbot-badge-textarea--compact"
-                name="evidence"
-                rows="1"
-                ?disabled=${state.profileBadgeBusy}
-                required
-              ></textarea>
-            </label>
-            <div class="profile__form-actions">
-              <button class="btn primary" type="submit" ?disabled=${state.profileBadgeBusy}>
-                ${t("profile.badges.nominateButton")}
-              </button>
-            </div>
-          </form>`
-        : html`<p class="profile__badges-empty">
-            ${forSelf
-              ? t("profile.badges.nominateNoneAvailable")
-              : t("profile.badges.nominateNoneAvailableFor", { name: nomineeName })}
-          </p>`}
+              <label class="profile__form-row">
+                <span class="profile__form-label"
+                  >${t("profile.badges.nominateEvidence")}
+                  <span class="profile__mandatory" aria-hidden="true"></span
+                  ><span class="sr-only">${t("profile.basics.mandatory")}</span></span
+                >
+                <textarea
+                  class="input adminbot-badge-textarea--compact"
+                  name="evidence"
+                  rows="1"
+                  ?disabled=${state.profileBadgeBusy}
+                  required
+                ></textarea>
+              </label>
+              <div class="profile__form-actions">
+                <button class="btn primary" type="submit" ?disabled=${state.profileBadgeBusy}>
+                  ${t("profile.badges.nominateButton")}
+                </button>
+              </div>
+            </form>`
+          : html`<p class="profile__badges-empty">
+              ${forSelf
+                ? t("profile.badges.nominateNoneAvailable")
+                : t("profile.badges.nominateNoneAvailableFor", { name: nomineeName })}
+            </p>`}
+      </details>
     </section>
   `;
 }
@@ -1798,7 +1802,9 @@ function renderPhotoCompliance(state: AppViewState, member: LabMember, props: Pr
             <p>
               <strong>Last look at your photo:</strong>
               ${assessment.compliant ? "matches the guidelines" : "could be improved"}
-              (${assessment.source})${assessment.summary ? ` - ${assessment.summary}` : ""}
+              (${assessment.source === "ai"
+                ? "checked by AI"
+                : "automatic check"})${assessment.summary ? ` - ${assessment.summary}` : ""}
             </p>
             ${assessment.issues.length
               ? html`<p><strong>What stood out:</strong> ${assessment.issues.join(", ")}</p>`
