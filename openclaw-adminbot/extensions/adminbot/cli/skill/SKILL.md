@@ -20,8 +20,12 @@ improvise another client. `operations` and `schema` are offline. Start with
 
 Not signed in → run `adminbot login --no-browser` in the background, show the user the
 printed link and code, and tell them it is one click to approve. The login then lasts until
-revoked or unused for 90 days, so this happens once per machine. Errors carry a `hint` with
-the next command to run.
+revoked or unused for 90 days, so this happens once per machine.
+
+Every error is one JSON line on stderr: `{"error":{code, message, exit_code, retryable,
+hint, operation, status, details}}`. Read `message`, then run `hint`. `details.suggestions`
+and `details.problems[].allowed` give the right flag, operation or value. Repeat the
+command only if `retryable` is true (wait `details.retry_after_seconds` if given).
 
 - Keychain unreadable (sandboxed agent, exit 3 `CREDENTIALS_ERROR`): ask the user to run
   `adminbot login --insecure-storage` once outside the sandbox, or to give you
@@ -64,7 +68,8 @@ ID) it affects, only before these:
 
 - "Just do it" covers everything except this table. For several risky actions, ask once
   for all of them together.
-- Don't retry a failed write. Exit 1 after a timeout may have succeeded: re-read state first.
+- Don't retry a failed write. If `details.may_have_applied` is true it may have succeeded:
+  re-read state first.
 - Exit 3 = not signed in (`hint: adminbot login`) or no permission. Don't route around a
   permission refusal: no impersonation, no other credentials. Sign-up approve/reject is
   head-professor-only (`adminbot whoami` shows who the user is).

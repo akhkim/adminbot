@@ -183,6 +183,34 @@ for agent consistency. Text responses remain text. Binary responses require
 | 3    | Authentication or permission failure        |
 | 4    | HTTP conflict                               |
 
+Every failure writes exactly one JSON line to stderr and nothing to stdout:
+
+```json
+{
+  "error": {
+    "code": "SERVICE_ERROR",
+    "message": "AdminBot rejected the request: …",
+    "exit_code": 3,
+    "retryable": false,
+    "hint": "adminbot whoami",
+    "operation": "get-papers",
+    "status": 403,
+    "details": { "request": "GET /papers", "meaning": "…", "server_code": "FORBIDDEN" }
+  }
+}
+```
+
+- `message` says what went wrong and why; `hint` is the next command to run.
+- `retryable: true` means repeating the same command is safe (reads, 429, timeouts on
+  reads). `details.retry_after_seconds` says how long to wait.
+- `details.may_have_applied: true` marks a write whose outcome is unknown (timeout, 5xx,
+  dropped connection): re-read state before repeating it.
+- Input errors list `details.suggestions` (closest commands, operations or flags),
+  `details.valid_flags`, and `details.problems` (field, problem, allowed values).
+- `details.reason` classifies network failures: `TIMEOUT`, `DNS_ERROR`,
+  `CONNECTION_REFUSED`, `TLS_ERROR`, `REDIRECTED`, `CONNECTION_ERROR`.
+- Anything shaped like a token is redacted from the whole envelope.
+
 ## Contract and generation
 
 ```text

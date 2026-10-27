@@ -17,7 +17,12 @@ export async function readSession(file) {
     if (error.code === "ENOENT") {
       return undefined;
     }
-    throw new ApiError("CREDENTIALS_ERROR", "Cannot read saved credentials");
+    throw new ApiError(
+      "CREDENTIALS_ERROR",
+      `Cannot read the saved login at ${file} (${error instanceof SyntaxError ? "not valid JSON" : (error.code ?? error.message)}); sign in again to rewrite it`,
+      undefined,
+      { hint: "adminbot login", details: { path: file } },
+    );
   }
 }
 export async function saveSession(file, data) {
@@ -76,15 +81,20 @@ export async function sessionToken(file, url, override, env = process.env) {
     !Number.isFinite(Date.parse(saved.expires_at)) ||
     Date.parse(saved.expires_at) <= Date.now()
   ) {
-    throw new ApiError("SESSION_EXPIRED", "Signed-in session expired. Run: adminbot login", 401);
+    throw new ApiError(
+      "SESSION_EXPIRED",
+      `The saved login for ${url} expired at ${saved.expires_at}; sign in again (one browser click)`,
+      401,
+    );
   }
   const token = await savedToken(saved, env);
   if (!token) {
     throw new ApiError(
       "CREDENTIALS_ERROR",
-      "Cannot read the saved token from the macOS Keychain (sandboxed agents often cannot). " +
-        "Run: adminbot login --insecure-storage, or set ADMINBOT_TOKEN",
+      "Cannot read the saved token from the macOS Keychain (sandboxed agents often cannot, and a locked keychain refuses). " +
+        "Sign in with --insecure-storage to keep it in a private file instead, or set ADMINBOT_TOKEN",
       401,
+      { hint: "adminbot login --insecure-storage" },
     );
   }
   return token;

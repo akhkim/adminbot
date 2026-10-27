@@ -30,7 +30,16 @@ function run(args, input, env) {
     child.stdout.on("data", (chunk) => {
       stdout += chunk;
     });
-    child.on("error", () => reject(new ApiError("KEYCHAIN_ERROR", "Cannot run macOS security")));
+    child.on("error", () =>
+      reject(
+        new ApiError(
+          "KEYCHAIN_ERROR",
+          "Cannot run /usr/bin/security to reach the macOS Keychain (not macOS, or sandboxed)",
+          undefined,
+          { hint: "adminbot login --insecure-storage" },
+        ),
+      ),
+    );
     child.on("close", (code) => resolve({ code, stdout }));
     if (input !== undefined) {
       child.stdin.end(`${input} ${keychain.map((path) => `"${path}"`).join(" ")}\n`);
@@ -42,11 +51,17 @@ function run(args, input, env) {
 
 export async function keychainSave(account, token, env = process.env) {
   if (!ACCOUNT_SHAPE.test(account) || !TOKEN_SHAPE.test(token)) {
-    throw new ApiError("KEYCHAIN_ERROR", "Refusing to store an unexpected value in the Keychain");
+    throw new ApiError(
+      "KEYCHAIN_ERROR",
+      "Refusing to store a value that is not shaped like an AdminBot URL and abt_ token; the server answer looks wrong",
+    );
   }
   // `security -i` writes to the login keychain when the named file is missing.
   if (env.ADMINBOT_KEYCHAIN_FILE && !existsSync(env.ADMINBOT_KEYCHAIN_FILE)) {
-    throw new ApiError("KEYCHAIN_ERROR", "ADMINBOT_KEYCHAIN_FILE does not exist");
+    throw new ApiError(
+      "KEYCHAIN_ERROR",
+      "ADMINBOT_KEYCHAIN_FILE names a keychain file that does not exist; create it with `security create-keychain` or unset the variable",
+    );
   }
   const { code } = await run(
     ["-i"],
@@ -54,7 +69,12 @@ export async function keychainSave(account, token, env = process.env) {
     env,
   );
   if (code !== 0 || (await keychainRead(account, env)) !== token) {
-    throw new ApiError("KEYCHAIN_ERROR", "Could not save the token in the macOS Keychain");
+    throw new ApiError(
+      "KEYCHAIN_ERROR",
+      "The macOS Keychain did not keep the token (locked, or access refused). The token was minted but not saved",
+      undefined,
+      { hint: "adminbot login --insecure-storage" },
+    );
   }
 }
 

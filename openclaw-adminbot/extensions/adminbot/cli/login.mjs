@@ -60,7 +60,10 @@ export async function deviceLogin({
   });
   const { device_code, user_code, verification_uri, verification_uri_complete } = started ?? {};
   if (typeof device_code !== "string" || typeof user_code !== "string") {
-    throw new ApiError("INVALID_RESPONSE", "Invalid login response");
+    throw new ApiError(
+      "INVALID_RESPONSE",
+      `${baseUrl} did not start a browser login (no device_code/user_code); it may be older than this CLI or not AdminBot`,
+    );
   }
   stderr.write(
     `To sign in, open ${verification_uri_complete ?? verification_uri}\n` +
@@ -82,13 +85,26 @@ export async function deviceLogin({
         interval += 5000;
         continue;
       case "access_denied":
-        throw new ApiError("ACCESS_DENIED", "The login was denied in AdminBot", 403);
+        throw new ApiError(
+          "ACCESS_DENIED",
+          "The sign-in was denied in the browser (Deny was clicked, or the account may not hold API tokens: admins only). Nothing was saved",
+          403,
+          { hint: "adminbot login" },
+        );
       case "expired_token":
-        throw new ApiError("LOGIN_EXPIRED", "The login code expired. Run: adminbot login", 401);
+        throw new ApiError(
+          "LOGIN_EXPIRED",
+          "The sign-in code expired before anyone approved it (codes last 10 minutes); start again",
+          401,
+          { retryable: true },
+        );
       case "approved": {
         const { token, api_token: apiToken, member } = polled;
         if (typeof token !== "string" || typeof apiToken?.id !== "string") {
-          throw new ApiError("INVALID_RESPONSE", "Invalid login response");
+          throw new ApiError(
+            "INVALID_RESPONSE",
+            "The approved sign-in carried no token; the server may be older than this CLI",
+          );
         }
         const storage = await saveApiToken(credentials, baseUrl, token, apiToken, env);
         return {
@@ -99,8 +115,16 @@ export async function deviceLogin({
         };
       }
       default:
-        throw new ApiError("INVALID_RESPONSE", "Invalid login response");
+        throw new ApiError(
+          "INVALID_RESPONSE",
+          `Unexpected sign-in status ${JSON.stringify(String(polled?.status)).slice(0, 60)}; the server may be newer or older than this CLI`,
+        );
     }
   }
-  throw new ApiError("LOGIN_EXPIRED", "The login code expired. Run: adminbot login", 401);
+  throw new ApiError(
+    "LOGIN_EXPIRED",
+    "Nobody approved the sign-in before the code expired; start again and approve the link",
+    401,
+    { retryable: true },
+  );
 }

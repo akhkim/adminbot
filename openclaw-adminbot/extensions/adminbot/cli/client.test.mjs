@@ -179,6 +179,80 @@ await test("a refusal without a reason still says something, bounded", async () 
   );
 });
 
+await test("every error is one JSON envelope an agent can act on", async (t) => {
+  const env = (url) => ({ ADMINBOT_URL: url, ADMINBOT_TOKEN: "test" });
+  const failing = (status, body, headers = {}) =>
+    service(t, (_req, res) => {
+      res.statusCode = status;
+      for (const [name, value] of Object.entries(headers)) {
+        res.setHeader(name, value);
+      }
+      res.end(JSON.stringify(body));
+    });
+  const errorOf = (result) => {
+    assert.equal(result.out, "");
+    const { error } = JSON.parse(result.err);
+    assert.equal(error.exit_code, result.code);
+    assert.equal(typeof error.retryable, "boolean");
+    return error;
+  };
+
+  const forbidden = errorOf(
+    await invoke(["papers", "list"], {
+      env: env(await failing(403, { error: { code: "FORBIDDEN", message: "admins only" } })),
+    }),
+  );
+  assert.equal(forbidden.code, "SERVICE_ERROR");
+  assert.equal(forbidden.exit_code, 3);
+  assert.equal(forbidden.hint, "adminbot whoami");
+  assert.equal(forbidden.details.server_code, "FORBIDDEN");
+  assert.match(forbidden.details.request, /^GET \//u);
+
+  const limited = errorOf(
+    await invoke(["papers", "list"], {
+      env: env(await failing(429, { error: { message: "slow down" } }, { "retry-after": "7" })),
+    }),
+  );
+  assert.equal(limited.retryable, true);
+  assert.equal(limited.details.retry_after_seconds, 7);
+  assert.match(limited.hint, /wait 7s/u);
+
+  // A failed write may still have landed: never advertise it as safe to repeat.
+  const crashed = errorOf(
+    await invoke(["papers", "progress", "p1", "--step", "overleaf_writing"], {
+      env: env(await failing(500, { error: { message: "boom" } })),
+    }),
+  );
+  assert.equal(crashed.retryable, false);
+  assert.equal(crashed.details.may_have_applied, true);
+  assert.equal(crashed.operation, "patch-papers-by-papers-id-progress");
+
+  const slow = await service(t, () => {});
+  const timeout = errorOf(await invoke(["papers", "list", "--timeout", "50"], { env: env(slow) }));
+  assert.equal(timeout.code, "CONNECTION_ERROR");
+  assert.equal(timeout.details.reason, "TIMEOUT");
+  assert.equal(timeout.retryable, true);
+  assert.match(timeout.hint, /--timeout 200/u);
+
+  const typo = errorOf(await invoke(["papers", "progress", "p1", "--stepp", "x"]));
+  assert.equal(typo.code, "INVALID_ARGUMENTS");
+  assert.deepEqual(typo.details.suggestions, ["--step"]);
+  assert.ok(typo.details.valid_flags.includes("--step"));
+
+  const unknown = errorOf(await invoke(["call", "get-deadline"]));
+  assert.equal(unknown.code, "UNKNOWN_OPERATION");
+  assert.equal(unknown.details.suggestions[0], "get-deadlines");
+  assert.equal(unknown.hint, "adminbot call get-deadlines --help");
+
+  const invalid = errorOf(
+    await invoke(["papers", "progress", "p1", "--step", "invented"], {
+      env: env("http://127.0.0.1:9"),
+    }),
+  );
+  assert.equal(invalid.details.problems[0].field, "body.current_step");
+  assert.ok(invalid.details.problems[0].allowed.includes("overleaf_writing"));
+});
+
 await test("header parameters are read from the headers, not the query", async (t) => {
   const seen = [];
   const baseUrl = await service(t, (req, res) => {
