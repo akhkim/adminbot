@@ -15,10 +15,15 @@ export const API_TOKEN_PREFIX = "abt_";
 const SECRET_BYTES = 32;
 // 32 bytes of base64url is 43 characters; the checksum is 8 hex digits of CRC32.
 
-export const API_TOKEN_DEFAULT_DAYS = 30;
-export const API_TOKEN_MAX_DAYS = 90;
+/** The longest fixed lifetime a token can ask for. Without one a token lives until it sits idle. */
+export const API_TOKEN_MAX_DAYS = 365;
+/**
+ * The `expires_at` of a token with no fixed lifetime, as gh and Modal tokens have. Stored as a date
+ * rather than null so every `expires_at <= now` comparison and the NOT NULL column stay as they are.
+ */
+export const API_TOKEN_NO_EXPIRY = "9999-12-31T23:59:59.999Z";
 /** A token nobody has used for this long is revoked the next time it is presented. */
-export const API_TOKEN_IDLE_REVOKE_MS = 30 * 24 * 60 * 60 * 1000;
+export const API_TOKEN_IDLE_REVOKE_MS = 90 * 24 * 60 * 60 * 1000;
 export const API_TOKEN_NAME_MAX = 64;
 export const API_TOKEN_REQUESTS_PER_MINUTE = 600;
 
@@ -93,11 +98,17 @@ export function apiTokensAllowed(
   return levels.has(member.privilege_level);
 }
 
-/** Days until expiry, clamped to 1..90; anything unparseable is the 30-day default. */
-export function clampApiTokenDays(value: unknown): number {
+/**
+ * Days until expiry, clamped to 1..365, or undefined for no fixed expiry (the default): absent,
+ * null, empty or unparseable all mean "until it sits idle".
+ */
+export function clampApiTokenDays(value: unknown): number | undefined {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
   const days = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(days) || days <= 0) {
-    return API_TOKEN_DEFAULT_DAYS;
+    return undefined;
   }
   return Math.min(API_TOKEN_MAX_DAYS, Math.max(1, Math.floor(days)));
 }

@@ -85,7 +85,7 @@ async function signIn(baseUrl: string, id: string): Promise<string> {
 async function mint(baseUrl: string, session: string, name = "agent"): Promise<string> {
   const created = await call(baseUrl, "POST", "/auth/api-tokens", {
     bearer: session,
-    body: { name, expires_in_days: 30, password: PASSWORD },
+    body: { name, expires_in_days: 30 },
   });
   expect(created.status).toBe(201);
   expect(created.headers.get("cache-control")).toBe("no-store");
@@ -117,46 +117,47 @@ describe("personal API tokens over HTTP", () => {
     expect(JSON.stringify(listed.body)).not.toContain(token);
   });
 
-  it("refuses a plain member, and refuses minting without the password", async () => {
+  it("refuses a plain member, and mints for an admin with one click", async () => {
     const { baseUrl } = await start();
     const plain = await signIn(baseUrl, "plain-c");
     expect((await call(baseUrl, "GET", "/auth/api-tokens", { bearer: plain })).body.allowed).toBe(
       false,
     );
     expect(
-      (
-        await call(baseUrl, "POST", "/auth/api-tokens", {
-          bearer: plain,
-          body: { name: "x", expires_in_days: 1, password: PASSWORD },
-        })
-      ).status,
+      (await call(baseUrl, "POST", "/auth/api-tokens", { bearer: plain, body: { name: "x" } }))
+        .status,
     ).toBe(403);
     const admin = await signIn(baseUrl, "admin-a");
-    expect(
-      (
-        await call(baseUrl, "POST", "/auth/api-tokens", {
-          bearer: admin,
-          body: { name: "x", expires_in_days: 1 },
-        })
-      ).status,
-    ).toBe(401);
+    const created = await call(baseUrl, "POST", "/auth/api-tokens", {
+      bearer: admin,
+      body: { name: "x" },
+    });
+    expect(created.status).toBe(201);
+    expect(created.body.api_token.expires_at.startsWith("9999-")).toBe(true);
   });
 
-  it("keeps a token away from credentials, impersonation, pairing and minting", async () => {
+  it("keeps a token away from credentials and impersonation, but lets it mint and pair", async () => {
     const { baseUrl } = await start();
     const token = await mint(baseUrl, await signIn(baseUrl, "admin-a"));
     for (const [path, body] of [
-      ["/auth/api-tokens", { name: "y", expires_in_days: 1, password: PASSWORD }],
       ["/auth/password", { current_password: PASSWORD, new_password: "another-password-2" }],
       ["/auth/email", { email: "new@example.invalid", password: PASSWORD }],
       ["/auth/impersonate", { member_id: "plain-c" }],
-      ["/auth/pair-device", {}],
-      ["/auth/device-token", {}],
-      ["/auth/device/approve", { user_code: "BCDF-GHJK", password: PASSWORD }],
-      ["/auth/device/lookup", { user_code: "BCDF-GHJK" }],
     ] as const) {
       const response = await call(baseUrl, "POST", path, { bearer: token, body });
       expect([path, response.status]).toEqual([path, 403]);
+    }
+    const minted = await call(baseUrl, "POST", "/auth/api-tokens", {
+      bearer: token,
+      body: { name: "child" },
+    });
+    expect(minted.status).toBe(201);
+    for (const path of ["/auth/pair-device", "/auth/device/lookup"]) {
+      const response = await call(baseUrl, "POST", path, {
+        bearer: token,
+        body: { user_code: "BCDF-GHJK" },
+      });
+      expect([path, response.status]).not.toEqual([path, 403]);
     }
   });
 
@@ -224,7 +225,7 @@ describe("personal API tokens over HTTP", () => {
       (
         await call(baseUrl, "POST", "/auth/device/approve", {
           bearer: session,
-          body: { user_code, password: PASSWORD },
+          body: { user_code },
         })
       ).status,
     ).toBe(200);

@@ -7,6 +7,8 @@ import { keychainAvailable, keychainDelete, keychainRead, keychainSave } from ".
 // The file holds one credential for one origin: a member session from `auth login --email`, or a
 // personal API token from `auth login`. A token's secret lives in the macOS Keychain when there is
 // one ("keychain": true), and the file then holds only which origin, id and expiry it belongs to.
+// Where the Keychain refuses (a sandboxed agent, a locked keychain, --insecure-storage), the token
+// goes in the file itself, which only this user can read, as `gh` does.
 
 export async function readSession(file) {
   try {
@@ -39,11 +41,16 @@ export async function saveApiToken(file, url, token, apiToken, env = process.env
   await forgetSavedSecret(file, env);
   const record = { url, kind: "api_token", id: apiToken.id, expires_at: apiToken.expires_at };
   if (keychainAvailable(env)) {
-    await keychainSave(url, token, env);
-    await saveSession(file, { ...record, keychain: true });
-  } else {
-    await saveSession(file, { ...record, token });
+    try {
+      await keychainSave(url, token, env);
+      await saveSession(file, { ...record, keychain: true });
+      return "keychain";
+    } catch {
+      // Fall through to the private file rather than lose an approved login.
+    }
   }
+  await saveSession(file, { ...record, token });
+  return "file";
 }
 export async function clearSession(file, url, token, env = process.env) {
   const saved = await readSession(file);
@@ -55,7 +62,7 @@ export async function clearSession(file, url, token, env = process.env) {
   }
 }
 async function savedToken(saved, env) {
-  return saved.keychain ? keychainRead(saved.url, env) : saved.token;
+  return saved.keychain ? keychainRead(saved.url, env).catch(() => undefined) : saved.token;
 }
 export async function sessionToken(file, url, override, env = process.env) {
   if (override?.trim()) {
@@ -69,11 +76,16 @@ export async function sessionToken(file, url, override, env = process.env) {
     !Number.isFinite(Date.parse(saved.expires_at)) ||
     Date.parse(saved.expires_at) <= Date.now()
   ) {
-    throw new ApiError("SESSION_EXPIRED", "Session expired; run auth login", 401);
+    throw new ApiError("SESSION_EXPIRED", "Signed-in session expired. Run: adminbot login", 401);
   }
   const token = await savedToken(saved, env);
   if (!token) {
-    throw new ApiError("CREDENTIALS_ERROR", "Saved token is missing from the Keychain; run auth login", 401);
+    throw new ApiError(
+      "CREDENTIALS_ERROR",
+      "Cannot read the saved token from the macOS Keychain (sandboxed agents often cannot). " +
+        "Run: adminbot login --insecure-storage, or set ADMINBOT_TOKEN",
+      401,
+    );
   }
   return token;
 }

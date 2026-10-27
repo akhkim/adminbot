@@ -415,6 +415,35 @@ await test("auth login through the browser saves the token privately and never p
   await assert.rejects(stat(credentials), { code: "ENOENT" });
 });
 
+await test("gh-style shortcuts: login falls back to a private file, auth token prints it, logout", async (t) => {
+  const { baseUrl, seen } = await deviceService(t, [approved]);
+  const dir = await mkdtemp(join(tmpdir(), "adminbot-cli-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const credentials = join(dir, "credentials.json");
+  // A keychain file that does not exist makes `security` fail, as it does inside an agent sandbox.
+  const env = {
+    ADMINBOT_CREDENTIALS_FILE: credentials,
+    ADMINBOT_KEYCHAIN_FILE: join(dir, "missing.keychain-db"),
+  };
+
+  const login = await invoke(["login", "--url", baseUrl, "--no-browser"], { env });
+  assert.equal(login.code, 0, login.err);
+  assert.equal(JSON.parse(login.out).storage, "file");
+  assert.deepEqual(Object.keys(seen[0].body), ["name"]);
+  assert.equal((await stat(credentials)).mode & 0o777, 0o600);
+
+  const token = await invoke(["auth", "token", "--url", baseUrl], { env });
+  assert.equal(token.code, 0, token.err);
+  assert.equal(token.out, `${FAKE_TOKEN}\n`);
+
+  assert.equal((await invoke(["whoami", "--url", baseUrl], { env })).code, 0);
+  assert.equal(seen.at(-1).authorization, `Bearer ${FAKE_TOKEN}`);
+  assert.equal((await invoke(["logout", "--url", baseUrl], { env })).code, 0);
+  const after = await invoke(["auth", "token", "--url", baseUrl], { env });
+  assert.equal(after.code, 3);
+  assert.equal(JSON.parse(after.err).error.hint, "adminbot login");
+});
+
 await test("browser login slows down when asked and stops on denial", async (t) => {
   const { deviceLogin } = await import("./login.mjs");
   const { baseUrl } = await deviceService(t, [
@@ -448,7 +477,7 @@ await test("browser login refuses unknown flags and redacts tokens from errors",
   const bad = await invoke(["auth", "login", "--password", FAKE_TOKEN]);
   assert.equal(bad.code, 2);
   assert.ok(!bad.err.includes(FAKE_TOKEN));
-  const days = await invoke(["auth", "login", "--days", "365"]);
+  const days = await invoke(["auth", "login", "--days", "366"]);
   assert.equal(days.code, 2);
   assert.match(days.err, /--days/u);
 });

@@ -1,7 +1,7 @@
 // `adminbot auth login` without --email: sign this machine in through the browser, after RFC 8628.
 //
-// The CLI asks the service for a one-time code, the person approves it in AdminBot with their
-// password, and the CLI collects a personal API token. No password ever passes through the
+// The CLI asks the service for a one-time code, the person approves it in AdminBot with one click,
+// and the CLI collects a personal API token. No password ever passes through the
 // terminal, and the token is only ever sent to the process that started the request.
 // See docs/adminbot/api-tokens.md.
 import { spawn } from "node:child_process";
@@ -84,16 +84,17 @@ export async function deviceLogin({
       case "access_denied":
         throw new ApiError("ACCESS_DENIED", "The login was denied in AdminBot", 403);
       case "expired_token":
-        throw new ApiError("LOGIN_EXPIRED", "The login code expired; run auth login again", 401);
+        throw new ApiError("LOGIN_EXPIRED", "The login code expired. Run: adminbot login", 401);
       case "approved": {
         const { token, api_token: apiToken, member } = polled;
         if (typeof token !== "string" || typeof apiToken?.id !== "string") {
           throw new ApiError("INVALID_RESPONSE", "Invalid login response");
         }
-        await saveApiToken(credentials, baseUrl, token, apiToken, env);
+        const storage = await saveApiToken(credentials, baseUrl, token, apiToken, env);
         return {
           authenticated: true,
           member,
+          storage,
           api_token: { id: apiToken.id, name: apiToken.name, expires_at: apiToken.expires_at },
         };
       }
@@ -101,5 +102,5 @@ export async function deviceLogin({
         throw new ApiError("INVALID_RESPONSE", "Invalid login response");
     }
   }
-  throw new ApiError("LOGIN_EXPIRED", "The login code expired; run auth login again", 401);
+  throw new ApiError("LOGIN_EXPIRED", "The login code expired. Run: adminbot login", 401);
 }

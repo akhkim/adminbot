@@ -20,6 +20,7 @@ import {
 } from "./api-token-device-logins.js";
 import {
   API_TOKEN_IDLE_REVOKE_MS,
+  API_TOKEN_NO_EXPIRY,
   ApiTokenRateLimiter,
   apiTokenHint,
   apiTokenLevels,
@@ -31,12 +32,7 @@ import {
   mintApiTokenSecret,
   newApiTokenId,
 } from "./api-token-format.js";
-import {
-  verifyPasswordAsync,
-  type AdminBotAuthResponse,
-  type AdminBotAuthStore,
-  type AdminBotMemberPrincipal,
-} from "./auth.js";
+import type { AdminBotAuthResponse, AdminBotAuthStore, AdminBotMemberPrincipal } from "./auth.js";
 
 /**
  * Where the Control UI asks the member to approve a CLI login: My Profile, which already sends a
@@ -47,8 +43,8 @@ export const ADMINBOT_CLI_LOGIN_PATH = "/profile";
 
 const TOUCH_INTERVAL_MS = 5 * 60 * 1000;
 const SEEN_IPS_MAX = 50;
-// Password re-checks (mint, approve) and user-code lookups, per member: the browser session is
-// already signed in, so this only slows somebody guessing at a session they have taken over.
+// Unknown user codes, per member: the browser session is already signed in, so this only slows
+// somebody guessing at codes from a session they have taken over.
 const FAILURE_LIMIT = 5;
 const FAILURE_WINDOW_MS = 15 * 60 * 1000;
 // Anonymous `adminbot login` starts, per IP.
@@ -61,7 +57,6 @@ export type AdminBotApiTokenStore = Pick<
   AdminBotAuthStore,
   | "getApiToken"
   | "getApiTokenByHash"
-  | "getCredentialByMemberId"
   | "getLabMember"
   | "listApiTokensForMember"
   | "recordAudit"
@@ -292,12 +287,12 @@ export class AdminBotApiTokenService {
   }
 
   /**
-   * A token made directly from My Profile, for a CI job or a machine without a browser. Requires
-   * the password again: a browser left signed in should not be enough to mint a 90-day credential.
+   * A token made directly from My Profile or by `adminbot auth tokens create`, for a CI job or a
+   * machine without a browser. Being signed in is enough, as with gh and Modal: no password.
    */
   async create(
     principal: AdminBotMemberPrincipal,
-    input: { name: unknown; expires_in_days: unknown; password: unknown; remoteIp?: string },
+    input: { name: unknown; expires_in_days?: unknown; remoteIp?: string },
   ): Promise<AdminBotAuthResponse<{ token: string; api_token: AdminBotApiTokenView }>> {
     const refused = this.refuseMinting(principal);
     if (refused) {
@@ -307,13 +302,9 @@ export class AdminBotApiTokenService {
     if (!name) {
       return fail(400, "a token needs a name, e.g. the machine or agent that will use it");
     }
-    const checked = await this.checkPassword(principal.member.id, input.password);
-    if (checked) {
-      return checked;
-    }
     const { secret, token } = await this.mint(principal.member.id, name, input.expires_in_days, {
       ...(input.remoteIp ? { ip: input.remoteIp } : {}),
-      via: "profile",
+      via: principal.apiToken ? "api_token" : "profile",
     });
     return { ok: true, status: 201, payload: { token: secret, api_token: toView(token) } };
   }
@@ -365,7 +356,7 @@ export class AdminBotApiTokenService {
   /** Anonymous: the CLI has no credential yet. Rate-limited per address. */
   async startDeviceLogin(input: {
     name: unknown;
-    expires_in_days: unknown;
+    expires_in_days?: unknown;
     remoteIp?: string;
   }): Promise<AdminBotAuthResponse<AdminBotDeviceLoginStart>> {
     const name = cleanApiTokenName(input.name);
@@ -387,11 +378,12 @@ export class AdminBotApiTokenService {
     const deviceCode = newDeviceCode();
     const created = this.now();
     let userCode = newUserCode();
+    const days = clampApiTokenDays(input.expires_in_days);
     const login = (code: string): DeviceLogin => ({
       device_code_hash: hashDeviceCode(deviceCode),
       user_code: code,
       name,
-      expires_in_days: clampApiTokenDays(input.expires_in_days),
+      ...(days ? { expires_in_days: days } : {}),
       ...(input.remoteIp ? { requested_ip: input.remoteIp } : {}),
       created_at: created.toISOString(),
       expires_at: new Date(created.getTime() + DEVICE_LOGIN_TTL_MS).toISOString(),
@@ -424,7 +416,7 @@ export class AdminBotApiTokenService {
     };
   }
 
-  /** What the approval page shows before asking for the password. */
+  /** What the approval page shows, so the member can check the code and name before approving. */
   async describeDeviceLogin(
     principal: AdminBotMemberPrincipal,
     rawCode: unknown,
@@ -432,7 +424,8 @@ export class AdminBotApiTokenService {
     AdminBotAuthResponse<{
       user_code: string;
       name: string;
-      expires_in_days: number;
+      /** Absent: no fixed expiry. */
+      expires_in_days?: number;
       requested_ip?: string;
       created_at: string;
       expires_at: string;
@@ -453,7 +446,7 @@ export class AdminBotApiTokenService {
       payload: {
         user_code: formatUserCode(login.user_code),
         name: login.name,
-        expires_in_days: login.expires_in_days,
+        ...(login.expires_in_days ? { expires_in_days: login.expires_in_days } : {}),
         ...(login.requested_ip ? { requested_ip: login.requested_ip } : {}),
         created_at: login.created_at,
         expires_at: login.expires_at,
@@ -461,9 +454,13 @@ export class AdminBotApiTokenService {
     };
   }
 
+  /**
+   * One click in a signed-in browser, like `gh auth login`: the code on screen matching the one in
+   * the terminal is the check, so there is no password prompt.
+   */
   async approveDeviceLogin(
     principal: AdminBotMemberPrincipal,
-    input: { user_code: unknown; password: unknown },
+    input: { user_code: unknown },
   ): Promise<AdminBotAuthResponse<{ approved: true }>> {
     const refused = this.refuseMinting(principal);
     if (refused) {
@@ -472,10 +469,6 @@ export class AdminBotApiTokenService {
     const found = this.pendingLogin(principal.member.id, input.user_code);
     if (!found.ok) {
       return found;
-    }
-    const checked = await this.checkPassword(principal.member.id, input.password);
-    if (checked) {
-      return checked;
     }
     found.payload.status = "approved";
     found.payload.member_id = principal.member.id;
@@ -502,13 +495,17 @@ export class AdminBotApiTokenService {
    * The CLI asking whether its request was approved. The token is minted here, on the first poll
    * after approval, and the request is then forgotten: the secret exists once, in this response.
    */
-  async pollDeviceLogin(deviceCode: unknown): Promise<AdminBotAuthResponse<AdminBotDeviceLoginPoll>> {
+  async pollDeviceLogin(
+    deviceCode: unknown,
+  ): Promise<AdminBotAuthResponse<AdminBotDeviceLoginPoll>> {
     if (typeof deviceCode !== "string" || !deviceCode) {
       return fail(400, "device_code is required");
     }
     const hash = hashDeviceCode(deviceCode);
     const login = this.deviceLogins.byDeviceCodeHash(hash);
-    const ok = (payload: AdminBotDeviceLoginPoll): AdminBotAuthResponse<AdminBotDeviceLoginPoll> => ({
+    const ok = (
+      payload: AdminBotDeviceLoginPoll,
+    ): AdminBotAuthResponse<AdminBotDeviceLoginPoll> => ({
       ok: true,
       status: 200,
       payload,
@@ -549,11 +546,9 @@ export class AdminBotApiTokenService {
   // ---- Internals ----------------------------------------------------------------------------
 
   /** Why this principal may not mint a token (or approve a sign-in that mints one), if it may not. */
-  private refuseMinting(principal: AdminBotMemberPrincipal): AdminBotAuthResponse<never> | undefined {
-    if (principal.apiToken) {
-      // A leaked token must not be able to make itself permanent by minting a successor.
-      return fail(403, "an API token cannot create tokens; sign in to AdminBot in a browser");
-    }
+  private refuseMinting(
+    principal: AdminBotMemberPrincipal,
+  ): AdminBotAuthResponse<never> | undefined {
     if (principal.impersonator) {
       return fail(403, "stop viewing as this member before creating tokens");
     }
@@ -563,10 +558,7 @@ export class AdminBotApiTokenService {
     return undefined;
   }
 
-  private pendingLogin(
-    memberId: string,
-    rawCode: unknown,
-  ): AdminBotAuthResponse<DeviceLogin> {
+  private pendingLogin(memberId: string, rawCode: unknown): AdminBotAuthResponse<DeviceLogin> {
     const limited = this.failureLimited(memberId);
     if (limited) {
       return limited;
@@ -580,34 +572,15 @@ export class AdminBotApiTokenService {
     return { ok: true, status: 200, payload: login };
   }
 
-  private async checkPassword(
-    memberId: string,
-    password: unknown,
-  ): Promise<AdminBotAuthResponse<never> | undefined> {
-    const limited = this.failureLimited(memberId);
-    if (limited) {
-      return limited;
-    }
-    const credential = await this.store.getCredentialByMemberId(memberId);
-    if (
-      typeof password !== "string" ||
-      !credential ||
-      !(await verifyPasswordAsync(credential.password_scrypt, password))
-    ) {
-      this.noteFailure(memberId);
-      return fail(401, "password is incorrect");
-    }
-    return undefined;
-  }
-
   private async mint(
     memberId: string,
     name: string,
     days: unknown,
-    origin: { ip?: string; via: "profile" | "cli_login" },
+    origin: { ip?: string; via: "profile" | "api_token" | "cli_login" },
   ): Promise<{ secret: string; token: AdminBotApiToken }> {
     const secret = mintApiTokenSecret();
     const created = this.now();
+    const fixedDays = clampApiTokenDays(days);
     const token: AdminBotApiToken = {
       id: newApiTokenId(),
       token_hash: hashApiToken(secret),
@@ -616,9 +589,9 @@ export class AdminBotApiTokenService {
       hint: apiTokenHint(secret),
       scopes: ["*"],
       created_at: created.toISOString(),
-      expires_at: new Date(
-        created.getTime() + clampApiTokenDays(days) * 24 * 60 * 60 * 1000,
-      ).toISOString(),
+      expires_at: fixedDays
+        ? new Date(created.getTime() + fixedDays * 24 * 60 * 60 * 1000).toISOString()
+        : API_TOKEN_NO_EXPIRY,
       ...(origin.ip ? { created_ip: origin.ip } : {}),
       seen_ips: [],
     };

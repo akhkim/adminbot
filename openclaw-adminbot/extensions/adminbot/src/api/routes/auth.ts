@@ -365,9 +365,6 @@ export async function handlePairDeviceRoute(
     sendJson(res, 401, { error: { message: "member session required" } });
     return;
   }
-  if (refuseApiToken(res, principal)) {
-    return;
-  }
   if (!ctx.devicePairingApprover) {
     sendJson(res, 503, { error: { message: "device pairing is not configured" } });
     return;
@@ -416,9 +413,6 @@ export async function handleDeviceTokenRoute(
   const principal = await resolvePrincipal(req, ctx);
   if (!principal || principal.kind !== "member") {
     sendJson(res, 401, { error: { message: "member session required" } });
-    return;
-  }
-  if (refuseApiToken(res, principal)) {
     return;
   }
   if (!ctx.deviceTokenIssuer) {

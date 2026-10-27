@@ -45,7 +45,7 @@ it("renders nothing for a member who may not hold tokens", async () => {
   expect(element.shadowRoot!.querySelector("section")).toBeNull();
 });
 
-it("shows a new token once, keeps it out of storage, and clears the password field", async () => {
+it("shows a new token once and keeps it out of storage", async () => {
   saveStoredMemberSession({ sessionToken: "synthetic-session", expiresAt: "2099-01-01T00:00:00Z" });
   let tokens: unknown[] = [];
   const calls = stubService((path, init) => {
@@ -63,23 +63,24 @@ it("shows a new token once, keeps it out of storage, and clears the password fie
   [...root.querySelectorAll("button")].find((b) => b.textContent?.includes("New token"))!.click();
   await element.updateComplete;
   (root.querySelector('[name="name"]') as HTMLInputElement).value = "Claude on laptop";
-  const password = root.querySelector('[name="password"]') as HTMLInputElement;
-  password.value = "synthetic-password";
+  expect(root.querySelector('[name="password"]')).toBeNull();
   root
     .querySelector("form")!
     .dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true }));
-  expect(password.value).toBe("");
 
-  await vi.waitFor(() => expect(root.querySelector('[data-testid="api-token-issued"]')).not.toBeNull());
+  await vi.waitFor(() =>
+    expect(root.querySelector('[data-testid="api-token-issued"]')).not.toBeNull(),
+  );
   const minted = calls.find((c) => c.init?.method === "POST")!;
-  expect(JSON.parse(minted.init!.body as string)).toEqual({
-    name: "Claude on laptop",
-    expires_in_days: 30,
-    password: "synthetic-password",
-  });
+  // The default lasts until revoked or unused for 90 days, so no expires_in_days is sent.
+  expect(JSON.parse(minted.init!.body as string)).toEqual({ name: "Claude on laptop" });
   expect(minted.init!.cache).toBe("no-store");
-  expect((root.querySelector('[aria-label="New API token"]') as HTMLInputElement).value).toBe(SECRET);
-  await vi.waitFor(() => expect(root.querySelectorAll('[data-testid="api-token-row"]')).toHaveLength(1));
+  expect((root.querySelector('[aria-label="New API token"]') as HTMLInputElement).value).toBe(
+    SECRET,
+  );
+  await vi.waitFor(() =>
+    expect(root.querySelectorAll('[data-testid="api-token-row"]')).toHaveLength(1),
+  );
   const stored = JSON.stringify({ ...localStorage }) + JSON.stringify({ ...sessionStorage });
   expect(stored).not.toContain(SECRET);
 
@@ -97,7 +98,9 @@ it("revokes a token only after confirmation", async () => {
   const element = document.createElement("adminbot-api-tokens") as ApiTokensSection;
   document.body.append(element);
   const root = element.shadowRoot!;
-  await vi.waitFor(() => expect(root.querySelectorAll('[data-testid="api-token-row"]')).toHaveLength(1));
+  await vi.waitFor(() =>
+    expect(root.querySelectorAll('[data-testid="api-token-row"]')).toHaveLength(1),
+  );
   const revoke = () =>
     [...root.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Revoke")!.click();
 
@@ -110,7 +113,7 @@ it("revokes a token only after confirmation", async () => {
   );
 });
 
-it("approves a CLI login with the password and reports back", async () => {
+it("approves a CLI login with one click and reports back", async () => {
   saveStoredMemberSession({ sessionToken: "synthetic-session", expiresAt: "2099-01-01T00:00:00Z" });
   const calls = stubService((path) =>
     path === "/auth/device/lookup"
@@ -130,19 +133,15 @@ it("approves a CLI login with the password and reports back", async () => {
   await vi.waitFor(() => expect(root.textContent).toContain("adminbot CLI on laptop"));
   expect(root.textContent).toContain("203.0.113.7");
 
-  const password = root.querySelector('[name="password"]') as HTMLInputElement;
-  password.value = "synthetic-password";
+  expect(root.querySelector('[name="password"]')).toBeNull();
   const done = vi.fn();
   element.addEventListener("cli-login-done", done);
-  root
-    .querySelector("form")!
-    .dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true }));
-  expect(password.value).toBe("");
-  await vi.waitFor(() => expect(root.querySelector('[data-testid="cli-login-outcome"]')).not.toBeNull());
-  expect(JSON.parse(calls.at(-1)!.init!.body as string)).toEqual({
-    user_code: "BCDF-GHJK",
-    password: "synthetic-password",
-  });
+  [...root.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Approve")!.click();
+  await vi.waitFor(() =>
+    expect(root.querySelector('[data-testid="cli-login-outcome"]')).not.toBeNull(),
+  );
+  expect(calls.at(-1)!.path).toBe("/auth/device/approve");
+  expect(JSON.parse(calls.at(-1)!.init!.body as string)).toEqual({ user_code: "BCDF-GHJK" });
   root.querySelector("button")!.click();
   expect(done).toHaveBeenCalledOnce();
 });
@@ -157,5 +156,7 @@ it("explains an expired or foreign code instead of offering approval", async () 
   document.body.append(element);
   const root = element.shadowRoot!;
   await vi.waitFor(() => expect(root.textContent).toContain("expired"));
-  expect(root.querySelector("form")).toBeNull();
+  expect(
+    [...root.querySelectorAll("button")].some((b) => b.textContent?.trim() === "Approve"),
+  ).toBe(false);
 });

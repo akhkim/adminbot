@@ -37,13 +37,19 @@ adminbot <generated command> [IDs] [flags]    Same API with readable command nam
 adminbot <command> --help                     Show generated parameters and flags
 adminbot skill install                        Install the agent skill for Claude Code and Codex
 
+Sign-in (one click in the browser, like gh and Modal):
+  adminbot login                              Approve once; the token lasts until revoked or unused 90 days
+  adminbot login --no-browser                 Print the link instead of opening it (agents, SSH)
+  adminbot login --insecure-storage           Keep the token in the credentials file, not the Keychain
+  adminbot whoami                             Who you are signed in as (also: auth status)
+  adminbot auth token                         Print the token, e.g. ADMINBOT_TOKEN=$(adminbot auth token)
+  adminbot logout                             Revoke this machine's token
+
 Examples:
   adminbot papers list
   adminbot work update PAPER_ID --note "Finished experiments"
   adminbot tasks update PAPER_ID fixes_merged --done
   adminbot papers progress PAPER_ID --step overleaf_writing
-  adminbot auth login                         Sign in through the browser (API token)
-  adminbot auth login --email EMAIL --password-stdin
   adminbot auth tokens list
 
 Input fields become --kebab-case flags; arrays accept repeated flags.
@@ -51,7 +57,7 @@ Nested/dynamic fields: --set FIELD.PATH=VALUE; dynamic query: --query NAME=VALUE
 Booleans: --done / --no-done. Dry-run operations need --live for real execution.
 Global options: --url ORIGIN, --timeout MS, --output PATH, --json, --help.
 Default: ${document.servers[0].url}; ADMINBOT_URL overrides it.
-Auth: saved login (macOS Keychain where available) or ADMINBOT_TOKEN; never put secrets in argv.
+Auth: saved login (macOS Keychain, else a private file) or ADMINBOT_TOKEN; never put secrets in argv.
 Exit codes: 0 success, 1 service/network, 2 input, 3 auth/permission, 4 conflict.
 `;
 async function stdinText(stream) {
@@ -96,7 +102,9 @@ function findCommand(argv) {
 }
 
 const LOGIN_USAGE =
-  "Usage: adminbot auth login [--name NAME] [--days 1-90] [--no-browser] [--url ORIGIN] [--timeout MS]";
+  "Usage: adminbot login [--name NAME] [--days 1-365] [--no-browser] [--insecure-storage] [--url ORIGIN] [--timeout MS]";
+// gh-style shortcuts: `adminbot login` is `adminbot auth login`, and so on.
+const TOP_LEVEL = { login: "login", logout: "logout", whoami: "whoami" };
 
 /** `auth login` without --email or --file: the browser handshake that issues a personal API token. */
 function deviceLoginArgs(argv) {
@@ -111,11 +119,15 @@ function deviceLoginArgs(argv) {
   ) {
     return undefined;
   }
-  const options = { browser: true };
+  const options = { browser: true, insecureStorage: false };
   for (let index = 0; index < args.length; index++) {
     const [flag, inline] = args[index].split(/[=](.*)/su);
     if (flag === "--no-browser" && inline === undefined) {
       options.browser = false;
+      continue;
+    }
+    if (flag === "--insecure-storage" && inline === undefined) {
+      options.insecureStorage = true;
       continue;
     }
     if (!["--name", "--days", "--url", "--timeout"].includes(flag)) {
@@ -129,8 +141,8 @@ function deviceLoginArgs(argv) {
   }
   if (options.days !== undefined) {
     options.days = Number(options.days);
-    if (!Number.isSafeInteger(options.days) || options.days < 1 || options.days > 90) {
-      throw new ApiError("INVALID_ARGUMENTS", "--days must be 1–90");
+    if (!Number.isSafeInteger(options.days) || options.days < 1 || options.days > 365) {
+      throw new ApiError("INVALID_ARGUMENTS", "--days must be 1–365");
     }
   }
   return options;
@@ -145,9 +157,19 @@ function requestTimeout(value) {
 // A token pasted into a flag or echoed back by a proxy must not reach a terminal log or an agent
 // transcript through an error message.
 const redact = (text) => text.replace(/abt_[A-Za-z0-9_-]{8,}/gu, "abt_[REDACTED]");
+// The next command to run, for a person or an agent reading the error.
+function hintFor(code, status) {
+  if (["AUTH_REQUIRED", "SESSION_EXPIRED", "LOGIN_EXPIRED"].includes(code) || status === 401) {
+    return "adminbot login";
+  }
+  if (code === "UNKNOWN_COMMAND" || code === "UNKNOWN_OPERATION") {
+    return "adminbot operations";
+  }
+  return undefined;
+}
 
 export async function run(
-  argv,
+  rawArgv,
   {
     env = process.env,
     stdin = process.stdin,
@@ -157,6 +179,9 @@ export async function run(
   } = {},
 ) {
   try {
+    const argv = Object.hasOwn(TOP_LEVEL, rawArgv[0] ?? "")
+      ? ["auth", TOP_LEVEL[rawArgv[0]], ...rawArgv.slice(1)]
+      : rawArgv;
     if (!argv.length || ["--help", "-h"].includes(argv[0])) {
       stdout.write(help);
       return 0;
@@ -206,11 +231,29 @@ export async function run(
         days: browserLogin.days,
         browser: browserLogin.browser,
         timeout: requestTimeout(browserLogin.timeout),
-        env,
+        env: browserLogin.insecureStorage ? { ...env, ADMINBOT_KEYCHAIN: "0" } : env,
         stderr,
         fetchImpl,
       });
       stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      return 0;
+    }
+    if (argv[0] === "auth" && argv[1] === "token") {
+      // Like `gh auth token`: for handing the saved login to another tool, never for a transcript.
+      const [flag, inline] = (argv[2] ?? "").split(/[=](.*)/su);
+      if (argv.length > 4 || (argv[2] && flag !== "--url")) {
+        throw new ApiError("INVALID_ARGUMENTS", "Usage: adminbot auth token [--url ORIGIN]");
+      }
+      const origin = serviceOrigin(
+        (flag === "--url" ? (inline ?? argv[3]) : undefined) ??
+          env.ADMINBOT_URL ??
+          document.servers[0].url,
+      );
+      const saved = await sessionToken(credentials, origin, env.ADMINBOT_TOKEN, env);
+      if (!saved) {
+        throw new ApiError("AUTH_REQUIRED", "Not signed in", 401);
+      }
+      stdout.write(`${saved}\n`);
       return 0;
     }
     const { alias, args } = findCommand(argv);
@@ -262,7 +305,11 @@ export async function run(
         (requirement) => Object.keys(requirement).length > 0,
       );
     if (requiresAuth && !token) {
-      throw new ApiError("AUTH_REQUIRED", "Run auth login or set ADMINBOT_TOKEN", 401);
+      throw new ApiError(
+        "AUTH_REQUIRED",
+        "Not signed in. Run: adminbot login (or set ADMINBOT_TOKEN)",
+        401,
+      );
     }
     let result = await callOperation(operation.operationId, {
       baseUrl,
@@ -309,8 +356,9 @@ export async function run(
   } catch (error) {
     const known = error instanceof ApiError;
     const status = known ? error.status : undefined;
+    const hint = known ? hintFor(error.code, status) : undefined;
     stderr.write(
-      `${JSON.stringify({ error: { code: known ? error.code : "CLI_ERROR", message: known ? redact(error.message) : "CLI failed; check input and local file permissions", ...(status ? { status } : {}) } })}\n`,
+      `${JSON.stringify({ error: { code: known ? error.code : "CLI_ERROR", message: known ? redact(error.message) : "CLI failed; check input and local file permissions", ...(status ? { status } : {}), ...(hint ? { hint } : {}) } })}\n`,
     );
     // The service refusing the input is an input error, the same as the CLI refusing it.
     return [401, 403].includes(status)

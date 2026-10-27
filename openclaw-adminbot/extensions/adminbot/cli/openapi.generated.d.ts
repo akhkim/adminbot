@@ -10150,7 +10150,6 @@ export interface operations {
         "application/json": {
           name?: unknown;
           expires_in_days?: unknown;
-          password?: unknown;
         } & {
           [key: string]: unknown;
         };
@@ -10389,7 +10388,6 @@ export interface operations {
       content: {
         "application/json": {
           user_code?: unknown;
-          password?: unknown;
         } & {
           [key: string]: unknown;
         };

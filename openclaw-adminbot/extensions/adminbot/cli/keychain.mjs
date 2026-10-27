@@ -3,7 +3,10 @@
 // The secret never goes in a process argument (visible to every local user through `ps`): it is
 // written through `security -i`, which reads its command from stdin, and read back on stdout.
 // Elsewhere, or with ADMINBOT_KEYCHAIN=0, the caller falls back to the private credentials file.
+// `security -i` exits 0 even when the command inside it fails, so a save is only trusted once it
+// reads back.
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { ApiError } from "./client.mjs";
 
 const SERVICE = "adminbot";
@@ -41,12 +44,16 @@ export async function keychainSave(account, token, env = process.env) {
   if (!ACCOUNT_SHAPE.test(account) || !TOKEN_SHAPE.test(token)) {
     throw new ApiError("KEYCHAIN_ERROR", "Refusing to store an unexpected value in the Keychain");
   }
+  // `security -i` writes to the login keychain when the named file is missing.
+  if (env.ADMINBOT_KEYCHAIN_FILE && !existsSync(env.ADMINBOT_KEYCHAIN_FILE)) {
+    throw new ApiError("KEYCHAIN_ERROR", "ADMINBOT_KEYCHAIN_FILE does not exist");
+  }
   const { code } = await run(
     ["-i"],
     `add-generic-password -U -s ${SERVICE} -a "${account}" -l "AdminBot API token" -w "${token}"`,
     env,
   );
-  if (code !== 0) {
+  if (code !== 0 || (await keychainRead(account, env)) !== token) {
     throw new ApiError("KEYCHAIN_ERROR", "Could not save the token in the macOS Keychain");
   }
 }
