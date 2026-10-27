@@ -17,6 +17,7 @@ function overview(overrides: Partial<TravelOverview> = {}): TravelOverview {
     plans: [{ start: "2026-11-01", end: "2026-11-05", city: "Berlin" }],
     home: "Toronto",
     matches: [],
+    sharing_members: 2,
     ...overrides,
   };
 }
@@ -114,7 +115,9 @@ describe("finding lab members nearby", () => {
     expect(now).toContain("Cy Member");
     expect(now).toContain("about 5 km away");
     expect(now).toContain("Lives here");
-    expect(q("lab-travel-group-people-trip:0")?.textContent).toContain("No one from the lab yet");
+    const empty = q("lab-travel-group-people-trip:0")?.textContent ?? "";
+    expect(empty).toContain("No one who shares their location yet");
+    expect(empty).toContain("(2 besides you)");
     q<HTMLButtonElement>("lab-travel-update-now")?.click();
     expect(wired.onShareFromDevice).toHaveBeenCalledOnce();
     q<HTMLButtonElement>("lab-travel-disable-sharing")?.click();
@@ -149,6 +152,7 @@ describe("finding lab members nearby", () => {
         from: "2026-10-13",
         to: "2026-10-13",
         people: [],
+        sharing_members: 0,
       },
     });
     q<HTMLFormElement>("lab-travel-city")?.dispatchEvent(new Event("submit", { cancelable: true }));
@@ -159,7 +163,8 @@ describe("finding lab members nearby", () => {
     expect(wired.onLookup).toHaveBeenCalledOnce();
     const result = q("lab-travel-lookup-result")?.textContent ?? "";
     expect(result).toContain("does not know where Atlantis is");
-    expect(result).toContain("No one from the lab will be in Atlantis then");
+    expect(result).toContain("No one who shares their location will be in Atlantis then");
+    expect(result).toContain("No other member shares their location yet");
   });
 });
 

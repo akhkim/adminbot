@@ -23,6 +23,8 @@ import {
 import { renderCvDigestDocument } from "../../workflows/cv/digest-doc.js";
 import {
   buildTalkLeaderboard,
+  classifyCvReadFailure,
+  type AdminBotCvUnreadReason,
   type AdminBotTalkLeaderboard,
 } from "../../workflows/cv/talk-leaderboard.js";
 import {
@@ -238,7 +240,7 @@ export const directoryRoutes: readonly Route[] = [
       sendJson(res, 400, { error: { message: "year must be a four-digit year" } });
       return;
     }
-    const board = currentTalkLeaderboard(ctx.service, new Date(), year);
+    const board = currentTalkLeaderboard(ctx.service, ctx.store, new Date(), year);
     if (!board) {
       sendJson(res, 500, { error: { message: "could not read the lab roster" } });
       return;
@@ -543,7 +545,7 @@ async function publishCvDigest(
  */
 function renderCvDigest(ctx: AdminBotRouteContext) {
   const now = new Date();
-  const talkLeaderboard = currentTalkLeaderboard(ctx.service, now);
+  const talkLeaderboard = currentTalkLeaderboard(ctx.service, ctx.store, now);
   const document = renderCvDigestDocument(
     ctx.store.listCvChangesSince(LEDGER_EPOCH),
     now,
@@ -573,11 +575,29 @@ function lastPublishedDigestHash(ctx: AdminBotRouteContext): string | undefined 
  */
 function currentTalkLeaderboard(
   service: AdminBotService,
+  store: AdminBotRouteContext["store"],
   now: Date,
   year: number = now.getUTCFullYear(),
 ): AdminBotTalkLeaderboard | null {
   const members = service.listLabMembers();
-  return members.ok ? buildTalkLeaderboard(members.payload.members, year) : null;
+  return members.ok
+    ? buildTalkLeaderboard(members.payload.members, year, lastCvReadFailures(store))
+    : null;
+}
+
+/** Why each member's CV failed in the latest daily read, as that sweep recorded it. */
+function lastCvReadFailures(store: AdminBotRouteContext["store"]) {
+  const latest = store
+    .listAuditEvents()
+    .filter((event) => event.type === CV_SWEEP_EVENT)
+    .reduce<{ timestamp: string; details?: Record<string, unknown> } | undefined>(
+      (last, event) => (!last || event.timestamp > last.timestamp ? event : last),
+      undefined,
+    );
+  const unread = latest?.details?.unread;
+  return unread && typeof unread === "object"
+    ? (unread as Record<string, AdminBotCvUnreadReason>)
+    : {};
 }
 
 export const CV_SWEEP_ACTOR = "system:cv-sweep";
@@ -586,20 +606,26 @@ const CV_SWEEP_FAILED_EVENT = "cv.sweep_failed";
 const CV_SWEEP_PERIOD_MS = 24 * 60 * 60 * 1000;
 
 /**
- * How a sweep went, member by member, without naming anyone: counts per outcome and per failure
- * reason. Enough to tell "35 Drive links are private" from "the model is down" in the audit log.
+ * How a sweep went: counts per outcome and per failure reason, enough to tell "35 Drive links are
+ * private" from "the model is down" in the audit log, plus each failed member's id and kind of
+ * failure for the talk leaderboard. Ids only; names and CV links stay out of the audit.
  */
 export function summarizeCvScan(results: AdminBotCvScanResult["results"]) {
   const statuses: Record<string, number> = {};
   const failures: Record<string, number> = {};
+  // By member id rather than name, for the talk leaderboard to say whose link needs fixing.
+  const unread: Record<string, AdminBotCvUnreadReason> = {};
   for (const entry of results) {
     statuses[entry.status] = (statuses[entry.status] ?? 0) + 1;
     if ((entry.status === "failed" || entry.status === "skipped") && entry.reason) {
       const reason = entry.reason.slice(0, 160);
       failures[reason] = (failures[reason] ?? 0) + 1;
     }
+    if (entry.status === "failed") {
+      unread[entry.member_id] = classifyCvReadFailure(entry.reason);
+    }
   }
-  return { statuses, failures };
+  return { statuses, failures, unread };
 }
 
 export type CvDailySweepOutcome =

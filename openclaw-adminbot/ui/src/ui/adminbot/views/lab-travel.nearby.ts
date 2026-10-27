@@ -84,9 +84,26 @@ function basisText(match: TravelMatch): string {
   }
 }
 
-function renderPeople(people: readonly TravelMatch[], testid: string) {
+/**
+ * Why a match came back empty. Only members who share their location are matched by home, trips
+ * or live location; everyone else only by conference RSVPs, so "no one" needs that context.
+ */
+export function nobodyText(sharers: number | undefined, place?: string): string {
+  const scope =
+    sharers === undefined
+      ? ""
+      : sharers === 0
+        ? t("labTravel.nearby.noSharers")
+        : t("labTravel.nearby.fewSharers", { count: String(sharers) });
+  const head = place
+    ? t("labTravel.nearby.lookupNone", { place })
+    : t("labTravel.nearby.nobody");
+  return scope ? `${head} ${scope}` : head;
+}
+
+function renderPeople(people: readonly TravelMatch[], testid: string, sharers?: number) {
   if (!people.length) {
-    return html`<p class="muted" data-testid=${testid}>${t("labTravel.nearby.nobody")}</p>`;
+    return html`<p class="muted" data-testid=${testid}>${nobodyText(sharers)}</p>`;
   }
   return html`<ul class="lab-travel__matches" data-testid=${testid}>
     ${people.map(
@@ -98,7 +115,7 @@ function renderPeople(people: readonly TravelMatch[], testid: string) {
   </ul>`;
 }
 
-function renderGroup(group: TravelMatchGroup) {
+function renderGroup(group: TravelMatchGroup, sharers?: number) {
   return html`
     <section class="lab-travel__group" data-testid=${`lab-travel-group-${group.id}`}>
       <div class="lab-travel__group-title">
@@ -107,7 +124,7 @@ function renderGroup(group: TravelMatchGroup) {
           ? html`<span class="muted"> · ${formatRange({ start: group.from, end: group.to })}</span>`
           : nothing}
       </div>
-      ${renderPeople(group.people, `lab-travel-group-people-${group.id}`)}
+      ${renderPeople(group.people, `lab-travel-group-people-${group.id}`, sharers)}
     </section>
   `;
 }
@@ -238,7 +255,7 @@ function renderLookup(props: TravelNearbyProps) {
           ${result.people.length
             ? renderPeople(result.people, "lab-travel-lookup-people")
             : html`<p class="muted" data-testid="lab-travel-lookup-people">
-                ${t("labTravel.nearby.lookupNone", { place: placeText(result.place) })}
+                ${nobodyText(result.sharing_members, placeText(result.place))}
               </p>`}
         </div>`
       : nothing}
@@ -347,7 +364,7 @@ function renderSharing(props: TravelNearbyProps, overview: TravelOverview) {
           </div>
           <div class="lab-travel__groups">
             ${overview.matches.length
-              ? overview.matches.map((group) => renderGroup(group))
+              ? overview.matches.map((group) => renderGroup(group, overview.sharing_members))
               : html`<p class="muted">${t("labTravel.nearby.groupsEmpty")}</p>`}
           </div>
           ${renderLookup(props)}

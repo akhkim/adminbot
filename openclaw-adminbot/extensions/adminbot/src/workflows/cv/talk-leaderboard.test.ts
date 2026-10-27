@@ -1,7 +1,11 @@
 // The talk leaderboard over a synthetic roster: who is counted, what counts, and how ties read.
 import { describe, expect, it } from "vitest";
 import type { AdminBotCvEntry, AdminBotLabMember } from "../../contracts/actions.js";
-import { buildTalkLeaderboard, renderTalkLeaderboardMarkdown } from "./talk-leaderboard.js";
+import {
+  buildTalkLeaderboard,
+  classifyCvReadFailure,
+  renderTalkLeaderboardMarkdown,
+} from "./talk-leaderboard.js";
 
 function talk(title: string, start: string, invited?: boolean): AdminBotCvEntry {
   return {
@@ -136,6 +140,25 @@ describe("buildTalkLeaderboard", () => {
     );
     expect(board.rows).toEqual([]);
     expect(board.unscanned).toEqual(["NEW"]);
+    expect(board.unread).toEqual([{ member_name: "NEW", reason: "pending" }]);
+  });
+
+  it("says why a CV was not read when the last read recorded a failure", () => {
+    const board = buildTalkLeaderboard([member("new", null), member("old", null)], 2026, {
+      new: "not_pdf",
+    });
+    expect(board.unread).toEqual([
+      { member_name: "NEW", reason: "not_pdf" },
+      { member_name: "OLD", reason: "pending" },
+    ]);
+  });
+});
+
+describe("classifyCvReadFailure", () => {
+  it("separates link problems from transient failures", () => {
+    expect(classifyCvReadFailure("cv url did not return a PDF (text/html)")).toBe("not_pdf");
+    expect(classifyCvReadFailure("cv download failed with 999")).toBe("refused");
+    expect(classifyCvReadFailure("fetch failed (ENETUNREACH)")).toBe("failed");
   });
 });
 
@@ -158,8 +181,19 @@ describe("renderTalkLeaderboardMarkdown", () => {
   });
 
   it("says so when no talks are on record rather than showing an empty list", () => {
-    const markdown = renderTalkLeaderboardMarkdown({ year: 2026, rows: [], unscanned: ["NEW"] });
+    const markdown = renderTalkLeaderboardMarkdown({
+      year: 2026,
+      rows: [],
+      unscanned: ["NEW", "OLD"],
+      unread: [
+        { member_name: "NEW", reason: "pending" },
+        { member_name: "OLD", reason: "not_pdf" },
+      ],
+    });
     expect(markdown.join("\n")).toContain("No talks dated 2026");
-    expect(markdown.join("\n")).toContain("Not counted yet (CV not read): NEW");
+    expect(markdown.join("\n")).toContain("Not counted yet, CV not read yet: NEW");
+    expect(markdown.join("\n")).toContain(
+      "Not counted yet, CV link does not open a PDF anyone with the link can download: OLD",
+    );
   });
 });

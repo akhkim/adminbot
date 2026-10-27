@@ -238,7 +238,7 @@ describe("location sharing", () => {
     unwrap(travel().setSharing("cy", { enabled: true }));
     unwrap(travel().reportLocation("cy", { lat: 48.87, lon: 2.33 }));
     // Ada is in Paris too, but has not opted in: she sees nobody, and cannot look anybody up.
-    expect(unwrap(travel().overview("ada")).matches).toEqual([]);
+    expect(unwrap(travel().overview("ada"))).toMatchObject({ matches: [], sharing_members: 0 });
     expect(travel().whosIn("ada", new URLSearchParams({ place: "Paris" }))).toMatchObject({
       ok: false,
       status: 403,
@@ -289,6 +289,13 @@ describe("location sharing", () => {
     // Dee lives in Berlin, which is where Bob is -- but she has not opted in.
     const berlin = unwrap(travel().whosIn("bob", new URLSearchParams({ place: "Berlin" })));
     expect(berlin.people).toEqual([]);
+    // So the empty answer can say it only checked the members who share.
+    expect(berlin.sharing_members).toBe(0);
+    unwrap(travel().setSharing("cy", { enabled: true }));
+    expect(
+      unwrap(travel().whosIn("bob", new URLSearchParams({ place: "Berlin" }))).sharing_members,
+    ).toBe(1);
+    expect(unwrap(travel().overview("bob")).sharing_members).toBe(1);
   });
 
   it("matches the viewer's upcoming trips and conferences against sharing members", () => {

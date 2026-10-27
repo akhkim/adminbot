@@ -1,11 +1,13 @@
 import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
+import type { LookupAddress } from "node:dns";
 import { lookup as dnsLookup } from "node:dns/promises";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { isIP } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import { Agent, fetch as undiciFetch, type Dispatcher } from "undici";
 import { cvEntryKey } from "./contracts/actions.js";
 import type {
   AdminBotCvChange,
@@ -451,7 +453,19 @@ export function describeCvEntry(entry: AdminBotCvEntry): string {
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  if (!(error instanceof Error)) {
+    return String(error);
+  }
+  // fetch reports every network failure as a bare "fetch failed" and keeps the reason in `cause`;
+  // without it the audit log cannot tell an unreachable host from a refused connection.
+  const cause = error.cause as { code?: unknown; message?: unknown } | undefined;
+  const detail =
+    typeof cause?.code === "string"
+      ? cause.code
+      : typeof cause?.message === "string"
+        ? cause.message
+        : "";
+  return detail && !error.message.includes(detail) ? `${error.message} (${detail})` : error.message;
 }
 
 /**
@@ -498,8 +512,11 @@ export function isPublicIpAddress(address: string): boolean {
   return false;
 }
 
+export type CvHostAddress = { address: string; family: 4 | 6 };
+
 /**
- * Resolves a hostname and refuses it unless every address it answers with is public.
+ * Resolves a hostname and refuses it unless every address it answers with is public. Returns the
+ * addresses, so the download connects to exactly what was checked.
  *
  * Every address, not just the first: a name that returns one public and one private address would
  * otherwise be usable to reach the private one.
@@ -507,14 +524,15 @@ export function isPublicIpAddress(address: string): boolean {
 export async function assertPublicHost(
   hostname: string,
   lookupImpl: typeof dnsLookup = dnsLookup,
-): Promise<void> {
+): Promise<CvHostAddress[]> {
   // An IP literal never reaches DNS, so check it directly rather than trusting the resolver to
   // echo it back.
-  if (isIP(hostname)) {
+  const literal = isIP(hostname);
+  if (literal) {
     if (!isPublicIpAddress(hostname)) {
       throw new Error(`cv url points at a non-public address (${hostname})`);
     }
-    return;
+    return [{ address: hostname, family: literal === 6 ? 6 : 4 }];
   }
   let records: Array<{ address: string }>;
   try {
@@ -532,6 +550,10 @@ export async function assertPublicHost(
       );
     }
   }
+  return records.map((record) => ({
+    address: record.address,
+    family: isIP(record.address) === 6 ? 6 : 4,
+  }));
 }
 
 /** Default deps: Drive fetch, the pypdfium2 helper, and the loopback model. */
@@ -540,18 +562,21 @@ export function createAdminBotCvScanDeps(options: {
   // bundled into dist, so it cannot resolve a repo-root script path on its own.
   extractScriptPath: string;
   fetchImpl?: typeof globalThis.fetch;
+  // The CV download alone; defaults to undici's fetch, which honours the pinned dispatcher.
+  downloadImpl?: CvDownloadFetch;
   env?: NodeJS.ProcessEnv;
   pythonCommand?: string;
   concurrency?: number;
 }): AdminBotCvScanDeps {
   const env = options.env ?? process.env;
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
+  const downloadImpl = options.downloadImpl ?? (undiciFetch as unknown as CvDownloadFetch);
   const pythonCommand = options.pythonCommand ?? env.ADMINBOT_PYTHON ?? "python3";
   const extractScriptPath = options.extractScriptPath;
   return {
     now: () => new Date(),
     concurrency: options.concurrency,
-    fetchPdf: async (url, signal) => await fetchCvPdf(fetchImpl, url, signal),
+    fetchPdf: async (url, signal) => await fetchCvPdf(downloadImpl, url, signal),
     extractText: async (pdf) => {
       const directory = await mkdtemp(path.join(tmpdir(), "adminbot-cv-"));
       const file = path.join(directory, `${randomUUID()}.pdf`);
@@ -580,14 +605,6 @@ export function createAdminBotCvScanDeps(options: {
 // fetched with no check at all. Three hops covers real CDN and shortener chains.
 const MAX_CV_REDIRECTS = 3;
 
-/**
- * Downloads a member's CV, revalidating the destination at every hop.
- *
- * Known residual risk: the address is validated by resolving DNS, then fetch resolves it again to
- * open the connection, so a name that answers differently between the two calls (DNS rebinding)
- * can still slip through. Closing that needs the connection pinned to the validated address, which
- * means an undici dispatcher and a dependency decision this change does not make on its own.
- */
 /**
  * Rewrites a Google share link into something that actually returns the file.
  *
@@ -626,8 +643,88 @@ function startsWithPdfMagic(buffer: Uint8Array): boolean {
   return PDF_MAGIC.every((byte, index) => buffer[index] === byte);
 }
 
+export type CvDownloadFetch = (
+  input: URL,
+  init: { redirect: "manual"; dispatcher: Dispatcher; signal?: AbortSignal },
+) => Promise<{
+  ok: boolean;
+  status: number;
+  statusText: string;
+  headers: { get(name: string): string | null };
+  arrayBuffer(): Promise<ArrayBuffer>;
+}>;
+
+type LookupCallback = (
+  error: NodeJS.ErrnoException | null,
+  address: string | LookupAddress[],
+  family?: number,
+) => void;
+
+/**
+ * A DNS lookup that answers only with addresses already validated for this download.
+ *
+ * IPv4 is answered alone when the host has any: the service host has no IPv6 route, and Google's
+ * hosts publish IPv6 first, so connecting by the resolver's order failed every Drive download with
+ * ENETUNREACH. A host with only IPv6 addresses still gets them.
+ */
+export function createCvPinnedLookup(pins: Map<string, CvHostAddress[]>) {
+  return (hostname: string, options: unknown, callback?: LookupCallback) => {
+    const done = (typeof options === "function" ? options : callback) as LookupCallback;
+    const opts = (typeof options === "object" && options ? options : {}) as {
+      all?: boolean;
+      family?: number;
+    };
+    const pinned = pins.get(hostname.toLowerCase()) ?? [];
+    const ipv4 = pinned.filter((record) => record.family === 4);
+    const preferred = ipv4.length ? ipv4 : pinned;
+    const usable =
+      opts.family === 4 || opts.family === 6
+        ? pinned.filter((record) => record.family === opts.family)
+        : preferred;
+    const first = usable[0];
+    if (!first) {
+      // Fail closed: anything not validated in this download is never connected to.
+      const error: NodeJS.ErrnoException = new Error(`cv host ${hostname} was not validated`);
+      error.code = "ENOTFOUND";
+      done(error, "", 0);
+      return;
+    }
+    if (opts.all) {
+      done(null, usable);
+      return;
+    }
+    done(null, first.address, first.family);
+  };
+}
+
+/**
+ * Downloads a member's CV, revalidating the destination at every hop.
+ *
+ * Each connection is pinned to the addresses validated for its host, so a name that answers
+ * differently when fetch resolves it again (DNS rebinding) never reaches the socket.
+ */
 async function fetchCvPdf(
-  fetchImpl: typeof globalThis.fetch,
+  fetchImpl: CvDownloadFetch,
+  url: string,
+  signal?: AbortSignal,
+): Promise<Uint8Array> {
+  const pins = new Map<string, CvHostAddress[]>();
+  const dispatcher = new Agent({
+    allowH2: false,
+    connect: { lookup: createCvPinnedLookup(pins) as never, autoSelectFamily: true },
+  });
+  try {
+    return await downloadCvPdf(fetchImpl, dispatcher, pins, url, signal);
+  } finally {
+    // Destroyed rather than closed: a redirect's unread body would keep close() waiting.
+    await dispatcher.destroy().catch(() => undefined);
+  }
+}
+
+async function downloadCvPdf(
+  fetchImpl: CvDownloadFetch,
+  dispatcher: Dispatcher,
+  pins: Map<string, CvHostAddress[]>,
   url: string,
   signal?: AbortSignal,
 ): Promise<Uint8Array> {
@@ -636,9 +733,10 @@ async function fetchCvPdf(
     if (target.protocol !== "https:") {
       throw new Error(`cv url must use https (got ${target.protocol.replace(":", "")})`);
     }
-    await assertPublicHost(target.hostname);
+    pins.set(target.hostname.toLowerCase(), await assertPublicHost(target.hostname));
     const response = await fetchImpl(target, {
       redirect: "manual",
+      dispatcher,
       ...(signal ? { signal } : {}),
     });
     if (response.status >= 300 && response.status < 400) {
