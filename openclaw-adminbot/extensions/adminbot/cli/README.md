@@ -27,6 +27,22 @@ The default API origin is `https://admin.safe.eu`. Use `--url ORIGIN` or
 The deployed server must match the packaged contract: the new paper-progress PATCH
 and `/openapi.json` require deploying the backend changes in this repository.
 
+## Agent skill (Claude Code and Codex)
+
+```bash
+adminbot skill install
+```
+
+Copies `skill/SKILL.md` and `skill/pages.md` into `~/.claude/skills/adminbot-cli` and
+`~/.codex/skills/adminbot-cli`, for whichever of the two exists. The skill tells an agent which
+operation each website page uses, which calls it may run freely (reads), which need the user's
+yes (every other write, and anything that messages people) and the workflow facts the routes
+don't show. It replaces only an earlier copy of itself. Run it again after updating the CLI.
+
+`skill/pages.md` is generated with the contract (`pnpm adminbot:api:generate`), and
+`adminbot:api:check` fails when it is stale or a route has no page in `skill/pages.mjs`.
+API tokens are for admins by default, so the skill is only useful to admins.
+
 ## Authenticate
 
 ```bash

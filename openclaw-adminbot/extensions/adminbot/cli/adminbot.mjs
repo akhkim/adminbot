@@ -15,6 +15,7 @@ import {
   serviceOrigin,
 } from "./client.mjs";
 import { deviceLogin } from "./login.mjs";
+import { installSkill } from "./skill.mjs";
 
 const commandIndex = new Map();
 for (const operation of Object.values(operations)) {
@@ -34,6 +35,7 @@ adminbot schema [OPERATION_ID]                Show OpenAPI, or one operation's c
 adminbot call OPERATION_ID [flags]            Call any documented operation
 adminbot <generated command> [IDs] [flags]    Same API with readable command names
 adminbot <command> --help                     Show generated parameters and flags
+adminbot skill install                        Install the agent skill for Claude Code and Codex
 
 Examples:
   adminbot papers list
@@ -102,7 +104,11 @@ function deviceLoginArgs(argv) {
     return undefined;
   }
   const args = argv.slice(2);
-  if (args.some((arg) => ["--email", "--file", "--password-stdin", "--help", "-h"].includes(arg.split("=")[0]))) {
+  if (
+    args.some((arg) =>
+      ["--email", "--file", "--password-stdin", "--help", "-h"].includes(arg.split("=")[0]),
+    )
+  ) {
     return undefined;
   }
   const options = { browser: true };
@@ -162,6 +168,13 @@ export async function run(
       stdout.write(
         `${JSON.stringify(argv[1] ? { ...operations[argv[1]], components: document.components } : document, null, 2)}\n`,
       );
+      return 0;
+    }
+    if (argv[0] === "skill") {
+      if (argv.length !== 2 || argv[1] !== "install") {
+        throw new ApiError("INVALID_ARGUMENTS", "Usage: adminbot skill install");
+      }
+      stdout.write(`${JSON.stringify(await installSkill(env), null, 2)}\n`);
       return 0;
     }
     if (argv[0] === "operations") {

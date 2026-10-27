@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -377,7 +377,11 @@ const approved = {
   status: "approved",
   token: FAKE_TOKEN,
   member: { id: "admin-a" },
-  api_token: { id: `tok_${"0".repeat(20)}`, name: "laptop", expires_at: "2099-01-01T00:00:00.000Z" },
+  api_token: {
+    id: `tok_${"0".repeat(20)}`,
+    name: "laptop",
+    expires_at: "2099-01-01T00:00:00.000Z",
+  },
 };
 
 await test("auth login through the browser saves the token privately and never prints it", async (t) => {
@@ -447,4 +451,40 @@ await test("browser login refuses unknown flags and redacts tokens from errors",
   const days = await invoke(["auth", "login", "--days", "365"]);
   assert.equal(days.code, 2);
   assert.match(days.err, /--days/u);
+});
+
+test("skill install copies the agent skill and replaces only an earlier copy", async () => {
+  const home = await mkdtemp(join(tmpdir(), "adminbot-skill-"));
+  try {
+    await mkdir(join(home, ".claude"));
+    await mkdir(join(home, ".codex", "skills"), { recursive: true });
+    await symlink(join(home, "elsewhere"), join(home, ".codex", "skills", "adminbot-cli"));
+    const first = await invoke(["skill", "install"], { env: { HOME: home } });
+    assert.equal(first.code, 0, first.err);
+    for (const agent of [".claude", ".codex"]) {
+      const skill = await readFile(join(home, agent, "skills", "adminbot-cli", "SKILL.md"), "utf8");
+      assert.match(skill, /^name: adminbot-cli$/mu);
+      assert.match(
+        await readFile(join(home, agent, "skills", "adminbot-cli", "pages.md"), "utf8"),
+        /post-guidebook-ask/u,
+      );
+    }
+    assert.equal((await invoke(["skill", "install"], { env: { HOME: home } })).code, 0);
+    await writeFile(
+      join(home, ".claude", "skills", "adminbot-cli", "SKILL.md"),
+      "---\nname: mine\n---\n",
+    );
+    const clash = await invoke(["skill", "install"], { env: { HOME: home } });
+    assert.equal(clash.code, 2);
+    assert.match(clash.err, /SKILL_CONFLICT/u);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("the skill's page index lists every operation", async () => {
+  const pages = await readFile(new URL("./skill/pages.md", import.meta.url), "utf8");
+  for (const operationId of Object.keys(operations)) {
+    assert.ok(pages.includes(`\`${operationId}\``), operationId);
+  }
 });
