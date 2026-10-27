@@ -294,6 +294,13 @@
   color: var(--muted);
 }
 
+/* A keyboard shortcut means nothing on a touch screen; there it is only clutter in the search. */
+@media (hover: none), (max-width: 768px) {
+  .topbar-search__kbd {
+    display: none;
+  }
+}
+
 .topbar-theme-mode {
   display: inline-flex;
   align-items: center;

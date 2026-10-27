@@ -10,6 +10,7 @@ import { saveStoredMemberSession } from "../auth/session.ts";
 import {
   loadAdminBotNudgeBatches,
   loadAdminBotPaperSlotOverview,
+  loadAdminBotPaperSlotsMany,
   nudgeAdminBotPaperAuthors,
   nudgeableBatches,
   type AdminBotPaperSlotsHost,
@@ -162,6 +163,33 @@ describe("nudge pass", () => {
     await loading;
     expect(host.adminBotPaperSlotOverview).toEqual([]);
     expect(host.adminBotPaperSlotsLoading).toBe(false);
+  });
+
+  it("reads many papers' evidence for a few redraws, not one per paper", async () => {
+    const urls: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      urls.push(String(input));
+      return json({ slots: [] });
+    });
+    const host = createHost();
+    host.adminBotPaperSlots = { loaded: {} as never };
+    let writes = 0;
+    let slots = host.adminBotPaperSlots;
+    Object.defineProperty(host, "adminBotPaperSlots", {
+      get: () => slots,
+      set: (value) => {
+        writes += 1;
+        slots = value;
+      },
+    });
+    const ids = Array.from({ length: 20 }, (_, index) => `p${index}`);
+    await loadAdminBotPaperSlotsMany(host, ["loaded", ...ids]);
+    // The paper already on hand is not fetched again.
+    expect(urls).toHaveLength(20);
+    expect(urls.some((url) => url.includes("/papers/loaded/"))).toBe(false);
+    expect(Object.keys(host.adminBotPaperSlots).toSorted()).toEqual(["loaded", ...ids].toSorted());
+    // Stubbed responses land within one flush window, so they arrive as a single assignment.
+    expect(writes).toBe(1);
   });
 
   it("sends one request per recipient instead of one long one", async () => {

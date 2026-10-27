@@ -13,6 +13,10 @@ import { findOwnMember } from "../views/profile-fields.ts";
 
 export type { AdminBotMyProjectSummary as ProjectSummary };
 
+// One collator for every comparison. `localeCompare` with options builds a fresh one per call,
+// which made sorting fifteen hundred papers cost a dozen milliseconds on every redraw.
+const titleCollator = new Intl.Collator(undefined, { sensitivity: "base" });
+
 /** Shared ordering for the sidebar and project lists; missing start dates sort last. */
 export function compareProjects(
   a: Pick<AdminBotMyProjectSummary, "started_on" | "venue_decision" | "alias" | "title">,
@@ -21,8 +25,27 @@ export function compareProjects(
   return (
     (b.started_on ?? "").localeCompare(a.started_on ?? "") ||
     Number(a.venue_decision === "accept") - Number(b.venue_decision === "accept") ||
-    (a.alias || a.title).localeCompare(b.alias || b.title, undefined, { sensitivity: "base" })
+    titleCollator.compare(a.alias || a.title, b.alias || b.title)
   );
+}
+
+const sortedCache = new WeakMap<readonly object[], readonly object[]>();
+
+/**
+ * `list` in `compareProjects` order, sorted once per list rather than once per redraw.
+ *
+ * Keyed by the array itself: the service's lists are replaced, never mutated, when they change,
+ * so the same array always sorts the same way. Returns a sorted copy, never the input.
+ */
+export function sortedProjects<T extends Parameters<typeof compareProjects>[0]>(
+  list: readonly T[],
+): T[] {
+  let sorted = sortedCache.get(list) as T[] | undefined;
+  if (!sorted) {
+    sorted = list.toSorted(compareProjects);
+    sortedCache.set(list, sorted);
+  }
+  return sorted;
 }
 
 export type ProjectLaneSegment = "writing" | "venue" | "archival" | "talk" | "social";
@@ -151,12 +174,14 @@ export function venuePosition(summary: AdminBotMyProjectSummary): string {
  * The papers that are the viewer's own, read from the lab list the page already holds. Used where
  * the full record is needed; the active list itself comes from the service (`GET /my/projects`).
  */
-export function ownPapers(state: AppViewState): AdminBotPaperRecord[] {
+export function ownPapers(state: AppViewState, { sorted = false } = {}): AdminBotPaperRecord[] {
   const member = findOwnMember(state);
+  const papers = state.adminBotData?.papers ?? [];
   // The same rule GET /papers?scope=mine applies, so a page that read only the viewer's papers
   // shows the rows it used to pick out of the full list. Names compare as people (isSamePerson):
   // a raw lowercase comparison once hid a co-first author's paper behind the "*" marking it.
-  return (state.adminBotData?.papers ?? []).filter((paper) =>
+  // `sorted` filters the lab list in its cached order, which keeps that order without a re-sort.
+  return (sorted ? sortedProjects(papers) : papers).filter((paper) =>
     paperInvolvesMember(paper, state.memberId, member?.name),
   );
 }
