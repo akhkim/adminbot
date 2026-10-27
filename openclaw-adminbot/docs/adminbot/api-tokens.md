@@ -80,6 +80,8 @@ unchanged. A token may also create tokens, approve a CLI sign-in and pair gatewa
 agent never has to hand anything back to a person. It cannot:
 
 - change the owner's password or email,
+- change another member's sign-in email (`POST /lab/members/{id}/email`, the admin version of the
+  same change, which skips that member's password),
 - start or stop impersonation.
 
 So a leaked token cannot lock its owner out or act as somebody else, and changing the password
@@ -177,7 +179,8 @@ commit stays in history: revoke it, which is what makes it harmless.
 - Tokens are accepted only as `Authorization: Bearer`, never in a cookie or the query string.
 - Responses that carry a secret (token creation, the approved poll) are `Cache-Control: no-store`.
 - `POST /auth/logout` with a token revokes that token.
-- A token is refused (403) on changing the password or email, and on impersonation.
+- A token is refused (403) on changing the password or email, on an admin's change of a member's
+  sign-in email, and on impersonation.
 
 ## Code map
 

@@ -273,6 +273,11 @@ export type AdminBotProps = {
   /** Re-key one member under a new id. Admin mode only; absent hides the Change ID button. */
   onRenameMember?: (memberId: string, newId: string) => void;
   /**
+   * Move one member's sign-in email. Admin mode only; absent hides the button. The service refuses
+   * the caller's own account and the head professor's, so the button can show for every row.
+   */
+  onChangeMemberEmail?: (memberId: string, newEmail: string) => void;
+  /**
    * Delete one roster row outright. Admin mode only, and absent means the affordance is not
    * rendered at all rather than rendered disabled -- a delete button that cannot delete is a
    * question the page cannot answer.
@@ -1396,6 +1401,7 @@ function renderMemberFormFields(
   member?: AdminBotLabMember,
   standingMeetings?: AdminBotStandingMeetingsState,
   onRenameMember?: AdminBotProps["onRenameMember"],
+  onChangeMemberEmail?: AdminBotProps["onChangeMemberEmail"],
 ) {
   const noteDraft = parseMemberNotes(member?.notes);
   const editing = member !== undefined;
@@ -1445,12 +1451,24 @@ function renderMemberFormFields(
           .value=${member?.email ?? ""}
           ?readonly=${editing}
           data-testid="member-form-email"
-      /></label>
+        />${member && onChangeMemberEmail
+          ? html`<button
+              class="btn btn--sm"
+              type="button"
+              data-testid="member-change-email"
+              @click=${(event: Event) => changeMemberEmail(event, member, onChangeMemberEmail)}
+            >
+              Change sign-in email
+            </button>`
+          : nothing}</label
+      >
       ${editing
         ? html`<p class="adminbot-form__hint" data-testid="member-form-email-locked">
-            Email is the login identity, so it is set once when the record is created and not edited
-            here. Changing it would sign the member out of an account they can no longer reach; a
-            correction goes through account recovery instead.
+            Email is the login identity, so this form never rewrites it: a stray edit would move the
+            member's sign-in to an address they may not
+            have.${onChangeMemberEmail
+              ? " Change sign-in email moves it on purpose, and their password reset with it."
+              : " A correction goes through an admin's Change sign-in email."}
           </p>`
         : nothing}
       <label class="adminbot-form__field"
@@ -1575,6 +1593,43 @@ function changeMemberId(
   onRenameMember(member.id, newId);
 }
 
+function changeMemberEmail(
+  event: Event,
+  member: AdminBotLabMember,
+  onChangeMemberEmail: NonNullable<AdminBotProps["onChangeMemberEmail"]>,
+): void {
+  const current = member.email ?? "";
+  const newEmail = globalThis
+    .prompt?.(`New sign-in email for ${member.name}:`, current)
+    ?.trim()
+    .toLowerCase();
+  if (!newEmail || newEmail === current.trim().toLowerCase()) {
+    return;
+  }
+  if (
+    !globalThis.confirm?.(
+      `Change ${member.name}'s sign-in email from "${current || "(none)"}" to "${newEmail}"?\n\n` +
+        `They sign in with the new address from now on, and a password reset goes there ` +
+        `(unless they set a correspondence email). Any reset link already sent to the old ` +
+        `address stops working. They stay signed in where they are.`,
+    )
+  ) {
+    return;
+  }
+  // A queued autosave carries the old email in the record it saves; landing after the change it
+  // would put the roster's copy back out of step with the sign-in. Drop it; the roster reloads.
+  const form = (event.currentTarget as Element | null)?.closest("form");
+  if (form) {
+    const pending = memberAutosaveTimers.get(form);
+    if (pending !== undefined) {
+      clearTimeout(pending);
+      memberAutosaveTimers.delete(form);
+    }
+    form.closest<HTMLElement>("[popover]")?.hidePopover();
+  }
+  onChangeMemberEmail(member.id, newEmail);
+}
+
 function renderMemberEditPopover(member: AdminBotLabMember, index: number, props: AdminBotProps) {
   const editId = `adminbot-edit-member-${index}`;
   // The shell is always here: `popovertarget` resolves against the id, so the button needs it in
@@ -1607,6 +1662,7 @@ function renderMemberEditPopover(member: AdminBotLabMember, index: number, props
                 member,
                 props.standingMeetings,
                 props.mode === "admin" ? props.onRenameMember : undefined,
+                props.mode === "admin" ? props.onChangeMemberEmail : undefined,
               )}
               ${props.notice?.kind === "error"
                 ? html`<div class="callout danger" role="alert" style="grid-column: 1 / -1">

@@ -456,6 +456,33 @@ describe("renderAdminBot members panel — the edit form waits to be asked for",
     const general = renderToDiv({ ...lazyProps(), mode: "general", onRenameMember });
     expect(general.querySelector('[data-testid="member-change-id"]')).toBeNull();
   });
+
+  // The form still never rewrites the sign-in email; this button is the one deliberate way to.
+  it("lets an admin change a member's sign-in email through its own route", () => {
+    const onChangeMemberEmail = vi.fn();
+    const container = renderToDiv({ ...lazyProps(), onChangeMemberEmail });
+    const button = container.querySelector<HTMLButtonElement>(
+      '#adminbot-edit-member-0 [data-testid="member-change-email"]',
+    );
+    expect(button).not.toBeNull();
+    expect(
+      container.querySelector<HTMLInputElement>('#adminbot-edit-member-0 input[name="email"]')
+        ?.readOnly,
+    ).toBe(true);
+
+    const prompt = vi.spyOn(globalThis, "prompt").mockReturnValue("  Lazy.New@Example.ORG ");
+    const confirm = vi.spyOn(globalThis, "confirm").mockReturnValue(false);
+    button!.click();
+    expect(onChangeMemberEmail).not.toHaveBeenCalled();
+    confirm.mockReturnValue(true);
+    button!.click();
+    expect(onChangeMemberEmail).toHaveBeenCalledWith("lazy-one", "lazy.new@example.org");
+    prompt.mockRestore();
+    confirm.mockRestore();
+
+    const general = renderToDiv({ ...lazyProps(), mode: "general", onChangeMemberEmail });
+    expect(general.querySelector('[data-testid="member-change-email"]')).toBeNull();
+  });
 });
 
 describe("renderAdminBot members panel — edit affordance", () => {

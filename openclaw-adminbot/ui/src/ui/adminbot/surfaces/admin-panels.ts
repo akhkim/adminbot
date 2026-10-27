@@ -40,6 +40,7 @@ import {
   withdrawAdminBotMemberRequest,
 } from "../controllers/member-requests.ts";
 import {
+  changeAdminBotMemberEmail,
   deleteAdminBotMember,
   mergeAdminBotMembers,
   purgeAdminBotMembersWithoutEmail,
@@ -269,6 +270,8 @@ export function renderAdminPanelsSurface(state: AppViewState, scope: AdminBotSur
           onMergeMembers: (survivorId, duplicateId) =>
             void mergeAdminBotMembers(state, survivorId, duplicateId),
           onRenameMember: (memberId, newId) => void renameAdminBotMember(state, memberId, newId),
+          onChangeMemberEmail: (memberId, newEmail) =>
+            void changeAdminBotMemberEmail(state, memberId, newEmail),
           onDeleteMember: (member) => void deleteAdminBotMember(state, member.id),
           onPurgeMembersWithoutEmail: (dryRun) =>
             void purgeAdminBotMembersWithoutEmail(state, { dryRun }),

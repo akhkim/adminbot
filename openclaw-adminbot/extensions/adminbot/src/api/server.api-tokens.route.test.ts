@@ -143,6 +143,8 @@ describe("personal API tokens over HTTP", () => {
       ["/auth/password", { current_password: PASSWORD, new_password: "another-password-2" }],
       ["/auth/email", { email: "new@example.invalid", password: PASSWORD }],
       ["/auth/impersonate", { member_id: "plain-c" }],
+      // The admin's version of /auth/email, which skips the member's password.
+      ["/lab/members/plain-c/email", { new_email: "moved@example.invalid" }],
     ] as const) {
       const response = await call(baseUrl, "POST", path, { bearer: token, body });
       expect([path, response.status]).toEqual([path, 403]);

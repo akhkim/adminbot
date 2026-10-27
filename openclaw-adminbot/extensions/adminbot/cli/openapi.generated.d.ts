@@ -1696,6 +1696,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/lab/members/{members_id}/email": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** POST /lab/members/{members_id}/email */
+    post: operations["post-lab-members-by-members-id-email"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/lab/members/{members_id}/id": {
     parameters: {
       query?: never;
@@ -5091,6 +5108,7 @@ export interface components {
         | "paper_author_links.backfilled"
         | "lab_member.merged"
         | "lab_member.id_changed"
+        | "lab_member.login_email_changed"
         | "lab_member.deleted"
         | "lab_members.purged_without_email"
         | "lab_member_request.submitted"
@@ -15777,6 +15795,54 @@ export interface operations {
         content: {
           "application/json": {
             member: components["schemas"]["AdminBotLabMemberView"];
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "post-lab-members-by-members-id-email": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        members_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          new_email?: string;
+        } & {
+          [key: string]: unknown;
+        };
+      };
+    };
+    responses: {
+      /** @description Successful service result */
+      "2XX": {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            member: components["schemas"]["AdminBotLabMember"];
+            email: string;
+            previous_email: null | string;
+            had_sign_in: boolean;
           } & {
             [key: string]: unknown;
           };

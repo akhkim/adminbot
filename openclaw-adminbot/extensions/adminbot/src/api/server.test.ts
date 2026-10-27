@@ -4520,6 +4520,7 @@ describe("viewing the lab as another member", () => {
     for (const [pathname, body] of [
       ["/auth/password", { current_password: "correcthorse", new_password: "hunter22222" }],
       ["/auth/email", { new_email: "elsewhere@example.com", current_password: "correcthorse" }],
+      ["/lab/members/ada/email", { new_email: "elsewhere@example.com" }],
     ] as const) {
       const res = await fetch(`${baseUrl}${pathname}`, {
         method: "POST",

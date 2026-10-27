@@ -9909,6 +9909,97 @@
         }
       }
     },
+    "/lab/members/{members_id}/email": {
+      "post": {
+        "operationId": "post-lab-members-by-members-id-email",
+        "summary": "POST /lab/members/{members_id}/email",
+        "tags": [
+          "lab"
+        ],
+        "x-source": "src/api/routes/members.ts",
+        "parameters": [
+          {
+            "name": "members_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "new_email": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true,
+                "x-schema-coverage": "inferred from property access or downstream casts; semantic validation remains server-side"
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful service result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "member": {
+                      "$ref": "#/components/schemas/AdminBotLabMember"
+                    },
+                    "email": {
+                      "type": "string"
+                    },
+                    "previous_email": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "had_sign_in": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "member",
+                    "email",
+                    "previous_email",
+                    "had_sign_in"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/lab/members/{members_id}/id": {
       "post": {
         "operationId": "post-lab-members-by-members-id-id",
@@ -29677,6 +29768,7 @@
               "paper_author_links.backfilled",
               "lab_member.merged",
               "lab_member.id_changed",
+              "lab_member.login_email_changed",
               "lab_member.deleted",
               "lab_members.purged_without_email",
               "lab_member_request.submitted",
