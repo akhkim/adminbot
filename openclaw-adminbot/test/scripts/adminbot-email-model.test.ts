@@ -138,6 +138,72 @@ describe("AdminBot email model", () => {
     expect(payload.messages[0]?.content).toContain("untrusted data");
   });
 
+  // A stopped vLLM unit surfaced in the cron history as "<id>: fetch failed" on every message for
+  // weeks. The error has to name the endpoint and the transport reason to be actionable.
+  it("names the endpoint and the reason when the local model is unreachable", async () => {
+    const refused = Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:8000"), {
+      code: "ECONNREFUSED",
+    });
+    const fetchMock = vi.fn<typeof fetch>(async () => {
+      throw new TypeError("fetch failed", { cause: refused });
+    });
+    const model = new AdminBotEmailModel(fetchMock, {
+      ADMINBOT_LOCAL_BASE_URL: "http://127.0.0.1:8000/v1/",
+    });
+
+    const error = await model
+      .classify({ from: "student@example.com", subject: "Research", body: "Can I join?" })
+      .catch((caught: unknown) => caught as Error);
+    expect(error.message).toContain(
+      "local model unreachable at http://127.0.0.1:8000/v1 (ECONNREFUSED)",
+    );
+    // The original undici error stays reachable for anything that logs the full chain.
+    expect((error.cause as Error).cause).toBe(refused);
+  });
+
+  it("keeps credentials in the base URL out of the error", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => {
+      throw new TypeError("fetch failed");
+    });
+    const model = new AdminBotEmailModel(fetchMock, {
+      ADMINBOT_LOCAL_BASE_URL: "http://user:hunter2@model.internal:8000/v1",
+    });
+
+    const error = await model
+      .classify({ from: "student@example.com", subject: "Research", body: "Can I join?" })
+      .catch((caught: unknown) => caught as Error);
+    expect(error.message).toContain("local model unreachable at http://model.internal:8000/v1");
+    expect(error.message).toContain("(fetch failed)");
+    expect(error.message).not.toContain("hunter2");
+  });
+
+  it("reports a model that never answers as a timeout rather than a network failure", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchMock = vi.fn<typeof fetch>(
+        (_url, init) =>
+          new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () =>
+              reject(new DOMException("This operation was aborted", "AbortError")),
+            );
+          }),
+      );
+      const model = new AdminBotEmailModel(fetchMock, {});
+      const failure = model.classify({
+        from: "student@example.com",
+        subject: "Research",
+        body: "Can I join?",
+      });
+      const settled = expect(failure).rejects.toThrow(
+        "local model at http://127.0.0.1:8000/v1 did not answer within 180s",
+      );
+      await vi.advanceTimersByTimeAsync(180_000);
+      await settled;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("rejects malformed model output before any action handler sees it", async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => {
       return new Response(
