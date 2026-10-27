@@ -24,8 +24,9 @@ const preamble = [
   "    if reactions is not None:",
   "        entry['reactions'] = reactions",
   "    return entry",
-  "def scenario(members, histories, live, cadence_days=3.0):",
+  "def scenario(members, histories, live, cadence_days=3.0, open_errors=None):",
   "    api_calls, slack_calls = [], []",
+  "    open_errors = open_errors or {}",
   "    def api_transport(method, url, headers, payload=None):",
   "        api_calls.append({'method': method, 'url': url, 'payload': payload})",
   "        if url.endswith('/pending'):",
@@ -34,6 +35,8 @@ const preamble = [
   "    def slack_transport(method, url, headers, payload=None):",
   "        slack_calls.append({'url': url, 'payload': payload})",
   "        if url.endswith('conversations.open'):",
+  "            if payload['users'] in open_errors:",
+  "                return {'ok': False, 'error': open_errors[payload['users']]}",
   "            return {'ok': True, 'channel': {'id': 'D-' + payload['users']}}",
   "        if url.endswith('conversations.history'):",
   "            return {'ok': True, 'messages': histories.get(payload['channel'], [])}",
@@ -127,6 +130,41 @@ describe("adminbot_onboarding_confirm.poll_step", () => {
     expect(result.report.outcomes).toMatchObject([{ member_id: "noslack", status: "skipped" }]);
     expect(result.posts).toEqual([]);
     expect(result.writes).toEqual([]);
+  });
+
+  it("reports a member whose Slack ID does not resolve and carries on with the rest", () => {
+    // Production shape: an import stored an email address as slack_user_id, conversations.open
+    // answered user_not_found, and the exception aborted every pass for weeks.
+    const result = runPython(
+      "print(json.dumps(scenario(" +
+        "[{'id': 'bad', 'name': 'Bad Id', 'slack_user_id': 'someone@example.com'}," +
+        "  {'id': 'kai', 'name': 'Kai', 'slack_user_id': 'U2'}]," +
+        " {'D-U2': [nudge(NOW - 5 * DAY)]}," +
+        " live=True, open_errors={'someone@example.com': 'user_not_found'})))",
+    );
+    expect(result.report.outcomes).toMatchObject([
+      {
+        member_id: "bad",
+        status: "unreachable",
+        reason: expect.stringContaining("user_not_found"),
+      },
+      { member_id: "kai", status: "renudged" },
+    ]);
+    expect(result.report.counts).toEqual({ unreachable: 1, renudged: 1 });
+    expect(result.posts).toMatchObject([{ channel: "D-U2" }]);
+    expect(result.writes).toEqual([]);
+  });
+
+  it("still fails the run on Slack errors that are not about one member", () => {
+    // A revoked token or missing scope would hit everyone alike; skipping each member would turn
+    // an outage into a green run that silently did nothing.
+    const script =
+      `${preamble}\n` +
+      "scenario([{'id': 'sam', 'name': 'Sam', 'slack_user_id': 'U1'}], {}, live=True," +
+      " open_errors={'U1': 'invalid_auth'})";
+    expect(() =>
+      execFileSync("python3", ["-c", script], { encoding: "utf8", cwd: repoRoot, stdio: "pipe" }),
+    ).toThrow(/slack conversations\.open failed: invalid_auth/);
   });
 
   it("dry-run reports the same decisions but sends and records nothing", () => {
