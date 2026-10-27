@@ -1014,6 +1014,13 @@ Run it on the Overleaf host with `ADMINBOT_URL` pointed at the service, or on th
 with the cache directory mounted or synced and `ADMINBOT_URL` left unset. A first pass against a
 full cache would otherwise report a year of old reviews as news, which is what `--since` is for.
 
+With neither, every run fails, naming the cache path it looked for. On an AdminBot host that has no
+cache and is not meant to (the reviews are collected on the Overleaf host, or not yet at all), set
+`ADMINBOT_PAPERMENTOR_DISABLED=1` in the cron environment and the job exits 0 saying it is off on
+purpose. The flag only covers "no cache here": a cache named in `ADMINBOT_PAPERMENTOR_CACHE_DIR`
+that goes missing or unreadable still fails, and a cache that appears later is read without
+clearing the flag. Until reviews are collected, authors tick `papermentor_review` by hand.
+
 `GET /papers/papermentor/runs?paper_id=` reads back what has been ingested, newest first, for an
 operator checking the collector is working.
 

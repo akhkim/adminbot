@@ -35,6 +35,7 @@ function cronEnv(dir: string, extra: Record<string, string>): NodeJS.ProcessEnv 
   delete env.PYTHONPATH;
   delete env.ADMINBOT_PYTHON;
   delete env.ADMINBOT_PAPERMENTOR_CACHE_DIR;
+  delete env.ADMINBOT_PAPERMENTOR_DISABLED;
   delete env.ADMINBOT_OPENREVIEW_RESULTS_JSON;
   delete env.ADMINBOT_DB_PATH;
   env.PYTHONNOUSERSITE = "1";
@@ -216,14 +217,19 @@ describe("cron service state dir", () => {
   });
 });
 
-function runPaperMentor(cacheDir: string | undefined, args: string[] = []) {
+function runPaperMentor(
+  cacheDir: string | undefined,
+  args: string[] = [],
+  { disabled = false } = {},
+) {
   const dir = tempDir("adminbot-papermentor-cron-");
   mkdirSync(path.join(dir, "home"), { recursive: true });
   const envFile = path.join(dir, "env");
   writeFileSync(
     envFile,
     "ADMINBOT_SERVICE_TOKEN=synthetic-test-token\n" +
-      (cacheDir ? `ADMINBOT_PAPERMENTOR_CACHE_DIR=${cacheDir}\n` : ""),
+      (cacheDir ? `ADMINBOT_PAPERMENTOR_CACHE_DIR=${cacheDir}\n` : "") +
+      (disabled ? "ADMINBOT_PAPERMENTOR_DISABLED=1\n" : ""),
   );
   return spawnSync("bash", ["scripts/adminbot-papermentor-cron.sh", ...args], {
     encoding: "utf8",
@@ -243,8 +249,42 @@ describe("papermentor runs cron", () => {
         "papermentor runs: PaperMentor cache /var/lib/overleaf/ai-tutor-cache is not a directory",
       );
       expect(lines[0]).toContain("ADMINBOT_PAPERMENTOR_CACHE_DIR is not set");
+      expect(lines[0]).toContain("or set ADMINBOT_PAPERMENTOR_DISABLED=1");
     },
   );
+
+  it.skipIf(existsSync("/var/lib/overleaf/ai-tutor-cache"))(
+    "exits 0 saying so when a host without a cache turns the job off on purpose",
+    () => {
+      const run = runPaperMentor(undefined, [], { disabled: true });
+      expect(run.stderr).toBe("");
+      expect(run.status).toBe(0);
+      expect(run.stdout.trim()).toBe(
+        "papermentor runs: disabled on purpose (ADMINBOT_PAPERMENTOR_DISABLED=1); no PaperMentor cache on this host",
+      );
+    },
+  );
+
+  it("still fails on a configured cache that is missing, even with the job turned off", () => {
+    // Naming a cache says one is supposed to be here; the opt-out must not hide that it broke.
+    const missing = path.join(tempDir("adminbot-papermentor-cache-"), "gone");
+    const run = runPaperMentor(missing, [], { disabled: true });
+    expect(run.status).toBe(1);
+    const lines = run.stderr.trim().split("\n");
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain(`PaperMentor cache ${missing} is not a directory`);
+    expect(lines[0]).toContain("from ADMINBOT_PAPERMENTOR_CACHE_DIR");
+    expect(lines[0]).not.toContain("ADMINBOT_PAPERMENTOR_DISABLED");
+  });
+
+  it("walks a configured cache even with the job turned off", () => {
+    // A cache mounted later is read without anyone having to remember to clear the flag.
+    const cache = tempDir("adminbot-papermentor-cache-");
+    const run = runPaperMentor(cache, ["--dry-run"], { disabled: true });
+    expect(run.stderr).toBe("");
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain("papermentor runs: 0 to post");
+  });
 
   it.skipIf(process.getuid?.() === 0)(
     "says a configured cache it cannot list is unreadable, instead of a bare EACCES",
