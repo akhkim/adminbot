@@ -145,6 +145,33 @@ test("reads the route table: fixed entries, '*' entries and prefix sub-routers",
   }
 });
 
+test("adjacent captures take their names from the handler's call", () => {
+  const example = fixture({
+    "routes/router.ts": ROUTER,
+    "routes/badges.ts": `
+      import { put, type Route } from "./router.js";
+      declare function removeBadge(memberId: string, badgeId: string): void;
+      export const badgeRoutes: readonly Route[] = [
+        put(/^\\/badges\\/assignments\\/([^/]+)\\/([^/]+)$/u, ({ params }) =>
+          removeBadge(decodeURIComponent(params[1]!), decodeURIComponent(params[2]!)),
+        ),
+      ];`,
+  });
+  try {
+    const paths = buildOpenApi(example.root).paths;
+    const operation = paths["/badges/assignments/{member_id}/{badge_id}"].put as {
+      operationId: string;
+    };
+    assert.equal(operation.operationId, "put-badges-assignments-by-member-id-by-badge-id");
+  } finally {
+    example.close();
+  }
+  assert.throws(
+    () => regexPaths("/^\\/pairs\\/([^/]+)\\/([^/]+)$/u"),
+    /Cannot name capture 1 of adjacent captures/u,
+  );
+});
+
 test("unrecognized route selectors fail generation rather than silently losing coverage", () => {
   assert.throws(() => regexPaths("/^\\/items\\/(\\d+)$/u"), /Unsupported route regex/u);
   const example = fixture({
