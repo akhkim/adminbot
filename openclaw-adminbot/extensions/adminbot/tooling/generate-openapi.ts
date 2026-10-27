@@ -303,18 +303,61 @@ export function buildOpenApi(root = extensionRoot) {
         declaration.initializer?.getText() === "url.searchParams",
       );
     };
-    for (const node of nodes) {
-      if (
-        ts.isCallExpression(node) &&
-        ts.isPropertyAccessExpression(node.expression) &&
-        ["get", "getAll", "has"].includes(node.expression.name.text) &&
-        isSearchParams(node.expression.expression) &&
-        node.arguments[0] &&
-        ts.isStringLiteral(node.arguments[0])
-      ) {
-        query.add(node.arguments[0].text);
+    // A reader or service method handed the whole query (`readPage(url.searchParams)`,
+    // `travel.whosIn(id, params)`) reads it through its own parameter, often outside src/api.
+    const followed = new Set<ts.Node>();
+    const collectQuery = (scope: readonly ts.Node[], isQuery: (e: ts.Expression) => boolean) => {
+      for (const node of scope) {
+        if (!ts.isCallExpression(node)) {
+          continue;
+        }
+        if (
+          ts.isPropertyAccessExpression(node.expression) &&
+          ["get", "getAll", "has"].includes(node.expression.name.text) &&
+          isQuery(node.expression.expression) &&
+          node.arguments[0] &&
+          ts.isStringLiteral(node.arguments[0])
+        ) {
+          query.add(node.arguments[0].text);
+        }
+        node.arguments.forEach((argument, index) => {
+          if (!isQuery(argument)) {
+            return;
+          }
+          let symbol = checker.getSymbolAtLocation(node.expression);
+          if (symbol?.flags && symbol.flags & ts.SymbolFlags.Alias) {
+            symbol = checker.getAliasedSymbol(symbol);
+          }
+          for (const declaration of symbol?.declarations ?? []) {
+            const callee =
+              ts.isVariableDeclaration(declaration) && declaration.initializer
+                ? declaration.initializer
+                : declaration;
+            if (
+              !(ts.isFunctionLike(callee) && "body" in callee && callee.body) ||
+              callee.getSourceFile().fileName.includes("/node_modules/") ||
+              followed.has(callee)
+            ) {
+              continue;
+            }
+            const parameter = callee.parameters[index]?.name;
+            if (!parameter || !ts.isIdentifier(parameter)) {
+              continue;
+            }
+            followed.add(callee);
+            const inner: ts.Node[] = [];
+            visit(callee.body as ts.Node, (child) => inner.push(child));
+            collectQuery(
+              inner,
+              (expression) =>
+                ts.isIdentifier(expression) &&
+                checker.getSymbolAtLocation(expression)?.valueDeclaration === parameter.parent,
+            );
+          }
+        });
       }
-    }
+    };
+    collectQuery(nodes, isSearchParams);
     for (const node of nodes) {
       if (ts.isPropertyAccessExpression(node) && node.expression.getText() === "req.headers") {
         headers.add(node.name.text);

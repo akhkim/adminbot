@@ -172,6 +172,36 @@ test("adjacent captures take their names from the handler's call", () => {
   );
 });
 
+// Routes that hand url.searchParams to a reader or a service method must still list the query
+// it reads; otherwise the CLI has no flag for it (who's-in had no --place, lists no --cursor).
+test("query names read by a helper or service method that receives url.searchParams", () => {
+  const example = fixture({
+    "routes/router.ts": ROUTER,
+    "routes/trips.ts": `
+      import { get, type Route } from "./router.js";
+      function readPage(params: URLSearchParams) { return { limit: params.get("limit"), cursor: params.get("cursor") }; }
+      class Travel {
+        whosIn(memberId: string, query: URLSearchParams) { return [memberId, query.get("place"), query.has("from")]; }
+      }
+      declare const travel: Travel;
+      export const tripRoutes: readonly Route[] = [
+        get("/trips", ({ url }) => readPage(url.searchParams)),
+        get("/whos-in", ({ url }) => { const params = url.searchParams; return travel.whosIn("me", params); }),
+      ];`,
+  });
+  try {
+    const paths = buildOpenApi(example.root).paths;
+    const names = (path: string) =>
+      ((paths[path].get as { parameters: { name: string; in: string }[] }).parameters ?? [])
+        .filter((parameter) => parameter.in === "query")
+        .map((parameter) => parameter.name);
+    assert.deepEqual(names("/trips"), ["cursor", "limit"]);
+    assert.deepEqual(names("/whos-in"), ["from", "place"]);
+  } finally {
+    example.close();
+  }
+});
+
 test("unrecognized route selectors fail generation rather than silently losing coverage", () => {
   assert.throws(() => regexPaths("/^\\/items\\/(\\d+)$/u"), /Unsupported route regex/u);
   const example = fixture({

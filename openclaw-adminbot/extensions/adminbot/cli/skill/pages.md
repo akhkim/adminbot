@@ -170,21 +170,21 @@ Website: `/members` · Who: member (edits: admin)
 
 Website: `/badges` · Who: admin
 
-| Operation ID                                                 | Route                                                       |
-| ------------------------------------------------------------ | ----------------------------------------------------------- |
-| `delete-badges-assignments-by-assignments-id-by-{param1}-id` | DELETE `/badges/assignments/{assignments_id}/{{param1}_id}` |
-| `get-badges-nominations`                                     | GET `/badges/nominations`                                   |
-| `get-badges-suggestions`                                     | GET `/badges/suggestions`                                   |
-| `get-badges`                                                 | GET `/badges`                                               |
-| `post-badges-assignments`                                    | POST `/badges/assignments`                                  |
-| `post-badges-nominations-by-nominations-id-approve`          | POST `/badges/nominations/{nominations_id}/approve`         |
-| `post-badges-nominations-by-nominations-id-reject`           | POST `/badges/nominations/{nominations_id}/reject`          |
-| `post-badges-nominations`                                    | POST `/badges/nominations`                                  |
-| `post-badges-suggestions-by-suggestions-id-approve`          | POST `/badges/suggestions/{suggestions_id}/approve`         |
-| `post-badges-suggestions-by-suggestions-id-reject`           | POST `/badges/suggestions/{suggestions_id}/reject`          |
-| `post-badges-suggestions`                                    | POST `/badges/suggestions`                                  |
-| `post-badges`                                                | POST `/badges`                                              |
-| `put-badges-by-badges-id`                                    | PUT `/badges/{badges_id}`                                   |
+| Operation ID                                         | Route                                               |
+| ---------------------------------------------------- | --------------------------------------------------- |
+| `delete-badges-assignments-by-member-id-by-badge-id` | DELETE `/badges/assignments/{member_id}/{badge_id}` |
+| `get-badges-nominations`                             | GET `/badges/nominations`                           |
+| `get-badges-suggestions`                             | GET `/badges/suggestions`                           |
+| `get-badges`                                         | GET `/badges`                                       |
+| `post-badges-assignments`                            | POST `/badges/assignments`                          |
+| `post-badges-nominations-by-nominations-id-approve`  | POST `/badges/nominations/{nominations_id}/approve` |
+| `post-badges-nominations-by-nominations-id-reject`   | POST `/badges/nominations/{nominations_id}/reject`  |
+| `post-badges-nominations`                            | POST `/badges/nominations`                          |
+| `post-badges-suggestions-by-suggestions-id-approve`  | POST `/badges/suggestions/{suggestions_id}/approve` |
+| `post-badges-suggestions-by-suggestions-id-reject`   | POST `/badges/suggestions/{suggestions_id}/reject`  |
+| `post-badges-suggestions`                            | POST `/badges/suggestions`                          |
+| `post-badges`                                        | POST `/badges`                                      |
+| `put-badges-by-badges-id`                            | PUT `/badges/{badges_id}`                           |
 
 ## Reimbursements
 

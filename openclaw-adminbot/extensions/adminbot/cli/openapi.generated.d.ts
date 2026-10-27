@@ -14549,7 +14549,13 @@ export interface operations {
   };
   "get-lab-sharing-discover": {
     parameters: {
-      query?: never;
+      query?: {
+        cursor?: string;
+        limit?: string;
+        max_hours?: string;
+        q?: string;
+        sort?: string;
+      };
       header?: never;
       path?: never;
       cookie?: never;
@@ -17789,7 +17795,15 @@ export interface operations {
   };
   "get-logistics-requests": {
     parameters: {
-      query?: never;
+      query?: {
+        cursor?: string;
+        dir?: string;
+        kind?: string;
+        limit?: string;
+        q?: string;
+        sort?: string;
+        status?: string;
+      };
       header?: never;
       path?: never;
       cookie?: never;
@@ -19533,6 +19547,13 @@ export interface operations {
   "get-members-profile-overview": {
     parameters: {
       query?: {
+        activity?: string;
+        cursor?: string;
+        gap?: string;
+        limit?: string;
+        member_types?: string;
+        membership?: string;
+        q?: string;
         view?: string;
       };
       header?: never;
@@ -26832,7 +26853,11 @@ export interface operations {
   };
   "get-travel-whos-in": {
     parameters: {
-      query?: never;
+      query?: {
+        from?: string;
+        place?: string;
+        to?: string;
+      };
       header?: never;
       path?: never;
       cookie?: never;
