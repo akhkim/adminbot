@@ -251,16 +251,49 @@ describe("loadAdminBot over the member session", () => {
       headers: { "Content-Type": "application/json" },
     });
 
-  it("loads the entire roster without pagination or server search", async () => {
+  it("requests a filtered page and retains the global options and filtered total", async () => {
     saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
     const { host } = createHost({});
-    host.adminBotMemberList = createEmptyAdminBotMemberList();
-    const members = Array.from({ length: 125 }, (_, i) => ({ id: `person-${i}` }));
-    const fetchMock = routedFetch({ "/lab/members": () => json({ members }) });
-    await loadAdminBotMemberList(host);
-    expect(String(fetchMock.mock.calls[0]?.[0])).toMatch(/\/lab\/members$/);
-    expect(host.adminBotMemberList.rows).toEqual(members);
-    expect(host.adminBotMemberList.loading).toBe(false);
+    const page = {
+      ...createEmptyAdminBotMemberList(),
+      members: [{ id: "person-90" }],
+      total: 101,
+      offset: 50,
+      filters: { location: "Zurich" },
+    };
+    const fetchMock = routedFetch({ "/lab/members/roster?": () => json(page) });
+    await loadAdminBotMemberList(host, { location: "Zurich" }, 50);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain(
+      "/lab/members/roster?limit=50&offset=50&location=Zurich",
+    );
+    expect(host.adminBotMemberList).toMatchObject({
+      rows: [{ id: "person-90" }],
+      total: 101,
+      offset: 50,
+      filters: { location: "Zurich" },
+      loading: false,
+    });
+  });
+
+  it("ignores an older page when filter requests finish out of order", async () => {
+    saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    const resolves: ((r: Response) => void)[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolves.push(resolve);
+        }),
+    );
+    const old = loadAdminBotMemberList(host, { q: "old" });
+    const current = loadAdminBotMemberList(host, { q: "new" }, 0);
+    const response = (id: string) =>
+      json({ ...createEmptyAdminBotMemberList(), members: [{ id }], total: 1, filters: { q: id } });
+    resolves[1]!(response("new"));
+    await current;
+    resolves[0]!(response("old"));
+    await old;
+    expect(host.adminBotMemberList?.rows).toEqual([{ id: "new" }]);
   });
 
   it("discards a roster response after the session changes", async () => {
@@ -306,7 +339,7 @@ describe("loadAdminBot over the member session", () => {
   it("keeps a failed roster page retryable with a useful error", async () => {
     saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
     const { host } = createHost({});
-    routedFetch({ "/lab/members": () => json({ error: { message: "temporary" } }, 503) });
+    routedFetch({ "/lab/members/roster?": () => json({ error: { message: "temporary" } }, 503) });
 
     await loadAdminBotMemberList(host);
 
@@ -1369,11 +1402,6 @@ describe("saveAdminBotOwnProfile", () => {
     host.adminBotData.members = [
       { id: "pat", name: "Pat", assigned_badges: [{ id: "badge-1" }] } as never,
     ];
-    host.adminBotMemberList = {
-      ...createEmptyAdminBotMemberList(),
-      rows: [{ id: "pat", name: "Pat" } as never, { id: "lee", name: "Lee" } as never],
-      loadedAt: 12,
-    };
     host.client = {
       request: async (_method: string, params: { name?: string }) => {
         toolInvocations.push(params.name ?? "");
@@ -1407,11 +1435,60 @@ describe("saveAdminBotOwnProfile", () => {
       name: "Pat Doe",
       assigned_badges: [{ id: "badge-1" }],
     });
-    expect(host.adminBotMemberList.rows.map((member) => member.name)).toEqual(["Pat Doe", "Lee"]);
-    expect(host.adminBotMemberList.loadedAt).toBe(12);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(host.adminBotLoading).toBe(false);
   });
+
+  it.each([false, true])(
+    "refreshes the current roster query after a profile edit (loading=%s)",
+    async (loading) => {
+      saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+      const { host } = createHost({});
+      const pat = { id: "pat", name: "Pat", location: "Zurich" };
+      host.adminBotData.members = [pat as never];
+      host.adminBotMemberList = {
+        ...createEmptyAdminBotMemberList(),
+        rows: loading ? [] : [pat as never],
+        filters: { location: "Zurich" },
+        offset: 50,
+        total: 51,
+        loading,
+        loadedAt: loading ? null : 12,
+      };
+      const refreshed = {
+        ...createEmptyAdminBotMemberList(),
+        members: [{ id: "lee", name: "Lee", location: "Zurich" }],
+        filters: { location: "Zurich" },
+        total: 1,
+        offset: 0,
+        options: { ...createEmptyAdminBotMemberList().options, location: ["London", "Zurich"] },
+      };
+      const fetchMock = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ ...pat, location: "London" }), { status: 200 }),
+        )
+        .mockResolvedValueOnce(new Response(JSON.stringify(refreshed), { status: 200 }));
+
+      await saveAdminBotOwnProfile(host, "pat", { location: "London" });
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(String(fetchMock.mock.calls[1]![0])).toContain(
+        "/lab/members/roster?limit=50&offset=50&location=Zurich",
+      );
+      expect(host.adminBotData.members[0]?.location).toBe("London");
+      expect(host.adminBotMemberList).toMatchObject({
+        rows: refreshed.members,
+        total: 1,
+        offset: 0,
+        options: refreshed.options,
+        filters: refreshed.filters,
+        loading: false,
+        error: null,
+      });
+      expect(host.adminBotNotice?.kind).toBe("success");
+    },
+  );
 
   it("shows correspondence validation errors without replacing saved profile or roster values", async () => {
     saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });

@@ -134,6 +134,7 @@ Website: `/members` · Who: member (edits: admin)
 | `get-lab-members-by-members-id-travel`       | GET `/lab/members/{members_id}/travel`                  |
 | `get-lab-members-collaborator-schedules`     | GET `/lab/members/collaborator-schedules`               |
 | `get-lab-members-duplicates`                 | GET `/lab/members/duplicates`                           |
+| `get-lab-members-roster`                     | GET `/lab/members/roster`                               |
 | `get-lab-members-self`                       | GET `/lab/members/self`                                 |
 | `get-lab-members-without-email`              | GET `/lab/members/without-email`                        |
 | `get-lab-members`                            | GET `/lab/members`                                      |

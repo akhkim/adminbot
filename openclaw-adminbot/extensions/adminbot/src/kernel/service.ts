@@ -204,6 +204,7 @@ import {
   readAdminBotMemberRequest,
 } from "../contracts/member-requests.js";
 import { parseAdminBotMemberRoles } from "../contracts/member-roles.js";
+import type { MemberRosterQuery } from "../contracts/member-roster.js";
 import type { OpenReviewCitationCheckStore } from "../contracts/openreview-citation-checks.js";
 import {
   ADMINBOT_OPPORTUNITY_TEXT_MAX,
@@ -369,6 +370,7 @@ import {
   type AdminBotCityCentroidResolver,
   type AdminBotMemberMap,
 } from "../workflows/members/member-map.js";
+import { memberRosterPage } from "../workflows/members/member-roster.js";
 import { summarizeLabMember } from "../workflows/members/member-summary.js";
 import {
   dormantChaseDue,
@@ -4100,6 +4102,31 @@ export class AdminBotService {
         subject: digest.subject,
         body: digest.body,
       },
+    };
+  }
+
+  listMemberRoster(query: MemberRosterQuery, meetingMembers?: ReadonlySet<string>) {
+    const page = memberRosterPage(
+      this.store.listLabMembers(),
+      this.store.listPapers(),
+      query,
+      meetingMembers,
+    );
+    const { badgesById, assignmentsByMember } = this.rosterBadgeViews(
+      page.members.map((member) => member.id),
+    );
+    const deadlines = page.members.some((member) => member.milestones?.length)
+      ? this.deadlineReadModel(DEADLINE_VENUES)
+      : undefined;
+    return {
+      ...page,
+      members: page.members.map((member) =>
+        this.memberView(
+          member,
+          this.assignedBadgesFor(member.id, assignmentsByMember.get(member.id) ?? [], badgesById),
+          deadlines,
+        ),
+      ),
     };
   }
 

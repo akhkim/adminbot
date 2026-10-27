@@ -104,7 +104,8 @@ export function renderAdminPanelsSurface(state: AppViewState, scope: AdminBotSur
           loading: state.adminBotLoading,
           error: state.adminBotError,
           data: state.adminBotData,
-          memberList: adminBotPanel === "members" ? state.adminBotMemberList : undefined,
+          memberList:
+            adminBotPanel === "members" && hasMemberSession ? state.adminBotMemberList : undefined,
           standingMeetings:
             adminBotPanel === "members" ? state.adminBotStandingMeetings : undefined,
           onboardingSlackChannels: state.myWorkChannelCheck,
@@ -153,8 +154,10 @@ export function renderAdminPanelsSurface(state: AppViewState, scope: AdminBotSur
           onLoadFullRoster: () => {
             void loadAdminBotRoster(state).finally(() => requestHostUpdate?.());
           },
-          onMemberListChange: () => {
-            void loadAdminBotMemberList(state).finally(() => requestHostUpdate?.());
+          onMemberListChange: (filters, offset) => {
+            void loadAdminBotMemberList(state, filters, offset).finally(() =>
+              requestHostUpdate?.(),
+            );
           },
           busyActionId: state.adminBotBusyActionId,
           notice: state.adminBotNotice,
