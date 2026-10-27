@@ -734,7 +734,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/badges/assignments/{assignments_id}/{{param1}_id}": {
+  "/badges/assignments/{member_id}/{badge_id}": {
     parameters: {
       query?: never;
       header?: never;
@@ -744,8 +744,8 @@ export interface paths {
     get?: never;
     put?: never;
     post?: never;
-    /** DELETE /badges/assignments/{assignments_id}/{{param1}_id} */
-    delete: operations["delete-badges-assignments-by-assignments-id-by-{param1}-id"];
+    /** DELETE /badges/assignments/{member_id}/{badge_id} */
+    delete: operations["delete-badges-assignments-by-member-id-by-badge-id"];
     options?: never;
     head?: never;
     patch?: never;
@@ -11883,13 +11883,13 @@ export interface operations {
       };
     };
   };
-  "delete-badges-assignments-by-assignments-id-by-{param1}-id": {
+  "delete-badges-assignments-by-member-id-by-badge-id": {
     parameters: {
       query?: never;
       header?: never;
       path: {
-        assignments_id: string;
-        "{param1": string;
+        member_id: string;
+        badge_id: string;
       };
       cookie?: never;
     };

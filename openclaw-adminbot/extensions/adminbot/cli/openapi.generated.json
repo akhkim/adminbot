@@ -3052,17 +3052,17 @@
         }
       }
     },
-    "/badges/assignments/{assignments_id}/{{param1}_id}": {
+    "/badges/assignments/{member_id}/{badge_id}": {
       "delete": {
-        "operationId": "delete-badges-assignments-by-assignments-id-by-{param1}-id",
-        "summary": "DELETE /badges/assignments/{assignments_id}/{{param1}_id}",
+        "operationId": "delete-badges-assignments-by-member-id-by-badge-id",
+        "summary": "DELETE /badges/assignments/{member_id}/{badge_id}",
         "tags": [
           "badges"
         ],
         "x-source": "src/api/routes/badges.ts",
         "parameters": [
           {
-            "name": "assignments_id",
+            "name": "member_id",
             "in": "path",
             "required": true,
             "schema": {
@@ -3071,7 +3071,7 @@
             }
           },
           {
-            "name": "{param1",
+            "name": "badge_id",
             "in": "path",
             "required": true,
             "schema": {
