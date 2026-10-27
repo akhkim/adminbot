@@ -405,6 +405,26 @@ describe("applySettingsFromUrl", () => {
     expect(window.location.search).toBe("?signedOut=login");
   });
 
+  it("reads an adminbot auth login code into state and strips it from the address bar", () => {
+    setTestWindowUrl("https://control.example/profile?cliLogin=bcdfghjk");
+    const host = createHost("profile") as SettingsHost & { cliLoginCode?: string };
+
+    applySettingsFromUrl(host);
+
+    expect(host.cliLoginCode).toBe("BCDF-GHJK");
+    expect(window.location.search).toBe("");
+  });
+
+  it("drops a cliLogin value that is not a login code", () => {
+    setTestWindowUrl("https://control.example/profile?cliLogin=%3Cscript%3E");
+    const host = createHost("profile") as SettingsHost & { cliLoginCode?: string };
+
+    applySettingsFromUrl(host);
+
+    expect(host.cliLoginCode).toBeUndefined();
+    expect(window.location.search).toBe("");
+  });
+
   it("hydrates native Mac app auth before the first connection", () => {
     setTestWindowUrl("https://control.example/ui/chat");
     (

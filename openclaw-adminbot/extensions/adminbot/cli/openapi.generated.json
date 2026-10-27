@@ -395,6 +395,167 @@
         }
       }
     },
+    "/auth/api-tokens": {
+      "get": {
+        "operationId": "get-auth-api-tokens",
+        "summary": "GET /auth/api-tokens",
+        "tags": [
+          "auth"
+        ],
+        "x-source": "src/api/routes/api-tokens.ts",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "allowed": {
+                      "type": "boolean"
+                    },
+                    "tokens": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AdminBotApiTokenView"
+                      }
+                    }
+                  },
+                  "required": [
+                    "allowed",
+                    "tokens"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "post-auth-api-tokens",
+        "summary": "POST /auth/api-tokens",
+        "tags": [
+          "auth"
+        ],
+        "x-source": "src/api/routes/api-tokens.ts",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {},
+                  "expires_in_days": {},
+                  "password": {}
+                },
+                "additionalProperties": true,
+                "x-schema-coverage": "inferred from property access or downstream casts; semantic validation remains server-side"
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success; response shape is validated by the server"
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/api-tokens/{api_tokens_id}": {
+      "delete": {
+        "operationId": "delete-auth-api-tokens-by-api-tokens-id",
+        "summary": "DELETE /auth/api-tokens/{api_tokens_id}",
+        "tags": [
+          "auth"
+        ],
+        "x-source": "src/api/routes/api-tokens.ts",
+        "parameters": [
+          {
+            "name": "api_tokens_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success; response shape is validated by the server"
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/api-tokens/revoke-all": {
+      "post": {
+        "operationId": "post-auth-api-tokens-revoke-all",
+        "summary": "POST /auth/api-tokens/revoke-all",
+        "tags": [
+          "auth"
+        ],
+        "x-source": "src/api/routes/api-tokens.ts",
+        "responses": {
+          "2XX": {
+            "description": "Success; response shape is validated by the server"
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/auth/claim": {
       "post": {
         "operationId": "post-auth-claim",
@@ -611,6 +772,225 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/device/approve": {
+      "post": {
+        "operationId": "post-auth-device-approve",
+        "summary": "POST /auth/device/approve",
+        "tags": [
+          "auth"
+        ],
+        "x-source": "src/api/routes/api-tokens.ts",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "user_code": {},
+                  "password": {}
+                },
+                "additionalProperties": true,
+                "x-schema-coverage": "inferred from property access or downstream casts; semantic validation remains server-side"
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success; response shape is validated by the server"
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/device/deny": {
+      "post": {
+        "operationId": "post-auth-device-deny",
+        "summary": "POST /auth/device/deny",
+        "tags": [
+          "auth"
+        ],
+        "x-source": "src/api/routes/api-tokens.ts",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "user_code": {}
+                },
+                "additionalProperties": true,
+                "x-schema-coverage": "inferred from property access or downstream casts; semantic validation remains server-side"
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success; response shape is validated by the server"
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/device/lookup": {
+      "post": {
+        "operationId": "post-auth-device-lookup",
+        "summary": "POST /auth/device/lookup",
+        "tags": [
+          "auth"
+        ],
+        "x-source": "src/api/routes/api-tokens.ts",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "user_code": {}
+                },
+                "additionalProperties": true,
+                "x-schema-coverage": "inferred from property access or downstream casts; semantic validation remains server-side"
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success; response shape is validated by the server"
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/device/poll": {
+      "post": {
+        "operationId": "post-auth-device-poll",
+        "summary": "POST /auth/device/poll",
+        "tags": [
+          "auth"
+        ],
+        "x-source": "src/api/routes/api-tokens.ts",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "device_code": {}
+                },
+                "additionalProperties": true,
+                "x-schema-coverage": "inferred from property access or downstream casts; semantic validation remains server-side"
+              }
+            }
+          }
+        },
+        "security": [],
+        "responses": {
+          "2XX": {
+            "description": "Success; response shape is validated by the server"
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/device/start": {
+      "post": {
+        "operationId": "post-auth-device-start",
+        "summary": "POST /auth/device/start",
+        "tags": [
+          "auth"
+        ],
+        "x-source": "src/api/routes/api-tokens.ts",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {},
+                  "expires_in_days": {}
+                },
+                "additionalProperties": true,
+                "x-schema-coverage": "inferred from property access or downstream casts; semantic validation remains server-side"
+              }
+            }
+          }
+        },
+        "security": [],
+        "responses": {
+          "2XX": {
+            "description": "Success; response shape is validated by the server"
           },
           "default": {
             "description": "Authentication, authorization, validation, policy, or connector error",
@@ -10189,10 +10569,10 @@
                       "items": {
                         "type": "object",
                         "properties": {
-                          "id": {
+                          "name": {
                             "type": "string"
                           },
-                          "name": {
+                          "id": {
                             "type": "string"
                           },
                           "hours_per_week": {
@@ -10212,8 +10592,8 @@
                           }
                         },
                         "required": [
-                          "id",
-                          "name"
+                          "name",
+                          "id"
                         ],
                         "additionalProperties": true
                       }
@@ -28708,6 +29088,12 @@
               "auth.login_location_suspected_vpn",
               "auth.impersonation_started",
               "auth.impersonation_ended",
+              "auth.api_token.created",
+              "auth.api_token.revoked",
+              "auth.api_token.revoked_all",
+              "auth.api_token.new_ip",
+              "auth.api_token.cli_login_started",
+              "auth.api_token.cli_login_denied",
               "member.slack_stopped",
               "member.slack_started",
               "member.location_observed",
@@ -28746,6 +29132,59 @@
           "id",
           "type",
           "timestamp"
+        ],
+        "additionalProperties": true
+      },
+      "AdminBotApiTokenView": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "hint": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string"
+          },
+          "created_ip": {
+            "type": "string"
+          },
+          "last_used_at": {
+            "type": "string"
+          },
+          "last_used_ip": {
+            "type": "string"
+          },
+          "last_used_place": {
+            "type": "string"
+          },
+          "ip_count": {
+            "type": "number"
+          },
+          "revoked_at": {
+            "type": "string"
+          },
+          "revoked_reason": {
+            "type": "string"
+          },
+          "current": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "hint",
+          "created_at",
+          "expires_at",
+          "ip_count"
         ],
         "additionalProperties": true
       },
@@ -28859,13 +29298,13 @@
       "AdminBotLabMember": {
         "type": "object",
         "properties": {
+          "name": {
+            "type": "string"
+          },
           "email": {
             "type": "string"
           },
           "id": {
-            "type": "string"
-          },
-          "name": {
             "type": "string"
           },
           "preferred_name": {
@@ -29297,8 +29736,8 @@
           }
         },
         "required": [
-          "id",
           "name",
+          "id",
           "privilege_level",
           "access",
           "created_at",
@@ -29946,10 +30385,10 @@
       "AdminBotBadgeDefinition": {
         "type": "object",
         "properties": {
-          "id": {
+          "name": {
             "type": "string"
           },
-          "name": {
+          "id": {
             "type": "string"
           },
           "category": {
@@ -29978,8 +30417,8 @@
           }
         },
         "required": [
-          "id",
           "name",
+          "id",
           "category",
           "description",
           "family_key",
@@ -31488,13 +31927,13 @@
       "AdminBotLabMemberView": {
         "type": "object",
         "properties": {
+          "name": {
+            "type": "string"
+          },
           "email": {
             "type": "string"
           },
           "id": {
-            "type": "string"
-          },
-          "name": {
             "type": "string"
           },
           "preferred_name": {
@@ -31932,8 +32371,8 @@
           }
         },
         "required": [
-          "id",
           "name",
+          "id",
           "privilege_level",
           "access",
           "created_at",
@@ -31944,6 +32383,9 @@
       "AdminBotLabMemberSummary": {
         "type": "object",
         "properties": {
+          "name": {
+            "type": "string"
+          },
           "email": {
             "type": "string"
           },
@@ -31957,9 +32399,6 @@
             ]
           },
           "id": {
-            "type": "string"
-          },
-          "name": {
             "type": "string"
           },
           "preferred_name": {
@@ -32395,9 +32834,9 @@
           }
         },
         "required": [
+          "name",
           "privilege_level",
           "id",
-          "name",
           "created_at",
           "updated_at"
         ],
@@ -32610,16 +33049,16 @@
       "AdminBotMemberRequestProfile": {
         "type": "object",
         "properties": {
-          "email": {
+          "name": {
             "type": "string"
           },
-          "name": {
+          "email": {
             "type": "string"
           }
         },
         "required": [
-          "email",
-          "name"
+          "name",
+          "email"
         ],
         "additionalProperties": true
       },
@@ -37916,10 +38355,10 @@
       "OpportunityWire": {
         "type": "object",
         "properties": {
-          "id": {
+          "name": {
             "type": "string"
           },
-          "name": {
+          "id": {
             "type": "string"
           },
           "status": {
@@ -37999,8 +38438,8 @@
           }
         },
         "required": [
-          "id",
           "name",
+          "id",
           "status",
           "category",
           "deadline_aoe"
@@ -39251,10 +39690,10 @@
       "ConferenceRosterWirePerson": {
         "type": "object",
         "properties": {
-          "member_id": {
+          "name": {
             "type": "string"
           },
-          "name": {
+          "member_id": {
             "type": "string"
           },
           "avatar_url": {

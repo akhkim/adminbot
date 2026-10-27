@@ -125,6 +125,8 @@ type SettingsHost = ProfileGateState & {
   guestReimbursements?: boolean;
   pendingGatewayToken?: string | null;
   passwordResetToken?: string;
+  // The code from `adminbot auth login`'s link, shown on My Profile for the member to approve.
+  cliLoginCode?: string;
   loginMode?: import("./adminbot/auth/flow.ts").LoginMode;
   requestUpdate?: () => void;
   updateComplete?: Promise<unknown>;
@@ -347,6 +349,21 @@ export function applySettingsFromUrl(host: SettingsHost) {
     }
     params.delete("passwordReset");
     hashParams.delete("passwordReset");
+    shouldCleanUrl = true;
+  }
+
+  // The code `adminbot auth login` printed, from the link it opened on My Profile. Not a secret --
+  // approving it takes the member's password -- but stripped like the reset token so a copied
+  // address bar cannot carry someone else's pending login. The shape check keeps arbitrary text
+  // out of the approval card.
+  const cliLoginRaw = params.get("cliLogin") ?? hashParams.get("cliLogin");
+  if (cliLoginRaw != null) {
+    const code = normalizeOptionalString(cliLoginRaw)?.toUpperCase();
+    if (code && /^[A-Z]{4}-?[A-Z]{4}$/u.test(code)) {
+      host.cliLoginCode = code.includes("-") ? code : `${code.slice(0, 4)}-${code.slice(4)}`;
+    }
+    params.delete("cliLogin");
+    hashParams.delete("cliLogin");
     shouldCleanUrl = true;
   }
 

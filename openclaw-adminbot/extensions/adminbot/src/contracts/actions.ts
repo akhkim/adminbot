@@ -2874,6 +2874,13 @@ export type AdminBotAuditEvent = {
     // an answer to, and an unclosed start is itself worth being able to see.
     | "auth.impersonation_started"
     | "auth.impersonation_ended"
+    // Personal API tokens (docs/adminbot/api-tokens.md). Never carries the secret, only its id.
+    | "auth.api_token.created"
+    | "auth.api_token.revoked"
+    | "auth.api_token.revoked_all"
+    | "auth.api_token.new_ip"
+    | "auth.api_token.cli_login_started"
+    | "auth.api_token.cli_login_denied"
     // Where members are. An observation is a fact about a person's whereabouts, and the answer to
     // the prompt is the only thing that turns one into a profile change, so both are recorded.
     | "member.slack_stopped"
