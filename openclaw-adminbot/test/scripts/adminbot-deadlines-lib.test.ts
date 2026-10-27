@@ -1440,3 +1440,137 @@ print(json.dumps({
     pending_2027: true,
   });
 });
+
+describe("deadline matcher sheet loading", () => {
+  // Stands in for gog: answers `sheets metadata` with two tabs (the first with gid 0, which the
+  // Sheets API leaves out of its JSON) and `sheets get` with the rows of whichever tab was asked for.
+  const fakeRun =
+    "calls = []\n" +
+    "def run(args):\n" +
+    "    calls.append(args)\n" +
+    "    if args[1] == 'metadata':\n" +
+    "        return {'sheets': [{'properties': {'title': 'Lead'}},\n" +
+    "                           {'properties': {'sheetId': 846550934, 'title': \"Paper's submissions\"}}]}\n" +
+    "    return {'range': args[3], 'values': [['', 'Title', 'Venue'], ['1', 'A paper', 2026]]}\n";
+
+  it("reads the tab by gid as the gog account, and stringifies cells like a CSV export would", () => {
+    expect(
+      runPython(
+        "m = load('adminbot-deadline-match')\n" +
+          fakeRun +
+          "rows = m.read_sheet_tab('sheet-id', '846550934', 'Paper submissions', run)\n" +
+          "print(json.dumps({'rows': rows, 'calls': calls}))",
+      ),
+    ).toEqual({
+      rows: [
+        ["", "Title", "Venue"],
+        ["1", "A paper", "2026"],
+      ],
+      calls: [
+        ["sheets", "metadata", "sheet-id"],
+        ["sheets", "get", "sheet-id", "'Paper''s submissions'"],
+      ],
+    });
+  });
+
+  it("treats a tab with no sheetId as gid 0", () => {
+    expect(
+      runPython(
+        "m = load('adminbot-deadline-match')\n" +
+          fakeRun +
+          "m.read_sheet_tab('sheet-id', '0', 'Lead', run)\n" +
+          "print(json.dumps(calls[-1]))",
+      ),
+    ).toEqual(["sheets", "get", "sheet-id", "'Lead'"]);
+  });
+
+  it("fails naming the gid when the spreadsheet has no such tab", () => {
+    expect(
+      runPython(
+        "m = load('adminbot-deadline-match')\n" +
+          fakeRun +
+          "try:\n" +
+          "    m.read_sheet_tab('sheet-id', '1634319760', 'Formatted Papers', run)\n" +
+          "except SystemExit as e:\n" +
+          "    print(json.dumps(str(e)))",
+      ),
+    ).toBe("spreadsheet sheet-id has no tab with gid 1634319760 (expected 'Formatted Papers')");
+  });
+
+  // The live failure: 63 nights of "no CSV path and no sheet id", which named neither variable.
+  it("names the missing variable for the required tab, and skips an optional one", () => {
+    expect(
+      runPython(
+        "m = load('adminbot-deadline-match')\n" +
+          "try:\n" +
+          "    m.read_csv(None, '', '846550934', 'Paper submissions', 'ADMINBOT_ONGOING_SHEET_ID')\n" +
+          "except SystemExit as e:\n" +
+          "    required = str(e)\n" +
+          "optional = m.read_csv(None, '', '1634319760', 'Formatted Papers', 'ADMINBOT_READY_SHEET_ID', required=False)\n" +
+          "print(json.dumps([required, optional]))",
+      ),
+    ).toEqual([
+      "ADMINBOT_ONGOING_SHEET_ID is not set and no CSV was given: nothing to read the 'Paper submissions' tab from",
+      null,
+    ]);
+  });
+
+  it("runs gog read-only as GOG_ACCOUNT and surfaces its stderr on failure", () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "adminbot-fake-gog-"));
+    temporaryDirectories.push(directory);
+    const fakeGog = path.join(directory, "gog");
+    fs.writeFileSync(
+      fakeGog,
+      [
+        "#!/bin/sh",
+        'case "$*" in',
+        '  *metadata*) printf \'%s\n\' "$*" >&2; echo "Google API error (403 forbidden): no" >&2; exit 1 ;;',
+        "esac",
+        'printf \'{"argv": "%s"}\n\' "$*"',
+      ].join("\n"),
+      { mode: 0o755 },
+    );
+    expect(
+      runPython(
+        `import os\nos.environ['GOG_BIN'] = ${JSON.stringify(fakeGog)}\n` +
+          "os.environ['GOG_ACCOUNT'] = 'bot@example.test'\n" +
+          "m = load('adminbot-deadline-match')\n" +
+          "ok = m.gog_json(['sheets', 'get', 'sheet-id', \"'Tab'\"])\n" +
+          "try:\n" +
+          "    m.gog_json(['sheets', 'metadata', 'sheet-id'])\n" +
+          "except SystemExit as e:\n" +
+          "    failed = str(e)\n" +
+          "print(json.dumps([ok['argv'], failed.splitlines()[-1]]))",
+      ),
+    ).toEqual([
+      "--no-input --readonly --json --account bot@example.test sheets get sheet-id 'Tab'",
+      "Google API error (403 forbidden): no",
+    ]);
+  });
+
+  // Ready suggestions are unconfirmed and never nudged on their own, so without that sheet the
+  // ongoing matches -- which reminders do run on -- still have to be written.
+  it("writes the ongoing matches when the ready sheet is not configured", () => {
+    const directory = datasetDir([
+      { ...venue("emnlp", "2026-12-01 23:59:59"), venue_group: "EMNLP 2026" },
+    ]);
+    const ongoing = path.join(directory, "ongoing.csv");
+    const out = path.join(directory, "matches.json");
+    fs.writeFileSync(ongoing, "#,Title,Venue,Authors\n1,A paper,EMNLP 100%,Ada Lovelace\n");
+    const result = runPython(
+      "import contextlib, io, os\n" +
+        "os.environ.pop('ADMINBOT_READY_SHEET_ID', None)\n" +
+        "m = load('adminbot-deadline-match')\n" +
+        `m.DDIR = ${JSON.stringify(directory)}\n` +
+        `sys.argv = ['match', '--ongoing-csv', ${JSON.stringify(ongoing)}, '--out', ${JSON.stringify(out)}, '--now', '2026-10-01']\n` +
+        "buffer = io.StringIO()\n" +
+        "with contextlib.redirect_stdout(buffer):\n" +
+        "    m.main()\n" +
+        `written = json.load(open(${JSON.stringify(out)}))\n` +
+        "print(json.dumps({'stdout': buffer.getvalue(), 'ongoing': [p['deadline_id'] for p in written['ongoing']], 'ready': written['ready']}))",
+    ) as { stdout: string; ongoing: string[]; ready: unknown[] };
+    expect(result.stdout).toContain("ready papers skipped: ADMINBOT_READY_SHEET_ID is not set");
+    expect(result.ongoing).toEqual(["emnlp"]);
+    expect(result.ready).toEqual([]);
+  });
+});

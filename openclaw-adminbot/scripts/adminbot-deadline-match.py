@@ -12,17 +12,20 @@ Maps lab papers to the UPCOMING deadlines in deadlines.json:
       NeurIPS 2026 workshops via TOPIC match (keyword + curated concept boosts).
       Fuzzy: emitted as SUGGESTIONS that a human confirms before any nudge.
 
-Input CSVs are read from local files (produced by `gog`/`gws` export on the
-server) or fetched via the Google Sheets CSV endpoint. Output: matches.json.
+Input rows come from local CSV exports or are read from the sheets through
+`gog` as GOG_ACCOUNT, which the sheets must be shared with. Output: matches.json.
 
 Env / args:
-  --ongoing-csv PATH   --ready-csv PATH        (local CSV, preferred on server)
+  --ongoing-csv PATH   --ready-csv PATH        (local CSV; overrides the sheet)
   --now YYYY-MM-DD      (default: today)        --out matches.json
-Sheet IDs (used only if no local CSV given; must be readable by the caller):
-  ADMINBOT_ONGOING_SHEET_ID (tab "Paper submissions", gid 846550934)
-  ADMINBOT_READY_SHEET_ID   (tab "Formatted Papers",  gid 1634319760)
+Sheet IDs (used only if no local CSV given):
+  ADMINBOT_ONGOING_SHEET_ID (tab "Paper submissions", gid 846550934) required
+  ADMINBOT_READY_SHEET_ID   (tab "Formatted Papers",  gid 1634319760) optional;
+      unset skips the ready->workshop suggestions and still writes the ongoing
+      matches
+  GOG_BIN (default ~/.local/bin/gog), GOG_ACCOUNT
 """
-import csv, io, json, os, re, sys, math, argparse, urllib.request
+import csv, json, os, re, sys, math, argparse, subprocess
 from collections import Counter, defaultdict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -146,16 +149,57 @@ def topic_match(title, topic, WT, idf):
     return [(c, round(s, 1)) for c, s in sorted(sc.items(), key=lambda x: -x[1])[:3] if s >= TOPIC_THRESHOLD]
 
 
-# ---------- CSV loading ----------
-def read_csv(local, sheet_id, gid, tab):
+# ---------- sheet loading ----------
+GOG_TIMEOUT_S = 120
+
+
+def gog_json(args):
+    """Run a read-only gog command as the bot account and parse its JSON output."""
+    account = os.environ.get("GOG_ACCOUNT", "").strip()
+    gog = os.environ.get("GOG_BIN", os.path.expanduser("~/.local/bin/gog"))
+    cmd = [gog, "--no-input", "--readonly", "--json", *(["--account", account] if account else []), *args]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=GOG_TIMEOUT_S)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        raise SystemExit(f"gog {' '.join(args[:2])} failed: {e}")
+    if r.returncode != 0:
+        raise SystemExit(f"gog {' '.join(args[:2])} failed: {r.stderr.strip()[-400:]}")
+    return json.loads(r.stdout)
+
+
+def read_sheet_tab(sheet_id, gid, tab, run=gog_json):
+    """Rows of the tab whose gid is `gid`, read through the authenticated gog account.
+
+    This used to fetch docs.google.com/.../export?format=csv anonymously. The lab's sheets are not
+    link-shared, and for a private sheet that URL answers 200 with Google's sign-in page, which
+    csv.reader parses happily -- the matcher would have reported "matched 0" every night instead of
+    failing. gog reads as the bot account, which the sheets are shared with.
+    """
+    meta = run(["sheets", "metadata", sheet_id])
+    # The Sheets API omits a zero sheetId from JSON, so an absent one is gid 0, not "unknown".
+    titles = {int(s.get("properties", {}).get("sheetId", 0)): s.get("properties", {}).get("title")
+              for s in meta.get("sheets", [])}
+    title = titles.get(int(gid))
+    if not title:
+        raise SystemExit(f"spreadsheet {sheet_id} has no tab with gid {gid} (expected {tab!r})")
+    quoted = "'" + title.replace("'", "''") + "'"
+    return [[str(cell) for cell in row] for row in run(["sheets", "get", sheet_id, quoted]).get("values", [])]
+
+
+def read_csv(local, sheet_id, gid, tab, env_name, required=True, run=gog_json):
+    """Rows from a local CSV export, else from the sheet named by `env_name`.
+
+    Returns None for an optional tab that has neither, so the caller can skip that pass rather than
+    fail the run.
+    """
     if local:
-        return list(csv.reader(open(local)))
-    if not sheet_id:
-        raise SystemExit("no CSV path and no sheet id; pass --ongoing-csv/--ready-csv")
-    url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
-    req = urllib.request.Request(url, headers={"User-Agent": "jinesis-adminbot/1.0"})
-    with urllib.request.urlopen(req, timeout=60) as r:
-        return list(csv.reader(io.StringIO(r.read().decode("utf-8", "replace"))))
+        with open(local, newline="") as f:
+            return list(csv.reader(f))
+    if sheet_id:
+        return read_sheet_tab(sheet_id, gid, tab, run)
+    if not required:
+        return None
+    raise SystemExit(f"{env_name} is not set and no CSV was given: nothing to read the {tab!r} tab from")
 
 
 def main():
@@ -177,7 +221,8 @@ def main():
             venues[group] = venue
 
     # ONGOING
-    rows = read_csv(a.ongoing_csv, os.environ.get("ADMINBOT_ONGOING_SHEET_ID"), "846550934", "Paper submissions")
+    rows = read_csv(a.ongoing_csv, os.environ.get("ADMINBOT_ONGOING_SHEET_ID", "").strip(), "846550934",
+                    "Paper submissions", "ADMINBOT_ONGOING_SHEET_ID")
     ongoing = []
     for r in rows:
         if len(r) < 4:
@@ -196,7 +241,14 @@ def main():
     # carries its own venue/deadline (so a lone NLP4PI match keeps its Aug 3 date).
     reg = build_workshop_registry(clock)
     WT, idf = build_workshop_index(reg)
-    rows = read_csv(a.ready_csv, os.environ.get("ADMINBOT_READY_SHEET_ID"), "1634319760", "Formatted Papers")
+    # The ready pass only produces unconfirmed suggestions that nobody is nudged about until a human
+    # confirms them, so a missing ready sheet costs suggestions, not correctness. It must not hold
+    # back the ongoing matches, which are the deterministic half the reminders actually run on.
+    rows = read_csv(a.ready_csv, os.environ.get("ADMINBOT_READY_SHEET_ID", "").strip(), "1634319760",
+                    "Formatted Papers", "ADMINBOT_READY_SHEET_ID", required=False)
+    if rows is None:
+        print("ready papers skipped: ADMINBOT_READY_SHEET_ID is not set")
+        rows = []
     ready = []
     for r in rows[1:]:
         if len(r) <= 23:

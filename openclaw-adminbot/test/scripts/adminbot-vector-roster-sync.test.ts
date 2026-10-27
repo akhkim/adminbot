@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { AdminBotLabMember } from "../../extensions/adminbot/src/contracts/actions.js";
 import { vectorSponsorRoster } from "../../extensions/adminbot/src/workflows/members/collaborator-subgroups.js";
-import { buildSheetValues, syncVectorRoster } from "../../scripts/adminbot-vector-roster-sync.js";
+import {
+  buildSheetValues,
+  describeGogFailure,
+  syncVectorRoster,
+} from "../../scripts/adminbot-vector-roster-sync.js";
 
 // `member_type` is what puts somebody on this sheet, not `privilege_level`: privilege says what a
 // person may do, and almost every imported row defaults to `member`.
@@ -120,5 +124,57 @@ describe("vector roster sheet sync", () => {
     await expect(syncVectorRoster({ roster: gapped, gog, strict: true })).rejects.toThrow(
       /no email: noemail/u,
     );
+  });
+});
+
+describe("gog failure reporting", () => {
+  const updateArgs = [
+    "sheets",
+    "update",
+    "sheet-id",
+    "A1:B3",
+    "--input",
+    "RAW",
+    "--values-json",
+    JSON.stringify(buildSheetValues(roster)),
+  ];
+  // What execFile rejects with: its message is the full command line, roster JSON included.
+  const execFailure = (stderr: string) =>
+    Object.assign(new Error(`Command failed: gog ${updateArgs.join(" ")}\n${stderr}`), {
+      stderr,
+      code: 1,
+    });
+
+  // The live failure: 56 nights of the whole roster, emails and all, in the cron run log.
+  it("never echoes the roster it was writing", () => {
+    const message = describeGogFailure(
+      updateArgs,
+      execFailure("Google API error (403 forbidden): The caller does not have permission\n"),
+      "bot@example.test",
+    );
+    expect(message).not.toMatch(/utoronto|Ada|Bob|values-json/u);
+    expect(message).toMatch(/^gog sheets update failed: Google API error \(403 forbidden\)/u);
+  });
+
+  it("names the sharing fix on a 403", () => {
+    const message = describeGogFailure(
+      updateArgs,
+      execFailure("Google API error (403 forbidden): The caller does not have permission"),
+      "bot@example.test",
+    );
+    expect(message).toMatch(/bot@example\.test needs Editor access on spreadsheet \S+/u);
+  });
+
+  it("adds no sharing hint to failures that are not permission errors", () => {
+    const message = describeGogFailure(
+      ["sheets", "clear", "sheet-id", "A4:B", "--force"],
+      execFailure("Google API error (500): backend error"),
+    );
+    expect(message).toBe("gog sheets clear failed: Google API error (500): backend error");
+  });
+
+  it("reports a timeout as one", () => {
+    const killed = Object.assign(new Error("Command failed"), { killed: true, signal: "SIGTERM" });
+    expect(describeGogFailure(updateArgs, killed)).toBe("gog sheets update timed out after 60s");
   });
 });

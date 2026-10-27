@@ -108,12 +108,43 @@ async function fetchRoster(): Promise<AdminBotVectorRoster> {
   return vectorSponsorRoster(payload.members ?? []);
 }
 
+/**
+ * One line saying which gog step failed and what Google said, built only from the subcommand and
+ * gog's stderr.
+ *
+ * execFile's own error message is "Command failed: <full argv>", and the argv of the update step is
+ * the whole roster as JSON. Rethrowing that put every member's name and email into the cron run
+ * log, the run summary, and the Control UI's Cron tab, once per failed night.
+ */
+export function describeGogFailure(args: string[], error: unknown, account?: string): string {
+  const step = `gog ${args.slice(0, 2).join(" ")}`;
+  const failure = (error ?? {}) as { stderr?: unknown; killed?: boolean; signal?: unknown };
+  if (failure.killed || failure.signal === "SIGTERM") {
+    return `${step} timed out after ${GOG_TIMEOUT_MS / 1000}s`;
+  }
+  const stderr = typeof failure.stderr === "string" ? failure.stderr.trim() : "";
+  const detail = stderr ? stderr.split("\n").slice(-3).join(" ").slice(0, 400) : "no stderr";
+  // A 403 here has never been auth: the token reads this sheet fine. It means the sheet was shared
+  // with the bot as a viewer, which only its owner can change, so say so instead of leaving the
+  // operator to rediscover it from a bare "caller does not have permission".
+  const hint = /\b403\b|does not have permission/iu.test(detail)
+    ? ` — ${account || "the gog account"} needs Editor access on spreadsheet ${SPREADSHEET_ID}; ask its owner to share it`
+    : "";
+  return `${step} failed: ${detail}${hint}`;
+}
+
 async function gog(args: string[]): Promise<void> {
   const account = process.env.GOG_ACCOUNT?.trim();
   const rootArgs = ["--no-input", "--json", ...(account ? ["--account", account] : [])];
-  await execFile(resolveGogExecutable(), [...rootArgs, ...args], {
-    timeout: GOG_TIMEOUT_MS,
-  });
+  try {
+    await execFile(resolveGogExecutable(), [...rootArgs, ...args], {
+      timeout: GOG_TIMEOUT_MS,
+    });
+  } catch (error: unknown) {
+    // No `cause`: main() prints the cause too, and the original error's message is the argv.
+    // oxlint-disable-next-line eslint/preserve-caught-error -- dropping the cause is the point
+    throw new Error(describeGogFailure(args, error, account));
+  }
 }
 
 // Every failure path, the roster fetch included, has to land on one line of stderr and a non-zero

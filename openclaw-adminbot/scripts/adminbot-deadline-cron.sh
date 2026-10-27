@@ -66,7 +66,7 @@ case "$task" in
     if [[ ! -f "$REPO_ROOT/extensions/adminbot/content/deadlines/matches.json" ]]; then
       printf 'deadline reminders: matches.json is missing.\n' >&2
       printf 'Run the "refresh deadline matches" tool first; it needs ADMINBOT_ONGOING_SHEET_ID\n' >&2
-      printf 'and ADMINBOT_READY_SHEET_ID in %s.\n' "$ADMINBOT_ENV_FILE" >&2
+      printf '(and optionally ADMINBOT_READY_SHEET_ID) in %s.\n' "$ADMINBOT_ENV_FILE" >&2
       exit 1
     fi
     # Only `reminders` delivers. The human gate is upstream rather than here: the matcher
