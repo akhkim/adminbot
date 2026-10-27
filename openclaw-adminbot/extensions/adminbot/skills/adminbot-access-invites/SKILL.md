@@ -86,9 +86,11 @@ guessing. Ordered least to most engaged:
 ## Vector Sponsor Roster
 
 Our Vector sponsor contact receives a constantly-updating sheet carrying **only
-each person's name and institutional email** — nothing else about them. He reads
-it to decide whether to extend or remove an account, so being absent from the
-sheet reads as "remove this account".
+each person's name, AdminBot id and DCS username** (`full_name`,
+`adminbot_internal_id`, `dcs_username`) — nothing else about them. He reads it to
+decide whether to extend or remove an account, so being absent from the sheet
+reads as "remove this account"; a member with no DCS username keeps a row with
+that cell empty and is listed in the sync's `missing_dcs_username`.
 
 Population crosses both axes and is computed by `vectorSponsorRoster`
 (`extensions/adminbot/src/collaborator-subgroups.ts`), never assembled by hand:

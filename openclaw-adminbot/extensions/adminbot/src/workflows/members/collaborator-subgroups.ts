@@ -427,6 +427,8 @@ export type AdminBotVectorRosterEntry = {
   id: string;
   name: string;
   email: string;
+  /** The member's DCS account, which is what the sponsor's sheet keys Vector accounts by. */
+  dcs_username?: string;
 };
 
 export type AdminBotVectorRoster = {
@@ -454,8 +456,9 @@ function vectorRosterEmail(member: AdminBotLabMember): string | undefined {
 }
 
 /**
- * Who belongs on the Vector sponsor sheet: name and institutional email only, nothing else about
- * the person. Sorted by name then id so the shared sheet does not churn between refreshes.
+ * Who belongs on the Vector sponsor sheet: name, AdminBot id, institutional email and DCS username,
+ * nothing else about the person. Sorted by name then id so the shared sheet does not churn between
+ * refreshes.
  *
  * Alumni are excluded outright, ahead of the type check rather than through it. Somebody who has
  * left keeps `privilege_level: member` and often keeps `full` in their member type too, so nothing
@@ -482,7 +485,13 @@ export function vectorSponsorRoster(members: readonly AdminBotLabMember[]): Admi
       missingEmail.push(member.id);
       continue;
     }
-    entries.push({ id: member.id, name: member.name, email });
+    const dcsUsername = member.dcs_username?.trim();
+    entries.push({
+      id: member.id,
+      name: member.name,
+      email,
+      ...(dcsUsername ? { dcs_username: dcsUsername } : {}),
+    });
   }
   entries.sort(
     (left, right) => left.name.localeCompare(right.name) || left.id.localeCompare(right.id),

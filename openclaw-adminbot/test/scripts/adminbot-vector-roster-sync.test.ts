@@ -23,8 +23,8 @@ function recordingGog() {
 }
 
 const roster = vectorSponsorRoster([
-  member({ id: "ada", name: "Ada", email: "ada@utoronto.ca" }),
-  member({ id: "bob", name: "Bob", email: "bob@utoronto.ca" }),
+  member({ id: "ada", name: "Ada", email: "ada@utoronto.ca", dcs_username: "adaex" } as never),
+  member({ id: "bob", name: "Bob", email: "bob@utoronto.ca", dcs_username: " bobex " } as never),
 ]);
 
 describe("who the sponsor sheet carries", () => {
@@ -55,7 +55,12 @@ describe("who the sponsor sheet carries", () => {
   // being told to keep twenty-two accounts that should have been closed.
   it("drops alumni even when their member type still says full", () => {
     const roster = vectorSponsorRoster([
-      member({ id: "gone", name: "Gone", email: "gone@cs.toronto.edu", member_type: "full, alumni" } as never),
+      member({
+        id: "gone",
+        name: "Gone",
+        email: "gone@cs.toronto.edu",
+        member_type: "full, alumni",
+      } as never),
       member({ id: "here", name: "Here", email: "here@cs.toronto.edu" } as never),
     ]);
     expect(roster.entries.map((entry) => entry.id)).toEqual(["here"]);
@@ -63,8 +68,18 @@ describe("who the sponsor sheet carries", () => {
 
   it("carries coauthor-major, and nobody the type column does not name", () => {
     const roster = vectorSponsorRoster([
-      member({ id: "major", name: "Major", email: "m@x.test", member_type: "coauthor-major" } as never),
-      member({ id: "minor", name: "Minor", email: "n@x.test", member_type: "coauthor-minor" } as never),
+      member({
+        id: "major",
+        name: "Major",
+        email: "m@x.test",
+        member_type: "coauthor-major",
+      } as never),
+      member({
+        id: "minor",
+        name: "Minor",
+        email: "n@x.test",
+        member_type: "coauthor-minor",
+      } as never),
       // privilege_level alone is what used to put 184 people on a sheet meant for 62.
       member({ id: "blank", name: "Blank", email: "b@x.test", member_type: "" } as never),
     ]);
@@ -73,12 +88,29 @@ describe("who the sponsor sheet carries", () => {
 });
 
 describe("vector roster sheet sync", () => {
-  it("writes a header plus name and email only", () => {
+  // The sponsor's sheet keys accounts by DCS username; nothing else about the person goes on it.
+  it("writes the sheet's own three columns and nothing else", () => {
     expect(buildSheetValues(roster)).toEqual([
-      ["Name", "Email"],
-      ["Ada", "ada@utoronto.ca"],
-      ["Bob", "bob@utoronto.ca"],
+      ["full_name", "adminbot_internal_id", "dcs_username"],
+      ["Ada", "ada", "adaex"],
+      ["Bob", "bob", "bobex"],
     ]);
+    expect(JSON.stringify(buildSheetValues(roster))).not.toMatch(/utoronto/u);
+  });
+
+  // Leaving someone off reads to the sponsor as "remove this account", which is not what a missing
+  // username means.
+  it("keeps a member with no DCS username, with that cell empty, and reports the gap", async () => {
+    const gapped = vectorSponsorRoster([
+      member({ id: "ada", name: "Ada", email: "ada@utoronto.ca", dcs_username: "adaex" } as never),
+      member({ id: "new", name: "New", email: "new@utoronto.ca" }),
+    ]);
+    expect(buildSheetValues(gapped).at(-1)).toEqual(["New", "new", ""]);
+    const { gog } = recordingGog();
+    expect(await syncVectorRoster({ roster: gapped, gog })).toMatchObject({
+      written_rows: 2,
+      missing_dcs_username: ["new"],
+    });
   });
 
   // Clearing before the write would blank the shared sheet if the write then failed, and a blank
@@ -88,10 +120,12 @@ describe("vector roster sheet sync", () => {
     await syncVectorRoster({ roster, gog });
 
     expect(calls.map((call) => `${call[0]} ${call[1]}`)).toEqual(["sheets update", "sheets clear"]);
-    expect(calls[0]).toContain("A1:B3");
+    // The bot-owned sheet the sponsor reads, not the read-only one this used to 403 against.
+    expect(calls[0]?.[2]).toBe("1DFDiFTfhXGDb5S4EKWLVEcj-3_NaxyHHjoUwawizs88");
+    expect(calls[0]).toContain("A1:C3");
     expect(calls[0]?.at(-1)).toBe(JSON.stringify(buildSheetValues(roster)));
     // The tail starts one row past what was just written, so a shrinking roster leaves nothing.
-    expect(calls[1]).toContain("A4:B");
+    expect(calls[1]).toContain("A4:C");
   });
 
   it("refuses to write an empty roster instead of blanking the sheet", async () => {
