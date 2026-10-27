@@ -12,6 +12,7 @@
 import type { AdminBotCvChangeEvent, AdminBotCvEntry } from "../../contracts/actions.js";
 import { cvEntryKey } from "../../contracts/actions.js";
 import { describeCvEntry, isNewsworthy } from "../../cv-scan.js";
+import { renderTalkLeaderboardMarkdown, type AdminBotTalkLeaderboard } from "./talk-leaderboard.js";
 
 export const CV_DIGEST_DOC_TITLE = "CV Updates";
 
@@ -35,12 +36,17 @@ export type AdminBotCvDigestDocument = {
 export function renderCvDigestDocument(
   changes: AdminBotCvChangeEvent[],
   now: Date,
+  // Placed above the dated changes because it is the part people come back to the doc for.
+  talkLeaderboard?: AdminBotTalkLeaderboard,
 ): AdminBotCvDigestDocument {
   const newsworthy = changes.filter((change) =>
     isNewsworthy({ entry: change.entry, recency: change.recency }),
   );
   const days = groupByDetectionDay(newsworthy);
   const lines: string[] = [`# ${CV_DIGEST_DOC_TITLE}`, "", `_Updated ${formatDay(now)}_`, ""];
+  if (talkLeaderboard) {
+    lines.push(...renderTalkLeaderboardMarkdown(talkLeaderboard));
+  }
   if (!days.length) {
     lines.push(
       "No CV changes have been recorded yet. Run the CV digest job again after members update their linked CVs.",

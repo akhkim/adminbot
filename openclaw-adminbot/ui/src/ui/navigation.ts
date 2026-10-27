@@ -21,16 +21,18 @@ export const TAB_GROUPS = [
   // sections of My Profile, which put a checklist somebody walks once at the bottom of a page they
   // edit every week.
   //
-  // Events follows Time Availability: where the viewer is going sits next to when they are free.
-  // There used to be a Travel tab between them; Events took over its conferences and nearby
-  // lab-mates, and the trip editor went back to Time Availability beside the where-strip it feeds.
   {
     label: "myInfo",
-    tabs: ["gettingStarted", "profile", "adminbotTimeAvailability", "events", "myWork"],
+    tabs: ["gettingStarted", "profile", "adminbotTimeAvailability", "myWork"],
   },
-  // Lab Members sits with Lab Sharing, not in the shared tools: the roster is who the lab is,
-  // which is what someone browsing the lab's shared surface came to look at.
-  { label: "labSharing", tabs: ["labSharing", "adminbotMeetings", "adminbotMembers"] },
+  // Everything about the people around the viewer, in one group: who can help (Collaborate), where
+  // they will be (Events), when the lab meets, and who the lab is. Events used to sit under My Info,
+  // so going from "who is at this conference" to "ask them for help" crossed two sidebar groups.
+  // Lab Members is a page of two (TAB_PAGES): the talk leaderboard ranks the same people.
+  {
+    label: "labSharing",
+    tabs: ["labSharing", "events", "adminbotMeetings", "adminbotMembers"],
+  },
   // The three logistics templates, each with its own heading. They used to be one "Logistics
   // Requests" tab whose first screen was a picker between them, which meant every request started
   // with a step that carried no information -- the member already knew which of the three they
@@ -138,6 +140,9 @@ export const TAB_PAGES = [
   // speed, and what the people already here have earned. Badges were a sidebar entry of their own,
   // which put "award Ada a badge" a page away from the roster that says who Ada is.
   { page: "membership", tabs: ["adminbotRegistrations", "adminbotOnboarding", "adminbotBadges"] },
+  // The roster and the talk leaderboard: one list of people, then the same people ranked by what
+  // their CVs say. Two sidebar entries read as two places to look somebody up.
+  { page: "people", tabs: ["adminbotMembers", "adminbotTalkLeaderboard"] },
 ] as const satisfies ReadonlyArray<{ page: string; tabs: readonly Tab[] }>;
 
 type TabPage = (typeof TAB_PAGES)[number];
@@ -229,6 +234,7 @@ export type Tab =
   | "adminbotConferencePapers"
   | "adminbotReferenceChecker"
   | "adminbotArrReviewers"
+  | "adminbotTalkLeaderboard"
   | "adminbotCalendar"
   | "adminbotGrantReport"
   | "adminbotMailingList"
@@ -321,6 +327,7 @@ const TAB_PATHS: Record<Tab, string> = {
   adminbotConferencePapers: "/conference-papers",
   adminbotReferenceChecker: "/reference-checker",
   adminbotArrReviewers: "/arr-eligible-reviewers",
+  adminbotTalkLeaderboard: "/talk-leaderboard",
   adminbotCalendar: "/calendar",
   adminbotGrantReport: "/grant-report",
   adminbotMailingList: "/mailing-list",
@@ -586,6 +593,8 @@ export function iconForTab(tab: Tab): IconName {
       return "send";
     case "adminbotMembers":
       return "folder";
+    case "adminbotTalkLeaderboard":
+      return "mic";
     case "adminbotTimeAvailability":
       return "clock";
     case "adminbotMeetings":

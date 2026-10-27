@@ -27,3 +27,18 @@ adminbot_load_cron_env() {
   printf '%s: env file not found: %s\n' "$label" "${candidates[*]}" >&2
   return 1
 }
+
+# The directory the running service keeps its database in, for jobs that read or write files next
+# to it. The service host opens `<release>/state/adminbot.sqlite` (extensions/adminbot/host/main.ts;
+# on Aurora a symlink into the deploy root's state dir) and never reads ADMINBOT_DB_PATH, so this is
+# the release's own state dir, not ~/.openclaw/state: on Aurora that one is a separate directory the
+# sheet export cannot read, and a snapshot written there is one nothing else ever sees.
+# ADMINBOT_DB_PATH still overrides it, as it does for scripts/adminbot-service-database.ts.
+adminbot_service_state_dir() {
+  local database="${ADMINBOT_DB_PATH:-}"
+  if [[ -n "${database//[[:space:]]/}" ]]; then
+    dirname "$database"
+  else
+    printf '%s/state\n' "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+  fi
+}

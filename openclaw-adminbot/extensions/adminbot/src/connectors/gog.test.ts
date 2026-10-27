@@ -244,8 +244,9 @@ describe("createGogAdminBotExecutor", () => {
       JSON.stringify({ event: { id: "event-9", attendees } });
 
     // The removal rewrites the whole guest list, so notifying would re-send the invite to everyone
-    // still on the meeting each time one person is dropped.
-    it("subtracts the named people from the live guest list, silently", async () => {
+    // still on the meeting each time one person is dropped, and writing bare addresses would reset
+    // everyone's RSVP so the meeting reappears as an unanswered invitation.
+    it("subtracts the named people from the live guest list, silently, keeping RSVPs", async () => {
       const run = vi.fn(async () => {});
       const capture = vi.fn(async () =>
         liveEvent([
@@ -272,10 +273,25 @@ describe("createGogAdminBotExecutor", () => {
         expect.arrayContaining(["calendar", "event", "jinesis.lab@gmail.com", "event-9"]),
       );
       const args = run.mock.calls[0]?.[0] as string[];
-      expect(args[args.indexOf("--attendees") + 1]).toBe(
-        "ada@cs.toronto.edu,late@cs.toronto.edu,room@resource.test;resource,maybe@cs.toronto.edu;optional",
+      expect(args).toContain("calendar.events.patch");
+      // gog refuses the call unless its command policy names the method as well as api.call.
+      expect(args[args.indexOf("--enable-commands-exact") + 1]).toBe(
+        "api.call,api.calendar.events.patch",
       );
-      expect(args[args.indexOf("--send-updates") + 1]).toBe("none");
+      expect(args).not.toContain("--attendees");
+      expect(JSON.parse(args[args.indexOf("--params") + 1])).toEqual({
+        calendarId: "jinesis.lab@gmail.com",
+        eventId: "event-9",
+        sendUpdates: "none",
+      });
+      expect(JSON.parse(args[args.indexOf("--body") + 1])).toEqual({
+        attendees: [
+          { email: "ada@cs.toronto.edu", responseStatus: "accepted" },
+          { email: "late@cs.toronto.edu" },
+          { email: "room@resource.test", resource: true },
+          { email: "maybe@cs.toronto.edu", optional: true },
+        ],
+      });
     });
 
     // Re-approving, retrying after a timeout, or approving a duplicate proposal must not touch the
@@ -314,7 +330,8 @@ describe("createGogAdminBotExecutor", () => {
 
       expect(capture).toHaveBeenCalledTimes(2);
       expect(run).toHaveBeenCalledTimes(1);
-      expect(run.mock.calls[0]?.[0]).toContain("series-a");
+      const args = run.mock.calls[0]?.[0] as string[];
+      expect(JSON.parse(args[args.indexOf("--params") + 1]).eventId).toBe("series-a");
     });
 
     it("refuses a removal that would empty the guest list", async () => {

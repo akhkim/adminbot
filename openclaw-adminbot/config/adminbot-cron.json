@@ -429,7 +429,7 @@
         "bash",
         "scripts/adminbot-weekly-update-cron.sh"
       ],
-      "timeoutSeconds": 900
+      "timeoutSeconds": 1800
     },
     {
       "name": "adminbot-prereg-nudges",

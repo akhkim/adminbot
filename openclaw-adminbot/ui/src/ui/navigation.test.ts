@@ -73,6 +73,7 @@ describe("iconForTab", () => {
       adminbotMembers: "folder",
       adminbotProfileOverview: "check",
       adminbotArrReviewers: "check",
+      adminbotTalkLeaderboard: "mic",
       adminbotTabUsage: "barChart",
       adminbotGrantReport: "scrollText",
       adminbotMailingList: "send",
@@ -137,6 +138,7 @@ describe("titleForTab", () => {
       adminbotMembers: "Lab Members",
       adminbotProfileOverview: "Profile Completeness",
       adminbotArrReviewers: "ARR Eligible Reviewers",
+      adminbotTalkLeaderboard: "Talk Leaderboard",
       adminbotTabUsage: "Tab Usage",
       adminbotGrantReport: "Grant Report",
       adminbotMailingList: "Mailing List",
@@ -184,7 +186,7 @@ describe("subtitleForTab", () => {
       myWork: "What you are working on, and anything holding it up.",
       // Corrected to the shipped string: the tab has said "Coming soon" for a while and this
       // expectation had not followed, leaving the suite red for a reason unrelated to it.
-      labSharing: "Coming soon — share resources, ideas, and collaborate.",
+      labSharing: "Ask for help on your projects, offer yours, and see who is around.",
       events: "Upcoming events, who from the lab is going, and who is nearby.",
       adminbotNotificationDrafts: "Create tweet drafts and images from notification exports.",
       adminbotOpportunities: "PhD programs, internships, grants, awards, and Rising Stars.",
@@ -195,9 +197,10 @@ describe("subtitleForTab", () => {
       adminbotBadges: "Manage badge definitions, assignments, and nominations.",
       adminbotOnboarding: "Send a member or collaborator their onboarding guide.",
       adminbotSettings: "Lab defaults and escalation policy.",
-      adminbotMembers: "Privilege levels and access profiles.",
+      adminbotMembers: "Who is in the lab, what they work on, and their access.",
       adminbotProfileOverview: "Who has filled in their profile and planned their term.",
       adminbotArrReviewers: "Self-reported ARR reviewer qualification and capacity.",
+      adminbotTalkLeaderboard: "This year's talks and orals, counted from members' CVs.",
       adminbotTabUsage: "Which parts of AdminBot the lab actually opens.",
       adminbotGrantReport:
         "Every paper mapped to a safety area, and the track record behind each ask.",

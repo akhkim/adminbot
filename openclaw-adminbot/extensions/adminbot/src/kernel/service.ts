@@ -5,6 +5,7 @@ import type {
 } from "../connectors/calendar-membership.js";
 import type { ReverseGeocoder } from "../connectors/reverse-geocode.js";
 import type { AdminBotExternalCollaboratorSubgroup } from "../contracts/actions.js";
+import type { AdminBotApiToken, AdminBotApiTokenUsage } from "../contracts/api-tokens.js";
 import {
   adminBotActionTypes,
   ADMINBOT_ONBOARDING_CATCH_UP_ROUND,
@@ -54,6 +55,7 @@ import type {
   AdminBotOnboardingCycleReason,
   AdminBotMemberNudgeRequest,
   AdminBotMemberNudgeResult,
+  AdminBotMemberNudgeDelivery,
   AdminBotMemberNudgeSkip,
   AdminBotMemberOnboarding,
   AdminBotLocationDrift,
@@ -175,6 +177,7 @@ import {
   adminBotGroupMeetingNudgeWindowHours,
   hoursUntilGroupMeeting,
   isGroupMeetingNudgeDue,
+  resolveGroupMeetingTopic,
   type GroupMeetingSchedule,
 } from "../contracts/group-meeting.js";
 import type { DiscoveryPosition } from "../contracts/lab-sharing-discovery-cursor.js";
@@ -236,6 +239,7 @@ import {
   type AdminBotSocialDraftRecord,
   type AdminBotWorkshopMatchRun,
 } from "../contracts/paper-cycle.js";
+import { isPaperImpactSlot } from "../contracts/paper-impact.js";
 import type { PaperAiTextCheckStore } from "../contracts/paper-integrity-checks.js";
 import {
   adminBotPaperAcceptanceNeedsOverleafReason,
@@ -280,6 +284,7 @@ import type { ReferenceScanStore } from "../contracts/reference-scans.js";
 import type { AdminBotReimbursementFunder } from "../contracts/reimbursement-rules.js";
 import { paperTargetsVenue } from "../contracts/venue-targets.js";
 import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
+import type { CalendarEventsReader } from "../workflows/calendar/events.js";
 import { resolveLabCalendar } from "../workflows/calendar/lab-calendar.js";
 import { memberAddresses } from "../workflows/calendar/standing-meetings.js";
 import {
@@ -342,7 +347,6 @@ import {
   type AdminBotWriteOrigin,
 } from "../workflows/members/adoption.js";
 import { validateBirthday } from "../workflows/members/birthday.js";
-import { slackStopReply, type SlackStopCommand } from "../workflows/members/slack-stop.js";
 import { collaboratorSubgroupAccess } from "../workflows/members/collaborator-subgroups.js";
 import {
   localEventAudience,
@@ -386,6 +390,7 @@ import {
   type ThemeMatch,
 } from "../workflows/members/research-themes.js";
 import type { SlackDirectoryReader } from "../workflows/members/slack-roster-sync.js";
+import { slackStopReply, type SlackStopCommand } from "../workflows/members/slack-stop.js";
 import {
   type AdminBotThemedMeeting,
   matchMeetingsForChannel,
@@ -448,6 +453,15 @@ import {
   textMatchesNeedles,
 } from "../workflows/papers/openreview-matching.js";
 import {
+  evidenceFromCitationChecks,
+  matchPaperEvidence,
+  normalizedTitle,
+  openReviewStageProofs,
+  planOpenReviewSync,
+  type OpenReviewEvidence,
+  type OpenReviewFieldChange,
+} from "../workflows/papers/openreview-paper-sync.js";
+import {
   memberOwnsPaper,
   paperIdsByOwner,
   rosterNameCounts,
@@ -491,15 +505,7 @@ import {
   reviewProvesFixesMerged,
   type PaperMentorContext,
 } from "../workflows/papers/papermentor-nudges.js";
-import { paperFeedbackQueue } from "../workflows/papers/pi-review.js";
-import {
-  evidenceFromCitationChecks,
-  matchPaperEvidence,
-  normalizedTitle,
-  planOpenReviewSync,
-  type OpenReviewEvidence,
-  type OpenReviewFieldChange,
-} from "../workflows/papers/openreview-paper-sync.js";
+import { paperFeedbackQueue, paperImpactQueue } from "../workflows/papers/pi-review.js";
 import {
   buildPiReviewNotice,
   isAwaitingPiReview,
@@ -522,8 +528,6 @@ import {
   isActiveChannelEligible,
   type ActiveChannelReader,
 } from "./service.active-channels.js";
-import { inviteLocalLunches } from "./service.local-lunches.js";
-import type { CalendarEventsReader } from "../workflows/calendar/events.js";
 import {
   automationHealthIssues,
   slackInviteBlockFor,
@@ -550,8 +554,13 @@ import {
 import { LabSharingInvites } from "./service.lab-sharing-invites.js";
 import { LabSharingService } from "./service.lab-sharing.js";
 import { LabTravelService } from "./service.lab-travel.js";
+import { inviteLocalLunches } from "./service.local-lunches.js";
 import { type IntroRunResult, MeetupService } from "./service.meetups.js";
-import { piReviewSlotDenial } from "./service.pi-review.js";
+import {
+  paperImpactSlotWrite,
+  piApprovalImpactDenial,
+  piReviewSlotDenial,
+} from "./service.pi-review.js";
 import { RecLetterEligibilityService } from "./service.rec-letter-eligibility.js";
 import { runSlackRosterSync, type SlackRosterSyncOptions } from "./service.slack-roster-sync.js";
 import {
@@ -938,8 +947,18 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   getSession(tokenHash: string): AdminBotAuthSession | undefined;
   touchSession(tokenHash: string, lastSeenAt: string): void;
   revokeSession(tokenHash: string, revokedAt: string): void;
+  /** Also revokes the member's API tokens: every "sign them out everywhere" means tokens too. */
   revokeSessionsForMember(memberId: string, revokedAt: string): void;
   pruneSessionsBefore(cutoffIso: string): number;
+  saveApiToken(token: AdminBotApiToken): void;
+  getApiTokenByHash(tokenHash: string): AdminBotApiToken | undefined;
+  getApiToken(id: string): AdminBotApiToken | undefined;
+  listApiTokensForMember(memberId: string): AdminBotApiToken[];
+  touchApiToken(id: string, usage: AdminBotApiTokenUsage): void;
+  /** True when this call revoked it; false when it was missing or already revoked. */
+  revokeApiToken(id: string, revokedAt: string, reason: string): boolean;
+  /** How many live tokens were revoked. */
+  revokeApiTokensForMember(memberId: string, revokedAt: string, reason: string): number;
   /** Upserts one author's account of one week on one paper. Re-saving the same week replaces. */
   savePaperWeeklyUpdate(update: AdminBotPaperWeeklyUpdate): void;
   listPaperWeeklyUpdates(params?: {
@@ -1033,7 +1052,7 @@ export type AdminBotPaperflowStageView = {
   closed_at?: string;
   /** The bcc'd mail's subject, so a closed rung says what closed it. */
   closed_by_subject?: string;
-  closed_by?: "email_bcc" | "admin";
+  closed_by?: AdminBotPaperflowEvidenceRecord["recorded_by"];
 };
 
 /**
@@ -1744,6 +1763,8 @@ export type OpenReviewPaperSyncReport = {
   kept: Array<{ paper_id: string; reason: string }>;
   /** Snapshot or e-mail reports that matched no paper on file. */
   unmatched_submissions: number;
+  /** PaperFlow stages a visible OpenReview reply closed (or, in a dry run, would close). */
+  stages_closed: Array<{ paper_id: string; stage: string }>;
 };
 
 export class AdminBotService {
@@ -1856,10 +1877,41 @@ export class AdminBotService {
       // Every caller already treats a refused proposal as a skip, which is what this is.
       return serviceError(409, blocked);
     }
+    if (proposal.type === "slack.invite_to_channel") {
+      // Every channel sweep re-files the invites it still thinks are owed, and a failed invite stays
+      // approved, so each run used to add another copy of the same effect. The outstanding one is
+      // handed back instead; callers execute it as they would have executed the copy.
+      const outstanding = this.outstandingProposalLike(proposal);
+      if (outstanding) {
+        return { ok: true, status: 200, payload: outstanding };
+      }
+    }
     const stored = this.prepareProposal(proposal);
     this.store.saveProposal(stored);
     this.auditProposalCreation(stored);
     return { ok: true, status: 200, payload: stored };
+  }
+
+  /**
+   * A proposal of the same type and exact payload that is still waiting to run: pending approval,
+   * or approved with no successful execution yet. Executed and rejected ones are settled, so they
+   * never stand in for a new proposal.
+   */
+  private outstandingProposalLike(
+    proposal: AdminBotActionProposal,
+  ): AdminBotStoredProposal | undefined {
+    const hash = payloadHash(proposal.proposed_payload);
+    return this.store
+      .listProposalsByType(proposal.type)
+      .find(
+        (stored) =>
+          (stored.status === "pending" || stored.status === "approved") &&
+          // Proposals filed before every action carried a payload (Aug-Sep 2026) have none to
+          // compare, so none can be "the same". Hashing that absence threw inside this find, and one
+          // such approved invite left every channel sweep that filed a new invite with a 500.
+          stored.proposed_payload !== undefined &&
+          payloadHash(stored.proposed_payload) === hash,
+      );
   }
 
   /**
@@ -2048,13 +2100,7 @@ export class AdminBotService {
     });
     // An invitation awaiting approval must not become a fresh card every morning.
     const proposeOnce = (proposal: AdminBotActionProposal) => {
-      const previous = this.store
-        .listProposalsByType(proposal.type)
-        .find(
-          (stored) =>
-            (stored.status === "pending" || stored.status === "approved") &&
-            payloadHash(stored.proposed_payload) === payloadHash(proposal.proposed_payload),
-        );
+      const previous = this.outstandingProposalLike(proposal);
       return previous
         ? { ok: true as const, status: 200, payload: previous }
         : this.createProposal(proposal);
@@ -3759,9 +3805,11 @@ export class AdminBotService {
 
   syncLocalLunchInvites(calendarId: string, read: CalendarEventsReader) {
     if (!this.localLunchInvites) {
-      this.localLunchInvites = inviteLocalLunches(this, this.store, calendarId, read).finally(() => {
-        this.localLunchInvites = undefined;
-      });
+      this.localLunchInvites = inviteLocalLunches(this, this.store, calendarId, read).finally(
+        () => {
+          this.localLunchInvites = undefined;
+        },
+      );
     }
     return this.localLunchInvites;
   }
@@ -6982,9 +7030,35 @@ export class AdminBotService {
     if (piDenial) {
       return serviceError(403, piDenial);
     }
+    const impactDenial = piApprovalImpactDenial({
+      slot: params.slot,
+      done: params.input.done,
+      paper: context.paper,
+      impactValueText: this.paperRows()
+        .listPaperSlots(params.paperId)
+        .find((row) => isPaperImpactSlot(row.slot))?.value_text,
+    });
+    if (impactDenial) {
+      return serviceError(409, impactDenial);
+    }
+    let input = params.input;
+    if (isPaperImpactSlot(params.slot)) {
+      const impact = paperImpactSlotWrite({
+        existingValueText: context.existing.value_text,
+        valueText: params.input.value_text,
+        memberId: params.memberId,
+        headProfessorMemberId: this.resolveSettings().head_professor_member_id,
+        privileged: params.privileged,
+        now: new Date().toISOString(),
+      });
+      if (!impact.ok) {
+        return serviceError(impact.status, impact.error);
+      }
+      input = { value_text: impact.valueText };
+    }
     const result = applyPaperSlotWrite({
       existing: context.existing,
-      input: params.input,
+      input,
       memberId: params.memberId,
       now: new Date(),
     });
@@ -7287,6 +7361,7 @@ export class AdminBotService {
       unchanged: 0,
       kept: [],
       unmatched_submissions: 0,
+      stages_closed: [],
     };
     const matchedEvidence = new Set<OpenReviewEvidence>();
     const ledger = this.nudgeLedgerIndex();
@@ -7298,6 +7373,9 @@ export class AdminBotService {
       }
       matchedEvidence.add(match);
       report.matched += 1;
+      // Ahead of the fingerprint check: a stage proof is idempotent per (paper, stage), and a
+      // paper whose fields were applied long ago still needs its rebuttal rung closed.
+      this.closeOpenReviewProvenStages(paper.id, match, options.dryRun, report);
       const plan = planOpenReviewSync(paper, slots, match, nowIso);
       if (plan.unchanged) {
         report.unchanged += 1;
@@ -7328,12 +7406,17 @@ export class AdminBotService {
           artifacts: { ...plan.patch.artifacts },
         });
         if (!written.ok) {
-          report.kept.push({ paper_id: paper.id, reason: `write refused: ${written.error.message}` });
+          report.kept.push({
+            paper_id: paper.id,
+            reason: `write refused: ${written.error.message}`,
+          });
           continue;
         }
       }
       for (const write of plan.slotWrites) {
-        const check = write.url ? validateAdminBotPaperSlotUrl(write.slot, write.url) : { ok: true as const };
+        const check = write.url
+          ? validateAdminBotPaperSlotUrl(write.slot, write.url)
+          : { ok: true as const };
         this.store.savePaperSlot({
           paper_id: paper.id,
           slot: write.slot,
@@ -7390,6 +7473,41 @@ export class AdminBotService {
         .filter((key) => key && !matchedKeys.has(key)),
     ).size;
     return { ok: true, status: 200, payload: report };
+  }
+
+  /**
+   * Close the PaperFlow stages a reply on the author's OpenReview view proves.
+   *
+   * Strict on purpose: a stage closes on a reply that exists (a released review, an author
+   * response, a meta-review, a decision), never because a deadline passed or an invitation is
+   * missing. A missed close costs one more nudge; a false close silences the reminder for a
+   * rebuttal nobody wrote.
+   */
+  private closeOpenReviewProvenStages(
+    paperId: string,
+    evidence: OpenReviewEvidence,
+    dryRun: boolean,
+    report: OpenReviewPaperSyncReport,
+  ): void {
+    const evidenced = new Set(this.store.listPaperflowEvidence(paperId).map((row) => row.stage));
+    for (const proof of openReviewStageProofs(evidence)) {
+      if (evidenced.has(proof.stage)) {
+        continue;
+      }
+      if (!dryRun) {
+        const recorded = this.recordPaperflowEvidence({
+          paperId,
+          stage: proof.stage,
+          subject: proof.subject,
+          recordedBy: "openreview",
+          actor: "openreview",
+        });
+        if (!recorded.ok || !recorded.payload.recorded) {
+          continue;
+        }
+      }
+      report.stages_closed.push({ paper_id: paperId, stage: proof.stage });
+    }
   }
 
   /**
@@ -7867,6 +7985,8 @@ export class AdminBotService {
       status: 200,
       payload: {
         papers: [
+          // Safety-related impact statements come first: the head professor asked for them at high priority.
+          ...paperImpactQueue(candidates.filter(({ paper }) => !isPaperClosed(paper))),
           // A previous venue rejection does not cancel an explicit request to review a revision.
           ...paperFeedbackQueue(candidates),
           ...piReviewQueue(candidates.filter(({ paper }) => !isPaperClosed(paper))),
@@ -10583,7 +10703,8 @@ export class AdminBotService {
   }
 
   /**
-   * The Meetings tab's index: one row per recurring meeting, newest first.
+   * The Meetings tab's index: one row per recurring meeting, the lab's weekly meeting first and the
+   * rest newest first.
    *
    * Every listed meeting is counted, not a page of them, so a series' row says how many recordings
    * its dropdown holds before anyone opens it. Built from heads, never rosters, and the same for
@@ -10603,6 +10724,7 @@ export class AdminBotService {
         series: summarizeMeetingSeries(
           this.store.listMeetingHeads(),
           this.resolveSettings().meeting_minimum_minutes ?? 0,
+          resolveGroupMeetingTopic(),
         ),
       },
     };
@@ -10826,7 +10948,12 @@ export class AdminBotService {
       } else {
         slackSkipped.push(...sent.payload.skipped);
       }
-      notified.push(row.member_id);
+      // Told only if the portal notification was actually filed. sendMemberNudge files none for
+      // somebody it refuses outright (alumni, off the nudge list), and counting them here is how a
+      // summary comes to say "told" about people nothing reached.
+      if (sent.ok && sent.payload.portal_notified?.includes(row.member_id)) {
+        notified.push(row.member_id);
+      }
       this.recordAudit({
         type: "meeting_attendance.nudged",
         actor,
@@ -13165,6 +13292,8 @@ export class AdminBotService {
     }
     const created: AdminBotStoredProposal[] = [];
     const skipped: AdminBotMemberNudgeSkip[] = [];
+    const portalNotified: string[] = [];
+    const deliveries: AdminBotMemberNudgeDelivery[] = [];
     const nowIso = new Date().toISOString();
     const headProfessorMemberId = this.resolveSettings().head_professor_member_id?.trim();
     // Every nudge asks the member to go and do something in the portal, and until now none of them
@@ -13236,6 +13365,7 @@ export class AdminBotService {
         ...(request.important ? { important: true } : {}),
         created_at: nowIso,
       });
+      portalNotified.push(member.id);
       // The correspondence address when the member nominated one, their login address otherwise.
       // `email` is the departmental identity the account is keyed by; it is not necessarily a
       // mailbox anybody reads, and four members on the roster have no departmental address at all
@@ -13295,13 +13425,29 @@ export class AdminBotService {
         skipped.push({ member_id: memberId, reason: created_.error.message });
         continue;
       }
-      const executed = await this.execute(created_.payload.id, { dry_run: false });
+      const actionId = created_.payload.id;
+      const executed = await this.execute(actionId, { dry_run: false });
       if (!executed.ok) {
         skipped.push({ member_id: memberId, reason: executed.error.message });
+        // A 502 is the connector raising mid-send (executeOnce's catch), so the DM may or may not
+        // have gone out. Everything else was refused before any send was attempted.
+        deliveries.push({
+          member_id: memberId,
+          outcome: executed.status === 502 ? "unknown" : "failed",
+          action_id: actionId,
+          reason: executed.error.message,
+        });
         continue;
       }
-      created.push(this.store.getProposal(created_.payload.id) ?? created_.payload);
+      deliveries.push({
+        member_id: memberId,
+        outcome: executed.payload.status === "executed" ? "executed" : "not_delivered",
+        action_id: actionId,
+      });
+      created.push(this.store.getProposal(actionId) ?? created_.payload);
     }
+    const outcomeCount = (outcome: AdminBotMemberNudgeDelivery["outcome"]) =>
+      deliveries.filter((entry) => entry.outcome === outcome).length;
     this.recordAudit({
       type: "member_nudge.sent",
       actor,
@@ -13310,15 +13456,32 @@ export class AdminBotService {
         requested: request.recipient_member_ids.length,
         created: created.length,
         skipped: skipped.length,
-        // Every recipient that resolved to a member was notified in the portal, whether or not the
-        // channel send worked, so the audit distinguishes "told" from "delivered".
-        notified:
-          request.recipient_member_ids.length -
-          skipped.filter((entry) => entry.reason === "member not found").length,
+        // Told in the portal: a notification was actually filed. It used to be everyone who
+        // resolved to a member, which counted alumni, the off-list and the opted-out -- none of
+        // whom get a notification -- and read as "ten notified" beside two executed Slack sends.
+        notified: portalNotified.length,
+        portal_notified: portalNotified.length,
+        // The channel send, counted apart from the portal. `executed` is AdminBot's side of the
+        // send, not a provider receipt; `unknown` needs reconciling, not resending.
+        executed: outcomeCount("executed"),
+        not_delivered: outcomeCount("not_delivered"),
+        failed: outcomeCount("failed"),
+        unknown: outcomeCount("unknown"),
+        ...(outcomeCount("unknown") > 0
+          ? {
+              unknown_action_ids: deliveries
+                .filter((entry) => entry.outcome === "unknown")
+                .map((entry) => entry.action_id),
+            }
+          : {}),
         important: Boolean(request.important),
       },
     });
-    return { ok: true, status: 200, payload: { created, skipped } };
+    return {
+      ok: true,
+      status: 200,
+      payload: { created, skipped, portal_notified: portalNotified, deliveries },
+    };
   }
 
   /**

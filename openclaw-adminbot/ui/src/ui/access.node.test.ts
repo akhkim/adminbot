@@ -139,6 +139,8 @@ describe("visibleTabsForRole", () => {
       // Recordings of the lab's own meetings sit with Lab Sharing, above the roster.
       "adminbotMeetings",
       "adminbotMembers",
+      // Ranks the roster on invited talks from their CVs; names and counts only.
+      "adminbotTalkLeaderboard",
       "adminbotSignatures",
       "adminbotRecLetters",
       "adminbotMeetingRequests",

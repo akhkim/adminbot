@@ -8,6 +8,7 @@ import {
   evidenceFromCitationChecks,
   isLaterPlan,
   matchPaperEvidence,
+  openReviewStageProofs,
   planOpenReviewSync,
   venueFromId,
   type OpenReviewEvidence,
@@ -102,6 +103,35 @@ describe("reading the sources", () => {
       "withdrawn",
       "desk_rejected",
     ]);
+  });
+
+  it("reads the stages a visible reply proves and nothing it does not", () => {
+    const [item, bare] = evidenceFromAuthorResults({
+      submissions: [
+        {
+          id: "Arr222",
+          title: "Reviewed",
+          status: "under_review",
+          stages: { reviews_out: "2026-10-20T09:00:00+00:00", rebuttal: "", camera_ready: "x" },
+        },
+        { id: "Arr333", title: "Quiet", status: "under_review", stages: {} },
+      ],
+    });
+    expect(item.stages).toEqual({ reviews_out: "2026-10-20T09:00:00+00:00", rebuttal: "" });
+    expect(bare.stages).toBeUndefined();
+    expect(openReviewStageProofs(item)).toEqual([
+      {
+        stage: "reviews_out",
+        at: "2026-10-20T09:00:00+00:00",
+        subject: "OpenReview: reviews visible (forum Arr222)",
+      },
+      {
+        stage: "rebuttal",
+        at: "",
+        subject: "OpenReview: author response or meta-review posted (forum Arr222)",
+      },
+    ]);
+    expect(openReviewStageProofs(bare)).toEqual([]);
   });
 
   it("reads every title, the submission time and the ARR cycle a commitment came from", () => {

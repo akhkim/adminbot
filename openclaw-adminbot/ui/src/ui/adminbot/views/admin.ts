@@ -1109,6 +1109,13 @@ function filterMemberSpreadsheet(form: EventTarget | null | undefined): void {
  */
 const INLINE_OPTION_LIMIT = 40;
 
+/**
+ * Paper titles shown in a roster row before "+N more". The titles are already listed by name in
+ * the row's first cell; a prolific member's full list there made each row a paragraph, and the
+ * search box finds the rest.
+ */
+const ROW_PAPER_PREVIEW = 3;
+
 /** The shared `<datalist>` id for a field whose options are too many to inline per row. */
 function sharedOptionListId(fieldKey: string): string {
   return `adminbot-field-options-${fieldKey}`;
@@ -1858,7 +1865,7 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
             ><input
               name="search"
               type="search"
-              placeholder="Name, topic, project…"
+              placeholder="Name, topic, project, paper…"
               .value=${page?.filters.q ?? ""}
               ?disabled=${page?.loading ?? false}
           /></label>
@@ -1880,13 +1887,20 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
             ${projects.map((value) => html`<option value=${value}>${value}</option>`)}
           </select></label
         >
-        <label
-          ><span>Paper</span
-          ><select name="paper" ?disabled=${page?.loading}>
-            <option value="">All papers</option>
-            ${paperTitles.map((value) => html`<option value=${value}>${value}</option>`)}
-          </select></label
-        >
+        ${
+          // Search already matches paper titles (the server-side roster search includes them
+          // too). Past a short list a dropdown of every title is scrolling, not picking, and in a
+          // lab with 1,500 papers it was most of the page.
+          paperTitles.length <= INLINE_OPTION_LIMIT
+            ? html`<label
+                ><span>Paper</span
+                ><select name="paper" ?disabled=${page?.loading}>
+                  <option value="">All papers</option>
+                  ${paperTitles.map((value) => html`<option value=${value}>${value}</option>`)}
+                </select></label
+              >`
+            : nothing
+        }
         <label
           ><span>Conference</span
           ><select name="conference" ?disabled=${page?.loading}>
@@ -1989,16 +2003,22 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
                     member.assigned_badges,
                   )}<small>${member.id}</small>
                   ${memberPapers.length
-                    ? html`<span
-                        class="adminbot-member-sheet__papers"
-                        title=${memberPapers.map((entry) => entry.title).join("\n")}
-                      >
-                        ${memberPapers.map(
-                          (entry) =>
-                            html`<span class="adminbot-tag adminbot-tag--paper"
-                              >${entry.title}</span
-                            >`,
-                        )}
+                    ? html`<span class="adminbot-member-sheet__papers">
+                        ${memberPapers
+                          .slice(0, ROW_PAPER_PREVIEW)
+                          .map(
+                            (entry) =>
+                              html`<span
+                                class="adminbot-tag adminbot-tag--paper"
+                                title=${entry.title}
+                                >${entry.title}</span
+                              >`,
+                          )}
+                        ${memberPapers.length > ROW_PAPER_PREVIEW
+                          ? html`<span class="adminbot-tag adminbot-tag--more"
+                              >+${memberPapers.length - ROW_PAPER_PREVIEW} more</span
+                            >`
+                          : nothing}
                       </span>`
                     : nothing}
                   ${rowEdit === "none"
@@ -2065,12 +2085,7 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
                     (value) => html`<span class="adminbot-tag">${value}</span>`,
                   )}
                 </td>
-                <td>
-                  ${memberPapers.map(
-                    (entry) =>
-                      html`<span class="adminbot-tag adminbot-tag--paper">${entry.title}</span>`,
-                  )}
-                </td>
+                <td class="num">${memberPapers.length || "—"}</td>
                 <td>
                   ${renderAvailabilityStrip(member.availability, member.time_off)}
                   <small
@@ -2748,7 +2763,7 @@ function board(label: string, content: unknown, options: { open?: boolean } = {}
     return nothing;
   }
   return html`
-    <details class="paper-overview__board" ?open=${options.open ?? false}>
+    <details class="paper-overview__board adminbot-fold" ?open=${options.open ?? false}>
       <summary class="paper-overview__board-summary">${label}</summary>
       <div class="paper-overview__board-body">${content}</div>
     </details>
@@ -4059,14 +4074,6 @@ function renderPanel(props: AdminBotProps) {
     case "members":
       return html`
         <div class="card adminbot-card adminbot-card--wide">
-          <div class="card-title">Lab members</div>
-          <div class="card-sub">
-            ${general
-              ? props.signedInMemberId
-                ? "Browse the lab roster and edit your own profile."
-                : "Browse the lab roster."
-              : "Edit roster details, member information, and access defaults."}
-          </div>
           ${renderMembers(props, props.data.members)}
         </div>
       `;

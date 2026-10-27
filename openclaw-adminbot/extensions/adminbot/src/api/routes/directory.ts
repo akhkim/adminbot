@@ -3,8 +3,12 @@
 // Cut from server.ts's handleAuthenticatedRoute. Each route states its audience with a guard
 // decorator from guards.ts; the order below is the order the old if-chain tried them in.
 
-import { randomUUID } from "node:crypto";
-import type { AdminBotCvScanResult } from "../../contracts/actions.js";
+import { createHash, randomUUID } from "node:crypto";
+import type {
+  AdminBotCvScanMemberResult,
+  AdminBotCvScanResult,
+  AdminBotCvSnapshot,
+} from "../../contracts/actions.js";
 import {
   type AdminBotCvScanDeps,
   buildNewsletterDraft,
@@ -17,6 +21,10 @@ import {
   type AdminBotSlackChannelNamingEvent,
 } from "../../kernel/service.js";
 import { renderCvDigestDocument } from "../../workflows/cv/digest-doc.js";
+import {
+  buildTalkLeaderboard,
+  type AdminBotTalkLeaderboard,
+} from "../../workflows/cv/talk-leaderboard.js";
 import {
   memberMapHour,
   toPrivilegedMemberMap,
@@ -172,44 +180,24 @@ export const directoryRoutes: readonly Route[] = [
         sendServiceResult(res, scan.failure);
         return;
       }
-      // Rendered from the whole ledger, not from the scan that just ran: a scan consumes its own
-      // diff, so a quiet week returns nothing and would otherwise blank the document. See
-      // workflows/cv/digest-doc.ts.
-      const document = renderCvDigestDocument(
-        ctx.store.listCvChangesSince(LEDGER_EPOCH),
-        new Date(),
+      const published = await publishCvDigest(
+        ctx,
+        publisher,
+        principalActor(principal),
+        scan.result.scanned_at,
       );
-      try {
-        await publisher.publish(document.markdown);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        ctx.store.recordAudit({
-          id: `aud_${randomUUID()}`,
-          timestamp: new Date().toISOString(),
-          type: "cv.digest_failed",
-          actor: principalActor(principal),
-          details: { document_url: publisher.documentUrl, reason: message },
+      if (!published.ok) {
+        sendJson(res, 502, {
+          error: { message: `could not write the CV digest doc: ${published.message}` },
         });
-        sendJson(res, 502, { error: { message: `could not write the CV digest doc: ${message}` } });
         return;
       }
-      ctx.store.recordAudit({
-        id: `aud_${randomUUID()}`,
-        timestamp: new Date().toISOString(),
-        type: "cv.digest_published",
-        actor: principalActor(principal),
-        details: {
-          document_url: publisher.documentUrl,
-          day_count: document.day_count,
-          change_count: document.change_count,
-          scanned_at: scan.result.scanned_at,
-        },
-      });
       sendJson(res, 200, {
         document_url: publisher.documentUrl,
         published_at: scan.result.scanned_at,
-        day_count: document.day_count,
-        change_count: document.change_count,
+        day_count: published.day_count,
+        change_count: published.change_count,
+        talk_leaderboard: published.talk_leaderboard,
         scan: scan.result,
       });
     }),
@@ -235,6 +223,28 @@ export const directoryRoutes: readonly Route[] = [
       });
     }),
   ),
+  get("/cv/talk-leaderboard", ({ res, url, ctx, principal }) => {
+    // Any signed-in member, not just admins: the list used to sit in the lab meeting doc every
+    // member reads, and it carries names and counts only -- never a talk title or a CV.
+    if (principal.kind === "anonymous") {
+      sendJson(res, 401, { error: { message: "member session required" } });
+      return;
+    }
+    // Defaults to this year, the one the guidebook's travel perk is decided on; ?year= reads back
+    // a past one from the same CVs.
+    const raw = url.searchParams.get("year")?.trim();
+    const year = raw ? Number(raw) : new Date().getUTCFullYear();
+    if (!Number.isInteger(year) || year < 1900 || year > 2100) {
+      sendJson(res, 400, { error: { message: "year must be a four-digit year" } });
+      return;
+    }
+    const board = currentTalkLeaderboard(ctx.service, new Date(), year);
+    if (!board) {
+      sendJson(res, 500, { error: { message: "could not read the lab roster" } });
+      return;
+    }
+    sendJson(res, 200, { ...board, sweep: cvSweepStatus(ctx, new Date()) });
+  }),
   post(
     /^\/cv\/blurb\/([^/]+)$/u,
     privilegedOnly(async ({ res, ctx, params }) => {
@@ -405,6 +415,7 @@ export type CvScanOutcome =
 export async function scanAndRecordCvs(
   ctx: AdminBotRouteContext,
   service: AdminBotService,
+  onProgress?: AdminBotCvScanDeps["onProgress"],
 ): Promise<CvScanOutcome> {
   const members = service.listLabMembers();
   if (!members.ok) {
@@ -413,43 +424,360 @@ export async function scanAndRecordCvs(
   // Read at scan time rather than captured at boot, so changing the window takes effect on the
   // next scan instead of the next restart.
   const cvSettings = service.getSettings();
-  const { result, snapshots } = await runAdminBotCvScan(
-    members.payload.members,
-    // Callers check this before calling; asserted here so the helper has one contract.
-    ctx.cvScanDeps as AdminBotCvScanDeps,
-    cvSettings.ok ? cvSettings.payload.cv_recency_window_months : undefined,
-  );
-  // Snapshots are written through upsertLabMember rather than straight to the store so the scan
-  // cannot bypass member validation, and so a bad extraction fails one member's save instead of
-  // corrupting the roster.
-  for (const member of members.payload.members) {
-    const snapshot = snapshots.get(member.id);
-    if (!snapshot) {
-      continue;
-    }
-    const saved = service.upsertLabMember({ ...member, cv_snapshot: snapshot });
-    if (!saved.ok) {
-      const failed = result.results.find((entry) => entry.member_id === member.id);
-      if (failed) {
-        failed.status = "failed";
-        failed.reason = `could not save cv snapshot: ${saved.error.message}`;
+  // Each member is saved, and their changes put on the ledger, as soon as their CV is read rather
+  // than once the whole roster is done: a sweep can take most of an hour, and a deploy restarting
+  // the host midway would otherwise throw every read away. Snapshot first, then ledger, per member,
+  // so a member whose snapshot failed to store does not leave a change on the ledger the next scan
+  // would then never re-detect.
+  const record = (entry: AdminBotCvScanMemberResult, snapshot: AdminBotCvSnapshot | undefined) => {
+    // Re-read, so an edit made to the member while the sweep ran is not overwritten.
+    const member = ctx.store.getLabMember(entry.member_id);
+    if (snapshot) {
+      // Written through upsertLabMember rather than straight to the store so the scan cannot bypass
+      // member validation, and so a bad extraction fails one member's save instead of corrupting
+      // the roster.
+      const saved = member
+        ? service.upsertLabMember({ ...member, cv_snapshot: snapshot })
+        : { ok: false as const, error: { message: "member was removed during the scan" } };
+      if (!saved.ok) {
+        entry.status = "failed";
+        entry.reason = `could not save cv snapshot: ${saved.error.message}`;
+        entry.added = [];
+        return;
       }
     }
-  }
-  // Recorded after the snapshots are saved, so a member whose snapshot failed to store does not
-  // leave a change on the ledger the next scan would then never re-detect.
-  ctx.store.recordCvChanges(
-    result.results
-      .filter((entry) => entry.status === "changed" || entry.status === "first_scan")
-      .flatMap((entry) =>
+    if (entry.status !== "changed" && entry.status !== "first_scan") {
+      return;
+    }
+    try {
+      ctx.store.recordCvChanges(
         entry.added.map((change) => ({
           member_id: entry.member_id,
           member_name: entry.member_name,
-          detected_at: result.scanned_at,
+          detected_at: scannedAt,
           recency: change.recency,
           entry: change.entry,
         })),
-      ),
+      );
+    } catch (error) {
+      // The new snapshot carries the PDF's hash, so keeping it would make the next sweep skip this
+      // CV as unchanged and its changes would never reach the ledger. Put the old one back, named
+      // explicitly because upsertLabMember patches: a first scan's missing key would keep the new one.
+      if (snapshot && member) {
+        service.upsertLabMember({ ...member, cv_snapshot: member.cv_snapshot });
+      }
+      throw error;
+    }
+  };
+  const scanDeps = ctx.cvScanDeps as AdminBotCvScanDeps;
+  const scannedAt = scanDeps.now().toISOString();
+  const { result } = await runAdminBotCvScan(
+    members.payload.members,
+    // Callers check this before calling; asserted here so the helper has one contract.
+    { ...scanDeps, now: () => new Date(scannedAt), onProgress, onMemberScanned: record },
+    cvSettings.ok ? cvSettings.payload.cv_recency_window_months : undefined,
   );
   return { ok: true, result };
+}
+
+type CvDigestPublishOutcome =
+  | {
+      ok: true;
+      day_count: number;
+      change_count: number;
+      talk_leaderboard: AdminBotTalkLeaderboard | null;
+    }
+  | { ok: false; message: string };
+
+/**
+ * Rewrites the CV Updates doc from the whole ledger and audits the attempt either way.
+ *
+ * Rendered from the whole ledger, not from the scan that just ran: a scan consumes its own diff,
+ * so a quiet week returns nothing and would otherwise blank the document. See
+ * workflows/cv/digest-doc.ts.
+ */
+async function publishCvDigest(
+  ctx: AdminBotRouteContext,
+  publisher: NonNullable<AdminBotRouteContext["cvDigestPublisher"]>,
+  actor: string,
+  scannedAt: string,
+): Promise<CvDigestPublishOutcome> {
+  const { document, talkLeaderboard, body_hash } = renderCvDigest(ctx);
+  try {
+    await publisher.publish(document.markdown);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    ctx.store.recordAudit({
+      id: `aud_${randomUUID()}`,
+      timestamp: new Date().toISOString(),
+      type: "cv.digest_failed",
+      actor,
+      details: { document_url: publisher.documentUrl, reason: message },
+    });
+    return { ok: false, message };
+  }
+  ctx.store.recordAudit({
+    id: `aud_${randomUUID()}`,
+    timestamp: new Date().toISOString(),
+    type: "cv.digest_published",
+    actor,
+    details: {
+      document_url: publisher.documentUrl,
+      day_count: document.day_count,
+      change_count: document.change_count,
+      scanned_at: scannedAt,
+      body_hash,
+    },
+  });
+  return {
+    ok: true,
+    day_count: document.day_count,
+    change_count: document.change_count,
+    talk_leaderboard: talkLeaderboard,
+  };
+}
+
+/**
+ * The CV Updates doc as it would be published now, with a hash of everything but its "Updated"
+ * date so two renders of the same content compare equal on different days.
+ */
+function renderCvDigest(ctx: AdminBotRouteContext) {
+  const now = new Date();
+  const talkLeaderboard = currentTalkLeaderboard(ctx.service, now);
+  const document = renderCvDigestDocument(
+    ctx.store.listCvChangesSince(LEDGER_EPOCH),
+    now,
+    talkLeaderboard ?? undefined,
+  );
+  const body_hash = createHash("sha256")
+    .update(document.markdown.replace(/^_Updated .*_$/mu, ""))
+    .digest("hex");
+  return { document, talkLeaderboard, body_hash };
+}
+
+/** The body hash of the last doc that was actually written, from the audit log. */
+function lastPublishedDigestHash(ctx: AdminBotRouteContext): string | undefined {
+  let latest: { timestamp: string; hash?: unknown } | undefined;
+  for (const event of ctx.store.listAuditEvents()) {
+    if (event.type === "cv.digest_published" && (!latest || event.timestamp > latest.timestamp)) {
+      latest = { timestamp: event.timestamp, hash: event.details?.body_hash };
+    }
+  }
+  return typeof latest?.hash === "string" ? latest.hash : undefined;
+}
+
+/**
+ * This calendar year's talk leaderboard from the roster as it stands, or null when the roster
+ * cannot be read -- the doc is then published without the section rather than with an empty one
+ * that would read as "nobody gave a talk".
+ */
+function currentTalkLeaderboard(
+  service: AdminBotService,
+  now: Date,
+  year: number = now.getUTCFullYear(),
+): AdminBotTalkLeaderboard | null {
+  const members = service.listLabMembers();
+  return members.ok ? buildTalkLeaderboard(members.payload.members, year) : null;
+}
+
+export const CV_SWEEP_ACTOR = "system:cv-sweep";
+const CV_SWEEP_EVENT = "cv.sweep_completed";
+const CV_SWEEP_FAILED_EVENT = "cv.sweep_failed";
+const CV_SWEEP_PERIOD_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * How a sweep went, member by member, without naming anyone: counts per outcome and per failure
+ * reason. Enough to tell "35 Drive links are private" from "the model is down" in the audit log.
+ */
+export function summarizeCvScan(results: AdminBotCvScanResult["results"]) {
+  const statuses: Record<string, number> = {};
+  const failures: Record<string, number> = {};
+  for (const entry of results) {
+    statuses[entry.status] = (statuses[entry.status] ?? 0) + 1;
+    if ((entry.status === "failed" || entry.status === "skipped") && entry.reason) {
+      const reason = entry.reason.slice(0, 160);
+      failures[reason] = (failures[reason] ?? 0) + 1;
+    }
+  }
+  return { statuses, failures };
+}
+
+export type CvDailySweepOutcome =
+  | { status: "skipped"; reason: "not_configured" | "not_due" | "running" }
+  | { status: "failed"; reason: string }
+  | { status: "done"; changed_members: number; published: boolean };
+
+let cvSweepRunning = false;
+
+/**
+ * Where the daily CV read stands, for the leaderboard to say "reading 40 of 230, about 25 minutes
+ * left" instead of looking finished while half the CVs are unread.
+ */
+export type CvSweepStatus =
+  | {
+      state: "reading";
+      started_at: string;
+      done: number;
+      total: number;
+      // From the pace so far; null until the first CV is through and there is a pace to go on.
+      eta_seconds: number | null;
+    }
+  | {
+      state: "idle";
+      last_completed_at: string | null;
+      last_failed_at: string | null;
+      // When the next read is due. A past or null time means it starts at the next hourly check.
+      next_due_at: string | null;
+    };
+
+type CvSweepState = {
+  progress?: { started_at: number; done: number; total: number };
+  // Read once from the audit log, then kept current here, so the leaderboard does not scan the
+  // whole audit log on every page load.
+  lastCompletedAt?: string | null;
+  lastFailedAt?: string | null;
+};
+
+// Keyed by store so test servers, each with their own store, do not see one another's sweeps.
+const cvSweepStates = new WeakMap<object, CvSweepState>();
+
+function cvSweepState(ctx: AdminBotRouteContext): CvSweepState {
+  let state = cvSweepStates.get(ctx.store);
+  if (!state) {
+    state = {};
+    cvSweepStates.set(ctx.store, state);
+  }
+  if (state.lastCompletedAt === undefined || state.lastFailedAt === undefined) {
+    const latest = (type: string) =>
+      ctx.store
+        .listAuditEvents()
+        .filter((event) => event.type === type)
+        .reduce<string | null>(
+          (last, event) => (!last || event.timestamp > last ? event.timestamp : last),
+          null,
+        );
+    state.lastCompletedAt = latest(CV_SWEEP_EVENT);
+    state.lastFailedAt = latest(CV_SWEEP_FAILED_EVENT);
+  }
+  return state;
+}
+
+export function cvSweepStatus(ctx: AdminBotRouteContext, now: Date): CvSweepStatus {
+  const state = cvSweepState(ctx);
+  const progress = state.progress;
+  if (progress) {
+    const elapsed = now.getTime() - progress.started_at;
+    return {
+      state: "reading",
+      started_at: new Date(progress.started_at).toISOString(),
+      done: progress.done,
+      total: progress.total,
+      eta_seconds:
+        progress.done > 0
+          ? Math.round(((elapsed / progress.done) * (progress.total - progress.done)) / 1000)
+          : null,
+    };
+  }
+  const last = state.lastCompletedAt ?? null;
+  return {
+    state: "idle",
+    last_completed_at: last,
+    last_failed_at: state.lastFailedAt ?? null,
+    next_due_at: last ? new Date(Date.parse(last) + CV_SWEEP_PERIOD_MS).toISOString() : null,
+  };
+}
+
+/**
+ * The once-a-day CV pass: re-scan every linked CV and, when anything new landed on the ledger,
+ * refresh the CV Updates doc. Nothing is messaged; the doc and the ledger are the only output.
+ *
+ * Called hourly by the host and runs only once 24 hours have passed since the last completed
+ * sweep, read from the audit log. A plain 24-hour timer would restart its countdown on every
+ * deploy, and the host is redeployed more often than daily, so it would never fire.
+ *
+ * Unchanged CVs cost a download and a hash, not a model call: runAdminBotCvScan skips extraction
+ * when the text hash matches the stored snapshot. Extraction stays on the loopback model.
+ */
+export async function runCvDailySweep(
+  ctx: AdminBotRouteContext,
+  service: AdminBotService,
+  now: Date = new Date(),
+): Promise<CvDailySweepOutcome> {
+  if (!ctx.cvScanDeps) {
+    return { status: "skipped", reason: "not_configured" };
+  }
+  if (cvSweepRunning) {
+    return { status: "skipped", reason: "running" };
+  }
+  const state = cvSweepState(ctx);
+  const last = state.lastCompletedAt;
+  if (last && now.getTime() - Date.parse(last) < CV_SWEEP_PERIOD_MS) {
+    return { status: "skipped", reason: "not_due" };
+  }
+  cvSweepRunning = true;
+  const startedAt = Date.now();
+  // The host fires this from a timer that discards the promise, so a sweep that fails has to say
+  // so here or nobody learns why CVs stopped being read. A failure is its own event type: it must
+  // not count as the day's sweep, or a broken model would only be retried tomorrow.
+  const recordFailure = (reason: string): CvDailySweepOutcome => {
+    ctx.store.recordAudit({
+      id: `aud_${randomUUID()}`,
+      timestamp: now.toISOString(),
+      type: CV_SWEEP_FAILED_EVENT,
+      actor: CV_SWEEP_ACTOR,
+      details: { reason },
+    });
+    state.lastFailedAt = now.toISOString();
+    return { status: "failed", reason };
+  };
+  try {
+    let scan: CvScanOutcome;
+    try {
+      scan = await scanAndRecordCvs(ctx, service, (done, total) => {
+        state.progress = { started_at: startedAt, done, total };
+      });
+    } catch (error) {
+      return recordFailure(error instanceof Error ? error.message : String(error));
+    }
+    if (!scan.ok) {
+      return recordFailure(scan.failure.error.message);
+    }
+    const changed = scan.result.results.filter(
+      (entry) =>
+        (entry.status === "changed" || entry.status === "first_scan") && entry.added.length > 0,
+    ).length;
+    // Rewritten only when the document would read differently from the last one published: an
+    // unchanged doc would just gain a fresh "Updated" date. Compared on the rendered body rather
+    // than on this run's diff, because the talk leaderboard can move with no ledger change (a CV
+    // re-read by a newer prompt surfaces talks that were always there), and because a write that
+    // failed yesterday must still go out today even though today's scan found nothing new.
+    const published =
+      ctx.cvDigestPublisher && renderCvDigest(ctx).body_hash !== lastPublishedDigestHash(ctx)
+        ? (
+            await publishCvDigest(
+              ctx,
+              ctx.cvDigestPublisher,
+              CV_SWEEP_ACTOR,
+              scan.result.scanned_at,
+            )
+          ).ok
+        : false;
+    ctx.store.recordAudit({
+      id: `aud_${randomUUID()}`,
+      timestamp: now.toISOString(),
+      type: CV_SWEEP_EVENT,
+      actor: CV_SWEEP_ACTOR,
+      details: {
+        scanned_at: scan.result.scanned_at,
+        changed_members: changed,
+        published,
+        ...summarizeCvScan(scan.result.results),
+      },
+    });
+    state.lastCompletedAt = now.toISOString();
+    return { status: "done", changed_members: changed, published };
+  } finally {
+    cvSweepRunning = false;
+    state.progress = undefined;
+  }
 }

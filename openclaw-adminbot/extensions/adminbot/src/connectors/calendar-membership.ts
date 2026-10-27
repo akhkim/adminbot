@@ -14,7 +14,8 @@ function args(method: string, params: Record<string, unknown>) {
     "--json",
     "--no-input",
     "--enable-commands-exact",
-    "api.call",
+    // gog refuses a discovery method unless the policy names it as well as `api.call`.
+    `api.call,api.calendar.events.${method}`,
     "api",
     "call",
     "calendar",
@@ -182,7 +183,7 @@ export type CalendarAccessReader = (calendarId: string) => Promise<CalendarAcces
 
 function aclArgs(method: string, params: Record<string, unknown>) {
   return args(method, params).map((arg) =>
-    arg === `calendar.events.${method}` ? `calendar.acl.${method}` : arg,
+    arg.replace(`calendar.events.${method}`, `calendar.acl.${method}`),
   );
 }
 

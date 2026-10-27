@@ -336,6 +336,7 @@ function renderLaneTab(
       ? renderPaperSlots({
           paperId: paper.id,
           paperTitle: paper.title,
+          paper,
           slots: cycle.slots,
           stages: cycle.stages,
           loading: props.slotsBusyId === paper.id,

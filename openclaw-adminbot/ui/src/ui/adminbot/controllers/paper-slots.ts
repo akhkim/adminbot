@@ -175,6 +175,64 @@ export async function loadAdminBotPaperSlotOverview(host: AdminBotPaperSlotsHost
   }
 }
 
+/** Requests in flight at once for a batch: the browser's own per-host limit, so none queue blind. */
+const BATCH_CONCURRENCY = 6;
+/** How often a running batch hands what it has to the page. One redraw per window, not per paper. */
+const BATCH_FLUSH_MS = 250;
+
+/**
+ * Reads the slots of many papers -- the sheet's and the flat view's evidence -- for one redraw
+ * every quarter second instead of one per paper.
+ *
+ * `adminBotPaperSlots` is reactive state, so the single-paper loader redraws the whole page each
+ * time a response lands. Fifty papers on screen meant fifty full redraws of a fifteen-hundred-paper
+ * page, which is what made switching views take seconds. This collects responses and assigns them
+ * together; it leaves `adminBotPaperSlotsBusyId` alone, since that is one card's spinner.
+ */
+export async function loadAdminBotPaperSlotsMany(
+  host: AdminBotPaperSlotsHost,
+  paperIds: string[],
+): Promise<void> {
+  const wire = session(host);
+  if (!wire) {
+    host.adminBotPaperSlotsError = t("paperSlots.error.signIn");
+    return;
+  }
+  const queue = paperIds.filter((id) => !host.adminBotPaperSlots[id]);
+  let pending: Record<string, PaperCycle> = {};
+  let failure: string | null = null;
+  const flush = () => {
+    if (!sameSession(wire.token)) {
+      return;
+    }
+    if (Object.keys(pending).length > 0) {
+      host.adminBotPaperSlots = { ...host.adminBotPaperSlots, ...pending };
+      pending = {};
+    }
+    if (failure) {
+      host.adminBotPaperSlotsError = failure;
+      failure = null;
+    }
+  };
+  const timer = setInterval(flush, BATCH_FLUSH_MS);
+  const worker = async () => {
+    for (let id = queue.shift(); id !== undefined; id = queue.shift()) {
+      const result = await fetchPaperSlots(id, wire.token, wire.baseUrl);
+      if (result.ok) {
+        pending[id] = result.value;
+      } else {
+        failure = failureText(result, wire.baseUrl);
+      }
+    }
+  };
+  try {
+    await Promise.all(Array.from({ length: Math.min(BATCH_CONCURRENCY, queue.length) }, worker));
+  } finally {
+    clearInterval(timer);
+    flush();
+  }
+}
+
 /**
  * Open or close one card.
  *
@@ -291,7 +349,9 @@ export async function saveAdminBotPaperSlot(
     host.adminBotPaperSlotsError = t("paperSlots.error.signIn");
     return;
   }
-  const feedbackRequest = slot.startsWith("feedback_") || slot === "pi_approval";
+  // The impact statement joins them: a PI review of it changes the queue the same way.
+  const feedbackRequest =
+    slot.startsWith("feedback_") || slot === "pi_approval" || slot === "impact_statement";
   if (feedbackRequest && host.adminBotPaperSlotsBusyId) {
     return;
   }

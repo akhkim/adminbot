@@ -27,7 +27,7 @@ PORT="${ADMINBOT_PORT:-8765}"
 # The snapshot the results cron writes, at the path that cron uses. It is posted with the request
 # so the service reads the same file even when its own default path differs; when it is missing
 # the service falls back to its own path, and with no snapshot at all the run fails.
-SNAPSHOT="${ADMINBOT_OPENREVIEW_RESULTS_JSON:-$(dirname "${ADMINBOT_DB_PATH:-$HOME/.openclaw/state/adminbot.sqlite}")/openreview-author-results.json}"
+SNAPSHOT="${ADMINBOT_OPENREVIEW_RESULTS_JSON:-$(adminbot_service_state_dir)/openreview-author-results.json}"
 request_file="$(mktemp)"
 trap 'rm -f "$request_file"' EXIT
 python3 - "$SNAPSHOT" "${ADMINBOT_OPENREVIEW_SYNC_DRY_RUN:-0}" >"$request_file" <<'REQUEST'
@@ -64,8 +64,8 @@ if [[ "$status" != "200" ]]; then
 fi
 
 # Each paper OpenReview changed is named, so a change can be found without reading the ledger.
-python3 - "$body" <<'PY'
-import json, sys
+SNAPSHOT="$SNAPSHOT" python3 - "$body" <<'PY'
+import json, os, sys
 
 try:
     result = json.loads(sys.argv[1])
@@ -88,9 +88,21 @@ for entry in applied:
     print(f"  {entry.get('paper_id')}: {entry.get('status')} at {entry.get('venue')} ({detail})")
 for entry in result.get("kept", []):
     print(f"  kept {entry.get('paper_id')}: {entry.get('reason')}")
+stage_mode = "would close" if result.get("dry_run") else "closed"
+for entry in result.get("stages_closed", []):
+    print(f"  {entry.get('paper_id')}: {stage_mode} PaperFlow stage {entry.get('stage')} (seen on OpenReview)")
 for warning in result.get("warnings", []):
     print(f"  warning: {warning}", file=sys.stderr)
 
-# No source at all is worth a failed run: the job is doing nothing.
-raise SystemExit(0 if result.get("sources") else 1)
+# No source at all is worth a failed run: the job is doing nothing. Nearly always that is because
+# the results job upstream has not written a snapshot, so the run names that job and the path
+# rather than leaving "read no source" for somebody to decode.
+if not result.get("sources"):
+    print(
+        f"paper openreview sync: no OpenReview snapshot to read at {os.environ['SNAPSHOT']}; it is"
+        " written by the adminbot-openreview-results cron job, so check that job's latest run"
+        " (OpenReview login, openreview-py) and re-run it before this one",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
 PY

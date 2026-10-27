@@ -17,11 +17,12 @@ export function renderArrReviewers(props: {
     .toSorted((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
   return html` <section class="card">
     <div class="row" style="justify-content: space-between; gap: 16px; flex-wrap: wrap;">
-      <div>
-        <h2 class="card-title">ARR Eligible Reviewers</h2>
-        <p class="card-sub">Qualification and review capacity are self-reported in My Profile.</p>
-      </div>
-      <button class="btn" ?disabled=${props.loading} @click=${props.onRefresh}>Refresh</button>
+      <p class="card-sub" style="margin: 0;">
+        Qualification and review capacity are self-reported in My Profile.
+      </p>
+      <button class="btn btn--sm" ?disabled=${props.loading} @click=${props.onRefresh}>
+        Refresh
+      </button>
     </div>
     ${props.error
       ? html`<p class="callout danger" role="alert">${props.error}</p>`

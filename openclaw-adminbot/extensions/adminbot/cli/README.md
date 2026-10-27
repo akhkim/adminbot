@@ -27,23 +27,66 @@ The default API origin is `https://admin.safe.eu`. Use `--url ORIGIN` or
 The deployed server must match the packaged contract: the new paper-progress PATCH
 and `/openapi.json` require deploying the backend changes in this repository.
 
+## Agent skill (Claude Code and Codex)
+
+```bash
+adminbot skill install
+```
+
+Copies `skill/SKILL.md` and `skill/pages.md` into `~/.claude/skills/adminbot-cli` and
+`~/.codex/skills/adminbot-cli`, for whichever of the two exists. The skill tells an agent which
+operation each website page uses, which calls it may run freely (reads), which need the user's
+yes (every other write, and anything that messages people) and the workflow facts the routes
+don't show. It replaces only an earlier copy of itself. Run it again after updating the CLI.
+
+`skill/pages.md` is generated with the contract (`pnpm adminbot:api:generate`), and
+`adminbot:api:check` fails when it is stale or a route has no page in `skill/pages.mjs`.
+API tokens are for admins by default, so the skill is only useful to admins.
+
 ## Authenticate
+
+```bash
+adminbot auth login               # opens AdminBot in the browser; approve the code shown
+adminbot auth whoami
+adminbot auth tokens list
+adminbot auth tokens revoke TOKEN_ID
+adminbot auth logout              # revokes this machine's token
+```
+
+`auth login` signs this machine in with a personal API token, following the OAuth device
+flow (RFC 8628) that `gh`, `modal` and `gcloud` use. The CLI prints a URL and a code. You
+open the URL in a browser where you are already signed in to AdminBot, check that the
+code matches, and approve with your password. No password passes through the terminal.
+Options: `--name NAME` (default "adminbot CLI on HOST"), `--days 1-90` (default 30),
+`--no-browser`, `--url ORIGIN`. Set `ADMINBOT_NO_BROWSER=1` to stop the CLI opening a
+browser. Personal API tokens are available to admins.
+
+On macOS the token is stored in the login Keychain (service `adminbot`, account = the
+service origin), and `~/.config/adminbot/credentials.json` holds only the origin, token id
+and expiry. Elsewhere, or with `ADMINBOT_KEYCHAIN=0`, the token is stored in that file
+instead, written atomically with mode `0600`. `ADMINBOT_CREDENTIALS_FILE` moves the file.
+A saved credential is bound to the exact service origin and port.
+
+A token acts as you, but it cannot change your password or email, impersonate anyone,
+pair devices, approve another login, or create more tokens. It expires on its own date,
+after 30 idle days, and when your password changes. Every action it takes is recorded in
+the audit log with the token's name. See `docs/adminbot/api-tokens.md`.
+
+For an AI agent or a CI job, create a token under **My Profile → API tokens** and put it
+in that process's environment as `ADMINBOT_TOKEN`. That variable overrides the saved
+credential. Do not paste it into prompts, files in a repository, or process arguments.
+
+The older password login still works for scripts that need a browser-equivalent session:
 
 ```bash
 # Pipe the password from your password manager; never put it in process arguments.
 password-manager-command | adminbot auth login --email member@example.test --password-stdin
-adminbot auth whoami
-adminbot auth logout
 ```
 
-`password-manager-command` is a placeholder for your own password retrieval tool.
-Login needs an approved account. Sessions are saved atomically with mode `0600` at
-`~/.config/adminbot/credentials.json`, or `ADMINBOT_CREDENTIALS_FILE`. A saved session
-is bound to the exact service origin and port. Expired sessions require login again.
-`ADMINBOT_TOKEN` overrides the saved session. Service tokens retain the service
-principal's existing restrictions, including the inability to approve or execute.
-Login output omits the password/session token. Logout revokes the active member
-session and removes its matching saved credentials after a successful response.
+`password-manager-command` is a placeholder for your own password retrieval tool. Login
+output never includes the password or a token, and error messages redact anything shaped
+like a token. Service tokens retain the service principal's existing restrictions,
+including the inability to approve or execute.
 
 ## Work and paper progress
 

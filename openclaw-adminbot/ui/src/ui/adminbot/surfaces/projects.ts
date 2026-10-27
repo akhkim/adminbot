@@ -11,6 +11,7 @@ import { loadSlackChannelNames } from "../controllers/directory.ts";
 import {
   circulateAdminBotSocialDraft,
   loadAdminBotPaperSlots,
+  loadAdminBotPaperSlotsMany,
   recordAdminBotSocialConsent,
   saveAdminBotPaperSlot,
   saveAdminBotPaperWeeklyUpdate,
@@ -26,6 +27,9 @@ import { renderPaperReviewDialog, type ReviewPaper } from "../projects/review-di
 import { renderMyProjects } from "../projects/view.ts";
 import type { PaperWorkspaceProps } from "../projects/workspace.ts";
 import type { AdminBotSurfaceScope } from "./scope.ts";
+
+// Evidence ids asked for in the current task, sent together. See `onLoadSlots` below.
+const slotBatch = new Set<string>();
 
 export function paperWorkspaceProps(
   state: AppViewState,
@@ -56,8 +60,22 @@ export function paperWorkspaceProps(
     // Which drawing the card list lands on, not what anybody may do: the role already resolved for
     // the whole render, so it cannot disagree with the tabs beside it.
     viewerIsAdmin: scope.accessRole === "admin",
+    // The sheet and flat view ask for every row's evidence in one synchronous pass; ids asked for
+    // in the same task go out as one batch, so the page redraws a few times rather than per paper.
     onLoadSlots: (paperId) => {
-      void loadAdminBotPaperSlots(state, paperId).finally(() => requestHostUpdate?.());
+      slotBatch.add(paperId);
+      if (slotBatch.size > 1) {
+        return;
+      }
+      queueMicrotask(() => {
+        const ids = [...slotBatch];
+        slotBatch.clear();
+        const load =
+          ids.length === 1
+            ? loadAdminBotPaperSlots(state, ids[0])
+            : loadAdminBotPaperSlotsMany(state, ids);
+        void load.finally(() => requestHostUpdate?.());
+      });
     },
     onSaveSlot: (paperId, slot, input) => {
       void saveAdminBotPaperSlot(state, paperId, slot, input).finally(done);

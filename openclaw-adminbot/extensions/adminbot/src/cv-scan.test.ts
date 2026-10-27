@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import { AdminBotMemoryStore } from "./persistence/memory.js";
 import type {
   AdminBotCvChangeEvent,
   AdminBotCvEntry,
@@ -11,12 +10,15 @@ import {
   assertPublicHost,
   buildNewsletterDraft,
   classifyRecency,
+  CV_EXTRACTOR_VERSION,
   isPublicIpAddress,
   normalizeCvDownloadUrl,
   resolveStartIso,
   runAdminBotCvScan,
+  sanitizeCvEntries,
   type AdminBotCvScanDeps,
 } from "./cv-scan.js";
+import { AdminBotMemoryStore } from "./persistence/memory.js";
 
 const SCANNED_AT = new Date("2026-08-05T12:00:00.000Z");
 
@@ -31,10 +33,16 @@ function member(overrides: Partial<AdminBotLabMember> & { id: string }): AdminBo
   };
 }
 
-function snapshotOf(text: string, entries: AdminBotCvEntry[]): AdminBotCvSnapshot {
+function snapshotOf(
+  text: string,
+  entries: AdminBotCvEntry[],
+  // null stands for a snapshot written before extractor versions existed.
+  extractorVersion: number | null = CV_EXTRACTOR_VERSION,
+): AdminBotCvSnapshot {
   return {
     fetched_at: "2026-01-01T00:00:00.000Z",
     content_hash: createHash("sha256").update(text).digest("hex"),
+    ...(extractorVersion === null ? {} : { extractor_version: extractorVersion }),
     entries,
   };
 }
@@ -113,7 +121,129 @@ describe("runAdminBotCvScan", () => {
     );
     expect(result.results[0]?.status).toBe("unchanged");
     expect(extractEntries).not.toHaveBeenCalled();
+    // Same text from a file it had not fingerprinted yet: the entries stay, and the file hash is
+    // kept so the next scan can stop at the bytes.
+    expect(snapshots.get("same")).toEqual({
+      ...snapshotOf("cv text", [POSITION]),
+      pdf_hash: createHash("sha256")
+        .update(new Uint8Array([1]))
+        .digest("hex"),
+    });
+  });
+
+  it("stops at the bytes when the file is the one already read: no parsing, no model", async () => {
+    const extractText = vi.fn(async () => ({ ok: true as const, text: "cv text" }));
+    const extractEntries = vi.fn(async () => [POSITION]);
+    const { result, snapshots } = await runAdminBotCvScan(
+      [
+        member({
+          id: "same",
+          cv_url: "https://drive.google.com/file/d/abc",
+          cv_snapshot: {
+            ...snapshotOf("cv text", [POSITION]),
+            pdf_hash: createHash("sha256")
+              .update(new Uint8Array([1]))
+              .digest("hex"),
+          },
+        }),
+      ],
+      deps({ extractText, extractEntries }),
+    );
+    expect(result.results[0]?.status).toBe("unchanged");
+    expect(extractText).not.toHaveBeenCalled();
+    expect(extractEntries).not.toHaveBeenCalled();
     expect(snapshots.size).toBe(0);
+  });
+
+  it("still re-reads a byte-identical file once when an older prompt read it", async () => {
+    const extractEntries = vi.fn(async () => [POSITION]);
+    await runAdminBotCvScan(
+      [
+        member({
+          id: "old",
+          cv_url: "https://drive.google.com/file/d/abc",
+          cv_snapshot: {
+            ...snapshotOf("cv text", [POSITION], CV_EXTRACTOR_VERSION - 1),
+            pdf_hash: createHash("sha256")
+              .update(new Uint8Array([1]))
+              .digest("hex"),
+          },
+        }),
+      ],
+      deps({ extractEntries }),
+    );
+    expect(extractEntries).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports progress over linked CVs only, ending at the total", async () => {
+    const onProgress = vi.fn();
+    await runAdminBotCvScan(
+      [
+        member({ id: "a", cv_url: "https://drive.google.com/file/d/a" }),
+        member({ id: "none" }),
+        member({ id: "b", cv_url: "https://drive.google.com/file/d/b" }),
+      ],
+      deps({ onProgress }),
+    );
+    expect(onProgress.mock.calls).toEqual([
+      [0, 2],
+      [1, 2],
+      [2, 2],
+    ]);
+  });
+
+  it("reads several CVs at once but reports them in roster order", async () => {
+    // The slowest CV comes first: with one at a time nothing else could start until it finished.
+    const delays: Record<string, number> = { a: 30, b: 0, c: 10 };
+    let inFlight = 0;
+    let peak = 0;
+    const scanned: string[] = [];
+    const { result } = await runAdminBotCvScan(
+      ["a", "b", "c"].map((id) => member({ id, cv_url: `https://drive.google.com/file/d/${id}` })),
+      deps({
+        concurrency: 2,
+        fetchPdf: async (url) => {
+          inFlight += 1;
+          peak = Math.max(peak, inFlight);
+          await new Promise((resolve) => setTimeout(resolve, delays[url.at(-1)!]));
+          inFlight -= 1;
+          return Buffer.from(url);
+        },
+        onMemberScanned: (entry) => void scanned.push(entry.member_id),
+      }),
+    );
+    expect(peak).toBe(2);
+    expect(scanned).toEqual(["b", "c", "a"]);
+    expect(result.results.map((entry) => entry.member_id)).toEqual(["a", "b", "c"]);
+  });
+
+  it("re-reads an unchanged CV once when an older prompt read it, without announcing it", async () => {
+    // A 2026 talk the first prompt could not see: it belongs on the leaderboard, but it was on the
+    // CV all along, so it must not reach the ledger as news.
+    const talk: AdminBotCvEntry = {
+      kind: "talk",
+      title: "Probing refusals",
+      organization: "Stanford NLP Seminar",
+      start: "2026",
+      invited: true,
+    };
+    const extractEntries = vi.fn(async () => [POSITION, talk]);
+    const { result, snapshots } = await runAdminBotCvScan(
+      [
+        member({
+          id: "old-read",
+          cv_url: "https://drive.google.com/file/d/abc",
+          cv_snapshot: snapshotOf("cv text", [POSITION], null),
+        }),
+      ],
+      deps({ extractEntries }),
+    );
+    expect(extractEntries).toHaveBeenCalledTimes(1);
+    expect(result.results[0]).toMatchObject({ status: "unchanged", added: [] });
+    expect(snapshots.get("old-read")).toMatchObject({
+      extractor_version: CV_EXTRACTOR_VERSION,
+      entries: [POSITION, talk],
+    });
   });
 
   it("drafts newsletter copy from newsworthy additions", async () => {
@@ -281,9 +411,7 @@ describe("isPublicIpAddress", () => {
 describe("assertPublicHost", () => {
   it("accepts a host that resolves entirely to public addresses", async () => {
     const lookup = vi.fn(async () => [{ address: "8.8.8.8" }]);
-    await expect(
-      assertPublicHost("example.com", lookup as never),
-    ).resolves.toBeUndefined();
+    await expect(assertPublicHost("example.com", lookup as never)).resolves.toBeUndefined();
   });
 
   it("refuses a host whose addresses include a private one", async () => {
@@ -398,8 +526,9 @@ describe("normalizeCvDownloadUrl", () => {
 
   it("rewrites the Drive viewer link members actually paste", () => {
     // This exact shape returns ~80KB of HTML, which reaches PDFium as a "Data format error".
-    expect(at("https://drive.google.com/file/d/1EkV76vhT3J6Z0VDB9cYBpeotbxWIJhOf/view?usp=sharing"))
-      .toBe("https://drive.google.com/uc?export=download&id=1EkV76vhT3J6Z0VDB9cYBpeotbxWIJhOf");
+    expect(
+      at("https://drive.google.com/file/d/1EkV76vhT3J6Z0VDB9cYBpeotbxWIJhOf/view?usp=sharing"),
+    ).toBe("https://drive.google.com/uc?export=download&id=1EkV76vhT3J6Z0VDB9cYBpeotbxWIJhOf");
   });
 
   it("handles the older open?id= form", () => {
@@ -542,8 +671,9 @@ describe("publications", () => {
   it("does not extend that leniency to jobs", () => {
     // A bare year on a position means the model failed to read a month, and guessing would
     // announce a job nobody started.
-    expect(classifyRecency({ kind: "position", title: "T", organization: "O", start: "2026" }, now))
-      .toBe("undated");
+    expect(
+      classifyRecency({ kind: "position", title: "T", organization: "O", start: "2026" }, now),
+    ).toBe("undated");
   });
 
   it("credits one paper to every co-author it was seen on", () => {
@@ -564,5 +694,72 @@ describe("publications", () => {
       { memberName: "Alan", change: { entry: POSITION, recency: "recent" } },
     ]);
     expect(draft.split("\n").filter((line) => line.startsWith("- "))).toHaveLength(2);
+  });
+});
+
+describe("talks and media", () => {
+  const now = new Date("2026-08-05T00:00:00.000Z");
+  const talk: AdminBotCvEntry = {
+    kind: "talk",
+    title: "Probing refusal circuits",
+    organization: "Stanford NLP Seminar",
+    start: "2026",
+  };
+  const press: AdminBotCvEntry = {
+    kind: "media",
+    title: "Why chatbots refuse",
+    organization: "Wired",
+    start: "2026-07",
+    start_iso: "2026-07",
+  };
+
+  it("dates a talk or press piece listed only by year the way it dates a paper", () => {
+    expect(classifyRecency(talk, now)).toBe("recent");
+    expect(classifyRecency({ ...press, start: "2023", start_iso: undefined }, now)).toBe(
+      "backfilled",
+    );
+  });
+
+  it("drafts both into the newsletter in their own words", () => {
+    const draft = buildNewsletterDraft([
+      { memberName: "Ada", change: { entry: talk, recency: "recent" } },
+      { memberName: "Alan", change: { entry: press, recency: "recent" } },
+    ]);
+    expect(draft).toContain(
+      'Ada — gave a talk, "Probing refusal circuits", at Stanford NLP Seminar',
+    );
+    expect(draft).toContain('Alan — was featured in Wired: "Why chatbots refuse"');
+  });
+});
+
+describe("sanitizeCvEntries", () => {
+  it("keeps well-formed entries and drops malformed ones one at a time", () => {
+    expect(
+      sanitizeCvEntries([
+        { kind: "publication", title: "  Sparse probes ", organization: "NeurIPS 2026 (Oral)" },
+        { kind: "talk", title: "Probing", organization: "MIT", start: "2026", invited: true },
+        { kind: "position", title: "Intern", organization: "Lab", invited: true },
+        { kind: "talk", title: "Untitled", organization: "X", invited: "yes" },
+        { kind: "blog", title: "Not a kind", organization: "X" },
+        { kind: "award", title: "   ", organization: "X" },
+        { kind: "media", title: "Interview" },
+        "not an entry",
+        null,
+      ]),
+    ).toEqual([
+      { kind: "publication", title: "Sparse probes", organization: "NeurIPS 2026 (Oral)" },
+      { kind: "talk", title: "Probing", organization: "MIT", start: "2026", invited: true },
+      { kind: "position", title: "Intern", organization: "Lab" },
+      { kind: "talk", title: "Untitled", organization: "X" },
+      { kind: "media", title: "Interview", organization: "" },
+    ]);
+  });
+
+  it("caps a runaway field and treats a non-list as no entries", () => {
+    const [entry] = sanitizeCvEntries([
+      { kind: "other", title: "x".repeat(5000), organization: "" },
+    ]);
+    expect(entry?.title).toHaveLength(500);
+    expect(sanitizeCvEntries({ entries: [] })).toEqual([]);
   });
 });

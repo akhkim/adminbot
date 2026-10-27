@@ -7503,14 +7503,14 @@
       "kind": "html-attribute",
       "name": "placeholder",
       "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
-      "text": "anything the abstract does not say"
+      "text": "Another post. Leave a blank line between posts to add several."
     },
     {
       "count": 1,
       "kind": "html-attribute",
       "name": "placeholder",
       "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
-      "text": "Arriving early for a workshop, sharing a room, funded by my scholarship…"
+      "text": "anything the abstract does not say"
     },
     {
       "count": 1,
@@ -7524,7 +7524,7 @@
       "kind": "html-attribute",
       "name": "placeholder",
       "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
-      "text": "Describe the finding shown; required when adding a figure"
+      "text": "EMNLP 2026 (Oral)"
     },
     {
       "count": 1,
@@ -7534,11 +7534,53 @@
       "text": "ICML 2026, poster Wed Jul 8 Hall A #3015"
     },
     {
-      "count": 2,
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
+      "text": "Mina and Khai, Nov 4–8"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
+      "text": "One sentence on what the figure shows; needed only if you add one"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
+      "text": "The whole abstract. Used only when no PDF is dropped above."
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
+      "text": "Wed Nov 5, 14:00, Hall B poster #212 — or Oral session 3A, Room 101"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
+      "text": "(optional — paste it if the paper has no PDF or arXiv link)"
+    },
+    {
+      "count": 3,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
       "text": "(optional)"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
+      "text": "Abstract"
     },
     {
       "count": 1,
@@ -7559,6 +7601,13 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
+      "text": "Add posts"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
       "text": "Announcement stage"
     },
     {
@@ -7566,35 +7615,7 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
-      "text": "Anything else"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
-      "text": "Are you going?"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
-      "text": "Arriving"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
       "text": "Ask for changes"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
-      "text": "Asked separately from the money: you might need no funding and still want to stay with everyone."
     },
     {
       "count": 1,
@@ -7615,7 +7636,21 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
-      "text": "Confirmed local date/time, hall, poster number"
+      "text": "Confirmed local date/time, room, poster number or talk slot"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
+      "text": "Copy post"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
+      "text": "Copy whole thread"
     },
     {
       "count": 1,
@@ -7657,42 +7692,7 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
-      "text": "Figures and text are saved together. Coauthor review is optional. Saving creates a new draft version."
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
       "text": "Generate draft"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
-      "text": "I need a visa invitation letter"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
-      "text": "I want a bed in whatever the lab books"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
-      "text": "I'm not going after all"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
-      "text": "Leaving"
     },
     {
       "count": 1,
@@ -7741,7 +7741,7 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
-      "text": "Recorded."
+      "text": "Paper figure (PNG/JPEG; larger images are shrunk to fit)"
     },
     {
       "count": 1,
@@ -7755,7 +7755,7 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
-      "text": "Reviewed paper figure (PNG/JPEG, under 512 KB)"
+      "text": "Remove this figure"
     },
     {
       "count": 1,
@@ -7763,13 +7763,6 @@
       "name": "text",
       "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
       "text": "Save thread and figures"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
-      "text": "Say so early — these take weeks to arrange."
     },
     {
       "count": 1,
@@ -7790,7 +7783,7 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
-      "text": "Text updates as you type. Figures reflect the saved draft."
+      "text": "Text updates as you type. Figures reflect the saved draft. Post by hand on X: copy each post into the composer, attaching its figures."
     },
     {
       "count": 1,
@@ -7798,6 +7791,13 @@
       "name": "text",
       "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
       "text": "Thread preview"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
+      "text": "To remove a post, clear its text. Posts over 280 characters are split, and numbering is redone, when you save. Coauthor review is optional. Saving creates a new draft version."
     },
     {
       "count": 1,
@@ -7818,13 +7818,6 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
-      "text": "What do you need the lab to cover?"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
       "text": "What would you like to announce?"
     },
     {
@@ -7832,21 +7825,7 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
-      "text": "What you need for this trip"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
       "text": "Who is going"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/adminbot/views/paper-cycle.ts",
-      "text": "Your own answer, for the whole conference rather than this one paper. The lab books against it — headcount, nights and who needs what covered."
     },
     {
       "count": 1,
@@ -9470,7 +9449,7 @@
       "kind": "object-property",
       "name": "description",
       "path": "ui/src/ui/app-render.ts",
-      "text": "Re-read every member's linked CV, record what changed, and rewrite the CV Updates doc with today's date."
+      "text": "Runs on its own once a day: re-reads every member's linked CV (unchanged ones are skipped), records new positions, papers, awards, talks and press, and rewrites the CV Updates doc when something changed. The doc opens with this year's invited-talk leaderboard. Press Run to do it now."
     },
     {
       "count": 1,

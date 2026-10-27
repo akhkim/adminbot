@@ -1,4 +1,4 @@
-import { LitElement, html } from "lit";
+import { LitElement, html, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { pendingDraftCount, retryDraftSync } from "./draft-sync.ts";
 
@@ -6,6 +6,12 @@ import { pendingDraftCount, retryDraftSync } from "./draft-sync.ts";
 @customElement("adminbot-offline-access")
 export class OfflineAccess extends LitElement {
   @property() scope = "";
+  /**
+   * Draw the setup panel even when there is nothing to report. Set on the request pages, where
+   * someone prepares a device before travelling; elsewhere the panel appears only while the device
+   * is offline or drafts wait to sync, so it is not a block above every page.
+   */
+  @property({ type: Boolean }) always = false;
   @state() private online = navigator.onLine;
   @state() private ready = false;
   @state() private storageMessage = "";
@@ -72,10 +78,19 @@ export class OfflineAccess extends LitElement {
 
   override render() {
     const pending = pendingDraftCount(this.scope);
-    return html`<details>
+    const quiet = this.online && pending === 0 && !this.always;
+    this.hidden = quiet;
+    if (quiet) {
+      return nothing;
+    }
+    return html`<details class="adminbot-fold">
       <summary role="status">
         ${!this.online ? "Working offline" : "Offline access"} ·
-        ${this.ready ? "Ready on this device" : "Open online to prepare this device"}
+        ${pending
+          ? `${pending} draft${pending === 1 ? "" : "s"} to sync`
+          : this.ready
+            ? "Ready on this device"
+            : "Open online to prepare this device"}
       </summary>
       <p role="status">
         ${pending} draft${pending === 1 ? "" : "s"} awaiting sync or review.

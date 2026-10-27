@@ -14,21 +14,35 @@ set -euo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/lib/adminbot-cron-env.sh"
 adminbot_load_cron_env "openreview results" || exit 1
 
-TARGET="${ADMINBOT_OPENREVIEW_RESULTS_JSON:-$(dirname "${ADMINBOT_DB_PATH:-$HOME/.openclaw/state/adminbot.sqlite}")/openreview-author-results.json}"
+TARGET="${ADMINBOT_OPENREVIEW_RESULTS_JSON:-$(adminbot_service_state_dir)/openreview-author-results.json}"
 PYTHON="${ADMINBOT_PYTHON:-/usr/bin/python3}"
+# openreview-py is installed by deploy/aurora/install-user-services.sh into this directory, not into
+# the interpreter's site-packages. The AdminBot service unit puts it on PYTHONPATH, but this job runs
+# under the OpenClaw gateway, whose unit does not, so the bridge has to be pointed at it here.
+PYTHON_LIBS="$HOME/.local/share/jinesis-adminbot/python-libs"
+export PYTHONPATH="${PYTHONPATH:+$PYTHONPATH:}$PYTHON_LIBS"
 tmp="$(mktemp "${TARGET}.XXXXXX")"
 trap 'rm -f "$tmp"' EXIT
 
 "$PYTHON" "$(dirname "${BASH_SOURCE[0]}")/adminbot-openreview.py" author-results >"$tmp"
 
-TARGET="$TARGET" "$PYTHON" - "$tmp" <<'PY'
+TARGET="$TARGET" PYTHON="$PYTHON" PYTHON_LIBS="$PYTHON_LIBS" "$PYTHON" - "$tmp" <<'PY'
 import datetime, json, os, sys
 
 path = sys.argv[1]
 with open(path) as handle:
     result = json.load(handle)
 if not result.get("ok"):
-    print(f"openreview results: {result.get('reason')}: {result.get('error')}", file=sys.stderr)
+    hint = ""
+    if result.get("reason") == "missing_dependency":
+        # The one failure an operator fixes on the host rather than in OpenReview: say where.
+        hint = (
+            f" ({os.environ['PYTHON']} with PYTHONPATH={os.environ.get('PYTHONPATH', '')}; install"
+            f" scripts/adminbot-openreview-requirements.txt into {os.environ['PYTHON_LIBS']} by"
+            " re-running deploy/aurora/install-user-services.sh, or point ADMINBOT_PYTHON at an"
+            " interpreter that has it)"
+        )
+    print(f"openreview results: {result.get('reason')}: {result.get('error')}{hint}", file=sys.stderr)
     raise SystemExit(1)
 result["fetched_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
 with open(path, "w") as handle:

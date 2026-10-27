@@ -619,6 +619,10 @@ const lazyNotificationDrafts = createLazyView(
   () => import("./adminbot/views/notification-drafts.ts"),
   notifyLazyViewHost,
 );
+const lazyTalkLeaderboard = createLazyView(
+  () => import("./adminbot/views/talk-leaderboard.ts"),
+  notifyLazyViewHost,
+);
 const lazyPublicShell = createLazyView(
   () => import("./adminbot/views/public-shell.ts"),
   notifyLazyViewHost,
@@ -3233,7 +3237,10 @@ export function renderApp(state: AppViewState) {
           ? "content--logs"
           : ""} ${state.tab === "adminbotDeadlines" ? "content--deadlines" : ""}"
       >
-        <adminbot-offline-access .scope=${logisticsScope}></adminbot-offline-access>
+        <adminbot-offline-access
+          .scope=${logisticsScope}
+          .always=${isLogisticsTab(state.tab)}
+        ></adminbot-offline-access>
         <!-- Settings only. The text is git and install plumbing -- "Update skipped:
              not-git-install. Not a git checkout. Run openclaw update from the CLI" -- and it was
              rendering above every page, including a member's own profile. Nobody but the admin who
@@ -3554,6 +3561,15 @@ export function renderApp(state: AppViewState) {
               }),
             )
           : nothing}
+        ${state.tab === "adminbotTalkLeaderboard"
+          ? renderLazyView(lazyTalkLeaderboard, (m) =>
+              m.renderTalkLeaderboard(
+                resolveAdminBotBaseUrl(state.settings),
+                loadStoredMemberSession()?.sessionToken ?? "",
+                state.memberId ?? "",
+              ),
+            )
+          : nothing}
         ${state.tab === "adminbotNotificationDrafts" && adminBotMode === "admin"
           ? renderLazyView(lazyNotificationDrafts, (m) =>
               m.renderNotificationDrafts(
@@ -3848,7 +3864,7 @@ export function renderApp(state: AppViewState) {
                     id: "cv-digest",
                     name: "CV digest",
                     description:
-                      "Re-read every member's linked CV, record what changed, and rewrite the CV Updates doc with today's date.",
+                      "Runs on its own once a day: re-reads every member's linked CV (unchanged ones are skipped), records new positions, papers, awards, talks and press, and rewrites the CV Updates doc when something changed. The doc opens with this year's invited-talk leaderboard. Press Run to do it now.",
                     status: state.adminBotCvDigestJob.status,
                     ...(state.adminBotCvDigestJob.detail
                       ? { detail: state.adminBotCvDigestJob.detail }

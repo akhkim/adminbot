@@ -443,6 +443,27 @@ describe("renderProfessorView", () => {
     expect(pdf?.href).toBe("https://drive.google.com/file/d/1");
   });
 
+  it("flags an impact statement row as high priority and says what the risk is", () => {
+    const { container } = draw({
+      piReview: [
+        piReviewRow({
+          title: "Jailbreak probes",
+          priority: "high",
+          impact: {
+            statement: { risk: "Disguised harmful requests.", intervention: "x", users: "y" },
+            verdict: "related",
+            source: "classifier",
+            reasons: ["jailbreak"],
+          },
+        }),
+      ],
+    });
+    const row = container.querySelector('[data-testid="professor-pi-review"] .professor__row');
+    expect(row?.querySelector('[data-testid="pi-review-high-priority"]')).not.toBeNull();
+    expect(row?.textContent).toContain("Safety impact statement");
+    expect(row?.textContent).toContain("Disguised harmful requests.");
+  });
+
   it("caps a long queue and offers the rest as a control rather than as a count", () => {
     const letters = Array.from({ length: 8 }, (_, index) =>
       request({ id: `r${index}`, deadline_at: `2026-0${(index % 9) + 1}-01T00:00:00Z` }),

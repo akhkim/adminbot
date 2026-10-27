@@ -88,8 +88,9 @@ function renderStepLinks(step: MemberOnboardingStep) {
 }
 
 // Completion is self-attested, and undoing is always allowed -- "required" describes what the lab
-// is waiting for, never a one-way door on a member's own answer.
-function renderStepToggle(state: AppViewState, step: MemberOnboardingStep) {
+// is waiting for, never a one-way door on a member's own answer. Only the step at the top of the
+// list is the page's primary action; a column of filled buttons says nothing about where to start.
+function renderStepToggle(state: AppViewState, step: MemberOnboardingStep, lead = false) {
   if (AUTO_GRANTED_STEP_IDS.has(step.id)) {
     return html`<span class="getting-started__auto">${t("adminbotWelcome.autoGranted")}</span>`;
   }
@@ -98,7 +99,7 @@ function renderStepToggle(state: AppViewState, step: MemberOnboardingStep) {
   return html`
     <button
       type="button"
-      class="btn onboarding-step-card__toggle ${complete ? "" : "primary"}"
+      class="btn onboarding-step-card__toggle ${lead && !complete ? "primary" : ""}"
       data-testid=${`getting-started-toggle-${step.id}`}
       ?disabled=${state.adminBotOnboardingBusyStepId !== null}
       @click=${() => void toggleOnboardingStep(state, step.id, !complete)}
@@ -112,7 +113,7 @@ function renderStepToggle(state: AppViewState, step: MemberOnboardingStep) {
   `;
 }
 
-function renderStepCard(state: AppViewState, step: MemberOnboardingStep) {
+function renderStepCard(state: AppViewState, step: MemberOnboardingStep, lead: boolean) {
   return html`
     <div class="onboarding-step-card getting-started__step" data-testid=${`step-${step.id}`}>
       <div class="onboarding-step-card__row onboarding-step-card__row--task">
@@ -154,7 +155,7 @@ function renderStepCard(state: AppViewState, step: MemberOnboardingStep) {
         ${renderStepLinks(step)}
       </div>
 
-      <div class="getting-started__step-footer">${renderStepToggle(state, step)}</div>
+      <div class="getting-started__step-footer">${renderStepToggle(state, step, lead)}</div>
     </div>
   `;
 }
@@ -281,6 +282,12 @@ export function renderGettingStarted(state: AppViewState) {
     (step) => step.required && !AUTO_GRANTED_STEP_IDS.has(step.id),
   ).length;
 
+  const remainingGroups = groupStepsByCategory(remaining);
+  // An auto-granted step has no button, so the lead is the first one the member can act on.
+  const leadId = remainingGroups
+    .flatMap((group) => group.steps)
+    .find((step) => !AUTO_GRANTED_STEP_IDS.has(step.id))?.id;
+
   return html`
     <div class="getting-started" data-testid="getting-started">
       ${renderProgress(done.length, steps.length, requiredLeft)}
@@ -293,12 +300,12 @@ export function renderGettingStarted(state: AppViewState) {
         ? html`
             <section class="getting-started__section" data-testid="getting-started-remaining">
               <h2 class="getting-started__section-title">${t("gettingStarted.stillToDo")}</h2>
-              ${groupStepsByCategory(remaining).map(
+              ${remainingGroups.map(
                 (group) => html`
                   <div class="getting-started__group">
                     <h3 class="getting-started__group-title">${group.category}</h3>
                     <div class="getting-started__steps">
-                      ${group.steps.map((step) => renderStepCard(state, step))}
+                      ${group.steps.map((step) => renderStepCard(state, step, step.id === leadId))}
                     </div>
                   </div>
                 `,

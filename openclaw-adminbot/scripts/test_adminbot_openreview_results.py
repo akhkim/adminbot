@@ -121,6 +121,39 @@ class AuthorResultsTests(unittest.TestCase):
         [entry] = self.results([paper], {}, edits)
         self.assertEqual(entry["titles"], ["Camera Ready Title", "Submitted Title"])
 
+    def test_stage_proofs_come_only_from_replies_the_author_can_see(self):
+        paper = note("iclr1", title="T", venue="Submitted to ICLR 2027", venueid="ICLR.cc/2027/Conference/Submission")
+        paper.signatures = ["ICLR.cc/2027/Conference/Submission1/Authors"]
+        review = note("r1", ["ICLR.cc/2027/Conference/Submission1/-/Official_Review"], forum="iclr1", rating=6)
+        review.cdate = 1_762_000_000_000
+        later_review = note("r2", ["ICLR.cc/2027/Conference/Submission1/-/Official_Review"], forum="iclr1", rating=5)
+        later_review.cdate = 1_762_100_000_000
+        reviewer_comment = note("c1", ["ICLR.cc/2027/Conference/Submission1/-/Official_Comment"], forum="iclr1")
+        reviewer_comment.signatures = ["ICLR.cc/2027/Conference/Submission1/Reviewer_ab12"]
+        reviewer_comment.cdate = 1_762_200_000_000
+        # Only reviews are visible: the submission note is signed by the authors, but it is not a
+        # response, and nothing says whether a rebuttal is due.
+        [entry] = self.results([paper], {"iclr1": [paper, later_review, review, reviewer_comment]})
+        self.assertEqual(entry["stages"], {"reviews_out": "2025-11-01T12:26:40+00:00"})
+
+        response = note("c2", ["ICLR.cc/2027/Conference/Submission1/-/Official_Comment"], forum="iclr1")
+        response.signatures = ["ICLR.cc/2027/Conference/Submission1/Authors"]
+        response.cdate = 1_762_300_000_000
+        decision = note("d1", ["ICLR.cc/2027/Conference/Submission1/-/Decision"], forum="iclr1", decision="Reject")
+        decision.cdate = 1_762_400_000_000
+        [entry] = self.results([paper], {"iclr1": [paper, review, response, decision]})
+        self.assertEqual(set(entry["stages"]), {"reviews_out", "rebuttal", "decision"})
+        self.assertEqual(entry["stages"]["rebuttal"], "2025-11-04T23:46:40+00:00")
+
+    def test_rebuttal_invitations_and_meta_reviews_account_for_the_window(self):
+        self.assertEqual(bridge.reply_kind(["ICML.cc/2026/Conference/Submission4/-/Rebuttal"]), "rebuttal")
+        arr = note("arrForum", title="T", venue="ACL ARR 2026 May Submission",
+                   venueid="aclweb.org/ACL/ARR/2026/May/Submission")
+        meta = note("m1", ["aclweb.org/ACL/ARR/2026/May/Submission9/-/Meta_Review"], forum="arrForum",
+                    overall_assessment=3)
+        [entry] = self.results([arr], {"arrForum": [meta]})
+        self.assertEqual(entry["stages"], {"rebuttal": ""})
+
     def test_unreadable_forum_keeps_the_submission(self):
         client = Mock()
         client.profile = SimpleNamespace(id="~Synthetic_PI1")
@@ -133,6 +166,7 @@ class AuthorResultsTests(unittest.TestCase):
         [entry] = json.loads(output.getvalue())["submissions"]
         self.assertEqual(entry["status"], "under_review")
         self.assertEqual(entry["error"], "forbidden")
+        self.assertEqual(entry["stages"], {})
 
 
 if __name__ == "__main__":

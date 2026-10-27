@@ -1396,6 +1396,12 @@ export type AdminBotCvEntryKind =
   // field: it is the thing that identifies the work alongside its title, which is exactly what
   // `organization` does for every other kind, and cvEntryKey already keys on it.
   | "publication"
+  // A talk the member gave: invited talk, keynote, seminar, panel. `organization` is the host or
+  // venue ("Stanford NLP Seminar", "ICML 2026 workshop").
+  | "talk"
+  // Press about the member or their work: an interview, article, podcast. `organization` is the
+  // outlet ("Wired", "The Gradient podcast").
+  | "media"
   | "other";
 
 export type AdminBotCvEntry = {
@@ -1411,6 +1417,11 @@ export type AdminBotCvEntry = {
   // means "unknown", never "old", so an undated entry is reported for a human rather than
   // silently dropped or silently announced.
   start_iso?: string;
+  // Talks only: true when the CV marks the talk as invited (an invited talk, keynote, seminar or
+  // panel the member was asked to give), false for a contributed talk or an oral presentation of
+  // their own paper. Absent when the CV does not say, which the talk leaderboard counts as not
+  // invited rather than guessing.
+  invited?: boolean;
 };
 
 // Why an added entry is, or is not, news.
@@ -1426,6 +1437,14 @@ export type AdminBotCvSnapshot = {
   // Hash of the extracted CV text. A re-scan whose hash is unchanged skips the model call
   // entirely, so repeat scans over an unchanged roster cost one fetch each and nothing more.
   content_hash: string;
+  // Hash of the downloaded PDF bytes. Checked before the text is even extracted: a file that is
+  // byte-for-byte the one already read skips parsing and the model. Absent on older snapshots, which
+  // fall back to the text hash and gain this field on their next read.
+  pdf_hash?: string;
+  // Which version of the extraction prompt produced `entries`. Absent on snapshots written before
+  // versioning. When the prompt learns to read something new, an unchanged CV is read once more
+  // despite its hash, or the new field would only ever appear on CVs their owners happen to edit.
+  extractor_version?: number;
   entries: AdminBotCvEntry[];
 };
 
@@ -2453,9 +2472,44 @@ export type AdminBotMemberNudgeSkip = {
   reason: string;
 };
 
+/**
+ * What became of one channel send (the Slack DM or the email), as far as AdminBot can know.
+ *
+ * - `executed`: the connector returned without error. That is AdminBot's side of the send; it is
+ *   not a provider receipt and not proof the member saw it, so it is never called "delivered".
+ * - `not_delivered`: the connector recognized the send and declined it (a delivery kill switch).
+ *   Nothing left the building.
+ * - `failed`: refused before any send was attempted (no connector, not approved, bad payload).
+ * - `unknown`: the connector raised part-way through. The message may or may not have gone out,
+ *   so this is a thing to reconcile against the provider, not something to send again blindly.
+ */
+export type AdminBotMemberNudgeDeliveryOutcome =
+  | "executed"
+  | "not_delivered"
+  | "failed"
+  | "unknown";
+
+export type AdminBotMemberNudgeDelivery = {
+  member_id: string;
+  outcome: AdminBotMemberNudgeDeliveryOutcome;
+  /** The `member_nudge.send` proposal, for reconciling against the execution ledger. */
+  action_id: string;
+  reason?: string;
+};
+
 export type AdminBotMemberNudgeResult = {
+  /** Proposals whose execution returned, including any the connector declined to deliver. */
   created: AdminBotStoredProposal[];
   skipped: AdminBotMemberNudgeSkip[];
+  /**
+   * Members a portal notification was filed for. Separate from the channel send on purpose: the
+   * portal copy is written before the DM is tried and kept whatever the DM does, so "told in the
+   * portal" and "sent on Slack" are two different counts. Absent from older services and from
+   * sweeps that merge several sends into one result.
+   */
+  portal_notified?: string[];
+  /** One row per channel send that was attempted, with its outcome. Absent as above. */
+  deliveries?: AdminBotMemberNudgeDelivery[];
 };
 
 // --- OpenReview reviewing cycles ---
@@ -2824,6 +2878,13 @@ export type AdminBotAuditEvent = {
     // an answer to, and an unclosed start is itself worth being able to see.
     | "auth.impersonation_started"
     | "auth.impersonation_ended"
+    // Personal API tokens (docs/adminbot/api-tokens.md). Never carries the secret, only its id.
+    | "auth.api_token.created"
+    | "auth.api_token.revoked"
+    | "auth.api_token.revoked_all"
+    | "auth.api_token.new_ip"
+    | "auth.api_token.cli_login_started"
+    | "auth.api_token.cli_login_denied"
     // Where members are. An observation is a fact about a person's whereabouts, and the answer to
     // the prompt is the only thing that turns one into a profile change, so both are recorded.
     | "member.slack_stopped"
@@ -2851,6 +2912,9 @@ export type AdminBotAuditEvent = {
     // the document changed and who changed it.
     | "cv.digest_published"
     | "cv.digest_failed"
+    // The daily CV sweep finished a scan; its timestamp is what decides when the next one is due.
+    | "cv.sweep_completed"
+    | "cv.sweep_failed"
     // Rebuilding the conference paper indexes. It spends a few minutes of an external API's quota
     // and replaces what every member then searches, so who triggered one is worth keeping.
     | "venue_index.rebuilt"
@@ -3157,8 +3221,12 @@ export type AdminBotMeetingRecordInput = {
   summary?: AdminBotMeetingSummary;
   snapshots?: AdminBotMeetingSnapshotState;
   attendees?: AdminBotMeetingAttendee[];
-  /** How the record got here: parsed from a forwarded notice, or filed by hand in the Control UI. */
-  source: "zoom_email" | "manual";
+  /**
+   * How the record got here: parsed from a forwarded notice, filed by hand in the Control UI, or
+   * filed from Zoom's own usage report for a meeting no notice described (which may have no
+   * recording at all -- see validateMeeting).
+   */
+  source: "zoom_email" | "manual" | "participant_report";
   notes?: string;
 };
 

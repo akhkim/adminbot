@@ -38,7 +38,8 @@ verify_status="${verify##*$'\n'}"
 verify_body="${verify%$'\n'*}"
 
 if [[ "$verify_status" == "200" ]]; then
-  python3 - "$verify_body" <<'VERIFY'
+  # A summary that cannot be read must not cost the walk below, which set -e would otherwise skip.
+  if ! python3 - "$verify_body" <<'VERIFY'
 import json, sys
 
 result = json.loads(sys.argv[1])
@@ -52,41 +53,12 @@ print(
 for entry in result.get("invalidated", []):
     print(f"  contradicted {entry.get('paper_id')}: {entry.get('slot')}")
 VERIFY
+  then
+    printf 'paper evidence: unreadable verification summary\n' >&2
+  fi
 else
   # Not fatal: the walk below is still worth running, and a check that could not run is exactly
   # the "we could not tell" case this pass is built to survive.
-  printf 'paper evidence: verification pass unavailable (HTTP %s)\n' "${verify_status:-none}" >&2
-fi
-
-
-# Verify first, advance second, and in that order for a reason: a Drive link Google says is not
-# there is marked invalid by the check, which un-settles the slot -- so a paper must not be
-# advanced on evidence this pass is about to contradict. A deployment with no Google account wired
-# checks nothing and the walk proceeds exactly as before.
-verify="$(
-  curl --silent --show-error --max-time 300 \
-    --write-out '\n%{http_code}' \
-    -X POST \
-    -H "Authorization: Bearer ${ADMINBOT_SERVICE_TOKEN}" \
-    "http://127.0.0.1:${PORT}/papers/evidence/verify/run"
-)" || verify=""
-verify_status="${verify##*$'\n'}"
-if [[ "$verify_status" == "200" ]]; then
-  python3 -c '
-import json, sys
-result = json.loads(sys.argv[1])
-print(
-    f"paper evidence: {result.get(\"checked\", 0)} checked, "
-    f"{len(result.get(\"verified\", []))} confirmed, "
-    f"{len(result.get(\"invalidated\", []))} contradicted, "
-    f"{len(result.get(\"unreadable\", []))} unreadable"
-)
-for entry in result.get("invalidated", []):
-    print(f"  contradicted {entry.get(\"paper_id\")}: {entry.get(\"slot\")}")
-' "${verify%$'\n'*}"
-else
-  # Not fatal: the walk below is still worth running, and a check that could not run is exactly
-  # the "we could not tell" case the pass is built to survive.
   printf 'paper evidence: verification pass unavailable (HTTP %s)\n' "${verify_status:-none}" >&2
 fi
 

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { aliases } from "./aliases.mjs";
 import { argumentModel, commandWords, parseOperationArgs } from "./arguments.mjs";
-import { clearSession, saveSession, sessionToken } from "./auth.mjs";
+import { clearSession, forgetSavedSecret, saveSession, sessionToken } from "./auth.mjs";
 import {
   ApiError,
   bodyFields,
@@ -14,6 +14,8 @@ import {
   operations,
   serviceOrigin,
 } from "./client.mjs";
+import { deviceLogin } from "./login.mjs";
+import { installSkill } from "./skill.mjs";
 
 const commandIndex = new Map();
 for (const operation of Object.values(operations)) {
@@ -33,20 +35,23 @@ adminbot schema [OPERATION_ID]                Show OpenAPI, or one operation's c
 adminbot call OPERATION_ID [flags]            Call any documented operation
 adminbot <generated command> [IDs] [flags]    Same API with readable command names
 adminbot <command> --help                     Show generated parameters and flags
+adminbot skill install                        Install the agent skill for Claude Code and Codex
 
 Examples:
   adminbot papers list
   adminbot work update PAPER_ID --note "Finished experiments"
   adminbot tasks update PAPER_ID fixes_merged --done
   adminbot papers progress PAPER_ID --step overleaf_writing
+  adminbot auth login                         Sign in through the browser (API token)
   adminbot auth login --email EMAIL --password-stdin
+  adminbot auth tokens list
 
 Input fields become --kebab-case flags; arrays accept repeated flags.
 Nested/dynamic fields: --set FIELD.PATH=VALUE; dynamic query: --query NAME=VALUE. Optional JSON: --file PATH or --file -.
 Booleans: --done / --no-done. Dry-run operations need --live for real execution.
 Global options: --url ORIGIN, --timeout MS, --output PATH, --json, --help.
 Default: ${document.servers[0].url}; ADMINBOT_URL overrides it.
-Auth: saved member session or ADMINBOT_TOKEN; never put secrets in argv.
+Auth: saved login (macOS Keychain where available) or ADMINBOT_TOKEN; never put secrets in argv.
 Exit codes: 0 success, 1 service/network, 2 input, 3 auth/permission, 4 conflict.
 `;
 async function stdinText(stream) {
@@ -90,6 +95,57 @@ function findCommand(argv) {
   throw new ApiError("UNKNOWN_COMMAND", "Unknown command; run adminbot operations");
 }
 
+const LOGIN_USAGE =
+  "Usage: adminbot auth login [--name NAME] [--days 1-90] [--no-browser] [--url ORIGIN] [--timeout MS]";
+
+/** `auth login` without --email or --file: the browser handshake that issues a personal API token. */
+function deviceLoginArgs(argv) {
+  if (argv[0] !== "auth" || argv[1] !== "login") {
+    return undefined;
+  }
+  const args = argv.slice(2);
+  if (
+    args.some((arg) =>
+      ["--email", "--file", "--password-stdin", "--help", "-h"].includes(arg.split("=")[0]),
+    )
+  ) {
+    return undefined;
+  }
+  const options = { browser: true };
+  for (let index = 0; index < args.length; index++) {
+    const [flag, inline] = args[index].split(/[=](.*)/su);
+    if (flag === "--no-browser" && inline === undefined) {
+      options.browser = false;
+      continue;
+    }
+    if (!["--name", "--days", "--url", "--timeout"].includes(flag)) {
+      throw new ApiError("INVALID_ARGUMENTS", LOGIN_USAGE);
+    }
+    const value = inline ?? args[++index];
+    if (value === undefined) {
+      throw new ApiError("INVALID_ARGUMENTS", LOGIN_USAGE);
+    }
+    options[flag.slice(2)] = value;
+  }
+  if (options.days !== undefined) {
+    options.days = Number(options.days);
+    if (!Number.isSafeInteger(options.days) || options.days < 1 || options.days > 90) {
+      throw new ApiError("INVALID_ARGUMENTS", "--days must be 1–90");
+    }
+  }
+  return options;
+}
+function requestTimeout(value) {
+  const timeout = Number(value ?? 30000);
+  if (!Number.isSafeInteger(timeout) || timeout < 1 || timeout > 300000) {
+    throw new ApiError("INVALID_ARGUMENTS", "--timeout must be 1–300000 milliseconds");
+  }
+  return timeout;
+}
+// A token pasted into a flag or echoed back by a proxy must not reach a terminal log or an agent
+// transcript through an error message.
+const redact = (text) => text.replace(/abt_[A-Za-z0-9_-]{8,}/gu, "abt_[REDACTED]");
+
 export async function run(
   argv,
   {
@@ -114,6 +170,13 @@ export async function run(
       );
       return 0;
     }
+    if (argv[0] === "skill") {
+      if (argv.length !== 2 || argv[1] !== "install") {
+        throw new ApiError("INVALID_ARGUMENTS", "Usage: adminbot skill install");
+      }
+      stdout.write(`${JSON.stringify(await installSkill(env), null, 2)}\n`);
+      return 0;
+    }
     if (argv[0] === "operations") {
       if (argv.slice(1).some((arg) => arg !== "--json")) {
         throw new ApiError("INVALID_ARGUMENTS", "Usage: adminbot operations [--json]");
@@ -132,6 +195,24 @@ export async function run(
       );
       return 0;
     }
+    const credentials =
+      env.ADMINBOT_CREDENTIALS_FILE ?? join(homedir(), ".config", "adminbot", "credentials.json");
+    const browserLogin = deviceLoginArgs(argv);
+    if (browserLogin) {
+      const result = await deviceLogin({
+        baseUrl: serviceOrigin(browserLogin.url ?? env.ADMINBOT_URL ?? document.servers[0].url),
+        credentials,
+        name: browserLogin.name,
+        days: browserLogin.days,
+        browser: browserLogin.browser,
+        timeout: requestTimeout(browserLogin.timeout),
+        env,
+        stderr,
+        fetchImpl,
+      });
+      stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      return 0;
+    }
     const { alias, args } = findCommand(argv);
     const operation = operations[alias.operation];
     if (args.includes("--help") || args.includes("-h")) {
@@ -141,10 +222,7 @@ export async function run(
     const parsed = parseOperationArgs(operation, alias, args);
     const { values } = parsed;
     const baseUrl = serviceOrigin(values.url ?? env.ADMINBOT_URL ?? document.servers[0].url);
-    const timeout = Number(values.timeout ?? 30000);
-    if (!Number.isSafeInteger(timeout) || timeout < 1 || timeout > 300000) {
-      throw new ApiError("INVALID_ARGUMENTS", "--timeout must be 1–300000 milliseconds");
-    }
+    const timeout = requestTimeout(values.timeout);
     let body = parsed.body;
     if (values.file) {
       try {
@@ -164,8 +242,6 @@ export async function run(
       }
       body = { ...body, dry_run: values.live !== true };
     }
-    const credentials =
-      env.ADMINBOT_CREDENTIALS_FILE ?? join(homedir(), ".config", "adminbot", "credentials.json");
     const login = operation.operationId === "post-auth-login";
     if (login && !values.file) {
       if (!values["password-stdin"] || !body.email?.trim()) {
@@ -179,7 +255,7 @@ export async function run(
     const token =
       operation.security?.length === 0
         ? undefined
-        : await sessionToken(credentials, baseUrl, env.ADMINBOT_TOKEN);
+        : await sessionToken(credentials, baseUrl, env.ADMINBOT_TOKEN, env);
     const requiresAuth =
       (operation.security ?? document.security).length > 0 &&
       (operation.security ?? document.security).every(
@@ -202,6 +278,7 @@ export async function run(
       if (typeof result?.session_token !== "string" || typeof result?.expires_at !== "string") {
         throw new ApiError("INVALID_RESPONSE", "Invalid login response");
       }
+      await forgetSavedSecret(credentials, env);
       await saveSession(credentials, {
         url: baseUrl,
         token: result.session_token,
@@ -210,7 +287,7 @@ export async function run(
       result = { authenticated: true, expires_at: result.expires_at };
     }
     if (operation.operationId === "post-auth-logout") {
-      await clearSession(credentials, baseUrl, token);
+      await clearSession(credentials, baseUrl, token, env);
       result = { authenticated: false };
     }
     if (values.output) {
@@ -233,7 +310,7 @@ export async function run(
     const known = error instanceof ApiError;
     const status = known ? error.status : undefined;
     stderr.write(
-      `${JSON.stringify({ error: { code: known ? error.code : "CLI_ERROR", message: known ? error.message : "CLI failed; check input and local file permissions", ...(status ? { status } : {}) } })}\n`,
+      `${JSON.stringify({ error: { code: known ? error.code : "CLI_ERROR", message: known ? redact(error.message) : "CLI failed; check input and local file permissions", ...(status ? { status } : {}) } })}\n`,
     );
     // The service refusing the input is an input error, the same as the CLI refusing it.
     return [401, 403].includes(status)

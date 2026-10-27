@@ -399,8 +399,22 @@
     font-size: 12px;
   }
 
-  /* Content */
+  /* Content: the page keeps its name on a phone -- without it, nothing on screen says which of
+     twenty tabs this is -- but drops the subtitle to a single compact row. The meta line stays: it
+     carries the page's load error. */
   .content-header {
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+    padding: 0 0 2px;
+    max-height: none;
+  }
+
+  .content-header .page-title {
+    font-size: 20px;
+  }
+
+  .content-header .page-sub {
     display: none;
   }
 
@@ -595,9 +609,16 @@
     height: 44px;
   }
 
+  /* A 16px gutter keeps cards off the screen edge; chat alone runs nearly edge to edge. The bottom
+     leaves room for the fixed feedback button (44px at 16px), so the last row can scroll clear of
+     it instead of sitting underneath. */
   .content {
-    padding: 4px 4px 16px;
+    padding: 8px 16px calc(76px + env(safe-area-inset-bottom, 0px));
     gap: 12px;
+  }
+
+  .content.content--chat {
+    padding: 4px 4px 16px;
   }
 
   .content.content--deadlines,
@@ -846,8 +867,12 @@
   }
 
   .content {
-    padding: 4px 4px 12px;
+    padding: 8px 16px calc(76px + env(safe-area-inset-bottom, 0px));
     gap: 10px;
+  }
+
+  .content.content--chat {
+    padding: 4px 4px 12px;
   }
 
   .content.content--deadlines,

@@ -57,9 +57,18 @@ export function validateMeeting(
   }
   // A record with neither link is not a recording anyone can open, and filing one would put a dead
   // row on the tab that nothing later can repair -- the ingest keys on the share URL.
+  //
+  // Zoom's usage report is the exception. It proves the meeting happened and who was in it whether
+  // or not anyone pressed record, and attendance is the whole point of filing it. Such a record is
+  // filed under `zoom-<meeting id>-<date>`, the id a notice carrying both would produce, so a
+  // recording that does turn up later merges onto it rather than landing beside it.
   const hasLink = (recording?: AdminBotMeetingRecordInput["recording"]) =>
     Boolean(recording?.share_url?.trim() || recording?.drive_url?.trim());
-  if (!hasLink(input.recording) && !hasLink(existing?.recording)) {
+  if (
+    input.source !== "participant_report" &&
+    !hasLink(input.recording) &&
+    !hasLink(existing?.recording)
+  ) {
     return "recording.share_url or recording.drive_url is required";
   }
   return undefined;
@@ -186,17 +195,24 @@ export function meetingSeriesKey(topic: string): string {
 }
 
 /**
- * The listed meetings folded into one row per series, newest series first.
+ * The listed meetings folded into one row per series, newest series first -- except
+ * `pinnedTopic`'s series, which leads whenever it has a listed recording.
  *
  * Takes the lightweight head rather than the record so the tab's index never parses a roster.
  * Meetings under the duration floor are left out, so a count here is always the number of
  * recordings the series' own list will show. The display title is the newest recording's, as it
  * was written.
+ *
+ * The pin is the lab's weekly meeting. Ordered by recency alone, it slid below whichever reading
+ * group met on Tuesday, and the tab opens its first series on arrival -- so the meeting most people
+ * came to catch up on was the one they had to scroll for.
  */
 export function summarizeMeetingSeries(
   heads: readonly AdminBotMeetingHead[],
   minimumMinutes: number,
+  pinnedTopic?: string,
 ): AdminBotMeetingSeries[] {
+  const pinned = pinnedTopic ? meetingSeriesKey(pinnedTopic) : undefined;
   const series = new Map<string, AdminBotMeetingSeries & { latestTime: number }>();
   for (const head of heads) {
     if (!meetsDurationFloor(head, minimumMinutes)) {
@@ -224,7 +240,10 @@ export function summarizeMeetingSeries(
   }
   return [...series.values()]
     .toSorted(
-      (left, right) => right.latestTime - left.latestTime || left.key.localeCompare(right.key),
+      (left, right) =>
+        Number(right.key === pinned) - Number(left.key === pinned) ||
+        right.latestTime - left.latestTime ||
+        left.key.localeCompare(right.key),
     )
     .map(({ latestTime: _latest, ...row }) => row);
 }

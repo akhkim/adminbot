@@ -30,8 +30,13 @@ wait
 if adminbot_load_cron_env "cron heartbeat" 2>/dev/null && [[ -n "${ADMINBOT_SERVICE_TOKEN:-}" ]]; then
   detail=""
   if [[ "$status" -ne 0 ]]; then
-    detail="$(grep -v '^[[:space:]]*$' "$errlog" | tail -n 1 | cut -c1-300 |
-      sed -E 's/(Bearer|token|secret|password|key)[=: ]+[^ ]+/\1 [redacted]/Ig; s/xox[abprs]-[A-Za-z0-9-]+/[redacted]/g; s/ya29\.[A-Za-z0-9._-]+/[redacted]/g')"
+    # Node's own warnings are skipped: one printed after the real error, and its
+    # "(Use `node --trace-warnings ...`)" hint, otherwise became the reported failure.
+    detail="$(grep -v -E '^[[:space:]]*$|^\(node:[0-9]+\) |^\(Use `node --trace-' "$errlog" |
+      tail -n 1 | cut -c1-300 |
+      # A bare word after "token" is usually the error ("token has been expired or revoked"), so
+      # only Bearer values and key=value / key: value pairs are treated as credentials.
+      sed -E 's/(Bearer)[ ]+[^ ]+/\1 [redacted]/Ig; s/(token|secret|password|key)[ ]*[=:][ ]*[^ ]+/\1 [redacted]/Ig; s/xox[abprs]-[A-Za-z0-9-]+/[redacted]/g; s/ya29\.[A-Za-z0-9._-]+/[redacted]/g; s/sk-[A-Za-z0-9_-]{16,}/[redacted]/g')"
   fi
   body="$(JOB="$job" CRON="$cron" STATUS="$status" DETAIL="$detail" python3 -c '
 import json, os

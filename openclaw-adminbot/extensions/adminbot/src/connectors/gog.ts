@@ -763,7 +763,7 @@ function buildCalendarAddAttendeesArgs(proposal: AdminBotStoredProposal): string
 /**
  * Take the people named in `removed_attendees` off each target event, and nobody else.
  *
- * There is no remove-attendee flag, so removal is a whole-list replace (`--attendees`). The list
+ * There is no remove-attendee flag, so removal writes the whole guest list back. The list
  * written is computed here, from the event as it stands at execution, rather than taken from the
  * proposal: a proposal's `remaining_attendees` is a snapshot from whenever the sweep ran, and
  * writing it back days later uninvites everyone added in between. Subtracting from the live list
@@ -777,9 +777,12 @@ function buildCalendarAddAttendeesArgs(proposal: AdminBotStoredProposal): string
  * Silent (CALENDAR_SEND_UPDATES). Google treats a whole-list replace as an edit for every guest,
  * so with `all` every remaining member got a fresh copy of the Monday meeting invite each time
  * somebody else was dropped. The people removed are not told either: a membership sweep tidying
- * the guest list is not news to anyone. gog sends bare `{email}` objects, so the write does reset
- * the remaining guests' RSVPs; it cannot be avoided through gog, and is why an event that needs
- * no change is never written.
+ * the guest list is not news to anyone.
+ *
+ * The write is a raw `events.patch` carrying each remaining guest's attendee object as read, not
+ * `gog calendar update --attendees`: gog rebuilds that list from bare addresses, which reset every
+ * remaining guest's RSVP to "needs action", so the meeting came back as a fresh, unanswered
+ * invitation in everyone's calendar each time one member stopped being a full member.
  */
 async function removeCalendarAttendees(
   proposal: AdminBotStoredProposal,
@@ -818,22 +821,29 @@ async function removeCalendarAttendees(
         `calendar.remove_attendees refuses to empty the guest list of event ${eventId}`,
       );
     }
-    const args = rootArgs("calendar.update", account);
+    // gog's command policy names each discovery method on top of `api.call` itself.
+    const args = rootArgs("api.call,api.calendar.events.patch", account, true);
     args.push(
+      "api",
+      "call",
       "calendar",
-      "update",
-      calendarId,
-      eventId,
-      "--attendees",
-      keep.map(attendeeSpec).join(","),
-      "--send-updates",
-      CALENDAR_SEND_UPDATES,
+      "v3",
+      "calendar.events.patch",
+      "--params",
+      JSON.stringify({ calendarId, eventId, sendUpdates: CALENDAR_SEND_UPDATES }),
+      "--scope",
+      "https://www.googleapis.com/auth/calendar",
+      "--allow-write",
+      "--body",
+      JSON.stringify({ attendees: keep }),
     );
     await run(args);
   }
 }
 
-type EventAttendee = { email: string; optional: boolean; resource: boolean };
+// The attendee object exactly as Google returned it (RSVP, optional, resource, comment), so writing
+// it back changes nothing about the guests who stay.
+type EventAttendee = Record<string, unknown> & { email: string };
 
 function parseEventAttendees(stdout: string, eventId: string, allowEmpty = false): EventAttendee[] {
   let parsed: unknown;
@@ -856,16 +866,8 @@ function parseEventAttendees(stdout: string, eventId: string, allowEmpty = false
   return event.attendees.flatMap((entry) => {
     const attendee = entry && typeof entry === "object" ? (entry as Record<string, unknown>) : {};
     const email = typeof attendee.email === "string" ? attendee.email.trim() : "";
-    return email
-      ? [{ email, optional: attendee.optional === true, resource: attendee.resource === true }]
-      : [];
+    return email ? [{ ...attendee, email }] : [];
   });
-}
-
-// gog's modifier syntax, so a replace does not quietly turn optional guests into required ones or a
-// booked room into a person.
-function attendeeSpec(attendee: EventAttendee): string {
-  return `${attendee.email}${attendee.optional ? ";optional" : ""}${attendee.resource ? ";resource" : ""}`;
 }
 
 function buildCalendarDeleteArgs(proposal: AdminBotStoredProposal): string[] {

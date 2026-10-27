@@ -31,10 +31,26 @@ TSX_BIN="$REPO_ROOT/node_modules/.bin/tsx"
 
 # Named before any work happens: the cache directory is the one piece of configuration this pass
 # cannot run without, and a missing one should say so rather than read as "no reviews today".
-CACHE_DIR="${ADMINBOT_PAPERMENTOR_CACHE_DIR:-/var/lib/overleaf/ai-tutor-cache}"
-[[ -d "$CACHE_DIR" ]] || {
-  printf 'papermentor runs: %s is not a directory.\n' "$CACHE_DIR" >&2
-  printf 'Set ADMINBOT_PAPERMENTOR_CACHE_DIR to the PaperMentor cache directory, or mount it here.\n' >&2
+# One line, naming whether the path was configured or is the built-in default (the Overleaf
+# host's own path, which an AdminBot host only has if the cache is mounted there). A directory this
+# user cannot list is the same failure: the walk would otherwise die on it with a bare EACCES.
+if [[ -n "${ADMINBOT_PAPERMENTOR_CACHE_DIR:-}" ]]; then
+  CACHE_DIR="$ADMINBOT_PAPERMENTOR_CACHE_DIR"
+  CACHE_SOURCE="from ADMINBOT_PAPERMENTOR_CACHE_DIR"
+else
+  CACHE_DIR="/var/lib/overleaf/ai-tutor-cache"
+  CACHE_SOURCE="the default: ADMINBOT_PAPERMENTOR_CACHE_DIR is not set in $ADMINBOT_ENV_FILE or the environment"
+fi
+if [[ ! -d "$CACHE_DIR" ]]; then
+  problem="is not a directory"
+elif [[ ! -r "$CACHE_DIR" || ! -x "$CACHE_DIR" ]]; then
+  problem="is not readable by $(id -un)"
+else
+  problem=""
+fi
+[[ -z "$problem" ]] || {
+  printf 'papermentor runs: PaperMentor cache %s %s (%s); set ADMINBOT_PAPERMENTOR_CACHE_DIR to the cache directory mounted or synced from the Overleaf host, or run this job there\n' \
+    "$CACHE_DIR" "$problem" "$CACHE_SOURCE" >&2
   exit 1
 }
 

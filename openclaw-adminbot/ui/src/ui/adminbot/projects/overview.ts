@@ -16,9 +16,15 @@ import { PAPER_GRID_THRESHOLD } from "../paper-grid.ts";
 import { renderAddButton, renderAddForm } from "./add-form.ts";
 import { renderBlockerBoard } from "./blocker-report.ts";
 import { renderDecisionBanners } from "./decisions.ts";
-import { projectsListMode, renderListMode, setProjectsListMode } from "./full-views.ts";
 import {
-  compareProjects,
+  projectsListMode,
+  renderListMode,
+  setProjectsListMode,
+  type ProjectsListMode,
+} from "./full-views.ts";
+import { renderListMore, renderListSearch, windowLists } from "./list-window.ts";
+import {
+  sortedProjects,
   navigateToProject,
   ownPapers,
   PROJECT_LANES,
@@ -126,7 +132,9 @@ function renderOtherPapers(
     return nothing;
   }
   // Finished papers stay on the page rather than disappearing: they are the record of what the lab
-  // published, and a list that silently shrinks is how somebody loses a paper.
+  // published, and a list that silently shrinks is how somebody loses a paper. Both groups are drawn
+  // the same way -- open, under a heading -- because one list folded and its neighbour open made
+  // readers guess which rule applied; length is handled by the shared window, not by folding.
   const { ongoing, completed } = partitionByCompletion(others);
   return html`<section class="projects__others" data-testid="projects-others">
     ${ongoing.length
@@ -136,12 +144,12 @@ function renderOtherPapers(
           </ul>`
       : nothing}
     ${completed.length
-      ? html`<details class="my-work__done" data-testid="my-work-completed">
-          <summary class="my-work__done-summary">Completed (${completed.length})</summary>
+      ? html`<div data-testid="my-work-completed">
+          <h3 class="projects__others-title">Completed</h3>
           <ul class="projects__other-list">
             ${completed.map((paper) => renderOtherRow(state, props, paper))}
           </ul>
-        </details>`
+        </div>`
       : nothing}
   </section>`;
 }
@@ -173,14 +181,20 @@ function renderCards(
   if (state.myProjects === null) {
     return html`<p class="projects__empty">Loading your projects…</p>`;
   }
+  const rerender = () => props.onRerender?.();
+  const listed = windowLists(projects, others);
   return html`${projects.length === 0
-    ? html`<p class="projects__empty">
+    ? html`<p class="projects__empty" data-testid="my-work-empty">
         ${hiddenCount > 0 && others.length === 0
           ? t("myWork.hidden.allHidden")
-          : "No active projects. Start one with Add a project."}
+          : others.length === 0
+            ? // A member who has never filed a paper, or was never added to one, lands here: say
+              // where papers come from rather than only that there are none.
+              "No papers on file for you yet. Add one with Add a project, or ask the paper's lead to list you as an author and it appears here."
+            : "No active projects right now. Your other papers are below."}
       </p>`
     : html`<div class="projects__cards">
-        ${projects.map((project) =>
+        ${listed.first.map((project) =>
           projectLink(
             state,
             project.paper_id,
@@ -190,7 +204,48 @@ function renderCards(
           ),
         )}
       </div>`}
-  ${renderOtherPapers(state, props, others)}`;
+  ${renderOtherPapers(state, props, listed.second)}
+  ${renderListMore(listed.shown, listed.matched, rerender)}`;
+}
+
+const MODE_LABELS: Record<ProjectsListMode, string> = {
+  cards: "Cards",
+  sheet: "Sheet",
+  flat: "All fields",
+};
+
+/**
+ * One switch for the three drawings, with the current one marked. Three loose buttons named after
+ * what they did ("Fill in as a spreadsheet", "View legacy view") did not say which view was open or
+ * how to get back; a segmented switch answers both at a glance.
+ */
+function renderModeSwitch(mode: ProjectsListMode, count: number, rerender: () => void) {
+  const modes: ProjectsListMode[] =
+    count > PAPER_GRID_THRESHOLD ? ["cards", "sheet", "flat"] : ["cards", "flat"];
+  if (count === 0) {
+    return nothing;
+  }
+  return html`<div class="projects__modes" role="group" aria-label="View">
+    ${modes.map(
+      (option) =>
+        html`<button
+          type="button"
+          class="projects__mode"
+          data-testid=${option === "sheet"
+            ? "my-work-open-grid"
+            : option === "flat"
+              ? "my-work-open-legacy"
+              : "my-work-open-cards"}
+          aria-pressed=${mode === option ? "true" : "false"}
+          @click=${() => {
+            setProjectsListMode(option);
+            rerender();
+          }}
+        >
+          ${MODE_LABELS[option]}
+        </button>`,
+    )}
+  </div>`;
 }
 
 export function renderProjectsOverview(state: OverviewState, props: PaperWorkspaceProps) {
@@ -198,12 +253,12 @@ export function renderProjectsOverview(state: OverviewState, props: PaperWorkspa
   // Read once per render: this is synchronous storage, and a thirty-paper list would otherwise
   // parse the same JSON thirty times.
   const { visible, hidden: tucked } = partitionHiddenPapers(
-    ownPapers(state).sort(compareProjects),
+    ownPapers(state, { sorted: true }),
     hiddenIds,
   );
-  const projects = (state.myProjects ?? [])
-    .filter((project) => !hiddenIds.has(project.paper_id))
-    .sort(compareProjects);
+  const projects = sortedProjects(state.myProjects ?? []).filter(
+    (project) => !hiddenIds.has(project.paper_id),
+  );
   const activeIds = new Set((state.myProjects ?? []).map((project) => project.paper_id));
   // Only meaningful once the active list is in: before that every paper would look inactive.
   const others =
@@ -212,51 +267,28 @@ export function renderProjectsOverview(state: OverviewState, props: PaperWorkspa
       : visible.filter((paper) => !activeIds.has(paper.id));
   // Lands on the sheet for an administrator, or for anybody with five or more papers, as the old
   // My Projects page did; everyone else lands on the cards. A press on either button outranks it.
-  const mode = projectsListMode({ count: visible.length, admin: props.viewerIsAdmin ?? false });
+  const mode = projectsListMode({
+    count: visible.length,
+    admin: props.viewerIsAdmin ?? false,
+    // The same key the hidden-papers list reads, so both preferences follow the same person.
+    memberId: state.memberId,
+  });
   const rerender = () => props.onRerender?.();
   const members = state.adminBotData?.members ?? [];
   return html`<section class="projects" data-testid="projects-overview">
+    <!-- One header for every view, in two rows on a phone: what you see (view, add) and how you
+         narrow it (search, hide). Each view drew its own search box under a header that already
+         wrapped to two rows, so the first paper sat a third of a screen down. -->
     <header class="projects__head">
-      <p class="projects__lede">
-        Your active projects. A dot is a lane with work still open; hover it for what it is.
-      </p>
-      <div class="my-work__section-actions">
-        ${visible.length > PAPER_GRID_THRESHOLD
-          ? html`<button
-              type="button"
-              class="btn btn--sm"
-              data-testid="my-work-open-grid"
-              aria-pressed=${mode === "sheet" ? "true" : "false"}
-              @click=${() => {
-                setProjectsListMode("sheet");
-                rerender();
-              }}
-            >
-              Fill in as a spreadsheet (${visible.length})
-            </button>`
-          : nothing}
-        ${visible.length
-          ? html`<button
-              type="button"
-              class="btn btn--sm"
-              data-testid="my-work-open-legacy"
-              aria-pressed=${mode === "flat" ? "true" : "false"}
-              @click=${() => {
-                setProjectsListMode("flat");
-                rerender();
-              }}
-            >
-              View legacy view (${visible.length})
-            </button>`
-          : nothing}
-        ${renderAddButton(state, props)}
-      </div>
+      ${renderModeSwitch(mode, visible.length, rerender)} ${renderAddButton(state, props)}
+      ${renderListSearch(visible.length, rerender)}
+      <adminbot-paper-visibility
+        class="projects__hide"
+        .papers=${visible}
+        .memberId=${props.memberId}
+        @visibility-changed=${rerender}
+      ></adminbot-paper-visibility>
     </header>
-    <adminbot-paper-visibility
-      .papers=${visible}
-      .memberId=${props.memberId}
-      @visibility-changed=${rerender}
-    ></adminbot-paper-visibility>
     ${state.myWorkProjectDraft !== null ? renderAddForm(state, props) : nothing}
     ${renderDecisionBanners(visible, props, members)} ${renderBlockerBoard(state, visible)}
     ${props.slotsNotice

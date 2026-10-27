@@ -713,9 +713,24 @@ export type MemberNudgeChannel = "slack" | "email";
 
 export type MemberNudgeSkip = { member_id: string; reason: string };
 
+/**
+ * One channel send and what became of it. `executed` is AdminBot's side of the send, not a
+ * provider receipt; `unknown` means the connector raised mid-send and the message may have gone.
+ */
+export type MemberNudgeDelivery = {
+  member_id: string;
+  outcome: "executed" | "not_delivered" | "failed" | "unknown";
+  action_id: string;
+  reason?: string;
+};
+
 export type MemberNudgeResult = {
   created: Array<{ id: string; status: string }>;
   skipped: MemberNudgeSkip[];
+  /** Who got a portal notification. Absent from a service that predates the split. */
+  portal_notified?: string[];
+  /** One row per Slack or email send attempted. Absent from a service that predates the split. */
+  deliveries?: MemberNudgeDelivery[];
 };
 
 /**

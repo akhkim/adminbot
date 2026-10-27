@@ -31,7 +31,6 @@ export class ReferenceChecker extends LitElement {
     :host {
       display: block;
       max-width: 760px;
-      margin: 24px auto;
     }
     section {
       padding: 28px;
@@ -298,8 +297,7 @@ export class ReferenceChecker extends LitElement {
 
   override render() {
     return html`<section>
-      <h2>PDF Reference Checker</h2>
-      <p>Check a paper’s references for potentially fabricated or incorrect citations.</p>
+      <!-- The shell header names the tab and says what it does; the form starts straight away. -->
       <label
         >Checker
         <select

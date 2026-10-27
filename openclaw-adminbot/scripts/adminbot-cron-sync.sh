@@ -8,10 +8,11 @@
 # nobody is nudged and nothing errors.
 #
 # Idempotent. A job already in the store is edited to match the manifest rather than added twice,
-# so this is safe to run on every deploy and is the intended way to change a schedule.
+# so this is safe to run on every deploy and is the intended way to change a schedule. A job whose
+# stored schedule and command already match is left untouched; --force edits it anyway.
 #
 # Usage:
-#   scripts/adminbot-cron-sync.sh [--dry-run] [--only <name>]
+#   scripts/adminbot-cron-sync.sh [--dry-run] [--force] [--only <name>]
 #
 # It never removes a job the manifest does not mention. Deleting somebody's ad-hoc job because it
 # is not in a file they have not read is not this script's call to make; it names them instead.
@@ -41,11 +42,13 @@ else
   exit 1
 fi
 DRY_RUN=0
+FORCE=0
 ONLY=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dry-run) DRY_RUN=1; shift ;;
+    --force) FORCE=1; shift ;;
     --only) ONLY="${2:-}"; shift 2 ;;
     -h|--help) sed -n '2,18p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) printf 'adminbot-cron-sync: unknown argument %s\n' "$1" >&2; exit 2 ;;
@@ -66,10 +69,10 @@ EXISTING="$(mktemp)"
 trap 'rm -f "$PLAN" "$EXISTING"' EXIT
 $OPENCLAW cron list --all --json > "$EXISTING"
 
-python3 - "$MANIFEST" "$REPO_ROOT" "$EXISTING" "$DRY_RUN" "$ONLY" <<'PY' > "$PLAN"
+python3 - "$MANIFEST" "$REPO_ROOT" "$EXISTING" "$DRY_RUN" "$ONLY" "$FORCE" <<'PY' > "$PLAN"
 import json, shlex, sys
 
-manifest_path, repo_root, existing_path, dry_run, only = sys.argv[1:6]
+manifest_path, repo_root, existing_path, dry_run, only, force = sys.argv[1:7]
 manifest = json.load(open(manifest_path))
 
 parsed = json.load(open(existing_path))
@@ -90,6 +93,29 @@ ids = {
     if isinstance(row, dict) and row.get("name") and row.get("id")
 }
 known = set(ids)
+rows_by_name = {row["name"]: row for row in rows}
+
+
+def matches_store(row, cron, argv, timeout):
+    """True when `cron edit` would write nothing new into this stored job.
+
+    Each edit is a fresh node process that loads the whole CLI, and a deploy used to spend most of
+    half an hour on fifty of them that changed nothing. Edit merges its patch onto the stored job,
+    so only the fields it sends are compared: the expression, argv, cwd and timeout. The stagger is
+    left out on purpose -- the store fills in a default for top-of-hour expressions, so it never
+    equals what the manifest says. A row without these fields counts as changed and is edited.
+    """
+    schedule = row.get("schedule") if isinstance(row.get("schedule"), dict) else {}
+    payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+    return (
+        schedule.get("kind") == "cron"
+        and schedule.get("expr") == cron.strip()
+        and payload.get("kind") == "command"
+        and payload.get("argv") == argv
+        and payload.get("cwd") == repo_root
+        and payload.get("timeoutSeconds") == timeout
+    )
+
 
 for job in manifest["jobs"]:
     name = job["name"]
@@ -101,7 +127,11 @@ for job in manifest["jobs"]:
     # Every job reports its run to the automation health check through one wrapper, so a job that
     # stops or keeps failing is noticed without each script having to remember to say so.
     argv = ["bash", f"{repo_root}/scripts/lib/adminbot-cron-run.sh", name, job["cron"], "--", *argv]
+    timeout = job.get("timeoutSeconds", 900)
     verb = "edit" if name in known else "add"
+    if verb == "edit" and force != "1" and matches_store(rows_by_name[name], job["cron"], argv, timeout):
+        print(f"unchanged\t{name}\t")
+        continue
     if verb == "edit":
         # The id first, as the positional the command wants. `--name` is not repeated: it is what
         # matched this job in the first place, and on edit it would only ever rename it to itself.
@@ -112,7 +142,7 @@ for job in manifest["jobs"]:
         "--cron", job["cron"],
         "--command-argv", json.dumps(argv),
         "--command-cwd", repo_root,
-        "--timeout-seconds", str(job.get("timeoutSeconds", 900)),
+        "--timeout-seconds", str(timeout),
     ]
     if verb == "add":
         # Cron output belongs in the run history, not in somebody's DMs: these are sweeps whose
@@ -125,6 +155,7 @@ for name in sorted(known - {job["name"] for job in manifest["jobs"]}):
 PY
 
 status=0
+unchanged=0
 # The plan is read on fd 3, and every command gets its stdin from /dev/null.
 #
 # Both halves matter. `openclaw cron add` reads stdin -- it prints prompts and notices through a
@@ -135,6 +166,9 @@ while IFS=$'\t' read -r verb name args <&3; do
   case "$verb" in
     unmanaged)
       printf 'adminbot-cron-sync: %s is in the store but not in the manifest — left alone\n' "$name"
+      ;;
+    unchanged)
+      unchanged=$((unchanged + 1))
       ;;
     add|edit)
       if [[ "$DRY_RUN" == "1" ]]; then
@@ -151,5 +185,9 @@ while IFS=$'\t' read -r verb name args <&3; do
   esac
 done 3< "$PLAN"
 rm -f "$PLAN"
+
+if (( unchanged > 0 )); then
+  printf 'adminbot-cron-sync: %d job(s) already match the manifest — not edited\n' "$unchanged"
+fi
 
 exit "$status"

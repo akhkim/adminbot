@@ -36,6 +36,25 @@ export function renderWeeklyUpdates(paper: AdminBotPaperRecord, props: PaperWork
 }
 
 /**
+ * The conference as an announcement names it, e.g. "EMNLP 2026 (Oral)", from what the card already
+ * records. Prefills the draft settings so nobody retypes it; empty until the venue is known.
+ */
+export function announcementVenue(paper: AdminBotPaperRecord): string {
+  const venue = paper.accepted_venue?.trim();
+  if (!venue) {
+    return "";
+  }
+  const year = typeof paper.accepted_year === "number" ? ` ${paper.accepted_year}` : "";
+  const type = paper.presentation_type?.trim();
+  const format = type ? ` (${type.charAt(0).toUpperCase()}${type.slice(1)})` : "";
+  return `${venue}${year}${format}`;
+}
+
+/** What to say when the console cannot reach AdminBot at all, rather than a bare "could not". */
+const UNREACHABLE =
+  "Could not reach AdminBot. Check your connection and the AdminBot URL in settings, then press Generate again.";
+
+/**
  * Drafts and their sign-offs, the conference roll call, the reader's trip, and reimbursements.
  *
  * Both generate paths run against the member's own session and the console's configured AdminBot
@@ -71,11 +90,17 @@ export function renderCycle(
     // The X thread credits authors by their member records, so it needs the byline and the roster.
     paperAuthors: paper.authors ?? [],
     creditMembers: state.adminBotData?.members ?? [],
+    defaultVenue: announcementVenue(paper),
     onSaveDraft: (platform, body, xThread) => props.onSaveDraft(paper.id, platform, body, xThread),
     onCirculateDraft: (draftId: string) => props.onCirculateDraft(paper.id, draftId),
     // The service reads the Drive copy the page already chases, unless a PDF was dropped on the
     // panel. The result lands as a stored draft, so the usual sign-off row takes over from there.
-    onGenerateLinkedInDraft: async (venue: string, note: string, pdfBase64?: string) => {
+    onGenerateLinkedInDraft: async (
+      venue: string,
+      note: string,
+      pdfBase64?: string,
+      abstract?: string,
+    ) => {
       const stored = loadStoredMemberSession();
       if (!stored) {
         globalThis.alert?.("Sign in first — drafting runs against your own session.");
@@ -86,6 +111,7 @@ export function renderCycle(
           {
             paperId: paper.id,
             ...(pdfBase64 ? { pdfBase64 } : {}),
+            ...(abstract ? { abstract } : {}),
             ...(paper.artifacts?.arxiv_url ? { url: paper.artifacts.arxiv_url } : {}),
             ...(venue ? { venue } : {}),
             ...(note ? { note } : {}),
@@ -94,7 +120,11 @@ export function renderCycle(
           resolveAdminBotBaseUrl(state.settings),
         );
         if (!result.ok) {
-          globalThis.alert?.(result.message ?? "Could not generate the draft.");
+          globalThis.alert?.(
+            result.kind === "unreachable"
+              ? UNREACHABLE
+              : (result.message ?? "Could not generate the draft."),
+          );
           return;
         }
         props.onSaveDraft(paper.id, "linkedin", result.value.text);
@@ -104,7 +134,7 @@ export function renderCycle(
     },
     // A thread, not a post: each stage (arXiv, acceptance, poster, talk) announces something
     // different, and the posts are stored with the stage so the sign-off is about what will go out.
-    onGenerateXDraft: async (_venue, _note, pdfBase64, announcement, credits) => {
+    onGenerateXDraft: async (_venue, _note, pdfBase64, announcement, credits, abstract) => {
       const stored = loadStoredMemberSession();
       if (!stored) {
         globalThis.alert?.("Sign in first.");
@@ -117,13 +147,18 @@ export function renderCycle(
             ...(announcement ? { announcement } : {}),
             ...(credits ? { credits } : {}),
             ...(pdfBase64 ? { pdfBase64 } : {}),
+            ...(abstract ? { abstract } : {}),
             ...(paper.artifacts?.arxiv_url ? { url: paper.artifacts.arxiv_url } : {}),
           },
           stored.sessionToken ?? "",
           resolveAdminBotBaseUrl(state.settings),
         );
         if (!result.ok) {
-          globalThis.alert?.(result.message ?? "Could not generate the X thread.");
+          globalThis.alert?.(
+            result.kind === "unreachable"
+              ? UNREACHABLE
+              : (result.message ?? "Could not generate the X thread."),
+          );
           return;
         }
         props.onSaveDraft(paper.id, "x", result.value.posts.map((post) => post.text).join("\n\n"), {

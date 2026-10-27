@@ -4,7 +4,6 @@ import { createArxivProbe } from "../connectors/arxiv.js";
 import { createOllamaEmbedder } from "../connectors/embeddings.js";
 import { appendGogSheetRows, readGogSheetRows } from "../connectors/gog.js";
 import { selectIpGeolocator } from "../connectors/ip-geolocation.js";
-import { createGeoNamesGeocoder, GEONAMES_ATTRIBUTION } from "../connectors/reverse-geocode.js";
 import {
   createOpenReviewForumProbe,
   createOpenReviewNotesReader,
@@ -13,6 +12,7 @@ import {
   createGptZeroBibliographyScanner,
   createPublicOpenReviewPdfReader,
 } from "../connectors/reference-scan.js";
+import { createGeoNamesGeocoder, GEONAMES_ATTRIBUTION } from "../connectors/reverse-geocode.js";
 import { createInterviewChannelProvisioner } from "../connectors/slack-interview.js";
 import {
   createLinkedInDraftRunner,
@@ -20,6 +20,7 @@ import {
   readArxivPdfBase64,
 } from "../connectors/social-draft.js";
 import type { AdminBotStoredProposal } from "../contracts/actions.js";
+import { resolveAdminBotControlUiUrl } from "../contracts/control-ui.js";
 import { missingMandatoryProfileFields } from "../contracts/profile-completion.js";
 import { createLlmLoadRouter, parseLlmNodes } from "../kernel/llm-router.js";
 import { ReferenceScans } from "../kernel/reference-scans.js";
@@ -43,6 +44,8 @@ import { resolveLabCalendar } from "../workflows/calendar/lab-calendar.js";
 import { DEADLINE_VENUES } from "../workflows/deadlines/generated/dataset.js";
 import { readDeadlineDataset } from "../workflows/deadlines/runtime-dataset.js";
 import { createAccountApprovedEmailRunner } from "../workflows/identity/account-approved-email.js";
+import { runWithApiToken } from "../workflows/identity/api-token-context.js";
+import { AdminBotApiTokenService } from "../workflows/identity/api-tokens.js";
 import { AdminBotAuthService } from "../workflows/identity/auth.js";
 import { createPasswordResetEmailRunner } from "../workflows/identity/password-reset-email.js";
 import { createCalendarInviteRunner } from "../workflows/onboarding/calendar-invite.js";
@@ -55,11 +58,11 @@ import {
 } from "../workflows/onboarding/guide-sender.js";
 import { createImportColumnMapper } from "../workflows/papers/import-columns.js";
 import { createPublicationMailingRunner } from "../workflows/papers/mailing-list-email.js";
+import type { OpenReviewPaperSyncSourceDeps } from "../workflows/papers/openreview-paper-sync-sources.js";
 import { createAdminBotOpenReviewWorkflow } from "../workflows/papers/openreview-workflow.js";
 import { createLocalWorkshopMatcher } from "../workflows/papers/workshop-match-llm.js";
 import { defaultCallSheet } from "./call-sheet-config.js";
 import { memberSheetSource, resolveMemberSheetConfig } from "./member-sheet-config.js";
-import type { OpenReviewPaperSyncSourceDeps } from "../workflows/papers/openreview-paper-sync-sources.js";
 import { createNotificationDraftHandler } from "./notification-drafts.js";
 import {
   warnIfLabCalendarUnconfigured,
@@ -78,12 +81,13 @@ import type {
   AdminBotRouteContext,
 } from "./routes/context.js";
 import type { AdminBotMockServiceOptions } from "./routes/context.js";
+import { runCvDailySweep } from "./routes/directory.js";
 import { AUTHENTICATED_ROUTES } from "./routes/index.js";
 import { memberEnrollmentContext } from "./routes/onboarding.js";
 import { DEFAULT_ALLOWED_ORIGINS, applyCors, parseOrigins, remoteIp } from "./routes/origin.js";
 import { createOpenReviewCitationWatch, createIclrIntegrityWatch } from "./routes/reviews.js";
 import { dispatchRoute } from "./routes/router.js";
-import { resolvePrincipal } from "./routes/session.js";
+import { ApiTokenRateLimitedError, resolvePrincipal } from "./routes/session.js";
 import { PayloadTooLargeError, sendJson } from "./server.http.js";
 import { executeMemberEnrollment } from "./server.member-onboarding.js";
 import {
@@ -91,6 +95,9 @@ import {
   handlePublicDeadlineProposal,
 } from "./server.public-deadline-proposals.js";
 import { servePublicRoute } from "./server.public.js";
+
+// Long enough that a deploy's restart has settled before CVs start downloading.
+const CV_SWEEP_FIRST_CHECK_MS = 2 * 60 * 1000;
 export type { AdminBotCvDigestPublisher } from "./routes/context.js";
 export type { AdminBotMemberSheetSource } from "./routes/context.js";
 export type { DeviceTokenIssuance } from "./routes/context.js";
@@ -255,6 +262,18 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     // An explicitly injected geolocator wins (tests inject their own); otherwise the local city
     // database when ADMINBOT_GEOIP_MMDB_PATH is set, then IPinfo when IPINFO_TOKEN is. With
     // neither, the option stays unset and the login path simply skips the stamp.
+    ...(options.geolocateIp
+      ? { geolocateIp: options.geolocateIp }
+      : ipGeolocation.geolocate
+        ? { geolocateIp: ipGeolocation.geolocate }
+        : {}),
+  });
+  // Personal API tokens for scripts and agents (docs/adminbot/api-tokens.md). Same store and the
+  // same geolocator as sign-in, so a token's "last used from" reads like a session's.
+  const apiTokens = new AdminBotApiTokenService({
+    store,
+    levels: process.env.ADMINBOT_API_TOKEN_LEVELS,
+    controlUiUrl: resolveAdminBotControlUiUrl(process.env),
     ...(options.geolocateIp
       ? { geolocateIp: options.geolocateIp }
       : ipGeolocation.geolocate
@@ -453,6 +472,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     store,
     memberDrafts,
     auth,
+    apiTokens,
     privacyBroker,
     localChat: options.localChat ?? createLocalChat(),
     sensitiveInfo,
@@ -569,12 +589,43 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
         }, meetupSweepIntervalMs)
       : undefined;
   meetupSweepTimer?.unref();
+  // Re-scans linked CVs once a day and refreshes the CV Updates doc when something new appeared.
+  // Checked on this cadence; runCvDailySweep decides from the audit log whether a day has passed.
+  const cvSweepCheckIntervalMs = options.cvSweepCheckIntervalMs;
+  const cvSweepTimer =
+    typeof cvSweepCheckIntervalMs === "number" && cvSweepCheckIntervalMs > 0
+      ? setInterval(() => {
+          void runCvDailySweep(ctx, service).catch(() => {});
+        }, cvSweepCheckIntervalMs)
+      : undefined;
+  cvSweepTimer?.unref();
+  // Also checked soon after start, not only an interval later. The host is redeployed more often
+  // than hourly on a busy day, and a first check an hour out was reset by every restart, so the
+  // sweep could go a whole day without ever running. runCvDailySweep is a no-op when not due.
+  const cvSweepFirstCheck =
+    typeof cvSweepCheckIntervalMs === "number" && cvSweepCheckIntervalMs > 0
+      ? setTimeout(
+          () => {
+            void runCvDailySweep(ctx, service).catch(() => {});
+          },
+          Math.min(cvSweepCheckIntervalMs, CV_SWEEP_FIRST_CHECK_MS),
+        )
+      : undefined;
+  cvSweepFirstCheck?.unref();
   const server = createServer(async (req, res) => {
     try {
       await routeRequest(req, res, ctx);
     } catch (error) {
       if (error instanceof PayloadTooLargeError) {
         sendJson(res, 413, { error: { message: error.message } });
+        return;
+      }
+      if (error instanceof ApiTokenRateLimitedError) {
+        res.setHeader("Retry-After", String(error.retryAfterSeconds));
+        sendJson(res, 429, {
+          error: { message: error.message },
+          retry_after_seconds: error.retryAfterSeconds,
+        });
         return;
       }
       sendJson(res, 500, {
@@ -590,6 +641,8 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     // directly to set up state that has no HTTP route, such as an observation dated three days
     // ago. Nothing in production reaches for it.
     store,
+    // The hourly timer's body, callable directly so a test can run a day's sweep on demand.
+    runCvSweep: (now?: Date) => runCvDailySweep(ctx, service, now),
     async listen(port = 8765, host = "127.0.0.1") {
       await listen(server, port, host);
       return `http://${host}:${port}`;
@@ -600,6 +653,10 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       }
       if (meetupSweepTimer) {
         clearInterval(meetupSweepTimer);
+      }
+      clearTimeout(cvSweepFirstCheck);
+      if (cvSweepTimer) {
+        clearInterval(cvSweepTimer);
       }
       closeDurable();
     },
@@ -696,7 +753,10 @@ async function routeRequest(req: IncomingMessage, res: ServerResponse, ctx: Admi
     });
     return;
   }
-  await handleAuthenticatedRoute(req, res, ctx, url, principal);
+  // Audit lines written anywhere under this request name the token it came with, if any.
+  await runWithApiToken(principal.kind === "member" ? principal.apiToken : undefined, () =>
+    handleAuthenticatedRoute(req, res, ctx, url, principal),
+  );
 }
 
 async function handleAuthenticatedRoute(

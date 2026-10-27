@@ -86,7 +86,7 @@ assert c.total_changes == before
 print('PASS: allowlist, missing status, venue fallback, RAW formula safety, read-only snapshot')
 
 headers = ['name', 'id', 'notes', 'member_type', 'join_date', 'status', 'other']
-expected = ['name', 'id', 'join_date', 'status', 'member_type', 'notes', 'other']
+expected = ['name', 'status', 'member_type', 'join_date', 'id', 'notes', 'other']
 assert exporter.ordered_people_columns(headers) == expected
 requests = exporter.people_layout_requests(headers, 123)
 for request in requests[:-1]:
@@ -99,9 +99,9 @@ print('PASS: requested column order, remaining-column preservation, repeat-safe 
 
 full = [['name', 'id', 'status', 'calendar_group', 'extra'], ['=SUM(1)', 'p1', 'active', 'lab'], ['Person 2', 'p2']]
 ordered = exporter.order_people_values(full)
-assert ordered[0] == ['name', 'id', 'status', 'calendar_group', 'extra']
-assert ordered[1] == ['=SUM(1)', 'p1', 'active', 'lab', '']
-assert ordered[2] == ['Person 2', 'p2', '', '', '']
+assert ordered[0] == ['name', 'status', 'calendar_group', 'id', 'extra']
+assert ordered[1] == ['=SUM(1)', 'active', 'lab', 'p1', '']
+assert ordered[2] == ['Person 2', '', '', 'p2', '']
 assert exporter.order_people_values(ordered) == ordered
 assert exporter.snapshot(c, '', full)['data'][0]['values'] == ordered
 for invalid in [[], [['name']], [['id', 'id']], [['id'], ['p', 'extra']]]:
@@ -140,6 +140,9 @@ columns = direct['data'][0]['values'][0]
 rows = [dict(zip(columns, row)) for row in direct['data'][0]['values'][1:]]
 new = next(row for row in rows if row['id'] == 'new')
 assert len(columns) == len(set(columns)) == len(exporter.PEOPLE_COLUMNS)
+# 1:1 folders are private Drive links; the link-shared sheet must never carry them.
+assert not any("one_on_one" in c for c in columns)
+assert not {"preferred_name", "birthday", "slack_active"} & set(columns)
 assert columns[:len(exporter.PEOPLE_PRIORITY)] == list(exporter.PEOPLE_PRIORITY)
 assert len(rows) == 2
 assert new['join_date'] == '2026-09' and new['join_date_basis'] == 'joined_month'
@@ -161,12 +164,17 @@ properties = {title: {'sheetId': sid, 'gridProperties': {'rowCount': 1000, 'colu
               for title, sid in [('PeopleList', 1), ('PaperList', 2)]}
 requests = refresh.refresh_requests(direct, properties)
 clears = [r['repeatCell'] for r in requests if r.get('repeatCell', {}).get('fields', '').startswith('userEnteredValue')]
+# Stale headers right of a narrower PeopleList are blanked, nothing inside the table.
+stale_headers = [c for c in clears if c['range'].get('endRowIndex') == 1]
+people_width = len(next(i for i in direct['data'] if 'PeopleList' in i['range'])['values'][0])
+assert [c['range'] for c in stale_headers] == [{'sheetId': 1, 'startRowIndex': 0, 'endRowIndex': 1, 'startColumnIndex': people_width}]
+clears = [c for c in clears if c not in stale_headers]
 assert len(clears) == 2
 assert {r['range']['sheetId'] for r in clears} == {1, 2}
 assert len([r for r in requests if 'addTable' in r]) == 2
 assert [r['range']['startRowIndex'] for r in clears] == [1, 0]
 assert clears[1]['fields'] == 'userEnteredValue,userEnteredFormat'
-assert len([r for r in requests if 'addFilterView' in r]) == 18
+assert len([r for r in requests if 'addFilterView' in r]) == 17
 paper_table = [r['addTable']['table'] for r in requests if 'addTable' in r and r['addTable']['table']['name'] == 'PaperList'][0]
 dropdowns = {c['columnName'] for c in paper_table['columnProperties'] if c['columnType'] == 'DROPDOWN'}
 assert dropdowns <= set(refresh.PAPER_DROPDOWNS), dropdowns
@@ -176,6 +184,23 @@ people_headers = direct['data'][0]['values'][0]
 assert full_view['criteria'] == {str(people_headers.index('member_type')): {'condition': {
     'type': 'TEXT_CONTAINS', 'values': [{'userEnteredValue': 'full'}]}}}
 assert people_headers[0] == 'name'
+# Written headers are labels; the table names its columns by them too, so every label must be unique.
+people_table = next(r['addTable']['table'] for r in requests if r.get('addTable', {}).get('table', {}).get('name') == 'PeopleList')
+written = [c['columnName'] for c in people_table['columnProperties']]
+assert written[0] == 'Name' and written[people_headers.index('whatsapp')] == 'WhatsApp'
+assert len(written) == len(set(written)) == len(people_headers)
+assert refresh.sheet_values('PeopleList', direct['data'][0]['values'])[0] == written
+assert direct['data'][0]['values'][0] == people_headers  # the batch keeps field names
+assert refresh.whatsapp_link('+1 (416) 555-0100') == 'https://wa.me/14165550100'
+assert refresh.whatsapp_link('ask me') is None and refresh.whatsapp_link('4165550100') is None
+assert refresh.people_link('email', 'a@b.org.') is None and refresh.people_link('personal_website', 'https://x.org/a b') is None
+assert refresh.people_link('personal_website', 'https://x.org/p?q=1') == 'https://x.org/p?q=1'
+assert refresh.people_link('email', 'a@b.org') == 'mailto:a@b.org'
+assert refresh.people_link('linkedin_url', 'https://linkedin.com/in/x') == 'https://linkedin.com/in/x'
+assert refresh.people_link('linkedin_url', 'see https://x y') is None and refresh.people_link('notes', 'https://x') is None
+assert refresh.people_link('openreview_id', '~A_B1') == 'https://openreview.net/profile?id=~A_B1'
+assert {exporter.people_section(f) for f in exporter.PEOPLE_PRIORITY} <= set(refresh.PEOPLE_SECTION_COLOURS)
+assert exporter.people_section('notes') == exporter.PEOPLE_RECORDS_SECTION
 # Search joins name, ids and authored papers; secondary columns sit behind one collapsed group per tab.
 assert 'New person' in new['search'] and 'new' in new['search'].split(' | ')
 groups = [r for r in requests if 'addDimensionGroup' in r]
@@ -193,7 +218,7 @@ stale = {**properties, 'PaperList': {**properties['PaperList'], 'columnGroups': 
     {'range': {'sheetId': 2, 'dimension': 'COLUMNS', 'startIndex': 3, 'endIndex': 9}, 'depth': 1}]}}
 regrouped = refresh.refresh_requests(direct, stale)
 assert any(r.get('deleteDimensionGroup', {}).get('range', {}).get('startIndex') == 3 for r in regrouped)
-print('PASS: name-first people, search column, Full members view, collapsible secondary columns')
+print('PASS: name-first people, labelled sections, clickable contacts, search column, Full members view, collapsible secondary columns')
 incomplete_view = next(r['addFilterView']['filter'] for r in requests
                        if r.get('addFilterView', {}).get('filter', {}).get('title') == 'Incomplete')
 assert incomplete_view['criteria'] == {str(exporter.PAPERS.index('Incomplete')): {'condition': {'type': 'NOT_BLANK'}}}
@@ -244,7 +269,8 @@ assert any(r.get('addFilterView', {}).get('filter', {}).get('title') == 'By stag
 assert all(r.get('repeatCell', {}).get('range', {}).get('sheetId') == 2 for r in restyled
            if r.get('repeatCell', {}).get('fields', '') == 'userEnteredValue,userEnteredFormat')
 assert all(r['repeatCell']['fields'].startswith('userEnteredFormat.') for r in restyled
-           if r.get('repeatCell', {}).get('range', {}).get('sheetId') == 1 and 'userEnteredFormat' in r['repeatCell']['fields'])
+           if r.get('repeatCell', {}).get('range', {}).get('sheetId') == 1 and 'userEnteredFormat' in r['repeatCell']['fields']
+           and r['repeatCell']['range'] not in [c['range'] for c in stale_headers])
 paper_write = next(r['updateCells'] for r in requests if 'updateCells' in r and r['updateCells']['range']['sheetId'] == 2)
 assert paper_write['rows'][1]['values'][0] == {'userEnteredValue': {'stringValue': '=IMPORTXML("private")'}}
 invalid = json.loads(json.dumps(direct))

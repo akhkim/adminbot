@@ -28,6 +28,7 @@ import {
   AdminBotAuthService,
   type AdminBotMemberPrincipal,
 } from "../../workflows/identity/auth.js";
+import type { AdminBotApiTokenService } from "../../workflows/identity/api-tokens.js";
 import type { SlackDirectoryReader } from "../../workflows/members/slack-roster-sync.js";
 import type { CalendarInviteRunner } from "../../workflows/onboarding/calendar-invite.js";
 import type { AdminBotOnboardingSender } from "../../workflows/onboarding/guide-sender.js";
@@ -61,6 +62,7 @@ export type AdminBotRouteContext = {
   // append-only bookkeeping with no policy of its own, so it does not earn a service method.
   store: AdminBotServiceStore;
   auth: AdminBotAuthService;
+  apiTokens: AdminBotApiTokenService;
   privacyBroker: AdminBotPrivacyBroker;
   localChat: ReturnType<typeof createLocalChat>;
   sensitiveInfo: AdminBotSensitiveInfoDocument;
@@ -410,6 +412,9 @@ export type AdminBotMockServiceOptions = {
   slackChannelNamingSweepIntervalMs?: number;
   // Hourly in the host: retries meetup intros held for quiet hours. Disabled when unset.
   meetupSweepIntervalMs?: number;
+  // How often the host checks whether the daily CV sweep is due (hourly in the host); the sweep
+  // itself runs at most once per 24 hours. Disabled when unset.
+  cvSweepCheckIntervalMs?: number;
   reviewSlackProfilePhoto?: NonNullable<AdminBotServiceOptions["reviewSlackProfilePhoto"]>;
   polishSlackProfilePhoto?: NonNullable<AdminBotServiceOptions["polishSlackProfilePhoto"]>;
 };

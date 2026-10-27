@@ -275,7 +275,7 @@ export class AdminBotMapCoverage extends LitElement {
     const coverage = this.coverage;
     const now = Date.now();
     return html`<details
-      class="card map-coverage"
+      class="card adminbot-fold map-coverage"
       data-testid="map-coverage"
       ?open=${this.open}
       @toggle=${this.onToggle}

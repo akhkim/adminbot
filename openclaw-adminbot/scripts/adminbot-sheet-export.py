@@ -42,7 +42,7 @@ VENUE_NOTES = {
     'uka-clinical-post-training': 'Not ARR (per PI, Oct 11 2026)',
 }
 # Plain-language layout: what the PI acts on first, links next, record-keeping detail last.
-PAPERS = ('Paper', 'Urgency', 'PI review', 'Paper state', 'Review for', 'Review link', 'Due (Toronto)', 'Authors',
+PAPERS = ('Paper', 'Urgency', 'PI review', 'Paper state', 'Review for', 'Review link', 'Due (Toronto)', 'Authors', 'tweet tags to copy',
           'Requested by', 'Requested on', 'Request note', 'Conference', 'Year', 'Track', 'Presentation', 'Venue',
           'Venue deadline (Toronto)', 'OpenReview', 'Submission history', 'Source', 'Stage', 'Lead', 'Incomplete', 'Blocker / next step', 'Link problems', 'Still missing', 'Mentor review', 'Co-author feedback', 'Accepted',
           'Going to conference', 'Started', 'Last updated', 'Feedback givers', 'Checks',
@@ -253,15 +253,15 @@ def deadline_name(d):
     return d['name'] + (f' ({label})' if label and label.lower() != 'paper submission' else '')
 
 
-PEOPLE_COLUMNS = tuple('''id join_date join_date_basis slack_active membership_review preferred_name member_type
+PEOPLE_COLUMNS = tuple('''id join_date join_date_basis membership_review member_type
 test_onboard_batch receives_nudges email calendar_email slack_user_id merch_requests
 next_position personal_circumstances slack_messages_7d slack_activity_checked_at
 privilege_level collaborator_subgroup access_overrides notes role status research_branch
 research_topics elevator_pitch projects hours_per_week location current_city
 city_channel_invited_at city_channels_invited affiliation timezone personal_website
-openreview_id cv_url intake_form_url intake_form_unavailable one_on_one_folder_url
+openreview_id cv_url intake_form_url intake_form_unavailable
 linkedin_url linkedin_urn twitter_url github_url scholar_url reviewer_exempt joined_month
-graduated_month birthday whatsapp correspondence_email dcs_username at_uoft compute_access
+graduated_month whatsapp correspondence_email dcs_username at_uoft compute_access
 vector_role lesswrong_url other_socials avatar_url slack_channels slack_location
 slack_location_updated_at profile_photo_review last_login_at last_login_country
 last_login_continent last_login_city last_login_timezone location_prompt_answered_at
@@ -278,17 +278,57 @@ notifications_total notifications_unread notifications_last_at notification_kind
 tab_visits_count logistics_requests paper_weekly_updates conference_attendances name
 password_resets feedback_submitted active_sessions paper_slots_provided paper_slots_waived
 papers_authored_count papers_authored papers_submitted_count papers_submitted
-audit_events_as_actor update_events_as_actor update_events_as_subject calendar_group search'''.split())
+audit_events_as_actor update_events_as_actor update_events_as_subject calendar_group acl_anthology_url
+arr_reviewer_qualified arr_review_capacity map_visibility location_permission linkedin_followers
+twitter_followers search'''.split())
 
 
-# Name first and frozen: it is what the PI scans and searches for, on a phone as much as on a laptop.
-PEOPLE_PRIORITY = (
-    'name', 'id', 'join_date', 'status', 'member_type', 'slack_active', 'membership_review', 'privilege_level',
-    'collaborator_subgroup', 'role', 'location', 'current_city', 'timezone',
-    'slack_messages_7d', 'receives_nudges', 'hours_per_week', 'affiliation',
-    'calendar_group', 'last_login_at', 'compute_access', 'availability',
-    'papers_authored_count', 'search',
+# PeopleList, left to right. Name is frozen first: it is what people scan and search for, on a phone
+# as much as on a laptop. Contact details follow, since they are what most people open the sheet for.
+# Each section gets its own header colour; columns no section lists sit behind one collapsed [+] group.
+PEOPLE_SECTIONS = (
+    ('Contact', ('name', 'calendar_email', 'whatsapp', 'email', 'correspondence_email',
+                 'timezone', 'current_city')),
+    ('Lab', ('status', 'member_type', 'role', 'collaborator_subgroup', 'privilege_level', 'join_date',
+             'affiliation', 'at_uoft', 'hours_per_week', 'membership_review', 'receives_nudges',
+             'compute_access', 'calendar_group', 'next_position', 'graduated_month')),
+    ('Research', ('research_branch', 'research_topics', 'elevator_pitch', 'projects', 'papers_authored_count',
+                  'papers_authored', 'arr_reviewer_qualified', 'arr_review_capacity')),
+    ('Links & socials', ('personal_website', 'linkedin_url', 'twitter_url', 'github_url', 'scholar_url',
+                         'openreview_id', 'acl_anthology_url', 'lesswrong_url', 'other_socials', 'cv_url',
+                         'linkedin_followers', 'twitter_followers')),
+    ('Location & availability', ('location', 'map_visibility', 'availability', 'availability_notes', 'time_off',
+                                 'trips', 'milestones', 'last_login_at', 'slack_messages_7d')),
+    ('Search', ('search',)),
 )
+PEOPLE_PRIORITY = tuple(field for _, fields in PEOPLE_SECTIONS for field in fields)
+PEOPLE_RECORDS_SECTION = 'AdminBot records'
+# Header text people read; any field not listed gets its name with underscores turned into spaces.
+PEOPLE_LABELS = {
+    'name': 'Name', 'calendar_email': 'Calendar email', 'whatsapp': 'WhatsApp',
+    'email': 'Email', 'correspondence_email': 'Correspondence email',
+    'timezone': 'Time zone', 'current_city': 'City', 'member_type': 'Membership', 'collaborator_subgroup': 'Subgroup',
+    'privilege_level': 'Access level', 'join_date': 'Joined', 'at_uoft': 'At UofT', 'hours_per_week': 'Hours / week',
+    'receives_nudges': 'Gets nudges', 'compute_access': 'Compute',
+    'calendar_group': 'Calendar group', 'graduated_month': 'Graduated', 'research_topics': 'Research topics',
+    'papers_authored_count': 'Papers', 'papers_authored': 'Paper titles', 'arr_reviewer_qualified': 'ARR reviewer',
+    'arr_review_capacity': 'ARR capacity', 'personal_website': 'Website', 'linkedin_url': 'LinkedIn',
+    'twitter_url': 'Twitter / X', 'github_url': 'GitHub', 'scholar_url': 'Google Scholar', 'openreview_id': 'OpenReview',
+    'acl_anthology_url': 'ACL Anthology', 'lesswrong_url': 'LessWrong', 'cv_url': 'CV',
+    'linkedin_followers': 'LinkedIn followers', 'twitter_followers': 'X followers', 'last_login_at': 'Last login',
+    'slack_messages_7d': 'Slack messages (7 days)', 'search': 'Search (all fields)', 'id': 'AdminBot ID',
+    'slack_user_id': 'Slack user ID', 'dcs_username': 'DCS username', 'avatar_url': 'Avatar', 'intake_form_url': 'Intake form',
+}
+
+
+def people_label(field):
+    return PEOPLE_LABELS.get(field) or field.replace('_', ' ').capitalize()
+
+
+def people_section(field):
+    return next((title for title, fields in PEOPLE_SECTIONS if field in fields), PEOPLE_RECORDS_SECTION)
+
+
 # Text the 'search' column joins, so one filter or Ctrl-F hit finds a person by any of them.
 PEOPLE_SEARCH_FIELDS = ('name', 'preferred_name', 'id', 'email', 'correspondence_email', 'member_type', 'role',
                         'affiliation', 'current_city', 'location', 'research_branch', 'research_topics', 'projects')
@@ -356,6 +396,64 @@ def safe_link(value):
         return ''
     # Overleaf share/read links are exported by operator decision (2026-10-11).
     return value
+
+
+# PI-supplied affiliation credits, not a claim that these organizations funded every paper.
+TWEET_AFFILIATIONS = {'zhijing jin': (
+    '@MPI_IS', '@ELLISforEurope', '@UofTCompSci', '@VectorInst', '@TorontoSRI',
+    '@CIFAR_News', '@JinesisLab', '@EuroSafeAI', '@ELLISInst_Tue',
+)}
+X_RESERVED_PATHS = frozenset('home i intent share search settings explore notifications messages compose '
+                             'tos privacy login signup hashtag'.split())
+
+
+def x_handle(value):
+    """Only a stored handle or profile URL; a post, email or X action is not a person."""
+    if not isinstance(value, str):
+        return ''
+    value = value.strip()
+    match = re.fullmatch(r'(?:https?://)?(?:www\.)?(?:x|twitter)\.com/(?:#!/)?@?([A-Za-z0-9_]{1,15})/?', value)
+    match = match or re.fullmatch(r'@?([A-Za-z0-9_]{1,15})', value)
+    return '@' + match[1] if match and match[1].casefold() not in X_RESERVED_PATHS else ''
+
+
+def tweet_tags(record, members, links):
+    """Copyable public links and complete credits, derived without model calls or social posting."""
+    author_links = [a for a in (record.get('author_links') or []) if isinstance(a, dict)]
+    authors = record.get('authors') or [a.get('name', '') for a in author_links]
+    if isinstance(authors, str):
+        authors = authors.split(';')
+    names = [name.strip() for name in authors if isinstance(name, str) and name.strip()]
+    key = lambda name: ' '.join(str(name or '').split()).casefold()
+    credits, affiliations = [], []
+    for name in names:
+        if re.search(r'[^\s@]+@[^\s@]+\.[^\s@]+', name):
+            credits.append('[author name missing]')
+            continue
+        choices = [a for a in author_links if key(a.get('name')) == key(name)]
+        author = choices[0] if len(choices) == 1 else {}
+        member = members.get(author.get('member_id'))
+        if not member and not author.get('member_id') and len(choices) <= 1:
+            matches = [m for m in members.values() if key(m.get('name')) == key(name)]
+            member = matches[0] if len(matches) == 1 else None
+        # An explicit author ID wins over name matching; missing/ambiguous handles stay names.
+        handle = (x_handle((member or {}).get('twitter_url')) or x_handle(author.get('twitter'))) if len(choices) <= 1 else ''
+        credits.append(handle or name)
+        affiliations.extend(TWEET_AFFILIATIONS.get(key(name), ()))
+    lines = []
+    for label in ('arXiv', 'Submission'):
+        url = safe_link(links.get(label))
+        if url and urlsplit(url).hostname in ('arxiv.org', 'www.arxiv.org', 'openreview.net', 'www.openreview.net'):
+            lines.append('Paper Link: ' + url)
+            break
+    github = safe_link(links.get('GitHub'))
+    if github and urlsplit(github).hostname in ('github.com', 'www.github.com'):
+        lines.append('GitHub Link: ' + github)
+    if credits:
+        lines.append('Authors: ' + ' '.join(credits))
+    if affiliations:
+        lines.append('Affiliations: ' + ' '.join(dict.fromkeys(affiliations)))
+    return '\n\n'.join(lines)
 
 
 def overleaf_kind(url):
@@ -1157,6 +1255,7 @@ def paper_row(record, members, slots, deadlines, now, access=None, openreview=()
         'Feedback givers': record.get('feedback_givers', ''),
         'Checks': ', '.join(f'{k}: {v}' for k, v in sorted((record.get('checks') or {}).items())),
         'Authors': record.get('authors', ''),
+        'tweet tags to copy': tweet_tags(record, members, links),
         'All artifact statuses': '\n'.join(sorted(f"{r['slot']}: {r['status']}" for r in slots)),
         PAPER_ID: record['id'],
     }

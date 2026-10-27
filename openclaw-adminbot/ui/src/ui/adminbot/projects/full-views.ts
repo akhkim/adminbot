@@ -7,9 +7,11 @@
 //
 // Both write through the same two endpoints as the project pages -- the paper save and the slot
 // save -- so they are other drawings of the same records, not other stores. Which one is showing is
-// per-session view state: it changes nothing about the papers and nobody needs it after a reload.
+// the reader's own preference, kept per member in this browser: somebody who works in the sheet
+// should not have to ask for it again on every visit.
 import { html, nothing } from "lit";
 import { isPaperFeedbackSlot } from "../../../../../extensions/adminbot/src/contracts/paper-feedback.js";
+import { isPaperImpactSlot } from "../../../../../extensions/adminbot/src/contracts/paper-impact.js";
 import type { AppViewState } from "../../app-view-state.ts";
 import { mapImportColumns } from "../api/paper-admin.ts";
 import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
@@ -28,6 +30,7 @@ import {
   type PaperGridState,
 } from "../paper-grid.ts";
 import { renderPaperFeedback } from "../views/paper-feedback.ts";
+import { renderPaperImpact } from "../views/paper-impact.ts";
 import {
   cancelPaperLegacyAutosave,
   emptyPaperLegacyState,
@@ -43,6 +46,7 @@ import {
   renderReportBlockerButton,
 } from "./blocker-report.ts";
 import { renderCycle, renderWeeklyUpdates } from "./cycle.ts";
+import { renderListMore, resetListWindow, windowList } from "./list-window.ts";
 import { renderDeletePaper, renderHideButton, renderPaperRecentEdits } from "./paper-actions.ts";
 import { renderCompletion, renderNextStep, renderStepControls } from "./progress.ts";
 import { renderTarget, renderVenueTargets } from "./venues.ts";
@@ -52,10 +56,35 @@ export type ProjectsListMode = "cards" | "flat" | "sheet";
 
 /**
  * Which drawing this reader has asked for, when they have asked at all. `auto` means they have not,
- * and `opensOnSheet` decides. A press is the standing answer for the rest of the session -- without
- * remembering it, "Back to cards" would be undone by the next render looking at the same papers.
+ * and `opensOnSheet` decides. A press is the standing answer -- without remembering it, "Back to
+ * cards" would be undone by the next render looking at the same papers -- and it is stored, so the
+ * next visit opens where the reader left off. `choiceFor` is whose answer is loaded.
  */
 let choice: ProjectsListMode | "auto" = "auto";
+let choiceFor: string | null = null;
+const CHOICE_KEY = "adminbot.myWork.view.v1:";
+const LIST_MODES: readonly ProjectsListMode[] = ["cards", "flat", "sheet"];
+
+function loadChoice(memberId: string): void {
+  if (choiceFor === memberId) {
+    return;
+  }
+  choiceFor = memberId;
+  choice = "auto";
+  try {
+    const stored = globalThis.localStorage?.getItem(CHOICE_KEY + memberId);
+    if (stored && (LIST_MODES as readonly string[]).includes(stored)) {
+      choice = stored as ProjectsListMode;
+    }
+  } catch {
+    // Storage blocked (private window): the choice still lasts for this session.
+  }
+}
+
+/** A phone is too narrow for the sheet's columns, so it never opens there unasked. */
+function narrowScreen(): boolean {
+  return globalThis.matchMedia?.("(max-width: 768px)").matches ?? false;
+}
 // Kept across renders so a half-typed field or cell survives a repaint.
 let legacyState: PaperLegacyState | null = null;
 let gridState: PaperGridState | null = null;
@@ -75,16 +104,28 @@ export function opensOnSheet(params: { count: number; admin: boolean }): boolean
 }
 
 /** The drawing the overview shows: the reader's own choice, or the landing rule above. */
-export function projectsListMode(params: { count: number; admin: boolean }): ProjectsListMode {
+export function projectsListMode(params: {
+  count: number;
+  admin: boolean;
+  memberId?: string | null;
+}): ProjectsListMode {
+  loadChoice(params.memberId ?? "");
   if (choice !== "auto") {
     return choice;
   }
-  return opensOnSheet(params) ? "sheet" : "cards";
+  return opensOnSheet(params) && !narrowScreen() ? "sheet" : "cards";
 }
 
 /** Switches the overview's drawing. The two whole-page views are exclusive: opening one closes the other. */
 export function setProjectsListMode(next: ProjectsListMode): void {
   choice = next;
+  if (choiceFor) {
+    try {
+      globalThis.localStorage?.setItem(CHOICE_KEY + choiceFor, next);
+    } catch {
+      // Not stored; it still holds until the page reloads.
+    }
+  }
   legacyState = next === "flat" ? (legacyState ?? emptyPaperLegacyState()) : null;
   gridState = next === "sheet" ? (gridState ?? emptyPaperGridState()) : null;
 }
@@ -93,7 +134,9 @@ export function setProjectsListMode(next: ProjectsListMode): void {
 export function resetProjectsListViews(): void {
   cancelPaperLegacyAutosave();
   clearHistory();
+  resetListWindow();
   choice = "auto";
+  choiceFor = null;
   legacyState = null;
   gridState = null;
 }
@@ -110,6 +153,20 @@ function renderFlatFeedback(paper: AdminBotPaperRecord, props: PaperWorkspacePro
   }
   return renderPaperFeedback({
     slots,
+    loading: props.slotsBusyId === paper.id,
+    onSaveSlot: (slot, input) => props.onSaveSlot(paper.id, slot, input),
+  });
+}
+
+/** The impact-statement form, drawn in the flat view for the same reason as the feedback one. */
+function renderFlatImpact(paper: AdminBotPaperRecord, props: PaperWorkspaceProps) {
+  const slots = props.slots[paper.id]?.slots ?? [];
+  if (!slots.some((row) => isPaperImpactSlot(row.slot))) {
+    return nothing;
+  }
+  return renderPaperImpact({
+    slots,
+    paper,
     loading: props.slotsBusyId === paper.id,
     onSaveSlot: (slot, input) => props.onSaveSlot(paper.id, slot, input),
   });
@@ -139,7 +196,7 @@ function renderFlatExtras(
         slots: props.slots[paper.id]?.slots ?? [],
         paper,
       })}
-      ${renderNextStep(paper)} ${renderFlatFeedback(paper, props)}
+      ${renderNextStep(paper)} ${renderFlatFeedback(paper, props)} ${renderFlatImpact(paper, props)}
     `,
     bottom: html`
       ${renderCompletion(paper, props)} ${renderWeeklyUpdates(paper, props)}
@@ -176,6 +233,7 @@ export function renderSheetView(
   state: AppViewState,
   props: PaperWorkspaceProps,
   papers: AdminBotPaperRecord[],
+  rows?: AdminBotPaperRecord[],
 ) {
   gridState ??= emptyPaperGridState();
   const grid = gridState;
@@ -183,6 +241,7 @@ export function renderSheetView(
   return renderPaperGrid({
     state: grid,
     papers,
+    rows,
     onChange: rerender,
     slots: props.slots,
     onLoadSlots: props.onLoadSlots,
@@ -251,11 +310,15 @@ export function renderListMode(
   papers: AdminBotPaperRecord[],
   mode: ProjectsListMode,
 ) {
-  if (mode === "flat") {
-    return html`<div class="my-work my-work--legacy">${renderFlatView(state, props, papers)}</div>`;
+  if (mode === "cards") {
+    return nothing;
   }
-  if (mode === "sheet") {
-    return html`<div class="my-work my-work--sheet">${renderSheetView(state, props, papers)}</div>`;
-  }
-  return nothing;
+  const rerender = () => props.onRerender?.();
+  const { shown, matched } = windowList(papers);
+  return html`${mode === "flat"
+    ? html`<div class="my-work my-work--legacy">${renderFlatView(state, props, shown)}</div>`
+    : html`<div class="my-work my-work--sheet">
+        ${renderSheetView(state, props, papers, shown)}
+      </div>`}
+  ${renderListMore(shown.length, matched, rerender)}`;
 }

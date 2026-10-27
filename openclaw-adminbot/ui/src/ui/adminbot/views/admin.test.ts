@@ -1487,6 +1487,28 @@ describe("renderAdminBot members panel — authored papers", () => {
 
     expect(container.querySelector(".adminbot-member-sheet__papers")).toBeNull();
   });
+
+  // A lab with 1,500 papers: each row names a few and counts the rest, and the paper dropdown --
+  // one option per title -- gives way to the search box, which already matches titles.
+  it("names three papers per row and leaves a long title list to search", () => {
+    const many = Array.from({ length: 45 }, (_, index) =>
+      paper({ id: `paper-${index}`, title: `Paper ${index}` }),
+    );
+    const container = renderToDiv(
+      baseProps({
+        mode: "general",
+        panel: "members",
+        data: { ...createEmptyAdminBotDashboardData(), members, papers: many },
+      }),
+    );
+    const strip = container.querySelector("tbody tr td .adminbot-member-sheet__papers");
+    expect(strip?.querySelectorAll(".adminbot-tag--paper")).toHaveLength(3);
+    expect(strip?.querySelector(".adminbot-tag--more")?.textContent).toContain("+42 more");
+    expect(container.querySelector('select[name="paper"]')).toBeNull();
+    // The rest are still findable: every title stays on the row for the search and filters.
+    const row = container.querySelector<HTMLTableRowElement>("tbody tr")!;
+    expect(row.dataset.papers?.split("|")).toHaveLength(45);
+  });
 });
 
 describe("renderAdminBot members panel — conference filter", () => {

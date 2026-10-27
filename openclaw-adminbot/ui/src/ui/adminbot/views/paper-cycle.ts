@@ -2,7 +2,9 @@ import { html, nothing } from "lit";
 import {
   X_ANNOUNCEMENT_STAGES,
   readXThreadDraft,
+  renumberXThread,
   xDraftLength,
+  xThreadFromText,
   type XAnnouncementDetails,
   type XAnnouncementStage,
   type XCreditSelection,
@@ -37,6 +39,8 @@ export type PaperCycleProps = {
   memberName: (memberId: string) => string;
   paperAuthors?: string[];
   creditMembers?: Array<{ id: string; name: string; twitter_url?: string; affiliation?: string }>;
+  /** The conference as the card records it ("EMNLP 2026 (Oral)"), prefilled into the settings. */
+  defaultVenue?: string;
   onSaveDraft: (
     platform: string,
     body: string,
@@ -45,16 +49,23 @@ export type PaperCycleProps = {
   onCirculateDraft: (draftId: string) => void;
   /**
    * LinkedIn only: run the model draft with the panel's venue/context inputs and store the text.
-   * `pdfBase64` is a PDF dropped on the panel; absent, the service reads the card's Drive copy.
+   * `pdfBase64` is a PDF dropped on the panel; absent, the service reads the card's arXiv or Drive
+   * copy. `abstract` is pasted by hand for a paper with neither, and replaces PDF reading.
    * May return the request's promise: the panel awaits it to keep its button disabled meanwhile.
    */
-  onGenerateLinkedInDraft?: (venue: string, note: string, pdfBase64?: string) => unknown;
+  onGenerateLinkedInDraft?: (
+    venue: string,
+    note: string,
+    pdfBase64?: string,
+    abstract?: string,
+  ) => unknown;
   onGenerateXDraft?: (
     venue: string,
     note: string,
     pdfBase64?: string,
     announcement?: XAnnouncementDetails,
     credits?: XCreditSelection,
+    abstract?: string,
   ) => unknown;
   onConsent: (draftId: string, decision: string, comment?: string) => void;
   onSetAttendee: (name: string, memberId: string | undefined, attending: string) => void;
@@ -171,7 +182,11 @@ function choosePdf(zone: HTMLElement, files: FileList | null | undefined): void 
     return;
   }
   if (!isPdf(file) || file.size > LINKEDIN_DRAFT_PDF_MAX_BYTES) {
-    globalThis.alert?.(isPdf(file) ? "That PDF is over 20 MB." : `${file.name} is not a PDF.`);
+    globalThis.alert?.(
+      isPdf(file)
+        ? "That PDF is over 20 MB. Leave it out to use the arXiv or Drive copy, or paste the abstract instead."
+        : `${file.name} is not a PDF. Drop the paper PDF, or paste the abstract instead.`,
+    );
     input.value = "";
     title.textContent = "Drop the paper PDF here";
     return;
@@ -200,23 +215,91 @@ const X_STAGE_LABELS = {
   arxiv: "arXiv release",
   acceptance: "Conference acceptance",
   attendance: "Going to the conference",
-  poster: "Poster — come chat",
+  poster: "Poster or talk — come chat",
 };
 
-async function readXFigure(file: File): Promise<string> {
-  if (!["image/png", "image/jpeg"].includes(file.type) || file.size > 512 * 1024) {
-    throw new Error("Choose a PNG/JPEG figure under 512 KB.");
-  }
+/** The service's per-figure ceiling: a data URI of 700,000 characters is about 512 KB of image. */
+const X_FIGURE_MAX_DATA_URI = 690_000;
+
+function readDataUri(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.addEventListener("load", () =>
       typeof reader.result === "string"
         ? resolve(reader.result)
-        : reject(new Error("Could not read the figure.")),
+        : reject(new Error(`Could not read "${file.name}".`)),
     );
-    reader.addEventListener("error", () => reject(new Error("Could not read the figure.")));
+    reader.addEventListener("error", () => reject(new Error(`Could not read "${file.name}".`)));
     reader.readAsDataURL(file);
   });
+}
+
+/**
+ * A figure as X will take it.
+ *
+ * A screenshot of a results table is routinely a 2 MB PNG, and "choose a figure under 512 KB" sent
+ * people off to an image editor. Anything too big, or in another format (WebP, HEIC from a phone),
+ * is redrawn as a JPEG and shrunk until it fits; only a figure that cannot be shrunk enough is
+ * refused, and the message says what to do.
+ */
+export async function readXFigure(file: File): Promise<string> {
+  if (!file.type.startsWith("image/")) {
+    throw new Error(`"${file.name}" is not an image. Choose a PNG or JPEG figure.`);
+  }
+  const original = await readDataUri(file);
+  if (/^image\/(png|jpeg)$/u.test(file.type) && original.length <= X_FIGURE_MAX_DATA_URI) {
+    return original;
+  }
+  const image = new Image();
+  image.src = original;
+  try {
+    await image.decode();
+  } catch {
+    throw new Error(`"${file.name}" could not be opened as an image. Export it as PNG or JPEG.`);
+  }
+  let scale = Math.min(1, 2400 / Math.max(image.naturalWidth, image.naturalHeight, 1));
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const context = canvas.getContext("2d");
+    if (!context) {
+      break;
+    }
+    // JPEG has no transparency; white is what a transparent plot background looks like on X.
+    context.fillStyle = "#fff";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    const shrunk = canvas.toDataURL("image/jpeg", 0.85);
+    if (shrunk.length <= X_FIGURE_MAX_DATA_URI) {
+      return shrunk;
+    }
+    scale *= 0.75;
+  }
+  throw new Error(
+    `"${file.name}" is still over 512 KB after shrinking. Crop it to the part that matters and try again.`,
+  );
+}
+
+async function copyToClipboard(text: string, button: HTMLButtonElement): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text);
+    const label = button.textContent;
+    button.textContent = "Copied";
+    setTimeout(() => {
+      button.textContent = label;
+    }, 1500);
+  } catch {
+    globalThis.alert?.("The browser blocked copying. Select the text and copy it by hand.");
+  }
+}
+
+/** The thread as currently typed, so copying gives what is on screen rather than the last save. */
+function currentThreadText(composer: Element | null, fallback: string[]): string[] {
+  return fallback.map(
+    (text, index) =>
+      composer?.querySelector<HTMLTextAreaElement>(`[data-post="${index}"]`)?.value.trim() ?? text,
+  );
 }
 
 function renderXThreadEditor(props: PaperCycleProps, draft: PaperSocialDraft) {
@@ -227,6 +310,7 @@ function renderXThreadEditor(props: PaperCycleProps, draft: PaperSocialDraft) {
   return html`<div class="paper-cycle__composer">
     <form
       class="paper-cycle__thread"
+      novalidate
       @submit=${async (event: Event) => {
         event.preventDefault();
         const form = event.currentTarget as HTMLFormElement;
@@ -238,34 +322,56 @@ function renderXThreadEditor(props: PaperCycleProps, draft: PaperSocialDraft) {
           button.disabled = true;
         }
         try {
-          const posts = await Promise.all(
+          const edited = await Promise.all(
             thread.posts.map(async (post, index) => {
+              const label = `Post ${index + 1}`;
               const text =
                 form.querySelector<HTMLTextAreaElement>(`[data-post="${index}"]`)?.value.trim() ??
                 "";
-              const images = (post.images ?? []).map((image, imageIndex) => ({
-                data_uri: image.data_uri,
-                alt_text:
+              const images = (post.images ?? []).flatMap((image, imageIndex) => {
+                if (
+                  form.querySelector<HTMLInputElement>(`[data-remove="${index}-${imageIndex}"]`)
+                    ?.checked
+                ) {
+                  return [];
+                }
+                const alt =
                   form
                     .querySelector<HTMLInputElement>(`[data-alt="${index}-${imageIndex}"]`)
-                    ?.value.trim() ?? "",
-              }));
+                    ?.value.trim() ?? "";
+                if (!alt) {
+                  throw new Error(
+                    `${label}, figure ${imageIndex + 1} needs a description, or tick "Remove this figure".`,
+                  );
+                }
+                return [{ data_uri: image.data_uri, alt_text: alt }];
+              });
               const file = form.querySelector<HTMLInputElement>(`[data-figure="${index}"]`)
                 ?.files?.[0];
               if (file) {
-                images.push({
-                  data_uri: await readXFigure(file),
-                  alt_text:
-                    form
-                      .querySelector<HTMLInputElement>(`[data-new-alt="${index}"]`)
-                      ?.value.trim() ?? "",
-                });
+                const alt =
+                  form.querySelector<HTMLInputElement>(`[data-new-alt="${index}"]`)?.value.trim() ??
+                  "";
+                if (!alt) {
+                  throw new Error(
+                    `${label}: describe the new figure in one sentence (it is read aloud to screen-reader users), or clear the file.`,
+                  );
+                }
+                if (images.length >= 4) {
+                  throw new Error(`${label} already has four figures, the most X allows.`);
+                }
+                images.push({ data_uri: await readXFigure(file), alt_text: alt });
               }
               return { text, ...(images.length ? { images } : {}) };
             }),
           );
+          const added = form.querySelector<HTMLTextAreaElement>("[data-post-new]")?.value ?? "";
+          const posts = renumberXThread([...edited, ...xThreadFromText(added)]);
+          if (!posts.length) {
+            throw new Error("Every post is empty. Write at least one post before saving.");
+          }
           const saved = readXThreadDraft({ stage: thread.stage, posts });
-          props.onSaveDraft("x", posts.map((post) => post.text).join("\n\n"), saved);
+          props.onSaveDraft("x", saved.posts.map((post) => post.text).join("\n\n"), saved);
         } catch (error) {
           globalThis.alert?.((error as Error).message);
         } finally {
@@ -295,8 +401,10 @@ function renderXThreadEditor(props: PaperCycleProps, draft: PaperSocialDraft) {
               }
               const count = composer?.querySelector<HTMLElement>(`[data-count="${index}"]`);
               if (count) {
-                count.textContent = `${xDraftLength(input.value)} / 280`;
-                count.classList.toggle("paper-cycle__over-limit", xDraftLength(input.value) > 280);
+                const length = xDraftLength(input.value);
+                count.textContent =
+                  length > 280 ? `${length} / 280 — will be split on save` : `${length} / 280`;
+                count.classList.toggle("paper-cycle__over-limit", length > 280);
               }
             }}
             .value=${post.text}
@@ -309,17 +417,20 @@ function renderXThreadEditor(props: PaperCycleProps, draft: PaperSocialDraft) {
                   class="input"
                   data-alt=${`${index}-${imageIndex}`}
                   .value=${image.alt_text}
-                  required
                   maxlength="1000"
               /></label>
+              <label
+                ><input type="checkbox" data-remove=${`${index}-${imageIndex}`} /> Remove this
+                figure</label
+              >
             `,
           )}
           <details class="paper-cycle__attachments">
             <summary>Add a figure</summary>
             <label
-              >Reviewed paper figure (PNG/JPEG, under 512 KB)<input
+              >Paper figure (PNG/JPEG; larger images are shrunk to fit)<input
                 type="file"
-                accept="image/png,image/jpeg"
+                accept="image/*"
                 data-figure=${index}
             /></label>
             <label
@@ -327,20 +438,47 @@ function renderXThreadEditor(props: PaperCycleProps, draft: PaperSocialDraft) {
                 class="input"
                 data-new-alt=${index}
                 maxlength="1000"
-                placeholder="Describe the finding shown; required when adding a figure"
+                placeholder="One sentence on what the figure shows; needed only if you add one"
             /></label>
           </details>
         </fieldset>`,
       )}
+      <label class="paper-cycle__field"
+        ><span>Add posts <em>(optional)</em></span
+        ><textarea
+          class="input"
+          rows="2"
+          data-post-new
+          placeholder="Another post. Leave a blank line between posts to add several."
+        ></textarea>
+      </label>
       <p>
-        Figures and text are saved together. Coauthor review is optional. Saving creates a new draft
-        version.
+        To remove a post, clear its text. Posts over 280 characters are split, and numbering is
+        redone, when you save. Coauthor review is optional. Saving creates a new draft version.
       </p>
       <button class="btn primary" type="submit">Save thread and figures</button>
     </form>
     <aside class="paper-cycle__preview" aria-label="Thread preview">
       <h5>Thread preview</h5>
-      <p class="paper-slot__note">Text updates as you type. Figures reflect the saved draft.</p>
+      <p class="paper-slot__note">
+        Text updates as you type. Figures reflect the saved draft. Post by hand on X: copy each post
+        into the composer, attaching its figures.
+      </p>
+      <button
+        type="button"
+        class="btn btn--sm"
+        data-testid=${`paper-draft-copy-thread-${props.paperId}`}
+        @click=${(event: Event) => {
+          const button = event.currentTarget as HTMLButtonElement;
+          const texts = currentThreadText(
+            button.closest(".paper-cycle__composer"),
+            thread.posts.map((post) => post.text),
+          );
+          void copyToClipboard(texts.filter(Boolean).join("\n\n"), button);
+        }}
+      >
+        Copy whole thread
+      </button>
       ${thread.posts.map(
         (post, index) => html`<article class="paper-cycle__preview-post">
           <span class="paper-cycle__post-number" aria-hidden="true">${index + 1}</span>
@@ -350,6 +488,22 @@ function renderXThreadEditor(props: PaperCycleProps, draft: PaperSocialDraft) {
             ${(post.images ?? []).map(
               (image) => html`<img src=${image.data_uri} alt=${image.alt_text} />`,
             )}
+            <button
+              type="button"
+              class="btn btn--sm"
+              data-testid=${`paper-draft-copy-post-${props.paperId}-${index}`}
+              @click=${(event: Event) => {
+                const button = event.currentTarget as HTMLButtonElement;
+                const live =
+                  button
+                    .closest(".paper-cycle__composer")
+                    ?.querySelector<HTMLTextAreaElement>(`[data-post="${index}"]`)
+                    ?.value.trim() ?? post.text;
+                void copyToClipboard(live, button);
+              }}
+            >
+              Copy post ${index + 1}
+            </button>
           </div>
         </article>`,
       )}
@@ -362,9 +516,8 @@ function renderDraft(
   platform: string,
   stage: XAnnouncementStage = "arxiv",
 ) {
-  // Hoisted so the click handler closes over a value that is already known to exist. Testing
-  // `props.onGenerateLinkedInDraft` at the render site guards the button correctly, but the
-  // narrowing does not survive into the closure, so the call read as possibly-undefined.
+  // Whether this panel can generate at all. The click handler calls the platform's own callback
+  // with `?.`: the two take different trailing arguments, so the union cannot be called directly.
   const generate = platform === "x" ? props.onGenerateXDraft : props.onGenerateLinkedInDraft;
   const draft =
     platform === "x"
@@ -417,19 +570,30 @@ function renderDraft(
                     </label>
                     ${stage !== "arxiv"
                       ? html`<label class="paper-cycle__field"
-                          ><span>Confirmed conference</span><input class="input" data-el="x-venue"
+                          ><span>Confirmed conference</span
+                          ><input
+                            class="input"
+                            data-el="x-venue"
+                            .value=${props.defaultVenue ?? ""}
+                            placeholder="EMNLP 2026 (Oral)"
                         /></label>`
                       : nothing}
                     ${stage === "attendance"
                       ? html`<label class="paper-cycle__field"
                           ><span>Confirmed attendees / dates</span
-                          ><input class="input" data-el="x-attendees"
+                          ><input
+                            class="input"
+                            data-el="x-attendees"
+                            placeholder="Mina and Khai, Nov 4–8"
                         /></label>`
                       : nothing}
                     ${stage === "poster"
                       ? html`<label class="paper-cycle__field"
-                          ><span>Confirmed local date/time, hall, poster number</span
-                          ><input class="input" data-el="x-session"
+                          ><span>Confirmed local date/time, room, poster number or talk slot</span
+                          ><input
+                            class="input"
+                            data-el="x-session"
+                            placeholder="Wed Nov 5, 14:00, Hall B poster #212 — or Oral session 3A, Room 101"
                         /></label>`
                       : nothing}
                     ${(props.paperAuthors ?? []).map(
@@ -480,6 +644,7 @@ function renderDraft(
                         class="input"
                         type="text"
                         data-el="venue"
+                        .value=${props.defaultVenue ?? ""}
                         placeholder="ICML 2026, poster Wed Jul 8 Hall A #3015"
                       />
                     `}
@@ -528,8 +693,8 @@ function renderDraft(
                   <small class="logistics-upload__drop-hint"
                     >Optional — or click to choose.
                     ${platform === "x"
-                      ? "Otherwise use arXiv first, then the Drive copy."
-                      : "Used instead of the Drive copy on the card."}
+                      ? "Without one: the arXiv copy, then the Drive copy, then the abstract below."
+                      : "Without one: the Drive copy, then arXiv, then the abstract below."}
                   </small>
                   <input
                     class="sr-only"
@@ -542,6 +707,17 @@ function renderDraft(
                     }}
                   />
                 </label>
+                <label class="paper-cycle__field"
+                  ><span
+                    >Abstract
+                    <em>(optional — paste it if the paper has no PDF or arXiv link)</em></span
+                  ><textarea
+                    class="input"
+                    rows="3"
+                    data-el="abstract"
+                    placeholder="The whole abstract. Used only when no PDF is dropped above."
+                  ></textarea>
+                </label>
               `}
             </details>
           `
@@ -549,18 +725,54 @@ function renderDraft(
       ${draft?.x_thread
         ? renderXThreadEditor(props, draft)
         : html`<textarea
-            class="input paper-cycle__draft-body"
-            rows="3"
-            placeholder=${`Draft the ${PLATFORM_LABELS[platform] ?? platform} post…`}
-            .value=${draft?.body ?? ""}
-            data-testid=${`paper-draft-body-${props.paperId}-${platform}`}
-            @change=${(event: Event) => {
-              const value = (event.target as HTMLTextAreaElement).value.trim();
-              if (value && value !== draft?.body) {
-                props.onSaveDraft(platform, value);
-              }
-            }}
-          ></textarea>`}
+              class="input paper-cycle__draft-body"
+              rows=${platform === "x" ? 6 : 3}
+              placeholder=${platform === "x"
+                ? "Write the thread by hand, or press Generate. Leave a blank line between posts; long posts are split and numbered on save."
+                : `Draft the ${PLATFORM_LABELS[platform] ?? platform} post…`}
+              .value=${draft?.body ?? ""}
+              data-testid=${`paper-draft-body-${props.paperId}-${platform}`}
+              @change=${(event: Event) => {
+                const value = (event.target as HTMLTextAreaElement).value.trim();
+                if (!value || value === draft?.body) {
+                  return;
+                }
+                if (platform !== "x") {
+                  props.onSaveDraft(platform, value);
+                  return;
+                }
+                // Typed text becomes a real thread for this panel's stage, so it gets the post
+                // editor, the 280-character check and the copy buttons, and lands on this stage.
+                try {
+                  const thread = readXThreadDraft({ stage, posts: xThreadFromText(value) });
+                  props.onSaveDraft(
+                    platform,
+                    thread.posts.map((post) => post.text).join("\n\n"),
+                    thread,
+                  );
+                } catch (error) {
+                  globalThis.alert?.((error as Error).message);
+                }
+              }}
+            ></textarea>
+            ${draft?.body
+              ? html`<button
+                  type="button"
+                  class="btn btn--sm"
+                  data-testid=${`paper-draft-copy-${props.paperId}-${panelId}`}
+                  @click=${(event: Event) => {
+                    const button = event.currentTarget as HTMLButtonElement;
+                    const text =
+                      button
+                        .closest(".paper-cycle__draft")
+                        ?.querySelector<HTMLTextAreaElement>(".paper-cycle__draft-body")
+                        ?.value.trim() ?? draft.body;
+                    void copyToClipboard(text, button);
+                  }}
+                >
+                  Copy post
+                </button>`
+              : nothing}`}
       ${generate
         ? html`
             <div class="paper-cycle__draft-actions">
@@ -580,6 +792,10 @@ function renderDraft(
                   const note =
                     root?.querySelector<HTMLInputElement>('[data-el="note"]')?.value.trim() ?? "";
                   const pdf = root?.querySelector<HTMLInputElement>('[data-el="pdf"]')?.files?.[0];
+                  const abstract =
+                    root
+                      ?.querySelector<HTMLTextAreaElement>('[data-el="abstract"]')
+                      ?.value.trim() || undefined;
                   try {
                     const pdfBase64 = pdf ? await readPdfBase64(pdf) : undefined;
                     if (platform === "x" && props.onGenerateXDraft) {
@@ -625,10 +841,13 @@ function renderDraft(
                                 return handle ? { name, x_handle: handle } : { name };
                               }),
                           },
+                          abstract,
                         ),
                       );
                     } else {
-                      await Promise.resolve(generate(venue, note, pdfBase64));
+                      await Promise.resolve(
+                        props.onGenerateLinkedInDraft?.(venue, note, pdfBase64, abstract),
+                      );
                     }
                   } catch (error) {
                     globalThis.alert?.((error as Error).message);

@@ -58,10 +58,20 @@ describe("TAB_GROUPS", () => {
       "gettingStarted",
       "profile",
       "adminbotTimeAvailability",
-      // Where you are going and who is nearby, beside when you are free. Travel used to sit
-      // here too; Events took it over.
-      "events",
       "myWork",
+    ]);
+    // The people around the viewer in one group: who can help, where they will be, when the lab
+    // meets and who the lab is. Events used to sit under My Info, two groups away from Collaborate.
+    // The talk leaderboard is the second tab of the Lab Members page, not its own sidebar entry.
+    expect(byLabel("labSharing")).toEqual([
+      "labSharing",
+      "events",
+      "adminbotMeetings",
+      "adminbotMembers",
+    ]);
+    expect(TAB_PAGES.find((page) => page.page === "people")?.tabs).toEqual([
+      "adminbotMembers",
+      "adminbotTalkLeaderboard",
     ]);
     // One tab per request template, named for what it asks and who it asks.
     expect(byLabel("requestsToZhijing")).toEqual([
@@ -89,8 +99,6 @@ describe("TAB_GROUPS", () => {
     // Chat is no longer a group of its own: asking AdminBot something is the second half of the
     // guidebook surface, which the sidebar footer renders.
     expect(TAB_GROUPS.flatMap((group) => group.tabs as readonly string[])).not.toContain("chat");
-    // The roster is part of the lab's shared surface, not a tool you operate.
-    expect(byLabel("labSharing")).toEqual(["labSharing", "adminbotMeetings", "adminbotMembers"]);
     // Six entries, not eleven: Lab Overview, Nudges and Membership are each one page with a tab
     // bar inside it (TAB_PAGES), and only the landing tab is listed here. Badges rides on
     // Membership and the Grant Report on Lab Overview, so neither is a sidebar entry of its own.
