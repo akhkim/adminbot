@@ -92,16 +92,14 @@ decide whether to extend or remove an account, so being absent from the sheet
 reads as "remove this account"; a member with no DCS username keeps a row with
 that cell empty and is listed in the sync's `missing_dcs_username`.
 
-Population crosses both axes and is computed by `vectorSponsorRoster`
-(`extensions/adminbot/src/collaborator-subgroups.ts`), never assembled by hand:
+Population is computed by `vectorSponsorRoster`
+(`extensions/adminbot/src/workflows/members/collaborator-subgroups.ts`) from the
+`member_type` column, never assembled by hand: everyone whose type includes
+`full`, `coauthor-major` or `own-pace-advisee`, minus alumni. Every other type
+is excluded, whatever the privilege level.
 
-- internal `member` and `admin` privilege levels, and
-- `external_collaborator` in the `coauthor_major` subgroup.
-
-`trial`, every other subgroup, and members with no email on file are excluded.
-The helper returns excluded-for-no-email ids separately in `missing_email`;
-chase those before the next refresh rather than letting the person silently drop
-off the sheet.
+A member with no email on file stays on the sheet (it carries no email column)
+and is listed in `missing_email`; close that gap in AdminBot when you can.
 
 The sheet was shared with him once by hand and is not re-shared. A monthly cron
 job keeps its contents current:
@@ -118,7 +116,8 @@ openclaw cron add --name "Vector roster sync" --cron "0 9 1 * *" \
 
 The sync writes the new rows before clearing the stale tail, and aborts on an
 empty roster, because a blank sheet tells the sponsor to remove every account.
-Pass `--strict` to fail the run when someone on the roster has no email.
+Pass `--strict` to fail the run (after writing) when someone on the roster has
+no email.
 
 ## Slack Invite Decision
 

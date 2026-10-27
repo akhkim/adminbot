@@ -263,15 +263,11 @@ describe("auditMemberAccess — roster-backed rows", () => {
     expect(finding(row, "spreadsheet_full_details").verdict).toBe("pass");
   });
 
-  it("reports the sponsor-roster contradiction instead of quietly picking a side", () => {
-    // The matrix grants vector_roster_share to own_pace_advisee; VECTOR_ROSTER_MEMBER_TYPES does
-    // not include them. That disagreement is documented in collaborator-subgroups.ts as a live
-    // question, and putting somebody's address in front of a sponsor is not a thing to resolve by
-    // guessing -- so the audit surfaces it.
+  // The matrix and the sheet used to disagree about own-pace advisees; the lab settled it in favor
+  // of the matrix, and the audit reads the same rule the sheet is built from.
+  it("grades own-pace advisees as on the sponsor roster", () => {
     const row = auditMemberAccess(member({ member_type: "own-pace-advisee" }), evidence());
-    const vector = finding(row, "vector_roster_share");
-    expect(vector.verdict).toBe("fail");
-    expect(vector.detail).toContain("VECTOR_ROSTER_MEMBER_TYPES");
+    expect(finding(row, "vector_roster_share").verdict).toBe("pass");
   });
 });
 
