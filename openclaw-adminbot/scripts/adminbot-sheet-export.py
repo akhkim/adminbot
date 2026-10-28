@@ -1370,17 +1370,18 @@ def recommendation_letter_windows(connection, timestamp):
             continue
         submitted = parse_time(submitted_at)
         dates = []
+        incomplete_dates = False
         for value in json.loads(deadlines_json or '[]'):
             try:
                 dates.append(datetime.date.fromisoformat(value))
             except (ValueError, TypeError):
-                pass
+                incomplete_dates = True
         if any(date >= today for date in dates):
             grouped[member_id].append('Upcoming letter')
         elif (submitted and start <= submitted.astimezone(TORONTO).date() <= today
               or any(start <= date < today for date in dates)):
             grouped[member_id].append('Recent request / letter')
-        elif not submitted or not dates:
+        elif not submitted or not dates or incomplete_dates:
             grouped[member_id].append('Unknown date')
     return {member_id: next(value for value in ('Upcoming letter', 'Recent request / letter', 'Unknown date')
                             if value in values) for member_id, values in grouped.items()}

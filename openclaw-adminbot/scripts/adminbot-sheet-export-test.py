@@ -765,6 +765,7 @@ letter('boundary', '2026-04-28T04:00:00Z', ['2026-04-28'])
 letter('old', '2025-01-01T00:00:00Z', ['2025-02-01'])
 letter('future', '2025-01-01T00:00:00Z', ['2028-01-01'])
 letter('undated', 'invalid', ['not-a-date'])
+letter('partial-dates', '2025-01-01T00:00:00Z', ['2025-02-01', 'invalid'])
 letter('withdrawn', '2026-10-20T00:00:00Z', ['2027-01-01'], 'withdrawn')
 letter('declined', '2026-10-20T00:00:00Z', ['2027-01-01'], 'declined')
 letter('other', '2026-10-20T00:00:00Z', ['2027-01-01'], kind='book_meeting')
@@ -774,7 +775,7 @@ letter('completed', '2026-10-20T00:00:00Z', ['2026-10-25'], 'completed')
 before = letters.total_changes
 windows = exporter.recommendation_letter_windows(letters, '2026-10-28T12:00:00Z')
 assert windows == {'recent': 'Recent request / letter', 'boundary': 'Recent request / letter',
-                   'future': 'Upcoming letter', 'undated': 'Unknown date', 'mixed': 'Upcoming letter',
+                   'future': 'Upcoming letter', 'undated': 'Unknown date', 'partial-dates': 'Unknown date', 'mixed': 'Upcoming letter',
                    'completed': 'Recent request / letter'}
 assert letters.total_changes == before
 assert 'PRIVATE' not in json.dumps(windows)
