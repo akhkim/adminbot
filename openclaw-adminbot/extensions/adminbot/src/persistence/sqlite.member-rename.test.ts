@@ -152,6 +152,15 @@ describe("renaming a member id in SQLite", () => {
         type: string;
       }>;
       const values = columns.map((column, index) => {
+        // A retirement names its survivor; the member being renamed must not itself be retired.
+        if (table === "adminbot_member_retirements") {
+          if (column.name === "member_id") {
+            return "retired-before-pat";
+          }
+          if (column.name === "survivor_id") {
+            return "pat";
+          }
+        }
         if (/INT|REAL|NUM|BOOL/iu.test(column.type)) {
           return index + 1;
         }
@@ -183,6 +192,7 @@ describe("renaming a member id in SQLite", () => {
         "adminbot_tab_visits",
         "adminbot_update_events",
         "adminbot_login_events",
+        "adminbot_member_retirements",
         "adminbot_proposals",
       ]),
     );
@@ -199,6 +209,7 @@ describe("renaming a member id in SQLite", () => {
       .filter((table) => !MEMBER_RENAME_HISTORY_TABLES.has(table))
       .filter((table) => namesPat(table) > 0);
     expect(stillNamingPat).toEqual([]);
+    expect(store.retiredMemberTarget("retired-before-pat")).toBe("patricia");
     // The ledger row (status "…seed", so neither pending nor approved) is history and keeps the id.
     expect(namesPat("adminbot_proposals")).toBe(1);
     // Written past the store's own methods, so the roster cache and the ETag counters had to hear.

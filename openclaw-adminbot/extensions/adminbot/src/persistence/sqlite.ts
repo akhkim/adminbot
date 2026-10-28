@@ -2,7 +2,6 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
-import type { AdminBotApiToken, AdminBotApiTokenUsage } from "../contracts/api-tokens.js";
 import { cvEntryKey } from "../contracts/actions.js";
 import type {
   AdminBotAccountRegistration,
@@ -31,6 +30,7 @@ import type {
   AdminBotLoginLocation,
   AdminBotUpdateEvent,
 } from "../contracts/activity-log.js";
+import type { AdminBotApiToken, AdminBotApiTokenUsage } from "../contracts/api-tokens.js";
 import type {
   AdminBotBadgeAssignment,
   AdminBotBadgeDefinition,
@@ -92,6 +92,7 @@ import {
   type AdminBotSlackConnectInvite,
 } from "../kernel/service.js";
 import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
+import { withApiTokenAttribution } from "../workflows/identity/api-token-context.js";
 import {
   labMemberRowReader,
   toStoredLabMember,
@@ -143,7 +144,6 @@ import {
   getReferenceScan,
   saveReferenceScan,
 } from "./reference-scans.js";
-import { withApiTokenAttribution } from "../workflows/identity/api-token-context.js";
 import { SqliteApiTokens } from "./sqlite.api-tokens.js";
 import { SqliteAuditLog } from "./sqlite.audit.js";
 import { SqliteLabMemberCache } from "./sqlite.lab-members.js";
@@ -155,6 +155,7 @@ import {
   MEMBER_RENAME_HISTORY_TABLES,
 } from "./sqlite.member-columns.js";
 import { escalatedMemberNotificationsSql } from "./sqlite.member-notifications.js";
+import { SqliteMemberRetirements } from "./sqlite.member-retirements.js";
 import { migratePaperSlotColumns } from "./sqlite.paper-slot-migration.js";
 import { SqliteRecLetterAttestations } from "./sqlite.rec-letter-attestations.js";
 import { SqliteRecLetterFreezeIncidents } from "./sqlite.rec-letter-freezes.js";
@@ -299,6 +300,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   private readonly members: SqliteLabMemberCache;
   private readonly versions: SqliteTableVersions;
   private readonly audit: SqliteAuditLog;
+  private readonly memberRetirements: SqliteMemberRetirements;
   private readonly apiTokens: SqliteApiTokens;
   private readonly recLetterFreezes: SqliteRecLetterFreezeIncidents;
   private readonly recLetterAttestations: SqliteRecLetterAttestations;
@@ -1010,6 +1012,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       CREATE INDEX IF NOT EXISTS adminbot_failed_external_requests_updated_idx
         ON adminbot_failed_external_requests(updated_at DESC);
     `);
+    this.memberRetirements = new SqliteMemberRetirements(this.db);
     ensureLabSharingSchema(this.db);
     ensureDirectorStatusSchema(this.db);
     ensureLocationShareSchema(this.db);
@@ -1962,6 +1965,14 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       )
       .all(...values) as Array<{ payload_json: string }>;
     return rows.map((row) => parseJson<AdminBotBadgeNomination>(row.payload_json));
+  }
+
+  retiredMemberTarget(memberId: string): string | undefined {
+    return this.memberRetirements.target(memberId);
+  }
+  retireLabMember(memberId: string, survivorId: string, at: string): void {
+    this.memberRetirements.retire(memberId, survivorId, at);
+    this.members.invalidate();
   }
 
   deleteLabMember(memberId: string): boolean {
