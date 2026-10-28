@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Prepare a one-way, allowlisted Sheets values batch. Run on the database host."""
 import argparse
+import calendar
 import datetime
 import json
 import re
@@ -280,7 +281,7 @@ password_resets feedback_submitted active_sessions paper_slots_provided paper_sl
 papers_authored_count papers_authored papers_submitted_count papers_submitted
 audit_events_as_actor update_events_as_actor update_events_as_subject calendar_group acl_anthology_url
 arr_reviewer_qualified arr_review_capacity map_visibility location_permission linkedin_followers
-twitter_followers search'''.split())
+twitter_followers recommendation_letter_window search'''.split())
 
 
 # PeopleList, left to right. Name is frozen first: it is what people scan and search for, on a phone
@@ -293,7 +294,7 @@ PEOPLE_SECTIONS = (
              'affiliation', 'at_uoft', 'hours_per_week', 'membership_review', 'receives_nudges',
              'compute_access', 'calendar_group', 'next_position', 'graduated_month')),
     ('Research', ('research_branch', 'research_topics', 'elevator_pitch', 'projects', 'papers_authored_count',
-                  'papers_authored', 'arr_reviewer_qualified', 'arr_review_capacity')),
+                  'papers_authored', 'arr_reviewer_qualified', 'arr_review_capacity', 'recommendation_letter_window')),
     ('Links & socials', ('personal_website', 'linkedin_url', 'twitter_url', 'github_url', 'scholar_url',
                          'openreview_id', 'acl_anthology_url', 'lesswrong_url', 'other_socials', 'cv_url',
                          'linkedin_followers', 'twitter_followers')),
@@ -305,6 +306,7 @@ PEOPLE_PRIORITY = tuple(field for _, fields in PEOPLE_SECTIONS for field in fiel
 PEOPLE_RECORDS_SECTION = 'AdminBot records'
 # Header text people read; any field not listed gets its name with underscores turned into spaces.
 PEOPLE_LABELS = {
+    'recommendation_letter_window': 'Recommendation letters (last 6 months / upcoming)',
     'name': 'Name', 'calendar_email': 'Calendar email', 'whatsapp': 'WhatsApp',
     'email': 'Email', 'correspondence_email': 'Correspondence email',
     'timezone': 'Time zone', 'current_city': 'City', 'member_type': 'Membership', 'collaborator_subgroup': 'Subgroup',
@@ -1347,6 +1349,43 @@ def people_search_text(record, papers):
     return ' | '.join(terms)[:SEARCH_LIMIT]
 
 
+def recommendation_letter_windows(connection, timestamp):
+    """Only recorded requests qualify; no request on file is not a person's answer of no."""
+    today = parse_time(timestamp).astimezone(TORONTO).date()
+    month = today.year * 12 + today.month - 1 - 6
+    year, month = divmod(month, 12)
+    month += 1
+    start = datetime.date(year, month, min(today.day, calendar.monthrange(year, month)[1]))
+    grouped = defaultdict(list)
+    # Select dates and status only, never school names, letter contents or attached documents.
+    rows = connection.execute("""
+        SELECT member_id, submitted_at, json_extract(payload_json, '$.status'),
+            (SELECT json_group_array(json_extract(value, '$.letter_deadline'))
+             FROM json_each(json_extract(payload_json, '$.schools')))
+        FROM adminbot_logistics_requests
+        WHERE json_extract(payload_json, '$.kind') = 'recommendation_letters'
+    """)
+    for member_id, submitted_at, status, deadlines_json in rows:
+        if status in ('withdrawn', 'declined'):
+            continue
+        submitted = parse_time(submitted_at)
+        dates = []
+        for value in json.loads(deadlines_json or '[]'):
+            try:
+                dates.append(datetime.date.fromisoformat(value))
+            except (ValueError, TypeError):
+                pass
+        if any(date >= today for date in dates):
+            grouped[member_id].append('Upcoming letter')
+        elif (submitted and start <= submitted.astimezone(TORONTO).date() <= today
+              or any(start <= date < today for date in dates)):
+            grouped[member_id].append('Recent request / letter')
+        elif not submitted or not dates:
+            grouped[member_id].append('Unknown date')
+    return {member_id: next(value for value in ('Upcoming letter', 'Recent request / letter', 'Unknown date')
+                            if value in values) for member_id, values in grouped.items()}
+
+
 def full_people_values(connection, members, papers, timestamp):
     """Export recorded fields and ID-linked aggregates; never read auth secrets."""
     tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
@@ -1357,6 +1396,13 @@ def full_people_values(connection, members, papers, timestamp):
             return []
         return [dict(zip(fields, row)) for row in connection.execute(
             f"SELECT {','.join(fields)} FROM {table}")]
+
+    letter_windows = (recommendation_letter_windows(connection, timestamp)
+                      if 'adminbot_logistics_requests' in tables else None)
+    for member_id, record in records.items():
+        record['recommendation_letter_window'] = (
+            letter_windows.get(member_id, 'No matching request recorded')
+            if letter_windows is not None else 'Unknown — requests unavailable')
 
     for record in records.values():
         avatar = record.get('avatar_url', '')
