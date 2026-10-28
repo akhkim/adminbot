@@ -681,6 +681,15 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     return this.memberRequests.delete(requestId);
   }
 
+  private readonly retiredMembers = new Map<string, string>();
+  retiredMemberTarget(memberId: string): string | undefined {
+    return this.retiredMembers.get(memberId);
+  }
+  retireLabMember(memberId: string, survivorId: string, _at: string): void {
+    this.retiredMembers.set(memberId, survivorId);
+    this.labMembers.delete(memberId);
+  }
+
   deleteLabMember(memberId: string): boolean {
     return this.labMembers.delete(memberId);
   }

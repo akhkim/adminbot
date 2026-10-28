@@ -208,3 +208,28 @@ describe("changing a member id", () => {
     expect(store.getLabMember("the-admin")).toBeUndefined();
   });
 });
+
+it("returns 409 for a stale admin create after an approved merge", async () => {
+  const { mock, store, admin, baseUrl } = await lab();
+  const input = withCompleteProfile({
+    id: "old-import",
+    name: "Synthetic Duplicate",
+    email: "old@cs.toronto.edu",
+  });
+  expect(mock.service.upsertLabMember(input).ok).toBe(true);
+  const merged = await fetch(`${baseUrl}/lab/members/merge`, {
+    method: "POST",
+    headers: jsonHeaders({ Authorization: `Bearer ${admin}` }),
+    body: JSON.stringify({ survivor_id: "pat", duplicate_id: "old-import" }),
+  });
+  expect(merged.status).toBe(200);
+  const recreated = await fetch(`${baseUrl}/lab/members`, {
+    method: "POST",
+    headers: jsonHeaders({ Authorization: `Bearer ${admin}` }),
+    body: JSON.stringify(input),
+  });
+  expect(recreated.status).toBe(409);
+  expect(await recreated.text()).toContain("retired by a merge");
+  expect(store.getLabMember("old-import")).toBeUndefined();
+  expect(store.getLabMember("pat")?.name).toBe("Pat");
+});
