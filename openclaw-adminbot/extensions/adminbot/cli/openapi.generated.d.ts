@@ -5401,6 +5401,9 @@ export interface components {
       whatsapp?: string;
       correspondence_email?: string;
       dcs_username?: string;
+      former_member_ids?: string[];
+      alternate_emails?: string[];
+      alternate_slack_user_ids?: string[];
       at_uoft?: boolean;
       compute_access?: string[];
       /** @enum {string} */
@@ -6227,6 +6230,9 @@ export interface components {
       whatsapp?: string;
       correspondence_email?: string;
       dcs_username?: string;
+      former_member_ids?: string[];
+      alternate_emails?: string[];
+      alternate_slack_user_ids?: string[];
       at_uoft?: boolean;
       compute_access?: string[];
       /** @enum {string} */
@@ -6368,6 +6374,9 @@ export interface components {
       whatsapp?: string;
       correspondence_email?: string;
       dcs_username?: string;
+      former_member_ids?: string[];
+      alternate_emails?: string[];
+      alternate_slack_user_ids?: string[];
       at_uoft?: boolean;
       compute_access?: string[];
       /** @enum {string} */
@@ -7502,6 +7511,9 @@ export interface components {
       whatsapp?: string;
       correspondence_email?: string;
       dcs_username?: string;
+      former_member_ids?: string[];
+      alternate_emails?: string[];
+      alternate_slack_user_ids?: string[];
       at_uoft?: boolean;
       compute_access?: string[];
       /** @enum {string} */
@@ -16853,6 +16865,9 @@ export interface operations {
               whatsapp?: string;
               correspondence_email?: string;
               dcs_username?: string;
+              former_member_ids?: string[];
+              alternate_emails?: string[];
+              alternate_slack_user_ids?: string[];
               at_uoft?: boolean;
               compute_access?: string[];
               /** @enum {string} */

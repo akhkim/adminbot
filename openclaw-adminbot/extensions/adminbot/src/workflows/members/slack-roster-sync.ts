@@ -312,7 +312,27 @@ export function planSlackRosterSync(params: {
       byEmail.set(email, [...(byEmail.get(email) ?? []), member]);
     }
   }
-  const takenIds = new Set(params.members.map((member) => member.id));
+  // What members absorbed in admin merges, consulted only when the live indexes miss.
+  const byAlternateSlackId = new Map<string, AdminBotLabMember>();
+  const byAlternateEmail = new Map<string, AdminBotLabMember>();
+  for (const member of params.members) {
+    for (const slackId of member.alternate_slack_user_ids ?? []) {
+      const key = slackId.trim();
+      if (key && !bySlackId.has(key) && !byAlternateSlackId.has(key)) {
+        byAlternateSlackId.set(key, member);
+      }
+    }
+    for (const address of member.alternate_emails ?? []) {
+      const key = normalizeEmail(address);
+      if (key && !byEmail.has(key) && !byAlternateEmail.has(key)) {
+        byAlternateEmail.set(key, member);
+      }
+    }
+  }
+  // Retired ids stay taken, so a re-created duplicate could not reclaim one even if it got this far.
+  const takenIds = new Set(
+    params.members.flatMap((member) => [member.id, ...(member.former_member_ids ?? [])]),
+  );
   const matchedMembers = new Set<string>();
   const removalIds = new Set<string>();
   const optedOutIds = new Set<string>();
@@ -364,6 +384,18 @@ export function planSlackRosterSync(params: {
       }
       member = candidates[0];
       matchedBy = "email";
+    }
+    if (!member) {
+      const absorbedBy =
+        byAlternateSlackId.get(user.id) ?? (email ? byAlternateEmail.get(email) : undefined);
+      if (absorbedBy) {
+        // A second account of somebody an admin merged: the duplicate record was retired on
+        // purpose, so this account is not a joiner. Nothing is written from it either -- its avatar,
+        // zone and deactivation describe the other account, not the one the record keeps.
+        matchedMembers.add(absorbedBy.id);
+        plan.unchanged += 1;
+        continue;
+      }
     }
     if (member) {
       matchedMembers.add(member.id);

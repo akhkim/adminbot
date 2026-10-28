@@ -11784,6 +11784,24 @@
                           "dcs_username": {
                             "type": "string"
                           },
+                          "former_member_ids": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "alternate_emails": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "alternate_slack_user_ids": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
                           "at_uoft": {
                             "type": "boolean"
                           },
@@ -30508,6 +30526,24 @@
           "dcs_username": {
             "type": "string"
           },
+          "former_member_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "alternate_emails": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "alternate_slack_user_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "at_uoft": {
             "type": "boolean"
           },
@@ -33169,6 +33205,24 @@
           "dcs_username": {
             "type": "string"
           },
+          "former_member_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "alternate_emails": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "alternate_slack_user_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "at_uoft": {
             "type": "boolean"
           },
@@ -33633,6 +33687,24 @@
           },
           "dcs_username": {
             "type": "string"
+          },
+          "former_member_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "alternate_emails": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "alternate_slack_user_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "at_uoft": {
             "type": "boolean"
@@ -37259,6 +37331,24 @@
           },
           "dcs_username": {
             "type": "string"
+          },
+          "former_member_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "alternate_emails": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "alternate_slack_user_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "at_uoft": {
             "type": "boolean"
