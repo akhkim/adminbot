@@ -89,6 +89,10 @@ const SKIP_FIELDS = new Set([
   "access",
   "onboarding",
   "field_provenance",
+  // Written by a merge, never filled in by anybody.
+  "former_member_ids",
+  "alternate_emails",
+  "alternate_slack_user_ids",
   "availability_updated_at",
   "last_login_at",
   "last_login_country",

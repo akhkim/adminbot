@@ -188,6 +188,7 @@ import type { LabHelpRequest } from "../contracts/lab-sharing.js";
 import type { AdminBotLocationShareRecord } from "../contracts/lab-travel.js";
 import {
   findDuplicateMembers,
+  absorbedIdentity,
   planMemberMerge,
   type MemberDuplicatePair,
   type MemberMergeConflict,
@@ -6069,12 +6070,15 @@ export class AdminBotService {
       survivor as unknown as Record<string, unknown>,
       duplicate as unknown as Record<string, unknown>,
     );
-    const merged: AdminBotLabMember = {
+    const patched: AdminBotLabMember = {
       ...survivor,
       ...(patch as Partial<AdminBotLabMember>),
       id: survivor.id,
       updated_at: now,
     };
+    // Remembered so the daily imports recognize the retired record's id, addresses and Slack
+    // account as this person instead of re-creating the duplicate the next morning.
+    const merged: AdminBotLabMember = { ...patched, ...absorbedIdentity(patched, duplicate) };
     reconcileBirthdayEvent(this.birthdayDeps, duplicate, true);
     this.store.saveLabMember(merged);
     reconcileBirthdayEvent(this.birthdayDeps, merged);
@@ -14257,7 +14261,11 @@ export class AdminBotService {
       appliedChanges,
       memberById: (memberId) => this.store.getLabMember(memberId),
       alreadyMailed,
-      knownMemberIds: new Set(members.map((member) => member.id)),
+      // Retired ids too: a merged duplicate's name slug must not be handed out again to the sheet
+      // row that created it in the first place.
+      knownMemberIds: new Set(
+        members.flatMap((member) => [member.id, ...(member.former_member_ids ?? [])]),
+      ),
     });
 
     const created: string[] = [];

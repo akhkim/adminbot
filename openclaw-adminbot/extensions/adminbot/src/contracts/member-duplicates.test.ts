@@ -2,6 +2,7 @@
 // does the surviving record say afterwards.
 import { describe, expect, it } from "vitest";
 import {
+  absorbedIdentity,
   findDuplicateMembers,
   memberDuplicateReasons,
   planMemberMerge,
@@ -209,5 +210,58 @@ describe("planMemberMerge", () => {
     );
     expect(patch).toEqual({});
     expect(conflicts).toEqual([]);
+  });
+});
+
+// What a merge must remember so the daily imports stop re-creating the retired record: its id, the
+// addresses only it held, and a Slack account other than the survivor's own.
+describe("absorbedIdentity", () => {
+  it("keeps the retired id, its other addresses and its second Slack account", () => {
+    const identity = absorbedIdentity(
+      {
+        id: "eric-zhang",
+        email: "eric.personal@example.com",
+        correspondence_email: "eric.personal@example.com",
+        slack_user_id: "UKEEP",
+      },
+      { id: "eric-zhang-2", email: "Eric@CS.Example.edu", slack_user_id: "USECOND" },
+    );
+    expect(identity).toEqual({
+      former_member_ids: ["eric-zhang-2"],
+      alternate_emails: ["eric@cs.example.edu"],
+      alternate_slack_user_ids: ["USECOND"],
+    });
+  });
+
+  it("does not repeat what the survivor already holds as its own", () => {
+    const identity = absorbedIdentity(
+      // The patch already gave the survivor the duplicate's Slack id and calendar address.
+      { id: "keep", calendar_email: "same@example.com", slack_user_id: "USAME" },
+      { id: "drop", calendar_email: "same@example.com", slack_user_id: "USAME" },
+    );
+    expect(identity).toEqual({
+      former_member_ids: ["drop"],
+      alternate_emails: [],
+      alternate_slack_user_ids: [],
+    });
+  });
+
+  // A then B then C: the last survivor must still answer to all three.
+  it("carries identities forward through a chain of merges", () => {
+    const identity = absorbedIdentity(
+      { id: "c", alternate_emails: ["c-old@example.com"] },
+      {
+        id: "b",
+        email: "b@example.com",
+        former_member_ids: ["a"],
+        alternate_emails: ["a@example.com"],
+        alternate_slack_user_ids: ["UA"],
+      },
+    );
+    expect(identity).toEqual({
+      former_member_ids: ["b", "a"],
+      alternate_emails: ["c-old@example.com", "b@example.com", "a@example.com"],
+      alternate_slack_user_ids: ["UA"],
+    });
   });
 });

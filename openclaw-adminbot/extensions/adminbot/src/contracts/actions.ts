@@ -1716,6 +1716,19 @@ export type AdminBotLabMemberInput = {
    */
   dcs_username?: string;
   /**
+   * What this record absorbed in admin merges: the retired records' ids, and the addresses and
+   * Slack accounts that were theirs rather than this record's own. Written only by
+   * mergeLabMembers (see absorbedIdentity).
+   *
+   * The daily imports read them so a merged duplicate is recognized as this person. Without them
+   * the Slack roster sync and the onboarding sheet sweep re-created every merged duplicate the next
+   * morning: the merge keeps one Slack id and one login email, so the other account and the sheet
+   * row's address matched nobody.
+   */
+  former_member_ids?: string[];
+  alternate_emails?: string[];
+  alternate_slack_user_ids?: string[];
+  /**
    * Whether this person holds a UofT affiliation, which is what makes a DCS account sponsorable.
    *
    * Its own field rather than a reading of `affiliation`: that column is free text and is empty
