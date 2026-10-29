@@ -18,6 +18,7 @@ import {
   submitAdminBotSignatureForm,
   updateAdminBotLogisticsRequest,
   withdrawAdminBotLogisticsRequest,
+  deleteAdminBotLogisticsRequest,
 } from "../controllers/logistics.ts";
 import {
   readRecLetterEligibility,
@@ -168,6 +169,11 @@ export function renderLogisticsSurface(state: AppViewState, scope: AdminBotSurfa
         },
         onWithdraw: (requestId) => {
           void withdrawAdminBotLogisticsRequest(state, requestId).finally(() =>
+            requestHostUpdate?.(),
+          );
+        },
+        onDelete: (requestId) => {
+          void deleteAdminBotLogisticsRequest(state, requestId).finally(() =>
             requestHostUpdate?.(),
           );
         },

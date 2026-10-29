@@ -1,6 +1,6 @@
 // The logistics request routes: what a member asks the lab for, and what the lab says back.
 //
-// Cut from server.ts's route table because the access rule is the same on all six routes and reads
+// Cut from server.ts's route table because the access rule is the same on every route and reads
 // better in one place: reads are scoped to the caller unless the caller is an admin, writes to a
 // request's content belong to whoever submitted it, and the status column belongs to the lab. The
 // service re-checks every one of those -- what happens here decides which service call to make,
@@ -215,6 +215,16 @@ export async function handleLogisticsRoute(
         LOGISTICS_BODY_LIMIT_BYTES,
       )) as AdminBotLogisticsRequestInput;
       sendServiceResult(res, service.updateLogisticsRequest(requestId, member.id, body));
+      return;
+    }
+    if (req.method === "DELETE") {
+      // Removing a request is the lab clearing its queue, not the requester taking it back (that is
+      // /withdraw): admin-only, like the status column.
+      if (!isAdmin) {
+        sendJson(res, 403, { error: { message: "insufficient privileges" } });
+        return;
+      }
+      sendServiceResult(res, service.deleteLogisticsRequest(requestId, member.id));
       return;
     }
   }

@@ -254,6 +254,7 @@ Website: `/signatures, /rec-letters, /meeting-requests` · Who: member (queues: 
 | -------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
 | `delete-logistics-eligibility-attestations-by-eligibility-attestations-id` | DELETE `/logistics/eligibility-attestations/{eligibility_attestations_id}` |
 | `delete-logistics-freeze-incidents-by-freeze-incidents-id`                 | DELETE `/logistics/freeze-incidents/{freeze_incidents_id}`                 |
+| `delete-logistics-requests-by-requests-id`                                 | DELETE `/logistics/requests/{requests_id}`                                 |
 | `get-logistics-call-sheet`                                                 | GET `/logistics/call-sheet`                                                |
 | `get-logistics-eligibility-attestations`                                   | GET `/logistics/eligibility-attestations`                                  |
 | `get-logistics-eligibility-me`                                             | GET `/logistics/eligibility/me`                                            |

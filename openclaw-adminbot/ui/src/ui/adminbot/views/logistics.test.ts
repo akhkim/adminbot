@@ -78,6 +78,7 @@ type Drawn = {
   modeChanges: LogisticsMode[];
   opened: (string | null)[];
   withdrawn: string[];
+  deleted: string[];
   edited: string[];
   settledToggles: boolean[];
   signedNoteChanges: string[];
@@ -149,6 +150,7 @@ function draw(options: DrawOptions = {}): Drawn {
   const modeChanges: LogisticsMode[] = [];
   const opened: (string | null)[] = [];
   const withdrawn: string[] = [];
+  const deleted: string[] = [];
   const edited: string[] = [];
   const settledToggles: boolean[] = [];
   const signedNoteChanges: string[] = [];
@@ -200,6 +202,7 @@ function draw(options: DrawOptions = {}): Drawn {
         viewerMemberId: options.viewerMemberId ?? "ada",
         onOpenRequest: (next) => opened.push(next),
         onWithdraw: (id) => withdrawn.push(id),
+        onDelete: (id) => deleted.push(id),
         onEdit: (id) => edited.push(id),
         onSetStatus: (id, status, note) => answers.push({ id, status, note }),
         statusNote: options.statusNote ?? "",
@@ -285,6 +288,7 @@ function draw(options: DrawOptions = {}): Drawn {
     modeChanges,
     opened,
     withdrawn,
+    deleted,
     edited,
     settledToggles,
     signedNoteChanges,
@@ -1440,6 +1444,25 @@ describe("answering a request", () => {
       "Done",
       "Declined",
     ]);
+  });
+
+  it("lets an admin delete a request after confirming, and shows members no such button", () => {
+    const deleteButton = (container: HTMLElement) =>
+      container.querySelector<HTMLButtonElement>("[data-testid='logistics-delete']");
+    expect(
+      deleteButton(draw({ role: "member", mode: "view", openRequest: request }).container),
+    ).toBeNull();
+
+    vi.stubGlobal("confirm", () => false);
+    const kept = draw({ role: "admin", mode: "view", openRequest: request });
+    deleteButton(kept.container)?.click();
+    expect(kept.deleted).toEqual([]);
+
+    vi.stubGlobal("confirm", () => true);
+    const drawn = draw({ role: "admin", mode: "view", openRequest: request });
+    deleteButton(drawn.container)?.click();
+    expect(drawn.deleted).toEqual(["logreq_1"]);
+    vi.unstubAllGlobals();
   });
 
   it("sends the answer with the note the admin typed", () => {

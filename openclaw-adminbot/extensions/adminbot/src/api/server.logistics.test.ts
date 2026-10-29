@@ -365,6 +365,19 @@ describe("logistics request routes", () => {
     await expect(mine.json()).resolves.toMatchObject({ status: "withdrawn" });
   });
 
+  it("lets an admin delete a request, and refuses the requester", async () => {
+    const lab = await startLab();
+    const submitted = await submit(lab, "ada", LETTERS);
+    const url = `${lab.baseUrl}/logistics/requests/${submitted.request.id}`;
+    expect((await fetch(url, { method: "DELETE", headers: asMember(lab, "ada") })).status).toBe(
+      403,
+    );
+    const removed = await fetch(url, { method: "DELETE", headers: asMember(lab, "zhijing") });
+    expect(removed.status).toBe(200);
+    await expect(removed.json()).resolves.toEqual({ deleted: true, id: submitted.request.id });
+    expect((await fetch(url, { headers: asMember(lab, "zhijing") })).status).toBe(404);
+  });
+
   it("lets a member correct a request nobody has picked up", async () => {
     const lab = await startLab();
     const submitted = await submit(lab, "ada", LETTERS);
