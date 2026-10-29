@@ -777,7 +777,10 @@ async function handleAuthenticatedRoute(
     // Re-read the row on every request: a saved answer unlocks immediately, and clearing it
     // locks again even when the member's session predates the change.
     const member = ctx.store.getLabMember(principal.member.id);
-    if (!member || isBlockedByProfile(member, req.method, url.pathname)) {
+    if (
+      !member ||
+      isBlockedByProfile(member, req.method, url.pathname, Boolean(principal.impersonator))
+    ) {
       sendJson(res, 403, {
         error: {
           code: "profile_incomplete",
