@@ -2116,6 +2116,8 @@ export const en: TranslationMap = {
       documents: "Documents to sign",
       withdraw: "Withdraw this request",
       withdrawConfirm: "Withdraw this request? The lab stops working on it.",
+      delete: "Delete request",
+      deleteConfirm: "Delete this request and its files for good? This cannot be undone.",
       edit: "Correct this request",
       resolution: "The lab says: {note}",
       answerTitle: "Answer this request",

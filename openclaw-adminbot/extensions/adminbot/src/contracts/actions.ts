@@ -2868,6 +2868,7 @@ export type AdminBotAuditEvent = {
     | "logistics_request.submitted"
     | "logistics_request.status_changed"
     | "logistics_request.withdrawn"
+    | "logistics_request.deleted"
     // The signed document going back to the member who asked for it, and the copies being dropped
     // once it has.
     | "logistics_request.signed_document_sent"

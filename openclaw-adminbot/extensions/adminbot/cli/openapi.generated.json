@@ -13665,6 +13665,92 @@
       }
     },
     "/logistics/requests/{requests_id}": {
+      "delete": {
+        "operationId": "delete-logistics-requests-by-requests-id",
+        "summary": "DELETE /logistics/requests/{requests_id}",
+        "tags": [
+          "logistics"
+        ],
+        "x-source": "src/api/server.logistics.ts",
+        "parameters": [
+          {
+            "name": "requests_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "403": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "Successful service result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "deleted": {
+                      "type": "boolean",
+                      "const": true
+                    },
+                    "id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "deleted",
+                    "id"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
       "get": {
         "operationId": "get-logistics-requests-by-requests-id",
         "summary": "GET /logistics/requests/{requests_id}",
@@ -30061,6 +30147,7 @@
               "logistics_request.submitted",
               "logistics_request.status_changed",
               "logistics_request.withdrawn",
+              "logistics_request.deleted",
               "logistics_request.signed_document_sent",
               "logistics_request.files_cleared",
               "rec_letter_freeze.recorded",

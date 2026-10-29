@@ -268,6 +268,39 @@ describe("withdrawLogisticsRequest", () => {
   });
 });
 
+describe("deleteLogisticsRequest", () => {
+  it("lets an admin remove a request somebody else filed, and records who did", () => {
+    const service = serviceWithMembers();
+    const submitted = unwrap(service.submitLogisticsRequest("ada", LETTERS));
+    expect(unwrap(service.deleteLogisticsRequest(submitted.id, "zhijing"))).toEqual({
+      deleted: true,
+      id: submitted.id,
+    });
+    expect(unwrap(service.listLogisticsRequests()).requests).toHaveLength(0);
+    expect(
+      service.getLogisticsRequest(submitted.id, { member_id: "zhijing", is_admin: true }),
+    ).toMatchObject({ ok: false, status: 404 });
+    expect(service.listAuditEvents().map((event) => event.type)).toContain(
+      "logistics_request.deleted",
+    );
+  });
+
+  it("removes a completed request too, which withdrawal refuses", () => {
+    const service = serviceWithMembers();
+    const submitted = unwrap(service.submitLogisticsRequest("ada", SIGNATURE));
+    unwrap(service.setLogisticsRequestStatus(submitted.id, "completed", "zhijing"));
+    expect(service.deleteLogisticsRequest(submitted.id, "zhijing")).toMatchObject({ ok: true });
+  });
+
+  it("answers 404 for an id that is not there", () => {
+    const service = serviceWithMembers();
+    expect(service.deleteLogisticsRequest("logreq_missing", "zhijing")).toMatchObject({
+      ok: false,
+      status: 404,
+    });
+  });
+});
+
 describe("updateLogisticsRequest", () => {
   it("re-derives the deadline from the corrected rows rather than leaving the old one", () => {
     const service = serviceWithMembers();

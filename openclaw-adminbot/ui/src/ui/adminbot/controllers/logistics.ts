@@ -16,6 +16,7 @@ import {
   submitLogisticsRequest,
   updateLogisticsRequest,
   withdrawLogisticsRequest,
+  deleteLogisticsRequest,
   type LogisticsAttachment,
   type LogisticsRequest,
   type LogisticsRequestInput,
@@ -333,6 +334,44 @@ export async function withdrawAdminBotLogisticsRequest(
       return;
     }
     replaceRequest(host, result.value);
+  } finally {
+    host.adminBotLogisticsOpenLoading = false;
+  }
+}
+
+/**
+ * An admin removing a request. It leaves every list it was in and, if it was the one open, the
+ * card closes: there is nothing left to show.
+ */
+export async function deleteAdminBotLogisticsRequest(
+  host: AdminBotLogisticsHost,
+  requestId: string,
+): Promise<void> {
+  const wire = session(host);
+  if (!wire) {
+    host.adminBotLogisticsRequestsError = t("logistics.requests.error.signIn");
+    return;
+  }
+  host.adminBotLogisticsOpenLoading = true;
+  host.adminBotLogisticsRequestsError = null;
+  try {
+    const result = await deleteLogisticsRequest(requestId, wire.token, wire.baseUrl);
+    if (!result.ok) {
+      host.adminBotLogisticsRequestsError = failureText(result, wire.baseUrl);
+      return;
+    }
+    const keep = (requests: LogisticsRequest[]) =>
+      requests.filter((request) => request.id !== requestId);
+    host.adminBotLogisticsRequests = keep(host.adminBotLogisticsRequests);
+    if (host.adminBotDeskLetters.requests.some((request) => request.id === requestId)) {
+      host.adminBotDeskLetters = {
+        ...host.adminBotDeskLetters,
+        requests: keep(host.adminBotDeskLetters.requests),
+      };
+    }
+    if (host.adminBotLogisticsOpenRequest?.id === requestId) {
+      host.adminBotLogisticsOpenRequest = null;
+    }
   } finally {
     host.adminBotLogisticsOpenLoading = false;
   }

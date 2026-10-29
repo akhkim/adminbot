@@ -2259,7 +2259,8 @@ export interface paths {
     /** PUT /logistics/requests/{requests_id} */
     put: operations["put-logistics-requests-by-requests-id"];
     post?: never;
-    delete?: never;
+    /** DELETE /logistics/requests/{requests_id} */
+    delete: operations["delete-logistics-requests-by-requests-id"];
     options?: never;
     head?: never;
     patch?: never;
@@ -5212,6 +5213,7 @@ export interface components {
         | "logistics_request.submitted"
         | "logistics_request.status_changed"
         | "logistics_request.withdrawn"
+        | "logistics_request.deleted"
         | "logistics_request.signed_document_sent"
         | "logistics_request.files_cleared"
         | "rec_letter_freeze.recorded"
@@ -18012,6 +18014,62 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["AdminBotLogisticsRequest"];
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "delete-logistics-requests-by-requests-id": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        requests_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Server response */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Successful service result */
+      "2XX": {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            /** @constant */
+            deleted: true;
+            id: string;
+          } & {
+            [key: string]: unknown;
+          };
         };
       };
       /** @description Authentication, authorization, validation, policy, or connector error */

@@ -11429,6 +11429,36 @@ export class AdminBotService {
   }
 
   /**
+   * The lab removing a request outright.
+   *
+   * Admin-only, and for what withdrawal cannot reach: an old request the requester will never come
+   * back to close, or one filed under a program the lab no longer handles. Withdrawal stays the
+   * requester's, and "declined" would put an answer on the record that nobody gave, so this is the
+   * one way an admin clears a row. The audit line keeps who removed what, since the row itself is
+   * gone.
+   */
+  deleteLogisticsRequest(
+    requestId: string,
+    actor: string,
+  ): AdminBotServiceResponse<{ deleted: true; id: string }> {
+    const existing = this.store.getLogisticsRequest(requestId);
+    if (!existing || !this.store.deleteLogisticsRequest(requestId)) {
+      return serviceError(404, `unknown logistics request ${requestId}`);
+    }
+    this.recordAudit({
+      type: "logistics_request.deleted",
+      actor,
+      details: {
+        request_id: requestId,
+        kind: existing.kind,
+        member_id: existing.member_id,
+        status: existing.status,
+      },
+    });
+    return { ok: true, status: 200, payload: { deleted: true, id: requestId } };
+  }
+
+  /**
    * The member correcting what they already sent.
    *
    * A resubmit rather than a patch: the form posts the whole request back, so the record is rebuilt
