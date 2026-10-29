@@ -23,6 +23,7 @@ import { loadConfig } from "../src/config/config.js";
 import type { OpenClawConfig } from "../src/config/types/openclaw.js";
 import { resolveSecretInputString } from "../src/secrets/resolve-secret-input-string.js";
 import { downloadLinkedDriveFiles } from "./adminbot-drive-download.js";
+import { deliveryFailureReason, parseDeliveryFailure } from "./adminbot-email-bounce.js";
 import { adminbotServiceDatabasePath } from "./adminbot-service-database.js";
 import {
   AdminBotEmailModel,
@@ -1848,6 +1849,33 @@ export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
           await file(message.id, "failed");
           continue;
         }
+      }
+      // Also deterministic: a bounce is AdminBot's own mail coming back. The classifier would park it
+      // as an opaque `unknown`; this parks it with the dead address and the server's reply instead,
+      // which is what a reviewer needs to fix the member record.
+      const bounce = parseDeliveryFailure(message);
+      if (bounce) {
+        try {
+          if (
+            await state.begin(message, {
+              category: "delivery_failure",
+              reason: deliveryFailureReason(bounce),
+            })
+          ) {
+            await state.finish(message.id, "needs_review", deliveryFailureReason(bounce));
+            summary.needs_review += 1;
+            await file(message.id, "needs_review");
+          } else {
+            summary.skipped += 1;
+          }
+        } catch (error) {
+          summary.failed += 1;
+          summary.errors.push(
+            `${message.id}: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          await file(message.id, "failed");
+        }
+        continue;
       }
       const onboarding =
         (await state.getOnboarding(message.threadId)) ??
