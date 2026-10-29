@@ -4454,6 +4454,49 @@ describe("viewing the lab as another member", () => {
     return ((await res.json()) as { session_token: string }).session_token;
   }
 
+  it("lifts the viewed member's profile-completion lock so their pages load under view-as", async () => {
+    const { baseUrl } = await startService();
+    seedMember(baseUrl, "root", {
+      name: "Root",
+      email: "root@cs.toronto.edu",
+      privilege_level: "admin",
+    });
+    // A member-tier record with its mandatory profile fields unfilled -- the state that locks a
+    // real login to the profile page, and that used to answer every feature read with a 403 when
+    // an admin viewed the lab as them.
+    seedMember(
+      baseUrl,
+      "nova",
+      { name: "Nova", email: "nova@cs.toronto.edu", privilege_level: "member" },
+      false,
+    );
+    await approveClaim(baseUrl, "root", "root@cs.toronto.edu");
+    await approveClaim(baseUrl, "nova", "nova@cs.toronto.edu");
+    const adminToken = await loginToken(baseUrl, "root@cs.toronto.edu");
+    const novaToken = await loginToken(baseUrl, "nova@cs.toronto.edu");
+
+    // Control: on their own login the lock still holds.
+    const direct = await fetch(`${baseUrl}/papers`, {
+      headers: { Authorization: `Bearer ${novaToken}` },
+    });
+    expect(direct.status).toBe(403);
+    await expect(direct.json()).resolves.toMatchObject({ error: { code: "profile_incomplete" } });
+
+    // Viewing as them, the admin sees their pages rather than a wall of 403s.
+    const viewToken = await viewAs(baseUrl, adminToken, "nova");
+    expect(
+      (await fetch(`${baseUrl}/papers`, { headers: { Authorization: `Bearer ${viewToken}` } }))
+        .status,
+    ).toBe(200);
+    expect(
+      (
+        await fetch(`${baseUrl}/lab/members/self`, {
+          headers: { Authorization: `Bearer ${viewToken}` },
+        })
+      ).status,
+    ).toBe(200);
+  });
+
   it("serves the member's own session, and says who is really looking", async () => {
     const { baseUrl } = await startService();
     const { adminToken } = await twoAccounts(baseUrl);
