@@ -11,6 +11,18 @@ export type CollaboratorChatRequest = {
 
 /** Saved intentions only. Approval and Slack receipts must live in the execution ledger. */
 export function createCollaboratorChatRequestStore(db?: DatabaseSync) {
+  const effects = new Map<string, Record<string, string>>();
+  db?.exec(`CREATE TABLE IF NOT EXISTS adminbot_collaborator_chat_effects (
+    action_id TEXT PRIMARY KEY, receipt_json TEXT NOT NULL)`);
+  const getEffect = (id: string): Record<string, string> | undefined => {
+    if (!db) {
+      return effects.get(id);
+    }
+    const row = db
+      .prepare("SELECT receipt_json FROM adminbot_collaborator_chat_effects WHERE action_id = ?")
+      .get(id);
+    return row ? JSON.parse(String(row.receipt_json)) : undefined;
+  };
   const memory = new Map<string, CollaboratorChatRequest>();
   db?.exec(`CREATE TABLE IF NOT EXISTS adminbot_collaborator_chat_requests (
     id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, context TEXT NOT NULL,
@@ -22,6 +34,38 @@ export function createCollaboratorChatRequestStore(db?: DatabaseSync) {
     "SELECT * FROM adminbot_collaborator_chat_requests WHERE owner_id = ? ORDER BY created_at, id",
   );
   return {
+    getEffect,
+    claimEffect(id: string): boolean {
+      if (db) {
+        return (
+          Number(
+            db
+              .prepare("INSERT OR IGNORE INTO adminbot_collaborator_chat_effects VALUES (?, ?)")
+              .run(
+                id,
+                JSON.stringify({
+                  outcome: "unknown",
+                  detail: "Execution started; reconcile before retrying.",
+                }),
+              ).changes,
+          ) === 1
+        );
+      }
+      if (effects.has(id)) {
+        return false;
+      }
+      effects.set(id, { outcome: "unknown" });
+      return true;
+    },
+    finishEffect(id: string, receipt: Record<string, string>) {
+      if (db) {
+        db.prepare(
+          "UPDATE adminbot_collaborator_chat_effects SET receipt_json = ? WHERE action_id = ?",
+        ).run(JSON.stringify(receipt), id);
+      } else {
+        effects.set(id, receipt);
+      }
+    },
     save(
       ownerId: string,
       input: { context: string; participant_ids: string[] },

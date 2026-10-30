@@ -1,3 +1,5 @@
+import { beginCollaboratorChatExecution } from "./service.collaborator-chats.js";
+import type { createCollaboratorChatRequestStore } from "../persistence/collaborator-chat-requests.js";
 import { createHash, randomUUID } from "node:crypto";
 import type {
   CalendarMembershipReader,
@@ -620,6 +622,7 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
     query: LabSharingDiscoveryQuery,
     after?: DiscoveryPosition,
   ): DiscoveredHelpRequest[];
+  collaboratorChatRequestStore?(): ReturnType<typeof createCollaboratorChatRequestStore>;
   saveProposal(proposal: AdminBotStoredProposal): void;
   getProposal(actionId: string): AdminBotStoredProposal | undefined;
   updateProposal(proposal: AdminBotStoredProposal): void;
@@ -1361,6 +1364,7 @@ const DEFAULT_ACTION_POLICIES = {
   "calendar.reschedule": approvalPolicy("T3", ["admin"]),
   "calendar.cancel": approvalPolicy("T3", ["admin"]),
   "email.draft": approvalPolicy("T1", ["admin"]),
+  "slack.collaborator_chat": approvalPolicy("T3", ["admin"]),
   "email.send": approvalPolicy("T3", ["admin"]),
   // T3 with the other outward mail, and deliberately not auto even though the recipient and the
   // copy are both computed rather than caller-supplied. Approving it is the moment somebody looks
@@ -3031,6 +3035,14 @@ export class AdminBotService {
     if (membershipError) {
       return this.executionFailure(proposal, membershipError.status, membershipError.message);
     }
+    const chatClaim = proposal.type === "slack.collaborator_chat"
+      ? beginCollaboratorChatExecution(this.store, proposal, Boolean(this.options.executor))
+      : undefined;
+    if (chatClaim && !chatClaim.ok) {
+      return serviceError(chatClaim.status, chatClaim.message);
+    }
+    const collaboratorEffects = chatClaim?.ok ? chatClaim.effects : undefined;
+    const collaboratorReceiptKey = chatClaim?.ok ? chatClaim.key : "";
     let handled: boolean;
     let delivered = true;
     let notDeliveredReason = "";
@@ -3169,6 +3181,11 @@ export class AdminBotService {
         delivered = outcome.delivered !== false;
         notDeliveredReason = outcome.reason ?? "";
         artifacts = outcome.artifacts ?? {};
+        if (collaboratorEffects) {
+          collaboratorEffects.finishEffect(collaboratorReceiptKey,
+            artifacts.outcome ? { ...artifacts, action_id: actionId }
+              : { outcome: "unknown", action_id: actionId });
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : "connector execution failed";
         return this.executionFailure(proposal, 502, message);
@@ -3186,6 +3203,9 @@ export class AdminBotService {
     // nothing may be stored as executed. The proposal stays approved and no execution result is
     // saved, so flipping the switch and executing again really delivers rather than replaying a
     // cached answer.
+    if (!delivered && collaboratorEffects) {
+      return this.executionFailure(proposal, 409, "Slack outcome is uncertain; inspect the retained conversation receipt before any further action.");
+    }
     if (!delivered) {
       const result: AdminBotExecutionResult = { ...baseResult, status: "simulated" };
       this.recordAudit({

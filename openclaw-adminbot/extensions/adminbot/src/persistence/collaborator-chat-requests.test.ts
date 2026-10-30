@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 import { createCollaboratorChatRequestStore } from "./collaborator-chat-requests.js";
@@ -34,6 +37,38 @@ describe("collaborator-chat saved intentions", () => {
       expect(store.list("owner")).toEqual([]);
     } finally {
       db.close();
+    }
+  });
+  it("durably refuses another attempt after an uncertain effect", () => {
+    const db = new DatabaseSync(":memory:");
+    try {
+      const first = createCollaboratorChatRequestStore(db);
+      expect(first.claimEffect("synthetic-action")).toBe(true);
+      const reopened = createCollaboratorChatRequestStore(db);
+      expect(reopened.claimEffect("synthetic-action")).toBe(false);
+      expect(reopened.getEffect("synthetic-action")?.outcome).toBe("unknown");
+      reopened.finishEffect("synthetic-action", {
+        outcome: "message_unknown",
+        slack_channel: "GEXAMPLE",
+      });
+      expect(first.getEffect("synthetic-action")?.slack_channel).toBe("GEXAMPLE");
+    } finally {
+      db.close();
+    }
+  });
+  it("retains an uncertain attempt after closing and reopening the database", () => {
+    const directory = mkdtempSync(join(tmpdir(), "collaborator-chat-test-"));
+    let db = new DatabaseSync(join(directory, "fixture.sqlite"));
+    try {
+      expect(createCollaboratorChatRequestStore(db).claimEffect("synthetic-action")).toBe(true);
+      db.close();
+      db = new DatabaseSync(join(directory, "fixture.sqlite"));
+      const reopened = createCollaboratorChatRequestStore(db);
+      expect(reopened.getEffect("synthetic-action")?.outcome).toBe("unknown");
+      expect(reopened.claimEffect("synthetic-action")).toBe(false);
+    } finally {
+      db.close();
+      rmSync(directory, { recursive: true, force: true });
     }
   });
 });

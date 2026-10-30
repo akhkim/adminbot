@@ -473,9 +473,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     store,
     memberDrafts,
     collaboratorChats:
-      store instanceof AdminBotSqliteStore
-        ? store.collaboratorChatRequestStore()
-        : createCollaboratorChatRequestStore(),
+      store.collaboratorChatRequestStore?.() ?? createCollaboratorChatRequestStore(),
     auth,
     apiTokens,
     privacyBroker,

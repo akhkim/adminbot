@@ -1,0 +1,46 @@
+adminbot-collaborator-chats {
+  display: block;
+}
+adminbot-collaborator-chats .card {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+adminbot-collaborator-chats label {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  font-weight: 500;
+}
+adminbot-collaborator-chats select,
+adminbot-collaborator-chats textarea {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 10px 12px;
+  min-height: 96px;
+  color: var(--text);
+  background: var(--input-bg, var(--bg));
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+}
+adminbot-collaborator-chats button {
+  justify-self: start;
+  max-width: 100%;
+  white-space: normal;
+}
+adminbot-collaborator-chats article {
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  min-width: 0;
+}
+adminbot-collaborator-chats pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
+adminbot-collaborator-chats h3,
+adminbot-collaborator-chats p {
+  overflow-wrap: anywhere;
+  margin: 0;
+}

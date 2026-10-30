@@ -455,6 +455,16 @@ Website: `/deadlines` · Who: anyone (proposals: member)
 | `post-internal-deadlines-extract-schedule`                          | POST `/internal/deadlines/extract-schedule`                         |
 | `post-public-deadline-proposals`                                    | POST `/public/deadline-proposals`                                   |
 
+## Collaborator chat requests
+
+Website: `/lab-sharing` · Who: admin
+
+| Operation ID                                               | Route                                                      |
+| ---------------------------------------------------------- | ---------------------------------------------------------- |
+| `get-collaborator-chats`                                   | GET `/collaborator-chats`                                  |
+| `post-collaborator-chats-by-collaborator-chats-id-prepare` | POST `/collaborator-chats/{collaborator_chats_id}/prepare` |
+| `post-collaborator-chats`                                  | POST `/collaborator-chats`                                 |
+
 ## Lab sharing
 
 Website: `/lab-sharing` · Who: member
