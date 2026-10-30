@@ -4817,6 +4817,438 @@
         }
       }
     },
+    "/collaborator-chats": {
+      "get": {
+        "operationId": "get-collaborator-chats",
+        "summary": "GET /collaborator-chats",
+        "tags": [
+          "collaborator-chats"
+        ],
+        "x-source": "src/api/routes/collaborator-chats.ts",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "requests": {
+                      "type": "array",
+                      "items": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "owner_id": {
+                                "type": "string"
+                              },
+                              "context": {
+                                "type": "string"
+                              },
+                              "participant_ids": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "created_at": {
+                                "type": "string"
+                              },
+                              "action": {
+                                "$ref": "#/components/schemas/AdminBotStoredProposal"
+                              },
+                              "receipt": {
+                                "type": "object",
+                                "additionalProperties": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "owner_id",
+                              "context",
+                              "participant_ids",
+                              "created_at",
+                              "action",
+                              "receipt"
+                            ],
+                            "additionalProperties": true
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "owner_id": {
+                                "type": "string"
+                              },
+                              "context": {
+                                "type": "string"
+                              },
+                              "participant_ids": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "created_at": {
+                                "type": "string"
+                              },
+                              "action": {},
+                              "receipt": {}
+                            },
+                            "required": [
+                              "id",
+                              "owner_id",
+                              "context",
+                              "participant_ids",
+                              "created_at"
+                            ],
+                            "additionalProperties": true
+                          }
+                        ]
+                      }
+                    },
+                    "members": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name"
+                        ],
+                        "additionalProperties": true
+                      }
+                    }
+                  },
+                  "required": [
+                    "requests",
+                    "members"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "post-collaborator-chats",
+        "summary": "POST /collaborator-chats",
+        "tags": [
+          "collaborator-chats"
+        ],
+        "x-source": "src/api/routes/collaborator-chats.ts",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "context": {
+                    "type": "string"
+                  },
+                  "participant_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "additionalProperties": true,
+                "x-schema-coverage": "inferred from property access or downstream casts; semantic validation remains server-side"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "request": {
+                      "$ref": "#/components/schemas/CollaboratorChatRequest"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "request",
+                    "status",
+                    "message"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/collaborator-chats/{collaborator_chats_id}/prepare": {
+      "post": {
+        "operationId": "post-collaborator-chats-by-collaborator-chats-id-prepare",
+        "summary": "POST /collaborator-chats/{collaborator_chats_id}/prepare",
+        "tags": [
+          "collaborator-chats"
+        ],
+        "x-source": "src/api/routes/collaborator-chats.ts",
+        "parameters": [
+          {
+            "name": "collaborator_chats_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "action": {
+                      "$ref": "#/components/schemas/AdminBotStoredProposal"
+                    }
+                  },
+                  "required": [
+                    "action"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "readiness": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "ready": {
+                              "type": "boolean",
+                              "const": false
+                            },
+                            "reason": {
+                              "type": "string"
+                            },
+                            "waiting_member_ids": {},
+                            "slack_user_ids": {}
+                          },
+                          "required": [
+                            "ready",
+                            "reason"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "ready": {
+                              "type": "boolean",
+                              "const": false
+                            },
+                            "reason": {
+                              "type": "string"
+                            },
+                            "waiting_member_ids": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "slack_user_ids": {}
+                          },
+                          "required": [
+                            "ready",
+                            "reason",
+                            "waiting_member_ids"
+                          ],
+                          "additionalProperties": true
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "readiness"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/conferences/{conferences_id}/trip": {
       "delete": {
         "operationId": "delete-conferences-by-conferences-id-trip",
@@ -26148,6 +26580,7 @@
                       "paper_integrity.alert",
                       "paper_integrity.report",
                       "slack.conference_intro",
+                      "slack.collaborator_chat",
                       "paper_integrity.sheet_scores",
                       "slack.invite_to_channel",
                       "slack.remove_from_channel",
@@ -29752,6 +30185,7 @@
               "paper_integrity.alert",
               "paper_integrity.report",
               "slack.conference_intro",
+              "slack.collaborator_chat",
               "paper_integrity.sheet_scores",
               "slack.invite_to_channel",
               "slack.remove_from_channel",
@@ -31822,6 +32256,37 @@
         "required": [
           "member_id",
           "reason"
+        ],
+        "additionalProperties": true
+      },
+      "CollaboratorChatRequest": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "owner_id": {
+            "type": "string"
+          },
+          "context": {
+            "type": "string"
+          },
+          "participant_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "created_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "owner_id",
+          "context",
+          "participant_ids",
+          "created_at"
         ],
         "additionalProperties": true
       },
@@ -41783,6 +42248,7 @@
               "paper_integrity.alert",
               "paper_integrity.report",
               "slack.conference_intro",
+              "slack.collaborator_chat",
               "paper_integrity.sheet_scores",
               "slack.invite_to_channel",
               "slack.remove_from_channel",
@@ -41918,6 +42384,7 @@
               "paper_integrity.alert",
               "paper_integrity.report",
               "slack.conference_intro",
+              "slack.collaborator_chat",
               "paper_integrity.sheet_scores",
               "slack.invite_to_channel",
               "slack.remove_from_channel",

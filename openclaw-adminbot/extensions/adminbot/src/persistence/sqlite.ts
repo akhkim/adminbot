@@ -2,7 +2,6 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
-import type { AdminBotApiToken, AdminBotApiTokenUsage } from "../contracts/api-tokens.js";
 import { cvEntryKey } from "../contracts/actions.js";
 import type {
   AdminBotAccountRegistration,
@@ -31,6 +30,7 @@ import type {
   AdminBotLoginLocation,
   AdminBotUpdateEvent,
 } from "../contracts/activity-log.js";
+import type { AdminBotApiToken, AdminBotApiTokenUsage } from "../contracts/api-tokens.js";
 import type {
   AdminBotBadgeAssignment,
   AdminBotBadgeDefinition,
@@ -92,6 +92,8 @@ import {
   type AdminBotSlackConnectInvite,
 } from "../kernel/service.js";
 import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
+import { createCollaboratorChatRequestStore } from "./collaborator-chat-requests.js";
+import { withApiTokenAttribution } from "../workflows/identity/api-token-context.js";
 import {
   labMemberRowReader,
   toStoredLabMember,
@@ -143,7 +145,6 @@ import {
   getReferenceScan,
   saveReferenceScan,
 } from "./reference-scans.js";
-import { withApiTokenAttribution } from "../workflows/identity/api-token-context.js";
 import { SqliteApiTokens } from "./sqlite.api-tokens.js";
 import { SqliteAuditLog } from "./sqlite.audit.js";
 import { SqliteLabMemberCache } from "./sqlite.lab-members.js";
@@ -289,6 +290,10 @@ export function sqliteServiceOptions({
 }
 
 export class AdminBotSqliteStore implements AdminBotServiceStore {
+  collaboratorChatRequestStore() {
+    return createCollaboratorChatRequestStore(this.db);
+  }
+
   memberDraftStore() {
     return createMemberDraftStore(this.db);
   }

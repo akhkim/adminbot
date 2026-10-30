@@ -1,3 +1,4 @@
+import "./collaborator-chats.ts";
 // Lab Sharing tab (Collaborate): six panels --
 //   1. Director status strip (availability, timezone, progress, a way to flag a blocker)
 //   2. Seek help -- pick a project, describe what's needed, tag it, then post a general call or
@@ -1445,6 +1446,12 @@ export function renderLabSharing(state: AppViewState) {
   return html`
     <div class="lab-sharing" data-testid="lab-sharing" aria-busy=${loading ? "true" : "false"}>
       ${renderLoadNotices(state)}
+      ${session && state.memberPrivilegeLevel === "admin"
+        ? html`<adminbot-collaborator-chats
+            .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
+            .sessionToken=${session.sessionToken}
+          ></adminbot-collaborator-chats>`
+        : nothing}
       ${loading
         ? html`<div class="muted lab-sharing__loading" role="status">
             ${t("labSharing.loading")}

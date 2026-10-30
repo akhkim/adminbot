@@ -41,6 +41,7 @@ import { createAdminBotSensitiveInfoDocument } from "../privacy/sensitive-info-d
 import { createEventDraftRunner } from "../workflows/calendar/event-draft.js";
 import { createCalendarEventsReader } from "../workflows/calendar/events.js";
 import { resolveLabCalendar } from "../workflows/calendar/lab-calendar.js";
+import { createCollaboratorChatRequestStore } from "../persistence/collaborator-chat-requests.js";
 import { DEADLINE_VENUES } from "../workflows/deadlines/generated/dataset.js";
 import { readDeadlineDataset } from "../workflows/deadlines/runtime-dataset.js";
 import { createAccountApprovedEmailRunner } from "../workflows/identity/account-approved-email.js";
@@ -471,6 +472,8 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     service,
     store,
     memberDrafts,
+    collaboratorChats:
+      store.collaboratorChatRequestStore?.() ?? createCollaboratorChatRequestStore(),
     auth,
     apiTokens,
     privacyBroker,
