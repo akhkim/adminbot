@@ -1,12 +1,11 @@
-// What every route is handed: the principal the request resolved to, the service and its
-// connectors (AdminBotRouteContext), and the options createAdminBotMockService builds them from.
-//
-// Cut from server.ts. Types only, so any route module may import it without a cycle.
-
 import type {
   CalendarMembershipReader,
   CalendarAccessReader,
 } from "../../connectors/calendar-membership.js";
+// What every route is handed: the principal the request resolved to, the service and its
+// connectors (AdminBotRouteContext), and the options createAdminBotMockService builds them from.
+//
+// Cut from server.ts. Types only, so any route module may import it without a cycle.
 import type { PdfReferenceChecker } from "../../connectors/reference-check.js";
 import type { AdminBotDriveProbe } from "../../contracts/drive-links.js";
 import type { OpenReviewSubmissionReader } from "../../contracts/openreview-citation-checks.js";
@@ -24,11 +23,12 @@ import type { MemberDraftStore } from "../../persistence/member-drafts.js";
 import type { AdminBotPrivacyBroker } from "../../privacy/broker.js";
 import { createLocalChat } from "../../privacy/local-chat.js";
 import type { AdminBotSensitiveInfoDocument } from "../../privacy/sensitive-info-doc.js";
+import type { createCollaboratorChatRequestStore } from "../../persistence/collaborator-chat-requests.js";
+import type { AdminBotApiTokenService } from "../../workflows/identity/api-tokens.js";
 import {
   AdminBotAuthService,
   type AdminBotMemberPrincipal,
 } from "../../workflows/identity/auth.js";
-import type { AdminBotApiTokenService } from "../../workflows/identity/api-tokens.js";
 import type { SlackDirectoryReader } from "../../workflows/members/slack-roster-sync.js";
 import type { CalendarInviteRunner } from "../../workflows/onboarding/calendar-invite.js";
 import type { AdminBotOnboardingSender } from "../../workflows/onboarding/guide-sender.js";
@@ -57,6 +57,7 @@ export type AdminBotRouteContext = {
   // A restart invalidates outstanding packages: regenerate and review against the current rules.
   reimbursementSigningKey: Buffer;
   memberDrafts: MemberDraftStore;
+  collaboratorChats: ReturnType<typeof createCollaboratorChatRequestStore>;
   service: AdminBotService;
   // The raw store, for the CV change ledger. Everything else goes through the service; this is
   // append-only bookkeeping with no policy of its own, so it does not earn a service method.
