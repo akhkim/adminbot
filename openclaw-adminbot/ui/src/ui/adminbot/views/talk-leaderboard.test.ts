@@ -1,6 +1,11 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { canAccessTab } from "../access.ts";
-import { type TalkLeaderboard, TalkLeaderboardView } from "./talk-leaderboard.ts";
+import {
+  sweepStatusText,
+  type TalkLeaderboard,
+  TalkLeaderboardView,
+  unreadLines,
+} from "./talk-leaderboard.ts";
 afterEach(() => {
   document.body.replaceChildren();
   vi.unstubAllGlobals();
@@ -21,7 +26,7 @@ async function mount(response: Response) {
   el.memberId = "m-cy";
   document.body.append(el);
   await el.updateComplete;
-  await vi.waitFor(() => expect(el.shadowRoot!.textContent).not.toContain("Loading…"));
+  await vi.waitFor(() => expect(el.shadowRoot!.textContent).not.toContain("Loading"));
   await el.updateComplete;
   return { el, fetchMock };
 }
@@ -77,4 +82,67 @@ it("shows the service's refusal instead of a blank page", async () => {
   expect(el.shadowRoot!.querySelector('[role="alert"]')?.textContent).toBe(
     "member session required",
   );
+});
+
+it("says how far the CV read has got and how long is left", async () => {
+  const { el } = await mount(
+    Response.json({
+      ...board([]),
+      sweep: {
+        state: "reading",
+        started_at: "2026-10-26T14:00:00Z",
+        done: 40,
+        total: 230,
+        eta_seconds: 1500,
+      },
+    }),
+  );
+  expect(
+    el.shadowRoot!.querySelector('[data-testid="talk-leaderboard-status"]')?.textContent,
+  ).toContain("40 of 230 done, about 25 min left");
+});
+
+it("tells a board that was never read from one that is settled, and flags a failed read", () => {
+  const now = new Date("2026-10-26T15:00:00Z");
+  expect(
+    sweepStatusText(
+      { state: "idle", last_completed_at: null, last_failed_at: null, next_due_at: null },
+      now,
+    ),
+  ).toContain("Waiting for the first full read");
+  expect(
+    sweepStatusText(
+      {
+        state: "idle",
+        last_completed_at: "2026-10-25T14:00:00Z",
+        last_failed_at: "2026-10-26T14:30:00Z",
+        next_due_at: "2026-10-26T14:00:00Z",
+      },
+      now,
+    ),
+  ).toMatch(/next read starts within the hour\. The last attempt failed/u);
+  expect(
+    sweepStatusText(
+      { state: "reading", started_at: "", done: 0, total: 9, eta_seconds: null },
+      now,
+    ),
+  ).toContain("0 of 9 done, working out how long");
+});
+
+it("says why each CV is unread, so the right person fixes their link", () => {
+  const lines = unreadLines({
+    ...board([], ["Ann", "Bo", "Cal"]),
+    unread: [
+      { member_name: "Ann", reason: "not_pdf" },
+      { member_name: "Bo", reason: "pending" },
+      { member_name: "Cal", reason: "not_pdf" },
+    ],
+  });
+  expect(lines).toHaveLength(2);
+  expect(lines[0]).toMatch(/does not open a PDF anyone with the link can download.*: Ann, Cal\.$/u);
+  expect(lines[1]).toBe("Not counted yet, because their CV has not been read: Bo.");
+  // An older service sends names only.
+  expect(unreadLines(board([], ["Eve"]))).toEqual([
+    "Not counted yet, because their CV has not been read: Eve.",
+  ]);
 });

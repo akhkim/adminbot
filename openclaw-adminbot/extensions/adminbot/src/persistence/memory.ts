@@ -28,6 +28,7 @@ import type {
   AdminBotSettings,
 } from "../contracts/actions.js";
 import type { AdminBotStoredProposal } from "../contracts/actions.js";
+import type { AdminBotApiToken, AdminBotApiTokenUsage } from "../contracts/api-tokens.js";
 import type {
   AdminBotLoginEvent,
   AdminBotLoginLocation,
@@ -92,6 +93,7 @@ import type {
   AdminBotSlackConnectInvite,
 } from "../kernel/service.js";
 import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
+import { withApiTokenAttribution } from "../workflows/identity/api-token-context.js";
 import { meetingSeriesKey, meetsDurationFloor } from "../workflows/meetings/records.js";
 import { discoverMemoryHelpRequests } from "./lab-sharing-discovery-memory.js";
 
@@ -350,6 +352,7 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   private readonly credentialsByEmail = new Map<string, AdminBotMemberCredential>();
   private readonly registrations = new Map<string, AdminBotAccountRegistration>();
   private readonly sessions = new Map<string, AdminBotAuthSession>();
+  private readonly apiTokens = new Map<string, AdminBotApiToken>();
   private readonly passwordResets = new Map<string, AdminBotPasswordReset>();
   private readonly slackChannelNaming = new Map<string, AdminBotSlackChannelNamingRecord>();
   private readonly slackConnectInvites = new Map<string, AdminBotSlackConnectInvite>();
@@ -1625,7 +1628,7 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   }
 
   recordAudit(event: AdminBotAuditEvent): void {
-    this.auditEvents.push(event);
+    this.auditEvents.push(withApiTokenAttribution(event));
   }
 
   listAuditEvents(): AdminBotAuditEvent[] {
@@ -1668,7 +1671,7 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
       return false;
     }
     this.saveCredential({ ...credential, password_scrypt: newPasswordHash, updated_at: updatedAt });
-    this.revokeSessionsForMember(memberId, updatedAt);
+    this.revokeSessionsAndTokens(memberId, updatedAt, "password_changed");
     return true;
   }
 
@@ -1853,11 +1856,67 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   }
 
   revokeSessionsForMember(memberId: string, revokedAt: string): void {
+    this.revokeSessionsAndTokens(memberId, revokedAt, "signed_out_everywhere");
+  }
+
+  private revokeSessionsAndTokens(memberId: string, revokedAt: string, reason: string): void {
     for (const session of this.sessions.values()) {
       if (session.member_id === memberId && !session.revoked_at) {
         session.revoked_at = revokedAt;
       }
     }
+    this.revokeApiTokensForMember(memberId, revokedAt, reason);
+  }
+
+  // Tokens are copied in and out, as a database would: a caller holding one cannot change the store.
+  saveApiToken(token: AdminBotApiToken): void {
+    if ([...this.apiTokens.values()].some((held) => held.token_hash === token.token_hash)) {
+      throw new Error("api token hash already stored");
+    }
+    this.apiTokens.set(token.id, structuredClone(token));
+  }
+
+  getApiTokenByHash(tokenHash: string): AdminBotApiToken | undefined {
+    const token = [...this.apiTokens.values()].find((held) => held.token_hash === tokenHash);
+    return token ? structuredClone(token) : undefined;
+  }
+
+  getApiToken(id: string): AdminBotApiToken | undefined {
+    const token = this.apiTokens.get(id);
+    return token ? structuredClone(token) : undefined;
+  }
+
+  listApiTokensForMember(memberId: string): AdminBotApiToken[] {
+    return [...this.apiTokens.values()]
+      .filter((token) => token.member_id === memberId)
+      .toSorted((left, right) => right.created_at.localeCompare(left.created_at))
+      .map((token) => structuredClone(token));
+  }
+
+  touchApiToken(id: string, usage: AdminBotApiTokenUsage): void {
+    const token = this.apiTokens.get(id);
+    if (token) {
+      this.apiTokens.set(id, { ...token, ...structuredClone(usage) });
+    }
+  }
+
+  revokeApiToken(id: string, revokedAt: string, reason: string): boolean {
+    const token = this.apiTokens.get(id);
+    if (!token || token.revoked_at) {
+      return false;
+    }
+    this.apiTokens.set(id, { ...token, revoked_at: revokedAt, revoked_reason: reason });
+    return true;
+  }
+
+  revokeApiTokensForMember(memberId: string, revokedAt: string, reason: string): number {
+    let revoked = 0;
+    for (const token of this.apiTokens.values()) {
+      if (token.member_id === memberId && this.revokeApiToken(token.id, revokedAt, reason)) {
+        revoked += 1;
+      }
+    }
+    return revoked;
   }
 
   savePasswordReset(reset: AdminBotPasswordReset): void {
@@ -1888,7 +1947,7 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     }
     this.saveCredential({ ...credential, password_scrypt: newPasswordHash, updated_at: usedAt });
     this.markPasswordResetsUsedForMember(reset.member_id, usedAt);
-    this.revokeSessionsForMember(reset.member_id, usedAt);
+    this.revokeSessionsAndTokens(reset.member_id, usedAt, "password_reset");
     return true;
   }
 

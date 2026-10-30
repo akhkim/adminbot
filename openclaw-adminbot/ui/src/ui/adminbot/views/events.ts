@@ -7,6 +7,7 @@ import { html, nothing, type TemplateResult } from "lit";
 import { t } from "../../../i18n/index.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
 import { sayHiBusyKey, type EventsNotice } from "../controllers/events.ts";
+import { plainDateLabel } from "../data/deadline-time.ts";
 import type {
   EventCard,
   EventPerson,
@@ -263,9 +264,9 @@ function viewerSourceNote(source: "device" | "ip" | "profile" | "slack"): string
 function renderHeader(props: EventsProps, overview: EventsOverview) {
   const where = overview.viewer_location;
   const nearby = overview.also_nearby;
+  // The shell's page header already names the tab and says what it is for, so this card opens on
+  // where the reader is rather than repeating a title and a paragraph above it.
   return html`<section class="card adminbot-card adminbot-card--wide events__intro">
-    <div class="card-title">${t("events.title")}</div>
-    <p class="card-sub">${t("events.hint")}</p>
     <p class="events__where" data-testid="events-where">
       ${where
         ? html`${t("events.location.youAre", { place: where.label })}
@@ -307,8 +308,11 @@ function renderPrompts(props: EventsProps, cards: EventCard[]) {
 function renderSettings(props: EventsProps, today: string, prefs: MeetupPreferences) {
   const busy = props.busy === "prefs";
   const snoozed = prefs.snoozed_until && prefs.snoozed_until >= today ? prefs.snoozed_until : null;
-  return html`<section class="card adminbot-card adminbot-card--wide events__settings">
-    <div class="card-title">${t("events.settings.title")}</div>
+  // Set once and rarely touched, so it stays folded at the foot of the page.
+  return html`<details
+    class="card adminbot-card adminbot-card--wide adminbot-fold events__settings"
+  >
+    <summary>${t("events.settings.title")}</summary>
     <p class="card-sub">${t("events.settings.hint")}</p>
     <label class="events__check">
       <input
@@ -340,7 +344,7 @@ function renderSettings(props: EventsProps, today: string, prefs: MeetupPreferen
     </label>
     <div class="events__snooze">
       ${snoozed
-        ? html`<span>${t("events.settings.snoozedUntil", { day: snoozed })}</span>
+        ? html`<span>${t("events.settings.snoozedUntil", { day: plainDateLabel(snoozed) })}</span>
             <button
               type="button"
               class="btn btn--sm"
@@ -358,7 +362,7 @@ function renderSettings(props: EventsProps, today: string, prefs: MeetupPreferen
             ${t("events.settings.snooze")}
           </button>`}
     </div>
-  </section>`;
+  </details>`;
 }
 
 export function renderEvents(props: EventsProps) {
@@ -386,7 +390,8 @@ export function renderEvents(props: EventsProps) {
           ? html`<div class="muted">${t("events.loading")}</div>`
           : nothing
         : html`
-            ${renderHeader(props, overview)} ${renderPrompts(props, overview.events)}
+            ${renderHeader(props, overview)} ${props.nearby ?? nothing}
+            ${renderPrompts(props, overview.events)}
             <section class="card adminbot-card adminbot-card--wide">
               <div class="card-title">${t("events.upcoming.title")}</div>
               ${overview.events.length === 0
@@ -397,7 +402,7 @@ export function renderEvents(props: EventsProps) {
                     ${overview.events.map((card) => renderCard(props, card))}
                   </ul>`}
               ${overview.past.length > 0
-                ? html`<details class="events__past">
+                ? html`<details class="adminbot-fold events__past">
                     <summary>
                       ${t("events.past.title", { count: String(overview.past.length) })}
                     </summary>
@@ -407,45 +412,10 @@ export function renderEvents(props: EventsProps) {
                   </details>`
                 : nothing}
             </section>
-            ${props.nearby ?? nothing}
             ${renderSettings(props, overview.today, overview.preferences)}
           `}
     </div>
   `;
-}
-
-export type NearbyNowProps = {
-  nearby: NonNullable<EventsOverview["also_nearby"]> | undefined;
-  busy: string | null;
-  notice: EventsNotice | null;
-  onSayHi: (target: SayHiTarget) => void;
-};
-
-/**
- * Collaborate's Nearby now strip: the same faces as the Events header, where people already go to
- * find collaborators. Draws nothing unless somebody is actually around.
- */
-export function renderNearbyNow(props: NearbyNowProps) {
-  const nearby = props.nearby;
-  if (!nearby || nearby.locked || nearby.people.length === 0) {
-    return nothing;
-  }
-  return html`<section
-    class="card adminbot-card adminbot-card--wide events__nearby-now"
-    data-testid="nearby-now"
-  >
-    <div class="card-title">${t("events.nearbyNow.title")}</div>
-    <p class="card-sub">${t("events.nearbyNow.sub", { place: nearby.place_label })}</p>
-    ${props.notice
-      ? html`<div
-          class="callout ${props.notice.kind === "error" ? "danger" : "success"}"
-          role=${props.notice.kind === "error" ? "alert" : "status"}
-        >
-          ${props.notice.text}
-        </div>`
-      : nothing}
-    ${renderNearbyFaces(nearby, props.busy, props.onSayHi)}
-  </section>`;
 }
 
 export type MeetupToggleProps = {

@@ -32,6 +32,7 @@ import {
   postAdminBotLabSharingRequest,
   searchAdminBotLabSharingMembers,
 } from "../controllers/lab-sharing.ts";
+import { LIST_SEARCH_FROM, LIST_WINDOW, matchesListQuery } from "../projects/list-window.ts";
 import { onViewSessionReset } from "../view-session-reset.ts";
 import { renderLabSharingResources } from "./lab-sharing-resources.ts";
 import { renderMemberMap } from "./member-map.ts";
@@ -297,6 +298,9 @@ let askSpecialMessage = "";
 let confirmingGeneralCall = false;
 // Which "Your requests" row is asking for a second, confirming click before it is deleted.
 let confirmingDeleteRequestId: string | null = null;
+// What the ask form's project search holds. A member with fifteen hundred papers gets a search and
+// a short list instead of a picker fifteen hundred options long.
+let askProjectQuery = "";
 
 export function resetLabSharingSessionState(): void {
   if (memberSearchTimer) {
@@ -305,6 +309,7 @@ export function resetLabSharingSessionState(): void {
   }
   addingTag = false;
   tagDraft = "";
+  askProjectQuery = "";
   composingAnnouncement = false;
   announcementDraft = "";
   viewingInviteId = null;
@@ -314,7 +319,6 @@ export function resetLabSharingSessionState(): void {
   confirmingDeleteRequestId = null;
 }
 onViewSessionReset(resetLabSharingSessionState);
-
 
 // ---------------------------------------------------------------------------
 // Shared section shell
@@ -459,13 +463,45 @@ function renderTagPicker(state: AppViewState) {
   `;
 }
 
+/** The projects the picker offers: those matching the search, capped, with the chosen one kept. */
+export function askProjectChoices(
+  projects: OwnedProject[],
+  chosenId: string,
+  query: string,
+): OwnedProject[] {
+  const shown = projects
+    .filter((project) => matchesListQuery(project, query))
+    .slice(0, LIST_WINDOW);
+  const chosen = projects.find((project) => project.id === chosenId);
+  return chosen && !shown.includes(chosen) ? [chosen, ...shown] : shown;
+}
+
 function renderAskForm(state: AppViewState) {
   const projects = ownedProjectsOf(state);
   const projectId = state.labSharingAskProjectId ?? projects[0]?.id ?? "";
+  const choices = askProjectChoices(projects, projectId, askProjectQuery);
   return html`
     <div class="adminbot-form lab-sharing-ask">
       <label class="adminbot-form__field lab-sharing-ask__field">
         <span class="lab-sharing-ask__label">${t("labSharing.seekHelp.projectLabel")}</span>
+        ${projects.length > LIST_SEARCH_FROM
+          ? html`<input
+              type="search"
+              class="lab-sharing-ask__input"
+              data-testid="lab-sharing-ask-search"
+              aria-label="Search your projects"
+              placeholder=${`Search ${projects.length.toLocaleString()} projects`}
+              .value=${askProjectQuery}
+              @input=${(event: Event) => {
+                askProjectQuery = (event.target as HTMLInputElement).value;
+                const first = askProjectChoices(projects, "", askProjectQuery)[0];
+                if (first) {
+                  state.labSharingAskProjectId = first.id;
+                }
+                requestUpdate(state);
+              }}
+            />`
+          : nothing}
         ${projects.length
           ? html`<select
               class="lab-sharing-ask__select"
@@ -474,8 +510,11 @@ function renderAskForm(state: AppViewState) {
                 state.labSharingAskProjectId = (event.target as HTMLSelectElement).value;
               }}
             >
-              ${projects.map(
-                (project) => html`<option value=${project.id}>${project.title}</option>`,
+              ${choices.map(
+                (project) =>
+                  html`<option value=${project.id} ?selected=${project.id === projectId}>
+                    ${project.title}
+                  </option>`,
               )}
             </select>`
           : html`<p class="muted lab-sharing-ask__none">${t("labSharing.seekHelp.noProjects")}</p>`}
@@ -538,7 +577,9 @@ function renderMemberCard(state: AppViewState, member: LabMemberSummary, canAsk:
     <article class="lab-sharing-member" data-testid=${`lab-sharing-member-${member.id}`}>
       <div class="lab-sharing-member__header">
         <span class="lab-sharing-member__name">${member.name}</span>
-        ${member.role ? html`<span class="lab-sharing-member__role">${member.role}</span>` : nothing}
+        ${member.role
+          ? html`<span class="lab-sharing-member__role">${member.role}</span>`
+          : nothing}
       </div>
       ${member.projects.length
         ? html`<p class="lab-sharing-member__line">
@@ -678,7 +719,9 @@ function renderAskSummary(state: AppViewState) {
       </div>
     </dl>
     ${tags.length
-      ? html`<div class="chip-row">${tags.map((tag) => html`<span class="chip">${tag}</span>`)}</div>`
+      ? html`<div class="chip-row">
+          ${tags.map((tag) => html`<span class="chip">${tag}</span>`)}
+        </div>`
       : nothing}
   `;
 }
@@ -835,6 +878,11 @@ function renderInvitesPanel(state: AppViewState) {
   const responded = new Set(state.labSharingRespondedInviteIds ?? []);
   const invites = invitesOf(state).filter((invite) => !responded.has(invite.id));
   const viewingInvite = invitesOf(state).find((invite) => invite.id === viewingInviteId) ?? null;
+  // An empty card is a notification about nothing. The section appears once there is something
+  // in it; "Need help?" is where the first one starts.
+  if (invites.length === 0 && !viewingInvite) {
+    return nothing;
+  }
 
   return html`
     <section
@@ -944,6 +992,9 @@ function renderInviteDetails(invite: CollabInvite) {
 
 function renderYourRequestsPanel(state: AppViewState) {
   const sentRequests = sentRequestsOf(state);
+  if (sentRequests.length === 0) {
+    return nothing;
+  }
   return html`
     <section
       class="card adminbot-card adminbot-card--wide lab-sharing-requests"
@@ -973,13 +1024,15 @@ function renderYourRequestsPanel(state: AppViewState) {
                           members: String(request.members),
                           hours: String(request.hours),
                         })}${request.sentAt
-                          ? html` · <span class="lab-sharing-request__time">${request.sentAt}</span>`
+                          ? html` ·
+                              <span class="lab-sharing-request__time">${request.sentAt}</span>`
                           : nothing}
                       </p>
                       ${request.tags.length
                         ? html`<div class="chip-row lab-sharing-request__needs">
                             ${request.tags.map(
-                              (tag) => html`<span class="chip lab-sharing-request__need">${tag}</span>`,
+                              (tag) =>
+                                html`<span class="chip lab-sharing-request__need">${tag}</span>`,
                             )}
                           </div>`
                         : nothing}
@@ -1065,7 +1118,9 @@ function renderProjectCard(state: AppViewState, project: OpenProject) {
         : nothing}
       ${project.tags.length
         ? html`<div class="chip-row lab-sharing-project__needs">
-            ${project.tags.map((tag) => html`<span class="chip lab-sharing-project__need">${tag}</span>`)}
+            ${project.tags.map(
+              (tag) => html`<span class="chip lab-sharing-project__need">${tag}</span>`,
+            )}
           </div>`
         : nothing}
       <div class="lab-sharing-project__footer">
@@ -1350,9 +1405,7 @@ function renderLoadNotices(state: AppViewState) {
         : nothing}
       ${errors.length
         ? html`<div class="callout danger lab-sharing__load-error" role="alert">
-            <div class="callout__content">
-              ${errors.map((message) => html`<p>${message}</p>`)}
-            </div>
+            <div class="callout__content">${errors.map((message) => html`<p>${message}</p>`)}</div>
             <button
               type="button"
               class="btn btn--sm"
@@ -1396,8 +1449,8 @@ export function renderLabSharing(state: AppViewState) {
         ? html`<div class="muted lab-sharing__loading" role="status">
             ${t("labSharing.loading")}
           </div>`
-        : html`${renderDirectorPanel(state)} ${renderInvitesPanel(state)}
-          ${renderYourRequestsPanel(state)} ${renderSeekHelpPanel(state)}
+        : html`${renderDirectorPanel(state)} ${renderSeekHelpPanel(state)}
+          ${renderInvitesPanel(state)} ${renderYourRequestsPanel(state)}
           ${renderOpenProjectsPanel(state)}`}
       ${renderAnnouncementsPanel(state)}
       ${

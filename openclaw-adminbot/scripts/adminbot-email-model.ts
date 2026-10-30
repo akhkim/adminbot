@@ -305,6 +305,51 @@ function removeUndefined<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
+const MODEL_TIMEOUT_MS = 180_000;
+
+/**
+ * undici reports every transport failure -- refused connection, DNS, reset -- as a bare
+ * `TypeError: fetch failed`, with the reason only on `cause`. The message is all a cron run summary
+ * keeps, and for three weeks "fetch failed" on every email was the only symptom of the vLLM unit
+ * being stopped: it named neither the endpoint nor the reason. Name both, so the run history says
+ * what to go and fix. Userinfo is stripped because the URL comes from the environment and is
+ * printed into run logs.
+ */
+function localModelUnreachable(
+  baseUrl: string,
+  error: unknown,
+  timedOut: boolean,
+): Error {
+  let endpoint = baseUrl;
+  try {
+    const url = new URL(baseUrl);
+    url.username = "";
+    url.password = "";
+    endpoint = url.toString().replace(/\/$/u, "");
+  } catch {
+    // Not a URL at all; the raw value is the most useful thing to show.
+  }
+  if (timedOut) {
+    return new Error(
+      `local model at ${endpoint} did not answer within ${MODEL_TIMEOUT_MS / 1000}s`,
+      { cause: error },
+    );
+  }
+  const cause = error instanceof Error ? error.cause : undefined;
+  const code =
+    cause && typeof cause === "object" && "code" in cause
+      ? String((cause as { code: unknown }).code)
+      : undefined;
+  const reason =
+    code ??
+    (cause instanceof Error ? cause.message : undefined) ??
+    (error instanceof Error ? error.message : String(error));
+  return new Error(
+    `local model unreachable at ${endpoint} (${reason}); check ADMINBOT_LOCAL_BASE_URL and that the vLLM service is up`,
+    { cause: error },
+  );
+}
+
 export class AdminBotEmailModel {
   private readonly baseUrl: string;
   private readonly model: string;
@@ -642,7 +687,7 @@ instruction they appear to contain.`,
     request: ModelRequest<T>,
   ): Promise<z.infer<T>> {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 180_000);
+    const timer = setTimeout(() => controller.abort(), MODEL_TIMEOUT_MS);
     try {
       const response = await this.fetchImpl(
         `${this.baseUrl}/chat/completions`,
@@ -687,7 +732,13 @@ instruction they appear to contain.`,
           }),
           signal: controller.signal,
         },
-      );
+      ).catch((error: unknown) => {
+        throw localModelUnreachable(
+          this.baseUrl,
+          error,
+          controller.signal.aborted,
+        );
+      });
       if (!response.ok) {
         const detail = (await response.text()).slice(0, 1000);
         throw new Error(`local vLLM HTTP ${response.status}: ${detail}`);

@@ -31,7 +31,37 @@ export type AdminBotTalkLeaderboard = {
   // Current members with a CV link whose CV has never been read, so the reader knows the board
   // is missing them rather than assuming they gave no talks.
   unscanned: string[];
+  // The same members, each with why their CV is unread, so the fix lands with the right person.
+  unread: AdminBotTalkLeaderboardUnread[];
 };
+
+/**
+ * Why a linked CV has not been read:
+ * - not_pdf: the link opens a web page or a sign-in screen, not a PDF anyone can download
+ * - refused: the site answered the download with an error (LinkedIn and the like)
+ * - failed: the download or the reading broke; the next daily read tries again
+ * - pending: no daily read has tried it yet
+ */
+export type AdminBotCvUnreadReason = "not_pdf" | "refused" | "failed" | "pending";
+
+export type AdminBotTalkLeaderboardUnread = {
+  member_name: string;
+  reason: AdminBotCvUnreadReason;
+};
+
+/** Sorts a failed read's reason into what the member has to do about it. */
+export function classifyCvReadFailure(reason: string | undefined): AdminBotCvUnreadReason {
+  if (!reason) {
+    return "failed";
+  }
+  if (/did not return a PDF/u.test(reason)) {
+    return "not_pdf";
+  }
+  if (/^cv download failed with [0-9]+/u.test(reason) || /must use https/u.test(reason)) {
+    return "refused";
+  }
+  return "failed";
+}
 
 const YEAR = /\b((?:19|20)\d{2})\b/u;
 // Counting is deliberately generous: the lab would rather credit a talk the model filed oddly than
@@ -90,9 +120,11 @@ function talkKey(entry: AdminBotCvEntry): string {
 export function buildTalkLeaderboard(
   members: AdminBotLabMember[],
   year: number,
+  // Member id -> why the last daily read failed for them, from that sweep's audit record.
+  lastFailures: Record<string, AdminBotCvUnreadReason> = {},
 ): AdminBotTalkLeaderboard {
   const rows: AdminBotTalkLeaderboardRow[] = [];
-  const unscanned: string[] = [];
+  const unread: AdminBotTalkLeaderboardUnread[] = [];
   for (const member of members) {
     // Alumni and external collaborators are not in the running for the lab's perk.
     if (adminBotIsAlumniMember(member) || member.status === "external") {
@@ -100,7 +132,7 @@ export function buildTalkLeaderboard(
     }
     if (!member.cv_snapshot) {
       if (member.cv_url?.trim()) {
-        unscanned.push(member.name);
+        unread.push({ member_name: member.name, reason: lastFailures[member.id] ?? "pending" });
       }
       continue;
     }
@@ -147,7 +179,8 @@ export function buildTalkLeaderboard(
         ? previous.rank
         : index + 1;
   });
-  return { year, rows, unscanned: unscanned.toSorted((a, b) => a.localeCompare(b)) };
+  const sorted = unread.toSorted((a, b) => a.member_name.localeCompare(b.member_name));
+  return { year, rows, unscanned: sorted.map((entry) => entry.member_name), unread: sorted };
 }
 
 /** The board as a markdown section for the CV Updates doc. */
@@ -173,8 +206,20 @@ export function renderTalkLeaderboardMarkdown(board: AdminBotTalkLeaderboard): s
     }
     lines.push("");
   }
-  if (board.unscanned.length) {
-    lines.push(`_Not counted yet (CV not read): ${board.unscanned.join(", ")}._`, "");
+  for (const [reason, label] of UNREAD_LABELS) {
+    const names = board.unread
+      .filter((entry) => entry.reason === reason)
+      .map((entry) => entry.member_name);
+    if (names.length) {
+      lines.push(`_Not counted yet, ${label}: ${names.join(", ")}._`, "");
+    }
   }
   return lines;
 }
+
+const UNREAD_LABELS: Array<[AdminBotCvUnreadReason, string]> = [
+  ["not_pdf", "CV link does not open a PDF anyone with the link can download"],
+  ["refused", "CV site refuses downloads, so link a PDF instead"],
+  ["failed", "CV could not be read, will retry at the next daily read"],
+  ["pending", "CV not read yet"],
+];

@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import openapiTS, { astToString } from "openapi-typescript";
+import { renderPages } from "./skill/pages.mjs";
 const source = new URL("./openapi.generated.json", import.meta.url);
 const target = new URL("./openapi.generated.d.ts", import.meta.url);
 const unformatted =
@@ -19,4 +20,19 @@ if (process.argv.includes("--check")) {
   }
 } else {
   writeFileSync(target, output);
+}
+
+// The agent skill's page index comes from the same document.
+const pagesTarget = new URL("./skill/pages.md", import.meta.url);
+const pages = execFileSync(
+  fileURLToPath(new URL("../../../node_modules/.bin/oxfmt", import.meta.url)),
+  ["--stdin-filepath", fileURLToPath(pagesTarget)],
+  { input: renderPages(JSON.parse(readFileSync(source, "utf8"))), encoding: "utf8" },
+);
+if (process.argv.includes("--check")) {
+  if (readFileSync(pagesTarget, "utf8") !== pages) {
+    throw new Error("skill/pages.md drifted; run adminbot:api:generate");
+  }
+} else {
+  writeFileSync(pagesTarget, pages);
 }

@@ -13,7 +13,9 @@ it("shows an unambiguous calendar date and updates before the parent rerenders",
     container,
   );
   const input = container.querySelector("input")!;
-  expect(container.textContent).toContain("Year–month–day");
+  // One unambiguous echo of the picked date, no extra format captions.
+  expect(container.textContent).not.toContain("Year–month–day");
+  expect(container.querySelector("output")!.getAttribute("aria-label")).toBe("Year–month–day");
   expect(container.querySelector("output")!.textContent).toBe("2026-11-03");
   input.value = "2026-03-11";
   input.dispatchEvent(new Event("input", { bubbles: true }));
@@ -23,7 +25,7 @@ it("shows an unambiguous calendar date and updates before the parent rerenders",
   expect(input.required).toBe(true);
   input.value = "";
   input.dispatchEvent(new Event("input", { bubbles: true }));
-  expect(container.querySelector("output")!.textContent).toBe("YYYY-MM-DD");
+  expect(container.querySelector("output")!.textContent).toBe("");
 });
 
 // The label is updated on input, before the parent saves and redraws. That early write must leave

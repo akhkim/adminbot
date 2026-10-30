@@ -31,17 +31,31 @@ adminbot_load_cron_env "disengagement sweep" || exit 1
 }
 
 PORT="${ADMINBOT_PORT:-8765}"
+# The pass answers only after its last Slack message, about ten seconds apiece: a day with eight
+# reminders took 61 seconds on 2026-10-27, one past the old 60-second limit, so the run was marked
+# failed while every reminder went out and the sweep was recorded a moment later. Kept under the
+# job's timeoutSeconds (config/adminbot-cron.json) so curl reports the timeout rather than the cron
+# killing it without a word.
+MAX_SECONDS=840
 
+curl_status=0
 response="$(
-  curl --silent --show-error --max-time 60 \
+  curl --silent --show-error --max-time "$MAX_SECONDS" \
     --write-out '\n%{http_code}' \
     -X POST \
     -H "Authorization: Bearer ${ADMINBOT_SERVICE_TOKEN}" \
     "http://127.0.0.1:${PORT}/members/disengagement/run"
-)" || {
+)" || curl_status=$?
+if ((curl_status == 28)); then
+  # Not "could not reach": the service took the request and is likely still sending. It finishes the
+  # pass and stamps the nudge ledger whether or not curl is still listening, so this is a slow run to
+  # look into, not a missed one.
+  printf 'disengagement sweep: no answer within %ss; the pass may still be running (look for members.disengagement_swept in the audit log)\n' "$MAX_SECONDS" >&2
+  exit 1
+elif ((curl_status != 0)); then
   printf 'disengagement sweep: could not reach the AdminBot service on 127.0.0.1:%s\n' "$PORT" >&2
   exit 1
-}
+fi
 
 status="${response##*$'\n'}"
 body="${response%$'\n'*}"

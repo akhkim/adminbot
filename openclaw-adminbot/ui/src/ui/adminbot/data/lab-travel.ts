@@ -40,6 +40,8 @@ export type TravelLookup = {
   from: string;
   to: string;
   people: AdminBotTravelMatch[];
+  /** Other members who share their location; absent from an older service. */
+  sharing_members?: number;
 };
 
 export type TravelResult<T> = { ok: true; value: T } | { ok: false; status: number; error: string };

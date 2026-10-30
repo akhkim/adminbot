@@ -14,6 +14,7 @@ import {
 } from "../controllers/profile.ts";
 import { loadAdminBotRecentEdits } from "../controllers/recent-edits.ts";
 import { submitOwnBadgeNomination, submitOwnBadgeSuggestion } from "../data/badges.ts";
+import "../views/api-tokens.ts";
 import { renderLocationPrompt } from "../views/location-prompt.ts";
 import { renderOwnPreciseLocation } from "../views/precise-location.ts";
 import { isProfileBlocked } from "../views/profile-gate.ts";
@@ -42,6 +43,15 @@ export function renderProfileSurface(state: AppViewState, scope: AdminBotSurface
       })
     : nothing}${state.tab === "profile"
     ? html`
+        ${state.cliLoginCode && !profileBlocked
+          ? html`<adminbot-cli-login
+              .code=${state.cliLoginCode}
+              @cli-login-done=${() => {
+                state.cliLoginCode = "";
+                requestHostUpdate?.();
+              }}
+            ></adminbot-cli-login>`
+          : nothing}
         ${renderLazyView(lazyProfile, (m) =>
           m.renderProfile(state, {
             badgesDisabled: profileBlocked,
@@ -79,6 +89,7 @@ export function renderProfileSurface(state: AppViewState, scope: AdminBotSurface
           }),
         )}
         ${profileBlocked ? nothing : renderMeetupToggleSurface(state, scope)}
+        ${profileBlocked ? nothing : html`<adminbot-api-tokens></adminbot-api-tokens>`}
       `
     : nothing}`;
 }

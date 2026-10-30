@@ -98,7 +98,9 @@ function totals(report: TabVisitReport) {
 
 function table(report: TabVisitReport) {
   const busiest = report.tabs[0]?.visits ?? 0;
-  return html`<table class="tab-usage__table">
+  // Six columns do not fit a phone; the table scrolls sideways inside its card rather than pushing
+  // the page wider than the screen, where the last columns were simply cut off.
+  return html`<div class="tab-usage__scroll"><table class="tab-usage__table">
     <thead>
       <tr>
         <th scope="col">${t("tabUsage.column.tab")}</th>
@@ -132,7 +134,7 @@ function table(report: TabVisitReport) {
         </tr>`,
       )}
     </tbody>
-  </table>`;
+  </table></div>`;
 }
 
 export function renderAdminBotTabUsage(props: TabUsageViewProps) {

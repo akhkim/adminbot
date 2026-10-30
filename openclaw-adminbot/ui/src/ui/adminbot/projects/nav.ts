@@ -1,20 +1,23 @@
 // The project list under "My Projects & Papers" in the sidebar.
 //
 // One row per active project, with a colored dot for each lane that still has work open and no dot
-// for a lane that is done; hovering a dot says which lane it is and what is waiting. "Choose" flips
-// the list into checkboxes, which hide a paper from this list and the cards. Hiding is this
-// viewer's own preference, kept in the browser: it changes nothing a coauthor sees.
+// for a lane that is done; hovering a dot says which lane it is and what is waiting. Papers hidden
+// with "Hide papers" on My Work are left out here too; that is the one place to hide or restore
+// them, so the sidebar stays a list of links.
 import { html, nothing } from "lit";
 import type { AppViewState } from "../../app-view-state.ts";
-import { readHiddenPapers, toggleHiddenPaper } from "../hidden-papers.ts";
+import { readHiddenPapers } from "../hidden-papers.ts";
 import {
-  compareProjects,
+  sortedProjects,
   laneDotTitle,
   navigateToProject,
   openLanes,
   projectRouteFromPath,
   type ProjectSummary,
 } from "./model.ts";
+
+/** Papers listed in the sidebar before "All N papers". Enough for the ones in hand this week. */
+const NAV_ITEMS = 8;
 
 export type ProjectsNavState = AppViewState & {
   myProjects: ProjectSummary[] | null;
@@ -43,7 +46,7 @@ export function renderProjectsNav(state: ProjectsNavState) {
   }
   return html`<details class="projects-nav-disclosure">
     <summary class="projects-nav__toggle">Papers</summary>
-    ${renderProjectsNavItems(state, [...projects].sort(compareProjects))}
+    ${renderProjectsNavItems(state, sortedProjects(projects))}
   </details>`;
 }
 
@@ -53,38 +56,17 @@ function renderProjectsNavItems(state: ProjectsNavState, projects: ProjectSummar
     state.tab === "myWork"
       ? projectRouteFromPath(window.location.pathname, state.basePath).paperId
       : null;
-  const rerender = () => state.requestUpdate?.();
-  if (state.myProjectsChoosing) {
-    return html`<div class="projects-nav" data-testid="projects-nav-choose">
-      ${projects.map(
-        (project) =>
-          html`<label class="projects-nav__choice">
-            <input
-              type="checkbox"
-              .checked=${!hidden.has(project.paper_id)}
-              @change=${() => {
-                toggleHiddenPaper(state.memberId, project.paper_id);
-                rerender();
-              }}
-            />
-            <span>${project.alias || project.title}</span>
-          </label>`,
-      )}
-      <button
-        type="button"
-        class="projects-nav__toggle"
-        @click=${() => {
-          state.myProjectsChoosing = false;
-          rerender();
-        }}
-      >
-        Done
-      </button>
-    </div>`;
-  }
   const visible = projects.filter((project) => !hidden.has(project.paper_id));
+  // A sidebar is for jumping between the few papers in hand, not for listing all of them: past
+  // NAV_ITEMS the rest are one press away on My Work, which has search. The current paper is
+  // always kept so the highlight never disappears off the end.
+  const listed = visible.slice(0, NAV_ITEMS);
+  const currentProject = visible.find((project) => project.paper_id === current);
+  if (currentProject && !listed.includes(currentProject)) {
+    listed.push(currentProject);
+  }
   return html`<div class="projects-nav" data-testid="projects-nav">
-    ${visible.map(
+    ${listed.map(
       (project) =>
         html`<a
           class="projects-nav__item ${current === project.paper_id ? "is-active" : ""}"
@@ -103,15 +85,20 @@ function renderProjectsNavItems(state: ProjectsNavState, projects: ProjectSummar
           ${renderLaneDots(project)}
         </a>`,
     )}
-    <button
-      type="button"
-      class="projects-nav__toggle"
-      @click=${() => {
-        state.myProjectsChoosing = true;
-        rerender();
-      }}
-    >
-      ${hidden.size > 0 ? `Choose papers (${hidden.size} hidden)` : "Choose papers"}
-    </button>
+    ${visible.length > listed.length
+      ? html`<a
+          class="projects-nav__item projects-nav__all"
+          href=${`${state.basePath}/my-work`}
+          data-testid="projects-nav-all"
+          @click=${(event: MouseEvent) => {
+            if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey) {
+              return;
+            }
+            event.preventDefault();
+            navigateToProject(state, null);
+          }}
+          >All ${visible.length} papers</a
+        >`
+      : nothing}
   </div>`;
 }

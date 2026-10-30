@@ -52,6 +52,7 @@ You need a local AdminBot service listening on loopback, for example
 | `GET /settings`                       | Return service defaults such as member privilege and escalation.   |
 | `PUT /settings`                       | Update AdminBot service defaults.                                  |
 | `GET /lab/members`                    | Return lab members and computed access profiles.                   |
+| `GET /lab/members/roster`             | Return a filtered member page and roster-wide filter options.      |
 | `PUT /lab/members/{member_id}`        | Create or update one lab member.                                   |
 | `GET /papers`                         | Return paper pipeline records with computed timeline estimates.    |
 | `GET /papers?scope=mine`              | Return only the papers the signed-in member is involved in.        |
@@ -61,6 +62,13 @@ You need a local AdminBot service listening on loopback, for example
 | `POST /approvals/{action_id}/approve` | Approve one immutable payload by hash.                             |
 | `POST /actions/{action_id}/execute`   | Execute or simulate an approved action.                            |
 | `GET /audit`                          | Return service audit events for local development and inspection.  |
+
+The Lab Members table uses `/lab/members/roster?limit=50&offset=0`. Filters (`q`,
+`status`, `project`, `paper`, `conference`, `location`, `career`, `membership`, and
+`meeting`) apply to the entire roster before join-date sorting (oldest first,
+missing dates last) and pagination. `total` counts matching members; `options`
+contains roster-wide choices. Meeting filtering requires an admin member session.
+Deploy the service endpoint with the updated UI; no SQLite migration is needed.
 
 Keep external connector credentials in the AdminBot service. Do not place Slack,
 Google, email, calendar, reimbursement, or social media write tokens in OpenClaw
@@ -571,6 +579,28 @@ matched as a whole value everywhere, an ID that is also a word the records store
 such as `member` or `admin`, a status, a Member Type, an actor stamp such as `service`) can be
 neither renamed from nor renamed to; it has to be changed by hand.
 
+### Changing a member's sign-in email
+
+The member form never rewrites the email: it is the address the member signs in with, and a stray
+edit would move their account to an inbox they may not have. An admin moves it on purpose with
+**Change sign-in email** in the Edit member popover (`POST /lab/members/{id}/email` with
+`{ "new_email": ... }`) -- for the member who signed up with the wrong address or can no longer
+reach the old one, which is exactly when they cannot change it themselves in My Profile.
+
+The sign-in and the roster email move together in one transaction. The old address stops signing
+in, the new one starts, and the member stays signed in where they already are. A password reset
+then goes to the new address (or to their correspondence email, if they have one), and any reset
+link already sent to the old address stops working. A member who has not claimed an account yet
+has only a roster email, so that is what moves: it is the address they will claim with. The
+address is lowercased; it is refused if it is malformed or unchanged, or if it is another
+member's sign-in, a pending sign-up, or on another roster record. Each change is audited as
+`lab_member.login_email_changed` with the old and new address.
+
+It needs an admin signed in to the website, never an API token or a "view as" session. It is
+refused for your own account (change yours in My Profile, behind your password) and for the head
+professor's: moving the PI's sign-in moves where their password reset goes, so only the PI does
+that.
+
 ### Adding a member from the Members tab
 
 **Add member** on the Members tab creates the roster record and, unless the admin unticks **Start
@@ -1005,6 +1035,13 @@ scripts/adminbot-papermentor-cron.sh --since 2026-09-01 # ignore reviews older t
 Run it on the Overleaf host with `ADMINBOT_URL` pointed at the service, or on the AdminBot host
 with the cache directory mounted or synced and `ADMINBOT_URL` left unset. A first pass against a
 full cache would otherwise report a year of old reviews as news, which is what `--since` is for.
+
+With neither, every run fails, naming the cache path it looked for. On an AdminBot host that has no
+cache and is not meant to (the reviews are collected on the Overleaf host, or not yet at all), set
+`ADMINBOT_PAPERMENTOR_DISABLED=1` in the cron environment and the job exits 0 saying it is off on
+purpose. The flag only covers "no cache here": a cache named in `ADMINBOT_PAPERMENTOR_CACHE_DIR`
+that goes missing or unreadable still fails, and a cache that appears later is read without
+clearing the flag. Until reviews are collected, authors tick `papermentor_review` by hand.
 
 `GET /papers/papermentor/runs?paper_id=` reads back what has been ingested, newest first, for an
 operator checking the collector is working.

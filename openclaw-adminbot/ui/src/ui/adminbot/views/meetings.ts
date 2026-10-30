@@ -14,11 +14,12 @@ import type {
 // Meeting Recordings: what was recorded, who was there, and what the local model made of it.
 //
 // Recordings are grouped by the meeting they belong to: one dropdown per recurring title ("Weekly
-// Lab Meeting", "Reading Group"), newest series first, each holding every recording of that
-// meeting newest first. A flat list made a weekly meeting's history a scroll through everyone
-// else's, and made a once-a-term meeting impossible to find at all.
+// Lab Meeting", "Reading Group"), the lab's weekly meeting first and the rest newest first (the
+// service orders them), each holding every recording of that meeting newest first. A flat list
+// made a weekly meeting's history a scroll through everyone else's, and made a once-a-term meeting
+// impossible to find at all.
 //
-// The tab is still a catch-up surface first. The newest series opens on arrival with its newest
+// The tab is still a catch-up surface first. The first series opens on arrival with its newest
 // recording unfolded, so somebody who missed Tuesday sees the recording and the summary without a
 // click; every other series is read only when it is opened. Attendance is secondary and folded
 // into a <details>. Two audiences share one view -- a member sees their own attendance line and a
@@ -36,7 +37,7 @@ import { renderDateControl } from "../date-control.ts";
 export type MeetingsRosterMember = { id: string; name: string };
 
 export type AdminBotMeetingsProps = {
-  /** The index of recurring meetings, newest first. */
+  /** The index of recurring meetings, the weekly meeting first and then newest first. */
   series: MeetingSeries[];
   /** Each opened series' recordings so far, by series key. */
   seriesPages: MeetingSeriesPages;
@@ -228,64 +229,141 @@ function renderOwnAttendance(meeting: MeetingRecord) {
 }
 
 /**
- * The admin roster editor.
+ * Members the search can add, keyed by the text the datalist offers.
  *
- * Every member is listed, not only the ones an import found: the whole point of the editor is the
- * person who was there and whom nothing detected, and a list that only shows detected attendees
- * cannot express them. The source tag beside each tick is what tells an admin which lines are worth
- * checking -- a transcript-sourced roster is a list of who talked, nothing more.
+ * The roster has people who share a name, and a datalist can only hand back the text that was
+ * picked, so a shared name carries the member id to stay unambiguous.
+ */
+function addableMembers(members: readonly MeetingsRosterMember[]) {
+  const counts = new Map<string, number>();
+  for (const member of members) {
+    const key = member.name.toLowerCase();
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return new Map(
+    members.map((member) => [
+      (counts.get(member.name.toLowerCase()) ?? 0) > 1
+        ? `${member.name} (${member.id})`
+        : member.name,
+      member,
+    ]),
+  );
+}
+
+function addAttendee(
+  event: SubmitEvent,
+  props: AdminBotMeetingsProps,
+  meetingId: string,
+  addable: ReadonlyMap<string, MeetingsRosterMember>,
+) {
+  event.preventDefault();
+  const form = event.currentTarget as HTMLFormElement;
+  const input = form.elements.namedItem("member") as HTMLInputElement;
+  const typed = input.value.trim().toLowerCase();
+  const member = [...addable].find(([label]) => label.toLowerCase() === typed)?.[1];
+  if (!member) {
+    // A typed name that is nobody on the roster would otherwise be dropped without a word.
+    input.setCustomValidity(t("adminbotMeetings.pickMember"));
+    input.reportValidity();
+    return;
+  }
+  props.onToggleAttendance(meetingId, {
+    member_id: member.id,
+    display_name: member.name,
+    source: "manual",
+    present: true,
+  });
+  form.reset();
+}
+
+/**
+ * The admin roster editor: who was there, and a search to add whoever is missing.
+ *
+ * Only the people recorded as present are listed. The checklist of every member it replaced made
+ * a forty-person meeting a scroll through the whole lab to find the one person an import missed;
+ * that person is now added by name instead. The source beside each line is what tells an admin
+ * which lines are worth checking -- a transcript-sourced roster is a list of who talked, nothing
+ * more. Removing a line saves the same manual correction an unticked box did: absent, so a later
+ * import cannot quietly put it back.
+ *
+ * The search is a native datalist, so it filters as the admin types without this view holding any
+ * state -- the same uncontrolled-form rule as the rest of the tab.
  */
 function renderRosterEditor(props: AdminBotMeetingsProps, meeting: MeetingRecord) {
   // The roster comes from its own read; a row that still carries one (an older service) is used
-  // as is. Until one of them has it, the fold stays empty rather than drawing every member
-  // unticked: an unticked box there would read as "absent", and ticking it would save a roster
-  // built from nothing.
+  // as is. Until one of them has it, the fold stays empty rather than saying nobody came, and
+  // nothing can be added to a roster built from nothing.
   const attendees = props.rosters?.[meeting.id]?.attendees ?? meeting.attendees;
   if (!attendees) {
     return nothing;
   }
-  const byMember = new Map(
-    attendees
-      .filter((attendee) => attendee.member_id)
-      .map((attendee) => [attendee.member_id as string, attendee]),
-  );
-  const guests = attendees.filter((attendee) => !attendee.member_id);
+  const names = new Map(props.members.map((member) => [member.id, member.name]));
+  const present = attendees
+    .filter((attendee) => attendee.member_id && attendee.present)
+    .map((attendee) => ({
+      attendee,
+      name: names.get(attendee.member_id as string) ?? attendee.display_name,
+    }))
+    .toSorted((left, right) => left.name.localeCompare(right.name));
+  const presentIds = new Set(present.map(({ attendee }) => attendee.member_id));
+  const addable = addableMembers(props.members.filter((member) => !presentIds.has(member.id)));
+  const listId = `meetings-add-${meeting.id}`;
+  const guests = attendees.filter((attendee) => !attendee.member_id && attendee.present);
   return html`
-    <table class="meetings__roster">
-      <tbody>
-        ${props.members.map((member) => {
-          const attendee = byMember.get(member.id);
-          const present = Boolean(attendee?.present);
-          return html`
-            <tr>
-              <td>
-                <label class="meetings__tick">
-                  <input
-                    type="checkbox"
-                    .checked=${present}
-                    ?disabled=${props.saving}
-                    @change=${() =>
-                      props.onToggleAttendance(meeting.id, {
-                        member_id: member.id,
-                        display_name: attendee?.display_name ?? member.name,
-                        source: "manual",
-                        present: !present,
-                      })}
-                  />
-                  ${member.name}
-                </label>
-              </td>
-              <td class="muted">
-                ${attendee ? attendanceSourceLabel(attendee.source) : nothing}
-                ${attendee?.minutes
-                  ? html` · ${t("adminbotMeetings.minutes", { minutes: String(attendee.minutes) })}`
-                  : nothing}
-              </td>
-            </tr>
-          `;
-        })}
-      </tbody>
-    </table>
+    ${present.length
+      ? html`<ul class="meetings__attendees">
+          ${present.map(
+            ({ attendee, name }) => html`
+              <li class="meetings__attendee">
+                <span>${name}</span>
+                <span class="muted">
+                  ${attendanceSourceLabel(attendee.source)}
+                  ${attendee.minutes
+                    ? html` ·
+                      ${t("adminbotMeetings.minutes", { minutes: String(attendee.minutes) })}`
+                    : nothing}
+                </span>
+                <button
+                  class="btn btn--sm"
+                  type="button"
+                  aria-label=${t("adminbotMeetings.removeAttendeeNamed", { name })}
+                  ?disabled=${props.saving}
+                  @click=${() =>
+                    props.onToggleAttendance(meeting.id, {
+                      member_id: attendee.member_id,
+                      display_name: attendee.display_name,
+                      source: "manual",
+                      present: false,
+                    })}
+                >
+                  ${t("adminbotMeetings.removeAttendee")}
+                </button>
+              </li>
+            `,
+          )}
+        </ul>`
+      : html`<p class="muted">${t("adminbotMeetings.noAttendees")}</p>`}
+    <form
+      class="adminbot-form meetings__add-attendee"
+      @submit=${(event: SubmitEvent) => addAttendee(event, props, meeting.id, addable)}
+    >
+      <input
+        name="member"
+        type="search"
+        list=${listId}
+        autocomplete="off"
+        placeholder=${t("adminbotMeetings.addAttendeePlaceholder")}
+        aria-label=${t("adminbotMeetings.addAttendeeLabel")}
+        ?disabled=${props.saving}
+        @input=${(event: Event) => (event.currentTarget as HTMLInputElement).setCustomValidity("")}
+      />
+      <datalist id=${listId}>
+        ${[...addable.keys()].map((label) => html`<option value=${label}></option>`)}
+      </datalist>
+      <button class="btn btn--sm" type="submit" ?disabled=${props.saving}>
+        ${t("adminbotMeetings.addAttendee")}
+      </button>
+    </form>
     ${guests.length
       ? html`<p class="muted">
           ${t("adminbotMeetings.guests", {
@@ -379,7 +457,7 @@ function formatDay(startedAt: string): string {
  * The count and date come from the index, so a closed dropdown already answers "how often does
  * this meet, and did it meet this week" without reading a single recording.
  *
- * `?open` is bound to "is this the newest series" rather than to held state. lit only writes the
+ * `?open` is bound to "is this the first series" rather than to held state. lit only writes the
  * attribute when that value changes, so a reader who closes the newest series keeps it closed
  * across re-renders, and one who opens an older series keeps it open.
  */
@@ -406,7 +484,7 @@ function renderSeries(props: AdminBotMeetingsProps, series: MeetingSeries, index
           · ${t("adminbotMeetings.seriesLatest", { date: formatDay(series.latest_started_at) })}
         </span>
       </summary>
-      ${page?.error ? html`<p class="notice notice--error">${page.error}</p>` : nothing}
+      ${page?.error ? html`<p class="callout danger" role="alert">${page.error}</p>` : nothing}
       ${!page || (page.loading && meetings.length === 0)
         ? html`<p class="muted">${t("adminbotMeetings.seriesLoading")}</p>`
         : nothing}
@@ -475,7 +553,7 @@ function renderFileForm(props: AdminBotMeetingsProps) {
     form.reset();
   };
   return html`
-    <details class="card adminbot-card adminbot-card--wide meetings__file">
+    <details class="card adminbot-card adminbot-card--wide adminbot-fold meetings__file">
       <summary>${t("adminbotMeetings.fileManually")}</summary>
       <p class="card-sub">${t("adminbotMeetings.fileManuallyHint")}</p>
       <form class="adminbot-form" @submit=${submit}>
@@ -521,7 +599,7 @@ function renderNudgePanel(nudge: NonNullable<AdminBotMeetingsProps["nudge"]>) {
     Boolean(preview) && (preview?.meetings.length ?? 0) < (preview?.streak ?? 2);
   return html`
     <details
-      class="card adminbot-card adminbot-card--wide meetings__nudge"
+      class="card adminbot-card adminbot-card--wide adminbot-fold meetings__nudge"
       data-testid="meetings-nudge"
       @toggle=${(event: Event) => {
         // Loaded on first open only. Re-reading on every toggle would re-shell to the calendar
@@ -533,7 +611,7 @@ function renderNudgePanel(nudge: NonNullable<AdminBotMeetingsProps["nudge"]>) {
     >
       <summary>${t("adminbotMeetings.nudge.title")}</summary>
       <p class="card-sub">${t("adminbotMeetings.nudge.sub")}</p>
-      ${nudge.error ? html`<p class="notice notice--error">${nudge.error}</p>` : nothing}
+      ${nudge.error ? html`<p class="callout danger" role="alert">${nudge.error}</p>` : nothing}
       ${nudge.busy && !preview
         ? html`<p class="muted">${t("adminbotMeetings.nudge.loading")}</p>`
         : nothing}
@@ -636,8 +714,7 @@ function renderArchiveLinks() {
 export function renderAdminBotMeetings(props: AdminBotMeetingsProps) {
   return html`
     <section class="meetings">
-      ${props.error ? html`<p class="notice notice--error">${props.error}</p>` : nothing}
-      ${renderArchiveLinks()}
+      ${props.error ? html`<p class="callout danger" role="alert">${props.error}</p>` : nothing}
       ${props.viewerIsAdmin && props.nudge ? renderNudgePanel(props.nudge) : nothing}
       ${props.viewerIsAdmin ? renderFileForm(props) : nothing}
       ${props.loading && props.series.length === 0
@@ -651,6 +728,8 @@ export function renderAdminBotMeetings(props: AdminBotMeetingsProps) {
         (series) => series.key,
         (series, index) => renderSeries(props, series, index),
       )}
+      <!-- Where older meetings live: a pointer for after the list, not a card ahead of it. -->
+      ${renderArchiveLinks()}
     </section>
   `;
 }

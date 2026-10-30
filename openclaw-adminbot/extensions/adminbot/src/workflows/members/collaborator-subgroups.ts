@@ -280,22 +280,10 @@ const ACCESS_ITEMS = [
     id: "vector_roster_share",
     label: "Vector sponsor roster share",
     detail:
-      "On the constantly-updating name + institutional-email sheet auto-shared with our Vector sponsor contact, who reads it to decide whether to extend or remove an account. Full members are on it too, by privilege level rather than subgroup -- see vectorSponsorRoster.",
-    // `own_pace_advisee` is what the sheet's cell says, and this row is the one place where the
-    // sheet contradicts itself: the row's own prose asks to share "our 'coauthor-major' and 'full
-    // members'", which is exactly what `VECTOR_ROSTER_MEMBER_TYPES` implements, while the
-    // own-pace-advisee column next to it is marked Y.
-    //
-    // The cell is transcribed here because that is what this table is -- the sheet's answer -- but
-    // the function is deliberately NOT changed to match, because the two are keyed on different
-    // fields and only one of them sends anything anywhere: this matrix reads
-    // `collaborator_subgroup`, which no roster row currently sets, while `vectorSponsorRoster`
-    // reads the `member_type` column and its output goes to somebody outside the lab. Widening it
-    // on the strength of a cell that argues with its own row would put two named people's
-    // addresses in front of a sponsor without anybody deciding to.
-    //
-    // So this is a live question, not a settled policy: if the lab means the cell, add
-    // "own-pace-advisee" to VECTOR_ROSTER_MEMBER_TYPES; if it means the prose, blank the cell.
+      "On the constantly-updating name + AdminBot id + DCS username sheet auto-shared with our Vector sponsor contact, who reads it to decide whether to extend or remove an account. Full members are on it too, by member type rather than subgroup -- see vectorSponsorRoster.",
+    // The sheet's row prose once named only "coauthor-major" and "full members" while its
+    // own-pace-advisee cell said Y. The lab settled it on 2026-10-27 in favor of the cell: full,
+    // coauthor-major and own-pace-advisee, which is what `VECTOR_ROSTER_MEMBER_TYPES` now carries.
     cells: { coauthor_major: "yes", own_pace_advisee: "yes" },
   },
   {
@@ -413,7 +401,8 @@ export function subgroupHoldsAccessItem(
 }
 
 /**
- * Who the sponsor sheet is for: the lab's full members and its major coauthors.
+ * Who the sponsor sheet is for: the lab's full members, its major coauthors and its own-pace
+ * advisees.
  *
  * Read from the member-type column, which is the lab's own statement of who is in the lab. It used
  * to select on `privilege_level` being member or admin, and that is a different question --
@@ -421,18 +410,33 @@ export function subgroupHoldsAccessItem(
  * sheet carried 184 people where this rule finds 62, which is the same mistake the nudge allowlist
  * made and for the same reason: the roster is not a list of lab members.
  */
-const VECTOR_ROSTER_MEMBER_TYPES = ["full", "coauthor-major"] as const;
+const VECTOR_ROSTER_MEMBER_TYPES = ["full", "coauthor-major", "own-pace-advisee"] as const;
+
+/**
+ * Whether a member's type puts them on the sponsor sheet, before the alumni exclusion. Shared with
+ * the access audit so the two cannot drift apart again.
+ */
+export function vectorRosterMemberType(memberType: string | undefined): boolean {
+  return (memberType ?? "")
+    .split(",")
+    .map((entry) => entry.trim().toLowerCase())
+    .some((type) => (VECTOR_ROSTER_MEMBER_TYPES as readonly string[]).includes(type));
+}
 
 export type AdminBotVectorRosterEntry = {
   id: string;
   name: string;
-  email: string;
+  /** Absent when the member has no address on file; the sheet does not carry it either way. */
+  email?: string;
+  /** The member's DCS account, which is what the sponsor's sheet keys Vector accounts by. */
+  dcs_username?: string;
 };
 
 export type AdminBotVectorRoster = {
   entries: AdminBotVectorRosterEntry[];
-  // Ids that belong on the sheet but have no email to put there. Reported rather than dropped
-  // silently: an omitted person reads to the sponsor as an account to remove.
+  // Ids on the sheet with no email on file anywhere. A gap for the lab to close, not a reason to
+  // leave them off: an omitted person reads to the sponsor as an account to remove, and the sheet
+  // has carried no email column since it moved to DCS usernames.
   missing_email: string[];
 };
 
@@ -454,8 +458,9 @@ function vectorRosterEmail(member: AdminBotLabMember): string | undefined {
 }
 
 /**
- * Who belongs on the Vector sponsor sheet: name and institutional email only, nothing else about
- * the person. Sorted by name then id so the shared sheet does not churn between refreshes.
+ * Who belongs on the Vector sponsor sheet: name, AdminBot id, institutional email (when there is
+ * one) and DCS username, nothing else about the person. Sorted by name then id so the shared sheet does not churn between
+ * refreshes.
  *
  * Alumni are excluded outright, ahead of the type check rather than through it. Somebody who has
  * left keeps `privilege_level: member` and often keeps `full` in their member type too, so nothing
@@ -470,19 +475,20 @@ export function vectorSponsorRoster(members: readonly AdminBotLabMember[]): Admi
     if (adminBotIsAlumniMember(member)) {
       continue;
     }
-    const types = String(member.member_type ?? "")
-      .split(",")
-      .map((entry) => entry.trim().toLowerCase())
-      .filter(Boolean);
-    if (!types.some((type) => (VECTOR_ROSTER_MEMBER_TYPES as readonly string[]).includes(type))) {
+    if (!vectorRosterMemberType(member.member_type)) {
       continue;
     }
     const email = vectorRosterEmail(member);
     if (!email) {
       missingEmail.push(member.id);
-      continue;
     }
-    entries.push({ id: member.id, name: member.name, email });
+    const dcsUsername = member.dcs_username?.trim();
+    entries.push({
+      id: member.id,
+      name: member.name,
+      ...(email ? { email } : {}),
+      ...(dcsUsername ? { dcs_username: dcsUsername } : {}),
+    });
   }
   entries.sort(
     (left, right) => left.name.localeCompare(right.name) || left.id.localeCompare(right.id),

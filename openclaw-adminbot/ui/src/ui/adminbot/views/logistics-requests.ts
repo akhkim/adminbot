@@ -560,7 +560,12 @@ function renderRequestDetail(props: AdminBotLogisticsRequestsProps, request: Log
                       class="btn btn--sm"
                       type="button"
                       ?disabled=${props.openLoading}
-                      @click=${() => props.onWithdraw(request.id)}
+                      @click=${() => {
+                        // Withdrawing tells the lab to stop, and a member cannot undo it here.
+                        if (globalThis.confirm?.(t("logistics.requests.withdrawConfirm"))) {
+                          props.onWithdraw(request.id);
+                        }
+                      }}
                     >
                       ${t("logistics.requests.withdraw")}
                     </button>

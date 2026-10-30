@@ -11,7 +11,9 @@ import type {
   AdminBotSettings,
 } from "../contracts/actions.js";
 import type { AdminBotLoginEvent, AdminBotLoginLocation } from "../contracts/activity-log.js";
+import type { AdminBotApiToken, AdminBotApiTokenUsage } from "../contracts/api-tokens.js";
 import type { AdminBotLabMemberSummary, AdminBotListPage } from "../kernel/service.js";
+import { withApiTokenAttribution } from "../workflows/identity/api-token-context.js";
 import type { AdminBotAuthStore } from "../workflows/identity/auth.js";
 import { summarizeLabMember } from "../workflows/members/member-summary.js";
 import {
@@ -19,6 +21,12 @@ import {
   readLabMemberRow,
   toStoredLabMember,
 } from "../workflows/onboarding/onboarding-storage.js";
+import {
+  API_TOKEN_COLUMNS,
+  apiTokenValues,
+  rowToApiToken,
+  type ApiTokenRow,
+} from "./api-token-rows.js";
 
 // Match SQLite's JS lowercase search, including non-ASCII names and topics.
 function memberMatchesQuery(member: AdminBotLabMember, q: string): boolean {
@@ -296,7 +304,8 @@ export class AdminBotPostgresAuthStore implements AdminBotAuthStore {
     );
   }
 
-  async recordAudit(event: AdminBotAuditEvent): Promise<void> {
+  async recordAudit(given: AdminBotAuditEvent): Promise<void> {
+    const event = withApiTokenAttribution(given);
     await this.pool.query(
       `INSERT INTO ${this.table("adminbot_audit_events")}
        (id, action_id, event_type, timestamp, actor, event_json)
@@ -417,6 +426,11 @@ export class AdminBotPostgresAuthStore implements AdminBotAuthStore {
         `UPDATE ${this.table("adminbot_sessions")}
          SET revoked_at = $1 WHERE member_id = $2 AND revoked_at IS NULL`,
         [updatedAt, memberId],
+      );
+      await client.query(
+        `UPDATE ${this.table("adminbot_api_tokens")}
+         SET revoked_at = $1, revoked_reason = $2 WHERE member_id = $3 AND revoked_at IS NULL`,
+        [updatedAt, "password_changed", memberId],
       );
       return true;
     });
@@ -579,6 +593,11 @@ export class AdminBotPostgresAuthStore implements AdminBotAuthStore {
         `UPDATE ${this.table("adminbot_sessions")}
          SET revoked_at = $1 WHERE member_id = $2 AND revoked_at IS NULL`,
         [usedAt, memberId],
+      );
+      await client.query(
+        `UPDATE ${this.table("adminbot_api_tokens")}
+         SET revoked_at = $1, revoked_reason = $2 WHERE member_id = $3 AND revoked_at IS NULL`,
+        [usedAt, "password_reset", memberId],
       );
       return true;
     });
@@ -889,11 +908,88 @@ export class AdminBotPostgresAuthStore implements AdminBotAuthStore {
   }
 
   async revokeSessionsForMember(memberId: string, revokedAt: string): Promise<void> {
+    await this.transaction(async (client) => {
+      await client.query(
+        `UPDATE ${this.table("adminbot_sessions")}
+         SET revoked_at = $1 WHERE member_id = $2 AND revoked_at IS NULL`,
+        [revokedAt, memberId],
+      );
+      await client.query(
+        `UPDATE ${this.table("adminbot_api_tokens")}
+         SET revoked_at = $1, revoked_reason = $2 WHERE member_id = $3 AND revoked_at IS NULL`,
+        [revokedAt, "signed_out_everywhere", memberId],
+      );
+    });
+  }
+
+  async saveApiToken(token: AdminBotApiToken): Promise<void> {
     await this.pool.query(
-      `UPDATE ${this.table("adminbot_sessions")}
-       SET revoked_at = $1 WHERE member_id = $2 AND revoked_at IS NULL`,
-      [revokedAt, memberId],
+      `INSERT INTO ${this.table("adminbot_api_tokens")} (${API_TOKEN_COLUMNS})
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+      apiTokenValues(token),
     );
+  }
+
+  async getApiTokenByHash(tokenHash: string): Promise<AdminBotApiToken | undefined> {
+    const row = await this.first<ApiTokenRow>(
+      `SELECT ${API_TOKEN_COLUMNS} FROM ${this.table("adminbot_api_tokens")} WHERE token_hash = $1`,
+      [tokenHash],
+    );
+    return row ? rowToApiToken(row) : undefined;
+  }
+
+  async getApiToken(id: string): Promise<AdminBotApiToken | undefined> {
+    const row = await this.first<ApiTokenRow>(
+      `SELECT ${API_TOKEN_COLUMNS} FROM ${this.table("adminbot_api_tokens")} WHERE id = $1`,
+      [id],
+    );
+    return row ? rowToApiToken(row) : undefined;
+  }
+
+  async listApiTokensForMember(memberId: string): Promise<AdminBotApiToken[]> {
+    const rows = await this.rows<ApiTokenRow>(
+      `SELECT ${API_TOKEN_COLUMNS} FROM ${this.table("adminbot_api_tokens")}
+       WHERE member_id = $1 ORDER BY created_at DESC`,
+      [memberId],
+    );
+    return rows.map(rowToApiToken);
+  }
+
+  async touchApiToken(id: string, usage: AdminBotApiTokenUsage): Promise<void> {
+    await this.pool.query(
+      `UPDATE ${this.table("adminbot_api_tokens")}
+       SET last_used_at = $1, last_used_ip = $2, last_used_place = $3, seen_ips_json = $4
+       WHERE id = $5`,
+      [
+        usage.last_used_at,
+        usage.last_used_ip ?? null,
+        usage.last_used_place ?? null,
+        JSON.stringify(usage.seen_ips),
+        id,
+      ],
+    );
+  }
+
+  async revokeApiToken(id: string, revokedAt: string, reason: string): Promise<boolean> {
+    const result = await this.pool.query(
+      `UPDATE ${this.table("adminbot_api_tokens")}
+       SET revoked_at = $1, revoked_reason = $2 WHERE id = $3 AND revoked_at IS NULL`,
+      [revokedAt, reason, id],
+    );
+    return result.rowCount === 1;
+  }
+
+  async revokeApiTokensForMember(
+    memberId: string,
+    revokedAt: string,
+    reason: string,
+  ): Promise<number> {
+    const result = await this.pool.query(
+      `UPDATE ${this.table("adminbot_api_tokens")}
+       SET revoked_at = $1, revoked_reason = $2 WHERE member_id = $3 AND revoked_at IS NULL`,
+      [revokedAt, reason, memberId],
+    );
+    return result.rowCount ?? 0;
   }
 
   async pruneSessionsBefore(cutoffIso: string): Promise<number> {

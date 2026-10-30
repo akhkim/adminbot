@@ -3237,7 +3237,10 @@ export function renderApp(state: AppViewState) {
           ? "content--logs"
           : ""} ${state.tab === "adminbotDeadlines" ? "content--deadlines" : ""}"
       >
-        <adminbot-offline-access .scope=${logisticsScope}></adminbot-offline-access>
+        <adminbot-offline-access
+          .scope=${logisticsScope}
+          .always=${isLogisticsTab(state.tab)}
+        ></adminbot-offline-access>
         <!-- Settings only. The text is git and install plumbing -- "Update skipped:
              not-git-install. Not a git checkout. Run openclaw update from the CLI" -- and it was
              rendering above every page, including a member's own profile. Nobody but the admin who

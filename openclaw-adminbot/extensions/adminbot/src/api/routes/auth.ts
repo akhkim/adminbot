@@ -13,6 +13,7 @@ import type { AdminBotMemberPrincipal } from "../../workflows/identity/auth.js";
 import { allowedGatewayScopesForPrivilege } from "../../workflows/identity/device-pairing-scopes.js";
 import { sendJson, readRecord, readJson, asString } from "../server.http.js";
 import { enrollNewMember, queueNewMemberGuide } from "../server.member-onboarding.js";
+import { handleApiTokenRoute, refuseApiToken } from "./api-tokens.js";
 import type { AdminBotRouteContext } from "./context.js";
 import {
   requirePrivileged,
@@ -39,6 +40,9 @@ export async function handleAuthRoute(
   ctx: AdminBotRouteContext,
   url: URL,
 ): Promise<void> {
+  if (await handleApiTokenRoute(req, res, ctx, url)) {
+    return;
+  }
   if (req.method === "GET" && url.pathname === "/auth/roster") {
     const query = (url.searchParams.get("q") ?? "").trim();
     if (query.length > 80) {
@@ -111,6 +115,9 @@ export async function handleAuthRoute(
       sendJson(res, 401, { error: { message: "authentication required" } });
       return;
     }
+    if (refuseApiToken(res, principal)) {
+      return;
+    }
     const body = readRecord(await readJson(req));
     sendAuthResult(
       res,
@@ -146,6 +153,12 @@ export async function handleAuthRoute(
     const principal = await resolvePrincipal(req, ctx);
     if (!principal || principal.kind !== "member") {
       sendJson(res, 401, { error: { message: "authentication required" } });
+      return;
+    }
+    if (principal.apiToken) {
+      // `adminbot logout`: signing out with a token means the token is done with.
+      await ctx.apiTokens.revoke(principal, principal.apiToken.id);
+      sendJson(res, 200, { logged_out: true });
       return;
     }
     const token = bearerToken(req) ?? cookieToken(req);
@@ -186,7 +199,7 @@ export async function handleAuthRoute(
       sendJson(res, 401, { error: { message: "authentication required" } });
       return;
     }
-    if (refuseWhileImpersonating(res, principal)) {
+    if (refuseWhileImpersonating(res, principal) || refuseApiToken(res, principal)) {
       return;
     }
     const body = readRecord(await readJson(req));
@@ -212,7 +225,7 @@ export async function handleAuthRoute(
       sendJson(res, 400, { error: { message: "member principal required" } });
       return;
     }
-    if (refuseWhileImpersonating(res, principal)) {
+    if (refuseWhileImpersonating(res, principal) || refuseApiToken(res, principal)) {
       return;
     }
     const body = readRecord(await readJson(req));

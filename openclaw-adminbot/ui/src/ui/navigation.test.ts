@@ -186,7 +186,7 @@ describe("subtitleForTab", () => {
       myWork: "What you are working on, and anything holding it up.",
       // Corrected to the shipped string: the tab has said "Coming soon" for a while and this
       // expectation had not followed, leaving the suite red for a reason unrelated to it.
-      labSharing: "Coming soon — share resources, ideas, and collaborate.",
+      labSharing: "Ask for help on your projects, offer yours, and see who is around.",
       events: "Upcoming events, who from the lab is going, and who is nearby.",
       adminbotNotificationDrafts: "Create tweet drafts and images from notification exports.",
       adminbotOpportunities: "PhD programs, internships, grants, awards, and Rising Stars.",
@@ -197,7 +197,7 @@ describe("subtitleForTab", () => {
       adminbotBadges: "Manage badge definitions, assignments, and nominations.",
       adminbotOnboarding: "Send a member or collaborator their onboarding guide.",
       adminbotSettings: "Lab defaults and escalation policy.",
-      adminbotMembers: "Privilege levels and access profiles.",
+      adminbotMembers: "Who is in the lab, what they work on, and their access.",
       adminbotProfileOverview: "Who has filled in their profile and planned their term.",
       adminbotArrReviewers: "Self-reported ARR reviewer qualification and capacity.",
       adminbotTalkLeaderboard: "This year's talks and orals, counted from members' CVs.",

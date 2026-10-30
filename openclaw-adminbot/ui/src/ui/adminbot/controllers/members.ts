@@ -11,6 +11,7 @@ import {
   mergeLabMembersAsAdmin,
   purgeMembersWithoutEmailAsAdmin,
   renameLabMemberAsAdmin,
+  changeLabMemberEmailAsAdmin,
   updateOwnProfile,
   updateOwnSchedule,
   upsertLabMemberAsAdmin,
@@ -27,6 +28,7 @@ import {
   formatAdminBotToolError,
   invokeAdminBotTool,
   loadAdminBot,
+  loadAdminBotMemberList,
   loadAdminBotStandingMeetings,
   onboardSavedMember,
   serializeMemberSave,
@@ -370,6 +372,49 @@ export async function renameAdminBotMember(
   await loadAdminBot(host);
 }
 
+/** Moves one member's sign-in email, through its own route rather than the form's upsert. */
+export async function changeAdminBotMemberEmail(
+  host: AdminBotHost,
+  memberId: string,
+  newEmail: string,
+): Promise<void> {
+  host.adminBotNotice = null;
+  const stored = loadStoredMemberSession();
+  if (!stored) {
+    host.adminBotNotice = {
+      kind: "error",
+      text: "Sign in with your admin account to change a member's sign-in email.",
+    };
+    return;
+  }
+  const result = await changeLabMemberEmailAsAdmin(
+    memberId,
+    newEmail,
+    stored.sessionToken,
+    resolveAdminBotBaseUrl(host.settings),
+  );
+  if (!result.ok) {
+    host.adminBotNotice = {
+      kind: "error",
+      text:
+        result.kind === "unreachable"
+          ? ADMINBOT_SERVICE_UNREACHABLE_MESSAGE
+          : (result.message ??
+            (result.kind === "forbidden"
+              ? "Your session no longer has admin access — sign in again and retry."
+              : "Couldn't change that sign-in email.")),
+    };
+    return;
+  }
+  host.adminBotNotice = {
+    kind: "success",
+    text: result.value.had_sign_in
+      ? `${memberId} now signs in with ${result.value.email}.`
+      : `${memberId} hasn't claimed an account yet; they'll claim it with ${result.value.email}.`,
+  };
+  await loadAdminBot(host);
+}
+
 /**
  * Deletes one roster row outright.
  *
@@ -577,13 +622,9 @@ export async function saveAdminBotOwnProfile(
           member.id === memberId ? { ...member, ...updated } : member,
         ),
       };
-      if (host.adminBotMemberList) {
-        host.adminBotMemberList = {
-          ...host.adminBotMemberList,
-          rows: host.adminBotMemberList.rows.map((member) =>
-            member.id === memberId ? { ...member, ...updated } : member,
-          ),
-        };
+      // A changed profile can move between filtered pages or change their order and options.
+      if (host.adminBotMemberList?.loadedAt || host.adminBotMemberList?.loading) {
+        await loadAdminBotMemberList(host);
       }
     },
   );

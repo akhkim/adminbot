@@ -10,7 +10,10 @@ import {
   assertPublicHost,
   buildNewsletterDraft,
   classifyRecency,
+  createAdminBotCvScanDeps,
+  createCvPinnedLookup,
   CV_EXTRACTOR_VERSION,
+  type CvHostAddress,
   isPublicIpAddress,
   normalizeCvDownloadUrl,
   resolveStartIso,
@@ -121,7 +124,100 @@ describe("runAdminBotCvScan", () => {
     );
     expect(result.results[0]?.status).toBe("unchanged");
     expect(extractEntries).not.toHaveBeenCalled();
+    // Same text from a file it had not fingerprinted yet: the entries stay, and the file hash is
+    // kept so the next scan can stop at the bytes.
+    expect(snapshots.get("same")).toEqual({
+      ...snapshotOf("cv text", [POSITION]),
+      pdf_hash: createHash("sha256")
+        .update(new Uint8Array([1]))
+        .digest("hex"),
+    });
+  });
+
+  it("stops at the bytes when the file is the one already read: no parsing, no model", async () => {
+    const extractText = vi.fn(async () => ({ ok: true as const, text: "cv text" }));
+    const extractEntries = vi.fn(async () => [POSITION]);
+    const { result, snapshots } = await runAdminBotCvScan(
+      [
+        member({
+          id: "same",
+          cv_url: "https://drive.google.com/file/d/abc",
+          cv_snapshot: {
+            ...snapshotOf("cv text", [POSITION]),
+            pdf_hash: createHash("sha256")
+              .update(new Uint8Array([1]))
+              .digest("hex"),
+          },
+        }),
+      ],
+      deps({ extractText, extractEntries }),
+    );
+    expect(result.results[0]?.status).toBe("unchanged");
+    expect(extractText).not.toHaveBeenCalled();
+    expect(extractEntries).not.toHaveBeenCalled();
     expect(snapshots.size).toBe(0);
+  });
+
+  it("still re-reads a byte-identical file once when an older prompt read it", async () => {
+    const extractEntries = vi.fn(async () => [POSITION]);
+    await runAdminBotCvScan(
+      [
+        member({
+          id: "old",
+          cv_url: "https://drive.google.com/file/d/abc",
+          cv_snapshot: {
+            ...snapshotOf("cv text", [POSITION], CV_EXTRACTOR_VERSION - 1),
+            pdf_hash: createHash("sha256")
+              .update(new Uint8Array([1]))
+              .digest("hex"),
+          },
+        }),
+      ],
+      deps({ extractEntries }),
+    );
+    expect(extractEntries).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports progress over linked CVs only, ending at the total", async () => {
+    const onProgress = vi.fn();
+    await runAdminBotCvScan(
+      [
+        member({ id: "a", cv_url: "https://drive.google.com/file/d/a" }),
+        member({ id: "none" }),
+        member({ id: "b", cv_url: "https://drive.google.com/file/d/b" }),
+      ],
+      deps({ onProgress }),
+    );
+    expect(onProgress.mock.calls).toEqual([
+      [0, 2],
+      [1, 2],
+      [2, 2],
+    ]);
+  });
+
+  it("reads several CVs at once but reports them in roster order", async () => {
+    // The slowest CV comes first: with one at a time nothing else could start until it finished.
+    const delays: Record<string, number> = { a: 30, b: 0, c: 10 };
+    let inFlight = 0;
+    let peak = 0;
+    const scanned: string[] = [];
+    const { result } = await runAdminBotCvScan(
+      ["a", "b", "c"].map((id) => member({ id, cv_url: `https://drive.google.com/file/d/${id}` })),
+      deps({
+        concurrency: 2,
+        fetchPdf: async (url) => {
+          inFlight += 1;
+          peak = Math.max(peak, inFlight);
+          await new Promise((resolve) => setTimeout(resolve, delays[url.at(-1)!]));
+          inFlight -= 1;
+          return Buffer.from(url);
+        },
+        onMemberScanned: (entry) => void scanned.push(entry.member_id),
+      }),
+    );
+    expect(peak).toBe(2);
+    expect(scanned).toEqual(["b", "c", "a"]);
+    expect(result.results.map((entry) => entry.member_id)).toEqual(["a", "b", "c"]);
   });
 
   it("re-reads an unchanged CV once when an older prompt read it, without announcing it", async () => {
@@ -276,6 +372,23 @@ describe("runAdminBotCvScan", () => {
     expect(result.newsletter_draft).toContain("Ada");
   });
 
+  it("keeps the network cause fetch hides behind 'fetch failed'", async () => {
+    const { result } = await runAdminBotCvScan(
+      [member({ id: "offline", cv_url: "https://drive.google.com/file/d/abc" })],
+      deps({
+        fetchPdf: async () => {
+          throw new TypeError("fetch failed", {
+            cause: Object.assign(new Error("connect ENETUNREACH"), { code: "ENETUNREACH" }),
+          });
+        },
+      }),
+    );
+    expect(result.results[0]).toMatchObject({
+      status: "failed",
+      reason: "fetch failed (ENETUNREACH)",
+    });
+  });
+
   it("separates an unreadable scan from one with no changes", async () => {
     const { result } = await runAdminBotCvScan(
       [member({ id: "scanned-paper", cv_url: "https://drive.google.com/file/d/abc" })],
@@ -318,7 +431,9 @@ describe("isPublicIpAddress", () => {
 describe("assertPublicHost", () => {
   it("accepts a host that resolves entirely to public addresses", async () => {
     const lookup = vi.fn(async () => [{ address: "8.8.8.8" }]);
-    await expect(assertPublicHost("example.com", lookup as never)).resolves.toBeUndefined();
+    await expect(assertPublicHost("example.com", lookup as never)).resolves.toEqual([
+      { address: "8.8.8.8", family: 4 },
+    ]);
   });
 
   it("refuses a host whose addresses include a private one", async () => {
@@ -668,5 +783,82 @@ describe("sanitizeCvEntries", () => {
     ]);
     expect(entry?.title).toHaveLength(500);
     expect(sanitizeCvEntries({ entries: [] })).toEqual([]);
+  });
+});
+
+describe("createCvPinnedLookup", () => {
+  const pins = new Map<string, CvHostAddress[]>([
+    [
+      "drive.google.com",
+      [
+        { address: "2607:f8b0:400b:80f::200e", family: 6 },
+        { address: "142.250.65.206", family: 4 },
+        { address: "142.250.65.238", family: 4 },
+      ],
+    ],
+    ["v6only.example", [{ address: "2001:db8::1", family: 6 }]],
+  ]);
+  const ask = (host: string, options: object) =>
+    new Promise<{ error: NodeJS.ErrnoException | null; address: unknown; family?: number }>(
+      (resolve) => {
+        createCvPinnedLookup(pins)(host, options, (error, address, family) =>
+          resolve({ error, address, family }),
+        );
+      },
+    );
+
+  it("answers IPv4 only when the host has it, so an IPv6-less host still connects", async () => {
+    expect(await ask("drive.google.com", { all: true })).toMatchObject({
+      error: null,
+      address: [
+        { address: "142.250.65.206", family: 4 },
+        { address: "142.250.65.238", family: 4 },
+      ],
+    });
+    expect(await ask("Drive.Google.com", {})).toMatchObject({
+      address: "142.250.65.206",
+      family: 4,
+    });
+  });
+
+  it("falls back to IPv6 for a host without IPv4", async () => {
+    expect(await ask("v6only.example", {})).toMatchObject({ address: "2001:db8::1", family: 6 });
+  });
+
+  it("refuses a host that was never validated", async () => {
+    const answer = await ask("169.254.169.254.nip.io", { all: true });
+    expect(answer.error?.code).toBe("ENOTFOUND");
+  });
+});
+
+describe("createAdminBotCvScanDeps fetchPdf", () => {
+  it("downloads through a dispatcher pinned to the validated host", async () => {
+    const downloadImpl = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      headers: { get: () => null },
+      arrayBuffer: async () => new TextEncoder().encode("%PDF-1.7 synthetic").buffer,
+    }));
+    const scanDeps = createAdminBotCvScanDeps({ extractScriptPath: "/unused", downloadImpl });
+    // An IP literal, so the test never touches DNS.
+    const pdf = await scanDeps.fetchPdf("https://8.8.8.8/cv.pdf");
+    expect(new TextDecoder().decode(pdf)).toContain("%PDF");
+    const init = downloadImpl.mock.calls[0]?.[1] as { redirect: string; dispatcher?: object };
+    expect(init.redirect).toBe("manual");
+    expect(init.dispatcher).toBeDefined();
+  });
+
+  it("refuses a redirect to a private address before connecting", async () => {
+    const downloadImpl = vi.fn(async () => ({
+      ok: false,
+      status: 302,
+      statusText: "Found",
+      headers: { get: (name: string) => (name === "location" ? "https://10.0.0.1/x" : null) },
+      arrayBuffer: async () => new ArrayBuffer(0),
+    }));
+    const scanDeps = createAdminBotCvScanDeps({ extractScriptPath: "/unused", downloadImpl });
+    await expect(scanDeps.fetchPdf("https://8.8.8.8/cv.pdf")).rejects.toThrow(/non-public/u);
+    expect(downloadImpl).toHaveBeenCalledTimes(1);
   });
 });

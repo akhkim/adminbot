@@ -443,6 +443,56 @@ export async function renameLabMemberAsAdmin(
   };
 }
 
+/**
+ * Move a member's sign-in address. Admin session only; the service refuses it for the caller's
+ * own account and the head professor's, and those refusals are 403s with a reason worth showing,
+ * so a 403 carries the service's message rather than collapsing into "not an admin".
+ */
+export async function changeLabMemberEmailAsAdmin(
+  memberId: string,
+  newEmail: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<
+  AuthResult<{
+    member: LabMember;
+    email: string;
+    previous_email: string | null;
+    had_sign_in: boolean;
+  }>
+> {
+  const result = await authedJson(
+    baseUrl,
+    `/lab/members/${encodeURIComponent(memberId)}/email`,
+    "POST",
+    sessionToken,
+    { new_email: newEmail },
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      const message = (result.body as { error?: { message?: unknown } } | null)?.error?.message;
+      return {
+        ok: false,
+        kind: "forbidden",
+        ...(typeof message === "string" && message ? { message } : {}),
+      };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return {
+    ok: true,
+    value: result.body as {
+      member: LabMember;
+      email: string;
+      previous_email: string | null;
+      had_sign_in: boolean;
+    },
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Profile overview
 //

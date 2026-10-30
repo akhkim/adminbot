@@ -125,6 +125,10 @@ function renderRow(props: TravelPlansProps, row: TripRow, index: number, today: 
         data-testid=${`lab-travel-plan-remove-${index}`}
         ?disabled=${props.saving}
         @click=${() => {
+          // Removing saves straight away, so it asks first.
+          if (!globalThis.confirm?.(t("adminbotTimeAvailability.trips.removeConfirm"))) {
+            return;
+          }
           props.onSave(props.trips.filter((_, at) => at !== index));
           // Removing the row being edited would leave the form pointed at an index that is now a
           // different trip, so the edit is abandoned with it.

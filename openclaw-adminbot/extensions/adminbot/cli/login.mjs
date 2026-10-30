@@ -1,0 +1,141 @@
+// `adminbot auth login` without --email: sign this machine in through the browser, after RFC 8628.
+//
+// The CLI asks the service for a one-time code, the person approves it in AdminBot with one click,
+// and the CLI collects a personal API token. No password ever passes through the
+// terminal, and the token is only ever sent to the process that started the request.
+// See docs/adminbot/api-tokens.md.
+import { spawn } from "node:child_process";
+import { hostname } from "node:os";
+import { saveApiToken } from "./auth.mjs";
+import { ApiError, callOperation } from "./client.mjs";
+
+const sleepFor = (ms) =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
+/** Opens the approval page, but only a web page on the service's own scheme rules. */
+function openBrowser(link, env) {
+  let url;
+  try {
+    url = new URL(link);
+  } catch {
+    return;
+  }
+  const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+  if (url.protocol !== "https:" && !(loopback && url.protocol === "http:")) {
+    return;
+  }
+  const opener =
+    process.platform === "darwin" ? "open" : process.platform === "win32" ? undefined : "xdg-open";
+  if (!opener || env.ADMINBOT_NO_BROWSER === "1") {
+    return;
+  }
+  try {
+    const child = spawn(opener, [url.href], { stdio: "ignore", detached: true });
+    child.on("error", () => {});
+    child.unref();
+  } catch {
+    // The link is printed as well; a missing opener is not a failure.
+  }
+}
+
+export async function deviceLogin({
+  baseUrl,
+  credentials,
+  name,
+  days,
+  browser,
+  timeout,
+  env,
+  stderr,
+  fetchImpl,
+  sleep = sleepFor,
+}) {
+  const call = (operationId, body) =>
+    callOperation(operationId, { baseUrl, body, timeout, fetchImpl });
+  const started = await call("post-auth-device-start", {
+    name: name ?? `adminbot CLI on ${hostname().split(".")[0] || "this computer"}`,
+    ...(days === undefined ? {} : { expires_in_days: days }),
+  });
+  const { device_code, user_code, verification_uri, verification_uri_complete } = started ?? {};
+  if (typeof device_code !== "string" || typeof user_code !== "string") {
+    throw new ApiError(
+      "INVALID_RESPONSE",
+      `${baseUrl} did not start a browser login (no device_code/user_code); it may be older than this CLI or not AdminBot`,
+    );
+  }
+  stderr.write(
+    `To sign in, open ${verification_uri_complete ?? verification_uri}\n` +
+      `and check that it shows this code: ${user_code}\n` +
+      `Approve it only if you started this login. Waiting…\n`,
+  );
+  if (browser) {
+    openBrowser(verification_uri_complete ?? verification_uri, env);
+  }
+  let interval = Math.max(1, Number(started.interval) || 5) * 1000;
+  const deadline = Date.now() + Math.max(1, Number(started.expires_in) || 600) * 1000;
+  while (Date.now() < deadline) {
+    await sleep(interval);
+    let polled;
+    try {
+      polled = await call("post-auth-device-poll", { device_code });
+    } catch (error) {
+      // A poll only reads the code's state, so a dropped one (a 502 while the service restarts, a
+      // network blip) is simply asked again on the next tick instead of abandoning a login the
+      // person may be approving right now.
+      if (error instanceof ApiError && error.retryable) {
+        continue;
+      }
+      throw error;
+    }
+    switch (polled?.status) {
+      case "authorization_pending":
+        continue;
+      case "slow_down":
+        interval += 5000;
+        continue;
+      case "access_denied":
+        throw new ApiError(
+          "ACCESS_DENIED",
+          "The sign-in was denied in the browser (Deny was clicked, or the account may not hold API tokens: admins only). Nothing was saved",
+          403,
+          { hint: "adminbot login" },
+        );
+      case "expired_token":
+        throw new ApiError(
+          "LOGIN_EXPIRED",
+          "The sign-in code expired before anyone approved it (codes last 10 minutes); start again",
+          401,
+          { retryable: true },
+        );
+      case "approved": {
+        const { token, api_token: apiToken, member } = polled;
+        if (typeof token !== "string" || typeof apiToken?.id !== "string") {
+          throw new ApiError(
+            "INVALID_RESPONSE",
+            "The approved sign-in carried no token; the server may be older than this CLI",
+          );
+        }
+        const storage = await saveApiToken(credentials, baseUrl, token, apiToken, env);
+        return {
+          authenticated: true,
+          member,
+          storage,
+          api_token: { id: apiToken.id, name: apiToken.name, expires_at: apiToken.expires_at },
+        };
+      }
+      default:
+        throw new ApiError(
+          "INVALID_RESPONSE",
+          `Unexpected sign-in status ${JSON.stringify(String(polled?.status)).slice(0, 60)}; the server may be newer or older than this CLI`,
+        );
+    }
+  }
+  throw new ApiError(
+    "LOGIN_EXPIRED",
+    "Nobody approved the sign-in before the code expired; start again and approve the link",
+    401,
+    { retryable: true },
+  );
+}

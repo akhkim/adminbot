@@ -11,12 +11,12 @@ import {
   toggleGoing,
   updateMeetupPreferences,
 } from "../controllers/events.ts";
-import { renderEvents, renderMeetupToggle, renderNearbyNow } from "../views/events.ts";
+import { renderEvents, renderMeetupToggle } from "../views/events.ts";
 import { renderTravelNearbySurface } from "./lab-travel.ts";
 import type { AdminBotSurfaceScope } from "./scope.ts";
 
-/** Tabs that draw part of the overview: Events, Collaborate's Nearby now, the profile toggle. */
-const EVENTS_TABS = new Set(["events", "labSharing", "profile"]);
+/** Tabs that draw part of the overview: Events itself and the profile's meetup toggle. */
+const EVENTS_TABS = new Set(["events", "profile"]);
 
 /** Opening one of those tabs loads it; self-limiting because the read marks itself loading at once. */
 export function syncEvents(state: AppViewState, requestHostUpdate: (() => void) | undefined) {
@@ -57,17 +57,6 @@ function settler(scope: AdminBotSurfaceScope) {
     update();
     void work.finally(update);
   };
-}
-
-/** Collaborate's Nearby now strip; nothing until somebody is around. */
-export function renderNearbyNowSurface(state: AppViewState, scope: AdminBotSurfaceScope) {
-  const settle = settler(scope);
-  return renderNearbyNow({
-    nearby: state.events?.also_nearby,
-    busy: state.eventsBusy ?? null,
-    notice: state.eventsNotice ?? null,
-    onSayHi: (target) => settle(sayHi(state, target)),
-  });
 }
 
 /** The profile's one-tap meetup switch, once the overview has loaded. */

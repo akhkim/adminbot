@@ -109,10 +109,13 @@ GitHub Pages revisions form an old-to-new extension chain. If a page says “ext
 no recoverable former date, the record says that the prior value is unavailable; the collector does
 not invent one.
 
-On Aurora, export the two sheets first with the authenticated `gog`/`gws`
-account (the same one used elsewhere), then pass them as `--ongoing-csv` /
-`--ready-csv`. Without local CSVs the matcher falls back to the Google Sheets
-CSV endpoint using `ADMINBOT_ONGOING_SHEET_ID` / `ADMINBOT_READY_SHEET_ID`.
+The matcher reads its two input tabs through `gog` as `GOG_ACCOUNT` (read-only), so both
+spreadsheets must be shared with that account. `ADMINBOT_ONGOING_SHEET_ID` names the spreadsheet
+holding the "Paper submissions" tab (gid 846550934), which is the lab member sheet, and is
+required. `ADMINBOT_READY_SHEET_ID` names the one holding "Formatted Papers" (gid 1634319760); when
+it is unset the matcher prints `ready papers skipped` and still writes the ongoing matches, since the
+ready-to-workshop pairs are unconfirmed suggestions that nothing is nudged about. `--ongoing-csv` /
+`--ready-csv` override either sheet with a local CSV export.
 
 The collector merges by stable deadline id. Top-level fields are the current
 projection; append-only `revisions` retain earlier accepted dates, and explicit

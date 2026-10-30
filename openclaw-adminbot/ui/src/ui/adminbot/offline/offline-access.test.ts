@@ -22,3 +22,18 @@ it("uses shared page buttons and retries from the offline panel", async () => {
   expect(retry).toHaveBeenCalledOnce();
   expect(panel.textContent).toContain("1 draft awaiting sync or review.");
 });
+
+it("stays out of the way while online with nothing waiting, unless the page asks for it", async () => {
+  const draftSync = await import("./draft-sync.ts");
+  const count = vi.spyOn(draftSync, "pendingDraftCount").mockReturnValue(0);
+  const panel = new OfflineAccess();
+  document.body.append(panel);
+  await panel.updateComplete;
+  expect(panel.hidden).toBe(true);
+  expect(panel.querySelector("details")).toBeNull();
+  panel.always = true;
+  await panel.updateComplete;
+  expect(panel.hidden).toBe(false);
+  expect(panel.querySelector("summary")?.textContent).toContain("Offline access");
+  count.mockRestore();
+});

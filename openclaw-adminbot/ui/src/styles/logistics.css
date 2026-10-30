@@ -315,6 +315,9 @@
    fields can actually be read at and the wrapper scrolls sideways. */
 
 .logistics-schools__scroll {
+  /* The containing block for the cells' visually hidden labels: without it they are placed against
+     the page, two thousand pixels out, and widen it even though the table itself scrolls. */
+  position: relative;
   overflow-x: auto;
   margin-top: var(--space-4);
   border: 1px solid var(--border);
@@ -1298,7 +1301,8 @@
 }
 
 .paper-overview__board-summary {
-  padding: var(--space-3) var(--space-4);
+  /* .adminbot-fold gives the row its height and chevron; this only insets it inside the border. */
+  padding: var(--space-1) var(--space-4);
   color: var(--muted-strong);
   font-weight: 600;
   cursor: pointer;
@@ -1785,6 +1789,12 @@
   font-size: var(--control-ui-text-xs);
 }
 
+.tab-usage__scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
 .tab-usage__table {
   width: 100%;
   margin-top: var(--space-3);
@@ -1949,7 +1959,8 @@ adminbot-offline-access {
 adminbot-offline-access details {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  padding: var(--space-3) var(--space-4);
+  /* The summary is a 44px fold row, so the box needs little padding of its own above and below. */
+  padding: var(--space-1) var(--space-4);
 }
 
 adminbot-offline-access summary {

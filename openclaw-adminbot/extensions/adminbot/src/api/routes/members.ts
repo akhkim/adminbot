@@ -47,6 +47,8 @@ import {
   type MemberTypeChangeStep,
   proposeDcsRosterRow,
 } from "../server.member-type-change.js";
+import { refuseApiToken } from "./api-tokens.js";
+import { refuseWhileImpersonating } from "./auth.js";
 import type { AdminBotRouteContext } from "./context.js";
 import {
   adminSessionOnly,
@@ -63,6 +65,7 @@ import {
 import { readStandingMeetings } from "./meetings.js";
 import { memberSummaryRow } from "./member-summary-row.js";
 import { memberViewEtag } from "./members-etag.js";
+import { memberRosterRoute } from "./members.roster.js";
 import { memberOnboardingDeps } from "./onboarding.js";
 import { readListPage, limitParam } from "./query-params.js";
 import { del, get, post, put, route, type Route, under } from "./router.js";
@@ -70,6 +73,7 @@ import { requestIsSecure, sendAuthResult } from "./session.js";
 import { sendNotModified } from "./version-etag.js";
 
 export const membersRoutes: readonly Route[] = [
+  memberRosterRoute,
   // Member requests: anyone signed in may propose adding somebody; admins may correct one, and only
   // the PI decides it. Ahead of every /lab/members/:id pattern so "requests" is never read as a
   // member id. A member session throughout -- the service principal speaks for whoever is
@@ -303,6 +307,26 @@ export const membersRoutes: readonly Route[] = [
         memberId: decodeURIComponent(params[1]!),
         newId: asString(body.new_id),
         actorId: principalActor(principal),
+      }),
+    );
+  }),
+  post(/^\/lab\/members\/([^/]+)\/email$/u, async ({ req, res, principal, ctx, params }) => {
+    // Admin session only, as for the id. And never an API token or a viewed-as session: this is
+    // the member's own /auth/email without their password, and it moves where their password reset
+    // goes, so it draws the line /auth/email draws.
+    if (!requireMemberPrivileged(res, principal) || principal.kind !== "member") {
+      return;
+    }
+    if (refuseWhileImpersonating(res, principal) || refuseApiToken(res, principal)) {
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    sendServiceResult(
+      res,
+      ctx.service.changeMemberLoginEmail({
+        memberId: decodeURIComponent(params[1]),
+        newEmail: asString(body.new_email),
+        actorId: principal.member.id,
       }),
     );
   }),

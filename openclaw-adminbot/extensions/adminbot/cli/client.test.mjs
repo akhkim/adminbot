@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -179,6 +179,102 @@ await test("a refusal without a reason still says something, bounded", async () 
   );
 });
 
+await test("every error is one JSON envelope an agent can act on", async (t) => {
+  const env = (url) => ({ ADMINBOT_URL: url, ADMINBOT_TOKEN: "test" });
+  const failing = (status, body, headers = {}) =>
+    service(t, (_req, res) => {
+      res.statusCode = status;
+      for (const [name, value] of Object.entries(headers)) {
+        res.setHeader(name, value);
+      }
+      res.end(JSON.stringify(body));
+    });
+  const errorOf = (result) => {
+    assert.equal(result.out, "");
+    const { error } = JSON.parse(result.err);
+    assert.equal(error.exit_code, result.code);
+    assert.equal(typeof error.retryable, "boolean");
+    return error;
+  };
+
+  const forbidden = errorOf(
+    await invoke(["papers", "list"], {
+      env: env(await failing(403, { error: { code: "FORBIDDEN", message: "admins only" } })),
+    }),
+  );
+  assert.equal(forbidden.code, "SERVICE_ERROR");
+  assert.equal(forbidden.exit_code, 3);
+  assert.equal(forbidden.hint, "adminbot whoami");
+  assert.equal(forbidden.details.server_code, "FORBIDDEN");
+  assert.match(forbidden.details.request, /^GET \//u);
+
+  const limited = errorOf(
+    await invoke(["papers", "list"], {
+      env: env(await failing(429, { error: { message: "slow down" } }, { "retry-after": "7" })),
+    }),
+  );
+  assert.equal(limited.retryable, true);
+  assert.equal(limited.details.retry_after_seconds, 7);
+  assert.match(limited.hint, /wait 7s/u);
+
+  // A failed write may still have landed: never advertise it as safe to repeat.
+  const crashed = errorOf(
+    await invoke(["papers", "progress", "p1", "--step", "overleaf_writing"], {
+      env: env(await failing(500, { error: { message: "boom" } })),
+    }),
+  );
+  assert.equal(crashed.retryable, false);
+  assert.equal(crashed.details.may_have_applied, true);
+  assert.equal(crashed.operation, "patch-papers-by-papers-id-progress");
+
+  const slow = await service(t, () => {});
+  const timeout = errorOf(await invoke(["papers", "list", "--timeout", "50"], { env: env(slow) }));
+  assert.equal(timeout.code, "CONNECTION_ERROR");
+  assert.equal(timeout.details.reason, "TIMEOUT");
+  assert.equal(timeout.retryable, true);
+  assert.match(timeout.hint, /--timeout 200/u);
+
+  const typo = errorOf(await invoke(["papers", "progress", "p1", "--stepp", "x"]));
+  assert.equal(typo.code, "INVALID_ARGUMENTS");
+  assert.deepEqual(typo.details.suggestions, ["--step"]);
+  assert.ok(typo.details.valid_flags.includes("--step"));
+
+  const unknown = errorOf(await invoke(["call", "get-deadline"]));
+  assert.equal(unknown.code, "UNKNOWN_OPERATION");
+  assert.equal(unknown.details.suggestions[0], "get-deadlines");
+  assert.equal(unknown.hint, "adminbot call get-deadlines --help");
+
+  const invalid = errorOf(
+    await invoke(["papers", "progress", "p1", "--step", "invented"], {
+      env: env("http://127.0.0.1:9"),
+    }),
+  );
+  assert.equal(invalid.details.problems[0].field, "body.current_step");
+  assert.ok(invalid.details.problems[0].allowed.includes("overleaf_writing"));
+});
+
+await test("--version prints the version, and a bare flag says where flags go", async () => {
+  const version = await invoke(["--version"]);
+  assert.equal(version.code, 0);
+  assert.match(version.out, /^adminbot \d+\.\d+\.\d+\n$/u);
+  const stray = await invoke(["--verbose"]);
+  assert.equal(stray.code, 2);
+  const { error } = JSON.parse(stray.err);
+  assert.match(error.message, /--verbose is not a top-level option/u);
+  assert.equal(error.hint, "adminbot --help");
+});
+
+await test("input errors come before sign-in, and logout without a login succeeds", async () => {
+  const offline = { ADMINBOT_URL: "http://127.0.0.1:9", ADMINBOT_TOKEN: "" };
+  const bad = await invoke(["papers", "progress", "p1", "--step", "invented"], { env: offline });
+  assert.equal(bad.code, 2);
+  assert.equal(JSON.parse(bad.err).error.code, "INVALID_INPUT");
+  const out = await invoke(["logout"], { env: offline });
+  assert.equal(out.code, 0);
+  assert.equal(JSON.parse(out.out).authenticated, false);
+  assert.match((await invoke(["help"])).out, /^AdminBot CLI/u);
+});
+
 await test("header parameters are read from the headers, not the query", async (t) => {
   const seen = [];
   const baseUrl = await service(t, (req, res) => {
@@ -342,4 +438,201 @@ await test("HTTP failures remain nonzero and redirects never receive credentials
     1,
   );
   assert.equal(forwarded, 0);
+});
+
+const FAKE_TOKEN = `abt_${"A".repeat(43)}_0badc0de`;
+async function deviceService(t, polls) {
+  const seen = [];
+  const baseUrl = await service(t, (req, res, body) => {
+    seen.push({ path: req.url, authorization: req.headers.authorization, body });
+    if (req.url === "/auth/device/start") {
+      res.end(
+        JSON.stringify({
+          device_code: "d".repeat(43),
+          user_code: "BCDF-GHJK",
+          verification_uri: "http://127.0.0.1/profile",
+          verification_uri_complete: "http://127.0.0.1/profile?cliLogin=BCDF-GHJK",
+          expires_in: 600,
+          interval: 1,
+        }),
+      );
+    } else if (req.url === "/auth/device/poll") {
+      const next = polls.shift();
+      if (typeof next === "number") {
+        res.statusCode = next;
+        res.end("{}");
+      } else {
+        res.end(JSON.stringify(next));
+      }
+    } else if (req.url === "/auth/session") {
+      res.end('{"member":{"id":"admin-a"}}');
+    } else if (req.url === "/auth/logout") {
+      res.end("{}");
+    } else {
+      res.statusCode = 404;
+      res.end("{}");
+    }
+  });
+  return { baseUrl, seen };
+}
+const approved = {
+  status: "approved",
+  token: FAKE_TOKEN,
+  member: { id: "admin-a" },
+  api_token: {
+    id: `tok_${"0".repeat(20)}`,
+    name: "laptop",
+    expires_at: "2099-01-01T00:00:00.000Z",
+  },
+};
+
+await test("auth login through the browser saves the token privately and never prints it", async (t) => {
+  const { baseUrl, seen } = await deviceService(t, [{ status: "authorization_pending" }, approved]);
+  const dir = await mkdtemp(join(tmpdir(), "adminbot-cli-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const credentials = join(dir, "credentials.json");
+  const env = { ADMINBOT_CREDENTIALS_FILE: credentials, ADMINBOT_KEYCHAIN: "0" };
+
+  const login = await invoke(
+    ["auth", "login", "--url", baseUrl, "--no-browser", "--name", "laptop", "--days", "7"],
+    { env },
+  );
+  assert.equal(login.code, 0, login.err);
+  assert.ok(login.err.includes("BCDF-GHJK"));
+  assert.ok(!login.out.includes(FAKE_TOKEN) && !login.err.includes(FAKE_TOKEN));
+  assert.equal(JSON.parse(login.out).api_token.id, approved.api_token.id);
+  assert.deepEqual(seen[0].body, { name: "laptop", expires_in_days: 7 });
+  assert.equal(seen[0].authorization, undefined);
+  assert.equal((await stat(credentials)).mode & 0o777, 0o600);
+  const saved = JSON.parse(await readFile(credentials, "utf8"));
+  assert.equal(saved.kind, "api_token");
+  assert.equal(saved.url, baseUrl);
+
+  const whoami = await invoke(["auth", "whoami", "--url", baseUrl], { env });
+  assert.equal(whoami.code, 0, whoami.err);
+  assert.equal(seen.at(-1).authorization, `Bearer ${FAKE_TOKEN}`);
+
+  const logout = await invoke(["auth", "logout", "--url", baseUrl], { env });
+  assert.equal(logout.code, 0, logout.err);
+  await assert.rejects(stat(credentials), { code: "ENOENT" });
+});
+
+await test("gh-style shortcuts: login falls back to a private file, auth token prints it, logout", async (t) => {
+  const { baseUrl, seen } = await deviceService(t, [approved]);
+  const dir = await mkdtemp(join(tmpdir(), "adminbot-cli-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const credentials = join(dir, "credentials.json");
+  // A keychain file that does not exist makes `security` fail, as it does inside an agent sandbox.
+  const env = {
+    ADMINBOT_CREDENTIALS_FILE: credentials,
+    ADMINBOT_KEYCHAIN_FILE: join(dir, "missing.keychain-db"),
+  };
+
+  const login = await invoke(["login", "--url", baseUrl, "--no-browser"], { env });
+  assert.equal(login.code, 0, login.err);
+  assert.equal(JSON.parse(login.out).storage, "file");
+  assert.deepEqual(Object.keys(seen[0].body), ["name"]);
+  assert.equal((await stat(credentials)).mode & 0o777, 0o600);
+
+  const token = await invoke(["auth", "token", "--url", baseUrl], { env });
+  assert.equal(token.code, 0, token.err);
+  assert.equal(token.out, `${FAKE_TOKEN}\n`);
+
+  assert.equal((await invoke(["whoami", "--url", baseUrl], { env })).code, 0);
+  assert.equal(seen.at(-1).authorization, `Bearer ${FAKE_TOKEN}`);
+  assert.equal((await invoke(["logout", "--url", baseUrl], { env })).code, 0);
+  const after = await invoke(["auth", "token", "--url", baseUrl], { env });
+  assert.equal(after.code, 3);
+  assert.equal(JSON.parse(after.err).error.hint, "adminbot login");
+});
+
+await test("browser login slows down when asked and stops on denial", async (t) => {
+  const { deviceLogin } = await import("./login.mjs");
+  const { baseUrl } = await deviceService(t, [
+    { status: "slow_down" },
+    { status: "authorization_pending" },
+    { status: "access_denied" },
+  ]);
+  const dir = await mkdtemp(join(tmpdir(), "adminbot-cli-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const waits = [];
+  await assert.rejects(
+    deviceLogin({
+      baseUrl,
+      credentials: join(dir, "credentials.json"),
+      browser: false,
+      timeout: 5000,
+      env: { ADMINBOT_KEYCHAIN: "0" },
+      stderr: { write: () => {} },
+      sleep: async (ms) => {
+        waits.push(ms);
+      },
+    }),
+    { code: "ACCESS_DENIED", status: 403 },
+  );
+  // RFC 8628: slow_down raises the interval for every later poll, not just the next.
+  assert.deepEqual(waits, [1000, 6000, 6000]);
+  await assert.rejects(stat(join(dir, "credentials.json")), { code: "ENOENT" });
+});
+
+await test("browser login keeps polling through a server error", async (t) => {
+  const { deviceLogin } = await import("./login.mjs");
+  const { baseUrl } = await deviceService(t, [502, { status: "authorization_pending" }, approved]);
+  const dir = await mkdtemp(join(tmpdir(), "adminbot-cli-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const result = await deviceLogin({
+    baseUrl,
+    credentials: join(dir, "credentials.json"),
+    browser: false,
+    timeout: 5000,
+    env: { ADMINBOT_KEYCHAIN: "0" },
+    stderr: { write: () => {} },
+    sleep: async () => {},
+  });
+  assert.equal(result.api_token.id, approved.api_token.id);
+});
+
+await test("browser login refuses unknown flags and redacts tokens from errors", async () => {
+  const bad = await invoke(["auth", "login", "--password", FAKE_TOKEN]);
+  assert.equal(bad.code, 2);
+  assert.ok(!bad.err.includes(FAKE_TOKEN));
+  const days = await invoke(["auth", "login", "--days", "366"]);
+  assert.equal(days.code, 2);
+  assert.match(days.err, /--days/u);
+});
+
+test("skill install copies the agent skill and replaces only an earlier copy", async () => {
+  const home = await mkdtemp(join(tmpdir(), "adminbot-skill-"));
+  try {
+    await mkdir(join(home, ".claude"));
+    await mkdir(join(home, ".codex", "skills"), { recursive: true });
+    await symlink(join(home, "elsewhere"), join(home, ".codex", "skills", "adminbot-cli"));
+    const first = await invoke(["skill", "install"], { env: { HOME: home } });
+    assert.equal(first.code, 0, first.err);
+    for (const agent of [".claude", ".codex"]) {
+      const skill = await readFile(join(home, agent, "skills", "adminbot-cli", "SKILL.md"), "utf8");
+      assert.match(skill, /^name: adminbot-cli$/mu);
+      assert.match(
+        await readFile(join(home, agent, "skills", "adminbot-cli", "pages.md"), "utf8"),
+        /post-guidebook-ask/u,
+      );
+    }
+    assert.equal((await invoke(["skill", "install"], { env: { HOME: home } })).code, 0);
+    await writeFile(
+      join(home, ".claude", "skills", "adminbot-cli", "SKILL.md"),
+      "---\nname: mine\n---\n",
+    );
+    const clash = await invoke(["skill", "install"], { env: { HOME: home } });
+    assert.equal(clash.code, 2);
+    assert.match(clash.err, /SKILL_CONFLICT/u);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("the skill's page index lists every operation", async () => {
+  const pages = await readFile(new URL("./skill/pages.md", import.meta.url), "utf8");
+  for (const operationId of Object.keys(operations)) {
+    assert.ok(pages.includes(`\`${operationId}\``), operationId);
+  }
 });

@@ -4,25 +4,28 @@ import { html, nothing } from "lit";
 import { ifDefined } from "lit/directives/if-defined.js";
 import { live } from "lit/directives/live.js";
 import { ref } from "lit/directives/ref.js";
-import "./interview-invite.ts";
+import { repeat } from "lit/directives/repeat.js";
 import {
   adminBotIsAlumniMember,
   adminBotMemberTypes,
 } from "../../../../../extensions/adminbot/src/contracts/actions.js";
-import "./member-guide-status.ts";
-import "./acquaintance-welcome.ts";
 import {
   findDuplicateMembers,
   type MemberDuplicatePair,
 } from "../../../../../extensions/adminbot/src/contracts/member-duplicates.js";
+import "./interview-invite.ts";
 import {
   MEMBER_CITY_OPTIONS,
   MEMBER_AFFILIATION_OPTIONS,
 } from "../../../../../extensions/adminbot/src/contracts/member-profile-values.js";
+import "./member-guide-status.ts";
+import "./acquaintance-welcome.ts";
 import {
   formatAdminBotMemberRoles,
   parseAdminBotMemberRoles,
 } from "../../../../../extensions/adminbot/src/contracts/member-roles.js";
+import type { MemberRosterFilters } from "../../../../../extensions/adminbot/src/contracts/member-roster.js";
+import { memberRosterFilterKeys } from "../../../../../extensions/adminbot/src/contracts/member-roster.js";
 import {
   adminBotPaperSlotRegistry,
   type AdminBotPaperSlotDefinition,
@@ -47,6 +50,7 @@ import type {
   AdminBotActionProposal,
   AdminBotDashboardData,
   AdminBotLabMember,
+  AdminBotMemberListState,
   AdminBotMemberNudgeState,
   AdminBotPaperRecord,
   AdminBotPaperSaveInput,
@@ -229,13 +233,9 @@ export type AdminBotProps = {
    * outside the Lab Members panel and for a visitor with no member session, who can do neither.
    */
   memberRequests?: Omit<MemberRequestsProps, "isAdmin">;
-  /** Full roster load state; absent for callers with a complete local roster. */
-  memberList?: {
-    rows: AdminBotLabMember[];
-    loading: boolean;
-    error: string | null;
-  };
-  onMemberListChange?: () => void;
+  /** Server-filtered roster page; absent for standalone/gateway views with local data. */
+  memberList?: AdminBotMemberListState;
+  onMemberListChange?: (filters: MemberRosterFilters, offset: number) => void;
   rosterLoadedAt?: number | null;
   duplicatePairs?: MemberDuplicatePair<AdminBotLabMember>[] | null; // service pairs; null: reading
   rosterLoading?: boolean;
@@ -274,6 +274,11 @@ export type AdminBotProps = {
   onMergeMembers?: (survivorId: string, duplicateId: string) => void;
   /** Re-key one member under a new id. Admin mode only; absent hides the Change ID button. */
   onRenameMember?: (memberId: string, newId: string) => void;
+  /**
+   * Move one member's sign-in email. Admin mode only; absent hides the button. The service refuses
+   * the caller's own account and the head professor's, so the button can show for every row.
+   */
+  onChangeMemberEmail?: (memberId: string, newEmail: string) => void;
   /**
    * Delete one roster row outright. Admin mode only, and absent means the affordance is not
    * rendered at all rather than rendered disabled -- a delete button that cannot delete is a
@@ -1111,6 +1116,13 @@ function filterMemberSpreadsheet(form: EventTarget | null | undefined): void {
  */
 const INLINE_OPTION_LIMIT = 40;
 
+/**
+ * Paper titles shown in a roster row before "+N more". The titles are already listed by name in
+ * the row's first cell; a prolific member's full list there made each row a paragraph, and the
+ * search box finds the rest.
+ */
+const ROW_PAPER_PREVIEW = 3;
+
 /** The shared `<datalist>` id for a field whose options are too many to inline per row. */
 function sharedOptionListId(fieldKey: string): string {
   return `adminbot-field-options-${fieldKey}`;
@@ -1391,6 +1403,7 @@ function renderMemberFormFields(
   member?: AdminBotLabMember,
   standingMeetings?: AdminBotStandingMeetingsState,
   onRenameMember?: AdminBotProps["onRenameMember"],
+  onChangeMemberEmail?: AdminBotProps["onChangeMemberEmail"],
 ) {
   const noteDraft = parseMemberNotes(member?.notes);
   const editing = member !== undefined;
@@ -1440,12 +1453,24 @@ function renderMemberFormFields(
           .value=${member?.email ?? ""}
           ?readonly=${editing}
           data-testid="member-form-email"
-      /></label>
+        />${member && onChangeMemberEmail
+          ? html`<button
+              class="btn btn--sm"
+              type="button"
+              data-testid="member-change-email"
+              @click=${(event: Event) => changeMemberEmail(event, member, onChangeMemberEmail)}
+            >
+              Change sign-in email
+            </button>`
+          : nothing}</label
+      >
       ${editing
         ? html`<p class="adminbot-form__hint" data-testid="member-form-email-locked">
-            Email is the login identity, so it is set once when the record is created and not edited
-            here. Changing it would sign the member out of an account they can no longer reach; a
-            correction goes through account recovery instead.
+            Email is the login identity, so this form never rewrites it: a stray edit would move the
+            member's sign-in to an address they may not
+            have.${onChangeMemberEmail
+              ? " Change sign-in email moves it on purpose, and their password reset with it."
+              : " A correction goes through an admin's Change sign-in email."}
           </p>`
         : nothing}
       <label class="adminbot-form__field"
@@ -1570,6 +1595,43 @@ function changeMemberId(
   onRenameMember(member.id, newId);
 }
 
+function changeMemberEmail(
+  event: Event,
+  member: AdminBotLabMember,
+  onChangeMemberEmail: NonNullable<AdminBotProps["onChangeMemberEmail"]>,
+): void {
+  const current = member.email ?? "";
+  const newEmail = globalThis
+    .prompt?.(`New sign-in email for ${member.name}:`, current)
+    ?.trim()
+    .toLowerCase();
+  if (!newEmail || newEmail === current.trim().toLowerCase()) {
+    return;
+  }
+  if (
+    !globalThis.confirm?.(
+      `Change ${member.name}'s sign-in email from "${current || "(none)"}" to "${newEmail}"?\n\n` +
+        `They sign in with the new address from now on, and a password reset goes there ` +
+        `(unless they set a correspondence email). Any reset link already sent to the old ` +
+        `address stops working. They stay signed in where they are.`,
+    )
+  ) {
+    return;
+  }
+  // A queued autosave carries the old email in the record it saves; landing after the change it
+  // would put the roster's copy back out of step with the sign-in. Drop it; the roster reloads.
+  const form = (event.currentTarget as Element | null)?.closest("form");
+  if (form) {
+    const pending = memberAutosaveTimers.get(form);
+    if (pending !== undefined) {
+      clearTimeout(pending);
+      memberAutosaveTimers.delete(form);
+    }
+    form.closest<HTMLElement>("[popover]")?.hidePopover();
+  }
+  onChangeMemberEmail(member.id, newEmail);
+}
+
 function renderMemberEditPopover(member: AdminBotLabMember, index: number, props: AdminBotProps) {
   const editId = `adminbot-edit-member-${index}`;
   // The shell is always here: `popovertarget` resolves against the id, so the button needs it in
@@ -1612,6 +1674,7 @@ function renderMemberEditPopover(member: AdminBotLabMember, index: number, props
                 member,
                 props.standingMeetings,
                 props.mode === "admin" ? props.onRenameMember : undefined,
+                props.mode === "admin" ? props.onChangeMemberEmail : undefined,
               )}
               ${props.notice?.kind === "error"
                 ? html`<div class="callout danger" role="alert" style="grid-column: 1 / -1">
@@ -1749,11 +1812,13 @@ function memberRowEdit(member: AdminBotLabMember, props: AdminBotProps): MemberR
 function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMember[]) {
   const page = props.memberList;
   const papers = props.data.papers;
-  const members = allMembers
-    .map(normalizeMemberLists)
-    .toSorted((a, b) =>
-      (memberJoinedMonth(a) || "9999").localeCompare(memberJoinedMonth(b) || "9999"),
-    );
+  const members = page
+    ? allMembers.map(normalizeMemberLists)
+    : allMembers
+        .map(normalizeMemberLists)
+        .toSorted((a, b) =>
+          (memberJoinedMonth(a) || "9999").localeCompare(memberJoinedMonth(b) || "9999"),
+        );
   const facets = new Map(
     members.map((member) => [member.id, memberFacets(member, props.standingMeetings)]),
   );
@@ -1763,15 +1828,31 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
     page !== undefined &&
     ownMember !== undefined &&
     !members.some((member) => member.id === ownMember.id);
-  const total = members.length;
-  const statuses = [...new Set(members.map((member) => memberDisplayStatus(member)))].sort();
-  const projects = [...new Set(members.flatMap((member) => member.projects ?? []))].sort();
-  const paperTitles = [...new Set(papers.map((paper) => paper.title))].sort();
+  const total = page?.total ?? members.length;
+  const requestPage = (form: HTMLFormElement) => {
+    const data = new FormData(form);
+    const filters = Object.fromEntries(
+      memberRosterFilterKeys
+        .map((key) => [key, getFormValue(data, key === "q" ? "search" : key).trim()])
+        .filter(([, value]) => value),
+    );
+    props.onMemberListChange?.(filters, 0);
+  };
+  const statuses =
+    page?.options.status ??
+    [...new Set(members.map((member) => memberDisplayStatus(member)))].toSorted();
+  const projects =
+    page?.options.project ??
+    [...new Set(members.flatMap((member) => member.projects ?? []))].toSorted();
+  const paperTitles =
+    page?.options.paper ?? [...new Set(papers.map((paper) => paper.title))].toSorted();
   // Only conferences someone on the roster is actually submitting to, so the options match what
   // selecting one can return.
-  const conferences = [
-    ...new Set(members.flatMap((member) => conferencesForMember(member, papers))),
-  ].toSorted((left, right) => left.localeCompare(right));
+  const conferences =
+    page?.options.conference ??
+    [...new Set(members.flatMap((member) => conferencesForMember(member, papers)))].toSorted(
+      (left, right) => left.localeCompare(right),
+    );
   return html`
     <section class="adminbot-member-sheet">
       ${renderSharedOptionLists()}
@@ -1800,11 +1881,13 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
         class="adminbot-member-filters"
         ${ref((form) => {
           // Restore selections by value after options/rows change, then reapply the filters.
-          if (form instanceof HTMLFormElement)
+          if (form instanceof HTMLFormElement) {
             queueMicrotask(() => {
               const selections = memberFilterSelections.get(form);
               for (const select of form.querySelectorAll("select")) {
-                const value = selections?.get(select.name) ?? "";
+                const value = page
+                  ? (page.filters[select.name as keyof MemberRosterFilters] ?? "")
+                  : (selections?.get(select.name) ?? "");
                 select.value = [...select.options].some((option) => option.value === value)
                   ? value
                   : "";
@@ -1815,12 +1898,34 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
                 search.value = seeded;
                 search.scrollIntoView({ block: "nearest" });
               }
-              filterMemberSpreadsheet(form);
+              if (page) {
+                if (seeded !== null) {
+                  props.onMemberListChange?.({ ...page.filters, q: seeded }, 0);
+                }
+              } else {
+                filterMemberSpreadsheet(form);
+              }
             });
+          }
         })}
-        @input=${(event: Event) => filterMemberSpreadsheet(event.currentTarget)}
-        @change=${(event: Event) => filterMemberSpreadsheet(event.currentTarget)}
-        @submit=${(event: Event) => event.preventDefault()}
+        @input=${(event: Event) => {
+          if (!page) {
+            filterMemberSpreadsheet(event.currentTarget);
+          }
+        }}
+        @change=${(event: Event) => {
+          if (page && event.target instanceof HTMLSelectElement) {
+            requestPage(event.currentTarget as HTMLFormElement);
+          } else if (!page) {
+            filterMemberSpreadsheet(event.currentTarget);
+          }
+        }}
+        @submit=${(event: Event) => {
+          event.preventDefault();
+          if (page) {
+            requestPage(event.currentTarget as HTMLFormElement);
+          }
+        }}
       >
         <div class="adminbot-member-filters__search">
           <label
@@ -1828,50 +1933,67 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
             ><input
               name="search"
               type="search"
-              placeholder="Name, topic, project…"
+              placeholder="Name, topic, project, paper…"
+              .value=${page?.filters.q ?? ""}
               ?disabled=${page?.loading ?? false}
           /></label>
+          ${page
+            ? html`<button class="btn btn--sm" ?disabled=${page.loading}>Search</button>`
+            : nothing}
         </div>
         <label
           ><span>Status</span
-          ><select name="status">
+          ><select name="status" ?disabled=${page?.loading}>
             <option value="">All statuses</option>
             ${statuses.map((value) => html`<option value=${value}>${friendly(value)}</option>`)}
           </select></label
         >
         <label
           ><span>Project</span
-          ><select name="project">
+          ><select name="project" ?disabled=${page?.loading}>
             <option value="">All projects</option>
             ${projects.map((value) => html`<option value=${value}>${value}</option>`)}
           </select></label
         >
-        <label
-          ><span>Paper</span
-          ><select name="paper">
-            <option value="">All papers</option>
-            ${paperTitles.map((value) => html`<option value=${value}>${value}</option>`)}
-          </select></label
-        >
+        ${
+          // Search already matches paper titles (the server-side roster search includes them
+          // too). Past a short list a dropdown of every title is scrolling, not picking, and in a
+          // lab with 1,500 papers it was most of the page.
+          paperTitles.length <= INLINE_OPTION_LIMIT
+            ? html`<label
+                ><span>Paper</span
+                ><select name="paper" ?disabled=${page?.loading}>
+                  <option value="">All papers</option>
+                  ${paperTitles.map((value) => html`<option value=${value}>${value}</option>`)}
+                </select></label
+              >`
+            : nothing
+        }
         <label
           ><span>Conference</span
-          ><select name="conference">
+          ><select name="conference" ?disabled=${page?.loading}>
             <option value="">All conferences</option>
             ${conferences.map((value) => html`<option value=${value}>${value}</option>`)}
           </select></label
         >
         ${Object.entries(memberFacetLabels).map(([key, label]) => {
           const facet = key as keyof typeof memberFacetLabels;
-          const options = [
-            ...new Set([
-              ...(facet === "membership" ? adminBotMemberTypes : []),
-              ...members.flatMap((member) => facets.get(member.id)![facet]),
-            ]),
-          ].sort();
+          const options =
+            (facet === "meeting" && page
+              ? props.standingMeetings?.meetings.map((meeting) => meeting.id)
+              : facet !== "meeting"
+                ? page?.options[facet]
+                : undefined) ??
+            [
+              ...new Set([
+                ...(facet === "membership" ? adminBotMemberTypes : []),
+                ...members.flatMap((member) => facets.get(member.id)![facet]),
+              ]),
+            ].toSorted();
           const unavailable = facet === "meeting" && !props.standingMeetings?.loadedAt;
           return html`<label
             ><span>${label}</span
-            ><select name=${key} ?disabled=${unavailable}>
+            ><select name=${key} ?disabled=${unavailable || page?.loading}>
               <option value="">
                 ${unavailable ? "Invitations unavailable" : `Any ${label.toLowerCase()}`}
               </option>
@@ -1949,16 +2071,22 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
                     member.assigned_badges,
                   )}<small>${member.id}</small>
                   ${memberPapers.length
-                    ? html`<span
-                        class="adminbot-member-sheet__papers"
-                        title=${memberPapers.map((entry) => entry.title).join("\n")}
-                      >
-                        ${memberPapers.map(
-                          (entry) =>
-                            html`<span class="adminbot-tag adminbot-tag--paper"
-                              >${entry.title}</span
-                            >`,
-                        )}
+                    ? html`<span class="adminbot-member-sheet__papers">
+                        ${memberPapers
+                          .slice(0, ROW_PAPER_PREVIEW)
+                          .map(
+                            (entry) =>
+                              html`<span
+                                class="adminbot-tag adminbot-tag--paper"
+                                title=${entry.title}
+                                >${entry.title}</span
+                              >`,
+                          )}
+                        ${memberPapers.length > ROW_PAPER_PREVIEW
+                          ? html`<span class="adminbot-tag adminbot-tag--more"
+                              >+${memberPapers.length - ROW_PAPER_PREVIEW} more</span
+                            >`
+                          : nothing}
                       </span>`
                     : nothing}
                   ${rowEdit === "none"
@@ -2025,12 +2153,7 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
                     (value) => html`<span class="adminbot-tag">${value}</span>`,
                   )}
                 </td>
-                <td>
-                  ${memberPapers.map(
-                    (entry) =>
-                      html`<span class="adminbot-tag adminbot-tag--paper">${entry.title}</span>`,
-                  )}
-                </td>
+                <td class="num">${memberPapers.length || "—"}</td>
                 <td>
                   ${renderAvailabilityStrip(member.availability, member.time_off)}
                   <small
@@ -2087,25 +2210,58 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
           </tbody>
         </table>
         ${members.length === 0 && !page?.loading && !page?.error
-          ? html`<div class="adminbot-empty adminbot-empty--compact">No lab members yet.</div>`
+          ? html`<div class="adminbot-empty adminbot-empty--compact">
+              ${page ? "No matching lab members." : "No lab members yet."}
+            </div>`
           : nothing}
       </div>
-      ${page?.loading ? html`<p role="status">Loading people…</p>` : nothing}
+      ${page
+        ? html`<nav class="adminbot-form__actions" aria-label="Member pages">
+            <span role="status"
+              >${page.loading
+                ? "Loading people…"
+                : `Showing ${members.length ? page.offset + 1 : 0}–${page.offset + members.length} of ${page.total}`}</span
+            >
+            <button
+              class="btn btn--sm"
+              ?disabled=${page.loading || page.offset === 0}
+              @click=${() =>
+                props.onMemberListChange?.(page.filters, Math.max(0, page.offset - page.limit))}
+            >
+              Previous
+            </button>
+            <button
+              class="btn btn--sm"
+              ?disabled=${page.loading || page.offset + page.limit >= page.total}
+              @click=${() => props.onMemberListChange?.(page.filters, page.offset + page.limit)}
+            >
+              Next
+            </button>
+          </nav>`
+        : nothing}
       ${page?.error
         ? html`<div class="callout danger" role="alert">
             ${page.error}
-            <button class="btn btn--sm" type="button" @click=${() => props.onMemberListChange?.()}>
+            <button
+              class="btn btn--sm"
+              type="button"
+              @click=${() => props.onMemberListChange?.(page.filters, page.offset)}
+            >
               Try again
             </button>
           </div>`
         : nothing}
-      ${members.map((member, index) => {
-        const rowEdit = memberRowEdit(member, props);
-        if (rowEdit === "admin") {
-          return renderMemberEditPopover(member, index, props);
-        }
-        return rowEdit === "self" ? renderMemberSelfEditPopover(member, index, props) : nothing;
-      })}
+      ${repeat(
+        members,
+        (member) => member.id,
+        (member, index) => {
+          const rowEdit = memberRowEdit(member, props);
+          if (rowEdit === "admin") {
+            return renderMemberEditPopover(member, index, props);
+          }
+          return rowEdit === "self" ? renderMemberSelfEditPopover(member, index, props) : nothing;
+        },
+      )}
       ${ownMemberOutsidePage && ownMember
         ? renderMemberSelfEditPopover(ownMember, "own", props)
         : nothing}
@@ -2675,7 +2831,7 @@ function board(label: string, content: unknown, options: { open?: boolean } = {}
     return nothing;
   }
   return html`
-    <details class="paper-overview__board" ?open=${options.open ?? false}>
+    <details class="paper-overview__board adminbot-fold" ?open=${options.open ?? false}>
       <summary class="paper-overview__board-summary">${label}</summary>
       <div class="paper-overview__board-body">${content}</div>
     </details>
@@ -3978,30 +4134,18 @@ function renderPanel(props: AdminBotProps) {
       }
       return html`
         <div class="card adminbot-card adminbot-card--wide">
-          <div class="card-title">Settings</div>
-          <div class="card-sub">Lab defaults and private-routing policy used by AdminBot.</div>
           ${renderSettings(props, props.data.settings, props.data.sensitiveInfo)}
         </div>
       `;
     case "members":
       return html`
         <div class="card adminbot-card adminbot-card--wide">
-          <div class="card-title">Lab members</div>
-          <div class="card-sub">
-            ${general
-              ? props.signedInMemberId
-                ? "Browse the lab roster and edit your own profile."
-                : "Browse the lab roster."
-              : "Edit roster details, member information, and access defaults."}
-          </div>
           ${renderMembers(props, props.data.members)}
         </div>
       `;
     case "papers":
       return html`
         <div class="card adminbot-card adminbot-card--wide">
-          <div class="card-title">Active papers</div>
-          <div class="card-sub">PaperPublish records, current steps, and estimated timelines.</div>
           ${renderPapers(props, props.data.papers)}
         </div>
       `;
@@ -4010,13 +4154,7 @@ function renderPanel(props: AdminBotProps) {
         return renderPanel({ ...props, panel: "papers" });
       }
       return html`
-        <div class="card adminbot-card adminbot-card--wide">
-          <div class="card-title">Announcements</div>
-          <div class="card-sub">
-            Nudge selected members or send a general announcement over Slack or email.
-          </div>
-          ${renderAnnouncements(props)}
-        </div>
+        <div class="card adminbot-card adminbot-card--wide">${renderAnnouncements(props)}</div>
       `;
   }
 }

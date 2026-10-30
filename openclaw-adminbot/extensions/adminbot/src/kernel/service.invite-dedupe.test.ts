@@ -79,6 +79,29 @@ describe("slack invite dedupe across sweeps", () => {
     expect(other.id).not.toBe(first.id);
   });
 
+  // Proposals filed before every action carried a payload have none to compare. Hashing that
+  // absence threw, and one such approved invite crashed every sweep that filed a new invite.
+  it("files a new invite past an old outstanding one that has no payload at all", () => {
+    const { service, store } = labWithMajor({ inviteFails: true });
+    const invite = {
+      type: "slack.invite_to_channel" as const,
+      summary: "Add Major to #discussion-causal-inference",
+      target: { service: "slack", channel: "slack", target: "discussion-causal-inference" },
+      proposed_payload: { channel: "discussion-causal-inference", user_id: "U-major" },
+    };
+    const template = unwrap(service.createProposal({ ...invite, summary: "template" }));
+    const legacy = { ...template, id: "act_legacy", status: "approved" as const };
+    delete (legacy as { proposed_payload?: unknown }).proposed_payload;
+    store.saveProposal(legacy);
+    store.saveProposal({ ...template, status: "rejected" });
+
+    const filed = unwrap(service.createProposal(invite));
+    expect(filed.id).not.toBe("act_legacy");
+    expect(filed.proposed_payload).toEqual(invite.proposed_payload);
+    // The ordinary dedupe still holds for the new invite.
+    expect(unwrap(service.createProposal(invite)).id).toBe(filed.id);
+  });
+
   it("files a new invite once the earlier one has executed", async () => {
     const { service, store } = labWithMajor({ inviteFails: false });
     await service.syncTopicChannels("cron", CHANNELS);

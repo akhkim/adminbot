@@ -35,6 +35,7 @@ import {
   type AdminBotCollaboratorGrantedCell,
   adminBotCollaboratorAccessItems,
   subgroupForMemberType,
+  vectorRosterMemberType,
 } from "./collaborator-subgroups.js";
 import { belongsOnSurface } from "./surface-membership.js";
 
@@ -154,9 +155,6 @@ export const ADMINBOT_ACTIVE_CHANNELS = ["jinesis-active", "random-active"];
 const FRIENDS_CHANNELS = ADMINBOT_FRIENDS_CHANNELS;
 
 const ACTIVE_CHANNELS = ADMINBOT_ACTIVE_CHANNELS;
-
-/** Member types the Vector sponsor roster is actually built from. See VECTOR_ROSTER_MEMBER_TYPES. */
-const VECTOR_ROSTER_TOKENS = ["full", "coauthor-major"];
 
 /**
  * How to check one matrix row, or why it cannot be checked.
@@ -386,23 +384,13 @@ const CHECKS: Record<AdminBotCollaboratorAccessItemId, AccessItemCheck> = {
   },
   vector_roster_share: {
     kind: "check",
-    run: (_evidence, member) => {
-      const tokens = (member.member_type ?? "").toLowerCase();
-      const onIt = VECTOR_ROSTER_TOKENS.some((token) => tokens.includes(token));
-      const email = (member.email ?? "").trim();
-      if (!onIt) {
-        // The matrix grants this to own_pace_advisee; vectorSponsorRoster does not include them.
-        // That contradiction is documented in collaborator-subgroups.ts and is a live question,
-        // so it is reported as a mismatch rather than graded either way.
-        return {
-          verdict: "fail",
-          detail: "granted by the matrix but excluded by VECTOR_ROSTER_MEMBER_TYPES",
-        };
-      }
-      return email
+    run: (_evidence, member) =>
+      vectorRosterMemberType(member.member_type)
         ? { verdict: "pass", detail: "member type puts them on the sponsor roster" }
-        : { verdict: "fail", detail: "on the sponsor roster by type but has no email to share" };
-    },
+        : {
+            verdict: "fail",
+            detail: "granted by the matrix but excluded by VECTOR_ROSTER_MEMBER_TYPES",
+          },
   },
   city_dinner_invite: slackCheck("a #group- city channel", (channels) => {
     const found = matching(channels, "group-");

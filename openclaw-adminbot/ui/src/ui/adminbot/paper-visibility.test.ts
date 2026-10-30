@@ -19,6 +19,11 @@ it("selects matching papers, preserves prior hidden papers and isolates members"
   ];
   document.body.append(view);
   await view.updateComplete;
+  // The panel is drawn on opening, not before: a closed list of every paper is wasted work.
+  expect(view.querySelector('input[type="search"]')).toBeNull();
+  const details = view.querySelector("details")!;
+  details.open = true;
+  details.dispatchEvent(new Event("toggle"));
   await view.updateComplete;
   const search = view.querySelector<HTMLInputElement>('input[type="search"]')!;
   search.value = "agents";

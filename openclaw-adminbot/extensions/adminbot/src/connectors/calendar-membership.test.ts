@@ -142,4 +142,40 @@ describe("calendar subscription connector", () => {
       )("lab"),
     ).rejects.toThrow("pagination");
   });
+  // Google's "make changes to events" share without private details. Two of them on the lab
+  // calendar failed every daily membership sync until the reader knew the role.
+  it("reads a writerWithoutPrivateAccess share like any other role", async () => {
+    const rules = await calendarAccessReader(async () =>
+      JSON.stringify({
+        kind: "calendar#acl",
+        items: [
+          { id: "user:a", role: "reader", scope: { type: "user", value: "a@example.org" } },
+          {
+            id: "user:b",
+            role: "writerWithoutPrivateAccess",
+            scope: { type: "user", value: "b@example.org" },
+          },
+        ],
+      }),
+    )("lab");
+    expect(rules.map((rule) => rule.role)).toEqual(["reader", "writerWithoutPrivateAccess"]);
+  });
+  it("still refuses an unknown role, naming it but not the shared address", async () => {
+    const read = calendarAccessReader(async () =>
+      JSON.stringify({
+        kind: "calendar#acl",
+        items: [
+          {
+            id: "user:c@example.org",
+            role: "superOwner",
+            scope: { type: "user", value: "c@example.org" },
+          },
+        ],
+      }),
+    )("lab");
+    await expect(read).rejects.toThrow(
+      "Invalid calendar sharing rule (role superOwner, scope user)",
+    );
+    await expect(read).rejects.not.toThrow("c@example.org");
+  });
 });

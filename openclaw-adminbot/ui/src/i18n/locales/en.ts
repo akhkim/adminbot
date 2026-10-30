@@ -607,6 +607,7 @@ export const en: TranslationMap = {
     labOverview: "Lab Overview",
     nudges: "Nudges",
     membership: "Membership",
+    people: "Lab Members",
   },
 
   tabs: {
@@ -684,7 +685,7 @@ export const en: TranslationMap = {
     adminbotOnboarding: "Send a member or collaborator their onboarding guide.",
     adminbotReimbursements: "Upload receipts, answer questions, and generate expense forms.",
     adminbotSettings: "Lab defaults and escalation policy.",
-    adminbotMembers: "Privilege levels and access profiles.",
+    adminbotMembers: "Who is in the lab, what they work on, and their access.",
     adminbotProfileOverview: "Who has filled in their profile and planned their term.",
     adminbotTabUsage: "Which parts of AdminBot the lab actually opens.",
     adminbotProfessor: "What is waiting on you, across every queue.",
@@ -694,7 +695,7 @@ export const en: TranslationMap = {
     adminbotRecLetters:
       "Ask for a recommendation letter, school by school and deadline by deadline.",
     adminbotMeetingRequests: "Ask for a slot, and say what the call is for.",
-    adminbotPapers: "PaperPublish records and current steps.",
+    adminbotPapers: "Every lab paper, its current step and timeline.",
     adminbotWorkshopNudges: "Review paper–workshop matches and send workshop nudges.",
     adminbotAnnouncements: "Nudge members or send a general announcement.",
     adminbotReferenceChecker: "Check PDF references against scholarly databases.",
@@ -1470,6 +1471,9 @@ export const en: TranslationMap = {
       playlist: "Open the recordings playlist",
     },
     actionItems: "Action items",
+    addAttendee: "Add",
+    addAttendeeLabel: "Add someone who was there",
+    addAttendeePlaceholder: "Search members to add",
     attendance: "Attendance",
     decisions: "Decisions",
     empty:
@@ -1487,6 +1491,7 @@ export const en: TranslationMap = {
     // rounding to a minute count that is either 0 or wrong.
     duration: "{minutes}m {seconds}s",
     durationHours: "{hours}h {minutes}m",
+    noAttendees: "Nobody is recorded as attending yet.",
     noTranscript: "No transcript has been attached, so there is no summary.",
     nudge: {
       title: "Who has stopped coming",
@@ -1505,9 +1510,12 @@ export const en: TranslationMap = {
     openDrive: "Open in Drive",
     openZoom: "Open recording",
     passcode: "Passcode:",
+    pickMember: "Choose a member from the list.",
     shareUrl: "Recording link",
     sourceManual: "marked by an admin",
     recordingDetails: "Summary and attendance",
+    removeAttendee: "Remove",
+    removeAttendeeNamed: "Remove {name} from this meeting",
     seriesCount: "{count} recordings",
     seriesCountOne: "1 recording",
     seriesLatest: "latest {date}",
@@ -1582,6 +1590,7 @@ export const en: TranslationMap = {
       submit: "Add trip",
       edit: "Edit",
       remove: "Remove",
+      removeConfirm: "Remove this trip?",
       home: "Home is {location}.",
       empty: "No trips logged.",
       errorCity: "Where are you going?",
@@ -1828,7 +1837,8 @@ export const en: TranslationMap = {
     nearby: {
       label: "Also nearby in {place}:",
       nobody: "nobody else right now.",
-      locked: "City intros are off, so nearby lab-mates are hidden. Turn them back on below.",
+      locked:
+        "City intros are off, so nearby lab-mates are hidden. Turn them back on under Meetup intros below.",
     },
     nearbyNow: {
       title: "Nearby now",
@@ -1945,7 +1955,7 @@ export const en: TranslationMap = {
       citySubmit: "Set city",
       cityErrorEmpty: "Type a city first.",
       groupsEmpty: "Add a trip or RSVP to a conference to see who else will be there.",
-      nobody: "No one from the lab yet.",
+      nobody: "No one who shares their location yet.",
       basisLive: "Here now",
       basisLiveKm: "Here now, about {km} km away",
       basisTrip: "Visiting {dates}",
@@ -1959,7 +1969,13 @@ export const en: TranslationMap = {
       lookupErrorPlace: "Type a city to look up.",
       lookupUnresolved:
         "AdminBot does not know where {place} is, so only trips naming it exactly are matched.",
-      lookupNone: "No one from the lab will be in {place} then.",
+      lookupNone: "No one who shares their location will be in {place} then.",
+      noSharers: "No other member shares their location yet, so only conference RSVPs are checked.",
+      fewSharers:
+        "Only members who share their location are checked ({count} besides you); everyone else shows up through conference RSVPs.",
+      statusOn: "Sharing · {place}",
+      statusOnNoFix: "Sharing",
+      statusOff: "Not sharing",
     },
     notice: {
       sharingOn: "Location sharing is on.",
@@ -2099,6 +2115,7 @@ export const en: TranslationMap = {
       detailEarliestDeadline: "earliest deadline {date}",
       documents: "Documents to sign",
       withdraw: "Withdraw this request",
+      withdrawConfirm: "Withdraw this request? The lab stops working on it.",
       edit: "Correct this request",
       resolution: "The lab says: {note}",
       answerTitle: "Answer this request",
@@ -2524,7 +2541,8 @@ export const en: TranslationMap = {
       stats: "Members needed: {members} · {hours} h/week",
       previous: "Previous project",
       next: "Next project",
-      empty: "No open projects right now.",
+      empty:
+        "No open projects right now. Ask for help on your own project above and it appears here.",
     },
     requests: {
       title: "Your requests",
@@ -2654,7 +2672,7 @@ export const en: TranslationMap = {
         approved: "Approved",
         rejected: "Rejected",
       },
-      suggestOpen: "Suggest a new badge",
+      suggestOpen: "Write a suggestion",
       suggestClose: "Cancel",
       suggestTitle: "Suggest a new badge",
       suggestHint:

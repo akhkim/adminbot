@@ -395,6 +395,166 @@
         }
       }
     },
+    "/auth/api-tokens": {
+      "get": {
+        "operationId": "get-auth-api-tokens",
+        "summary": "GET /auth/api-tokens",
+        "tags": [
+          "auth"
+        ],
+        "x-source": "src/api/routes/api-tokens.ts",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "allowed": {
+                      "type": "boolean"
+                    },
+                    "tokens": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AdminBotApiTokenView"
+                      }
+                    }
+                  },
+                  "required": [
+                    "allowed",
+                    "tokens"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "post-auth-api-tokens",
+        "summary": "POST /auth/api-tokens",
+        "tags": [
+          "auth"
+        ],
+        "x-source": "src/api/routes/api-tokens.ts",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {},
+                  "expires_in_days": {}
+                },
+                "additionalProperties": true,
+                "x-schema-coverage": "inferred from property access or downstream casts; semantic validation remains server-side"
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success; response shape is validated by the server"
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/api-tokens/{api_tokens_id}": {
+      "delete": {
+        "operationId": "delete-auth-api-tokens-by-api-tokens-id",
+        "summary": "DELETE /auth/api-tokens/{api_tokens_id}",
+        "tags": [
+          "auth"
+        ],
+        "x-source": "src/api/routes/api-tokens.ts",
+        "parameters": [
+          {
+            "name": "api_tokens_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success; response shape is validated by the server"
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/api-tokens/revoke-all": {
+      "post": {
+        "operationId": "post-auth-api-tokens-revoke-all",
+        "summary": "POST /auth/api-tokens/revoke-all",
+        "tags": [
+          "auth"
+        ],
+        "x-source": "src/api/routes/api-tokens.ts",
+        "responses": {
+          "2XX": {
+            "description": "Success; response shape is validated by the server"
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/auth/claim": {
       "post": {
         "operationId": "post-auth-claim",
@@ -611,6 +771,224 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/device/approve": {
+      "post": {
+        "operationId": "post-auth-device-approve",
+        "summary": "POST /auth/device/approve",
+        "tags": [
+          "auth"
+        ],
+        "x-source": "src/api/routes/api-tokens.ts",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "user_code": {}
+                },
+                "additionalProperties": true,
+                "x-schema-coverage": "inferred from property access or downstream casts; semantic validation remains server-side"
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success; response shape is validated by the server"
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/device/deny": {
+      "post": {
+        "operationId": "post-auth-device-deny",
+        "summary": "POST /auth/device/deny",
+        "tags": [
+          "auth"
+        ],
+        "x-source": "src/api/routes/api-tokens.ts",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "user_code": {}
+                },
+                "additionalProperties": true,
+                "x-schema-coverage": "inferred from property access or downstream casts; semantic validation remains server-side"
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success; response shape is validated by the server"
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/device/lookup": {
+      "post": {
+        "operationId": "post-auth-device-lookup",
+        "summary": "POST /auth/device/lookup",
+        "tags": [
+          "auth"
+        ],
+        "x-source": "src/api/routes/api-tokens.ts",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "user_code": {}
+                },
+                "additionalProperties": true,
+                "x-schema-coverage": "inferred from property access or downstream casts; semantic validation remains server-side"
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success; response shape is validated by the server"
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/device/poll": {
+      "post": {
+        "operationId": "post-auth-device-poll",
+        "summary": "POST /auth/device/poll",
+        "tags": [
+          "auth"
+        ],
+        "x-source": "src/api/routes/api-tokens.ts",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "device_code": {}
+                },
+                "additionalProperties": true,
+                "x-schema-coverage": "inferred from property access or downstream casts; semantic validation remains server-side"
+              }
+            }
+          }
+        },
+        "security": [],
+        "responses": {
+          "2XX": {
+            "description": "Success; response shape is validated by the server"
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/device/start": {
+      "post": {
+        "operationId": "post-auth-device-start",
+        "summary": "POST /auth/device/start",
+        "tags": [
+          "auth"
+        ],
+        "x-source": "src/api/routes/api-tokens.ts",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {},
+                  "expires_in_days": {}
+                },
+                "additionalProperties": true,
+                "x-schema-coverage": "inferred from property access or downstream casts; semantic validation remains server-side"
+              }
+            }
+          }
+        },
+        "security": [],
+        "responses": {
+          "2XX": {
+            "description": "Success; response shape is validated by the server"
           },
           "default": {
             "description": "Authentication, authorization, validation, policy, or connector error",
@@ -2672,17 +3050,17 @@
         }
       }
     },
-    "/badges/assignments/{assignments_id}/{{param1}_id}": {
+    "/badges/assignments/{member_id}/{badge_id}": {
       "delete": {
-        "operationId": "delete-badges-assignments-by-assignments-id-by-{param1}-id",
-        "summary": "DELETE /badges/assignments/{assignments_id}/{{param1}_id}",
+        "operationId": "delete-badges-assignments-by-member-id-by-badge-id",
+        "summary": "DELETE /badges/assignments/{member_id}/{badge_id}",
         "tags": [
           "badges"
         ],
         "x-source": "src/api/routes/badges.ts",
         "parameters": [
           {
-            "name": "assignments_id",
+            "name": "member_id",
             "in": "path",
             "required": true,
             "schema": {
@@ -2691,7 +3069,7 @@
             }
           },
           {
-            "name": "{param1",
+            "name": "badge_id",
             "in": "path",
             "required": true,
             "schema": {
@@ -5041,7 +5419,124 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AdminBotTalkLeaderboard"
+                  "type": "object",
+                  "properties": {
+                    "sweep": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "state": {
+                              "type": "string",
+                              "const": "reading"
+                            },
+                            "started_at": {
+                              "type": "string"
+                            },
+                            "done": {
+                              "type": "number"
+                            },
+                            "total": {
+                              "type": "number"
+                            },
+                            "eta_seconds": {
+                              "anyOf": [
+                                {
+                                  "type": "null"
+                                },
+                                {
+                                  "type": "number"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "state",
+                            "started_at",
+                            "done",
+                            "total",
+                            "eta_seconds"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "state": {
+                              "type": "string",
+                              "const": "idle"
+                            },
+                            "last_completed_at": {
+                              "anyOf": [
+                                {
+                                  "type": "null"
+                                },
+                                {
+                                  "type": "string"
+                                }
+                              ]
+                            },
+                            "last_failed_at": {
+                              "anyOf": [
+                                {
+                                  "type": "null"
+                                },
+                                {
+                                  "type": "string"
+                                }
+                              ]
+                            },
+                            "next_due_at": {
+                              "anyOf": [
+                                {
+                                  "type": "null"
+                                },
+                                {
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "state",
+                            "last_completed_at",
+                            "last_failed_at",
+                            "next_due_at"
+                          ],
+                          "additionalProperties": true
+                        }
+                      ]
+                    },
+                    "year": {
+                      "type": "number"
+                    },
+                    "rows": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AdminBotTalkLeaderboardRow"
+                      }
+                    },
+                    "unscanned": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "unread": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AdminBotTalkLeaderboardUnread"
+                      }
+                    }
+                  },
+                  "required": [
+                    "sweep",
+                    "year",
+                    "rows",
+                    "unscanned",
+                    "unread"
+                  ],
+                  "additionalProperties": true
                 }
               }
             }
@@ -6839,6 +7334,43 @@
           "lab-sharing"
         ],
         "x-source": "src/api/server.lab-sharing.ts",
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "max_hours",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "2XX": {
             "description": "Successful service result",
@@ -9421,6 +9953,97 @@
         }
       }
     },
+    "/lab/members/{members_id}/email": {
+      "post": {
+        "operationId": "post-lab-members-by-members-id-email",
+        "summary": "POST /lab/members/{members_id}/email",
+        "tags": [
+          "lab"
+        ],
+        "x-source": "src/api/routes/members.ts",
+        "parameters": [
+          {
+            "name": "members_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "new_email": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true,
+                "x-schema-coverage": "inferred from property access or downstream casts; semantic validation remains server-side"
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful service result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "member": {
+                      "$ref": "#/components/schemas/AdminBotLabMember"
+                    },
+                    "email": {
+                      "type": "string"
+                    },
+                    "previous_email": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "had_sign_in": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "member",
+                    "email",
+                    "previous_email",
+                    "had_sign_in"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/lab/members/{members_id}/id": {
       "post": {
         "operationId": "post-lab-members-by-members-id-id",
@@ -10603,10 +11226,10 @@
                       "items": {
                         "type": "object",
                         "properties": {
-                          "id": {
+                          "name": {
                             "type": "string"
                           },
-                          "name": {
+                          "id": {
                             "type": "string"
                           },
                           "hours_per_week": {
@@ -10626,8 +11249,8 @@
                           }
                         },
                         "required": [
-                          "id",
-                          "name"
+                          "name",
+                          "id"
                         ],
                         "additionalProperties": true
                       }
@@ -11277,6 +11900,628 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/lab/members/roster": {
+      "get": {
+        "operationId": "get-lab-members-roster",
+        "summary": "GET /lab/members/roster",
+        "tags": [
+          "lab"
+        ],
+        "x-source": "src/api/routes/members.roster.ts",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "members": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "research_topics": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "projects": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "location": {
+                            "type": "string"
+                          },
+                          "joined_month": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "email": {
+                            "type": "string"
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "preferred_name": {
+                            "type": "string"
+                          },
+                          "member_type": {
+                            "type": "string"
+                          },
+                          "test_onboard_batch": {
+                            "type": "number"
+                          },
+                          "receives_nudges": {
+                            "type": "boolean"
+                          },
+                          "meetup_intros": {
+                            "type": "object",
+                            "properties": {
+                              "events": {
+                                "type": "boolean"
+                              },
+                              "city": {
+                                "type": "boolean"
+                              },
+                              "snoozed_until": {
+                                "type": "string"
+                              }
+                            },
+                            "additionalProperties": true
+                          },
+                          "do_not_contact": {
+                            "type": "boolean"
+                          },
+                          "slack_stop_at": {
+                            "type": "string"
+                          },
+                          "calendar_email": {
+                            "type": "string"
+                          },
+                          "slack_user_id": {
+                            "type": "string"
+                          },
+                          "merch_requests": {
+                            "type": "string"
+                          },
+                          "next_position": {
+                            "type": "string"
+                          },
+                          "personal_circumstances": {
+                            "type": "string"
+                          },
+                          "slack_messages_7d": {
+                            "type": "number"
+                          },
+                          "slack_activity_checked_at": {
+                            "type": "string"
+                          },
+                          "slack_deactivated_at": {
+                            "type": "string"
+                          },
+                          "collaborator_subgroup": {
+                            "type": "string",
+                            "enum": [
+                              "interviewee",
+                              "slightly_better_than_emails",
+                              "acquaintance",
+                              "alumni",
+                              "own_pace_advisee",
+                              "coauthor_minor",
+                              "coauthor_major",
+                              "coauthor_discussant_designer",
+                              "disappearing_coauthor",
+                              "external_prof",
+                              "benefit_partner",
+                              "benefit_direct_relative"
+                            ]
+                          },
+                          "access_overrides": {
+                            "type": "array",
+                            "items": {
+                              "$ref": "#/components/schemas/AdminBotAccessGrant"
+                            }
+                          },
+                          "notes": {
+                            "type": "string"
+                          },
+                          "role": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "alumni",
+                              "active",
+                              "part_time",
+                              "on_leave",
+                              "external"
+                            ]
+                          },
+                          "research_branch": {
+                            "type": "string"
+                          },
+                          "elevator_pitch": {
+                            "type": "string"
+                          },
+                          "hours_per_week": {
+                            "type": "number"
+                          },
+                          "current_city": {
+                            "type": "string"
+                          },
+                          "city_channel_invited_at": {
+                            "type": "string"
+                          },
+                          "city_channels_invited": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "affiliation": {
+                            "type": "string"
+                          },
+                          "timezone": {
+                            "type": "string"
+                          },
+                          "personal_website": {
+                            "type": "string"
+                          },
+                          "openreview_id": {
+                            "type": "string"
+                          },
+                          "cv_url": {
+                            "type": "string"
+                          },
+                          "intake_form_url": {
+                            "type": "string"
+                          },
+                          "intake_form_unavailable": {
+                            "type": "boolean"
+                          },
+                          "arr_reviewer_qualified": {
+                            "anyOf": [
+                              {
+                                "type": "null"
+                              },
+                              {
+                                "type": "boolean",
+                                "const": false
+                              },
+                              {
+                                "type": "boolean",
+                                "const": true
+                              }
+                            ]
+                          },
+                          "arr_review_capacity": {
+                            "anyOf": [
+                              {
+                                "type": "null"
+                              },
+                              {
+                                "type": "number"
+                              }
+                            ]
+                          },
+                          "one_on_one_folder_url": {
+                            "type": "string"
+                          },
+                          "linkedin_url": {
+                            "type": "string"
+                          },
+                          "linkedin_urn": {
+                            "type": "string"
+                          },
+                          "twitter_url": {
+                            "type": "string"
+                          },
+                          "twitter_followers": {
+                            "type": "number"
+                          },
+                          "linkedin_followers": {
+                            "type": "number"
+                          },
+                          "github_url": {
+                            "type": "string"
+                          },
+                          "scholar_url": {
+                            "type": "string"
+                          },
+                          "acl_anthology_url": {
+                            "type": "string"
+                          },
+                          "reviewer_exempt": {
+                            "type": "boolean"
+                          },
+                          "graduated_month": {
+                            "type": "string"
+                          },
+                          "birthday": {
+                            "type": "string"
+                          },
+                          "whatsapp": {
+                            "type": "string"
+                          },
+                          "correspondence_email": {
+                            "type": "string"
+                          },
+                          "dcs_username": {
+                            "type": "string"
+                          },
+                          "former_member_ids": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "alternate_emails": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "alternate_slack_user_ids": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "at_uoft": {
+                            "type": "boolean"
+                          },
+                          "compute_access": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "vector_role": {
+                            "type": "string",
+                            "enum": [
+                              "phd",
+                              "postdoc",
+                              "other"
+                            ]
+                          },
+                          "lesswrong_url": {
+                            "type": "string"
+                          },
+                          "other_socials": {
+                            "type": "string"
+                          },
+                          "avatar_url": {
+                            "type": "string"
+                          },
+                          "slack_channels": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "slack_location": {
+                            "type": "string"
+                          },
+                          "slack_location_updated_at": {
+                            "type": "string"
+                          },
+                          "profile_photo_review": {
+                            "$ref": "#/components/schemas/AdminBotProfilePhotoReviewState"
+                          },
+                          "last_login_at": {
+                            "type": "string"
+                          },
+                          "last_login_country": {
+                            "type": "string"
+                          },
+                          "last_login_continent": {
+                            "type": "string"
+                          },
+                          "last_login_city": {
+                            "type": "string"
+                          },
+                          "last_login_region": {
+                            "type": "string"
+                          },
+                          "last_login_timezone": {
+                            "type": "string"
+                          },
+                          "map_visibility": {
+                            "type": "string",
+                            "enum": [
+                              "auto",
+                              "stated",
+                              "hidden"
+                            ]
+                          },
+                          "location_prompt_answered_at": {
+                            "type": "string"
+                          },
+                          "location_prompt_answered_country": {
+                            "type": "string"
+                          },
+                          "location_checkin_at": {
+                            "type": "string"
+                          },
+                          "location_checkin_city": {
+                            "type": "string"
+                          },
+                          "location_checkin_snoozed_until": {
+                            "type": "string"
+                          },
+                          "location_checkin_declined_at": {
+                            "type": "string"
+                          },
+                          "slack_tz": {
+                            "type": "string"
+                          },
+                          "slack_tz_observed_at": {
+                            "type": "string"
+                          },
+                          "last_ip_observed_at": {
+                            "type": "string"
+                          },
+                          "last_ip_suspected_vpn": {
+                            "type": "boolean"
+                          },
+                          "last_device_tz": {
+                            "type": "string"
+                          },
+                          "last_device_tz_at": {
+                            "type": "string"
+                          },
+                          "device_city": {
+                            "type": "string"
+                          },
+                          "device_region": {
+                            "type": "string"
+                          },
+                          "device_country": {
+                            "type": "string"
+                          },
+                          "device_located_at": {
+                            "type": "string"
+                          },
+                          "location_permission": {
+                            "type": "string",
+                            "enum": [
+                              "granted",
+                              "denied",
+                              "dismissed"
+                            ]
+                          },
+                          "location_permission_at": {
+                            "type": "string"
+                          },
+                          "last_seen_at": {
+                            "type": "string"
+                          },
+                          "availability": {
+                            "type": "array",
+                            "items": {
+                              "$ref": "#/components/schemas/AdminBotAvailabilityRow"
+                            }
+                          },
+                          "time_off": {
+                            "type": "array",
+                            "items": {
+                              "$ref": "#/components/schemas/AdminBotTimeOffRow"
+                            }
+                          },
+                          "milestones": {
+                            "type": "array",
+                            "items": {
+                              "$ref": "#/components/schemas/AdminBotMemberMilestone"
+                            }
+                          },
+                          "trips": {
+                            "type": "array",
+                            "items": {
+                              "$ref": "#/components/schemas/AdminBotMemberTrip"
+                            }
+                          },
+                          "dismissed_deadlines": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "availability_notes": {
+                            "type": "string"
+                          },
+                          "availability_doc_url": {
+                            "type": "string"
+                          },
+                          "cv_snapshot": {
+                            "$ref": "#/components/schemas/AdminBotCvSnapshot"
+                          },
+                          "availability_updated_at": {
+                            "type": "string"
+                          },
+                          "privilege_level": {
+                            "type": "string",
+                            "enum": [
+                              "member",
+                              "admin",
+                              "external_collaborator",
+                              "trial"
+                            ]
+                          },
+                          "access": {
+                            "type": "array",
+                            "items": {
+                              "$ref": "#/components/schemas/AdminBotAccessGrant"
+                            }
+                          },
+                          "onboarding": {
+                            "$ref": "#/components/schemas/AdminBotMemberOnboarding"
+                          },
+                          "field_provenance": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "$ref": "#/components/schemas/AdminBotFieldProvenance"
+                            }
+                          },
+                          "created_at": {
+                            "type": "string"
+                          },
+                          "updated_at": {
+                            "type": "string"
+                          },
+                          "assigned_badges": {
+                            "type": "array",
+                            "items": {
+                              "$ref": "#/components/schemas/AdminBotAssignedBadge"
+                            }
+                          }
+                        },
+                        "required": [
+                          "research_topics",
+                          "projects",
+                          "location",
+                          "joined_month",
+                          "name",
+                          "id",
+                          "privilege_level",
+                          "access",
+                          "created_at",
+                          "updated_at"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "total": {
+                      "type": "number"
+                    },
+                    "limit": {
+                      "type": "number"
+                    },
+                    "offset": {
+                      "type": "number"
+                    },
+                    "filters": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "options": {
+                      "$ref": "#/components/schemas/MemberRosterOptions"
+                    }
+                  },
+                  "required": [
+                    "members",
+                    "total",
+                    "limit",
+                    "offset",
+                    "filters",
+                    "options"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
               }
             }
           },
@@ -12576,6 +13821,57 @@
           "logistics"
         ],
         "x-source": "src/api/server.logistics.ts",
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "dir",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Success",
@@ -15494,6 +16790,55 @@
         "x-source": "src/api/routes/members.ts",
         "parameters": [
           {
+            "name": "activity",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "gap",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "member_types",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "membership",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "view",
             "in": "query",
             "schema": {
@@ -17943,6 +19288,10 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "before_email": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
                   "template_id": {
                     "type": "string"
                   },
@@ -27546,6 +28895,29 @@
           "travel"
         ],
         "x-source": "src/api/server.travel.ts",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "place",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "2XX": {
             "description": "Successful service result",
@@ -27586,6 +28958,9 @@
                       "items": {
                         "$ref": "#/components/schemas/AdminBotTravelMatch"
                       }
+                    },
+                    "sharing_members": {
+                      "type": "number"
                     }
                   },
                   "required": [
@@ -27593,7 +28968,8 @@
                     "resolved",
                     "from",
                     "to",
-                    "people"
+                    "people",
+                    "sharing_members"
                   ],
                   "additionalProperties": true
                 }
@@ -28999,6 +30375,7 @@
               "paper_author_links.backfilled",
               "lab_member.merged",
               "lab_member.id_changed",
+              "lab_member.login_email_changed",
               "lab_member.deleted",
               "lab_members.purged_without_email",
               "lab_member_request.submitted",
@@ -29044,6 +30421,7 @@
               "research_theme_invites.swept",
               "prereg.nudged",
               "paper.deleted",
+              "onboarding.email_attempted",
               "onboarding.guide_sent",
               "onboarding_sweep.ran",
               "members.disengagement_swept",
@@ -29122,6 +30500,12 @@
               "auth.login_location_suspected_vpn",
               "auth.impersonation_started",
               "auth.impersonation_ended",
+              "auth.api_token.created",
+              "auth.api_token.revoked",
+              "auth.api_token.revoked_all",
+              "auth.api_token.new_ip",
+              "auth.api_token.cli_login_started",
+              "auth.api_token.cli_login_denied",
               "member.slack_stopped",
               "member.slack_started",
               "member.location_observed",
@@ -29160,6 +30544,59 @@
           "id",
           "type",
           "timestamp"
+        ],
+        "additionalProperties": true
+      },
+      "AdminBotApiTokenView": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "hint": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string"
+          },
+          "created_ip": {
+            "type": "string"
+          },
+          "last_used_at": {
+            "type": "string"
+          },
+          "last_used_ip": {
+            "type": "string"
+          },
+          "last_used_place": {
+            "type": "string"
+          },
+          "ip_count": {
+            "type": "number"
+          },
+          "revoked_at": {
+            "type": "string"
+          },
+          "revoked_reason": {
+            "type": "string"
+          },
+          "current": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "hint",
+          "created_at",
+          "expires_at",
+          "ip_count"
         ],
         "additionalProperties": true
       },
@@ -29273,13 +30710,13 @@
       "AdminBotLabMember": {
         "type": "object",
         "properties": {
+          "name": {
+            "type": "string"
+          },
           "email": {
             "type": "string"
           },
           "id": {
-            "type": "string"
-          },
-          "name": {
             "type": "string"
           },
           "preferred_name": {
@@ -29508,6 +30945,24 @@
           "dcs_username": {
             "type": "string"
           },
+          "former_member_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "alternate_emails": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "alternate_slack_user_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "at_uoft": {
             "type": "boolean"
           },
@@ -29711,8 +31166,8 @@
           }
         },
         "required": [
-          "id",
           "name",
+          "id",
           "privilege_level",
           "access",
           "created_at",
@@ -29971,6 +31426,9 @@
             "type": "string"
           },
           "content_hash": {
+            "type": "string"
+          },
+          "pdf_hash": {
             "type": "string"
           },
           "extractor_version": {
@@ -30360,10 +31818,10 @@
       "AdminBotBadgeDefinition": {
         "type": "object",
         "properties": {
-          "id": {
+          "name": {
             "type": "string"
           },
-          "name": {
+          "id": {
             "type": "string"
           },
           "category": {
@@ -30392,8 +31850,8 @@
           }
         },
         "required": [
-          "id",
           "name",
+          "id",
           "category",
           "description",
           "family_key",
@@ -30894,12 +32352,19 @@
             "items": {
               "type": "string"
             }
+          },
+          "unread": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminBotTalkLeaderboardUnread"
+            }
           }
         },
         "required": [
           "year",
           "rows",
-          "unscanned"
+          "unscanned",
+          "unread"
         ],
         "additionalProperties": true
       },
@@ -30932,6 +32397,28 @@
           "invited",
           "orals",
           "total"
+        ],
+        "additionalProperties": true
+      },
+      "AdminBotTalkLeaderboardUnread": {
+        "type": "object",
+        "properties": {
+          "member_name": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "failed",
+              "not_pdf",
+              "refused"
+            ]
+          }
+        },
+        "required": [
+          "member_name",
+          "reason"
         ],
         "additionalProperties": true
       },
@@ -31902,13 +33389,13 @@
       "AdminBotLabMemberView": {
         "type": "object",
         "properties": {
+          "name": {
+            "type": "string"
+          },
           "email": {
             "type": "string"
           },
           "id": {
-            "type": "string"
-          },
-          "name": {
             "type": "string"
           },
           "preferred_name": {
@@ -32136,6 +33623,24 @@
           },
           "dcs_username": {
             "type": "string"
+          },
+          "former_member_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "alternate_emails": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "alternate_slack_user_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "at_uoft": {
             "type": "boolean"
@@ -32346,8 +33851,8 @@
           }
         },
         "required": [
-          "id",
           "name",
+          "id",
           "privilege_level",
           "access",
           "created_at",
@@ -32358,6 +33863,9 @@
       "AdminBotLabMemberSummary": {
         "type": "object",
         "properties": {
+          "name": {
+            "type": "string"
+          },
           "email": {
             "type": "string"
           },
@@ -32371,9 +33879,6 @@
             ]
           },
           "id": {
-            "type": "string"
-          },
-          "name": {
             "type": "string"
           },
           "preferred_name": {
@@ -32602,6 +34107,24 @@
           "dcs_username": {
             "type": "string"
           },
+          "former_member_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "alternate_emails": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "alternate_slack_user_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "at_uoft": {
             "type": "boolean"
           },
@@ -32809,9 +34332,9 @@
           }
         },
         "required": [
+          "name",
           "privilege_level",
           "id",
-          "name",
           "created_at",
           "updated_at"
         ],
@@ -33024,16 +34547,16 @@
       "AdminBotMemberRequestProfile": {
         "type": "object",
         "properties": {
-          "email": {
+          "name": {
             "type": "string"
           },
-          "name": {
+          "email": {
             "type": "string"
           }
         },
         "required": [
-          "email",
-          "name"
+          "name",
+          "email"
         ],
         "additionalProperties": true
       },
@@ -33093,6 +34616,10 @@
           "created_at",
           "updated_at"
         ],
+        "additionalProperties": true
+      },
+      "MemberRosterOptions": {
+        "type": "object",
         "additionalProperties": true
       },
       "CallSheetPush": {
@@ -34304,7 +35831,8 @@
             "type": "string",
             "enum": [
               "manual",
-              "zoom_email"
+              "zoom_email",
+              "participant_report"
             ]
           },
           "started_at": {
@@ -34538,7 +36066,8 @@
             "type": "string",
             "enum": [
               "manual",
-              "zoom_email"
+              "zoom_email",
+              "participant_report"
             ]
           },
           "notes": {
@@ -34720,7 +36249,8 @@
             "type": "string",
             "enum": [
               "manual",
-              "zoom_email"
+              "zoom_email",
+              "participant_report"
             ]
           },
           "notes": {
@@ -35211,12 +36741,12 @@
             "type": "string",
             "enum": [
               "slack",
+              "meeting",
               "lab_calendar",
               "group_meeting",
               "sheet",
               "dcs_roster",
-              "guide",
-              "meeting"
+              "guide"
             ]
           },
           "target": {
@@ -36220,6 +37750,24 @@
           },
           "dcs_username": {
             "type": "string"
+          },
+          "former_member_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "alternate_emails": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "alternate_slack_user_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "at_uoft": {
             "type": "boolean"
@@ -37586,6 +39134,10 @@
       "AdminBotOnboardingSendRequest": {
         "type": "object",
         "properties": {
+          "before_email": {
+            "type": "object",
+            "additionalProperties": true
+          },
           "template_id": {
             "type": "string"
           },
@@ -38327,10 +39879,10 @@
       "OpportunityWire": {
         "type": "object",
         "properties": {
-          "id": {
+          "name": {
             "type": "string"
           },
-          "name": {
+          "id": {
             "type": "string"
           },
           "status": {
@@ -38410,8 +39962,8 @@
           }
         },
         "required": [
-          "id",
           "name",
+          "id",
           "status",
           "category",
           "deadline_aoe"
@@ -38878,8 +40430,8 @@
             "type": "string",
             "enum": [
               "complete",
-              "blocked",
               "idle",
+              "blocked",
               "waiting_on_authors"
             ]
           },
@@ -39662,10 +41214,10 @@
       "ConferenceRosterWirePerson": {
         "type": "object",
         "properties": {
-          "member_id": {
+          "name": {
             "type": "string"
           },
-          "name": {
+          "member_id": {
             "type": "string"
           },
           "avatar_url": {
@@ -42276,6 +43828,9 @@
             "items": {
               "$ref": "#/components/schemas/AdminBotTravelMatchGroup"
             }
+          },
+          "sharing_members": {
+            "type": "number"
           }
         },
         "required": [
@@ -42283,7 +43838,8 @@
           "conferences",
           "sharing",
           "plans",
-          "matches"
+          "matches",
+          "sharing_members"
         ],
         "additionalProperties": true
       },

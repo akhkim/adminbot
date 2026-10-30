@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { adminBotOutreachEmail } from "../../contracts/member-outreach-email.js";
 import { composeOnboardingGuide } from "../../workflows/onboarding/guide.js";
 import { memberTypeTokens } from "../../workflows/onboarding/member-type-template.js";
 import { readJsonOrEmpty, sendJson } from "../server.http.js";
@@ -55,7 +56,7 @@ export const acquaintanceWelcomeRoutes: readonly Route[] = [
         });
         return;
       }
-      const email = member.email?.trim();
+      const email = adminBotOutreachEmail(member);
       if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(email)) {
         sendJson(res, 422, {
           error: {

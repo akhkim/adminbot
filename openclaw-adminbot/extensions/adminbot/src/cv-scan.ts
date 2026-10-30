@@ -1,11 +1,13 @@
 import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
+import type { LookupAddress } from "node:dns";
 import { lookup as dnsLookup } from "node:dns/promises";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { isIP } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import { Agent, fetch as undiciFetch, type Dispatcher } from "undici";
 import { cvEntryKey } from "./contracts/actions.js";
 import type {
   AdminBotCvChange,
@@ -39,6 +41,17 @@ export type AdminBotCvScanDeps = {
   extractText: (pdf: Uint8Array, signal?: AbortSignal) => Promise<AdminBotCvExtraction>;
   extractEntries: (text: string, signal?: AbortSignal) => Promise<AdminBotCvEntry[]>;
   now: () => Date;
+  // Told how many linked CVs have been dealt with so far, so a long sweep can say how far along it
+  // is. Called once before the first CV and again as each one finishes.
+  onProgress?: (done: number, total: number) => void;
+  // Given each member's outcome as soon as their CV is dealt with, with the snapshot to store if
+  // it was read. The result can still be marked failed here, before the scan reports it.
+  onMemberScanned?: (
+    result: AdminBotCvScanMemberResult,
+    snapshot: AdminBotCvSnapshot | undefined,
+  ) => void | Promise<void>;
+  // How many CVs to read at once. Defaults to one at a time.
+  concurrency?: number;
 };
 
 export type AdminBotCvScanOutcome = {
@@ -64,63 +77,65 @@ export async function runAdminBotCvScan(
   windowMonths: number = CV_RECENCY_WINDOW_MONTHS,
 ): Promise<AdminBotCvScanOutcome> {
   const scannedAt = deps.now().toISOString();
-  const results: AdminBotCvScanMemberResult[] = [];
-  const snapshots = new Map<string, AdminBotCvSnapshot>();
 
-  for (const member of members) {
-    const cvUrl = member.cv_url?.trim();
-    if (!cvUrl) {
-      continue;
-    }
+  type MemberScan = { result: AdminBotCvScanMemberResult; snapshot?: AdminBotCvSnapshot };
+  const scanOne = async (member: AdminBotLabMember): Promise<MemberScan> => {
+    const cvUrl = member.cv_url!.trim();
     const base = { member_id: member.id, member_name: member.name, added: [], removed: [] };
     let parsed: URL;
     try {
       parsed = new URL(cvUrl);
     } catch {
-      results.push({ ...base, status: "failed", reason: "cv url is not a valid URL" });
-      continue;
+      return { result: { ...base, status: "failed", reason: "cv url is not a valid URL" } };
     }
     // Cheap, synchronous, and member-fixable, so it is reported as skipped rather than failed.
     // The address-level check that actually stops SSRF lives in the fetch, where DNS is resolved.
     if (parsed.protocol !== "https:") {
-      results.push({ ...base, status: "skipped", reason: "cv url must use https" });
-      continue;
+      return { result: { ...base, status: "skipped", reason: "cv url must use https" } };
     }
 
     try {
       const pdf = await deps.fetchPdf(cvUrl);
+      const previous = member.cv_snapshot;
+      const current = (previous?.extractor_version ?? 1) >= CV_EXTRACTOR_VERSION;
+      // The cheapest check first: the very same file as last time cannot read differently, so it
+      // costs a download and a hash -- no PDF parsing, no model call.
+      const pdfHash = createHash("sha256").update(pdf).digest("hex");
+      if (current && previous?.pdf_hash === pdfHash) {
+        return { result: { ...base, status: "unchanged" } };
+      }
       const extraction = await deps.extractText(pdf);
       if (!extraction.ok) {
-        results.push({ ...base, status: "failed", reason: extraction.reason });
-        continue;
+        return { result: { ...base, status: "failed", reason: extraction.reason } };
       }
       const contentHash = createHash("sha256").update(extraction.text).digest("hex");
-      const previous = member.cv_snapshot;
-      // An unchanged document cannot have produced changed facts, so the model call is skipped
-      // outright. Re-running the scan over a settled roster costs one fetch per member -- unless
-      // the snapshot was read by an older prompt that could not see everything this one can.
+      // A new file with the same text (re-exported, or metadata touched) cannot have produced
+      // changed facts either, so the model call is skipped -- unless the snapshot was read by an
+      // older prompt that could not see everything this one can. The new file hash is kept, so
+      // tomorrow's check stops at the bytes.
       const sameText = previous?.content_hash === contentHash;
-      const current = (previous?.extractor_version ?? 1) >= CV_EXTRACTOR_VERSION;
-      if (sameText && current) {
-        results.push({ ...base, status: "unchanged" });
-        continue;
+      if (sameText && current && previous) {
+        return {
+          result: { ...base, status: "unchanged" },
+          snapshot: { ...previous, pdf_hash: pdfHash },
+        };
       }
 
       const entries = await deps.extractEntries(extraction.text);
-      snapshots.set(member.id, {
+      const snapshot: AdminBotCvSnapshot = {
         fetched_at: scannedAt,
         content_hash: contentHash,
+        pdf_hash: pdfHash,
         extractor_version: CV_EXTRACTOR_VERSION,
         entries,
-      });
+      };
 
       if (sameText) {
         // Same document, better reader: whatever the new prompt finds was on the CV all along, so
         // it refreshes the snapshot (and the talk leaderboard counted from it) without reaching
         // the ledger. Otherwise this year's talks would all be announced as news the day the
         // prompt changed.
-        results.push({ ...base, status: "unchanged" });
-        continue;
+        return { result: { ...base, status: "unchanged" }, snapshot };
       }
 
       if (!previous) {
@@ -133,22 +148,54 @@ export async function runAdminBotCvScan(
         const recent = entries
           .map((entry) => ({ entry, recency: classifyRecency(entry, deps.now(), windowMonths) }))
           .filter((change) => change.recency === "recent");
-        results.push({ ...base, status: "first_scan", added: recent });
-        continue;
+        return { result: { ...base, status: "first_scan", added: recent }, snapshot };
       }
       const added = entriesMissingFrom(entries, previous.entries).map((entry) => ({
         entry,
         recency: classifyRecency(entry, deps.now(), windowMonths),
       }));
       const removed = entriesMissingFrom(previous.entries, entries);
-      results.push({
-        ...base,
-        status: added.length || removed.length ? "changed" : "unchanged",
-        added,
-        removed,
-      });
+      return {
+        result: {
+          ...base,
+          status: added.length || removed.length ? "changed" : "unchanged",
+          added,
+          removed,
+        },
+        snapshot,
+      };
     } catch (error) {
-      results.push({ ...base, status: "failed", reason: errorMessage(error) });
+      return { result: { ...base, status: "failed", reason: errorMessage(error) } };
+    }
+  };
+
+  // CVs are read a few at a time: most of a CV's time is waiting on the download and the model,
+  // and the local model batches concurrent requests. Kept small because that model is shared.
+  const linked = members.filter((member) => member.cv_url?.trim());
+  const outcomes: MemberScan[] = [];
+  let next = 0;
+  let done = 0;
+  deps.onProgress?.(0, linked.length);
+  const worker = async () => {
+    while (next < linked.length) {
+      const index = next;
+      next += 1;
+      const outcome = await scanOne(linked[index]!);
+      outcomes[index] = outcome;
+      // Handed over as each CV finishes, so a restart mid-sweep keeps what was already read.
+      await deps.onMemberScanned?.(outcome.result, outcome.snapshot);
+      done += 1;
+      deps.onProgress?.(done, linked.length);
+    }
+  };
+  const workers = Math.max(1, Math.min(deps.concurrency ?? 1, linked.length));
+  await Promise.all(Array.from({ length: workers }, worker));
+  // In roster order, whatever order the reads finished in.
+  const results = outcomes.map((outcome) => outcome.result);
+  const snapshots = new Map<string, AdminBotCvSnapshot>();
+  for (const outcome of outcomes) {
+    if (outcome.snapshot) {
+      snapshots.set(outcome.result.member_id, outcome.snapshot);
     }
   }
 
@@ -406,7 +453,19 @@ export function describeCvEntry(entry: AdminBotCvEntry): string {
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  if (!(error instanceof Error)) {
+    return String(error);
+  }
+  // fetch reports every network failure as a bare "fetch failed" and keeps the reason in `cause`;
+  // without it the audit log cannot tell an unreachable host from a refused connection.
+  const cause = error.cause as { code?: unknown; message?: unknown } | undefined;
+  const detail =
+    typeof cause?.code === "string"
+      ? cause.code
+      : typeof cause?.message === "string"
+        ? cause.message
+        : "";
+  return detail && !error.message.includes(detail) ? `${error.message} (${detail})` : error.message;
 }
 
 /**
@@ -453,8 +512,11 @@ export function isPublicIpAddress(address: string): boolean {
   return false;
 }
 
+export type CvHostAddress = { address: string; family: 4 | 6 };
+
 /**
- * Resolves a hostname and refuses it unless every address it answers with is public.
+ * Resolves a hostname and refuses it unless every address it answers with is public. Returns the
+ * addresses, so the download connects to exactly what was checked.
  *
  * Every address, not just the first: a name that returns one public and one private address would
  * otherwise be usable to reach the private one.
@@ -462,14 +524,15 @@ export function isPublicIpAddress(address: string): boolean {
 export async function assertPublicHost(
   hostname: string,
   lookupImpl: typeof dnsLookup = dnsLookup,
-): Promise<void> {
+): Promise<CvHostAddress[]> {
   // An IP literal never reaches DNS, so check it directly rather than trusting the resolver to
   // echo it back.
-  if (isIP(hostname)) {
+  const literal = isIP(hostname);
+  if (literal) {
     if (!isPublicIpAddress(hostname)) {
       throw new Error(`cv url points at a non-public address (${hostname})`);
     }
-    return;
+    return [{ address: hostname, family: literal === 6 ? 6 : 4 }];
   }
   let records: Array<{ address: string }>;
   try {
@@ -487,6 +550,10 @@ export async function assertPublicHost(
       );
     }
   }
+  return records.map((record) => ({
+    address: record.address,
+    family: isIP(record.address) === 6 ? 6 : 4,
+  }));
 }
 
 /** Default deps: Drive fetch, the pypdfium2 helper, and the loopback model. */
@@ -495,16 +562,21 @@ export function createAdminBotCvScanDeps(options: {
   // bundled into dist, so it cannot resolve a repo-root script path on its own.
   extractScriptPath: string;
   fetchImpl?: typeof globalThis.fetch;
+  // The CV download alone; defaults to undici's fetch, which honours the pinned dispatcher.
+  downloadImpl?: CvDownloadFetch;
   env?: NodeJS.ProcessEnv;
   pythonCommand?: string;
+  concurrency?: number;
 }): AdminBotCvScanDeps {
   const env = options.env ?? process.env;
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
+  const downloadImpl = options.downloadImpl ?? (undiciFetch as unknown as CvDownloadFetch);
   const pythonCommand = options.pythonCommand ?? env.ADMINBOT_PYTHON ?? "python3";
   const extractScriptPath = options.extractScriptPath;
   return {
     now: () => new Date(),
-    fetchPdf: async (url, signal) => await fetchCvPdf(fetchImpl, url, signal),
+    concurrency: options.concurrency,
+    fetchPdf: async (url, signal) => await fetchCvPdf(downloadImpl, url, signal),
     extractText: async (pdf) => {
       const directory = await mkdtemp(path.join(tmpdir(), "adminbot-cv-"));
       const file = path.join(directory, `${randomUUID()}.pdf`);
@@ -533,14 +605,6 @@ export function createAdminBotCvScanDeps(options: {
 // fetched with no check at all. Three hops covers real CDN and shortener chains.
 const MAX_CV_REDIRECTS = 3;
 
-/**
- * Downloads a member's CV, revalidating the destination at every hop.
- *
- * Known residual risk: the address is validated by resolving DNS, then fetch resolves it again to
- * open the connection, so a name that answers differently between the two calls (DNS rebinding)
- * can still slip through. Closing that needs the connection pinned to the validated address, which
- * means an undici dispatcher and a dependency decision this change does not make on its own.
- */
 /**
  * Rewrites a Google share link into something that actually returns the file.
  *
@@ -579,8 +643,88 @@ function startsWithPdfMagic(buffer: Uint8Array): boolean {
   return PDF_MAGIC.every((byte, index) => buffer[index] === byte);
 }
 
+export type CvDownloadFetch = (
+  input: URL,
+  init: { redirect: "manual"; dispatcher: Dispatcher; signal?: AbortSignal },
+) => Promise<{
+  ok: boolean;
+  status: number;
+  statusText: string;
+  headers: { get(name: string): string | null };
+  arrayBuffer(): Promise<ArrayBuffer>;
+}>;
+
+type LookupCallback = (
+  error: NodeJS.ErrnoException | null,
+  address: string | LookupAddress[],
+  family?: number,
+) => void;
+
+/**
+ * A DNS lookup that answers only with addresses already validated for this download.
+ *
+ * IPv4 is answered alone when the host has any: the service host has no IPv6 route, and Google's
+ * hosts publish IPv6 first, so connecting by the resolver's order failed every Drive download with
+ * ENETUNREACH. A host with only IPv6 addresses still gets them.
+ */
+export function createCvPinnedLookup(pins: Map<string, CvHostAddress[]>) {
+  return (hostname: string, options: unknown, callback?: LookupCallback) => {
+    const done = (typeof options === "function" ? options : callback) as LookupCallback;
+    const opts = (typeof options === "object" && options ? options : {}) as {
+      all?: boolean;
+      family?: number;
+    };
+    const pinned = pins.get(hostname.toLowerCase()) ?? [];
+    const ipv4 = pinned.filter((record) => record.family === 4);
+    const preferred = ipv4.length ? ipv4 : pinned;
+    const usable =
+      opts.family === 4 || opts.family === 6
+        ? pinned.filter((record) => record.family === opts.family)
+        : preferred;
+    const first = usable[0];
+    if (!first) {
+      // Fail closed: anything not validated in this download is never connected to.
+      const error: NodeJS.ErrnoException = new Error(`cv host ${hostname} was not validated`);
+      error.code = "ENOTFOUND";
+      done(error, "", 0);
+      return;
+    }
+    if (opts.all) {
+      done(null, usable);
+      return;
+    }
+    done(null, first.address, first.family);
+  };
+}
+
+/**
+ * Downloads a member's CV, revalidating the destination at every hop.
+ *
+ * Each connection is pinned to the addresses validated for its host, so a name that answers
+ * differently when fetch resolves it again (DNS rebinding) never reaches the socket.
+ */
 async function fetchCvPdf(
-  fetchImpl: typeof globalThis.fetch,
+  fetchImpl: CvDownloadFetch,
+  url: string,
+  signal?: AbortSignal,
+): Promise<Uint8Array> {
+  const pins = new Map<string, CvHostAddress[]>();
+  const dispatcher = new Agent({
+    allowH2: false,
+    connect: { lookup: createCvPinnedLookup(pins) as never, autoSelectFamily: true },
+  });
+  try {
+    return await downloadCvPdf(fetchImpl, dispatcher, pins, url, signal);
+  } finally {
+    // Destroyed rather than closed: a redirect's unread body would keep close() waiting.
+    await dispatcher.destroy().catch(() => undefined);
+  }
+}
+
+async function downloadCvPdf(
+  fetchImpl: CvDownloadFetch,
+  dispatcher: Dispatcher,
+  pins: Map<string, CvHostAddress[]>,
   url: string,
   signal?: AbortSignal,
 ): Promise<Uint8Array> {
@@ -589,9 +733,10 @@ async function fetchCvPdf(
     if (target.protocol !== "https:") {
       throw new Error(`cv url must use https (got ${target.protocol.replace(":", "")})`);
     }
-    await assertPublicHost(target.hostname);
+    pins.set(target.hostname.toLowerCase(), await assertPublicHost(target.hostname));
     const response = await fetchImpl(target, {
       redirect: "manual",
+      dispatcher,
       ...(signal ? { signal } : {}),
     });
     if (response.status >= 300 && response.status < 400) {

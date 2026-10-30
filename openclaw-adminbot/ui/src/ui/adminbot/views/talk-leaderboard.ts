@@ -19,7 +19,86 @@ export type TalkLeaderboard = {
     total: number;
   }>;
   unscanned: string[];
+  // Why each of `unscanned` is unread. Older services do not send it; the page then lists names.
+  unread?: Array<{ member_name: string; reason: "not_pdf" | "refused" | "failed" | "pending" }>;
+  // Older services do not send it; the page then just omits the status line.
+  sweep?:
+    | {
+        state: "reading";
+        started_at: string;
+        done: number;
+        total: number;
+        eta_seconds: number | null;
+      }
+    | {
+        state: "idle";
+        last_completed_at: string | null;
+        last_failed_at: string | null;
+        next_due_at: string | null;
+      };
 };
+
+// What each kind of unread CV needs, worded for the member who has to fix it.
+const UNREAD_TEXT: Record<NonNullable<TalkLeaderboard["unread"]>[number]["reason"], string> = {
+  not_pdf:
+    "Not counted, because their CV link does not open a PDF anyone with the link can download. Share the file as \u201canyone with the link\u201d, or link the PDF itself rather than a web page, on My Profile",
+  refused:
+    "Not counted, because the site their CV link points to refuses downloads. Link a PDF instead, on My Profile",
+  failed: "Not counted yet, because their CV could not be read; the next daily read tries again",
+  pending: "Not counted yet, because their CV has not been read",
+};
+
+/** One line per kind of unread CV, so each person can see what they need to do. */
+export function unreadLines(board: TalkLeaderboard): string[] {
+  if (!board.unread) {
+    return board.unscanned.length
+      ? [`${UNREAD_TEXT.pending}: ${board.unscanned.join(", ")}.`]
+      : [];
+  }
+  const unread = board.unread;
+  return (Object.keys(UNREAD_TEXT) as Array<keyof typeof UNREAD_TEXT>).flatMap((reason) => {
+    const names = unread.filter((entry) => entry.reason === reason).map((e) => e.member_name);
+    return names.length ? [`${UNREAD_TEXT[reason]}: ${names.join(", ")}.`] : [];
+  });
+}
+
+function minutes(seconds: number) {
+  const m = Math.max(1, Math.round(seconds / 60));
+  return m >= 90 ? `about ${Math.round(m / 60)} hours` : `about ${m} min`;
+}
+
+function when(iso: string) {
+  return new Date(iso).toLocaleString(undefined, {
+    weekday: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+/** One line on whether the counts are settled, being refreshed, or waiting for the first read. */
+export function sweepStatusText(sweep: TalkLeaderboard["sweep"], now = new Date()): string {
+  if (!sweep) {
+    return "";
+  }
+  if (sweep.state === "reading") {
+    const eta =
+      sweep.eta_seconds === null ? "working out how long" : `${minutes(sweep.eta_seconds)} left`;
+    return `Reading CVs now: ${sweep.done} of ${sweep.total} done, ${eta}. Counts update when it finishes.`;
+  }
+  const failed =
+    sweep.last_failed_at &&
+    (!sweep.last_completed_at || sweep.last_failed_at > sweep.last_completed_at)
+      ? " The last attempt failed and will be retried."
+      : "";
+  if (!sweep.last_completed_at) {
+    return `Waiting for the first full read of everyone's CVs; it starts within the hour.${failed}`;
+  }
+  const due =
+    sweep.next_due_at && Date.parse(sweep.next_due_at) > now.getTime()
+      ? `next read ${when(sweep.next_due_at)}`
+      : "next read starts within the hour";
+  return `Last read ${when(sweep.last_completed_at)}; ${due}.${failed}`;
+}
 
 // The guidebook's extra free trip goes to the top two. Ranks, not positions: two people level at
 // second are both in line for it, and the page should not pick between them.
@@ -34,12 +113,13 @@ export class TalkLeaderboardView extends LitElement {
   @state() private loading = false;
   @state() private error = "";
   private controller?: AbortController;
+  // While the service is reading CVs the counts and progress move, so the page re-asks each minute.
+  private refreshTimer?: ReturnType<typeof setTimeout>;
 
   static override styles = css`
     :host {
       display: block;
       max-width: 860px;
-      margin: 24px auto;
       color: var(--text);
     }
     section {
@@ -50,12 +130,41 @@ export class TalkLeaderboardView extends LitElement {
     header {
       display: flex;
       flex-wrap: wrap;
-      align-items: baseline;
+      align-items: center;
       justify-content: space-between;
       gap: 12px;
     }
-    h2 {
+    header .hint {
       margin: 0;
+      flex: 1 1 18rem;
+    }
+    details {
+      margin-top: 16px;
+    }
+    summary {
+      cursor: pointer;
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      font-weight: 600;
+      list-style: none;
+    }
+    summary::-webkit-details-marker {
+      display: none;
+    }
+    /* The same chevron as the light DOM's .adminbot-fold, so every fold in the app reads alike. */
+    summary::after {
+      content: "";
+      width: 7px;
+      height: 7px;
+      margin-left: 10px;
+      border-right: 2px solid var(--muted);
+      border-bottom: 2px solid var(--muted);
+      transform: rotate(45deg);
+      transition: transform 0.15s ease;
+    }
+    details[open] > summary::after {
+      transform: rotate(225deg);
     }
     p {
       line-height: 1.6;
@@ -118,6 +227,12 @@ export class TalkLeaderboardView extends LitElement {
       border: 1px solid var(--accent, #486bdf);
       color: var(--accent, #486bdf);
     }
+    .status {
+      font-size: 13px;
+      padding: 8px 12px;
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--accent, #486bdf) 8%, transparent);
+    }
     .error {
       color: var(--danger, #c0392b);
     }
@@ -143,11 +258,13 @@ export class TalkLeaderboardView extends LitElement {
 
   override disconnectedCallback() {
     this.controller?.abort();
+    clearTimeout(this.refreshTimer);
     super.disconnectedCallback();
   }
 
   private async load() {
     this.controller?.abort();
+    clearTimeout(this.refreshTimer);
     if (!this.sessionToken) {
       this.board = null;
       this.error = "Sign in to see the leaderboard.";
@@ -171,6 +288,9 @@ export class TalkLeaderboardView extends LitElement {
         return;
       }
       this.board = body;
+      if (body.sweep?.state === "reading") {
+        this.refreshTimer = setTimeout(() => void this.load(), 60_000);
+      }
     } catch (error) {
       if (controller.signal.aborted) {
         return;
@@ -232,7 +352,10 @@ export class TalkLeaderboardView extends LitElement {
     const board = this.board;
     return html`<section>
       <header>
-        <h2>Talks and orals ${this.year}</h2>
+        <p class="hint">
+          Ranked by all talks, then invited ones. The top two at the end of the year get the
+          guidebook's extra free trip.
+        </p>
         <div class="controls">
           <select aria-label="Year" @change=${this.chooseYear} ?disabled=${this.loading}>
             ${[thisYear, thisYear - 1, thisYear - 2].map(
@@ -245,23 +368,32 @@ export class TalkLeaderboardView extends LitElement {
           </button>
         </div>
       </header>
-      <p class="hint">
-        Counted once a day from each member's linked CV and ranked by all talks, then invited ones.
-        The top two at the end of the year get the guidebook's extra free trip.
-      </p>
-      ${this.error ? html`<p class="error" role="alert">${this.error}</p>` : nothing}
-      ${board ? this.renderRows(board) : nothing}
-      ${board?.unscanned.length
-        ? html`<p class="hint" data-testid="talk-leaderboard-unscanned">
-            Not counted yet, because their CV has not been read: ${board.unscanned.join(", ")}.
+      ${board?.sweep
+        ? html`<p class="status" role="status" data-testid="talk-leaderboard-status">
+            ${sweepStatusText(board.sweep)}
           </p>`
         : nothing}
-      <p class="hint">
-        Counted generously: invited talks, keynotes, seminars, panels and guest lectures;
-        contributed talks; and any paper the CV marks as an oral or spotlight. A talk listed twice
-        counts once. If one of yours is missing, make it clear on the CV (for example "(Oral)" after
-        the venue) and link it from My Profile; the next daily read picks it up.
-      </p>
+      ${this.error ? html`<p class="error" role="alert">${this.error}</p>` : nothing}
+      ${board
+        ? this.renderRows(board)
+        : this.loading
+          ? html`<p class="hint" data-testid="talk-leaderboard-loading">Loading the board…</p>`
+          : nothing}
+      ${board && unreadLines(board).length
+        ? html`<div data-testid="talk-leaderboard-unscanned">
+            ${unreadLines(board).map((line) => html`<p class="hint">${line}</p>`)}
+          </div>`
+        : nothing}
+      <details>
+        <summary>What counts as a talk</summary>
+        <p class="hint">
+          Counted once a day from each member's linked CV, generously: invited talks, keynotes,
+          seminars, panels and guest lectures; contributed talks; and any paper the CV marks as an
+          oral or spotlight. A talk listed twice counts once. If one of yours is missing, make it
+          clear on the CV (for example "(Oral)" after the venue) and link it from My Profile; the
+          next daily read picks it up.
+        </p>
+      </details>
     </section>`;
   }
 }

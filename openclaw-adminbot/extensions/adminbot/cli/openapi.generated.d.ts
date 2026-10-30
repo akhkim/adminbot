@@ -120,6 +120,58 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/auth/api-tokens": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** GET /auth/api-tokens */
+    get: operations["get-auth-api-tokens"];
+    put?: never;
+    /** POST /auth/api-tokens */
+    post: operations["post-auth-api-tokens"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/auth/api-tokens/{api_tokens_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** DELETE /auth/api-tokens/{api_tokens_id} */
+    delete: operations["delete-auth-api-tokens-by-api-tokens-id"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/auth/api-tokens/revoke-all": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** POST /auth/api-tokens/revoke-all */
+    post: operations["post-auth-api-tokens-revoke-all"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/auth/claim": {
     parameters: {
       query?: never;
@@ -148,6 +200,91 @@ export interface paths {
     put?: never;
     /** POST /auth/device-token */
     post: operations["post-auth-device-token"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/auth/device/approve": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** POST /auth/device/approve */
+    post: operations["post-auth-device-approve"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/auth/device/deny": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** POST /auth/device/deny */
+    post: operations["post-auth-device-deny"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/auth/device/lookup": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** POST /auth/device/lookup */
+    post: operations["post-auth-device-lookup"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/auth/device/poll": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** POST /auth/device/poll */
+    post: operations["post-auth-device-poll"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/auth/device/start": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** POST /auth/device/start */
+    post: operations["post-auth-device-start"];
     delete?: never;
     options?: never;
     head?: never;
@@ -597,7 +734,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/badges/assignments/{assignments_id}/{{param1}_id}": {
+  "/badges/assignments/{member_id}/{badge_id}": {
     parameters: {
       query?: never;
       header?: never;
@@ -607,8 +744,8 @@ export interface paths {
     get?: never;
     put?: never;
     post?: never;
-    /** DELETE /badges/assignments/{assignments_id}/{{param1}_id} */
-    delete: operations["delete-badges-assignments-by-assignments-id-by-{param1}-id"];
+    /** DELETE /badges/assignments/{member_id}/{badge_id} */
+    delete: operations["delete-badges-assignments-by-member-id-by-badge-id"];
     options?: never;
     head?: never;
     patch?: never;
@@ -1559,6 +1696,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/lab/members/{members_id}/email": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** POST /lab/members/{members_id}/email */
+    post: operations["post-lab-members-by-members-id-email"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/lab/members/{members_id}/id": {
     parameters: {
       query?: never;
@@ -1844,6 +1998,23 @@ export interface paths {
     put?: never;
     /** POST /lab/members/requests/{requests_id}/reject */
     post: operations["post-lab-members-requests-by-requests-id-reject"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/lab/members/roster": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** GET /lab/members/roster */
+    get: operations["get-lab-members-roster"];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -4971,6 +5142,7 @@ export interface components {
         | "paper_author_links.backfilled"
         | "lab_member.merged"
         | "lab_member.id_changed"
+        | "lab_member.login_email_changed"
         | "lab_member.deleted"
         | "lab_members.purged_without_email"
         | "lab_member_request.submitted"
@@ -5016,6 +5188,7 @@ export interface components {
         | "research_theme_invites.swept"
         | "prereg.nudged"
         | "paper.deleted"
+        | "onboarding.email_attempted"
         | "onboarding.guide_sent"
         | "onboarding_sweep.ran"
         | "members.disengagement_swept"
@@ -5094,6 +5267,12 @@ export interface components {
         | "auth.login_location_suspected_vpn"
         | "auth.impersonation_started"
         | "auth.impersonation_ended"
+        | "auth.api_token.created"
+        | "auth.api_token.revoked"
+        | "auth.api_token.revoked_all"
+        | "auth.api_token.new_ip"
+        | "auth.api_token.cli_login_started"
+        | "auth.api_token.cli_login_denied"
         | "member.slack_stopped"
         | "member.slack_started"
         | "member.location_observed"
@@ -5120,6 +5299,23 @@ export interface components {
       details?: {
         [key: string]: unknown;
       };
+    } & {
+      [key: string]: unknown;
+    };
+    AdminBotApiTokenView: {
+      id: string;
+      name: string;
+      hint: string;
+      created_at: string;
+      expires_at: string;
+      created_ip?: string;
+      last_used_at?: string;
+      last_used_ip?: string;
+      last_used_place?: string;
+      ip_count: number;
+      revoked_at?: string;
+      revoked_reason?: string;
+      current?: boolean;
     } & {
       [key: string]: unknown;
     };
@@ -5163,9 +5359,9 @@ export interface components {
       [key: string]: unknown;
     };
     AdminBotLabMember: {
+      name: string;
       email?: string;
       id: string;
-      name: string;
       preferred_name?: string;
       member_type?: string;
       test_onboard_batch?: number;
@@ -5240,6 +5436,9 @@ export interface components {
       whatsapp?: string;
       correspondence_email?: string;
       dcs_username?: string;
+      former_member_ids?: string[];
+      alternate_emails?: string[];
+      alternate_slack_user_ids?: string[];
       at_uoft?: boolean;
       compute_access?: string[];
       /** @enum {string} */
@@ -5390,6 +5589,7 @@ export interface components {
     AdminBotCvSnapshot: {
       fetched_at: string;
       content_hash: string;
+      pdf_hash?: string;
       extractor_version?: number;
       entries: components["schemas"]["AdminBotCvEntry"][];
     } & {
@@ -5508,8 +5708,8 @@ export interface components {
       [key: string]: unknown;
     };
     AdminBotBadgeDefinition: {
-      id: string;
       name: string;
+      id: string;
       category: string;
       description: string;
       criteria_url?: string;
@@ -5673,6 +5873,7 @@ export interface components {
       year: number;
       rows: components["schemas"]["AdminBotTalkLeaderboardRow"][];
       unscanned: string[];
+      unread: components["schemas"]["AdminBotTalkLeaderboardUnread"][];
     } & {
       [key: string]: unknown;
     };
@@ -5683,6 +5884,13 @@ export interface components {
       invited: number;
       orals: number;
       total: number;
+    } & {
+      [key: string]: unknown;
+    };
+    AdminBotTalkLeaderboardUnread: {
+      member_name: string;
+      /** @enum {string} */
+      reason: "pending" | "failed" | "not_pdf" | "refused";
     } & {
       [key: string]: unknown;
     };
@@ -5980,9 +6188,9 @@ export interface components {
       [key: string]: unknown;
     };
     AdminBotLabMemberView: {
+      name: string;
       email?: string;
       id: string;
-      name: string;
       preferred_name?: string;
       member_type?: string;
       test_onboard_batch?: number;
@@ -6057,6 +6265,9 @@ export interface components {
       whatsapp?: string;
       correspondence_email?: string;
       dcs_username?: string;
+      former_member_ids?: string[];
+      alternate_emails?: string[];
+      alternate_slack_user_ids?: string[];
       at_uoft?: boolean;
       compute_access?: string[];
       /** @enum {string} */
@@ -6119,11 +6330,11 @@ export interface components {
       [key: string]: unknown;
     };
     AdminBotLabMemberSummary: {
+      name: string;
       email?: string;
       /** @enum {string} */
       privilege_level: "member" | "admin" | "external_collaborator" | "trial";
       id: string;
-      name: string;
       preferred_name?: string;
       member_type?: string;
       test_onboard_batch?: number;
@@ -6198,6 +6409,9 @@ export interface components {
       whatsapp?: string;
       correspondence_email?: string;
       dcs_username?: string;
+      former_member_ids?: string[];
+      alternate_emails?: string[];
+      alternate_slack_user_ids?: string[];
       at_uoft?: boolean;
       compute_access?: string[];
       /** @enum {string} */
@@ -6330,8 +6544,8 @@ export interface components {
       [key: string]: unknown;
     };
     AdminBotMemberRequestProfile: {
-      email: string;
       name: string;
+      email: string;
     } & {
       [key: string]: unknown;
     };
@@ -6350,6 +6564,9 @@ export interface components {
       decision_note?: string;
       member_id?: string;
     } & {
+      [key: string]: unknown;
+    };
+    MemberRosterOptions: {
       [key: string]: unknown;
     };
     CallSheetPush: {
@@ -6725,7 +6942,7 @@ export interface components {
       id: string;
       notes?: string;
       /** @enum {string} */
-      source: "manual" | "zoom_email";
+      source: "manual" | "zoom_email" | "participant_report";
       started_at: string;
       topic: string;
       duration_minutes?: number;
@@ -6801,7 +7018,7 @@ export interface components {
       snapshots?: components["schemas"]["AdminBotMeetingSnapshotState"];
       attendees?: components["schemas"]["AdminBotMeetingAttendee"][];
       /** @enum {string} */
-      source: "manual" | "zoom_email";
+      source: "manual" | "zoom_email" | "participant_report";
       notes?: string;
       created_at: string;
       updated_at: string;
@@ -6857,7 +7074,7 @@ export interface components {
       snapshots?: components["schemas"]["AdminBotMeetingSnapshotState"];
       attendees?: components["schemas"]["AdminBotMeetingAttendee"][];
       /** @enum {string} */
-      source: "manual" | "zoom_email";
+      source: "manual" | "zoom_email" | "participant_report";
       notes?: string;
     } & {
       [key: string]: unknown;
@@ -7023,12 +7240,12 @@ export interface components {
       /** @enum {string} */
       step:
         | "slack"
+        | "meeting"
         | "lab_calendar"
         | "group_meeting"
         | "sheet"
         | "dcs_roster"
-        | "guide"
-        | "meeting";
+        | "guide";
       target?: string;
       /** @enum {string} */
       status: "failed" | "skipped" | "done" | "queued";
@@ -7329,6 +7546,9 @@ export interface components {
       whatsapp?: string;
       correspondence_email?: string;
       dcs_username?: string;
+      former_member_ids?: string[];
+      alternate_emails?: string[];
+      alternate_slack_user_ids?: string[];
       at_uoft?: boolean;
       compute_access?: string[];
       /** @enum {string} */
@@ -7791,6 +8011,9 @@ export interface components {
       [key: string]: unknown;
     };
     AdminBotOnboardingSendRequest: {
+      before_email?: {
+        [key: string]: unknown;
+      };
       template_id: string;
       interview?: components["schemas"]["InterviewInvitation"];
       name: string;
@@ -8016,8 +8239,8 @@ export interface components {
       [key: string]: unknown;
     };
     OpportunityWire: {
-      id: string;
       name: string;
+      id: string;
       /** @enum {string} */
       status: "pending" | "approved" | "rejected";
       /** @enum {string} */
@@ -8197,7 +8420,7 @@ export interface components {
     };
     AdminBotPaperReminderState: {
       /** @enum {string} */
-      status?: "complete" | "blocked" | "idle" | "waiting_on_authors";
+      status?: "complete" | "idle" | "blocked" | "waiting_on_authors";
       requested_step_at?: string;
       last_author_dm_at?: string;
       last_author_reply_at?: string;
@@ -8465,8 +8688,8 @@ export interface components {
       [key: string]: unknown;
     };
     ConferenceRosterWirePerson: {
-      member_id?: string;
       name: string;
+      member_id?: string;
       avatar_url?: string;
       /** @enum {string} */
       attending: "unknown" | "yes" | "no";
@@ -9343,6 +9566,7 @@ export interface components {
       plans: components["schemas"]["AdminBotTravelPlan"][];
       home?: string;
       matches: components["schemas"]["AdminBotTravelMatchGroup"][];
+      sharing_members: number;
     } & {
       [key: string]: unknown;
     };
@@ -9955,6 +10179,140 @@ export interface operations {
       };
     };
   };
+  "get-auth-api-tokens": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            allowed: boolean;
+            tokens: components["schemas"]["AdminBotApiTokenView"][];
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "post-auth-api-tokens": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          name?: unknown;
+          expires_in_days?: unknown;
+        } & {
+          [key: string]: unknown;
+        };
+      };
+    };
+    responses: {
+      /** @description Success; response shape is validated by the server */
+      "2XX": {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "delete-auth-api-tokens-by-api-tokens-id": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        api_tokens_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success; response shape is validated by the server */
+      "2XX": {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "post-auth-api-tokens-revoke-all": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success; response shape is validated by the server */
+      "2XX": {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
   "post-auth-claim": {
     parameters: {
       query?: never;
@@ -10082,6 +10440,192 @@ export interface operations {
             [key: string]: unknown;
           };
         };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "post-auth-device-approve": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          user_code?: unknown;
+        } & {
+          [key: string]: unknown;
+        };
+      };
+    };
+    responses: {
+      /** @description Success; response shape is validated by the server */
+      "2XX": {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "post-auth-device-deny": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          user_code?: unknown;
+        } & {
+          [key: string]: unknown;
+        };
+      };
+    };
+    responses: {
+      /** @description Success; response shape is validated by the server */
+      "2XX": {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "post-auth-device-lookup": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          user_code?: unknown;
+        } & {
+          [key: string]: unknown;
+        };
+      };
+    };
+    responses: {
+      /** @description Success; response shape is validated by the server */
+      "2XX": {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "post-auth-device-poll": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          device_code?: unknown;
+        } & {
+          [key: string]: unknown;
+        };
+      };
+    };
+    responses: {
+      /** @description Success; response shape is validated by the server */
+      "2XX": {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "post-auth-device-start": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          name?: unknown;
+          expires_in_days?: unknown;
+        } & {
+          [key: string]: unknown;
+        };
+      };
+    };
+    responses: {
+      /** @description Success; response shape is validated by the server */
+      "2XX": {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
       /** @description Authentication, authorization, validation, policy, or connector error */
       default: {
@@ -11434,13 +11978,13 @@ export interface operations {
       };
     };
   };
-  "delete-badges-assignments-by-assignments-id-by-{param1}-id": {
+  "delete-badges-assignments-by-member-id-by-badge-id": {
     parameters: {
       query?: never;
       header?: never;
       path: {
-        assignments_id: string;
-        "{param1": string;
+        member_id: string;
+        badge_id: string;
       };
       cookie?: never;
     };
@@ -12900,7 +13444,34 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["AdminBotTalkLeaderboard"];
+          "application/json": {
+            sweep:
+              | ({
+                  /** @constant */
+                  state: "reading";
+                  started_at: string;
+                  done: number;
+                  total: number;
+                  eta_seconds: null | number;
+                } & {
+                  [key: string]: unknown;
+                })
+              | ({
+                  /** @constant */
+                  state: "idle";
+                  last_completed_at: null | string;
+                  last_failed_at: null | string;
+                  next_due_at: null | string;
+                } & {
+                  [key: string]: unknown;
+                });
+            year: number;
+            rows: components["schemas"]["AdminBotTalkLeaderboardRow"][];
+            unscanned: string[];
+            unread: components["schemas"]["AdminBotTalkLeaderboardUnread"][];
+          } & {
+            [key: string]: unknown;
+          };
         };
       };
       /** @description Server response */
@@ -14028,7 +14599,13 @@ export interface operations {
   };
   "get-lab-sharing-discover": {
     parameters: {
-      query?: never;
+      query?: {
+        cursor?: string;
+        limit?: string;
+        max_hours?: string;
+        q?: string;
+        sort?: string;
+      };
       header?: never;
       path?: never;
       cookie?: never;
@@ -15302,6 +15879,54 @@ export interface operations {
       };
     };
   };
+  "post-lab-members-by-members-id-email": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        members_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          new_email?: string;
+        } & {
+          [key: string]: unknown;
+        };
+      };
+    };
+    responses: {
+      /** @description Successful service result */
+      "2XX": {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            member: components["schemas"]["AdminBotLabMember"];
+            email: string;
+            previous_email: null | string;
+            had_sign_in: boolean;
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
   "post-lab-members-by-members-id-id": {
     parameters: {
       query?: never;
@@ -15994,8 +16619,8 @@ export interface operations {
         content: {
           "application/json": {
             members: ({
-              id: string;
               name: string;
+              id: string;
               hours_per_week?: number;
               availability?: components["schemas"]["AdminBotAvailabilityRow"][];
               time_off?: components["schemas"]["AdminBotTimeOffRow"][];
@@ -16405,6 +17030,227 @@ export interface operations {
         };
         content: {
           "application/json": unknown;
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "get-lab-members-roster": {
+    parameters: {
+      query?: {
+        limit?: string;
+        offset?: string;
+        q?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            members: ({
+              research_topics: string[];
+              projects: string[];
+              location: string;
+              joined_month: string;
+              name: string;
+              email?: string;
+              id: string;
+              preferred_name?: string;
+              member_type?: string;
+              test_onboard_batch?: number;
+              receives_nudges?: boolean;
+              meetup_intros?: {
+                events?: boolean;
+                city?: boolean;
+                snoozed_until?: string;
+              } & {
+                [key: string]: unknown;
+              };
+              do_not_contact?: boolean;
+              slack_stop_at?: string;
+              calendar_email?: string;
+              slack_user_id?: string;
+              merch_requests?: string;
+              next_position?: string;
+              personal_circumstances?: string;
+              slack_messages_7d?: number;
+              slack_activity_checked_at?: string;
+              slack_deactivated_at?: string;
+              /** @enum {string} */
+              collaborator_subgroup?:
+                | "interviewee"
+                | "slightly_better_than_emails"
+                | "acquaintance"
+                | "alumni"
+                | "own_pace_advisee"
+                | "coauthor_minor"
+                | "coauthor_major"
+                | "coauthor_discussant_designer"
+                | "disappearing_coauthor"
+                | "external_prof"
+                | "benefit_partner"
+                | "benefit_direct_relative";
+              access_overrides?: components["schemas"]["AdminBotAccessGrant"][];
+              notes?: string;
+              role?: string;
+              /** @enum {string} */
+              status?: "alumni" | "active" | "part_time" | "on_leave" | "external";
+              research_branch?: string;
+              elevator_pitch?: string;
+              hours_per_week?: number;
+              current_city?: string;
+              city_channel_invited_at?: string;
+              city_channels_invited?: string[];
+              affiliation?: string;
+              timezone?: string;
+              personal_website?: string;
+              openreview_id?: string;
+              cv_url?: string;
+              intake_form_url?: string;
+              intake_form_unavailable?: boolean;
+              arr_reviewer_qualified?: null | false | true;
+              arr_review_capacity?: null | number;
+              one_on_one_folder_url?: string;
+              linkedin_url?: string;
+              linkedin_urn?: string;
+              twitter_url?: string;
+              twitter_followers?: number;
+              linkedin_followers?: number;
+              github_url?: string;
+              scholar_url?: string;
+              acl_anthology_url?: string;
+              reviewer_exempt?: boolean;
+              graduated_month?: string;
+              birthday?: string;
+              whatsapp?: string;
+              correspondence_email?: string;
+              dcs_username?: string;
+              former_member_ids?: string[];
+              alternate_emails?: string[];
+              alternate_slack_user_ids?: string[];
+              at_uoft?: boolean;
+              compute_access?: string[];
+              /** @enum {string} */
+              vector_role?: "phd" | "postdoc" | "other";
+              lesswrong_url?: string;
+              other_socials?: string;
+              avatar_url?: string;
+              slack_channels?: string[];
+              slack_location?: string;
+              slack_location_updated_at?: string;
+              profile_photo_review?: components["schemas"]["AdminBotProfilePhotoReviewState"];
+              last_login_at?: string;
+              last_login_country?: string;
+              last_login_continent?: string;
+              last_login_city?: string;
+              last_login_region?: string;
+              last_login_timezone?: string;
+              /** @enum {string} */
+              map_visibility?: "auto" | "stated" | "hidden";
+              location_prompt_answered_at?: string;
+              location_prompt_answered_country?: string;
+              location_checkin_at?: string;
+              location_checkin_city?: string;
+              location_checkin_snoozed_until?: string;
+              location_checkin_declined_at?: string;
+              slack_tz?: string;
+              slack_tz_observed_at?: string;
+              last_ip_observed_at?: string;
+              last_ip_suspected_vpn?: boolean;
+              last_device_tz?: string;
+              last_device_tz_at?: string;
+              device_city?: string;
+              device_region?: string;
+              device_country?: string;
+              device_located_at?: string;
+              /** @enum {string} */
+              location_permission?: "granted" | "denied" | "dismissed";
+              location_permission_at?: string;
+              last_seen_at?: string;
+              availability?: components["schemas"]["AdminBotAvailabilityRow"][];
+              time_off?: components["schemas"]["AdminBotTimeOffRow"][];
+              milestones?: components["schemas"]["AdminBotMemberMilestone"][];
+              trips?: components["schemas"]["AdminBotMemberTrip"][];
+              dismissed_deadlines?: string[];
+              availability_notes?: string;
+              availability_doc_url?: string;
+              cv_snapshot?: components["schemas"]["AdminBotCvSnapshot"];
+              availability_updated_at?: string;
+              /** @enum {string} */
+              privilege_level: "member" | "admin" | "external_collaborator" | "trial";
+              access: components["schemas"]["AdminBotAccessGrant"][];
+              onboarding?: components["schemas"]["AdminBotMemberOnboarding"];
+              field_provenance?: {
+                [key: string]: components["schemas"]["AdminBotFieldProvenance"];
+              };
+              created_at: string;
+              updated_at: string;
+              assigned_badges?: components["schemas"]["AdminBotAssignedBadge"][];
+            } & {
+              [key: string]: unknown;
+            })[];
+            total: number;
+            limit: number;
+            offset: number;
+            filters: {
+              [key: string]: unknown;
+            };
+            options: components["schemas"]["MemberRosterOptions"];
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Server response */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Server response */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
+          } & {
+            [key: string]: unknown;
+          };
         };
       };
       /** @description Authentication, authorization, validation, policy, or connector error */
@@ -17242,7 +18088,15 @@ export interface operations {
   };
   "get-logistics-requests": {
     parameters: {
-      query?: never;
+      query?: {
+        cursor?: string;
+        dir?: string;
+        kind?: string;
+        limit?: string;
+        q?: string;
+        sort?: string;
+        status?: string;
+      };
       header?: never;
       path?: never;
       cookie?: never;
@@ -18986,6 +19840,13 @@ export interface operations {
   "get-members-profile-overview": {
     parameters: {
       query?: {
+        activity?: string;
+        cursor?: string;
+        gap?: string;
+        limit?: string;
+        member_types?: string;
+        membership?: string;
+        q?: string;
         view?: string;
       };
       header?: never;
@@ -20458,6 +21319,9 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          before_email?: {
+            [key: string]: unknown;
+          };
           template_id: string;
           interview?: components["schemas"]["InterviewInvitation"];
           name: string;
@@ -26285,7 +27149,11 @@ export interface operations {
   };
   "get-travel-whos-in": {
     parameters: {
-      query?: never;
+      query?: {
+        from?: string;
+        place?: string;
+        to?: string;
+      };
       header?: never;
       path?: never;
       cookie?: never;
@@ -26310,6 +27178,7 @@ export interface operations {
             from: string;
             to: string;
             people: components["schemas"]["AdminBotTravelMatch"][];
+            sharing_members: number;
           } & {
             [key: string]: unknown;
           };

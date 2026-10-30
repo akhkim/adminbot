@@ -269,6 +269,79 @@ export function findDuplicateMembers<T extends DuplicateCandidate>(
   return [...high, ...likely];
 }
 
+/** The slice of a member record a merge remembers about the person it retires. */
+export type MemberIdentity = {
+  id: string;
+  email?: string;
+  calendar_email?: string;
+  correspondence_email?: string;
+  slack_user_id?: string;
+  former_member_ids?: string[];
+  alternate_emails?: string[];
+  alternate_slack_user_ids?: string[];
+};
+
+export type AbsorbedIdentity = {
+  former_member_ids: string[];
+  alternate_emails: string[];
+  alternate_slack_user_ids: string[];
+};
+
+/** Every address a member record answers to as its own: login, calendar and correspondence. */
+export function memberOwnEmails(member: MemberIdentity): string[] {
+  return [member.email, member.calendar_email, member.correspondence_email]
+    .map((email) => (email ?? "").trim().toLowerCase())
+    .filter(Boolean);
+}
+
+/**
+ * What the survivor of a merge must remember about the duplicate it retires.
+ *
+ * `merged` is the survivor after planMemberMerge's patch, so an address or Slack id the patch
+ * already moved onto it (because the survivor had none) is its own and not repeated here. The
+ * duplicate's own remembered identities come along too, which is what keeps a chain of merges
+ * (A into B, then B into C) recognizing all three.
+ *
+ * Kept apart from the patch rather than left to planMemberMerge's array union, because the union
+ * would only carry what the duplicate already listed -- never the duplicate's own id, its login
+ * email (NEVER_MERGED) or the Slack id the conflict rule discarded, which are the three things the
+ * imports look people up by.
+ */
+export function absorbedIdentity(
+  merged: MemberIdentity,
+  duplicate: MemberIdentity,
+): AbsorbedIdentity {
+  const unique = (values: readonly (string | undefined)[], exclude: ReadonlySet<string>) => [
+    ...new Set(
+      values.map((value) => (value ?? "").trim()).filter((value) => value && !exclude.has(value)),
+    ),
+  ];
+  const ownEmails = new Set(memberOwnEmails(merged));
+  const ownSlackId = merged.slack_user_id?.trim();
+  return {
+    former_member_ids: unique(
+      [...(merged.former_member_ids ?? []), duplicate.id, ...(duplicate.former_member_ids ?? [])],
+      new Set([merged.id]),
+    ),
+    alternate_emails: unique(
+      [
+        ...(merged.alternate_emails ?? []),
+        ...memberOwnEmails(duplicate),
+        ...(duplicate.alternate_emails ?? []),
+      ].map((email) => email.trim().toLowerCase()),
+      ownEmails,
+    ),
+    alternate_slack_user_ids: unique(
+      [
+        ...(merged.alternate_slack_user_ids ?? []),
+        duplicate.slack_user_id,
+        ...(duplicate.alternate_slack_user_ids ?? []),
+      ],
+      new Set(ownSlackId ? [ownSlackId] : []),
+    ),
+  };
+}
+
 /** A field the merge would have had to choose between, so the admin can see what it kept. */
 export type MemberMergeConflict = {
   field: string;

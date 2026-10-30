@@ -1146,10 +1146,6 @@ class AdminbotOpportunitiesView extends LitElement {
         }
       </style>
       <section class="opportunities-view">
-        <p class="intro">
-          Programs the lab wants you to know about. Eligibility is quoted from each program so you
-          can judge your own fit &mdash; nothing here is filtered by who you are.
-        </p>
         ${this.notice
           ? html`<p class=${`opp-notice opp-notice--${this.notice.kind}`}>${this.notice.text}</p>`
           : nothing}

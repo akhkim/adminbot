@@ -115,6 +115,7 @@ import {
   type AdminBotUpdateSource,
   type AdminBotUpdateSubject,
 } from "../contracts/activity-log.js";
+import type { AdminBotApiToken, AdminBotApiTokenUsage } from "../contracts/api-tokens.js";
 import {
   ADMINBOT_BADGE_CATEGORY_MAX,
   ADMINBOT_BADGE_DESCRIPTION_MAX,
@@ -176,6 +177,7 @@ import {
   adminBotGroupMeetingNudgeWindowHours,
   hoursUntilGroupMeeting,
   isGroupMeetingNudgeDue,
+  resolveGroupMeetingTopic,
   type GroupMeetingSchedule,
 } from "../contracts/group-meeting.js";
 import type { DiscoveryPosition } from "../contracts/lab-sharing-discovery-cursor.js";
@@ -186,6 +188,7 @@ import type { LabHelpRequest } from "../contracts/lab-sharing.js";
 import type { AdminBotLocationShareRecord } from "../contracts/lab-travel.js";
 import {
   findDuplicateMembers,
+  absorbedIdentity,
   planMemberMerge,
   type MemberDuplicatePair,
   type MemberMergeConflict,
@@ -202,6 +205,7 @@ import {
   readAdminBotMemberRequest,
 } from "../contracts/member-requests.js";
 import { parseAdminBotMemberRoles } from "../contracts/member-roles.js";
+import type { MemberRosterQuery } from "../contracts/member-roster.js";
 import type { OpenReviewCitationCheckStore } from "../contracts/openreview-citation-checks.js";
 import {
   ADMINBOT_OPPORTUNITY_TEXT_MAX,
@@ -367,6 +371,7 @@ import {
   type AdminBotCityCentroidResolver,
   type AdminBotMemberMap,
 } from "../workflows/members/member-map.js";
+import { memberRosterPage } from "../workflows/members/member-roster.js";
 import { summarizeLabMember } from "../workflows/members/member-summary.js";
 import {
   dormantChaseDue,
@@ -943,8 +948,18 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   getSession(tokenHash: string): AdminBotAuthSession | undefined;
   touchSession(tokenHash: string, lastSeenAt: string): void;
   revokeSession(tokenHash: string, revokedAt: string): void;
+  /** Also revokes the member's API tokens: every "sign them out everywhere" means tokens too. */
   revokeSessionsForMember(memberId: string, revokedAt: string): void;
   pruneSessionsBefore(cutoffIso: string): number;
+  saveApiToken(token: AdminBotApiToken): void;
+  getApiTokenByHash(tokenHash: string): AdminBotApiToken | undefined;
+  getApiToken(id: string): AdminBotApiToken | undefined;
+  listApiTokensForMember(memberId: string): AdminBotApiToken[];
+  touchApiToken(id: string, usage: AdminBotApiTokenUsage): void;
+  /** True when this call revoked it; false when it was missing or already revoked. */
+  revokeApiToken(id: string, revokedAt: string, reason: string): boolean;
+  /** How many live tokens were revoked. */
+  revokeApiTokensForMember(memberId: string, revokedAt: string, reason: string): number;
   /** Upserts one author's account of one week on one paper. Re-saving the same week replaces. */
   savePaperWeeklyUpdate(update: AdminBotPaperWeeklyUpdate): void;
   listPaperWeeklyUpdates(params?: {
@@ -1887,13 +1902,15 @@ export class AdminBotService {
     proposal: AdminBotActionProposal,
   ): AdminBotStoredProposal | undefined {
     const hash = payloadHash(proposal.proposed_payload);
-    return this.store
-      .listProposalsByType(proposal.type)
-      .find(
-        (stored) =>
-          (stored.status === "pending" || stored.status === "approved") &&
-          payloadHash(stored.proposed_payload) === hash,
-      );
+    return this.store.listProposalsByType(proposal.type).find(
+      (stored) =>
+        (stored.status === "pending" || stored.status === "approved") &&
+        // Proposals filed before every action carried a payload (Aug-Sep 2026) have none to
+        // compare, so none can be "the same". Hashing that absence threw inside this find, and one
+        // such approved invite left every channel sweep that filed a new invite with a 500.
+        stored.proposed_payload !== undefined &&
+        payloadHash(stored.proposed_payload) === hash,
+    );
   }
 
   /**
@@ -4087,6 +4104,31 @@ export class AdminBotService {
     };
   }
 
+  listMemberRoster(query: MemberRosterQuery, meetingMembers?: ReadonlySet<string>) {
+    const page = memberRosterPage(
+      this.store.listLabMembers(),
+      this.store.listPapers(),
+      query,
+      meetingMembers,
+    );
+    const { badgesById, assignmentsByMember } = this.rosterBadgeViews(
+      page.members.map((member) => member.id),
+    );
+    const deadlines = page.members.some((member) => member.milestones?.length)
+      ? this.deadlineReadModel(DEADLINE_VENUES)
+      : undefined;
+    return {
+      ...page,
+      members: page.members.map((member) =>
+        this.memberView(
+          member,
+          this.assignedBadgesFor(member.id, assignmentsByMember.get(member.id) ?? [], badgesById),
+          deadlines,
+        ),
+      ),
+    };
+  }
+
   listLabMembers<P extends AdminBotListPage | undefined = undefined>(
     page?: P,
   ): AdminBotServiceResponse<{
@@ -6026,12 +6068,15 @@ export class AdminBotService {
       survivor as unknown as Record<string, unknown>,
       duplicate as unknown as Record<string, unknown>,
     );
-    const merged: AdminBotLabMember = {
+    const patched: AdminBotLabMember = {
       ...survivor,
       ...(patch as Partial<AdminBotLabMember>),
       id: survivor.id,
       updated_at: now,
     };
+    // Remembered so the daily imports recognize the retired record's id, addresses and Slack
+    // account as this person instead of re-creating the duplicate the next morning.
+    const merged: AdminBotLabMember = { ...patched, ...absorbedIdentity(patched, duplicate) };
     reconcileBirthdayEvent(this.birthdayDeps, duplicate, true);
     this.store.saveLabMember(merged);
     reconcileBirthdayEvent(this.birthdayDeps, merged);
@@ -6124,6 +6169,129 @@ export class AdminBotService {
       details: { from_id: params.memberId, to_id: newId, name: member.name, changed },
     });
     return { ok: true, status: 200, payload: { member: renamed, changed } };
+  }
+
+  /**
+   * An admin's change of the address a member signs in with: the member's own `/auth/email`,
+   * without their password. It exists for the member who signed up with the wrong address or can
+   * no longer reach the old inbox, which is exactly when they cannot do it themselves.
+   *
+   * The credential row (what login looks up) and the roster email move together in one store
+   * transaction, as they do for the member's own change. A member who has not claimed an account
+   * yet has no credential, so only the roster email moves -- it is the address they will claim
+   * with. Sessions stay signed in, as for a rename: the same person at a new address. Any
+   * outstanding password-reset link is burned, because it went to the address being replaced.
+   *
+   * Two refusals the member's own change does not need, because this one skips the password:
+   * `self` -- an admin's own sign-in email changes in My Profile, behind their password.
+   * `head professor` -- moving the PI's sign-in moves where their password reset goes, so only the
+   * PI does it, in My Profile.
+   */
+  changeMemberLoginEmail(params: {
+    memberId: string;
+    newEmail: string;
+    actorId: string;
+  }): AdminBotServiceResponse<{
+    member: AdminBotLabMember;
+    email: string;
+    previous_email: string | null;
+    had_sign_in: boolean;
+  }> {
+    const email = params.newEmail.trim().toLowerCase();
+    if (!email) {
+      return serviceError(400, "a new email is required");
+    }
+    const formatError = validateEmailFormat(email, "email");
+    if (formatError) {
+      return serviceError(400, formatError);
+    }
+    if (params.memberId === params.actorId) {
+      return serviceError(403, "change your own sign-in email in My Profile, with your password");
+    }
+    if (params.memberId === this.headProfessorMemberId()) {
+      return serviceError(403, "only the head professor can change their own sign-in email");
+    }
+    const member = this.store.getLabMember(params.memberId);
+    if (!member) {
+      return serviceError(404, "member not found");
+    }
+    const credential = this.store.getCredentialByMemberId(params.memberId);
+    const previous = (credential?.email ?? member.email ?? "").trim().toLowerCase() || null;
+    if (email === previous) {
+      return serviceError(400, "that is already this member's sign-in email");
+    }
+    // Specific rather than the self-service path's generic "unavailable": that one hides which
+    // addresses have accounts from whoever is typing, and an admin can read the roster anyway.
+    const holder = this.store.getCredentialByEmail(email);
+    if (holder && holder.member_id !== params.memberId) {
+      return serviceError(
+        409,
+        `${email} is already the sign-in email of member ${holder.member_id}`,
+      );
+    }
+    if (this.store.getPendingRegistrationByEmail(email)) {
+      return serviceError(409, `${email} belongs to a pending sign-up; approve or reject it first`);
+    }
+    // Another record carrying the address on any of its email fields is the same person twice, or
+    // a typo that would route their mail to someone else. Either way it is a merge or a correction
+    // of that record first, as creating a member refuses it (member-create.ts).
+    const other = this.store
+      .listLabMembers()
+      .find(
+        (candidate) =>
+          candidate.id !== params.memberId &&
+          [candidate.email, candidate.correspondence_email, candidate.calendar_email].some(
+            (address) => address?.trim().toLowerCase() === email,
+          ),
+      );
+    if (other) {
+      return serviceError(409, `${email} is already on the roster for member ${other.id}`);
+    }
+    const now = new Date().toISOString();
+    if (credential) {
+      // The password hash is the guard the member's own change uses against a concurrent password
+      // change; here it only means "the account is still the one just read".
+      const changed = this.store.changeMemberLoginEmail(
+        params.memberId,
+        email,
+        credential.password_scrypt,
+        now,
+      );
+      if (changed === "stale") {
+        return serviceError(
+          409,
+          "this member's sign-in changed while saving; reload and try again",
+        );
+      }
+      if (changed === "taken") {
+        return serviceError(409, `${email} was just taken by another account`);
+      }
+      this.store.markPasswordResetsUsedForMember(params.memberId, now);
+    } else {
+      this.store.saveLabMember({ ...member, email, updated_at: now });
+    }
+    const updated = this.store.getLabMember(params.memberId) ?? { ...member, email };
+    this.recordAudit({
+      type: "lab_member.login_email_changed",
+      actor: params.actorId,
+      details: {
+        member_id: params.memberId,
+        name: member.name,
+        from_email: previous,
+        to_email: email,
+        had_sign_in: Boolean(credential),
+      },
+    });
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        member: updated,
+        email,
+        previous_email: previous,
+        had_sign_in: Boolean(credential),
+      },
+    };
   }
 
   /**
@@ -10660,7 +10828,8 @@ export class AdminBotService {
   }
 
   /**
-   * The Meetings tab's index: one row per recurring meeting, newest first.
+   * The Meetings tab's index: one row per recurring meeting, the lab's weekly meeting first and the
+   * rest newest first.
    *
    * Every listed meeting is counted, not a page of them, so a series' row says how many recordings
    * its dropdown holds before anyone opens it. Built from heads, never rosters, and the same for
@@ -10680,6 +10849,7 @@ export class AdminBotService {
         series: summarizeMeetingSeries(
           this.store.listMeetingHeads(),
           this.resolveSettings().meeting_minimum_minutes ?? 0,
+          resolveGroupMeetingTopic(),
         ),
       },
     };
@@ -14089,7 +14259,11 @@ export class AdminBotService {
       appliedChanges,
       memberById: (memberId) => this.store.getLabMember(memberId),
       alreadyMailed,
-      knownMemberIds: new Set(members.map((member) => member.id)),
+      // Retired ids too: a merged duplicate's name slug must not be handed out again to the sheet
+      // row that created it in the first place.
+      knownMemberIds: new Set(
+        members.flatMap((member) => [member.id, ...(member.former_member_ids ?? [])]),
+      ),
     });
 
     const created: string[] = [];
@@ -14194,7 +14368,10 @@ export class AdminBotService {
     if (!member) {
       return serviceError(404, `no member ${params.memberId}`);
     }
-    const email = params.email?.trim() || member.email?.trim() || "";
+    const email =
+      params.email?.trim() ||
+      (params.basicWelcome ? adminBotOutreachEmail(member) : member.email?.trim()) ||
+      "";
     if (!email) {
       return serviceError(
         422,

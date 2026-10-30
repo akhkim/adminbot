@@ -284,9 +284,49 @@ describe("daily CV sweep", () => {
         { rank: 1, member_id: "m-jane", member_name: "Jane Doe", invited: 1, orals: 0, total: 1 },
       ],
       unscanned: [],
+      unread: [],
+      sweep: {
+        state: "idle",
+        last_completed_at: "2026-08-22T09:00:00.000Z",
+        last_failed_at: null,
+        next_due_at: "2026-08-23T09:00:00.000Z",
+      },
     });
     const bad = await fetch(`${baseUrl}/cv/talk-leaderboard?year=26x`, { headers: headers() });
     expect(bad.status).toBe(400);
+  });
+
+  it("shows a sweep in progress on the leaderboard, and goes back to idle when it ends", async () => {
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const deps = stubScanDeps([RECENT_POSITION]);
+    const { baseUrl, mock } = await startService({
+      cvScanDeps: {
+        ...deps,
+        extractEntries: async (text) => {
+          await gate;
+          return deps.extractEntries(text);
+        },
+      },
+    });
+    seedMember(mock);
+    const sweep = mock.runCvSweep(new Date("2026-08-20T09:00:00.000Z"));
+    const during = await fetch(`${baseUrl}/cv/talk-leaderboard?year=2026`, { headers: headers() });
+    expect(((await during.json()) as { sweep: unknown }).sweep).toMatchObject({
+      state: "reading",
+      done: 0,
+      total: 1,
+      eta_seconds: null,
+    });
+    release();
+    await sweep;
+    const after = await fetch(`${baseUrl}/cv/talk-leaderboard?year=2026`, { headers: headers() });
+    expect(((await after.json()) as { sweep: unknown }).sweep).toMatchObject({
+      state: "idle",
+      last_completed_at: "2026-08-20T09:00:00.000Z",
+    });
   });
 
   it("records the scan without a doc when no digest document is configured", async () => {
@@ -359,6 +399,41 @@ describe("daily CV sweep", () => {
     expect(recordChanges).toHaveBeenCalledTimes(2);
   });
 
+  it("keeps the CVs a crashed sweep already read, and rereads only the one it lost", async () => {
+    // A restart or crash mid-sweep used to throw away every CV read so far; now each one is saved
+    // as it lands, so the retry only spends the model on what is still missing.
+    const extractEntries = vi.fn(async () => [RECENT_POSITION]);
+    const { mock } = await startService({
+      cvScanDeps: { ...stubScanDeps([RECENT_POSITION]), extractEntries },
+    });
+    seedMember(mock);
+    seedMember(mock, {
+      ...MEMBER,
+      id: "m-sam",
+      name: "Sam Roe",
+      cv_url: "https://example.com/s.pdf",
+    });
+    vi.spyOn(mock.store, "recordCvChanges")
+      .mockImplementationOnce((events) => events)
+      .mockImplementationOnce(() => {
+        throw new Error("database is locked");
+      });
+
+    expect(await mock.runCvSweep(new Date("2026-08-20T09:00:00.000Z"))).toMatchObject({
+      status: "failed",
+    });
+    const saved = ["m-jane", "m-sam"].map((id) =>
+      Boolean(mock.store.getLabMember(id)?.cv_snapshot),
+    );
+    expect(saved.filter(Boolean)).toHaveLength(1);
+
+    extractEntries.mockClear();
+    expect(await mock.runCvSweep(new Date("2026-08-20T10:00:00.000Z"))).toMatchObject({
+      status: "done",
+    });
+    expect(extractEntries).toHaveBeenCalledTimes(1);
+  });
+
   it("does nothing when CV scanning is not configured", async () => {
     const { mock } = await startService();
     expect(await mock.runCvSweep()).toEqual({ status: "skipped", reason: "not_configured" });
@@ -397,7 +472,10 @@ describe("GET /cv/talk-leaderboard", () => {
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(member.status).toBe(200);
-    expect(await member.json()).toMatchObject({ year: 2026, rows: [], unscanned: ["Jane Doe"] });
+    expect(await member.json()).toMatchObject({ year: 2026, rows: [],
+      unscanned: ["Jane Doe"],
+      unread: [{ member_name: "Jane Doe", reason: "pending" }],
+    });
 
     const visitor = await fetch(`${baseUrl}/cv/talk-leaderboard`);
     expect(visitor.status).toBe(401);

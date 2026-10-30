@@ -38,6 +38,13 @@ const ROUTER_HELPERS = new Map<string, readonly string[]>([
 ]);
 /** Dispatchers that run before authentication; their routes need no bearer token. */
 const PUBLIC_DISPATCHERS = new Set(["routeRequest", "servePublicRoute"]);
+/**
+ * Route modules outside the table that the auth dispatcher hands requests to, walked like auth.ts.
+ * In api-tokens.ts only `handleApiTokenRoute`'s own branches (the two `adminbot login` steps a CLI
+ * makes before it holds a credential) are public; its member routes sit in a separate function.
+ */
+const AUTH_ROUTE_MODULES = /[/\\]routes[/\\](auth|api-tokens)\.ts$/u;
+const PUBLIC_AUTH_FUNCTIONS = new Set(["handleApiTokenRoute"]);
 const clean = (node: ts.Node) => node.getText().replace(/\?\./gu, ".");
 const where = (node: ts.Node) =>
   `${node.getSourceFile().fileName}:${node.getSourceFile().getLineAndCharacterOfPosition(node.getStart()).line + 1}`;
@@ -137,7 +144,59 @@ function terms(checker: ts.TypeChecker, node: ts.Expression): Term[][] {
   return [[]];
 }
 
-export function regexPaths(text: string): Variant[] {
+/**
+ * The name a table handler gives capture `group`, from the typed call it is passed to:
+ * `service.removeBadge(decodeURIComponent(params[1]!), ...)` names capture 1 after
+ * `removeBadge`'s `memberId` parameter, as `member_id`.
+ */
+function captureName(checker: ts.TypeChecker, handler: ts.Node, group: number): string | undefined {
+  let name: string | undefined;
+  const visit = (node: ts.Node) => {
+    if (name) {
+      return;
+    }
+    if (
+      ts.isElementAccessExpression(node) &&
+      node.expression.getText() === "params" &&
+      ts.isNumericLiteral(node.argumentExpression) &&
+      Number(node.argumentExpression.text) === group
+    ) {
+      // Step out of `!`, parentheses and `decodeURIComponent(...)` to the call the value feeds.
+      let value: ts.Expression = node;
+      while (
+        ts.isNonNullExpression(value.parent) ||
+        ts.isParenthesizedExpression(value.parent) ||
+        (ts.isCallExpression(value.parent) &&
+          value.parent.expression.getText() === "decodeURIComponent")
+      ) {
+        value = value.parent;
+      }
+      const call = value.parent;
+      // Read the callee's declared parameter names, not its resolved signature: resolving
+      // runs inference early and reorders the properties emitted for unrelated schemas.
+      if (ts.isCallExpression(call) && call.expression !== value) {
+        const callee = checker.getSymbolAtLocation(call.expression)?.valueDeclaration;
+        const parameter =
+          callee && ts.isFunctionLike(callee)
+            ? callee.parameters[call.arguments.indexOf(value)]
+            : undefined;
+        name =
+          parameter && ts.isIdentifier(parameter.name)
+            ? parameter.name.text.replace(/([a-z0-9])([A-Z])/gu, "$1_$2").toLowerCase()
+            : undefined;
+      }
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(handler);
+  return name;
+}
+
+export function regexPaths(
+  text: string,
+  captureName?: (group: number) => string | undefined,
+): Variant[] {
   const last = text.lastIndexOf("/");
   let pattern = text.slice(1, last);
   if (!pattern.startsWith("^") || !pattern.endsWith("$")) {
@@ -192,16 +251,27 @@ export function regexPaths(text: string): Variant[] {
     }
   }
   // Name opaque captures by their containing collection, keeping IDs stable if a
-  // later segment is added. Repeated collection names get a numeric suffix.
+  // later segment is added. Repeated collection names get a numeric suffix. Adjacent
+  // captures (`/assignments/{member}/{badge}`) have no collection of their own, so each
+  // one in such a run takes the name the handler gives it.
+  const isCapture = (segment: string | undefined) => Boolean(segment?.startsWith("{param"));
   return variants.map((variant) => {
     const segments = variant.path.split("/");
     const used = new Set<string>();
     variant.path = segments
       .map((segment, index) => {
-        if (!segment.startsWith("{param")) {
+        if (!isCapture(segment)) {
           return segment;
         }
-        const base = `${(segments[index - 1] || "resource").replaceAll("-", "_")}_id`;
+        let base = `${(segments[index - 1] || "resource").replaceAll("-", "_")}_id`;
+        if (isCapture(segments[index - 1]) || isCapture(segments[index + 1])) {
+          const group = Number(segment.slice("{param".length, -1));
+          const named = captureName?.(group);
+          if (!named) {
+            throw new Error(`Cannot name capture ${group} of adjacent captures in ${text}`);
+          }
+          base = named;
+        }
         let name = base;
         for (let suffix = 2; used.has(name); suffix++) {
           name = `${base}_${suffix}`;
@@ -488,7 +558,9 @@ export function discoverRoutes(
         path.kind === "exact"
           ? [path.path]
           : path.kind === "regex"
-            ? regexPaths(path.text).map((variant) => variant.path)
+            ? regexPaths(path.text, (group) => captureName(checker, fn, group)).map(
+                (variant) => variant.path,
+              )
             : [];
       if (entry.methods !== "*" && paths.length) {
         for (const method of entry.methods) {
@@ -532,7 +604,7 @@ export function discoverRoutes(
   for (const source of sources) {
     if (
       /[/\\]routes[/\\]/u.test(source.fileName) &&
-      !/[/\\]routes[/\\]auth\.ts$/u.test(source.fileName)
+      !AUTH_ROUTE_MODULES.test(source.fileName)
     ) {
       continue;
     }
@@ -543,7 +615,7 @@ export function discoverRoutes(
       // and a contract calling it public would make the CLI drop the very token it needs.
       const body = node.thenStatement.getText();
       return (
-        (name !== undefined && PUBLIC_DISPATCHERS.has(name)) ||
+        (name !== undefined && (PUBLIC_DISPATCHERS.has(name) || PUBLIC_AUTH_FUNCTIONS.has(name))) ||
         (name === "handleAuthRoute" &&
           !["resolvePrincipal(", "requirePrivileged(", "bearerToken(", "cookieToken("].some(
             (call) => body.includes(call),

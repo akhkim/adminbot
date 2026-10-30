@@ -201,7 +201,7 @@ describe("acquaintance welcome preview and approval", () => {
       mock.service.upsertLabMember({
         id: "member",
         name: "Mina Member",
-        email: "updated@example.test",
+        correspondence_email: "updated@example.test",
       }).ok,
     ).toBe(true);
     expect(
@@ -213,6 +213,70 @@ describe("acquaintance welcome preview and approval", () => {
         })
       ).status,
     ).toBe(409);
+  });
+  it("previews and queues the correspondence address rather than the login address", async () => {
+    vi.stubEnv("ADMINBOT_CONTACT_EMAILS", "support@example.test");
+    const { mock, baseUrl } = await startLab();
+    const admin = await memberSession(mock, baseUrl, "admin");
+    expect(
+      mock.service.upsertLabMember({
+        id: "member",
+        name: "Mina Member",
+        email: "login@lab.test",
+        correspondence_email: "letters@lab.test",
+      }).ok,
+    ).toBe(true);
+    const base = `${baseUrl}/lab/members/member/onboarding/welcome`;
+    const preview = await (
+      await fetch(`${base}/preview`, { method: "POST", headers: admin, body: "{}" })
+    ).json();
+    expect(preview.email).toBe("letters@lab.test");
+    const queued = await (
+      await fetch(`${base}/queue`, {
+        method: "POST",
+        headers: admin,
+        body: JSON.stringify({ preview_hash: preview.preview_hash }),
+      })
+    ).json();
+    expect(mock.service.getProposal(queued.proposal_id)).toMatchObject({
+      target: { target: "letters@lab.test" },
+      proposed_payload: { email: "letters@lab.test" },
+    });
+    expect(
+      mock.service.upsertLabMember({
+        id: "member",
+        name: "Mina Member",
+        correspondence_email: "changed@lab.test",
+      }).ok,
+    ).toBe(true);
+    expect(
+      (
+        await fetch(`${base}/queue`, {
+          method: "POST",
+          headers: admin,
+          body: JSON.stringify({ preview_hash: preview.preview_hash }),
+        })
+      ).status,
+    ).toBe(409);
+  });
+  it("supports a correspondence-only record and refuses an invalid selected address", async () => {
+    vi.stubEnv("ADMINBOT_CONTACT_EMAILS", "support@example.test");
+    const { mock, baseUrl } = await startLab();
+    const admin = await memberSession(mock, baseUrl, "admin");
+    const member = mock.store.getLabMember("member")!;
+    mock.store.saveLabMember({
+      ...member,
+      email: undefined,
+      correspondence_email: "letters@lab.test",
+    });
+    const base = `${baseUrl}/lab/members/member/onboarding/welcome`;
+    const response = await fetch(`${base}/preview`, { method: "POST", headers: admin, body: "{}" });
+    expect(response.status).toBe(200);
+    expect((await response.json()).email).toBe("letters@lab.test");
+    mock.store.saveLabMember({ ...member, email: undefined, correspondence_email: "broken@" });
+    expect(
+      (await fetch(`${base}/preview`, { method: "POST", headers: admin, body: "{}" })).status,
+    ).toBe(422);
   });
   it("requires an explicit reviewed resend after a previous delivered welcome", async () => {
     vi.stubEnv("ADMINBOT_CONTACT_EMAILS", "support@example.test");

@@ -7,7 +7,20 @@ import {
   DEFAULT_GROUP_MEETING_EVENT_ID,
   groupMeetingSeriesId,
   resolveGroupMeetingEventId,
+  resolveGroupMeetingTopic,
 } from "./group-meeting.js";
+
+describe("resolveGroupMeetingTopic", () => {
+  it("defaults to the lab's weekly meeting and takes an override", () => {
+    expect(resolveGroupMeetingTopic({})).toBe("Weekly Jinesis Meeting");
+    expect(resolveGroupMeetingTopic({ ADMINBOT_GROUP_MEETING_TOPIC: "  " })).toBe(
+      "Weekly Jinesis Meeting",
+    );
+    expect(resolveGroupMeetingTopic({ ADMINBOT_GROUP_MEETING_TOPIC: " Lab Sync " })).toBe(
+      "Lab Sync",
+    );
+  });
+});
 
 const schedule = adminBotDefaultGroupMeeting; // Monday 09:30 America/Toronto
 

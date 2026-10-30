@@ -186,6 +186,23 @@ export class LabTravelService {
     return people;
   }
 
+  /** Other members whose whereabouts the viewer may match: both sides share, as in travellers. */
+  private otherSharers(viewerId: string): number {
+    if (!this.store.getLocationShare(viewerId)) {
+      return 0;
+    }
+    const members = new Map(this.store.listLabMembers().map((member) => [member.id, member]));
+    return this.store.listLocationShares().filter((row) => {
+      const member = members.get(row.member_id);
+      return (
+        row.member_id !== viewerId &&
+        member !== undefined &&
+        !DEPARTED_STATUSES.has(member.status ?? "") &&
+        isTravelEntitled(member)
+      );
+    }).length;
+  }
+
   private conferencesFor(
     viewerId: string,
     sites: readonly TravelConferenceSite[],
@@ -366,6 +383,7 @@ export class LabTravelService {
       plans: structuredClone(viewer.member.trips ?? []),
       ...(home ? { home } : {}),
       matches: share ? this.matchGroups(viewer.member, share, sites, today) : [],
+      sharing_members: this.otherSharers(memberId),
     };
     return ok(overview);
   }
@@ -546,6 +564,7 @@ export class LabTravelService {
       from,
       to,
       people,
+      sharing_members: this.otherSharers(memberId),
     });
   }
 

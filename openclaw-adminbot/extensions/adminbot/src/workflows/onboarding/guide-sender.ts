@@ -86,6 +86,8 @@ export type SlackConnectInviter = (params: {
 }) => Promise<{ url: string }>;
 
 export type AdminBotOnboardingSendRequest = {
+  /** Internal executor hook: durable claim immediately before mail; never accepted from JSON. */
+  before_email?: () => void;
   template_id: string;
   interview?: InterviewInvitation;
   name: string;
@@ -775,14 +777,21 @@ export function createAdminBotOnboardingSender(
     const html = htmlOf(guide.body);
     const replyTo =
       request.reply_to?.trim() || (template.id === "welcome" ? onboardingWelcomeReplyTo(env) : "");
-    await sendEmail({
-      to: email,
-      subject: guide.subject,
-      body: guide.body,
-      ...html,
-      ...(request.cc?.length ? { cc: request.cc } : {}),
-      ...(replyTo ? { reply_to: replyTo } : {}),
-    });
+    request.before_email?.();
+    try {
+      await sendEmail({
+        to: email,
+        subject: guide.subject,
+        body: guide.body,
+        ...html,
+        ...(request.cc?.length ? { cc: request.cc } : {}),
+        ...(replyTo ? { reply_to: replyTo } : {}),
+      });
+    } catch {
+      throw new Error(
+        "Onboarding email delivery is unknown after a provider attempt. Reconcile provider receipts before any resend; do not retry this action.",
+      );
+    }
 
     // After the mail, and reported rather than thrown: the guide has already been delivered, so a
     // failed row is a follow-up item, not a reason to tell the operator the send failed. Awaited

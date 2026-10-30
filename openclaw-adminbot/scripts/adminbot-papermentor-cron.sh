@@ -48,9 +48,25 @@ elif [[ ! -r "$CACHE_DIR" || ! -x "$CACHE_DIR" ]]; then
 else
   problem=""
 fi
+
+# A host with no cache at all can say so on purpose, as the working-groups slide job does: exit 0
+# rather than fail every hour for a reviewer that runs somewhere else. It is honored only when
+# nothing points at a cache -- the variable is unset and the Overleaf default is absent -- so a
+# named cache that broke, or the Overleaf host's own cache going unreadable, still fails loudly,
+# and a cache mounted here later is read without anyone remembering to clear the flag.
+if [[ "${ADMINBOT_PAPERMENTOR_DISABLED:-}" == "1" && -z "${ADMINBOT_PAPERMENTOR_CACHE_DIR:-}" &&
+  "$problem" == "is not a directory" ]]; then
+  printf 'papermentor runs: disabled on purpose (ADMINBOT_PAPERMENTOR_DISABLED=1); no PaperMentor cache on this host\n'
+  exit 0
+fi
+
 [[ -z "$problem" ]] || {
-  printf 'papermentor runs: PaperMentor cache %s %s (%s); set ADMINBOT_PAPERMENTOR_CACHE_DIR to the cache directory mounted or synced from the Overleaf host, or run this job there\n' \
-    "$CACHE_DIR" "$problem" "$CACHE_SOURCE" >&2
+  hint="set ADMINBOT_PAPERMENTOR_CACHE_DIR to the cache directory mounted or synced from the Overleaf host, or run this job there"
+  if [[ -z "${ADMINBOT_PAPERMENTOR_CACHE_DIR:-}" && "$problem" == "is not a directory" ]]; then
+    hint="$hint, or set ADMINBOT_PAPERMENTOR_DISABLED=1 to turn this job off on a host without one"
+  fi
+  printf 'papermentor runs: PaperMentor cache %s %s (%s); %s\n' \
+    "$CACHE_DIR" "$problem" "$CACHE_SOURCE" "$hint" >&2
   exit 1
 }
 

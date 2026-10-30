@@ -20,6 +20,7 @@ import {
   readArxivPdfBase64,
 } from "../connectors/social-draft.js";
 import type { AdminBotStoredProposal } from "../contracts/actions.js";
+import { resolveAdminBotControlUiUrl } from "../contracts/control-ui.js";
 import { missingMandatoryProfileFields } from "../contracts/profile-completion.js";
 import { createLlmLoadRouter, parseLlmNodes } from "../kernel/llm-router.js";
 import { ReferenceScans } from "../kernel/reference-scans.js";
@@ -43,6 +44,8 @@ import { resolveLabCalendar } from "../workflows/calendar/lab-calendar.js";
 import { DEADLINE_VENUES } from "../workflows/deadlines/generated/dataset.js";
 import { readDeadlineDataset } from "../workflows/deadlines/runtime-dataset.js";
 import { createAccountApprovedEmailRunner } from "../workflows/identity/account-approved-email.js";
+import { runWithApiToken } from "../workflows/identity/api-token-context.js";
+import { AdminBotApiTokenService } from "../workflows/identity/api-tokens.js";
 import { AdminBotAuthService } from "../workflows/identity/auth.js";
 import { createPasswordResetEmailRunner } from "../workflows/identity/password-reset-email.js";
 import { createCalendarInviteRunner } from "../workflows/onboarding/calendar-invite.js";
@@ -84,7 +87,7 @@ import { memberEnrollmentContext } from "./routes/onboarding.js";
 import { DEFAULT_ALLOWED_ORIGINS, applyCors, parseOrigins, remoteIp } from "./routes/origin.js";
 import { createOpenReviewCitationWatch, createIclrIntegrityWatch } from "./routes/reviews.js";
 import { dispatchRoute } from "./routes/router.js";
-import { resolvePrincipal } from "./routes/session.js";
+import { ApiTokenRateLimitedError, resolvePrincipal } from "./routes/session.js";
 import { PayloadTooLargeError, sendJson } from "./server.http.js";
 import { executeMemberEnrollment } from "./server.member-onboarding.js";
 import {
@@ -92,6 +95,9 @@ import {
   handlePublicDeadlineProposal,
 } from "./server.public-deadline-proposals.js";
 import { servePublicRoute } from "./server.public.js";
+
+// Long enough that a deploy's restart has settled before CVs start downloading.
+const CV_SWEEP_FIRST_CHECK_MS = 2 * 60 * 1000;
 export type { AdminBotCvDigestPublisher } from "./routes/context.js";
 export type { AdminBotMemberSheetSource } from "./routes/context.js";
 export type { DeviceTokenIssuance } from "./routes/context.js";
@@ -137,6 +143,28 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       () => onboardingArms.slackConnect,
       () => onboardingArms.enroll,
       () => onboardingArms.dcsRoster,
+      (proposal) => {
+        // A distinct, permanent effect key. Unlike the outer execution lease this never expires
+        // or releases on exception: a timeout may mean the provider already accepted the mail.
+        const key = `onboarding-email:${proposal.id}`;
+        if (!store.claimExecution(key, proposal.id, new Date().toISOString(), "")) {
+          throw new Error(
+            "This onboarding email was already attempted. Delivery is unknown or recorded; reconcile provider receipts before any resend. Do not retry this action.",
+          );
+        }
+        store.recordAudit({
+          id: `aud_${randomUUID()}`,
+          timestamp: new Date().toISOString(),
+          type: "onboarding.email_attempted",
+          actor: proposal.approvals.at(-1)?.approver_id ?? "adminbot",
+          details: {
+            action_id: proposal.id,
+            outcome: "unknown",
+            reason:
+              "Mail attempt claimed before provider call; reconcile if execution does not finish.",
+          },
+        });
+      },
     );
   // GeoNames for the "Use my precise location" control. Built before the service, which owns the
   // only code that sees a position; the route context gets its credit for the map.
@@ -256,6 +284,18 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     // An explicitly injected geolocator wins (tests inject their own); otherwise the local city
     // database when ADMINBOT_GEOIP_MMDB_PATH is set, then IPinfo when IPINFO_TOKEN is. With
     // neither, the option stays unset and the login path simply skips the stamp.
+    ...(options.geolocateIp
+      ? { geolocateIp: options.geolocateIp }
+      : ipGeolocation.geolocate
+        ? { geolocateIp: ipGeolocation.geolocate }
+        : {}),
+  });
+  // Personal API tokens for scripts and agents (docs/adminbot/api-tokens.md). Same store and the
+  // same geolocator as sign-in, so a token's "last used from" reads like a session's.
+  const apiTokens = new AdminBotApiTokenService({
+    store,
+    levels: process.env.ADMINBOT_API_TOKEN_LEVELS,
+    controlUiUrl: resolveAdminBotControlUiUrl(process.env),
     ...(options.geolocateIp
       ? { geolocateIp: options.geolocateIp }
       : ipGeolocation.geolocate
@@ -454,6 +494,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     store,
     memberDrafts,
     auth,
+    apiTokens,
     privacyBroker,
     localChat: options.localChat ?? createLocalChat(),
     sensitiveInfo,
@@ -580,12 +621,33 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
         }, cvSweepCheckIntervalMs)
       : undefined;
   cvSweepTimer?.unref();
+  // Also checked soon after start, not only an interval later. The host is redeployed more often
+  // than hourly on a busy day, and a first check an hour out was reset by every restart, so the
+  // sweep could go a whole day without ever running. runCvDailySweep is a no-op when not due.
+  const cvSweepFirstCheck =
+    typeof cvSweepCheckIntervalMs === "number" && cvSweepCheckIntervalMs > 0
+      ? setTimeout(
+          () => {
+            void runCvDailySweep(ctx, service).catch(() => {});
+          },
+          Math.min(cvSweepCheckIntervalMs, CV_SWEEP_FIRST_CHECK_MS),
+        )
+      : undefined;
+  cvSweepFirstCheck?.unref();
   const server = createServer(async (req, res) => {
     try {
       await routeRequest(req, res, ctx);
     } catch (error) {
       if (error instanceof PayloadTooLargeError) {
         sendJson(res, 413, { error: { message: error.message } });
+        return;
+      }
+      if (error instanceof ApiTokenRateLimitedError) {
+        res.setHeader("Retry-After", String(error.retryAfterSeconds));
+        sendJson(res, 429, {
+          error: { message: error.message },
+          retry_after_seconds: error.retryAfterSeconds,
+        });
         return;
       }
       sendJson(res, 500, {
@@ -614,6 +676,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       if (meetupSweepTimer) {
         clearInterval(meetupSweepTimer);
       }
+      clearTimeout(cvSweepFirstCheck);
       if (cvSweepTimer) {
         clearInterval(cvSweepTimer);
       }
@@ -712,7 +775,10 @@ async function routeRequest(req: IncomingMessage, res: ServerResponse, ctx: Admi
     });
     return;
   }
-  await handleAuthenticatedRoute(req, res, ctx, url, principal);
+  // Audit lines written anywhere under this request name the token it came with, if any.
+  await runWithApiToken(principal.kind === "member" ? principal.apiToken : undefined, () =>
+    handleAuthenticatedRoute(req, res, ctx, url, principal),
+  );
 }
 
 async function handleAuthenticatedRoute(

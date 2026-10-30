@@ -432,6 +432,12 @@ describe("hasLabCalendarAccess", () => {
     });
     expect(hasLabCalendarAccess([rule("reader", "user", "A@gmail.com")], "a@gmail.com")).toBe(true);
     expect(hasLabCalendarAccess([rule("writer", "user", "a@gmail.com")], "a@gmail.com")).toBe(true);
+    expect(
+      hasLabCalendarAccess(
+        [rule("writerWithoutPrivateAccess", "user", "a@gmail.com")],
+        "a@gmail.com",
+      ),
+    ).toBe(true);
     expect(hasLabCalendarAccess([rule("reader", "default")], "a@gmail.com")).toBe(true);
     expect(
       hasLabCalendarAccess([rule("freeBusyReader", "user", "a@gmail.com")], "a@gmail.com"),
