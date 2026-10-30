@@ -65,4 +65,45 @@ describe("approved collaborator-chat connector", () => {
     );
     expect(fetch).toHaveBeenCalledTimes(1);
   });
+  it("bounds a stalled provider and aborts without another request", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetch = vi.fn().mockImplementation(() => new Promise(() => {}));
+      const result = executeCollaboratorChat(proposal, "synthetic-token", fetch);
+      const refused = expect(result).rejects.toThrow("deadline exceeded");
+      await vi.advanceTimersByTimeAsync(25_000);
+      await refused;
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(fetch.mock.calls[0][1].signal.aborted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it("bounds response-body consumption and retains the already opened group", async () => {
+    vi.useFakeTimers();
+    try {
+      let release!: (text: string) => void;
+      const fetch = fetcher().mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        text: () =>
+          new Promise<string>((resolve) => {
+            release = resolve;
+          }),
+      });
+      const result = executeCollaboratorChat(proposal, "synthetic-token", fetch);
+      await vi.advanceTimersByTimeAsync(25_000);
+      expect(await result).toMatchObject({
+        delivered: false,
+        artifacts: { outcome: "message_unknown", slack_channel: "GEXAMPLE" },
+      });
+      expect(fetch.mock.calls[3][1].signal.aborted).toBe(true);
+      release(JSON.stringify({ ok: true, ts: "late-response" }));
+      await vi.advanceTimersByTimeAsync(1);
+      expect(fetch).toHaveBeenCalledTimes(4);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
