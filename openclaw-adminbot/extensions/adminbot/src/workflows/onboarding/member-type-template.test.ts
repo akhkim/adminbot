@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { findOnboardingTemplate } from "./emails.js";
 import { adminBotMemberTypes } from "../../contracts/actions.js";
+import { findOnboardingTemplate } from "./emails.js";
 import {
-  NO_MAIL_MEMBER_TYPES,
+  BASIC_WELCOME_MEMBER_TYPES,
+  memberGuideProvidesSlackConnect,
   memberTypeTokens,
   templateForMemberType,
 } from "./member-type-template.js";
@@ -14,8 +15,9 @@ describe("choosing a template from the Member Type column", () => {
       templateId: "alumni",
       token: "alumni",
     });
-    expect(templateForMemberType("coauthor-minor").ok && templateForMemberType("coauthor-minor"))
-      .toMatchObject({ templateId: "coauthor_minor" });
+    expect(
+      templateForMemberType("coauthor-minor").ok && templateForMemberType("coauthor-minor"),
+    ).toMatchObject({ templateId: "coauthor_minor" });
     expect(templateForMemberType("interviewee")).toMatchObject({ templateId: "interviewee" });
   });
 
@@ -35,11 +37,11 @@ describe("choosing a template from the Member Type column", () => {
     });
   });
 
-  it("refuses a row carrying only no-mail roles, and says why", () => {
-    for (const type of ["acquaintance", "coauthor-discussant-or-designer", "external-prof"]) {
+  it("gives every lightweight collaboration role the basic welcome", () => {
+    for (const type of BASIC_WELCOME_MEMBER_TYPES) {
       const result = templateForMemberType(type);
-      expect(result.ok, type).toBe(false);
-      expect(result.ok ? "" : result.reason).toContain("sends no onboarding mail");
+      expect(result, type).toMatchObject({ ok: true, templateId: "welcome", token: type });
+      expect(memberGuideProvidesSlackConnect(type), type).toBe(false);
     }
   });
 
@@ -105,7 +107,7 @@ describe("the routing table and the Member Type vocabulary", () => {
     }
     // Adding a token to the vocabulary without deciding its onboarding lands it here and fails.
     expect(buckets.none.toSorted()).toEqual(OPERATIONAL.toSorted());
-    expect(buckets.noMail.toSorted()).toEqual([...NO_MAIL_MEMBER_TYPES].toSorted());
+    expect(buckets.noMail).toEqual([]);
     expect(buckets.mail.length).toBeGreaterThan(0);
   });
 
@@ -118,8 +120,8 @@ describe("the routing table and the Member Type vocabulary", () => {
     }
   });
 
-  it("keeps the no-mail roles inside the vocabulary", () => {
-    for (const type of NO_MAIL_MEMBER_TYPES) {
+  it("keeps the basic welcome roles inside the vocabulary", () => {
+    for (const type of BASIC_WELCOME_MEMBER_TYPES) {
       expect(adminBotMemberTypes as readonly string[]).toContain(type);
     }
   });

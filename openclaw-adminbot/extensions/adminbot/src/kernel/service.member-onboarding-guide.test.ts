@@ -76,15 +76,12 @@ describe("onboarding a member added from the roster", () => {
     expect(filed(service)).toHaveLength(0);
   });
 
-  // Their onboarding is the access-level algorithm granting the subgroup's items in the backend.
-  // Saying so is the point: an admin who ticked the box should learn nothing is owed, not wonder.
-  it("refuses a member type whose onboarding is not a mail, and says which", () => {
+  it("queues a basic welcome for an acquaintance without granting more access", () => {
     const service = new AdminBotService();
     add(service, { member_type: "acquaintance" });
     const result = queue(service);
-    expect(result.ok).toBe(false);
-    expect(!result.ok && result.error.message).toContain("acquaintance");
-    expect(filed(service)).toHaveLength(0);
+    expect(unwrap(result)).toMatchObject({ template_id: "welcome" });
+    expect(filed(service)).toHaveLength(1);
   });
 
   it("refuses a member with no type at all", () => {
@@ -180,10 +177,10 @@ describe("onboarding a member added from the roster", () => {
       expect(payload.add_dcs_roster_row).toBeUndefined();
     });
 
-    it("keeps refusing a member type whose onboarding is not a mail", () => {
+    it("can resend the basic welcome when explicitly requested", () => {
       const service = new AdminBotService();
       add(service, { member_type: "acquaintance" });
-      expect(resend(service)).toMatchObject({ ok: false, status: 422 });
+      expect(unwrap(resend(service))).toMatchObject({ template_id: "welcome" });
     });
   });
 

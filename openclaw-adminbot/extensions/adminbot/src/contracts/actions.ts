@@ -2799,6 +2799,7 @@ export type AdminBotAuditEvent = {
     // The pre-meeting pre-registration reminder, keyed by the meeting it was sent before.
     | "prereg.nudged"
     | "paper.deleted"
+    | "onboarding.email_attempted"
     | "onboarding.guide_sent"
     // One weekly pass over the sheet for joiners and re-typed members. Its timestamp is what the
     // next pass reads to know which applied type changes it has already seen.

@@ -27,6 +27,7 @@ import {
   configuredEnvValue,
   driveWorkspaceFolderName,
   firstNameOf,
+  onboardingWelcomeReplyTo,
   unfilledPlaceholders,
   type AdminBotComposedGuide,
   type AdminBotGuideComposeResult,
@@ -85,6 +86,8 @@ export type SlackConnectInviter = (params: {
 }) => Promise<{ url: string }>;
 
 export type AdminBotOnboardingSendRequest = {
+  /** Internal executor hook: durable claim immediately before mail; never accepted from JSON. */
+  before_email?: () => void;
   template_id: string;
   interview?: InterviewInvitation;
   name: string;
@@ -282,7 +285,7 @@ const ACTIVE_CHANNELS_ACCESS_ITEM = "active_channels";
  *
  * The same channel, invite and reuse window as the guide's `{slack_connect_link}`, so somebody
  * reached by both is invited once: a fresh cached invite is reported as reused rather than minted
- * again. For the Member Types the access design gives the channel but no onboarding mail.
+ * again. Used when the basic welcome does not provision Slack itself.
  */
 export function createSlackConnectOnboardingInviter(
   options: Pick<
@@ -772,14 +775,23 @@ export function createAdminBotOnboardingSender(
       guide.body = guide.body.replace(INTERVIEW_TASK_MARKER, () => interview!.task);
     }
     const html = htmlOf(guide.body);
-    await sendEmail({
-      to: email,
-      subject: guide.subject,
-      body: guide.body,
-      ...html,
-      ...(request.cc?.length ? { cc: request.cc } : {}),
-      ...(request.reply_to?.trim() ? { reply_to: request.reply_to.trim() } : {}),
-    });
+    const replyTo =
+      request.reply_to?.trim() || (template.id === "welcome" ? onboardingWelcomeReplyTo(env) : "");
+    request.before_email?.();
+    try {
+      await sendEmail({
+        to: email,
+        subject: guide.subject,
+        body: guide.body,
+        ...html,
+        ...(request.cc?.length ? { cc: request.cc } : {}),
+        ...(replyTo ? { reply_to: replyTo } : {}),
+      });
+    } catch {
+      throw new Error(
+        "Onboarding email delivery is unknown after a provider attempt. Reconcile provider receipts before any resend; do not retry this action.",
+      );
+    }
 
     // After the mail, and reported rather than thrown: the guide has already been delivered, so a
     // failed row is a follow-up item, not a reason to tell the operator the send failed. Awaited

@@ -143,6 +143,28 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       () => onboardingArms.slackConnect,
       () => onboardingArms.enroll,
       () => onboardingArms.dcsRoster,
+      (proposal) => {
+        // A distinct, permanent effect key. Unlike the outer execution lease this never expires
+        // or releases on exception: a timeout may mean the provider already accepted the mail.
+        const key = `onboarding-email:${proposal.id}`;
+        if (!store.claimExecution(key, proposal.id, new Date().toISOString(), "")) {
+          throw new Error(
+            "This onboarding email was already attempted. Delivery is unknown or recorded; reconcile provider receipts before any resend. Do not retry this action.",
+          );
+        }
+        store.recordAudit({
+          id: `aud_${randomUUID()}`,
+          timestamp: new Date().toISOString(),
+          type: "onboarding.email_attempted",
+          actor: proposal.approvals.at(-1)?.approver_id ?? "adminbot",
+          details: {
+            action_id: proposal.id,
+            outcome: "unknown",
+            reason:
+              "Mail attempt claimed before provider call; reconcile if execution does not finish.",
+          },
+        });
+      },
     );
   // GeoNames for the "Use my precise location" control. Built before the service, which owns the
   // only code that sees a position; the route context gets its credit for the map.

@@ -174,8 +174,8 @@ describe("onboarding a member from their roster row", () => {
     await expect(res.json()).resolves.toMatchObject({
       error: { message: expect.any(String) },
     });
-    expect(sender).toHaveBeenCalledTimes(1);
-    expect(filed(mock)).toHaveLength(1);
+    expect(sender).toHaveBeenCalledTimes(2);
+    expect(filed(mock)).toHaveLength(2);
   });
 
   // The path also matches /lab/members/:id/onboarding/:step, which ticks a checklist item. If the
@@ -302,13 +302,14 @@ describe("onboarding a member from their roster row", () => {
     });
   });
 
-  it("passes the service's reason through when there is no guide to send", async () => {
-    const { baseUrl, mock } = await lab();
+  it("sends the basic welcome while an approved person's Member Type is unresolved", async () => {
+    const { baseUrl, mock } = await lab(fakeSender("sent"));
     const token = await memberToken(mock, baseUrl, "admin", "admin@cs.toronto.edu");
     const res = await onboard(baseUrl, "pat", { Authorization: `Bearer ${token}` });
-    expect(res.status).toBe(422);
+    expect(res.status).toBe(200);
     await expect(res.json()).resolves.toMatchObject({
-      error: { message: expect.stringContaining("Member Type") },
+      status: "done",
+      template_id: "welcome",
     });
   });
 });

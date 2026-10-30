@@ -5,7 +5,6 @@ import type {
 } from "../connectors/calendar-membership.js";
 import type { ReverseGeocoder } from "../connectors/reverse-geocode.js";
 import type { AdminBotExternalCollaboratorSubgroup } from "../contracts/actions.js";
-import type { AdminBotApiToken, AdminBotApiTokenUsage } from "../contracts/api-tokens.js";
 import {
   adminBotActionTypes,
   ADMINBOT_ONBOARDING_CATCH_UP_ROUND,
@@ -116,6 +115,7 @@ import {
   type AdminBotUpdateSource,
   type AdminBotUpdateSubject,
 } from "../contracts/activity-log.js";
+import type { AdminBotApiToken, AdminBotApiTokenUsage } from "../contracts/api-tokens.js";
 import {
   ADMINBOT_BADGE_CATEGORY_MAX,
   ADMINBOT_BADGE_DESCRIPTION_MAX,
@@ -1902,17 +1902,15 @@ export class AdminBotService {
     proposal: AdminBotActionProposal,
   ): AdminBotStoredProposal | undefined {
     const hash = payloadHash(proposal.proposed_payload);
-    return this.store
-      .listProposalsByType(proposal.type)
-      .find(
-        (stored) =>
-          (stored.status === "pending" || stored.status === "approved") &&
-          // Proposals filed before every action carried a payload (Aug-Sep 2026) have none to
-          // compare, so none can be "the same". Hashing that absence threw inside this find, and one
-          // such approved invite left every channel sweep that filed a new invite with a 500.
-          stored.proposed_payload !== undefined &&
-          payloadHash(stored.proposed_payload) === hash,
-      );
+    return this.store.listProposalsByType(proposal.type).find(
+      (stored) =>
+        (stored.status === "pending" || stored.status === "approved") &&
+        // Proposals filed before every action carried a payload (Aug-Sep 2026) have none to
+        // compare, so none can be "the same". Hashing that absence threw inside this find, and one
+        // such approved invite left every channel sweep that filed a new invite with a 500.
+        stored.proposed_payload !== undefined &&
+        payloadHash(stored.proposed_payload) === hash,
+    );
   }
 
   /**
@@ -14351,6 +14349,10 @@ export class AdminBotService {
   queueOnboardingGuideForMember(params: {
     memberId: string;
     actor: string;
+    subjectOverride?: string;
+    bodyOverride?: string;
+    /** A minimal contact email while the role-specific guide still needs setup or review. */
+    basicWelcome?: boolean;
     slackChannels?: readonly string[];
     /** The Onboarding tab's per-row address override; the record's email otherwise. */
     email?: string;
@@ -14366,18 +14368,46 @@ export class AdminBotService {
     if (!member) {
       return serviceError(404, `no member ${params.memberId}`);
     }
-    const email = params.email?.trim() || member.email?.trim() || "";
+    const email =
+      params.email?.trim() ||
+      (params.basicWelcome ? adminBotOutreachEmail(member) : member.email?.trim()) ||
+      "";
     if (!email) {
       return serviceError(
         422,
         `${member.name || member.id} has no email address, so there is nowhere to send an onboarding guide`,
       );
     }
-    const template = templateForMemberType(member.member_type);
+    const template = params.basicWelcome
+      ? { ok: true as const, templateId: "welcome" }
+      : templateForMemberType(member.member_type);
     if (!template.ok) {
       return serviceError(422, template.reason);
     }
     const recipient = email.toLowerCase();
+    if (params.basicWelcome && !params.resend && !params.subjectOverride && !params.bodyOverride) {
+      // Only reuse the unedited standard welcome for this exact person. Enrollment approval
+      // must not approve a manually rewritten email or somebody else's pending proposal.
+      const matching = this.store.listProposalsByType("onboarding.send_guide").filter((stored) => {
+        const payload = (stored.proposed_payload ?? {}) as Record<string, unknown>;
+        return (
+          ["pending", "approved", "executed"].includes(stored.status) &&
+          Object.keys(payload).length === 4 &&
+          payload.template_id === "welcome" &&
+          payload.member_id === member.id &&
+          payload.name === member.name &&
+          payload.email === email
+        );
+      });
+      const existing = matching.find((stored) => stored.status === "executed") ?? matching[0];
+      if (existing) {
+        return {
+          ok: true,
+          status: 200,
+          payload: { proposal_id: existing.id, template_id: "welcome", email },
+        };
+      }
+    }
     // The same two ledgers `sweepOnboardingMail` keys on -- a guide already sent, and one already
     // waiting for an approver. Pressing Add member twice on one id, or adding somebody the weekly
     // sweep has already picked up, must not put a second copy of the same mail in front of them.
@@ -14435,6 +14465,8 @@ export class AdminBotService {
         name: member.name,
         email,
         member_id: member.id,
+        ...(params.subjectOverride ? { subject_override: params.subjectOverride } : {}),
+        ...(params.bodyOverride ? { body_override: params.bodyOverride } : {}),
         // The first send already filed this person's DCS roster row; a second row would ask DCS
         // for a second account under a second password.
         ...(resend ? { resend: true, add_dcs_roster_row: false } : {}),
