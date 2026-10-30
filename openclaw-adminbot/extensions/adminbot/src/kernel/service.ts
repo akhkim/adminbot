@@ -14175,6 +14175,8 @@ export class AdminBotService {
   queueOnboardingGuideForMember(params: {
     memberId: string;
     actor: string;
+    subjectOverride?: string;
+    bodyOverride?: string;
     /** A minimal contact email while the role-specific guide still needs setup or review. */
     basicWelcome?: boolean;
     slackChannels?: readonly string[];
@@ -14206,7 +14208,7 @@ export class AdminBotService {
       return serviceError(422, template.reason);
     }
     const recipient = email.toLowerCase();
-    if (params.basicWelcome && !params.resend) {
+    if (params.basicWelcome && !params.resend && !params.subjectOverride && !params.bodyOverride) {
       // Only reuse the unedited standard welcome for this exact person. Enrollment approval
       // must not approve a manually rewritten email or somebody else's pending proposal.
       const matching = this.store.listProposalsByType("onboarding.send_guide").filter((stored) => {
@@ -14286,6 +14288,8 @@ export class AdminBotService {
         name: member.name,
         email,
         member_id: member.id,
+        ...(params.subjectOverride ? { subject_override: params.subjectOverride } : {}),
+        ...(params.bodyOverride ? { body_override: params.bodyOverride } : {}),
         // The first send already filed this person's DCS roster row; a second row would ask DCS
         // for a second account under a second password.
         ...(resend ? { resend: true, add_dcs_roster_row: false } : {}),

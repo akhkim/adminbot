@@ -1,9 +1,8 @@
+import { randomUUID } from "node:crypto";
 // Onboarding guides, the membership sheet, interviews, and onboarding sweeps.
 //
 // Cut from server.ts's handleAuthenticatedRoute. Each route states its audience with a guard
 // decorator from guards.ts; the order below is the order the old if-chain tried them in.
-
-import { randomUUID } from "node:crypto";
 import type { AdminBotMemberNudgeChannel } from "../../contracts/actions.js";
 import { ADMINBOT_ALUMNI_SLACK_CONNECT_TEMPLATE_ID } from "../../contracts/paper-cycle.js";
 import type { AdminBotOnboardingSendRequest } from "../../workflows/onboarding/guide-sender.js";
@@ -34,6 +33,7 @@ import {
   readRosterSheet,
 } from "../server.member-sheet.js";
 import { memberSheetWire } from "../server.member-sheet.wire.js";
+import { acquaintanceWelcomeRoutes } from "./acquaintance-welcome.js";
 import type { AdminBotPrincipal, AdminBotRouteContext } from "./context.js";
 import {
   adminSessionOnly,
@@ -46,6 +46,7 @@ import { readGroupMeetingSeries } from "./meetings.js";
 import { get, post, route, type Route } from "./router.js";
 
 export const onboardingRoutes: readonly Route[] = [
+  ...acquaintanceWelcomeRoutes,
   // Onboarding for one member of the roster, which is what the Members tab's Add-member button
   // runs after it has created the record. Matched before `onboardingStep` below, whose pattern
   // would otherwise read "guide" as the id of a checklist step (there is no such step, so it would

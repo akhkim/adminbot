@@ -10,6 +10,7 @@ import {
   adminBotMemberTypes,
 } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import "./member-guide-status.ts";
+import "./acquaintance-welcome.ts";
 import {
   findDuplicateMembers,
   type MemberDuplicatePair,
@@ -32,6 +33,7 @@ import { icons } from "../../icons.ts";
 import type { MemberProfileUpdate } from "../api/members.ts";
 import type { ConferenceRoster, PaperSlotOverviewRow } from "../api/paper-admin.ts";
 import type { PaperSlotRow } from "../api/papers.ts";
+import { loadStoredMemberSession } from "../auth/session.ts";
 import type { AdminBotEmailReviewResolution, MemberNudgeChannel } from "../auth/session.ts";
 import {
   type BlockerRow,
@@ -1595,7 +1597,17 @@ function renderMemberEditPopover(member: AdminBotLabMember, index: number, props
               <adminbot-member-guide-status
                 style="grid-column: 1 / -1"
                 .memberId=${member.id}
+                .requirePreview=${member.member_type
+                  ?.split(",")
+                  .some((part) => part.trim() === "acquaintance")}
               ></adminbot-member-guide-status>
+              ${member.member_type?.split(",").some((part) => part.trim() === "acquaintance")
+                ? html`<adminbot-acquaintance-welcome
+                    style="grid-column:1 / -1"
+                    .memberId=${member.id}
+                    .sessionToken=${loadStoredMemberSession()?.sessionToken ?? ""}
+                  ></adminbot-acquaintance-welcome>`
+                : nothing}
               ${renderMemberFormFields(
                 member,
                 props.standingMeetings,
