@@ -7,6 +7,8 @@ import {
   dcsAddressOf,
   dcsCredentialsEmail,
   dcsUsernameCandidates,
+  dcsCareerStage,
+  DCS_CAREER_STAGES,
   DCS_DEFAULT_PERMISSION,
   DCS_ROSTER_SHEET_COLUMNS,
   generateDcsTemporaryPassword,
@@ -155,7 +157,7 @@ describe("buildDcsRosterRow", () => {
       ...base,
       facts: {
         id: "member-1",
-        member_type: "PhD student",
+        role: "PhD Student",
         at_uoft: true,
         correspondence_email: "ada@ethz.ch",
         compute_access: ["UofT-AI-Slurm"],
@@ -167,7 +169,7 @@ describe("buildDcsRosterRow", () => {
     expect(column(row, "dcs_username")).toBe("ada");
     expect(column(row, "dcs_password")).toBe("TEMPpw");
     expect(column(row, "non_dcs_email")).toBe("ada@ethz.ch");
-    expect(column(row, "career_stage")).toBe("PhD student");
+    expect(column(row, "career_stage")).toBe("grad student (at uoft)");
     expect(column(row, "at_uoft_or_not")).toBe("yes");
     expect(column(row, "permission")).toBe("UofT-AI-Slurm");
     expect(column(row, "date_of_this_row_change")).toBe("2026-09-20");
@@ -180,6 +182,15 @@ describe("buildDcsRosterRow", () => {
     expect(
       column(buildDcsRosterRow({ ...base, facts: { at_uoft: false } }), "at_uoft_or_not"),
     ).toBe("no");
+  });
+
+  it("writes a retired permission spelling as its replacement", () => {
+    expect(
+      column(
+        buildDcsRosterRow({ ...base, facts: { compute_access: ["UofT-slack-only"] } }),
+        "permission",
+      ),
+    ).toBe("UofT-CSlab-noDiskusage-justSlack");
   });
 
   // New members default to the least-privileged tier. An escalation is a deliberate later row.
@@ -349,5 +360,51 @@ describe("dcsCredentialsEmail", () => {
         password: "x",
       }).body,
     ).toContain("Hi Cher,");
+  });
+});
+
+describe("dcsCareerStage", () => {
+  it("maps a UofT-affiliated student or postdoc onto the sheet's dropdown", () => {
+    expect(dcsCareerStage({ role: "PhD Student", at_uoft: true })).toBe("grad student (at uoft)");
+    expect(dcsCareerStage({ role: "Master's Student", at_uoft: true })).toBe(
+      "grad student (at uoft)",
+    );
+    expect(dcsCareerStage({ role: "Undergraduate Student", at_uoft: true })).toBe(
+      "undergrad (at uoft)",
+    );
+    expect(dcsCareerStage({ role: "Postdoc", at_uoft: true })).toBe("postdoc (at uoft)");
+    // The most senior role decides when somebody holds several.
+    expect(dcsCareerStage({ role: "Research Assistant, Master's Student", at_uoft: true })).toBe(
+      "grad student (at uoft)",
+    );
+  });
+
+  it("calls somebody external when the record says they are not at UofT", () => {
+    expect(dcsCareerStage({ role: "PhD Student", at_uoft: false })).toBe(
+      "external (from another org)",
+    );
+    expect(dcsCareerStage({ role: "External Collaborator" })).toBe("external (from another org)");
+    expect(dcsCareerStage({ role: "Industry Researcher, External Collaborator" })).toBe(
+      "external (from another org)",
+    );
+  });
+
+  // "(at uoft)" is an eligibility claim to DCS. A student role without a recorded affiliation, or
+  // an affiliation with no role the dropdown has a slot for, is left for a person to fill in.
+  it("leaves the cell blank when the record cannot back one of the four values", () => {
+    expect(dcsCareerStage({})).toBe("");
+    expect(dcsCareerStage({ role: "PhD Student" })).toBe("");
+    expect(dcsCareerStage({ role: "External Collaborator, PhD Student" })).toBe("");
+    expect(dcsCareerStage({ role: "Research Assistant", at_uoft: true })).toBe("");
+    expect(dcsCareerStage({ role: "External Collaborator", at_uoft: true })).toBe("");
+  });
+
+  it("only ever writes a value the sheet's validation accepts", () => {
+    const allowed = new Set<string>([...DCS_CAREER_STAGES, ""]);
+    for (const role of [undefined, "", "PhD Student", "Postdoc", "Professor", "Other"]) {
+      for (const at_uoft of [undefined, true, false]) {
+        expect(allowed.has(dcsCareerStage({ role, at_uoft }))).toBe(true);
+      }
+    }
   });
 });

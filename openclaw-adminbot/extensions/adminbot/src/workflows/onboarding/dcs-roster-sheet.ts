@@ -21,6 +21,8 @@
  */
 
 import { randomInt } from "node:crypto";
+import { canonicalComputeAccess } from "../../contracts/compute-access.js";
+import { parseAdminBotMemberRoles } from "../../contracts/member-roles.js";
 
 /**
  * The sheet's header row, in the order the columns appear.
@@ -201,8 +203,8 @@ export function generateDcsTemporaryPassword(
 export type DcsRosterMemberFacts = {
   /** AdminBot's own member id, for `adminbot_internal_id`. */
   id?: string;
-  /** Free-text member type, which is what the sheet calls `career_stage`. */
-  member_type?: string;
+  /** The member's roles (the profile's comma-joined vocabulary), which `career_stage` is derived from. */
+  role?: string;
   /**
    * Whether this person holds a UofT affiliation.
    *
@@ -226,7 +228,52 @@ export type DcsRosterMemberFacts = {
  * least-privileged tier unless an explicit, authorized choice says otherwise -- an escalation is a
  * separate, deliberate row on this sheet, not a side effect of onboarding.
  */
-export const DCS_DEFAULT_PERMISSION = "UofT-slack-only";
+export const DCS_DEFAULT_PERMISSION = "UofT-CSlab-noDiskusage-justSlack";
+
+/**
+ * The values the sheet's `career_stage` dropdown allows, and the only ones written into it.
+ *
+ * Three of the four claim a UofT affiliation. That claim is about whether DCS can sponsor the
+ * account, so it is made only when `at_uoft` is `true`. A student role alone is not enough, because
+ * many of the lab's PhD and master's students are enrolled elsewhere.
+ */
+export const DCS_CAREER_STAGES = [
+  "grad student (at uoft)",
+  "undergrad (at uoft)",
+  "external (from another org)",
+  "postdoc (at uoft)",
+] as const;
+
+export type DcsCareerStage = (typeof DCS_CAREER_STAGES)[number];
+
+/** Roles that place someone outside UofT when nothing says they hold an affiliation there. */
+const EXTERNAL_ROLES = new Set(["external collaborator", "industry researcher"]);
+
+/**
+ * The `career_stage` cell, from the member's roles and UofT affiliation.
+ *
+ * Blank whenever the record cannot back one of the four values. The sheet's validation rejects
+ * anything else, and a guessed stage would be a guessed eligibility claim. With several roles the
+ * most senior one decides, so a "Research Assistant, Master's Student" reads as a grad student.
+ */
+export function dcsCareerStage(member: { role?: string; at_uoft?: boolean }): DcsCareerStage | "" {
+  if (member.at_uoft === false) {
+    return "external (from another org)";
+  }
+  const roles = new Set(parseAdminBotMemberRoles(member.role).map((role) => role.toLowerCase()));
+  if (member.at_uoft === true) {
+    if (roles.has("postdoc")) {
+      return "postdoc (at uoft)";
+    }
+    if (roles.has("phd student") || roles.has("master's student")) {
+      return "grad student (at uoft)";
+    }
+    return roles.has("undergraduate student") ? "undergrad (at uoft)" : "";
+  }
+  return roles.size > 0 && [...roles].every((role) => EXTERNAL_ROLES.has(role))
+    ? "external (from another org)"
+    : "";
+}
 
 export type DcsRosterRowInput = {
   name: string;
@@ -247,7 +294,8 @@ export type DcsRosterRowInput = {
  */
 export function buildDcsRosterRow(input: DcsRosterRowInput): string[] {
   const facts = input.facts ?? {};
-  const permission = facts.compute_access?.find((entry) => entry.trim()) ?? DCS_DEFAULT_PERMISSION;
+  const granted = facts.compute_access?.find((entry) => entry.trim());
+  const permission = granted ? canonicalComputeAccess(granted) : DCS_DEFAULT_PERMISSION;
   const atUoft = facts.at_uoft === undefined ? "" : facts.at_uoft ? "yes" : "no";
   const row: Record<(typeof DCS_ROSTER_SHEET_COLUMNS)[number], string> = {
     full_name: input.name.trim(),
@@ -255,7 +303,7 @@ export function buildDcsRosterRow(input: DcsRosterRowInput): string[] {
     dcs_username: input.username,
     dcs_password: input.password,
     non_dcs_email: facts.correspondence_email?.trim() || input.email.trim(),
-    career_stage: facts.member_type?.trim() ?? "",
+    career_stage: dcsCareerStage(facts),
     at_uoft_or_not: atUoft,
     permission,
     date_of_this_row_change: (input.now ?? new Date()).toISOString().slice(0, 10),

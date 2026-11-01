@@ -22,11 +22,13 @@ import {
 } from "../../contracts/actions.js";
 import {
   adminBotComputeAccessRegistry,
+  canonicalComputeAccess,
   formatComputeAccessCell,
   isAdminBotComputeAccess,
 } from "../../contracts/compute-access.js";
 import {
   chooseDcsUsername,
+  dcsCareerStage,
   DCS_DEFAULT_PERMISSION,
   dcsUsernameCandidates,
   normalizeDcsUsername,
@@ -111,22 +113,24 @@ function nonDcsEmail(member: AdminBotLabMember): string {
  * those are another sysadmin's business -- writing them here would ask this one to act on them.
  */
 function permissionCell(member: AdminBotLabMember): string {
-  const dcs = (member.compute_access ?? []).filter(
-    (value) =>
-      isAdminBotComputeAccess(value.trim()) &&
-      adminBotComputeAccessRegistry[value.trim() as keyof typeof adminBotComputeAccessRegistry]
-        .provider === "dcs",
-  );
+  const dcs = (member.compute_access ?? [])
+    .map(canonicalComputeAccess)
+    .filter(
+      (value) =>
+        isAdminBotComputeAccess(value) && adminBotComputeAccessRegistry[value].provider === "dcs",
+    );
   return formatComputeAccessCell(dcs) || DCS_DEFAULT_PERMISSION;
 }
 
 /**
  * The row's values for one member, by column name.
  *
- * `career_stage` carries the Member Type, as the rows the guide filed always did; it is what the
- * sysadmin reads to tell a lab member from a coauthor. `dcs_username` is the stored account name
- * when there is one and blank otherwise -- the candidates travel separately, because which one is
- * free can only be answered against the sheet at the moment the row is written.
+ * `career_stage` is one of the sheet's four dropdown values, derived from the member's roles and
+ * UofT affiliation (see `dcsCareerStage`), and blank when the record cannot back one. It used to
+ * carry the Member Type (`full`, `coauthor-major`), which the sheet no longer accepts there.
+ * `dcs_username` is the stored account name when there is one and blank otherwise -- the candidates
+ * travel separately, because which one is free can only be answered against the sheet at the
+ * moment the row is written.
  */
 export function dcsRosterEntryValues(
   member: AdminBotLabMember,
@@ -138,7 +142,7 @@ export function dcsRosterEntryValues(
     adminbot_internal_id: member.id,
     dcs_username: normalizeDcsUsername(member.dcs_username ?? ""),
     non_dcs_email: nonDcsEmail(member),
-    career_stage: member.member_type?.trim() ?? "",
+    career_stage: dcsCareerStage(member),
     at_uoft_or_not: atUoft,
     permission: permissionCell(member),
     date_of_this_row_change: now.toISOString().slice(0, 10),

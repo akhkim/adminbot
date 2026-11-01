@@ -283,7 +283,9 @@ describe("the DCS roster row", () => {
   // deliberate later row, never a side effect of onboarding.
   it("asks for the least-privileged access when the roster grants nothing yet", async () => {
     const { recorded } = await sendFiling("Eric Zhang");
-    expect(column(recorded.dcsRows[0] as string[], "permission")).toBe("UofT-slack-only");
+    expect(column(recorded.dcsRows[0] as string[], "permission")).toBe(
+      "UofT-CSlab-noDiskusage-justSlack",
+    );
   });
 
   // The bug this inherited from the retired form: a one-word name once filed a real account for
