@@ -4,6 +4,7 @@ import {
   adminBotComputeAccessRegistry,
   adminBotComputeAccessValues,
   adminBotReservedComputeAccessValues,
+  canonicalComputeAccess,
   formatComputeAccessCell,
   isAdminBotComputeAccess,
   isProvisionedComputeAccess,
@@ -82,11 +83,9 @@ describe("normalising a member's access", () => {
   it("orders by the vocabulary rather than by however the cells were typed", () => {
     // Two members with the same access must produce the same cell, or the diff against the sheet
     // is noise the sysadmin has to read past.
-    expect(normalizeComputeAccess(["UofT-H100", "UofT-slack-only", "UofT-AI-Slurm"])).toEqual([
-      "UofT-slack-only",
-      "UofT-AI-Slurm",
-      "UofT-H100",
-    ]);
+    expect(
+      normalizeComputeAccess(["UofT-H100", "UofT-CSlab-noDiskusage-justSlack", "UofT-AI-Slurm"]),
+    ).toEqual(["UofT-CSlab-noDiskusage-justSlack", "UofT-AI-Slurm", "UofT-H100"]);
   });
 
   it("drops duplicates, blank cells and anything it does not recognise", () => {
@@ -94,12 +93,26 @@ describe("normalising a member's access", () => {
       "UofT-cslab",
     ]);
   });
+
+  // Records saved before the sheet renamed the value still hold the old spelling. Dropping it as
+  // unrecognised would silently erase a grant from the permission cell.
+  it("reads the retired UofT-slack-only spelling as its replacement", () => {
+    expect(canonicalComputeAccess(" UofT-slack-only ")).toBe("UofT-CSlab-noDiskusage-justSlack");
+    expect(
+      normalizeComputeAccess([
+        "UofT-AI-Slurm",
+        "UofT-slack-only",
+        "UofT-CSlab-noDiskusage-justSlack",
+      ]),
+    ).toEqual(["UofT-CSlab-noDiskusage-justSlack", "UofT-AI-Slurm"]);
+    expect(isAdminBotComputeAccess("UofT-slack-only")).toBe(false);
+  });
 });
 
 describe("the permission cell", () => {
   it("writes multiple choices comma-separated", () => {
     expect(formatComputeAccessCell(["UofT-AI-Slurm", "UofT-slack-only"])).toBe(
-      "UofT-slack-only, UofT-AI-Slurm",
+      "UofT-CSlab-noDiskusage-justSlack, UofT-AI-Slurm",
     );
   });
 

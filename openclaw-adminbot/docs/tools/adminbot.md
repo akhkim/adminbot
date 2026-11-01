@@ -1233,11 +1233,23 @@ sheet gains is left blank, one it loses is not written, and a sheet with no `ful
 | `adminbot_internal_id`    | The member id                                                              |
 | `dcs_username`            | The stored account name, else the first free candidate (below), else blank |
 | `non_dcs_email`           | The first address on file that is not `@cs.toronto.edu`                    |
-| `career_stage`            | The Member Type                                                            |
+| `career_stage`            | One of the sheet's four dropdown values (below), else blank                |
 | `at_uoft_or_not`          | `yes` / `no`, or blank when the roster does not know                       |
-| `permission`              | The DCS access already granted, else `UofT-slack-only`                     |
+| `permission`              | The DCS access already granted, else `UofT-CSlab-noDiskusage-justSlack`    |
 | `date_of_this_row_change` | The filing date                                                            |
 | anything else (`UTORid`)  | Left blank for the sysadmin                                                |
+
+`career_stage` is limited by the sheet's validation to `grad student (at uoft)`,
+`undergrad (at uoft)`, `postdoc (at uoft)` and `external (from another org)`. `dcsCareerStage` in
+`dcs-roster-sheet.ts` derives it from the member's roles and `at_uoft`:
+
+- `at_uoft` is `false`: `external (from another org)`.
+- `at_uoft` is `true`: `postdoc (at uoft)` for a Postdoc, `grad student (at uoft)` for a PhD or
+  Master's Student, `undergrad (at uoft)` for an Undergraduate Student, checked in that order.
+- `at_uoft` is unknown and every role is External Collaborator or Industry Researcher:
+  `external (from another org)`.
+- Anything else is left blank. The three "(at uoft)" values tell DCS the account is sponsorable, so
+  a student role alone does not earn one.
 
 The sheet is one row per person. Somebody already on it is skipped rather than filed -- at proposal
 time, and again at execution, because a row typed in by hand while a card waited must win over the
@@ -1292,8 +1304,10 @@ where it belongs, in the credentials mail to the member. Comparison runs both si
 bare `andrew` on the sheet and a generated `andrew@cs.toronto.edu` never match and the taken-check
 silently passes every collision through.
 
-`permission` defaults to `UofT-slack-only`, the least-privileged provisioned value in
-`contracts/compute-access.ts`, unless the roster already grants this person something. An
+`permission` defaults to `UofT-CSlab-noDiskusage-justSlack`, the least-privileged provisioned value
+in `contracts/compute-access.ts`, unless the roster already grants this person something. That
+value was called `UofT-slack-only` until 2026-11-01; a record still holding the old spelling is
+written with the new one. An
 escalation is a deliberate later row, never a side effect of onboarding.
 
 `at_uoft_or_not` is left blank when the roster does not know. It is never written as "no": that
