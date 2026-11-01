@@ -1091,18 +1091,32 @@ function createGogRunner(env: NodeJS.ProcessEnv | undefined): GogRun {
   };
 }
 
+// Google refuses a rate-limited request before applying it, so trying the same command again is
+// safe. A burst (a membership sweep inviting a dozen people) otherwise failed every call past the
+// quota, and each failure became an approval somebody had to redo by hand.
+const GOG_RATE_LIMIT_RETRY_MS = [5_000, 20_000];
+export const isGogRateLimit = (message: string) =>
+  /\b(?:user)?ratelimitexceeded\b|\(429\b/iu.test(message);
+
 function createGogCapture(env: NodeJS.ProcessEnv | undefined): GogCapture {
   return async (args) => {
-    try {
-      const result = await execFile(GOG_EXECUTABLE, args, {
-        env: env ?? process.env,
-        maxBuffer: GOG_MAX_OUTPUT_BYTES,
-        timeout: GOG_TIMEOUT_MS,
-        windowsHide: true,
-      });
-      return result.stdout;
-    } catch (error) {
-      throw new Error(formatGogError(error), { cause: error });
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        const result = await execFile(GOG_EXECUTABLE, args, {
+          env: env ?? process.env,
+          maxBuffer: GOG_MAX_OUTPUT_BYTES,
+          timeout: GOG_TIMEOUT_MS,
+          windowsHide: true,
+        });
+        return result.stdout;
+      } catch (error) {
+        const message = formatGogError(error);
+        const delay = GOG_RATE_LIMIT_RETRY_MS[attempt];
+        if (delay === undefined || !isGogRateLimit(message)) {
+          throw new Error(message, { cause: error });
+        }
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
     }
   };
 }

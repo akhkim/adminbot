@@ -20,10 +20,9 @@
 // needed wiring. That stopped being true when the five panels landed, and a reader who believed it
 // had no way to tell which half of the page to trust.
 import { html, nothing } from "lit";
-import "./lab-sharing-how-to.ts";
 import { t } from "../../../i18n/index.ts";
 import type { AppViewState } from "../../app-view-state.ts";
-import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
+import { loadStoredMemberSession } from "../auth/session.ts";
 import {
   askAdminBotLabSharingMember,
   closeAdminBotLabSharingRequest,
@@ -1464,10 +1463,6 @@ export function renderLabSharing(state: AppViewState) {
           loading: state.adminBotMemberMapLoading,
         })
       }
-      <lab-sharing-how-to
-        .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
-        .sessionToken=${session?.sessionToken ?? ""}
-      ></lab-sharing-how-to>
       ${renderLabSharingResources(state.basePath, Boolean(session?.sessionToken))}
     </div>
   `;

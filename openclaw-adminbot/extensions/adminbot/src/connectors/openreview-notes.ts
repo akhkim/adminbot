@@ -62,8 +62,8 @@ export function createOpenReviewNotesReader(
     return undefined;
   }
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
-  // One token per reader, reused across the venues of a single index run. Not cached beyond that:
-  // the run is minutes long and a token outlives it comfortably, so there is nothing to refresh.
+  // One token per reader, reused across venues and runs. The server keeps one reader for its whole
+  // lifetime, so the token does expire: a 401 drops it and logs in once more before giving up.
   let token: string | undefined;
 
   const login = async (): Promise<string> => {
@@ -98,10 +98,16 @@ export function createOpenReviewNotesReader(
         limit: String(PAGE_SIZE),
         offset: String(offset),
       });
-      const response = await fetchImpl(`${BASE_URL}/notes?${query}`, {
-        headers: { Authorization: `Bearer ${token}` },
-        signal: AbortSignal.timeout(PAGE_TIMEOUT_MS),
-      });
+      const fetchPage = (bearer: string) =>
+        fetchImpl(`${BASE_URL}/notes?${query}`, {
+          headers: { Authorization: `Bearer ${bearer}` },
+          signal: AbortSignal.timeout(PAGE_TIMEOUT_MS),
+        });
+      let response = await fetchPage(token);
+      if (response.status === 401) {
+        token = await login();
+        response = await fetchPage(token);
+      }
       if (!response.ok) {
         throw new Error(`OpenReview returned ${response.status} for ${venue}`);
       }

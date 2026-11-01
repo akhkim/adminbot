@@ -1016,3 +1016,20 @@ describe("readDriveFileBase64", () => {
     }
   });
 });
+
+describe("gog rate-limit retry", () => {
+  it("retries Google's quota refusals and nothing else", async () => {
+    const { isGogRateLimit } = await import("./gog.js");
+    expect(
+      isGogRateLimit(
+        "gog command failed (exit 7): Google API error (403 rateLimitExceeded): Rate Limit Exceeded",
+      ),
+    ).toBe(true);
+    expect(isGogRateLimit("Google API error (403 userRateLimitExceeded)")).toBe(true);
+    expect(isGogRateLimit("Google API error (429 Too Many Requests)")).toBe(true);
+    expect(
+      isGogRateLimit("Google API error (403 forbidden): The caller does not have permission"),
+    ).toBe(false);
+    expect(isGogRateLimit("Google API error (404 notFound)")).toBe(false);
+  });
+});

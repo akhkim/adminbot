@@ -394,6 +394,13 @@ export async function main(argv: string[]): Promise<number> {
     console.log(`parsed ${docTemplates.length} template(s) from the doc`);
     console.log(renderReport(drift));
   }
+  if (drift.length > 0) {
+    // The cron heartbeat reports the last stderr line; the report above is stdout only.
+    const first = drift[0];
+    console.error(
+      `email template check: ${drift.length} template(s) differ from the doc (first: ${first.kind} of ${"id" in first ? first.id : first.templateId})`,
+    );
+  }
   return drift.length === 0 ? 0 : 1;
 }
 
@@ -406,6 +413,10 @@ if (isMainModule(import.meta.url)) {
       console.error(
         error instanceof Error ? (error.stack ?? error.message) : String(error),
       );
+      // Last, so the cron heartbeat reports the message rather than the stack's bottom frame.
+      if (error instanceof Error && error.stack) {
+        console.error(`email template check: ${error.message}`);
+      }
       process.exitCode = 2;
     });
 }

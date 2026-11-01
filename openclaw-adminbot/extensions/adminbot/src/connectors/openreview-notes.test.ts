@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createOpenReviewForumProbe } from "./openreview-notes.js";
+import { createOpenReviewForumProbe, createOpenReviewNotesReader } from "./openreview-notes.js";
 
 describe("OpenReview submission identity", () => {
   it("queries the submission id, not a reply, and reads explicit ARR history", async () => {
@@ -86,5 +86,48 @@ describe("OpenReview submission identity", () => {
     await expect(probe("../bad")).resolves.toMatchObject({ status: "unreadable" });
     expect(fetchImpl).not.toHaveBeenCalled();
     await expect(probe("Paper123")).resolves.toMatchObject({ status: "unreadable" });
+  });
+});
+
+describe("OpenReview venue reader", () => {
+  it("logs in again when a kept token has expired, and only once", async () => {
+    let logins = 0;
+    const fetchImpl = vi.fn<typeof fetch>(async (url, init) => {
+      if (String(url).endsWith("/login")) {
+        logins += 1;
+        return new Response(JSON.stringify({ token: `token-${logins}` }));
+      }
+      const auth = new Headers(init?.headers).get("Authorization");
+      if (auth === "Bearer token-1") {
+        return new Response("{}", { status: 401 });
+      }
+      return new Response(
+        JSON.stringify({ notes: [{ id: "Paper1", content: { title: { value: "A paper" } } }] }),
+      );
+    });
+    const reader = createOpenReviewNotesReader({
+      env: { OPENREVIEW_USERNAME: "reader@example.org", OPENREVIEW_PASSWORD: "synthetic" },
+      fetchImpl,
+    });
+    await expect(reader?.("Venue.cc/2026/Conference")).resolves.toHaveLength(1);
+    await expect(reader?.("Other.cc/2026/Conference")).resolves.toHaveLength(1);
+    expect(logins).toBe(2);
+  });
+
+  it("still fails when a fresh token is refused too", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async (url) =>
+      String(url).endsWith("/login")
+        ? new Response(JSON.stringify({ token: "token" }))
+        : new Response("{}", { status: 401 }),
+    );
+    const reader = createOpenReviewNotesReader({
+      env: { OPENREVIEW_USERNAME: "reader@example.org", OPENREVIEW_PASSWORD: "synthetic" },
+      fetchImpl,
+    });
+    await expect(reader?.("Venue.cc/2026/Conference")).rejects.toThrow(
+      "OpenReview returned 401 for Venue.cc/2026/Conference",
+    );
+    // login, refused page, one more login, refused again: no loop.
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
   });
 });

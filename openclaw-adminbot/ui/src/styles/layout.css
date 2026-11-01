@@ -8024,10 +8024,6 @@ adminbot-deadline-timezone {
   min-width: 0;
 }
 
-lab-sharing-how-to {
-  display: block;
-}
-
 .lab-sharing :is(p, h2, h3, h4) {
   margin: 0;
 }

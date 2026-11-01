@@ -1926,6 +1926,11 @@ if (isMainModule(import.meta.url)) {
         summary.failed > 0 &&
         process.env.ADMINBOT_EMAIL_ALLOW_PARTIAL !== "1"
       ) {
+        // The summary goes to stdout, but the cron heartbeat reports the last stderr line, so a
+        // failed pass without this line reads "Last error: none recorded" on the health check.
+        console.error(
+          `email automation: ${summary.failed} message(s) failed; latest: ${summary.errors.at(-1) ?? "no error text"}`,
+        );
         process.exitCode = 1;
       }
     })
@@ -1933,6 +1938,10 @@ if (isMainModule(import.meta.url)) {
       console.error(
         error instanceof Error ? (error.stack ?? error.message) : String(error),
       );
+      // Last, so the cron heartbeat reports the message rather than the stack's bottom frame.
+      if (error instanceof Error && error.stack) {
+        console.error(`email automation: ${error.message}`);
+      }
       process.exitCode = 1;
     });
 }
