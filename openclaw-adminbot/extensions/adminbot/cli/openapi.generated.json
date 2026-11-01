@@ -2662,12 +2662,19 @@
                     },
                     "admins": {
                       "type": "number"
+                    },
+                    "connect_invites_proposed": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
                     }
                   },
                   "required": [
                     "issues",
                     "alerted",
-                    "admins"
+                    "admins",
+                    "connect_invites_proposed"
                   ],
                   "additionalProperties": true
                 }
@@ -38538,6 +38545,9 @@
             "type": "boolean"
           },
           "escalated_at": {
+            "type": "string"
+          },
+          "resolved_at": {
             "type": "string"
           }
         },

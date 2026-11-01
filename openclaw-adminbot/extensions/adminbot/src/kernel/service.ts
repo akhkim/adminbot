@@ -16858,7 +16858,7 @@ const PAPER_NUDGE_DOMAINS: ReadonlySet<AdminBotNudgeDomain> = new Set([
   "paper_reimbursement",
 ]);
 
-// A venue-cycle stage is asked about once a week, not every three days like a slot. The author
+// A venue-cycle stage is asked about once a week, the same as a slot. The author
 // cannot make the answer arrive any sooner -- the venue decides when reviews land -- so a tighter
 // cadence buys nothing and spends the one thing that makes these mails work, which is that
 // receiving one still means something.
