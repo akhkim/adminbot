@@ -109,13 +109,19 @@ GitHub Pages revisions form an old-to-new extension chain. If a page says “ext
 no recoverable former date, the record says that the prior value is unavailable; the collector does
 not invent one.
 
-The matcher reads its two input tabs through `gog` as `GOG_ACCOUNT` (read-only), so both
-spreadsheets must be shared with that account. `ADMINBOT_ONGOING_SHEET_ID` names the spreadsheet
-holding the "Paper submissions" tab (gid 846550934), which is the lab member sheet, and is
-required. `ADMINBOT_READY_SHEET_ID` names the one holding "Formatted Papers" (gid 1634319760); when
-it is unset the matcher prints `ready papers skipped` and still writes the ongoing matches, since the
-ready-to-workshop pairs are unconfirmed suggestions that nothing is nudged about. `--ongoing-csv` /
-`--ready-csv` override either sheet with a local CSV export.
+The matcher reads **ongoing** papers from the AdminBot service DB by default — the lab's live paper
+tracking (`GET /papers` on `ADMINBOT_SERVICE_BASE_URL`, default `http://127.0.0.1:8765`, as
+`ADMINBOT_SERVICE_TOKEN`). An ongoing paper is one that still has a `venue` and no `accept`/`reject`
+`venue_decision` yet; its `venue` string is classified the same way the sheet's `Venue` column was.
+This replaced the "Paper submissions" sheet, which drifts behind the DB. Set
+`ADMINBOT_ONGOING_SOURCE=sheet` to read that tab instead (gid 846550934, in the lab member sheet
+named by `ADMINBOT_ONGOING_SHEET_ID`); `--ongoing-csv` overrides with a local CSV for tests.
+
+**Ready** papers (the workshop suggestions) still come from the "Formatted Papers" sheet through
+`gog` as `GOG_ACCOUNT` (read-only), so that spreadsheet must be shared with that account.
+`ADMINBOT_READY_SHEET_ID` names it (gid 1634319760); when it is unset the matcher prints `ready
+papers skipped` and still writes the ongoing matches, since the ready-to-workshop pairs are
+unconfirmed suggestions that nothing is nudged about. `--ready-csv` overrides it with a local CSV.
 
 The collector merges by stable deadline id. Top-level fields are the current
 projection; append-only `revisions` retain earlier accepted dates, and explicit
