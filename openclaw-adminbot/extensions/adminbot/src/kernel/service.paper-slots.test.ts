@@ -517,6 +517,31 @@ describe("sendPaperSlotNudges", () => {
     expect(second.created).toHaveLength(0);
   });
 
+  it("asks a person at most once a week, even about a gap that opened after the last message", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date("2026-10-01T09:00:00Z"));
+      const service = serviceWithDelivery();
+      seed(service);
+      expect(unwrap(await service.sendPaperSlotNudges("cron")).created).toHaveLength(1);
+      // Waiving the folder opens the next slot, which has never been asked about on its own clock.
+      unwrap(
+        service.waivePaperSlot({
+          paperId: "p1",
+          slot: "project_folder",
+          reason: "predates AdminBot",
+          memberId: "zhijing",
+        }),
+      );
+      vi.setSystemTime(new Date("2026-10-05T09:00:00Z"));
+      expect(unwrap(await service.sendPaperSlotNudges("cron")).created).toHaveLength(0);
+      vi.setSystemTime(new Date("2026-10-08T10:00:00Z"));
+      expect(unwrap(await service.sendPaperSlotNudges("cron")).created).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("stays quiet on a paper whose evidence is all in", async () => {
     const service = serviceWithDelivery();
     seed(service);

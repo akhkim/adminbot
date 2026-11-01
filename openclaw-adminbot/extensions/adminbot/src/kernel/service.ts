@@ -9372,9 +9372,28 @@ export class AdminBotService {
     const stamped: Array<{ item: NudgeItem; memberId: string }> = [];
     const linkProblemsByPaper = this.options.paperLinkProblems?.() ?? new Map<string, string[]>();
 
+    // The cadence is per person as well as per item. Items fall due on their own clocks, so a
+    // per-item interval alone lets a gap that opened yesterday send a second message two days after
+    // the first. Whoever got this message inside the interval waits, and the new item goes out with
+    // the next one.
+    const recentlyMessaged = new Set(
+      this.store
+        .listNudgeLedger()
+        .filter(
+          (entry) =>
+            PAPER_NUDGE_DOMAINS.has(entry.domain) &&
+            entry.last_nudged_at &&
+            Date.parse(entry.last_nudged_at) > now.getTime() - PAPER_SLOT_NUDGE_INTERVAL_MS,
+        )
+        .map((entry) => entry.member_id),
+    );
+
     const enqueue = (memberId: string, paper: AdminBotPaperRecord, item: NudgeItem) => {
       const key = `${item.domain}|${item.subjectId}|${memberId}`;
-      if (!isNudgeDue(ledger.get(key), now, PAPER_SLOT_NUDGE_INTERVAL_MS)) {
+      if (
+        recentlyMessaged.has(memberId) ||
+        !isNudgeDue(ledger.get(key), now, PAPER_SLOT_NUDGE_INTERVAL_MS)
+      ) {
         return;
       }
       const forMember = byRecipient.get(memberId) ?? new Map();
@@ -16711,11 +16730,11 @@ const WEEKLY_UPDATE_NUDGE_TITLE = "This week's paper update";
 // following week and gives way to the next Sunday's.
 const WEEKLY_UPDATE_NUDGE_SHELF_LIFE_MS = 8 * 24 * 60 * 60 * 1000;
 
-// Re-sent every three days while a slot is still open (PAPER_SLOT_NUDGE_INTERVAL_MS), so a week-old
-// copy is either superseded by a newer one or about evidence that has since been filed. By title
+// Re-sent once a week while a slot is still open (PAPER_SLOT_NUDGE_INTERVAL_MS), so a week-old copy
+// is either superseded by a newer one or about evidence that has since been filed. By title
 // rather than kind: the head professor's PI-review notice is a `paper_slot` too, and it is sent once.
 const EVIDENCE_NUDGE_TITLE = "Evidence still missing on your paper";
-const EVIDENCE_NUDGE_SHELF_LIFE_MS = 7 * 24 * 60 * 60 * 1000;
+const EVIDENCE_NUDGE_SHELF_LIFE_MS = 8 * 24 * 60 * 60 * 1000;
 
 // How long a notification of each kind is worth showing when nothing settles it sooner. A workshop
 // suggestion is about deadlines a few weeks out and is re-sent by any pass that still finds a match;
@@ -16732,10 +16751,18 @@ const RESOLVED_PROFILE_NOTIFICATION_TITLES = new Set([
   "Your profile needs some info",
 ]);
 
-// The same idea one level down: a *slot* is left alone for three days after it was nudged about.
-// Per-slot rather than per-paper, so filling in two of four artifacts genuinely quiets those two
-// and the next pass chases only what is still open.
-const PAPER_SLOT_NUDGE_INTERVAL_MS = 3 * 24 * 60 * 60 * 1000;
+// The same idea one level down: a *slot* is left alone for a week after it was nudged about, and so
+// is the person (see `sweepPaperNudges`). Per-slot as well as per-person, so filling in two of four
+// artifacts genuinely quiets those two and the next pass chases only what is still open. It was
+// three days, and people found a DM about the same paper twice a week nagging.
+const PAPER_SLOT_NUDGE_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
+// Everything `sweepPaperNudges` sends, which all goes out in the one evidence message.
+const PAPER_NUDGE_DOMAINS: ReadonlySet<AdminBotNudgeDomain> = new Set([
+  "paper_slot",
+  "social_consent",
+  "conference_attendance",
+  "paper_reimbursement",
+]);
 
 // A venue-cycle stage is asked about once a week, not every three days like a slot. The author
 // cannot make the answer arrive any sooner -- the venue decides when reviews land -- so a tighter
