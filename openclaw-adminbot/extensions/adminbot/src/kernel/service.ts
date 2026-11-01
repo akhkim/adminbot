@@ -531,9 +531,11 @@ import {
 } from "./service.active-channels.js";
 import {
   automationHealthIssues,
+  SLACK_CONNECT_INVITE_REASONS,
   slackInviteBlockFor,
   slackInviteBlocks,
   type AutomationHealthIssue,
+  type SlackInviteBlock,
 } from "./service.automation-health.js";
 import {
   birthdayProposalStillCurrent,
@@ -3284,9 +3286,88 @@ export class AdminBotService {
           this.store.listAuditEvents(),
           (id) => this.failedInviteProposal(id),
           now,
+          // A rejected proposal hands the person back to the manual list: the admin said no to
+          // the invitation, not to the person being in the channel.
+          (block) => {
+            const status = this.slackConnectProposalFor(block)?.status;
+            return status !== undefined && status !== "rejected";
+          },
         ),
       },
     };
+  }
+
+  /**
+   * The Slack Connect proposal standing in for a refused channel invite, if one was filed.
+   *
+   * Matched on the address and channel in its payload, not on the member id, because the address is
+   * what Slack is asked to invite and the member's address can change after the proposal was filed.
+   */
+  private slackConnectProposalFor(block: SlackInviteBlock): AdminBotStoredProposal | undefined {
+    const email = this.slackConnectAddress(block)?.toLowerCase();
+    if (!email) {
+      return undefined;
+    }
+    return this.store.listProposalsByType("slack.connect_invite").find((proposal) => {
+      const payload = (proposal.proposed_payload ?? {}) as Record<string, unknown>;
+      return (
+        typeof payload.email === "string" &&
+        payload.email.trim().toLowerCase() === email &&
+        typeof payload.channel === "string" &&
+        payload.channel.replace(/^#/u, "").toLowerCase() === block.channel
+      );
+    });
+  }
+
+  /** Where a Slack Connect invite for a refused invite would go: the member's roster address. */
+  private slackConnectAddress(block: SlackInviteBlock): string | undefined {
+    if (block.scope !== "member" || !SLACK_CONNECT_INVITE_REASONS.has(block.reason)) {
+      return undefined;
+    }
+    const member = this.store
+      .listLabMembers()
+      .find((entry) => entry.slack_user_id?.trim() === block.user_id);
+    const email = member ? adminBotOutreachEmail(member) : "";
+    return email || undefined;
+  }
+
+  /**
+   * One Slack Connect proposal per person Slack refused because they are in another workspace.
+   *
+   * Filed, never executed: an invitation mails somebody outside the lab, so `slack.connect_invite`
+   * waits for an admin (T3). Filed once per address and channel whatever became of it -- an admin who
+   * rejected it has decided, and asking again every hour would undo that decision by attrition.
+   */
+  private proposeSlackConnectInvites(now: Date): string[] {
+    const filed: string[] = [];
+    for (const block of slackInviteBlocks(
+      this.store.listAuditEvents(),
+      (id) => this.failedInviteProposal(id),
+      now,
+    )) {
+      const email = this.slackConnectAddress(block);
+      if (!email || this.slackConnectProposalFor(block)) {
+        continue;
+      }
+      const member = this.store
+        .listLabMembers()
+        .find((entry) => entry.slack_user_id?.trim() === block.user_id);
+      const created = this.createProposal({
+        type: "slack.connect_invite",
+        summary: `Invite ${member?.name ?? email} to #${block.channel} through Slack Connect: they are in another Slack workspace, so the bot cannot add them directly (${block.reason})`,
+        target: { service: "slack", channel: "slack", target: email },
+        proposed_payload: {
+          email,
+          channel: block.channel,
+          ...(member ? { member_id: member.id } : {}),
+        },
+        undo_plan: "Revoke the invitation in the channel's Slack Connect settings.",
+      });
+      if (created.ok) {
+        filed.push(created.payload.id);
+      }
+    }
+    return filed;
   }
 
   /**
@@ -3301,7 +3382,15 @@ export class AdminBotService {
   raiseAutomationHealthAlerts(
     actor: string,
     now = new Date(),
-  ): AdminBotServiceResponse<{ issues: number; alerted: string[]; admins: number }> {
+  ): AdminBotServiceResponse<{
+    issues: number;
+    alerted: string[];
+    admins: number;
+    connect_invites_proposed: string[];
+  }> {
+    // Before the issues are read, so a person who just got a proposal is not also reported as a
+    // manual invite on the same pass.
+    const connectInvitesProposed = this.proposeSlackConnectInvites(now);
     const health = this.automationHealth(now);
     if (!health.ok) {
       return health;
@@ -3368,7 +3457,12 @@ export class AdminBotService {
     return {
       ok: true,
       status: 200,
-      payload: { issues: health.payload.issues.length, alerted, admins: admins.length },
+      payload: {
+        issues: health.payload.issues.length,
+        alerted,
+        admins: admins.length,
+        connect_invites_proposed: connectInvitesProposed,
+      },
     };
   }
 

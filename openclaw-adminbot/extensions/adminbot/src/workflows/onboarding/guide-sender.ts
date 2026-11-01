@@ -283,6 +283,9 @@ const ACTIVE_CHANNELS_ACCESS_ITEM = "active_channels";
  * The same channel, invite and reuse window as the guide's `{slack_connect_link}`, so somebody
  * reached by both is invited once: a fresh cached invite is reported as reused rather than minted
  * again. For the Member Types the access design gives the channel but no onboarding mail.
+ *
+ * `channel` names another channel instead, for somebody in another workspace whom a plain channel
+ * invite cannot reach.
  */
 export function createSlackConnectOnboardingInviter(
   options: Pick<
@@ -293,6 +296,7 @@ export function createSlackConnectOnboardingInviter(
 ) {
   return async (
     email: string,
+    channel?: string,
   ): Promise<
     { ok: true; channel_id: string; url: string; reused: boolean } | { ok: false; reason: string }
   > => {
@@ -304,6 +308,7 @@ export function createSlackConnectOnboardingInviter(
       return { ok: false, reason: "Slack Connect invites are not configured" };
     }
     const channelId =
+      channel?.trim() ||
       options.defaultSlackChannelId?.trim() ||
       configuredEnvValue(env[ADMINBOT_ONBOARDING_CHANNEL_ENV]);
     if (!channelId) {

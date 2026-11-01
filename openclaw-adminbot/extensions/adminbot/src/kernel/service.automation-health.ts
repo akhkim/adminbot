@@ -44,6 +44,18 @@ export type SlackInviteBlock = {
 
 type ProposalLookup = (id: string) => AdminBotStoredProposal | undefined;
 
+/**
+ * The refusals that mean "this person is in another Slack workspace or org". They have no seat the
+ * bot can add to a channel, but a Slack Connect invitation reaches them by email, so the health pass
+ * files one for an admin to approve instead of asking for a manual invite. Guests
+ * (`user_is_restricted`, `user_is_ultra_restricted`) are not in this set: Slack lets only a
+ * workspace admin change a guest's channels.
+ */
+export const SLACK_CONNECT_INVITE_REASONS: ReadonlySet<string> = new Set([
+  "user_team_not_in_channel",
+  "org_user_not_in_team",
+]);
+
 const channelKey = (channel: string) => channel.trim().replace(/^#/u, "").toLowerCase();
 
 function invitePayload(
@@ -253,6 +265,9 @@ export function automationHealthIssues(
   events: readonly AdminBotAuditEvent[],
   proposalOf: ProposalLookup,
   now = new Date(),
+  // A member block a Slack Connect proposal already covers. That person is in the approval queue,
+  // so listing them as a manual invite as well would ask the admin for the same thing twice.
+  connectFiled: (block: SlackInviteBlock) => boolean = () => false,
 ): AutomationHealthIssue[] {
   const issues: AutomationHealthIssue[] = [];
   const nowMs = now.getTime();
@@ -355,7 +370,7 @@ export function automationHealthIssues(
     });
   }
   const manual = new Map<string, SlackInviteBlock[]>();
-  for (const block of blocks.filter((entry) => entry.scope === "member")) {
+  for (const block of blocks.filter((entry) => entry.scope === "member" && !connectFiled(entry))) {
     manual.set(block.channel, [...(manual.get(block.channel) ?? []), block]);
   }
   for (const [channel, people] of manual) {

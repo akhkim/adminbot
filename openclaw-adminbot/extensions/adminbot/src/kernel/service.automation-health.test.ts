@@ -277,3 +277,51 @@ describe("settling notifications", () => {
     expect(resolved).toEqual(["evidence", "workshop"]);
   });
 });
+
+describe("Slack Connect for people in another workspace", () => {
+  it("files one admin-approved invitation in place of the manual invite, and leaves guests manual", async () => {
+    const { service, store } = lab(async (proposal) => {
+      const payload = proposal.proposed_payload as { user_id: string };
+      throw new Error(
+        payload.user_id === "U-EXT"
+          ? "Slack channel invite failed 200: user_team_not_in_channel"
+          : "Slack channel invite failed 200: user_is_restricted",
+      );
+    });
+    for (const [id, slack, email] of [
+      ["ext", "U-EXT", "ext@other.example"],
+      ["guest", "U-GUEST", "guest@lab.example"],
+    ]) {
+      unwrap(
+        service.upsertLabMember({
+          id,
+          name: id,
+          privilege_level: "member",
+          slack_user_id: slack,
+          email,
+        } as never),
+      );
+      await service.execute(unwrap(invite(service, "random-active", slack)).id, { dry_run: false });
+    }
+
+    const first = unwrap(service.raiseAutomationHealthAlerts("cron"));
+    expect(first.connect_invites_proposed).toHaveLength(1);
+    const [proposal] = store.listProposalsByType("slack.connect_invite");
+    expect(proposal).toMatchObject({
+      status: "pending",
+      proposed_payload: { email: "ext@other.example", channel: "random-active", member_id: "ext" },
+    });
+    // The person with a proposal is in the approval queue; only the guest is asked for by hand.
+    expect(unwrap(service.automationHealth()).issues).toEqual([
+      expect.objectContaining({ key: "slack-manual-invite:random-active:U-GUEST" }),
+    ]);
+    expect(unwrap(service.raiseAutomationHealthAlerts("cron")).connect_invites_proposed).toEqual([]);
+
+    // Rejected: not filed again, and the person goes back on the manual list.
+    store.saveProposal({ ...proposal!, status: "rejected" });
+    expect(unwrap(service.raiseAutomationHealthAlerts("cron")).connect_invites_proposed).toEqual([]);
+    expect(unwrap(service.automationHealth()).issues).toEqual([
+      expect.objectContaining({ key: "slack-manual-invite:random-active:U-EXT,U-GUEST" }),
+    ]);
+  });
+});
