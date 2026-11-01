@@ -3343,6 +3343,12 @@ export type AdminBotMemberNotification = {
    * member already has.
    */
   escalated_at?: string;
+  /**
+   * When AdminBot saw that what this asked for is done or no longer applies: the failing job
+   * recovered, the weekly line was written, the workshop deadlines went by. A resolved notification
+   * leaves the dashboard and is marked read, so it also drains from the escalation queue.
+   */
+  resolved_at?: string;
 };
 
 /**

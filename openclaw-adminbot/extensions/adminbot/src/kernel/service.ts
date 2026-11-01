@@ -3339,6 +3339,25 @@ export class AdminBotService {
       });
       alerted.push(issue.key);
     }
+    // And the other way: an alert whose issue is gone (the job ran clean, the failures aged out of
+    // the 24h window) comes off the dashboard. Matched on the title, which is the issue's label and
+    // does not carry the counts that change from pass to pass.
+    const open = new Set(health.payload.issues.map((issue) => issue.label));
+    for (const admin of admins) {
+      for (const notification of this.store.listMemberNotifications(admin.id)) {
+        if (
+          notification.kind === "automation" &&
+          !notification.resolved_at &&
+          !open.has(notification.title)
+        ) {
+          this.store.saveMemberNotification({
+            ...notification,
+            read_at: notification.read_at ?? nowIso,
+            resolved_at: nowIso,
+          });
+        }
+      }
+    }
     if (alerted.length > 0) {
       this.recordAudit({
         type: "automation_health.alerted",
@@ -5719,7 +5738,7 @@ export class AdminBotService {
           recipient_member_ids: [memberId],
           message: buildWeeklyUpdateMessage({ titles, weekStart }),
           kind: "nudge",
-          title: "This week's paper update",
+          title: WEEKLY_UPDATE_NUDGE_TITLE,
           tab: "myWork",
           // Not important: a skipped week is a gap in a log, and next Monday asks again.
         },
@@ -9514,7 +9533,7 @@ export class AdminBotService {
           recipient_member_ids: [memberId],
           message: this.composeNudgeMessage(groups, now),
           kind: "paper_slot",
-          title: "Evidence still missing on your paper",
+          title: EVIDENCE_NUDGE_TITLE,
           tab: "myWork",
           // Important: a missing submission link or camera-ready is the kind of gap that costs a
           // paper its venue, and the deadline does not move because nobody read the DM.
@@ -11143,11 +11162,61 @@ export class AdminBotService {
     // Clear it on the first read as well as on the last profile save, so deployment heals existing
     // rows without asking everybody at 100% to edit and save an arbitrary field again.
     this.clearResolvedProfileNotifications(member);
+    this.resolveSettledNotifications(member.id);
     return {
       ok: true,
       status: 200,
       payload: { notifications: this.store.listMemberNotifications(memberId) },
     };
+  }
+
+  /**
+   * Take a nudge off the dashboard once what it asked for is done or no longer applies.
+   *
+   * Every notification used to stay until the end of time, so the dashboard filled with things
+   * that had long stopped being true: a workshop list whose deadlines were two months gone, last
+   * week's "write your weekly line", a job failure that recovered days ago. Each kind is settled by
+   * the cheapest check that can tell. Automation alerts are settled by the hourly health pass,
+   * which already has the live issue list (see raiseAutomationHealthAlerts). Nothing is deleted:
+   * the row is stamped resolved and read, so the popup stops and the escalation queue drains.
+   */
+  private resolveSettledNotifications(memberId: string, now = new Date()): void {
+    const nowIso = now.toISOString();
+    let owesWeeklyLine: Map<string, boolean> | undefined;
+    for (const notification of this.store.listMemberNotifications(memberId)) {
+      if (notification.resolved_at || notification.kind === "automation") {
+        continue;
+      }
+      const ageMs = now.getTime() - Date.parse(notification.created_at);
+      let settled: boolean;
+      if (notification.title === WEEKLY_UPDATE_NUDGE_TITLE) {
+        // Settled when every line it asked for is written, or once the week it asked about is over
+        // and the next Sunday sweep has had its turn to ask afresh.
+        const weekStart = adminBotWeekStart(new Date(notification.created_at));
+        owesWeeklyLine ??= new Map();
+        let owes = owesWeeklyLine.get(weekStart);
+        if (owes === undefined) {
+          const gaps = this.collectWeeklyUpdateGaps(notification.created_at);
+          owes = !gaps.ok || gaps.payload.gaps.some((gap) => gap.member_id === memberId);
+          owesWeeklyLine.set(weekStart, owes);
+        }
+        settled = !owes || ageMs > WEEKLY_UPDATE_NUDGE_SHELF_LIFE_MS;
+      } else {
+        // An escalated nudge is the head professor's to close, not the clock's.
+        const shelfLife =
+          notification.title === EVIDENCE_NUDGE_TITLE
+            ? EVIDENCE_NUDGE_SHELF_LIFE_MS
+            : NOTIFICATION_SHELF_LIFE_MS[notification.kind];
+        settled = !notification.escalated_at && shelfLife !== undefined && ageMs > shelfLife;
+      }
+      if (settled) {
+        this.store.saveMemberNotification({
+          ...notification,
+          read_at: notification.read_at ?? nowIso,
+          resolved_at: nowIso,
+        });
+      }
+    }
   }
 
   private clearResolvedProfileNotifications(member: AdminBotLabMember): void {
@@ -16637,6 +16706,26 @@ function serviceError<T>(status: number, message: string): AdminBotServiceRespon
 // often as it likes -- daily is fine, and gives a member who fills their profile in on day one a
 // prompt exit from the list -- but nobody is nudged about the same gap more than once per window.
 const MANDATORY_FIELDS_REMINDER_INTERVAL_MS = 3 * 24 * 60 * 60 * 1000;
+const WEEKLY_UPDATE_NUDGE_TITLE = "This week's paper update";
+// Eight days: the Sunday sweep asks about the week just ending, so its nudge stays up through the
+// following week and gives way to the next Sunday's.
+const WEEKLY_UPDATE_NUDGE_SHELF_LIFE_MS = 8 * 24 * 60 * 60 * 1000;
+
+// Re-sent every three days while a slot is still open (PAPER_SLOT_NUDGE_INTERVAL_MS), so a week-old
+// copy is either superseded by a newer one or about evidence that has since been filed. By title
+// rather than kind: the head professor's PI-review notice is a `paper_slot` too, and it is sent once.
+const EVIDENCE_NUDGE_TITLE = "Evidence still missing on your paper";
+const EVIDENCE_NUDGE_SHELF_LIFE_MS = 7 * 24 * 60 * 60 * 1000;
+
+// How long a notification of each kind is worth showing when nothing settles it sooner. A workshop
+// suggestion is about deadlines a few weeks out and is re-sent by any pass that still finds a match;
+// a month-old one-off nudge is past acting on. A kind missing from here (meeting attendance,
+// profile, the PI-review notice) stays until something settles it.
+const NOTIFICATION_SHELF_LIFE_MS: Partial<Record<string, number>> = {
+  workshop: 14 * 24 * 60 * 60 * 1000,
+  nudge: 30 * 24 * 60 * 60 * 1000,
+};
+
 const RESOLVED_PROFILE_NOTIFICATION_TITLES = new Set([
   "Your profile is missing a required field",
   "Your profile is missing required fields",

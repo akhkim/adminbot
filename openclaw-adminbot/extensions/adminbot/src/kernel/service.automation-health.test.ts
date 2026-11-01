@@ -219,3 +219,61 @@ describe("automation health", () => {
     ]);
   });
 });
+
+
+describe("settling notifications", () => {
+  it("takes a recovered automation alert off the dashboard on the next health pass", () => {
+    const { service, store } = lab(async () => ({ handled: true }));
+    store.saveMemberNotification({
+      id: "n-old",
+      member_id: "boss",
+      kind: "automation",
+      title: "calendar.add_attendees keeps failing",
+      body: "6 failures in 24h",
+      created_at: new Date(Date.now() - DAY).toISOString(),
+    });
+    unwrap(service.raiseAutomationHealthAlerts("cron"));
+    const [settled] = store.listMemberNotifications("boss");
+    expect(settled?.resolved_at).toBeDefined();
+    expect(settled?.read_at).toBeDefined();
+    expect(unwrap(service.listMemberNotifications("boss")).notifications).toHaveLength(1);
+  });
+
+  it("expires stale suggestions on read, but keeps escalations and one-off notices", () => {
+    const { service, store } = lab(async () => ({ handled: true }));
+    const old = new Date(Date.now() - 40 * DAY).toISOString();
+    const base = { member_id: "boss", body: "", created_at: old };
+    store.saveMemberNotification({
+      ...base,
+      id: "workshop",
+      kind: "workshop",
+      title: "Workshops that may fit your papers",
+    });
+    store.saveMemberNotification({
+      ...base,
+      id: "evidence",
+      kind: "paper_slot",
+      title: "Evidence still missing on your paper",
+    });
+    store.saveMemberNotification({
+      ...base,
+      id: "pi-review",
+      kind: "paper_slot",
+      title: "A paper is waiting on your review",
+    });
+    store.saveMemberNotification({
+      ...base,
+      id: "escalated",
+      kind: "nudge",
+      title: "Overdue",
+      escalated_at: old,
+    });
+    unwrap(service.listMemberNotifications("boss"));
+    const resolved = store
+      .listMemberNotifications("boss")
+      .filter((notification) => notification.resolved_at)
+      .map((notification) => notification.id)
+      .toSorted();
+    expect(resolved).toEqual(["evidence", "workshop"]);
+  });
+});

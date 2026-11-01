@@ -22,7 +22,10 @@ export function notificationFeed(
   notifications: readonly AdminBotMemberNotification[],
 ): AdminBotNotificationFeedItem[] {
   const kept = new Map<string, AdminBotMemberNotification>();
-  for (const notification of notifications) {
+  // Resolved ones are history, not something that needs anybody: the job recovered, the line was
+  // written. Dropped before the grouping so an older open nudge of the same kind can still be drawn.
+  const open = notifications.filter((notification) => !notification.resolved_at);
+  for (const notification of open) {
     const held = kept.get(notification.kind);
     // Strictly better only: on a tie the earlier one stays, which is what the dashboard's stable
     // sort over the same order picks.
@@ -34,7 +37,7 @@ export function notificationFeed(
       kept.set(notification.kind, notification);
     }
   }
-  return notifications
+  return open
     .filter((notification) => !notification.read_at || kept.get(notification.kind) === notification)
     .map(({ member_id: _owner, ...item }) => item);
 }
