@@ -535,18 +535,58 @@ function createSlackProfilePhotoUpdateExecutor(): AdminBotActionExecutor {
 }
 
 /**
+ * How many Slack member lookups may be in flight at once.
+ *
+ * Each lookup is its own `openclaw.mjs` subprocess (see fetchSlackMemberInfo), so a roster's worth
+ * of them run in a small pool rather than strictly one after another. Done serially, ~90 members
+ * took longer than the member-map refresh's caller allows and the nightly pass timed out at five
+ * minutes every single run; a handful at a time finishes in well under a minute. Capped so the box
+ * is never handed dozens of Node processes at once.
+ */
+const SLACK_MEMBER_LOOKUP_CONCURRENCY = 8;
+
+/**
+ * Run `worker` over `items` with at most `limit` in flight, results in input order.
+ *
+ * A fixed set of runners share one cursor. `next++` is synchronous -- there is no await between
+ * reading and incrementing it -- so no two runners ever take the same index, and the only
+ * concurrency is the deliberate one `limit` sets.
+ */
+export async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  limit: number,
+  worker: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = [];
+  let next = 0;
+  const runner = async (): Promise<void> => {
+    for (let index = next++; index < items.length; index = next++) {
+      results[index] = await worker(items[index]);
+    }
+  };
+  const runners = Array.from({ length: Math.min(Math.max(1, limit), items.length) }, runner);
+  await Promise.all(runners);
+  return results;
+}
+
+/**
  * Reads each member's location from their Slack profile via the OpenClaw CLI, the same seam the
  * message executor uses. Slack reports `tz` (an IANA zone, whose city is what the map wants) for
  * every active account; a workspace "location" profile field wins when one is configured. A member
  * Slack knows nothing about simply gets no entry, and the map falls back to their roster location.
  */
-function createSlackLocationReader(repoRoot: string) {
+export function createSlackLocationReader(repoRoot: string) {
   return async function fetchSlackLocations(
     slackUserIds: readonly string[],
   ): Promise<Map<string, string>> {
+    const infos = await mapWithConcurrency(
+      slackUserIds,
+      SLACK_MEMBER_LOOKUP_CONCURRENCY,
+      (userId) => fetchSlackMemberInfo(repoRoot, userId),
+    );
     const located = new Map<string, string>();
-    for (const userId of slackUserIds) {
-      const user = (await fetchSlackMemberInfo(repoRoot, userId)) as
+    slackUserIds.forEach((userId, index) => {
+      const user = infos[index] as
         | { profile?: { fields?: Record<string, unknown> }; tz?: unknown }
         | undefined;
       const fields = user?.profile?.fields ?? {};
@@ -559,7 +599,7 @@ function createSlackLocationReader(repoRoot: string) {
       if (typeof location === "string" && location.trim()) {
         located.set(userId, location.trim());
       }
-    }
+    });
     return located;
   };
 }
@@ -573,17 +613,22 @@ export function createSlackTimezoneReader(repoRoot: string) {
   return async function fetchSlackTimezones(
     slackUserIds: readonly string[],
   ): Promise<Map<string, string | null>> {
+    const infos = await mapWithConcurrency(
+      slackUserIds,
+      SLACK_MEMBER_LOOKUP_CONCURRENCY,
+      (userId) => fetchSlackMemberInfo(repoRoot, userId),
+    );
     const timezones = new Map<string, string | null>();
-    for (const userId of slackUserIds) {
-      const user = (await fetchSlackMemberInfo(repoRoot, userId)) as { tz?: unknown } | undefined;
+    slackUserIds.forEach((userId, index) => {
+      const user = infos[index] as { tz?: unknown } | undefined;
       // fetchSlackMemberInfo answers `undefined` only when the lookup itself failed. Leaving the
       // key out says "we could not ask"; `null` says Slack answered and had no zone. The caller
       // clears on the second and never on the first.
       if (user === undefined) {
-        continue;
+        return;
       }
       timezones.set(userId, typeof user.tz === "string" && user.tz.trim() ? user.tz.trim() : null);
-    }
+    });
     return timezones;
   };
 }
