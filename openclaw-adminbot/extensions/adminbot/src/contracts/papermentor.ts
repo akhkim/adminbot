@@ -21,6 +21,22 @@
 //     summary: { total, byCategory: {...}, bySeverity: {...} },
 //     failedAgents: [ { id, name, reason } ], roleModelPapers?: [ "<name>" ] }
 
+/**
+ * The shared secret that lets AdminBot ask the lab's Overleaf for a review. While it is unset
+ * AdminBot never asks, and the review step is the author's button press it has always been.
+ */
+export const ADMINBOT_PAPERMENTOR_SERVICE_TOKEN_ENV = "ADMINBOT_PAPERMENTOR_SERVICE_TOKEN";
+
+/**
+ * Whether this deployment runs the review for its authors. Read through a guard rather than a
+ * bare `process.env`, because the nudge lines that ask this are shared code.
+ */
+export function isAdminBotPaperMentorAutoReviewEnabled(
+  env: NodeJS.ProcessEnv = typeof process === "undefined" ? {} : (process.env ?? {}),
+): boolean {
+  return Boolean(env[ADMINBOT_PAPERMENTOR_SERVICE_TOKEN_ENV]?.trim());
+}
+
 /** What the reviewers label a comment. The fork's own three, in the order they matter. */
 export const adminBotPaperMentorSeverities = ["critical", "warning", "suggestion"] as const;
 

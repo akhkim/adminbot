@@ -24018,6 +24018,120 @@
         }
       }
     },
+    "/papers/papermentor/reviews/run": {
+      "post": {
+        "operationId": "post-papers-papermentor-reviews-run",
+        "summary": "POST /papers/papermentor/reviews/run",
+        "tags": [
+          "papers"
+        ],
+        "x-source": "src/api/routes/paper-admin.ts",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "limit": {
+                    "type": "number"
+                  },
+                  "dry_run": {}
+                },
+                "additionalProperties": true,
+                "x-schema-coverage": "inferred from property access or downstream casts; semantic validation remains server-side"
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful service result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "dry_run": {
+                      "type": "boolean"
+                    },
+                    "due": {
+                      "type": "number"
+                    },
+                    "requests": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "paper_id": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "reason": {
+                            "type": "string",
+                            "enum": [
+                              "stale",
+                              "never"
+                            ]
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "rejected",
+                              "failed",
+                              "recent",
+                              "busy",
+                              "not_found",
+                              "started",
+                              "running",
+                              "would_request"
+                            ]
+                          },
+                          "project_id": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "paper_id",
+                          "title",
+                          "reason",
+                          "status"
+                        ],
+                        "additionalProperties": true
+                      }
+                    }
+                  },
+                  "required": [
+                    "dry_run",
+                    "due",
+                    "requests"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/papers/papermentor/runs": {
       "get": {
         "operationId": "get-papers-papermentor-runs",
@@ -29990,6 +30104,8 @@
               "reference_check.pdf_checked",
               "rec_letter_reminders.swept",
               "papermentor.run_recorded",
+              "papermentor.review_requested",
+              "papermentor.project_linked",
               "paper_evidence.verified",
               "paper.stage_advanced",
               "paper.pi_review_requested",

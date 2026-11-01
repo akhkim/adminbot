@@ -1001,13 +1001,15 @@ where they are useful, and `contracts/papermentor.ts` is the boundary that keeps
 written as an allow-list, so a field the fork adds later arrives as nothing rather than as a leak.
 
 **How a review finds its paper.** By the Overleaf project id, read out of a project link the paper
-already carries (a stored `overleaf_edit` row, or the older `artifacts.overleaf_edit_url`). Both
-sides go through `adminBotOverleafProjectRef`, so this is a comparison of two ids and never anything
-that follows a URL. The card no longer collects the project link -- the share links it takes carry
-a token, not an id -- so only papers filed before that change can be matched; on any other paper an
-author ticks `papermentor_review` by hand. A review of a project no paper claims is refused with a
-404 and named in the run summary rather than stored as an orphan -- that is usually a paper nobody
-registered, which is the thing for somebody to go and fix.
+already carries (a stored `overleaf_edit` row, or `artifacts.overleaf_edit_url`). Both sides go
+through `adminBotOverleafProjectRef`, so this is a comparison of two ids and never anything that
+follows a URL. The card no longer collects the project link -- the share links it takes carry a
+token, not an id -- so a paper filed since then is matched once an automated review (below) has
+resolved its share link and written the project link onto `artifacts.overleaf_edit_url`. Until
+then, and wherever automated reviews are off, an author ticks `papermentor_review` by hand. A
+review of a project no paper claims is refused with a 404 and named in the run summary rather than
+stored as an orphan -- that is usually a paper nobody registered, which is the thing for somebody
+to go and fix.
 
 **What it changes on the paper.** The `papermentor_review` slot is marked provided, dated from the
 review rather than from the ingest, and with no member credited: nobody ticked a box, and crediting
@@ -1046,6 +1048,43 @@ clearing the flag. Until reviews are collected, authors tick `papermentor_review
 `GET /papers/papermentor/runs?paper_id=` reads back what has been ingested, newest first, for an
 operator checking the collector is working.
 
+**Automated reviews.** AdminBot runs the review step for the author.
+`scripts/adminbot-papermentor-review-cron.sh`, registered as `adminbot-papermentor-reviews` (every
+two hours, 08:02 to 20:02), calls `POST /papers/papermentor/reviews/run` with `dry_run: false`.
+The service picks the papers at their review step and asks the lab's Overleaf to review at most
+three per pass. A paper is at its review step when it is open, not dormant and unsubmitted, and its
+`papermentor_review` is either open and never reviewed or re-opened because the last review is
+stale. A waived slot, and a hand tick with no review behind it, are left alone. Never-reviewed
+papers go first. Each request goes to the fork's `POST /internal/papermentor/review` with a shared
+secret, naming the paper by the author's own `overleaf_share` link. The fork resolves that link to
+its project, so nobody's Overleaf account is involved, and answers with the project id, which
+AdminBot writes onto the paper. The review runs in the background on the Overleaf host, and its
+counts arrive through the collector like any other review.
+
+**The link must be from the lab's PaperMentor Overleaf** (`overleaf.safe.eu`) for the review to run
+automatically. The share link is a credential, so it is only ever sent to the instance that minted
+it, and a link from `overleaf.com` names a project PaperMentor cannot see. Those papers are not
+asked about. The `overleaf_share` hint on the paper card says this where the link is pasted, and
+the nudge tells the author to move the draft.
+
+Nothing is written into the paper without a person. The review waits in the project's AI Tutor
+panel, which offers **Load Automated Review** to the next author who opens it. Apply then adds it
+once for the whole project, and a review someone runs by hand replaces it. The fork runs at most
+two automated reviews at a time and at most one per project a day, whatever came of it, so the
+pass is safe at any cadence. A hand run is a dry run unless the body says `dry_run: false`. It names
+the papers due and asks for nothing.
+
+```bash
+# The same secret as PAPERMENTOR_SERVICE_TOKEN on the Overleaf host. Unset, the job says it is off.
+export ADMINBOT_PAPERMENTOR_SERVICE_TOKEN="..."
+# Where the lab's Overleaf answers, if not https://overleaf.safe.eu.
+export ADMINBOT_OVERLEAF_URL="https://overleaf.safe.eu"
+```
+
+Every request writes a `papermentor.review_requested` audit row with what the Overleaf answered:
+`started`, `running`, `recent`, `busy`, `not_found` (the link was regenerated, or link sharing is
+off), `rejected` or `failed`. Every resolved project writes `papermentor.project_linked`.
+
 **What the lab chases.** The review is a step on the evidence checklist, so it rides the paper-slot
 nudge sweep rather than a sweep of its own -- one message per person per cadence, however many
 papers and however many kinds of thing they owe. Three things the slot's own status cannot say are
@@ -1053,9 +1092,9 @@ added to the line:
 
 | The paper                             | The line says                                                                               |
 | ------------------------------------- | ------------------------------------------------------------------------------------------- |
-| Draft is on `overleaf.com`            | it has to move to the lab's Overleaf before PaperMentor can read it at all                  |
-| On the lab's Overleaf, never reviewed | where to run it -- the AI Tutor panel in the project                                        |
-| Reviewed, fixes still open            | what the reviewer found: "PaperMentor left 14 comments 3 days ago (3 critical, 5 warnings)" |
+| Draft is on `overleaf.com`            | it has to move to the lab's Overleaf before PaperMentor can read it at all, or review it automatically |
+| On the lab's Overleaf, never reviewed | where to run it -- the AI Tutor panel in the project -- or, with automated reviews on, where to load and apply the one PaperMentor ran |
+| Reviewed, fixes still open            | what the reviewer found: "PaperMentor left 14 comments 3 days ago (3 critical, 5 warnings)", and to load them from the panel if they are not in the project yet |
 
 The first is the one worth having. Every paper is reviewed before submission and PaperMentor only
 reads its own instance, so a draft on `overleaf.com` cannot clear the step at all -- and the worst
@@ -1476,6 +1515,7 @@ a job that was never registered is silent: nobody is nudged and nothing errors.
 | `adminbot-onboarding-chase`         | `40 9 * * 1-5`       | Chase setup checklists still open after ten days, then every two months                     |
 | `adminbot-thesis-milestones`        | `50 9 * * 1-5`       | Guidebook nudge before a thesis deadline, grading reminder five days after                  |
 | `adminbot-paper-stages`             | `45 * * * *`         | Verify the evidence, advance each paper on it, and queue the PI's gate                      |
+| `adminbot-papermentor-reviews`      | `2 8-20/2 * * *`     | Ask PaperMentor to review the papers at their review step, on the lab's Overleaf            |
 | `adminbot-papermentor-runs`         | `35 * * * *`         | Collect PaperMentor's cached reviews and record them against their papers                   |
 | `adminbot-rec-letter-reminders`     | `25 10 * * *`        | Mail the head professor the letters due within three days                                   |
 | `adminbot-meeting-attendance`       | `30 9 * * 1`         | Chase members who have stopped coming to the group meeting                                  |

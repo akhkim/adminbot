@@ -8,6 +8,7 @@ import {
   createOpenReviewForumProbe,
   createOpenReviewNotesReader,
 } from "../connectors/openreview-notes.js";
+import { paperMentorReviewRequesterFromEnv } from "../connectors/papermentor-review.js";
 import {
   createGptZeroBibliographyScanner,
   createPublicOpenReviewPdfReader,
@@ -218,6 +219,8 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
   // Built here rather than injected from the launcher, like the geolocator above: both are pure
   // functions of the environment, and the composition root has nothing to add to either.
   const venuePapersReader = options.venuePapersReader ?? createOpenReviewNotesReader();
+  const paperMentorReviewRequester =
+    options.paperMentorReviewRequester ?? paperMentorReviewRequesterFromEnv();
   const embedder = options.embedder ?? createOllamaEmbedder();
   const embeddingModel =
     options.embeddingModel ?? process.env.ADMINBOT_EMBED_MODEL?.trim() ?? "embeddinggemma:latest";
@@ -508,6 +511,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     ...(options.cvScanDeps ? { cvScanDeps: options.cvScanDeps } : {}),
     ...(options.cvDigestPublisher ? { cvDigestPublisher: options.cvDigestPublisher } : {}),
     publicationMailingRunner: options.publicationMailingRunner ?? createPublicationMailingRunner(),
+    ...(paperMentorReviewRequester ? { paperMentorReviewRequester } : {}),
     ...(venuePapersReader ? { venuePapersReader } : {}),
     embedder,
     embeddingModel,

@@ -5,9 +5,42 @@ import {
   ADMINBOT_OVERLEAF_URL_ENV,
   adminBotOverleafHosts,
   adminBotOverleafProjectRef,
+  adminBotOverleafShareRef,
   isAdminBotOverleafHost,
   resolveAdminBotLabOverleafHost,
 } from "./overleaf.js";
+
+describe("adminBotOverleafShareRef", () => {
+  it("reads the edit share link on the lab's Overleaf as one PaperMentor can resolve", () => {
+    expect(
+      adminBotOverleafShareRef(`https://${ADMINBOT_LAB_OVERLEAF_HOST}/1234567890abcdefghijkl`, {}),
+    ).toEqual({
+      url: `https://${ADMINBOT_LAB_OVERLEAF_HOST}/1234567890abcdefghijkl`,
+      host: ADMINBOT_LAB_OVERLEAF_HOST,
+      lab: true,
+    });
+  });
+
+  it("knows a share link on overleaf.com cannot be reviewed", () => {
+    expect(
+      adminBotOverleafShareRef("https://www.overleaf.com/1234567890abcdefghijkl#a1b2c3", {}),
+    ).toMatchObject({ host: "www.overleaf.com", lab: false });
+  });
+
+  it("is not a project link, a read-only link, or a link anywhere else", () => {
+    const cases = [
+      `https://${ADMINBOT_LAB_OVERLEAF_HOST}/project/65f2a1c9d4e3b7a801f6`,
+      `https://${ADMINBOT_LAB_OVERLEAF_HOST}/read/xzqvbnmklpqr`,
+      `http://${ADMINBOT_LAB_OVERLEAF_HOST}/1234567890abcdefghijkl`,
+      "https://evil.example/1234567890abcdefghijkl",
+      `https://${ADMINBOT_LAB_OVERLEAF_HOST}/short`,
+      "not a url",
+    ];
+    for (const raw of cases) {
+      expect(adminBotOverleafShareRef(raw, {})).toBeUndefined();
+    }
+  });
+});
 
 describe("resolveAdminBotLabOverleafHost", () => {
   it("is the lab's own instance when nothing is configured", () => {

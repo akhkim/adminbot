@@ -384,6 +384,7 @@ Website: `/papers, /announcements, /grant-report, /professor, /arr-eligible-revi
 | `post-papers-openreview-sync-run`                                         | POST `/papers/openreview-sync/run` (dry-run)                              |
 | `post-papers-paperflow-evidence`                                          | POST `/papers/paperflow-evidence`                                         |
 | `post-papers-paperflow-stages-run`                                        | POST `/papers/paperflow-stages/run`                                       |
+| `post-papers-papermentor-reviews-run`                                     | POST `/papers/papermentor/reviews/run` (dry-run)                          |
 | `post-papers-papermentor-runs`                                            | POST `/papers/papermentor/runs`                                           |
 | `post-papers-pre-registration-run`                                        | POST `/papers/pre-registration/run`                                       |
 | `post-papers-project-channels-run`                                        | POST `/papers/project-channels/run`                                       |

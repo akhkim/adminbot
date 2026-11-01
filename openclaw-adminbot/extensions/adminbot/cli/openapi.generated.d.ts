@@ -3941,6 +3941,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/papers/papermentor/reviews/run": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** POST /papers/papermentor/reviews/run */
+    post: operations["post-papers-papermentor-reviews-run"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/papers/papermentor/runs": {
     parameters: {
       query?: never;
@@ -5141,6 +5158,8 @@ export interface components {
         | "reference_check.pdf_checked"
         | "rec_letter_reminders.swept"
         | "papermentor.run_recorded"
+        | "papermentor.review_requested"
+        | "papermentor.project_linked"
         | "paper_evidence.verified"
         | "paper.stage_advanced"
         | "paper.pi_review_requested"
@@ -24065,6 +24084,71 @@ export interface operations {
             deliveries?: components["schemas"]["AdminBotMemberNudgeDelivery"][];
             papers_considered: number;
             unroutable: string[];
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "post-papers-papermentor-reviews-run": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          limit?: number;
+          dry_run?: unknown;
+        } & {
+          [key: string]: unknown;
+        };
+      };
+    };
+    responses: {
+      /** @description Successful service result */
+      "2XX": {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            dry_run: boolean;
+            due: number;
+            requests: ({
+              paper_id: string;
+              title: string;
+              /** @enum {string} */
+              reason: "stale" | "never";
+              /** @enum {string} */
+              status:
+                | "rejected"
+                | "failed"
+                | "recent"
+                | "busy"
+                | "not_found"
+                | "started"
+                | "running"
+                | "would_request";
+              project_id?: string;
+              message?: string;
+            } & {
+              [key: string]: unknown;
+            })[];
           } & {
             [key: string]: unknown;
           };

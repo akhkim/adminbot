@@ -3,6 +3,10 @@ import type {
   CalendarMembershipReader,
   CalendarAccessReader,
 } from "../connectors/calendar-membership.js";
+import type {
+  PaperMentorReviewRequester,
+  PaperMentorReviewRequestStatus,
+} from "../connectors/papermentor-review.js";
 import type { ReverseGeocoder } from "../connectors/reverse-geocode.js";
 import type { AdminBotExternalCollaboratorSubgroup } from "../contracts/actions.js";
 import type { AdminBotApiToken, AdminBotApiTokenUsage } from "../contracts/api-tokens.js";
@@ -217,7 +221,11 @@ import {
   type AdminBotOpportunityStatus,
   type AdminBotOpportunityView,
 } from "../contracts/opportunities.js";
-import { adminBotOverleafProjectRef } from "../contracts/overleaf.js";
+import {
+  adminBotOverleafProjectRef,
+  adminBotOverleafShareRef,
+  resolveAdminBotLabOverleafHost,
+} from "../contracts/overleaf.js";
 import {
   adminBotArxivId,
   adminBotOpenReviewForumId,
@@ -274,6 +282,7 @@ import {
   type AdminBotPaperflowStage,
 } from "../contracts/paperflow-stages.js";
 import {
+  ADMINBOT_PAPERMENTOR_SERVICE_TOKEN_ENV,
   adminBotPaperMentorRunId,
   type AdminBotPaperMentorRun,
   type AdminBotPaperMentorRunInput,
@@ -502,6 +511,12 @@ import {
   paperflowRecipient,
   paperflowStageEmail,
 } from "../workflows/papers/paperflow-stages.js";
+import {
+  adminBotPaperMentorAutoReviewLimit,
+  paperMentorAutoReviewCandidate,
+  paperMentorAutoReviewQueue,
+  type PaperMentorAutoReviewCandidate,
+} from "../workflows/papers/papermentor-auto-review.js";
 import {
   reviewProvesFixesMerged,
   type PaperMentorContext,
@@ -7378,6 +7393,155 @@ export class AdminBotService {
   }
 
   /**
+   * Ask PaperMentor to review the papers at their review step, so nobody has to press the button.
+   *
+   * Which papers is workflows/papers/papermentor-auto-review.ts: open, unsubmitted, never reviewed
+   * or reviewed too long ago, and on the lab's own Overleaf. The request names the paper by the
+   * edit share link its author gave, and the lab's Overleaf answers with the project it resolved
+   * that link to. That id is written onto the paper, which is how the review -- arriving later
+   * through the ordinary collector -- finds the paper it belongs to.
+   *
+   * Dry run unless the caller says otherwise, like the other sweeps a person may run by hand. A
+   * live pass asks for at most `limit` reviews and stops early when the Overleaf says it is busy.
+   * Asking twice is harmless: the Overleaf runs at most one automated review per project a day.
+   */
+  async requestPaperMentorReviews(
+    actor: string,
+    requester: PaperMentorReviewRequester | undefined,
+    options: { dryRun?: boolean; limit?: number; nowIso?: string } = {},
+  ): Promise<
+    AdminBotServiceResponse<{
+      dry_run: boolean;
+      /** Every paper at its review step, of which `requests` are the ones asked about this pass. */
+      due: number;
+      requests: Array<{
+        paper_id: string;
+        title: string;
+        reason: PaperMentorAutoReviewCandidate["reason"];
+        status: PaperMentorReviewRequestStatus | "would_request";
+        project_id?: string;
+        message?: string;
+      }>;
+    }>
+  > {
+    const nowIso = options.nowIso ?? new Date().toISOString();
+    const now = new Date(nowIso);
+    const dryRun = options.dryRun !== false;
+    const limit = options.limit ?? adminBotPaperMentorAutoReviewLimit;
+    const due = this.withPaperTables(() =>
+      paperMentorAutoReviewQueue(
+        this.store.listPapers().flatMap((paper) => {
+          const [latest] = this.paperRows().listPaperMentorRuns(paper.id);
+          const candidate = paperMentorAutoReviewCandidate({
+            paper,
+            slots: this.paperRows().listPaperSlots(paper.id),
+            ...(latest ? { latest } : {}),
+            now,
+          });
+          return candidate ? [candidate] : [];
+        }),
+      ),
+    );
+    const batch = due.slice(0, limit);
+    if (dryRun) {
+      return {
+        ok: true,
+        status: 200,
+        payload: {
+          dry_run: true,
+          due: due.length,
+          requests: batch.map(({ paper_id, title, reason }) => ({
+            paper_id,
+            title,
+            reason,
+            status: "would_request" as const,
+          })),
+        },
+      };
+    }
+    if (!requester) {
+      return serviceError(
+        503,
+        `automated PaperMentor reviews are not configured; set ${ADMINBOT_PAPERMENTOR_SERVICE_TOKEN_ENV}`,
+      );
+    }
+    const requests = [];
+    for (const candidate of batch) {
+      const outcome = await requester(
+        candidate.target,
+        candidate.venue ? { venue: candidate.venue } : {},
+      );
+      if (outcome.project_id) {
+        this.rememberPaperMentorProject(candidate.paper_id, outcome.project_id, actor, nowIso);
+      }
+      this.recordAudit({
+        type: "papermentor.review_requested",
+        actor,
+        details: {
+          paper_id: candidate.paper_id,
+          reason: candidate.reason,
+          status: outcome.status,
+          ...(outcome.project_id ? { project_id: outcome.project_id } : {}),
+          ...(outcome.message ? { message: outcome.message } : {}),
+        },
+      });
+      requests.push({
+        paper_id: candidate.paper_id,
+        title: candidate.title,
+        reason: candidate.reason,
+        status: outcome.status,
+        ...(outcome.project_id ? { project_id: outcome.project_id } : {}),
+        ...(outcome.message ? { message: outcome.message } : {}),
+      });
+      // The Overleaf is running as many as it will; the rest wait for the next pass.
+      if (outcome.status === "busy") {
+        break;
+      }
+    }
+    return { ok: true, status: 200, payload: { dry_run: false, due: due.length, requests } };
+  }
+
+  /**
+   * Write the project a paper's share link resolved to onto the paper, as its project link.
+   *
+   * `artifacts.overleaf_edit_url` is the field the ingest and the nudge already read a project id
+   * from, and the one the grid shows as the paper's Overleaf edit URL -- which this is. The id is
+   * inert on its own: opening it still takes an invitation, unlike the share link it came from.
+   */
+  private rememberPaperMentorProject(
+    paperId: string,
+    projectId: string,
+    actor: string,
+    nowIso: string,
+  ): void {
+    const paper = this.store.getPaper(paperId);
+    if (!paper) {
+      return;
+    }
+    const existing = paper.artifacts?.overleaf_edit_url;
+    if (existing && adminBotOverleafProjectRef(existing)?.projectId === projectId) {
+      return;
+    }
+    this.store.savePaper({
+      ...paper,
+      artifacts: {
+        ...paper.artifacts,
+        overleaf_edit_url: `https://${resolveAdminBotLabOverleafHost()}/project/${projectId}`,
+      },
+      updated_at: (paper.updated_at ?? "") < nowIso ? nowIso : paper.updated_at,
+    });
+    this.recordAudit({
+      type: "papermentor.project_linked",
+      actor,
+      details: {
+        paper_id: paperId,
+        project_id: projectId,
+        ...(existing ? { replaced: existing } : {}),
+      },
+    });
+  }
+
+  /**
    * The paper a project id belongs to, by the link its author keeps.
    *
    * The evidence slot is asked first and the legacy `artifacts.overleaf_edit_url` second, because
@@ -8138,7 +8302,12 @@ export class AdminBotService {
   ): PaperMentorContext {
     const link =
       stored.find((row) => row.slot === "overleaf_edit")?.url ?? paper.artifacts?.overleaf_edit_url;
-    const project = link ? adminBotOverleafProjectRef(link) : undefined;
+    // The share link stands in for a project link until the first review resolves it: where it is
+    // hosted is all the nudge needs, and an overleaf.com link is exactly the case worth catching.
+    const share = stored.find((row) => row.slot === "overleaf_share")?.url;
+    const project =
+      (link ? adminBotOverleafProjectRef(link) : undefined) ??
+      (share ? adminBotOverleafShareRef(share) : undefined);
     const [latest] = this.paperRows().listPaperMentorRuns(paper.id);
     return {
       ...(project ? { project: { lab: project.lab, host: project.host } } : {}),

@@ -78,6 +78,29 @@ describe("paperMentorReviewDetail", () => {
     expect(paperMentorReviewDetail({ kind: "never" }, LAB)).toContain("AI Tutor panel");
   });
 
+  it("asks for the review to be applied, not run, where the lab runs it automatically", () => {
+    const never = paperMentorReviewDetail({ kind: "never" }, LAB, true);
+    expect(never).toContain("reviews it automatically");
+    expect(never).toContain("load and apply");
+    const stale = paperMentorReviewDetail(
+      { kind: "stale", reviewed_at: "2026-08-01T09:00:00Z", days_ago: 43 },
+      LAB,
+      true,
+    );
+    expect(stale).toContain("43 days ago");
+    expect(stale).toContain("automatically");
+  });
+
+  it("says the edit link must be from the lab's Overleaf for the automated review", () => {
+    const detail = paperMentorReviewDetail(
+      { kind: "unreachable", host: "www.overleaf.com" },
+      LAB,
+      true,
+    );
+    expect(detail).toContain(`move the project to ${LAB}`);
+    expect(detail).toContain(`only reviews automatically when the edit link is from ${LAB}`);
+  });
+
   it("says how old the last one was when it has gone stale", () => {
     expect(
       paperMentorReviewDetail(

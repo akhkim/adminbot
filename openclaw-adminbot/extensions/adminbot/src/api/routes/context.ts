@@ -7,6 +7,7 @@ import type {
   CalendarMembershipReader,
   CalendarAccessReader,
 } from "../../connectors/calendar-membership.js";
+import type { PaperMentorReviewRequester } from "../../connectors/papermentor-review.js";
 import type { PdfReferenceChecker } from "../../connectors/reference-check.js";
 import type { AdminBotDriveProbe } from "../../contracts/drive-links.js";
 import type { OpenReviewSubmissionReader } from "../../contracts/openreview-citation-checks.js";
@@ -85,6 +86,8 @@ export type AdminBotRouteContext = {
   placeAttribution?: { text: string; url: string };
   /** Sends the publication digest. Absent leaves /papers/mailing-list/send answering 503. */
   publicationMailingRunner?: PublicationMailingRunner;
+  /** Asks the lab's Overleaf for a PaperMentor review. Absent leaves a live review pass answering 503. */
+  paperMentorReviewRequester?: PaperMentorReviewRequester;
   venuePapersReader?: import("../../connectors/openreview-notes.js").OpenReviewNotesReader;
   // Always present: the server builds both from the environment, and an absent embedder would
   // make every search path optional-chained for a case that cannot happen.
@@ -261,6 +264,9 @@ export type AdminBotMockServiceOptions = {
   cvDigestPublisher?: AdminBotCvDigestPublisher;
   /** Sends the publication digest. Absent leaves /papers/mailing-list/send answering 503. */
   publicationMailingRunner?: PublicationMailingRunner;
+  // Asks the lab's Overleaf for PaperMentor reviews. Injected so tests never reach an Overleaf;
+  // otherwise built from ADMINBOT_PAPERMENTOR_SERVICE_TOKEN, and absent while that is unset.
+  paperMentorReviewRequester?: PaperMentorReviewRequester;
   // Reads a venue's accepted papers from OpenReview, and turns text into vectors. Injected so the
   // conference-paper tool is testable without a network and so a deployment without OpenReview
   // credentials simply has no index job rather than a button that fails inside a connector.

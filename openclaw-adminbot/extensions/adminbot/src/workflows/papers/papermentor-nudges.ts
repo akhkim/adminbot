@@ -13,7 +13,10 @@
 // Pure, like the rest of the nudge layer: given a paper's review state and a clock, this says what
 // the line in the message should read. The service gathers the state and sends.
 import { resolveAdminBotLabOverleafHost } from "../../contracts/overleaf.js";
-import type { AdminBotPaperMentorRun } from "../../contracts/papermentor.js";
+import {
+  isAdminBotPaperMentorAutoReviewEnabled,
+  type AdminBotPaperMentorRun,
+} from "../../contracts/papermentor.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -46,8 +49,8 @@ export type PaperMentorContext = {
 
 export type PaperMentorReviewState =
   /**
-   * No Overleaf project id on the paper. Every paper filed since the project-link slot was retired
-   * is here -- the share links carry a token, not an id -- so the review slot is ticked by hand.
+   * No Overleaf link on the paper at all. A share link counts: it carries a token rather than an
+   * id, but the lab's Overleaf resolves it, and the first review writes the project id back.
    */
   | { kind: "no_project" }
   /** The draft is on an Overleaf PaperMentor cannot read. Nothing else can happen until it moves. */
@@ -95,20 +98,33 @@ export function isPaperMentorReviewStale(state: PaperMentorReviewState): boolean
   return state.kind === "stale";
 }
 
-/** The line appended to "PaperMentor review done" in a nudge, or nothing when the label says it all. */
+/**
+ * The line appended to "PaperMentor review done" in a nudge, or nothing when the label says it all.
+ *
+ * Where the lab runs the review itself (see papermentor-auto-review.ts), the ask is to apply the
+ * review rather than to run it -- and the condition for that, the edit link being on the lab's
+ * own Overleaf, is the thing worth saying to an author whose link is somewhere else.
+ */
 export function paperMentorReviewDetail(
   state: PaperMentorReviewState,
   labHost: string = resolveAdminBotLabOverleafHost(),
+  autoReview: boolean = isAdminBotPaperMentorAutoReviewEnabled(),
 ): string | undefined {
   switch (state.kind) {
     case "unreachable":
       // The only line here that asks for something other than "run the review": this paper cannot
       // clear the step at all until it moves, and saying so in week one is the whole point.
-      return `the draft is on ${state.host}, which PaperMentor cannot read — move the project to ${labHost} first, then run the review from the AI Tutor panel`;
+      return autoReview
+        ? `the draft is on ${state.host}, which PaperMentor cannot read — move the project to ${labHost} first; PaperMentor only reviews automatically when the edit link is from ${labHost}`
+        : `the draft is on ${state.host}, which PaperMentor cannot read — move the project to ${labHost} first, then run the review from the AI Tutor panel`;
     case "never":
-      return "open the project on the lab's Overleaf and run it from the AI Tutor panel";
+      return autoReview
+        ? "PaperMentor reviews it automatically — open the AI Tutor panel in the project to load and apply the review, or run one there now"
+        : "open the project on the lab's Overleaf and run it from the AI Tutor panel";
     case "stale":
-      return `the last review was ${agePhrase(state.days_ago)} — run it again so the review is about the draft you will submit`;
+      return autoReview
+        ? `the last review was ${agePhrase(state.days_ago)} — PaperMentor is reviewing the current draft automatically; load it from the AI Tutor panel once it is there`
+        : `the last review was ${agePhrase(state.days_ago)} — run it again so the review is about the draft you will submit`;
     default:
       return undefined;
   }
@@ -158,7 +174,8 @@ export function paperMentorFixesDetail(
     `PaperMentor left ${comments}`,
     when ? ` ${when}` : "",
     severities ? ` (${severities})` : "",
-    " — the cheap ones are the ones to merge",
+    // A review PaperMentor ran on its own waits in the panel until somebody applies it.
+    " — if they are not in the project yet, load them from the AI Tutor panel; the cheap ones are the ones to merge",
   ].join("");
 }
 
