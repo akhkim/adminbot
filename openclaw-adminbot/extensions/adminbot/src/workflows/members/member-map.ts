@@ -25,12 +25,9 @@
 //      (rule 0) by date, so it leads the IP too.
 //   3. Other stated cities: `current_city`, then the roster `location`, then the Slack profile's
 //      location field. The member's own words, undated.
-//   4. The city an IANA timezone is named for: the zone the member's browser reported
-//      (`last_device_tz`, while fresh -- ADMINBOT_DEVICE_TZ_FRESH_DAYS), then the Slack `tz` the
-//      directory sync recorded (`slack_tz`, while fresh -- SLACK_TZ_FRESH_DAYS), then a zone in the
-//      Slack location field, then the roster `timezone`. "America/Toronto" says Toronto, but it
-//      says the same for Montréal, so it is a city-level answer that is less exact than any of the
-//      above.
+//   4. (Retired.) A timezone alone never places anyone: "America/Los_Angeles" covers a whole
+//      coast and is often a laptop that never changed its clock, so a member with nothing better
+//      is listed off the map ("no location") instead of pinned to the city the zone is named for.
 //   5. A country: any of the texts above that names only a country ("Germany"), then the country
 //      of the last IP reading unless that reading was ignored. Drawn hollow by the UI so it does
 //      not pass for a city.
@@ -1480,11 +1477,6 @@ const cityFrom = (raw: string | undefined) => () => {
   return place ? { place, precision: "city" as const } : undefined;
 };
 
-const zoneFrom = (raw: string | undefined) => () => {
-  const place = raw && fragmentFromTimezone(raw) ? resolvePlace(raw) : undefined;
-  return place ? { place, precision: "timezone" as const } : undefined;
-};
-
 const countryFrom = (raw: string | undefined) => () => {
   // Only the text's primary fragment and its last comma part: "Germany" and "Somewhere, Germany"
   // name a country, "Berlin" does not, and a timezone never does.
@@ -1549,21 +1541,6 @@ function resolveMemberPlace(
       resolve: cityFrom(checkinCity),
     },
   ];
-  // The country the member wrote down, if any text names one. A timezone in another country
-  // ("Abuja, Nigeria" next to a laptop still on America/Los_Angeles) is a stale clock, not a
-  // move: it must not outrank the country they stated (rule 5).
-  const statedCountry = [currentCity, rosterText, slackText]
-    .map((raw) => countryFrom(raw)() ?? cityFrom(raw)())
-    .find(Boolean)?.place.country;
-  const statedKey = resolveCountry(statedCountry)?.key;
-  const sameCountry = (place: AdminBotMapPlace) => {
-    const zoneKey = resolveCountry(place.country)?.key;
-    return !statedKey || !zoneKey || zoneKey === statedKey;
-  };
-  const zoneIn = (raw: string | undefined) => () => {
-    const resolved = zoneFrom(raw)();
-    return resolved && sameCountry(resolved.place) ? resolved : undefined;
-  };
 
   const personal = ownSources.toSorted(
     (left, right) => stampMs(right.located_at) - stampMs(left.located_at),
@@ -1591,28 +1568,6 @@ function resolveMemberPlace(
       located_at: member.slack_location_updated_at,
       resolve: cityFrom(slackText),
     },
-    // 4. Cities named by a timezone: the browser's zone first, then the synced Slack zone, while
-    //    fresh. Device and Slack zones are both the member's own devices; the browser's is the one
-    //    in front of them today.
-    {
-      raw: deviceZone,
-      source: "device",
-      located_at: member.last_device_tz_at,
-      resolve: zoneIn(deviceZone),
-    },
-    {
-      raw: slackZone,
-      source: "slack",
-      located_at: member.slack_tz_observed_at,
-      resolve: zoneIn(slackZone),
-    },
-    {
-      raw: slackText,
-      source: "slack",
-      located_at: member.slack_location_updated_at,
-      resolve: zoneIn(slackText),
-    },
-    { raw: rosterZone, source: "roster", resolve: zoneIn(rosterZone) },
     // 5. Countries: the device's first, since it is the member's own machine, then what they wrote,
     //    then the IP's.
     {
@@ -1652,11 +1607,12 @@ function resolveMemberPlace(
     }
   }
   // Nothing resolved: report the most trusted text that was written, so an unplaced entry always
-  // points at the thing worth fixing (usually a city the gazetteer should learn). The roster
-  // timezone is left out: an unplaceable zone is a typo, not a city to add.
+  // points at the thing worth fixing (usually a city the gazetteer should learn). Timezones are
+  // left out: a zone is not a location, so a member with only a zone has no location at all.
   const written = candidates.find(
     (candidate) =>
       candidate.raw &&
+      !fragmentFromTimezone(candidate.raw) &&
       candidate.raw !== rosterZone &&
       candidate.raw !== slackZone &&
       candidate.raw !== deviceZone &&

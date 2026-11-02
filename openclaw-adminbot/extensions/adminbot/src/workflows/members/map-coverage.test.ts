@@ -33,7 +33,7 @@ const roster = [
   member("b", { location_checkin_city: "Berlin", location_checkin_at: ago(10) }),
   // Only a stored city, last here three weeks ago.
   member("c", { current_city: "Zurich", last_seen_at: ago(21) }),
-  // Only a Slack zone, never seen in AdminBot.
+  // Only a Slack zone, never seen in AdminBot: a zone places nobody.
   member("d", { slack_tz: "Asia/Tokyo", slack_tz_observed_at: ago(1) }),
   // Nothing at all.
   member("e"),
@@ -69,13 +69,13 @@ describe("buildMapCoverage", () => {
       ip: 1,
       checkin: 1,
       stored_city: 2,
-      timezone: 1,
+      timezone: 0,
       country: 0,
-      unplaced: 1,
+      unplaced: 2,
       hidden: 1,
       suspected_vpn: 1,
-      // Placed by the IP (a) or a time zone's city (d): somewhere near, never exact.
-      approximate_only: 2,
+      // Placed by the IP (a): somewhere near, never exact.
+      approximate_only: 1,
     });
     const { suspected_vpn: _overlay, approximate_only: _subset, ...buckets } = coverage.counts;
     expect(Object.values(buckets).reduce((sum, n) => sum + n, 0)).toBe(coverage.active);
@@ -89,8 +89,7 @@ describe("buildMapCoverage", () => {
       last_seen_at: ago(21),
     });
     expect(coverage.stale.find((entry) => entry.member_id === "d")).toMatchObject({
-      placed_by: "timezone",
-      place_label: "Tokyo",
+      placed_by: "unplaced",
     });
     expect(coverage.stale.find((entry) => entry.member_id === "d")?.last_seen_at).toBeUndefined();
     expect(coverage.stale.find((entry) => entry.member_id === "e")).toMatchObject({
