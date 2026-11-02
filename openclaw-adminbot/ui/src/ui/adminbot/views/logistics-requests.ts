@@ -48,6 +48,8 @@ export type AdminBotLogisticsRequestsProps = {
   /** Loads the request back into its form so the member can correct what they sent. */
   onEdit: (requestId: string) => void;
   onSetStatus: (requestId: string, status: LogisticsRequestStatus, note: string) => void;
+  /** Admin only: removes the request for good. Withdrawal stays the requester's. */
+  onDelete: (requestId: string) => void;
   /** The note an admin is typing on the open request, held on app state so a re-render cannot eat it. */
   statusNote: string;
   onStatusNoteChange: (note: string) => void;
@@ -575,6 +577,26 @@ function renderRequestDetail(props: AdminBotLogisticsRequestsProps, request: Log
           `
         : nothing}
       ${props.viewerIsAdmin ? renderAnswerControls(props, request) : nothing}
+      ${props.viewerIsAdmin
+        ? html`
+            <div class="logistics-detail__actions">
+              <button
+                class="btn btn--sm danger"
+                type="button"
+                data-testid="logistics-delete"
+                ?disabled=${props.openLoading}
+                @click=${() => {
+                  // Kept apart from the answers: those can be changed later, this cannot.
+                  if (globalThis.confirm?.(t("logistics.requests.deleteConfirm"))) {
+                    props.onDelete(request.id);
+                  }
+                }}
+              >
+                ${t("logistics.requests.delete")}
+              </button>
+            </div>
+          `
+        : nothing}
     </div>
   `;
 }
