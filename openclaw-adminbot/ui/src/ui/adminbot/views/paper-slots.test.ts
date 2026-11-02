@@ -4,7 +4,7 @@ import { render } from "lit";
 import { describe, expect, it } from "vitest";
 import { ADMINBOT_LAB_OVERLEAF_HOST } from "../../../../../extensions/adminbot/src/contracts/overleaf.js";
 import type { PaperflowStageRow, PaperSlotRow } from "../api/papers.ts";
-import { renderPaperSlots, type PaperDetailsProps } from "./paper-slots.ts";
+import { renderPaperSlots, type PaperDetailsProps, type PaperSlotsProps } from "./paper-slots.ts";
 
 type Saved = {
   slot: string;
@@ -17,17 +17,18 @@ type Saved = {
  * upstream evidence. The filtering itself is covered by its own describe block below.
  */
 /**
- * Render the card and wait for it to actually exist.
- *
- * The checklist now hands each branch's cards to <adminbot-paper-slot-deck>, a custom element, so
- * the rows arrive one microtask later than the synchronous `render()` call: the element has to
- * upgrade and Lit has to run its first update. Querying straight after `render` finds an empty
- * container -- which is what made every assertion in this file report zero rows.
+ * Render the card. Async only so the many `await draw(...)` call sites keep reading the same:
+ * every field is in the light DOM as soon as `render()` returns.
  */
 async function draw(
   slots: PaperSlotRow[],
   loading = false,
-  extra: { stages?: PaperflowStageRow[]; details?: PaperDetailsProps; showAll?: boolean } = {},
+  extra: {
+    stages?: PaperflowStageRow[];
+    details?: PaperDetailsProps;
+    showAll?: boolean;
+    branch?: PaperSlotsProps["branch"];
+  } = {},
 ) {
   const saved: Saved[] = [];
   const container = document.createElement("div");
@@ -42,15 +43,10 @@ async function draw(
       onToggleShowAll: () => {},
       ...(extra.stages ? { stages: extra.stages } : {}),
       ...(extra.details ? { details: extra.details } : {}),
+      ...(extra.branch ? { branch: extra.branch } : {}),
       onSaveSlot: (slot, input) => saved.push({ slot, input }),
     }),
     container,
-  );
-  await customElements.whenDefined("adminbot-paper-slot-deck");
-  await Promise.all(
-    [...container.querySelectorAll("adminbot-paper-slot-deck")].map(
-      (deck) => (deck as HTMLElement & { updateComplete?: Promise<unknown> }).updateComplete,
-    ),
   );
   return { container, saved };
 }
@@ -84,10 +80,6 @@ describe("renderPaperSlots", () => {
       }),
       container,
     );
-    const deck = container.querySelector("adminbot-paper-slot-deck") as HTMLElement & {
-      updateComplete: Promise<unknown>;
-    };
-    await deck.updateComplete;
     expect(box.checked).toBe(false);
   });
 
@@ -556,6 +548,50 @@ describe("renderPaperSlots", () => {
   });
 });
 
+describe("a branch section opened from its lane tab", () => {
+  const cards = (container: HTMLElement, branch: string) => [
+    ...container.querySelectorAll<HTMLElement>(
+      `[data-testid="paper-slots-branch-p1-${branch}"] [data-testid^="paper-slot-row-p1-"]`,
+    ),
+  ];
+
+  it("arrives expanded when a tab picked it, and stays folded with no tab", async () => {
+    const tabbed = await draw([], false, { branch: "archive" });
+    const section = tabbed.container.querySelector<HTMLDetailsElement>(
+      '[data-testid="paper-slots-branch-p1-archive"]',
+    );
+    expect(section?.open).toBe(true);
+    const untabbed = await draw([]);
+    const sections = [
+      ...untabbed.container.querySelectorAll<HTMLDetailsElement>("details.paper-slots__group"),
+    ];
+    expect(sections.length).toBeGreaterThan(1);
+    expect(sections.every((entry) => !entry.open)).toBe(true);
+  });
+
+  // The old deck showed one card and a "1 / 6" counter, and the other five sat behind arrows.
+  it("lists every field at once, with no pager", async () => {
+    const { container } = await draw([], false, { branch: "archive" });
+    const shown = cards(container, "archive");
+    expect(shown.length).toBeGreaterThan(1);
+    expect(shown.every((card) => card.closest("[hidden]") === null)).toBe(true);
+    expect(container.querySelector('[aria-label="Next field"]')).toBeNull();
+    expect(container.textContent).not.toMatch(/\b1 \/ \d+\b/u);
+  });
+
+  it("shows each branch's whole checklist on its own tab", async () => {
+    for (const branch of ["core", "venue", "archive", "talk", "social"] as const) {
+      const all = await draw([]);
+      const tabbed = await draw([], false, { branch });
+      expect(cards(tabbed.container, branch).length, branch).toBe(
+        cards(all.container, branch).length,
+      );
+      all.container.remove();
+      tabbed.container.remove();
+    }
+  });
+});
+
 describe("renderPaperSlots -- only what is ready", () => {
   it("keeps every field in the deck rather than hiding what is not ready", async () => {
     // This reverses the old working-set rule, deliberately: 25 boxes was a wall only while they
@@ -649,13 +685,6 @@ describe("social draft gates", () => {
         onOpenDraft: (platform) => opened.push(platform),
       }),
       container,
-    );
-    // This one renders inline rather than through `draw`, so it has to flush the deck itself.
-    await customElements.whenDefined("adminbot-paper-slot-deck");
-    await Promise.all(
-      [...container.querySelectorAll("adminbot-paper-slot-deck")].map(
-        (deck) => (deck as HTMLElement & { updateComplete?: Promise<unknown> }).updateComplete,
-      ),
     );
     const gate = container.querySelector<HTMLButtonElement>(
       '[data-testid="paper-slot-p1-linkedin_draft"]',
