@@ -81,7 +81,11 @@ export function clampViewport(view: Viewport, size: Size): Viewport {
 
 /** Zoom by `factor` keeping the map point under (`px`, `py`) where it is. */
 export function zoomAt(view: Viewport, factor: number, px: number, py: number, size: Size) {
-  const k = view.k * factor;
+  // Capped before the offsets, not left to clampViewport: offsets worked out for an uncapped k
+  // belong to a deeper zoom than the one drawn, so every wheel tick past the limit slid the map
+  // toward its bottom-right corner instead of holding the point under the cursor.
+  const base = fitViewport(size).k;
+  const k = Math.min(Math.max(view.k * factor, base), base * MAX_ZOOM);
   return clampViewport(
     { k, x: px - ((px - view.x) / view.k) * k, y: py - ((py - view.y) / view.k) * k },
     size,

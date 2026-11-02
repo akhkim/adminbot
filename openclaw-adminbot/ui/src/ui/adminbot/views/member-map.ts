@@ -216,10 +216,22 @@ export function updatedAgo(loadedAt: number, now: number): string {
     : t("dashboard.memberMap.updatedHours", { count: String(Math.floor(minutes / 60)) });
 }
 
+// The list and search draw the same three kinds of dot the map does: solid for a city somebody
+// stated or signed in from, a hollow ring for a time-zone guess, dashed for a country.
+function swatchClass(place: MemberMapPlace): string {
+  if (place.approximate) {
+    return "member-map__swatch member-map__swatch--country";
+  }
+  return place.guessed ? "member-map__swatch member-map__swatch--guessed" : "member-map__swatch";
+}
+
 function placeWhere(place: MemberMapPlace): string {
   // A country-level place's label already is the country, so "France, France" would be noise.
   if (place.approximate) {
     return t("dashboard.memberMap.approximatePlace", { place: place.label });
+  }
+  if (place.guessed) {
+    return t("dashboard.memberMap.guessedPlace", { place: `${place.label}, ${place.country}` });
   }
   return place.country ? `${place.label}, ${place.country}` : place.label;
 }
@@ -625,9 +637,7 @@ function renderList(map: MemberMap, options: ListOptions) {
               @click=${() => options.onPick(place.key)}
             >
               <span class="member-map__row-main">
-                <span
-                  class=${`member-map__swatch${place.approximate ? " member-map__swatch--country" : ""}`}
-                ></span>
+                <span class=${swatchClass(place)}></span>
                 <span class="member-map__row-label">${place.label}</span>
               </span>
               <span class="member-map__row-side">
@@ -709,6 +719,16 @@ function renderFoot(map: MemberMap, sources: boolean, onToggleSources: () => voi
             >
               <span class="member-map__key member-map__key--country"></span>${t(
                 "dashboard.memberMap.legendCountry",
+              )}
+            </li>`
+          : nothing}
+        ${map.places.some((place) => place.guessed)
+          ? html`<li
+              data-testid="member-map-guessed"
+              title=${t("dashboard.memberMap.guessedNote")}
+            >
+              <span class="member-map__key member-map__key--guessed"></span>${t(
+                "dashboard.memberMap.legendGuessed",
               )}
             </li>`
           : nothing}
@@ -1184,7 +1204,7 @@ class AdminbotMemberMap extends LitElement {
                   ${person
                     ? renderAvatar(result.member)
                     : html`<span
-                        class=${`member-map__swatch${result.place.approximate ? " member-map__swatch--country" : ""}`}
+                        class=${swatchClass(result.place)}
                       ></span>`}
                   <span class="member-map__search-text">
                     <span class="member-map__search-name">${name}</span>
@@ -1750,6 +1770,8 @@ class AdminbotMemberMap extends LitElement {
                   (marker) => {
                     const cluster = marker.places.length > 1;
                     const approximate = !cluster && marker.places[0]!.approximate;
+                    // A cluster is drawn guessed only when every city inside it is a guess.
+                    const guessed = marker.places.every((place) => place.guessed);
                     const countInside = marker.r >= 8.5 && marker.count > 1;
                     const solo = soloMember(marker);
                     return html`<button
@@ -1758,6 +1780,7 @@ class AdminbotMemberMap extends LitElement {
                         "member-map__marker",
                         cluster ? "member-map__marker--cluster" : "",
                         approximate ? "member-map__marker--approximate" : "",
+                        guessed ? "member-map__marker--guessed" : "",
                         isLit(marker) ? "member-map__marker--active" : "",
                       ]
                         .filter(Boolean)
