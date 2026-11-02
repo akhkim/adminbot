@@ -144,7 +144,7 @@ We release the infrastructure behind our results so other groups can rerun and e
 (KDD 2026) TamperBench: Systematically Stress-Testing LLM Safety Under Fine-Tuning and Tampering. Hossain et al. https://arxiv.org/abs/2602.06911
 (EMNLP 2026) Tracing Multilingual Representations in LLMs with Cross-Layer Transcoders. Abir Harrasse, Florent Draye (equal contribution) et al. https://arxiv.org/abs/2511.10840
 (ARR 2026) AdminBot: a multi-agent lab-operations system in daily production use. Andrew et al. [under review; no public URL]
-[needs number] Add GitHub stars, downloads or known outside users for CLT-Forge and TamperBench before sending.
+GitHub stars as of November 2026: [CLT-Forge](https://github.com/LLM-Interp/CLT-Forge) 111, [TamperBench](https://github.com/criticalml-uw/TamperBench) 34. Refresh these before sending.
 ```
 
 ---

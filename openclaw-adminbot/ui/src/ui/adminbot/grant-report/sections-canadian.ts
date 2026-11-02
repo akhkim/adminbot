@@ -219,21 +219,26 @@ export const CANADIAN_SECTIONS: readonly GrantSection[] = [
         {
           label: "An open library for cross-layer transcoders",
           detail:
-            "CLT-Forge (EMNLP 2026 Demo) trains cross-layer transcoders and builds attribution graphs at scale; the lab's multilingual tracing paper (EMNLP 2026) is built on the same method.",
+            "CLT-Forge (EMNLP 2026 Demo) trains cross-layer transcoders and builds attribution graphs at scale, and has 111 GitHub stars (November 2026); the lab's multilingual tracing paper (EMNLP 2026) is built on the same method.",
           links: [
             { text: "CLT-Forge", href: "https://arxiv.org/abs/2603.21014" },
+            { text: "GitHub", href: "https://github.com/LLM-Interp/CLT-Forge" },
             { text: "multilingual", href: "https://arxiv.org/abs/2511.10840" },
           ],
         },
         {
           label: "A public safety benchmark",
-          detail: "TamperBench (KDD 2026), from Theme 1, released for outside use.",
-          links: [{ text: "arXiv", href: "https://arxiv.org/abs/2602.06911" }],
+          detail:
+            "TamperBench (KDD 2026), from Theme 1, released for outside use; 34 GitHub stars (November 2026).",
+          links: [
+            { text: "arXiv", href: "https://arxiv.org/abs/2602.06911" },
+            { text: "GitHub", href: "https://github.com/criticalml-uw/TamperBench" },
+          ],
         },
         {
           label: "Lab operations, in production",
           detail:
-            "AdminBot, a multi-agent lab-operations system in daily use (ARR 2026, under review). [needs number: stars, downloads or outside users for CLT-Forge and TamperBench]",
+            "AdminBot, a multi-agent lab-operations system in daily use (ARR 2026, under review).",
         },
       ],
     },
