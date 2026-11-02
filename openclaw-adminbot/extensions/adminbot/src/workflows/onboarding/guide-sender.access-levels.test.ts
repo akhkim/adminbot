@@ -234,14 +234,13 @@ describe("what each access level's send provisions", () => {
   });
 });
 
-describe("access levels with no onboarding mail at all", () => {
-  it("names them, so adding one is a decision rather than an oversight", () => {
+describe("access levels sharing the basic welcome", () => {
+  it("uses a common template for roles without their own detailed guide", () => {
     const without = adminBotExternalCollaboratorSubgroups.filter(
       (subgroup) => !findOnboardingTemplate(subgroup),
     );
-    // These are onboarded without a mail. The matrix still grants each of them the Slack Connect
-    // channel, which enrollment files as its own `slack.connect_invite` since no guide mints it
-    // (api/server.member-type-change.ts).
+    // These share the welcome template; enrollment still files their separate Slack Connect invite.
+    expect(findOnboardingTemplate("welcome")).toBeDefined();
     expect(without.toSorted()).toEqual(
       [
         "acquaintance",

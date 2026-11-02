@@ -10583,6 +10583,420 @@
         }
       }
     },
+    "/lab/members/{members_id}/onboarding/welcome/preview": {
+      "post": {
+        "operationId": "post-lab-members-by-members-id-onboarding-welcome-preview",
+        "summary": "POST /lab/members/{members_id}/onboarding/welcome/preview",
+        "tags": [
+          "lab"
+        ],
+        "x-source": "src/api/routes/acquaintance-welcome.ts",
+        "parameters": [
+          {
+            "name": "members_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "subject": {
+                    "type": "string"
+                  },
+                  "body": {
+                    "type": "string"
+                  },
+                  "resend": {
+                    "type": "boolean"
+                  },
+                  "preview_hash": {}
+                },
+                "additionalProperties": true,
+                "x-schema-coverage": "inferred from property access or downstream casts; semantic validation remains server-side"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "proposal_id": {
+                      "type": "string"
+                    },
+                    "template_id": {
+                      "type": "string"
+                    },
+                    "email": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "detail",
+                    "proposal_id",
+                    "template_id",
+                    "email"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/lab/members/{members_id}/onboarding/welcome/queue": {
+      "post": {
+        "operationId": "post-lab-members-by-members-id-onboarding-welcome-queue",
+        "summary": "POST /lab/members/{members_id}/onboarding/welcome/queue",
+        "tags": [
+          "lab"
+        ],
+        "x-source": "src/api/routes/acquaintance-welcome.ts",
+        "parameters": [
+          {
+            "name": "members_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "subject": {
+                    "type": "string"
+                  },
+                  "body": {
+                    "type": "string"
+                  },
+                  "resend": {
+                    "type": "boolean"
+                  },
+                  "preview_hash": {}
+                },
+                "additionalProperties": true,
+                "x-schema-coverage": "inferred from property access or downstream casts; semantic validation remains server-side"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "proposal_id": {
+                      "type": "string"
+                    },
+                    "template_id": {
+                      "type": "string"
+                    },
+                    "email": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "detail",
+                    "proposal_id",
+                    "template_id",
+                    "email"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/lab/members/{members_id}/recent-edits": {
       "get": {
         "operationId": "get-lab-members-by-members-id-recent-edits",
@@ -18874,6 +19288,10 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "before_email": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
                   "template_id": {
                     "type": "string"
                   },
@@ -30003,6 +30421,7 @@
               "research_theme_invites.swept",
               "prereg.nudged",
               "paper.deleted",
+              "onboarding.email_attempted",
               "onboarding.guide_sent",
               "onboarding_sweep.ran",
               "members.disengagement_swept",
@@ -38715,6 +39134,10 @@
       "AdminBotOnboardingSendRequest": {
         "type": "object",
         "properties": {
+          "before_email": {
+            "type": "object",
+            "additionalProperties": true
+          },
           "template_id": {
             "type": "string"
           },

@@ -35,10 +35,6 @@ export type AdminBotOnboardingTemplate = {
   required: readonly string[];
 };
 
-// `acquaintance`, `coauthor_discussant_designer` and `external_prof` deliberately have no
-// onboarding template. Those collaborations do not open with a welcome mail: the access-level
-// algorithm (collaborator-subgroups.ts) grants the subgroup's access items in the backend, and
-// that is the whole onboarding. Do not re-add one without Zhijing asking for it.
 export const ADMINBOT_ONBOARDING_TEMPLATES = [
   {
     // The proofread "top1" variant: a 30-minute conversation with Zhijing. Two sibling variants
@@ -690,6 +686,23 @@ If this is accurate, no reply is needed. Otherwise, reply with any corrections, 
 
 Best regards,
 Jinesis Lab by Prof. Zhijing Jin`,
+  },
+
+  {
+    id: "welcome",
+    kind: "subgroup",
+    subject: `Getting connected with the Jinesis Lab`,
+    required: [],
+    body: `Hi {first_name},
+
+Welcome to the Jinesis Lab community!
+
+If you're waiting for a Slack invitation or need help with access, reply to this email or contact {contact_emails}.
+
+We'll share the channels, meetings and resources relevant to your work separately.
+
+Best,
+Jinesis Lab`,
   },
 ] as const satisfies readonly AdminBotOnboardingTemplate[];
 

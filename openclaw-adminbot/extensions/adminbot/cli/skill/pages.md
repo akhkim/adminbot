@@ -82,6 +82,8 @@ Website: `/onboarding` · Who: admin
 | `get-onboarding-interviewers`                                | GET `/onboarding/interviewers`                              |
 | `post-lab-members-by-members-id-onboarding-by-onboarding-id` | POST `/lab/members/{members_id}/onboarding/{onboarding_id}` |
 | `post-lab-members-by-members-id-onboarding-guide`            | POST `/lab/members/{members_id}/onboarding/guide`           |
+| `post-lab-members-by-members-id-onboarding-welcome-preview`  | POST `/lab/members/{members_id}/onboarding/welcome/preview` |
+| `post-lab-members-by-members-id-onboarding-welcome-queue`    | POST `/lab/members/{members_id}/onboarding/welcome/queue`   |
 | `post-members-dcs-roster-backfill`                           | POST `/members/dcs-roster/backfill` (dry-run)               |
 | `post-members-roster-sync`                                   | POST `/members/roster-sync` (dry-run)                       |
 | `post-members-slack-roster-sync`                             | POST `/members/slack-roster/sync` (dry-run)                 |
