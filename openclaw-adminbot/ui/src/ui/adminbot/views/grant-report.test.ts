@@ -12,9 +12,11 @@ import {
   papersForArea,
   papersForSection,
   pipelinePapers,
+  sectionsInProposal,
   unmappedPapers,
 } from "../grant-report/linkage.ts";
 import { GRANT_PAPERS } from "../grant-report/papers.ts";
+import { ALL_SECTION_BY_ID, PROPOSAL_BY_ID } from "../grant-report/proposals.ts";
 import {
   classifyRecord,
   inferPlacement,
@@ -22,6 +24,7 @@ import {
   resolvePapers,
   titleKey,
 } from "../grant-report/resolve.ts";
+import { CANADIAN_SECTIONS } from "../grant-report/sections-canadian.ts";
 import { GRANT_SECTIONS, GRANT_SECTION_BY_ID } from "../grant-report/sections.ts";
 import { renderGrantReport } from "./grant-report.ts";
 
@@ -70,7 +73,7 @@ describe("grant report data", () => {
   it("only assigns sections the proposal tree defines", () => {
     for (const paper of GRANT_PAPERS) {
       for (const section of paper.sections) {
-        expect(GRANT_SECTION_BY_ID[section], `${paper.id} -> ${section}`).toBeDefined();
+        expect(ALL_SECTION_BY_ID[section], `${paper.id} -> ${section}`).toBeDefined();
       }
     }
   });
@@ -201,7 +204,7 @@ describe("linkage", () => {
   it("reports unmapped papers rather than hiding them", () => {
     const unmapped = unmappedPapers(SNAPSHOT);
     expect(unmapped.length).toBeGreaterThan(0);
-    expect(unmapped.every((paper) => paper.sections.length === 0)).toBe(true);
+    expect(unmapped.every((paper) => sectionsInProposal(paper).length === 0)).toBe(true);
   });
 
   it("orders area counts largest first", () => {
@@ -248,6 +251,53 @@ describe("markdown export", () => {
     expect(markdown).toContain("Jinesis Contact/Paper list with Zhijing");
     expect(markdown).toContain("Task 1 — Papers mapped to the six areas");
     expect(markdown).toContain("Task 2 — Track record by proposal section");
+  });
+});
+
+describe("Canadian proposal", () => {
+  const canadian = PROPOSAL_BY_ID.canadian;
+
+  it("keeps its section ids apart from EuroSafe's", () => {
+    for (const section of CANADIAN_SECTIONS) {
+      expect(GRANT_SECTION_BY_ID[section.id], section.id).toBeUndefined();
+      if (section.parent) {
+        expect(ALL_SECTION_BY_ID[section.parent], section.id).toBeDefined();
+      }
+    }
+  });
+
+  it("gives every section a track record with at least two bullets", () => {
+    for (const section of CANADIAN_SECTIONS) {
+      expect(section.trackRecord.lede.length, section.id).toBeGreaterThan(0);
+      expect(section.trackRecord.bullets.length, section.id).toBeGreaterThanOrEqual(2);
+    }
+  });
+
+  it("leaves no theme without papers", () => {
+    for (const section of CANADIAN_SECTIONS.filter((s) => s.depth > 2)) {
+      expect(papersForSection(SNAPSHOT, section.id).length, section.id).toBeGreaterThan(0);
+    }
+  });
+
+  // A paper only on the EuroSafe agenda is unclaimed here, and the other way round: the unmapped
+  // list has to be read per proposal, or a paper tagged for one would hide the gap in the other.
+  it("counts unmapped papers against its own sections", () => {
+    const unmapped = unmappedPapers(SNAPSHOT, canadian);
+    expect(unmapped.some((paper) => paper.id === "eval-awareness")).toBe(true);
+    expect(unmapped.some((paper) => paper.id === "raptor")).toBe(false);
+    expect(unmappedPapers(SNAPSHOT).some((paper) => paper.id === "raptor")).toBe(true);
+  });
+
+  it("exports only its own sections and names itself in the provenance", () => {
+    const markdown = fullReportMarkdown(SNAPSHOT, canadian);
+    expect(markdown.match(/\*\*Track record\*\*/gu)?.length).toBe(CANADIAN_SECTIONS.length);
+    expect(markdown).toContain(canadian.title);
+    expect(markdown).not.toContain("Part 1.1.1");
+  });
+
+  it("places a live training paper on its themes", () => {
+    const placed = inferPlacement("Distilling Reasoning into Small Models", "");
+    expect(placed.sections).toContain("ca.2");
   });
 });
 
@@ -299,6 +349,19 @@ describe("renderGrantReport", () => {
     await view.updateComplete;
     expect(container.querySelector(".gr-tr")).not.toBeNull();
     expect(container.textContent).toContain("Track record");
+  });
+
+  it("switches the track record to the Canadian proposal", async () => {
+    const container = await renderView();
+    const view = container.querySelector("adminbot-grant-report-view") as HTMLElement & {
+      updateComplete: Promise<unknown>;
+    };
+    (container.querySelectorAll(".gr-proposal-tab")[1] as HTMLButtonElement).click();
+    (container.querySelectorAll(".gr-panel-tab")[1] as HTMLButtonElement).click();
+    await view.updateComplete;
+    expect(container.querySelectorAll(".gr-section").length).toBe(CANADIAN_SECTIONS.length);
+    expect(container.textContent).toContain("Model training and model features");
+    expect(container.textContent).not.toContain("Evaluation hacking");
   });
 
   it("lists the papers awaiting confirmation on the coverage panel", async () => {

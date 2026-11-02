@@ -30,15 +30,18 @@ import {
   papersForSection,
   pipelinePapers,
   sectionMarkdown,
+  sectionsInProposal,
   unclassifiedPapers,
   unmappedPapers,
 } from "../grant-report/linkage.ts";
-import { needsReview, resolvePapers, type ClassifiedPaper } from "../grant-report/resolve.ts";
 import {
-  GRANT_SECTIONS,
-  GRANT_SECTION_BY_ID,
-  type GrantSection,
-} from "../grant-report/sections.ts";
+  ALL_SECTION_BY_ID,
+  DEFAULT_PROPOSAL,
+  PROPOSALS,
+  type GrantProposal,
+} from "../grant-report/proposals.ts";
+import { needsReview, resolvePapers, type ClassifiedPaper } from "../grant-report/resolve.ts";
+import type { GrantSection } from "../grant-report/sections.ts";
 
 type Panel = "areas" | "track" | "coverage";
 
@@ -69,6 +72,7 @@ class AdminbotGrantReportView extends LitElement {
   @property({ attribute: false }) records: readonly AdminBotPaperRecord[] = [];
 
   private panel: Panel = "areas";
+  private proposal: GrantProposal = DEFAULT_PROPOSAL;
   private areaFilter: SafetyAreaId | null = null;
   private openSections = new Set<string>();
   private copied: string | null = null;
@@ -79,6 +83,13 @@ class AdminbotGrantReportView extends LitElement {
 
   private select(panel: Panel): void {
     this.panel = panel;
+    this.requestUpdate();
+  }
+
+  private selectProposal(proposal: GrantProposal): void {
+    this.proposal = proposal;
+    // Section ids differ between proposals, so open state from one would only hide the other's.
+    this.openSections = new Set();
     this.requestUpdate();
   }
 
@@ -161,10 +172,10 @@ class AdminbotGrantReportView extends LitElement {
         </div>
         <div class="gr-chips">
           ${this.renderAreaChips(paper)}
-          ${paper.sections.map(
+          ${sectionsInProposal(paper, this.proposal).map(
             (id) =>
-              html`<span class="gr-chip gr-chip-sec" title=${GRANT_SECTION_BY_ID[id]?.title ?? id}
-                >${GRANT_SECTION_BY_ID[id]?.number ?? id}</span
+              html`<span class="gr-chip gr-chip-sec" title=${ALL_SECTION_BY_ID[id]?.title ?? id}
+                >${ALL_SECTION_BY_ID[id]?.number ?? id}</span
               >`,
           )}
         </div>
@@ -230,7 +241,7 @@ class AdminbotGrantReportView extends LitElement {
                 Clear filter
               </button>`
             : nothing}
-          ${this.renderCopyButton("area-map", areaMapMarkdown(papers), "Copy table")}
+          ${this.renderCopyButton("area-map", areaMapMarkdown(papers, this.proposal), "Copy table")}
         </span>
       </div>
       <div class="gr-papers">${shown.map((paper) => this.renderPaperRow(paper))}</div>
@@ -245,7 +256,9 @@ class AdminbotGrantReportView extends LitElement {
       <div class=${`gr-section gr-depth-${section.depth}`}>
         <button class="gr-section-head" @click=${() => this.toggleSection(section.id)}>
           <span class="gr-caret">${open ? "▾" : "▸"}</span>
-          <span class="gr-section-number">${section.number}</span>
+          ${section.number
+            ? html`<span class="gr-section-number">${section.number}</span>`
+            : nothing}
           <span class="gr-section-title">${section.title}</span>
           <span class="gr-section-count">${inSection.length}</span>
         </button>
@@ -253,15 +266,17 @@ class AdminbotGrantReportView extends LitElement {
           ? html`
               <div class="gr-section-body">
                 <p class="gr-summary">${section.summary}</p>
-                <div class="gr-mix">
-                  ${mix.map(
-                    (row) => html`
-                      <span class="gr-chip" style=${`--c:${AREA_COLORS[row.area]}`}>
-                        ${row.name} ${row.count}
-                      </span>
-                    `,
-                  )}
-                </div>
+                ${this.proposal.areaMix
+                  ? html`<div class="gr-mix">
+                      ${mix.map(
+                        (row) => html`
+                          <span class="gr-chip" style=${`--c:${AREA_COLORS[row.area]}`}>
+                            ${row.name} ${row.count}
+                          </span>
+                        `,
+                      )}
+                    </div>`
+                  : nothing}
                 <div class="gr-tr">
                   <div class="gr-tr-head">
                     <h4>Track record</h4>
@@ -303,30 +318,37 @@ class AdminbotGrantReportView extends LitElement {
   }
 
   private renderTrack(papers: readonly ClassifiedPaper[]) {
+    const sections = this.proposal.sections;
     return html`
       <div class="gr-listhead">
         <span>
-          One track-record block per section of Part 1, in the shape Part 2.3 already uses. The
-          prose is written by hand; the paper counts beside it are live.
+          ${this.proposal.id === "eurosafe"
+            ? "One track-record block per section of Part 1, in the shape Part 2.3 already uses."
+            : "One track-record block per theme, until the proposal's own headings arrive."}
+          The prose is written by hand; the paper counts beside it are live.
         </span>
         <span class="gr-listhead-right">
           <button
             class="gr-copy"
             @click=${() => {
-              const allOpen = this.openSections.size === GRANT_SECTIONS.length;
+              const allOpen = this.openSections.size === sections.length;
               this.openSections = allOpen
                 ? new Set()
-                : new Set(GRANT_SECTIONS.map((section) => section.id));
+                : new Set(sections.map((section) => section.id));
               this.requestUpdate();
             }}
           >
-            ${this.openSections.size === GRANT_SECTIONS.length ? "Collapse all" : "Expand all"}
+            ${this.openSections.size === sections.length ? "Collapse all" : "Expand all"}
           </button>
-          ${this.renderCopyButton("full", fullReportMarkdown(papers), "Copy full report")}
+          ${this.renderCopyButton(
+            "full",
+            fullReportMarkdown(papers, this.proposal),
+            "Copy full report",
+          )}
         </span>
       </div>
       <div class="gr-sections">
-        ${GRANT_SECTIONS.map((section) => this.renderSection(papers, section))}
+        ${sections.map((section) => this.renderSection(papers, section))}
       </div>
     `;
   }
@@ -334,7 +356,8 @@ class AdminbotGrantReportView extends LitElement {
   private renderCoverage(papers: readonly ClassifiedPaper[]) {
     const pipeline = pipelinePapers(papers);
     const pending = needsReview(papers);
-    const unmapped = unmappedPapers(papers);
+    const unmapped = unmappedPapers(papers, this.proposal);
+    const leaves = this.proposal.sections.filter((section) => section.depth > 2);
     const unclassified = unclassifiedPapers(papers);
     const live = papers.filter((paper) => !paper.fromSnapshot);
     const stats = [
@@ -345,9 +368,7 @@ class AdminbotGrantReportView extends LitElement {
     ];
     const maxCount = Math.max(
       1,
-      ...GRANT_SECTIONS.filter((s) => s.depth > 2).map(
-        (s) => papersForSection(papers, s.id).length,
-      ),
+      ...leaves.map((section) => papersForSection(papers, section.id).length),
     );
     return html`
       <div class="gr-stats">
@@ -374,7 +395,7 @@ class AdminbotGrantReportView extends LitElement {
         : nothing}
       <h4 class="gr-h4">Papers per proposal section</h4>
       <div class="gr-bars">
-        ${GRANT_SECTIONS.filter((section) => section.depth > 2).map((section) => {
+        ${leaves.map((section) => {
           const count = papersForSection(papers, section.id).length;
           return html`
             <div class="gr-bar-row">
@@ -389,8 +410,8 @@ class AdminbotGrantReportView extends LitElement {
       </div>
       <h4 class="gr-h4">Lab output the technical agenda does not claim</h4>
       <p class="gr-intro">
-        Not a gap to close by force. These are real papers that Part 1 does not ask money for, and
-        the honest report says so rather than stretching a section to cover them.
+        Not a gap to close by force. These are real papers that this proposal does not ask money
+        for, and the honest report says so rather than stretching a section to cover them.
       </p>
       <div class="gr-papers">${unmapped.map((paper) => this.renderPaperRow(paper))}</div>
       ${unclassified.length > 0
@@ -461,6 +482,55 @@ class AdminbotGrantReportView extends LitElement {
         .gr-panel-tab.is-active {
           border-color: var(--accent, #4f8cff);
           color: var(--accent, #4f8cff);
+        }
+        /* The proposal is a different kind of choice from the panel: it changes what every panel
+           reports against. So it gets its own row, its own label and a segmented control, rather
+           than a second row of pills that reads as more tabs. */
+        .gr-proposal-bar {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          gap: 8px 12px;
+          padding: 10px 12px;
+          margin-bottom: 14px;
+          border: 1px solid var(--border, #26324a);
+          border-radius: 10px;
+          background: var(--bg-elevated, #141b2b);
+        }
+        .gr-proposal-label {
+          color: var(--muted, #9fb0cc);
+          font-size: 11px;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+        }
+        .gr-seg {
+          display: inline-flex;
+          padding: 2px;
+          border: 1px solid var(--border, #26324a);
+          border-radius: 8px;
+          background: var(--bg, #0b111c);
+        }
+        .gr-proposal-tab {
+          padding: 5px 14px;
+          border: 0;
+          border-radius: 6px;
+          background: transparent;
+          color: var(--muted, #9fb0cc);
+          font-size: 13px;
+          font-weight: 500;
+          cursor: pointer;
+        }
+        .gr-proposal-tab.is-active {
+          background: var(--accent, #4f8cff);
+          color: #fff;
+        }
+        .gr-proposal-note {
+          flex: 1 1 260px;
+          color: var(--muted, #9fb0cc);
+          font-size: 12px;
+        }
+        .gr-proposal-note a {
+          color: inherit;
         }
         .gr-area-grid {
           display: grid;
@@ -796,13 +866,37 @@ class AdminbotGrantReportView extends LitElement {
           <code>${SOURCE.sheet.tab}</code> tab of
           <a href=${SOURCE.sheet.url} target="_blank" rel="noopener">${SOURCE.sheet.title}</a>
           as of ${SOURCE.compiledOn}, so a paper on the sheet but not yet in AdminBot still counts.
-          Sections follow
-          <a href=${SOURCE.proposal.url} target="_blank" rel="noopener">${SOURCE.proposal.title}</a
-          >; areas follow
+          Areas follow
           <a href=${SOURCE.taxonomy.url} target="_blank" rel="noopener">${SOURCE.taxonomy.title}</a>
           (${SOURCE.taxonomy.attribution}). Where a paper sits is a human judgment; anything the
           rules guessed is labelled.
         </p>
+        <div class="gr-proposal-bar">
+          <span class="gr-proposal-label">Reporting against</span>
+          <div class="gr-seg" role="tablist" aria-label="Proposal">
+            ${PROPOSALS.map((proposal) => {
+              const selected = this.proposal.id === proposal.id;
+              return html`
+                <button
+                  class=${`gr-proposal-tab ${selected ? "is-active" : ""}`}
+                  role="tab"
+                  aria-selected=${selected ? "true" : "false"}
+                  @click=${() => this.selectProposal(proposal)}
+                >
+                  ${proposal.label}
+                </button>
+              `;
+            })}
+          </div>
+          <span class="gr-proposal-note">
+            ${this.proposal.url
+              ? html`<a href=${this.proposal.url} target="_blank" rel="noopener"
+                  >${this.proposal.title}</a
+                >`
+              : this.proposal.title}.
+            ${this.proposal.note}
+          </span>
+        </div>
         <div class="gr-panels" role="tablist">
           ${(Object.keys(PANEL_LABELS) as Panel[]).map((panel) => {
             const selected = this.panel === panel;
