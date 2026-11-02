@@ -104,16 +104,44 @@ export function isHeadProfessorAtKeyboard(
   return head !== undefined && principal.member.id === head;
 }
 
-/** Approving or declining somebody new: the PI's call alone. */
-export function requireHeadProfessor(
-  res: ServerResponse,
+/**
+ * Whether the person at the keyboard may approve or decline somebody new.
+ *
+ * The PI, plus the members the host names in `ADMINBOT_MEMBER_APPROVER_IDS` (`memberApproverIds`).
+ * A named approver must also hold an admin session of their own: the list delegates the PI's
+ * decision to a trusted admin, it does not make a member or collaborator an approver. The list is
+ * host configuration rather than a setting because any admin can edit settings, and the point of
+ * this gate is that admins do not decide who joins unless the operator named them. It grants
+ * nothing else the PI holds -- in particular not naming the PI, which stays
+ * `isHeadProfessorAtKeyboard`. A "view as" session is refused for the same reason as there.
+ */
+export function canDecideNewMembers(
   ctx: AdminBotRouteContext,
   principal: AdminBotPrincipal,
 ): boolean {
   if (isHeadProfessorAtKeyboard(ctx, principal)) {
     return true;
   }
-  sendJson(res, 403, { error: { message: "only the PI can approve or decline a new member" } });
+  if (principal.kind !== "member" || principal.impersonator || !isPrivileged(principal)) {
+    return false;
+  }
+  return ctx.memberApproverIds.includes(principal.member.id);
+}
+
+/** Approving or declining somebody new: the PI's call, or a named approver's. */
+export function requireNewMemberDecider(
+  res: ServerResponse,
+  ctx: AdminBotRouteContext,
+  principal: AdminBotPrincipal,
+): boolean {
+  if (canDecideNewMembers(ctx, principal)) {
+    return true;
+  }
+  sendJson(res, 403, {
+    error: {
+      message: "only the PI or a named member approver can approve or decline a new member",
+    },
+  });
   return false;
 }
 

@@ -150,6 +150,11 @@ export type AdminBotRouteContext = {
   // etc.) that sets X-Forwarded-For itself. Otherwise a caller could hand-write that header to
   // spoof the IP rate-limiting and login-location keys off of — see remoteIp().
   trustProxyHeaders: boolean;
+  /**
+   * Member ids who may approve or reject new members alongside the PI. See
+   * `canDecideNewMembers` in guards.ts for what this does and does not grant.
+   */
+  memberApproverIds: readonly string[];
   llmRouter: LlmLoadRouter;
   failedRequestLedger: FailedExternalRequestLedger;
 };
@@ -239,6 +244,11 @@ export type AdminBotMockServiceOptions = {
   // socket address. Only safe when this process is only reachable through a proxy that sets that
   // header itself (Render, Fly, etc.) — falls back to process.env.ADMINBOT_TRUST_PROXY === "1".
   trustProxyHeaders?: boolean;
+  // Members who approve or reject new members alongside the PI. Falls back to
+  // process.env.ADMINBOT_MEMBER_APPROVER_IDS (comma-separated member ids). Host configuration
+  // rather than a /settings field on purpose: an admin who could edit the list could grant
+  // themselves the decision the PI gate exists to keep from admins.
+  memberApproverIds?: readonly string[];
   referenceScanDependencies?: ReferenceScanDependencies;
   pdfReferenceChecker?: PdfReferenceChecker;
   // Automatic citation checks of the OpenReview account's own submissions. Injecting a reader

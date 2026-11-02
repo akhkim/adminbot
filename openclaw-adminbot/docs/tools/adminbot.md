@@ -554,7 +554,13 @@ run the same three steps (`api/server.member-onboarding.ts`):
 Only who approves differs. A member request or a portal sign-up is somebody asking in, and only
 the PI -- the member `head_professor_member_id` names -- may approve or decline one: admins see
 the queue and can correct a request, but the service answers their Approve with a 403, and so it
-does an admin "viewing as" the PI. Once that setting is filled in, only the PI can change it. An
+does an admin "viewing as" the PI. Once that setting is filled in, only the PI can change it.
+The host can name other admins who decide alongside the PI, in `ADMINBOT_MEMBER_APPROVER_IDS`
+(comma-separated member ids in the service env file). A named approver must hold an admin session
+of their own: naming a member or collaborator grants nothing, and a "view as" session is still
+refused. The list covers approving and declining new members only, not naming the PI. It lives in
+the host's environment rather than in Settings because any admin can edit Settings and could
+otherwise add themselves. An
 admin's click approves each step on the spot for the rest (Add member, Add row, and enrollment
 from onboard selected rows, whose mails still wait in Pending Actions), and the PI's click does
 the same for the two above. The sweep runs with nobody present, and a spreadsheet row is not an

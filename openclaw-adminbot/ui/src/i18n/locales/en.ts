@@ -1179,7 +1179,7 @@ export const en: TranslationMap = {
   adminbotRegistrations: {
     title: "Member requests",
     sub: "Pending account requests awaiting the PI's decision.",
-    piOnly: "Only the PI can approve or reject a new member.",
+    piOnly: "Only the PI or a named approver can approve or reject a new member.",
     loading: "Loading member requests…",
     refresh: "Refresh",
     retry: "Retry",
