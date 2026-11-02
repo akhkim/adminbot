@@ -85,6 +85,11 @@ export type MemberMapPlace = {
    * is not where the person is, so the card draws it differently rather than implying a city.
    */
   approximate?: boolean;
+  /**
+   * `full` only: everyone here was placed from a time zone, so the pin is the city the zone is
+   * named for (America/New_York covers the whole US East Coast), not where anyone said they are.
+   */
+  guessed?: boolean;
   /** Present in both shapes. In `full` it equals `members.length`. */
   count: number;
   /** `full` only: who is there. Absent for a non-admin, which is not an error. */
@@ -359,6 +364,8 @@ function toPlace(raw: RawPlace): MemberMapPlace | null {
     : undefined;
   const count = asNumber(raw.count);
   const key = String(raw.key ?? raw.label ?? `${lat},${lon}`);
+  const guesses = members?.filter((member) => member.precision === "timezone").length ?? 0;
+  const firm = (members?.length ?? 0) - guesses;
   return {
     key,
     label: String(raw.label ?? ""),
@@ -366,6 +373,7 @@ function toPlace(raw: RawPlace): MemberMapPlace | null {
     lat,
     lon,
     approximate: key.startsWith("country:"),
+    ...(guesses > 0 && firm === 0 ? { guessed: true } : {}),
     // The summary shape carries `count`; the full shape carries `members`. Either is enough.
     count: Number.isNaN(count) ? (members?.length ?? 0) : count,
     ...(members ? { members } : {}),

@@ -1391,6 +1391,9 @@ export const en: TranslationMap = {
       showFewerMembers: "Show fewer",
       approximatePlace: "{place} (country only)",
       approximateNote: "Hollow dots are placed only to a country, not to a city.",
+      guessedPlace: "{place} (time zone guess)",
+      guessedNote:
+        "Hollow rings are guesses from a time zone: the pin is the zone's main city, not where the person said they are.",
       updatedJustNow: "Updated just now",
       updatedMinutes: "Updated {count} min ago",
       updatedHours: "Updated {count} h ago",
@@ -1425,6 +1428,7 @@ export const en: TranslationMap = {
       ipGeoInactive:
         "IP geolocation is off: members are placed by what they state and their time zone.",
       legendCountry: "Country only",
+      legendGuessed: "Guessed from time zone",
       legendSize: "Bigger dot, more people",
       legendCluster: "Nearby cities, combined",
       loading: "Loading the map…",
@@ -1934,15 +1938,15 @@ export const en: TranslationMap = {
       offHint:
         "Share your location to find lab members in the same city — at home, on a trip or at a conference. Members who also share will see the city you are in (from this browser, never more precise than about a kilometre, and forgotten after three days), the city you live in, and the cities and dates of your travel plans. You will see theirs. Stop any time and your location is deleted.",
       enable: "Share my location with lab members",
-      disable: "Stop sharing and delete my location",
-      on: "Location sharing is on.",
-      lastLocation: "Last shared location: {place}, {when}.",
+      disable: "Stop sharing",
+      disableTitle: "Stops sharing and deletes your location",
+      on: "Sharing:",
+      lastLocation: "{place}, {when}.",
       noFix: "No location shared yet.",
       deviceWatching: "Updating automatically while AdminBot is open.",
       deviceLocating: "Finding your location…",
       deviceNeedsPermission: "This browser has not been allowed to share its location yet.",
-      deviceDenied:
-        "Location is blocked for this site. Allow it in your browser's site settings, or type your city below.",
+      deviceDenied: "Location is blocked for this site, so type your city instead.",
       deviceInsecure:
         "Browsers only share location with pages served over HTTPS. Type your city below instead.",
       deviceUnsupported: "This browser cannot share its location. Type your city below instead.",
@@ -1951,7 +1955,8 @@ export const en: TranslationMap = {
       deviceUnavailable: "your browser could not find it right now.",
       useDevice: "Use this browser's location",
       updateNow: "Update now",
-      cityLabel: "Or type the city you are in",
+      cityLabel: "Your city",
+      changeCity: "Wrong city? Type it",
       citySubmit: "Set city",
       cityErrorEmpty: "Type a city first.",
       groupsEmpty: "Add a trip or RSVP to a conference to see who else will be there.",

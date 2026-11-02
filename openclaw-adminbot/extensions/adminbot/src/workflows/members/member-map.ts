@@ -155,6 +155,7 @@ const GAZETTEER: AdminBotMapPlace[] = [
   { key: "cape-town", label: "Cape Town", country: "South Africa", lat: -33.9249, lon: 18.4241 },
   { key: "nairobi", label: "Nairobi", country: "Kenya", lat: -1.2921, lon: 36.8219 },
   { key: "lagos", label: "Lagos", country: "Nigeria", lat: 6.5244, lon: 3.3792 },
+  { key: "abuja", label: "Abuja", country: "Nigeria", lat: 9.0765, lon: 7.3986 },
   { key: "cairo", label: "Cairo", country: "Egypt", lat: 30.0444, lon: 31.2357 },
   { key: "tel-aviv", label: "Tel Aviv", country: "Israel", lat: 32.0853, lon: 34.7818 },
   { key: "dubai", label: "Dubai", country: "United Arab Emirates", lat: 25.2048, lon: 55.2708 },
@@ -1548,6 +1549,22 @@ function resolveMemberPlace(
       resolve: cityFrom(checkinCity),
     },
   ];
+  // The country the member wrote down, if any text names one. A timezone in another country
+  // ("Abuja, Nigeria" next to a laptop still on America/Los_Angeles) is a stale clock, not a
+  // move: it must not outrank the country they stated (rule 5).
+  const statedCountry = [currentCity, rosterText, slackText]
+    .map((raw) => countryFrom(raw)() ?? cityFrom(raw)())
+    .find(Boolean)?.place.country;
+  const statedKey = resolveCountry(statedCountry)?.key;
+  const sameCountry = (place: AdminBotMapPlace) => {
+    const zoneKey = resolveCountry(place.country)?.key;
+    return !statedKey || !zoneKey || zoneKey === statedKey;
+  };
+  const zoneIn = (raw: string | undefined) => () => {
+    const resolved = zoneFrom(raw)();
+    return resolved && sameCountry(resolved.place) ? resolved : undefined;
+  };
+
   const personal = ownSources.toSorted(
     (left, right) => stampMs(right.located_at) - stampMs(left.located_at),
   );
@@ -1581,21 +1598,21 @@ function resolveMemberPlace(
       raw: deviceZone,
       source: "device",
       located_at: member.last_device_tz_at,
-      resolve: zoneFrom(deviceZone),
+      resolve: zoneIn(deviceZone),
     },
     {
       raw: slackZone,
       source: "slack",
       located_at: member.slack_tz_observed_at,
-      resolve: zoneFrom(slackZone),
+      resolve: zoneIn(slackZone),
     },
     {
       raw: slackText,
       source: "slack",
       located_at: member.slack_location_updated_at,
-      resolve: zoneFrom(slackText),
+      resolve: zoneIn(slackText),
     },
-    { raw: rosterZone, source: "roster", resolve: zoneFrom(rosterZone) },
+    { raw: rosterZone, source: "roster", resolve: zoneIn(rosterZone) },
     // 5. Countries: the device's first, since it is the member's own machine, then what they wrote,
     //    then the IP's.
     {

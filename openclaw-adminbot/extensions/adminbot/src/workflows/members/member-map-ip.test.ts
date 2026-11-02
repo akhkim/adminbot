@@ -407,3 +407,35 @@ describe("ipReadingSetAside", () => {
     expect(ipReadingSetAside(member(unlisted), now)).toBe(false);
   });
 });
+
+describe("a timezone that contradicts the stated country", () => {
+  it("places a stated Abuja in Abuja, not at a laptop's Los Angeles clock", () => {
+    const placed = placeOf({
+      location: "Abuja, Nigeria",
+      current_city: "Abuja",
+      timezone: "Africa/Lagos",
+      last_device_tz: "America/Los_Angeles",
+      last_device_tz_at: ago(0),
+    });
+    expect(placed).toMatchObject({ label: "Abuja", precision: "city", source: "roster" });
+  });
+
+  it("falls back to the stated country rather than a zone in another one", () => {
+    const placed = placeOf({
+      location: "Somewhere, Nigeria",
+      last_device_tz: "America/Los_Angeles",
+      last_device_tz_at: ago(0),
+    });
+    expect(placed).toMatchObject({ label: "Nigeria", precision: "country" });
+  });
+
+  it("still uses a zone in the stated country", () => {
+    const placed = placeOf({ location: "Somewhere, Canada", timezone: "America/Toronto" });
+    expect(placed).toMatchObject({ label: "Toronto", precision: "timezone" });
+  });
+
+  it("still uses a zone when nothing names a country", () => {
+    const placed = placeOf({ location: "America/Los_Angeles", timezone: "America/Los_Angeles" });
+    expect(placed).toMatchObject({ label: "Los Angeles", precision: "timezone" });
+  });
+});
