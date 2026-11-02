@@ -7996,6 +7996,7 @@ export interface components {
       read_at?: string;
       important?: boolean;
       escalated_at?: string;
+      resolved_at?: string;
     } & {
       [key: string]: unknown;
     };
@@ -11778,6 +11779,7 @@ export interface operations {
             issues: number;
             alerted: string[];
             admins: number;
+            connect_invites_proposed: string[];
           } & {
             [key: string]: unknown;
           };

@@ -219,3 +219,109 @@ describe("automation health", () => {
     ]);
   });
 });
+
+
+describe("settling notifications", () => {
+  it("takes a recovered automation alert off the dashboard on the next health pass", () => {
+    const { service, store } = lab(async () => ({ handled: true }));
+    store.saveMemberNotification({
+      id: "n-old",
+      member_id: "boss",
+      kind: "automation",
+      title: "calendar.add_attendees keeps failing",
+      body: "6 failures in 24h",
+      created_at: new Date(Date.now() - DAY).toISOString(),
+    });
+    unwrap(service.raiseAutomationHealthAlerts("cron"));
+    const [settled] = store.listMemberNotifications("boss");
+    expect(settled?.resolved_at).toBeDefined();
+    expect(settled?.read_at).toBeDefined();
+    expect(unwrap(service.listMemberNotifications("boss")).notifications).toHaveLength(1);
+  });
+
+  it("expires stale suggestions on read, but keeps escalations and one-off notices", () => {
+    const { service, store } = lab(async () => ({ handled: true }));
+    const old = new Date(Date.now() - 40 * DAY).toISOString();
+    const base = { member_id: "boss", body: "", created_at: old };
+    store.saveMemberNotification({
+      ...base,
+      id: "workshop",
+      kind: "workshop",
+      title: "Workshops that may fit your papers",
+    });
+    store.saveMemberNotification({
+      ...base,
+      id: "evidence",
+      kind: "paper_slot",
+      title: "Evidence still missing on your paper",
+    });
+    store.saveMemberNotification({
+      ...base,
+      id: "pi-review",
+      kind: "paper_slot",
+      title: "A paper is waiting on your review",
+    });
+    store.saveMemberNotification({
+      ...base,
+      id: "escalated",
+      kind: "nudge",
+      title: "Overdue",
+      escalated_at: old,
+    });
+    unwrap(service.listMemberNotifications("boss"));
+    const resolved = store
+      .listMemberNotifications("boss")
+      .filter((notification) => notification.resolved_at)
+      .map((notification) => notification.id)
+      .toSorted();
+    expect(resolved).toEqual(["evidence", "workshop"]);
+  });
+});
+
+describe("Slack Connect for people in another workspace", () => {
+  it("files one admin-approved invitation in place of the manual invite, and leaves guests manual", async () => {
+    const { service, store } = lab(async (proposal) => {
+      const payload = proposal.proposed_payload as { user_id: string };
+      throw new Error(
+        payload.user_id === "U-EXT"
+          ? "Slack channel invite failed 200: user_team_not_in_channel"
+          : "Slack channel invite failed 200: user_is_restricted",
+      );
+    });
+    for (const [id, slack, email] of [
+      ["ext", "U-EXT", "ext@other.example"],
+      ["guest", "U-GUEST", "guest@lab.example"],
+    ]) {
+      unwrap(
+        service.upsertLabMember({
+          id,
+          name: id,
+          privilege_level: "member",
+          slack_user_id: slack,
+          email,
+        } as never),
+      );
+      await service.execute(unwrap(invite(service, "random-active", slack)).id, { dry_run: false });
+    }
+
+    const first = unwrap(service.raiseAutomationHealthAlerts("cron"));
+    expect(first.connect_invites_proposed).toHaveLength(1);
+    const [proposal] = store.listProposalsByType("slack.connect_invite");
+    expect(proposal).toMatchObject({
+      status: "pending",
+      proposed_payload: { email: "ext@other.example", channel: "random-active", member_id: "ext" },
+    });
+    // The person with a proposal is in the approval queue; only the guest is asked for by hand.
+    expect(unwrap(service.automationHealth()).issues).toEqual([
+      expect.objectContaining({ key: "slack-manual-invite:random-active:U-GUEST" }),
+    ]);
+    expect(unwrap(service.raiseAutomationHealthAlerts("cron")).connect_invites_proposed).toEqual([]);
+
+    // Rejected: not filed again, and the person goes back on the manual list.
+    store.saveProposal({ ...proposal!, status: "rejected" });
+    expect(unwrap(service.raiseAutomationHealthAlerts("cron")).connect_invites_proposed).toEqual([]);
+    expect(unwrap(service.automationHealth()).issues).toEqual([
+      expect.objectContaining({ key: "slack-manual-invite:random-active:U-EXT,U-GUEST" }),
+    ]);
+  });
+});

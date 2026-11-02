@@ -40,6 +40,14 @@ describe("notificationFeed", () => {
     expect(feed.map((item) => item.id)).toEqual(["esc"]);
   });
 
+  it("drops resolved notifications, letting an older open one of the kind be the card", () => {
+    const feed = notificationFeed([
+      note("done", "2026-01-03T00:00:00.000Z", { read_at: READ, resolved_at: READ }),
+      note("open", "2026-01-01T00:00:00.000Z", { read_at: READ }),
+    ]);
+    expect(feed.map((item) => item.id)).toEqual(["open"]);
+  });
+
   it("does not repeat the owner, who is always the caller", () => {
     const [item] = notificationFeed([note("p1", "2026-01-01T00:00:00.000Z")]);
     expect(item).not.toHaveProperty("member_id");

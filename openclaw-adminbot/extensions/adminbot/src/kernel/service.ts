@@ -533,9 +533,11 @@ import {
 } from "./service.active-channels.js";
 import {
   automationHealthIssues,
+  SLACK_CONNECT_INVITE_REASONS,
   slackInviteBlockFor,
   slackInviteBlocks,
   type AutomationHealthIssue,
+  type SlackInviteBlock,
 } from "./service.automation-health.js";
 import {
   birthdayProposalStillCurrent,
@@ -3302,9 +3304,88 @@ export class AdminBotService {
           this.store.listAuditEvents(),
           (id) => this.failedInviteProposal(id),
           now,
+          // A rejected proposal hands the person back to the manual list: the admin said no to
+          // the invitation, not to the person being in the channel.
+          (block) => {
+            const status = this.slackConnectProposalFor(block)?.status;
+            return status !== undefined && status !== "rejected";
+          },
         ),
       },
     };
+  }
+
+  /**
+   * The Slack Connect proposal standing in for a refused channel invite, if one was filed.
+   *
+   * Matched on the address and channel in its payload, not on the member id, because the address is
+   * what Slack is asked to invite and the member's address can change after the proposal was filed.
+   */
+  private slackConnectProposalFor(block: SlackInviteBlock): AdminBotStoredProposal | undefined {
+    const email = this.slackConnectAddress(block)?.toLowerCase();
+    if (!email) {
+      return undefined;
+    }
+    return this.store.listProposalsByType("slack.connect_invite").find((proposal) => {
+      const payload = (proposal.proposed_payload ?? {}) as Record<string, unknown>;
+      return (
+        typeof payload.email === "string" &&
+        payload.email.trim().toLowerCase() === email &&
+        typeof payload.channel === "string" &&
+        payload.channel.replace(/^#/u, "").toLowerCase() === block.channel
+      );
+    });
+  }
+
+  /** Where a Slack Connect invite for a refused invite would go: the member's roster address. */
+  private slackConnectAddress(block: SlackInviteBlock): string | undefined {
+    if (block.scope !== "member" || !SLACK_CONNECT_INVITE_REASONS.has(block.reason)) {
+      return undefined;
+    }
+    const member = this.store
+      .listLabMembers()
+      .find((entry) => entry.slack_user_id?.trim() === block.user_id);
+    const email = member ? adminBotOutreachEmail(member) : "";
+    return email || undefined;
+  }
+
+  /**
+   * One Slack Connect proposal per person Slack refused because they are in another workspace.
+   *
+   * Filed, never executed: an invitation mails somebody outside the lab, so `slack.connect_invite`
+   * waits for an admin (T3). Filed once per address and channel whatever became of it -- an admin who
+   * rejected it has decided, and asking again every hour would undo that decision by attrition.
+   */
+  private proposeSlackConnectInvites(now: Date): string[] {
+    const filed: string[] = [];
+    for (const block of slackInviteBlocks(
+      this.store.listAuditEvents(),
+      (id) => this.failedInviteProposal(id),
+      now,
+    )) {
+      const email = this.slackConnectAddress(block);
+      if (!email || this.slackConnectProposalFor(block)) {
+        continue;
+      }
+      const member = this.store
+        .listLabMembers()
+        .find((entry) => entry.slack_user_id?.trim() === block.user_id);
+      const created = this.createProposal({
+        type: "slack.connect_invite",
+        summary: `Invite ${member?.name ?? email} to #${block.channel} through Slack Connect: they are in another Slack workspace, so the bot cannot add them directly (${block.reason})`,
+        target: { service: "slack", channel: "slack", target: email },
+        proposed_payload: {
+          email,
+          channel: block.channel,
+          ...(member ? { member_id: member.id } : {}),
+        },
+        undo_plan: "Revoke the invitation in the channel's Slack Connect settings.",
+      });
+      if (created.ok) {
+        filed.push(created.payload.id);
+      }
+    }
+    return filed;
   }
 
   /**
@@ -3319,7 +3400,15 @@ export class AdminBotService {
   raiseAutomationHealthAlerts(
     actor: string,
     now = new Date(),
-  ): AdminBotServiceResponse<{ issues: number; alerted: string[]; admins: number }> {
+  ): AdminBotServiceResponse<{
+    issues: number;
+    alerted: string[];
+    admins: number;
+    connect_invites_proposed: string[];
+  }> {
+    // Before the issues are read, so a person who just got a proposal is not also reported as a
+    // manual invite on the same pass.
+    const connectInvitesProposed = this.proposeSlackConnectInvites(now);
     const health = this.automationHealth(now);
     if (!health.ok) {
       return health;
@@ -3357,6 +3446,25 @@ export class AdminBotService {
       });
       alerted.push(issue.key);
     }
+    // And the other way: an alert whose issue is gone (the job ran clean, the failures aged out of
+    // the 24h window) comes off the dashboard. Matched on the title, which is the issue's label and
+    // does not carry the counts that change from pass to pass.
+    const open = new Set(health.payload.issues.map((issue) => issue.label));
+    for (const admin of admins) {
+      for (const notification of this.store.listMemberNotifications(admin.id)) {
+        if (
+          notification.kind === "automation" &&
+          !notification.resolved_at &&
+          !open.has(notification.title)
+        ) {
+          this.store.saveMemberNotification({
+            ...notification,
+            read_at: notification.read_at ?? nowIso,
+            resolved_at: nowIso,
+          });
+        }
+      }
+    }
     if (alerted.length > 0) {
       this.recordAudit({
         type: "automation_health.alerted",
@@ -3367,7 +3475,12 @@ export class AdminBotService {
     return {
       ok: true,
       status: 200,
-      payload: { issues: health.payload.issues.length, alerted, admins: admins.length },
+      payload: {
+        issues: health.payload.issues.length,
+        alerted,
+        admins: admins.length,
+        connect_invites_proposed: connectInvitesProposed,
+      },
     };
   }
 
@@ -5737,7 +5850,7 @@ export class AdminBotService {
           recipient_member_ids: [memberId],
           message: buildWeeklyUpdateMessage({ titles, weekStart }),
           kind: "nudge",
-          title: "This week's paper update",
+          title: WEEKLY_UPDATE_NUDGE_TITLE,
           tab: "myWork",
           // Not important: a skipped week is a gap in a log, and next Monday asks again.
         },
@@ -9371,9 +9484,28 @@ export class AdminBotService {
     const stamped: Array<{ item: NudgeItem; memberId: string }> = [];
     const linkProblemsByPaper = this.options.paperLinkProblems?.() ?? new Map<string, string[]>();
 
+    // The cadence is per person as well as per item. Items fall due on their own clocks, so a
+    // per-item interval alone lets a gap that opened yesterday send a second message two days after
+    // the first. Whoever got this message inside the interval waits, and the new item goes out with
+    // the next one.
+    const recentlyMessaged = new Set(
+      this.store
+        .listNudgeLedger()
+        .filter(
+          (entry) =>
+            PAPER_NUDGE_DOMAINS.has(entry.domain) &&
+            entry.last_nudged_at &&
+            Date.parse(entry.last_nudged_at) > now.getTime() - PAPER_SLOT_NUDGE_INTERVAL_MS,
+        )
+        .map((entry) => entry.member_id),
+    );
+
     const enqueue = (memberId: string, paper: AdminBotPaperRecord, item: NudgeItem) => {
       const key = `${item.domain}|${item.subjectId}|${memberId}`;
-      if (!isNudgeDue(ledger.get(key), now, PAPER_SLOT_NUDGE_INTERVAL_MS)) {
+      if (
+        recentlyMessaged.has(memberId) ||
+        !isNudgeDue(ledger.get(key), now, PAPER_SLOT_NUDGE_INTERVAL_MS)
+      ) {
         return;
       }
       const forMember = byRecipient.get(memberId) ?? new Map();
@@ -9532,7 +9664,7 @@ export class AdminBotService {
           recipient_member_ids: [memberId],
           message: this.composeNudgeMessage(groups, now),
           kind: "paper_slot",
-          title: "Evidence still missing on your paper",
+          title: EVIDENCE_NUDGE_TITLE,
           tab: "myWork",
           // Important: a missing submission link or camera-ready is the kind of gap that costs a
           // paper its venue, and the deadline does not move because nobody read the DM.
@@ -11161,11 +11293,61 @@ export class AdminBotService {
     // Clear it on the first read as well as on the last profile save, so deployment heals existing
     // rows without asking everybody at 100% to edit and save an arbitrary field again.
     this.clearResolvedProfileNotifications(member);
+    this.resolveSettledNotifications(member.id);
     return {
       ok: true,
       status: 200,
       payload: { notifications: this.store.listMemberNotifications(memberId) },
     };
+  }
+
+  /**
+   * Take a nudge off the dashboard once what it asked for is done or no longer applies.
+   *
+   * Every notification used to stay until the end of time, so the dashboard filled with things
+   * that had long stopped being true: a workshop list whose deadlines were two months gone, last
+   * week's "write your weekly line", a job failure that recovered days ago. Each kind is settled by
+   * the cheapest check that can tell. Automation alerts are settled by the hourly health pass,
+   * which already has the live issue list (see raiseAutomationHealthAlerts). Nothing is deleted:
+   * the row is stamped resolved and read, so the popup stops and the escalation queue drains.
+   */
+  private resolveSettledNotifications(memberId: string, now = new Date()): void {
+    const nowIso = now.toISOString();
+    let owesWeeklyLine: Map<string, boolean> | undefined;
+    for (const notification of this.store.listMemberNotifications(memberId)) {
+      if (notification.resolved_at || notification.kind === "automation") {
+        continue;
+      }
+      const ageMs = now.getTime() - Date.parse(notification.created_at);
+      let settled: boolean;
+      if (notification.title === WEEKLY_UPDATE_NUDGE_TITLE) {
+        // Settled when every line it asked for is written, or once the week it asked about is over
+        // and the next Sunday sweep has had its turn to ask afresh.
+        const weekStart = adminBotWeekStart(new Date(notification.created_at));
+        owesWeeklyLine ??= new Map();
+        let owes = owesWeeklyLine.get(weekStart);
+        if (owes === undefined) {
+          const gaps = this.collectWeeklyUpdateGaps(notification.created_at);
+          owes = !gaps.ok || gaps.payload.gaps.some((gap) => gap.member_id === memberId);
+          owesWeeklyLine.set(weekStart, owes);
+        }
+        settled = !owes || ageMs > WEEKLY_UPDATE_NUDGE_SHELF_LIFE_MS;
+      } else {
+        // An escalated nudge is the head professor's to close, not the clock's.
+        const shelfLife =
+          notification.title === EVIDENCE_NUDGE_TITLE
+            ? EVIDENCE_NUDGE_SHELF_LIFE_MS
+            : NOTIFICATION_SHELF_LIFE_MS[notification.kind];
+        settled = !notification.escalated_at && shelfLife !== undefined && ageMs > shelfLife;
+      }
+      if (settled) {
+        this.store.saveMemberNotification({
+          ...notification,
+          read_at: notification.read_at ?? nowIso,
+          resolved_at: nowIso,
+        });
+      }
+    }
   }
 
   private clearResolvedProfileNotifications(member: AdminBotLabMember): void {
@@ -16719,18 +16901,46 @@ function serviceError<T>(status: number, message: string): AdminBotServiceRespon
 // often as it likes -- daily is fine, and gives a member who fills their profile in on day one a
 // prompt exit from the list -- but nobody is nudged about the same gap more than once per window.
 const MANDATORY_FIELDS_REMINDER_INTERVAL_MS = 3 * 24 * 60 * 60 * 1000;
+const WEEKLY_UPDATE_NUDGE_TITLE = "This week's paper update";
+// Eight days: the Sunday sweep asks about the week just ending, so its nudge stays up through the
+// following week and gives way to the next Sunday's.
+const WEEKLY_UPDATE_NUDGE_SHELF_LIFE_MS = 8 * 24 * 60 * 60 * 1000;
+
+// Re-sent once a week while a slot is still open (PAPER_SLOT_NUDGE_INTERVAL_MS), so a week-old copy
+// is either superseded by a newer one or about evidence that has since been filed. By title
+// rather than kind: the head professor's PI-review notice is a `paper_slot` too, and it is sent once.
+const EVIDENCE_NUDGE_TITLE = "Evidence still missing on your paper";
+const EVIDENCE_NUDGE_SHELF_LIFE_MS = 8 * 24 * 60 * 60 * 1000;
+
+// How long a notification of each kind is worth showing when nothing settles it sooner. A workshop
+// suggestion is about deadlines a few weeks out and is re-sent by any pass that still finds a match;
+// a month-old one-off nudge is past acting on. A kind missing from here (meeting attendance,
+// profile, the PI-review notice) stays until something settles it.
+const NOTIFICATION_SHELF_LIFE_MS: Partial<Record<string, number>> = {
+  workshop: 14 * 24 * 60 * 60 * 1000,
+  nudge: 30 * 24 * 60 * 60 * 1000,
+};
+
 const RESOLVED_PROFILE_NOTIFICATION_TITLES = new Set([
   "Your profile is missing a required field",
   "Your profile is missing required fields",
   "Your profile needs some info",
 ]);
 
-// The same idea one level down: a *slot* is left alone for three days after it was nudged about.
-// Per-slot rather than per-paper, so filling in two of four artifacts genuinely quiets those two
-// and the next pass chases only what is still open.
-const PAPER_SLOT_NUDGE_INTERVAL_MS = 3 * 24 * 60 * 60 * 1000;
+// The same idea one level down: a *slot* is left alone for a week after it was nudged about, and so
+// is the person (see `sweepPaperNudges`). Per-slot as well as per-person, so filling in two of four
+// artifacts genuinely quiets those two and the next pass chases only what is still open. It was
+// three days, and people found a DM about the same paper twice a week nagging.
+const PAPER_SLOT_NUDGE_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
+// Everything `sweepPaperNudges` sends, which all goes out in the one evidence message.
+const PAPER_NUDGE_DOMAINS: ReadonlySet<AdminBotNudgeDomain> = new Set([
+  "paper_slot",
+  "social_consent",
+  "conference_attendance",
+  "paper_reimbursement",
+]);
 
-// A venue-cycle stage is asked about once a week, not every three days like a slot. The author
+// A venue-cycle stage is asked about once a week, the same as a slot. The author
 // cannot make the answer arrive any sooner -- the venue decides when reviews land -- so a tighter
 // cadence buys nothing and spends the one thing that makes these mails work, which is that
 // receiving one still means something.

@@ -5640,55 +5640,6 @@
       "count": 1,
       "kind": "html-attribute",
       "name": "aria-label",
-      "path": "ui/src/ui/adminbot/views/lab-sharing-how-to.ts",
-      "text": "Lab how-to"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/adminbot/views/lab-sharing-how-to.ts",
-      "text": "Ask where to find something or how a lab process works. Answers use the member guidebook. Check the cited sections before acting."
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/adminbot/views/lab-sharing-how-to.ts",
-      "text": "Guidebook answer"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/adminbot/views/lab-sharing-how-to.ts",
-      "text": "Lab how-to"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/adminbot/views/lab-sharing-how-to.ts",
-      "text": "Looking up the member guidebook…"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/adminbot/views/lab-sharing-how-to.ts",
-      "text": "Source sections"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/adminbot/views/lab-sharing-how-to.ts",
-      "text": "Your question"
-    },
-    {
-      "count": 1,
-      "kind": "html-attribute",
-      "name": "aria-label",
       "path": "ui/src/ui/adminbot/views/lab-sharing-resources.ts",
       "text": "Collaboration resources"
     },
