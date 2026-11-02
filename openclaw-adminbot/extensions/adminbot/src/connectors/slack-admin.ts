@@ -1,5 +1,6 @@
 import type { AdminBotStoredProposal } from "../contracts/actions.js";
 import type { AdminBotActionExecutor } from "../kernel/service.js";
+import { executeCollaboratorChat } from "./collaborator-chat.js";
 
 export type SlackAdminFetch = (
   input: string | URL,
@@ -7,6 +8,7 @@ export type SlackAdminFetch = (
     method?: string;
     headers?: Record<string, string>;
     body?: string;
+    signal?: AbortSignal;
   },
 ) => Promise<{ ok: boolean; status: number; statusText: string; text(): Promise<string> }>;
 
@@ -36,6 +38,9 @@ export function createAdminBotSlackAdminExecutor(
   const fetchImpl = options.fetchImpl ?? (globalThis.fetch as SlackAdminFetch);
   return {
     async execute(proposal) {
+      if (proposal.type === "slack.collaborator_chat") {
+        return executeCollaboratorChat(proposal, resolveSlackBotToken(env), fetchImpl);
+      }
       if (proposal.type === "slack.rename_channel") {
         const payload = readRenamePayload(proposal);
         const token = resolveSlackBotToken(env);
@@ -487,9 +492,7 @@ function readIntroBlocks(proposal: AdminBotStoredProposal): unknown[] | undefine
     blocks.length > 12 ||
     !blocks.every(
       (block) =>
-        block &&
-        typeof block === "object" &&
-        kinds.has(String((block as { type?: unknown }).type)),
+        block && typeof block === "object" && kinds.has(String((block as { type?: unknown }).type)),
     )
   ) {
     throw new Error("slack.conference_intro blocks must be header, section or context blocks");

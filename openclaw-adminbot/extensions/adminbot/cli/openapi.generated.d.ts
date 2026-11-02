@@ -992,6 +992,41 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/collaborator-chats": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** GET /collaborator-chats */
+    get: operations["get-collaborator-chats"];
+    put?: never;
+    /** POST /collaborator-chats */
+    post: operations["post-collaborator-chats"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/collaborator-chats/{collaborator_chats_id}/prepare": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** POST /collaborator-chats/{collaborator_chats_id}/prepare */
+    post: operations["post-collaborator-chats-by-collaborator-chats-id-prepare"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/conferences/{conferences_id}/trip": {
     parameters: {
       query?: never;
@@ -5050,6 +5085,7 @@ export interface components {
         | "paper_integrity.alert"
         | "paper_integrity.report"
         | "slack.conference_intro"
+        | "slack.collaborator_chat"
         | "paper_integrity.sheet_scores"
         | "slack.invite_to_channel"
         | "slack.remove_from_channel"
@@ -5841,6 +5877,15 @@ export interface components {
     AdminBotMemberNudgeSkip: {
       member_id: string;
       reason: string;
+    } & {
+      [key: string]: unknown;
+    };
+    CollaboratorChatRequest: {
+      id: string;
+      owner_id: string;
+      context: string;
+      participant_ids: string[];
+      created_at: string;
     } & {
       [key: string]: unknown;
     };
@@ -9049,6 +9094,7 @@ export interface components {
         | "paper_integrity.alert"
         | "paper_integrity.report"
         | "slack.conference_intro"
+        | "slack.collaborator_chat"
         | "paper_integrity.sheet_scores"
         | "slack.invite_to_channel"
         | "slack.remove_from_channel"
@@ -9128,6 +9174,7 @@ export interface components {
         | "paper_integrity.alert"
         | "paper_integrity.report"
         | "slack.conference_intro"
+        | "slack.collaborator_chat"
         | "paper_integrity.sheet_scores"
         | "slack.invite_to_channel"
         | "slack.remove_from_channel"
@@ -13037,6 +13084,242 @@ export interface operations {
               [key: string]: unknown;
             })[];
             skipped: components["schemas"]["AdminBotMemberNudgeSkip"][];
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "get-collaborator-chats": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            requests: (
+              | ({
+                  id: string;
+                  owner_id: string;
+                  context: string;
+                  participant_ids: string[];
+                  created_at: string;
+                  action: components["schemas"]["AdminBotStoredProposal"];
+                  receipt: {
+                    [key: string]: string;
+                  };
+                } & {
+                  [key: string]: unknown;
+                })
+              | ({
+                  id: string;
+                  owner_id: string;
+                  context: string;
+                  participant_ids: string[];
+                  created_at: string;
+                  action?: unknown;
+                  receipt?: unknown;
+                } & {
+                  [key: string]: unknown;
+                })
+            )[];
+            members: ({
+              id: string;
+              name: string;
+            } & {
+              [key: string]: unknown;
+            })[];
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "post-collaborator-chats": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          context?: string;
+          participant_ids?: string[];
+        } & {
+          [key: string]: unknown;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            request: components["schemas"]["CollaboratorChatRequest"];
+            status: string;
+            message: string;
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Server response */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "post-collaborator-chats-by-collaborator-chats-id-prepare": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        collaborator_chats_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            action: components["schemas"]["AdminBotStoredProposal"];
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Server response */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Server response */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
+            readiness:
+              | ({
+                  /** @constant */
+                  ready: false;
+                  reason: string;
+                  waiting_member_ids?: unknown;
+                  slack_user_ids?: unknown;
+                } & {
+                  [key: string]: unknown;
+                })
+              | ({
+                  /** @constant */
+                  ready: false;
+                  reason: string;
+                  waiting_member_ids: string[];
+                  slack_user_ids?: unknown;
+                } & {
+                  [key: string]: unknown;
+                });
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Server response */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
           } & {
             [key: string]: unknown;
           };
@@ -25729,6 +26012,7 @@ export interface operations {
             | "paper_integrity.alert"
             | "paper_integrity.report"
             | "slack.conference_intro"
+            | "slack.collaborator_chat"
             | "paper_integrity.sheet_scores"
             | "slack.invite_to_channel"
             | "slack.remove_from_channel"

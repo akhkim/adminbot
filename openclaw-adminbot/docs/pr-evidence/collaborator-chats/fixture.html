@@ -1,0 +1,10 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Collaborator chats — synthetic component fixture</title><body><main style="max-width:900px;margin:24px auto;padding:16px"><p>Synthetic component fixture — no Slack connection</p><adminbot-collaborator-chats></adminbot-collaborator-chats></main><script type="module">
+import '/src/styles.css';
+import '/src/ui/adminbot/views/collaborator-chats.ts';
+document.documentElement.dataset.theme=new URL(location).searchParams.get('theme')==='light'?'light':'dark';
+const members=[{id:'ada',name:'Ada Example'},{id:'bea',name:'Bea Example'}];
+const request={id:'synthetic-request',context:'Discuss the evaluation plan for the synthetic research project.',participant_ids:['ada','bea']};
+if(new URL(location).searchParams.get('state')==='unknown') {request.action={id:'synthetic-action',status:'approved',payload_hash:'synthetic-reviewed-payload-hash',proposed_payload:{participants:[{member_id:'ada',slack_user_id:'UADA'},{member_id:'bea',slack_user_id:'UBEA'}],message:request.context}};request.receipt={outcome:'message_unknown',slack_channel:'GEXAMPLE'};}
+window.fetch=async (url, init={})=>({ok:true,json:async()=>String(url).endsWith('/prepare')?{action:{id:'synthetic-action',status:'pending',payload_hash:'synthetic-reviewed-payload-hash',proposed_payload:{participants:[{member_id:'ada',slack_user_id:'UADA'},{member_id:'bea',slack_user_id:'UBEA'}],message:request.context}}}:init.method==='POST'?{request,message:'Saved only. No Slack chat or invitation has been created.'}:{members,requests:[request]}});
+const el=document.querySelector('adminbot-collaborator-chats');el.baseUrl='http://127.0.0.1:5299';el.sessionToken='synthetic-session';
+</script></body></html>

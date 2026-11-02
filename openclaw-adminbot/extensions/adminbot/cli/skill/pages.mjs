@@ -88,6 +88,7 @@ const PAGES = [
     "anyone (proposals: member)",
     /^\/(deadlines|deadline-|internal\/deadlines|public\/deadline|venue-picker)/u,
   ],
+  ["Collaborator chat requests", "/lab-sharing", "admin", /^\/collaborator-chats/u],
   ["Lab sharing", "/lab-sharing", "member", /^\/lab-sharing/u],
   ["Events and travel", "/events", "full members", /^\/(events|travel)/u],
   ["Chat and guidebook", "/chat", "member", /^\/(local-chat|guidebook|feedback)/u],
