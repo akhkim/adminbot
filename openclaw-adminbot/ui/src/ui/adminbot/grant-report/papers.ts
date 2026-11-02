@@ -31,7 +31,10 @@ export type GrantPaper = {
   /** The sheet's own topic column, when the row carries one. */
   topic?: string;
   areas: readonly SafetyAreaId[];
-  /** Ids from sections.ts. Empty when no part of the technical agenda claims this work. */
+  /**
+   * Section ids from every proposal: `p…` from sections.ts (EuroSafeAI), `ca…` from
+   * sections-canadian.ts. Empty when no proposal claims this work.
+   */
   sections: readonly string[];
   /** Set for prior results the proposal cites; these are not part of the current cycle. */
   published?: boolean;
@@ -100,7 +103,7 @@ export const GRANT_PAPERS: readonly GrantPaper[] = [
     venue: "60% ICLR",
     authors: "Arth, Sekai and Stanford Collab (Nick Haber Lab)",
     areas: ["whiteBox", "evals"],
-    sections: ["p1.1.1.A", "p1.1.4"],
+    sections: ["p1.1.1.A", "p1.1.4", "ca.4"],
   },
   {
     id: "if-rlvr",
@@ -108,7 +111,7 @@ export const GRANT_PAPERS: readonly GrantPaper[] = [
     venue: "50% ICLR",
     authors: "Han, Terry",
     areas: ["whiteBox"],
-    sections: ["p1.1.1.A", "p1.1.4"],
+    sections: ["p1.1.1.A", "p1.1.4", "ca.4"],
   },
   {
     id: "root-cause-mcp",
@@ -222,7 +225,7 @@ export const GRANT_PAPERS: readonly GrantPaper[] = [
     authors: "Memo, Samuel, Zhijing, Bernhard",
     topic: "Safety",
     areas: ["alignment", "construction"],
-    sections: ["p1.1.3"],
+    sections: ["p1.1.3", "ca.1"],
   },
   {
     id: "reppo",
@@ -231,7 +234,7 @@ export const GRANT_PAPERS: readonly GrantPaper[] = [
     authors: "Damiano, Samuel, Bernhard, Zhijing",
     topic: "Robustness",
     areas: ["alignment", "whiteBox"],
-    sections: ["p1.1.3"],
+    sections: ["p1.1.3", "ca.1"],
   },
   {
     id: "predictive-representation-alignment",
@@ -240,7 +243,7 @@ export const GRANT_PAPERS: readonly GrantPaper[] = [
     authors: "Samuel, Memo, Damiano, Zhijing, Bernhard",
     topic: "Robustness",
     areas: ["alignment", "whiteBox"],
-    sections: ["p1.1.3"],
+    sections: ["p1.1.3", "ca.1"],
   },
   {
     id: "diffusion-concept-erasure",
@@ -249,7 +252,7 @@ export const GRANT_PAPERS: readonly GrantPaper[] = [
     authors: "Samuel, Rishit, (others welcome)",
     topic: "Causality",
     areas: ["alignment", "construction"],
-    sections: ["p1.1.3"],
+    sections: ["p1.1.3", "ca.1"],
   },
   {
     id: "adv-robustness-rlvr-triplet",
@@ -258,7 +261,7 @@ export const GRANT_PAPERS: readonly GrantPaper[] = [
     authors: "Suvajit, Samuel, Jacob",
     topic: "Safety+RL",
     areas: ["alignment"],
-    sections: ["p1.1.3"],
+    sections: ["p1.1.3", "ca.1"],
   },
   {
     id: "moe-unlearning",
@@ -266,7 +269,7 @@ export const GRANT_PAPERS: readonly GrantPaper[] = [
     venue: "ICLR 77.77%",
     authors: "Khai",
     areas: ["alignment"],
-    sections: ["p1.1.3"],
+    sections: ["p1.1.3", "ca.1"],
   },
   {
     id: "simko-emnlp2025",
@@ -274,7 +277,7 @@ export const GRANT_PAPERS: readonly GrantPaper[] = [
     venue: "EMNLP 2025",
     authors: "Simko et al.",
     areas: ["alignment", "construction"],
-    sections: ["p1.1.3"],
+    sections: ["p1.1.3", "ca.1"],
     published: true,
     link: "https://aclanthology.org/2025.emnlp-main.1430/",
   },
@@ -284,7 +287,7 @@ export const GRANT_PAPERS: readonly GrantPaper[] = [
     venue: "ICML 2026",
     authors: "Simko et al.",
     areas: ["alignment", "control"],
-    sections: ["p1.1.3"],
+    sections: ["p1.1.3", "ca.1"],
     published: true,
     link: "https://drive.google.com/file/d/1SS0R_ah7mOqSgZHkOViqAFA7YbLOVQLj/view?usp=sharing",
   },
@@ -294,7 +297,7 @@ export const GRANT_PAPERS: readonly GrantPaper[] = [
     venue: "2026",
     authors: "Ozdincer et al.",
     areas: ["alignment", "construction"],
-    sections: ["p1.1.3"],
+    sections: ["p1.1.3", "ca.1"],
     published: true,
     link: "https://drive.google.com/file/d/1BC_r4ca7CPmFR6d2QzcXe0esuYp8paKH/view?usp=sharing",
   },
@@ -304,7 +307,7 @@ export const GRANT_PAPERS: readonly GrantPaper[] = [
     venue: "2026",
     authors: "Hossain et al.",
     areas: ["evals", "construction"],
-    sections: ["p1.1.3"],
+    sections: ["p1.1.3", "ca.1", "ca.6"],
     published: true,
     link: "https://arxiv.org/pdf/2602.06911v2",
   },
@@ -316,7 +319,7 @@ export const GRANT_PAPERS: readonly GrantPaper[] = [
     venue: "80% ICLR",
     authors: "Vedant, Florent, Bernhard, Zhijing",
     areas: ["whiteBox", "alignment"],
-    sections: ["p1.1.4", "p1.1.5"],
+    sections: ["p1.1.4", "p1.1.5", "ca.3"],
     link: "https://www.overleaf.com/3597486326fncdydshtnbm",
   },
   {
@@ -327,7 +330,7 @@ export const GRANT_PAPERS: readonly GrantPaper[] = [
     authors: "Vincent, Vedant",
     topic: "Interp",
     areas: ["whiteBox", "alignment"],
-    sections: ["p1.1.4", "p1.1.5"],
+    sections: ["p1.1.4", "p1.1.5", "ca.3"],
   },
   {
     id: "causal-foundational-models",
@@ -363,7 +366,7 @@ export const GRANT_PAPERS: readonly GrantPaper[] = [
     authors: "Rahul, Moritz (MPI-IS)",
     topic: "Causality",
     areas: ["whiteBox"],
-    sections: ["p1.1.4"],
+    sections: ["p1.1.4", "ca.3"],
   },
   {
     id: "mechanistic-causal-reasoning",
@@ -381,7 +384,7 @@ export const GRANT_PAPERS: readonly GrantPaper[] = [
     authors: "Yongjin, Zhijing",
     topic: "RL",
     areas: ["alignment"],
-    sections: ["p1.1.4"],
+    sections: ["p1.1.4", "ca.2"],
   },
   {
     id: "cross-lingual-transfer-math",
@@ -390,7 +393,7 @@ export const GRANT_PAPERS: readonly GrantPaper[] = [
     authors: "Gopal, Rishitej, Terry",
     topic: "Multi-linguality / Post-Training",
     areas: ["aiSolve", "alignment"],
-    sections: ["p1.1.4"],
+    sections: ["p1.1.4", "ca.2"],
     link: "https://www.overleaf.com/3374842454gttjvwqsthnn",
   },
   {
@@ -399,7 +402,7 @@ export const GRANT_PAPERS: readonly GrantPaper[] = [
     venue: "60% ICLR",
     authors: "Arth and Stanford Collab (Nick Haber Lab)",
     areas: ["alignment", "evals"],
-    sections: ["p1.1.2", "p1.1.4"],
+    sections: ["p1.1.2", "p1.1.4", "ca.3"],
   },
 
   // --- Interpretability ---------------------------------------------------------------------
@@ -432,7 +435,7 @@ export const GRANT_PAPERS: readonly GrantPaper[] = [
       "Florent Draye, Abir Harrasse, Vedant Palit, Tung-Yu Wu, Jiarui Liu, Punya Syon Pandey, Terry Jingchen Zhang, Zhijing Jin, Bernhard Schölkopf",
     topic: "Interp",
     areas: ["whiteBox", "aiSolve"],
-    sections: ["p1.1.5"],
+    sections: ["p1.1.5", "ca.6"],
     alsoListedAs: "CLT-Forge (EMNLP Demo), listed twice on the sheet",
   },
   {
@@ -442,7 +445,7 @@ export const GRANT_PAPERS: readonly GrantPaper[] = [
     authors: "Abir Harrasse*, Florent Draye*, Punya Syon Pandey, Zhijing Jin†, Bernhard Schölkopf†",
     topic: "Interp / Multi-linguality",
     areas: ["whiteBox"],
-    sections: ["p1.1.5"],
+    sections: ["p1.1.5", "ca.6"],
     alsoListedAs: "listed again as an EMNLP-or-commitment-only row",
   },
   {
@@ -464,7 +467,7 @@ export const GRANT_PAPERS: readonly GrantPaper[] = [
       "Dmitrii Kharlapenko, Terry Jingchen Zhang, Arth Singh, Alessandro Stolfo, Arthur Conmy, Mrinmaya Sachan, Zhijing Jin",
     topic: "Interp",
     areas: ["whiteBox"],
-    sections: ["p1.1.5"],
+    sections: ["p1.1.5", "ca.3"],
     alsoListedAs: "Fluid Reasoning Representation",
   },
   {
@@ -474,7 +477,7 @@ export const GRANT_PAPERS: readonly GrantPaper[] = [
     authors: "Rishit, Abir, Luke and others (Florent, Zhijing)",
     topic: "Interp",
     areas: ["whiteBox"],
-    sections: ["p1.1.5"],
+    sections: ["p1.1.5", "ca.4"],
     alsoListedAs: "listed twice on the sheet, once per cycle",
   },
   {
@@ -521,7 +524,7 @@ export const GRANT_PAPERS: readonly GrantPaper[] = [
     venue: "Findings of EMNLP 100%",
     authors: "Prakhar Gupta, Terry Jingchen Zhang, Florent Draye, Bernhard Schölkopf, Zhijing Jin",
     areas: ["whiteBox", "alignment"],
-    sections: ["p1.1.5", "p1.1.2"],
+    sections: ["p1.1.5", "p1.1.2", "ca.3"],
   },
   {
     id: "multilingual-interp",
@@ -690,7 +693,7 @@ export const GRANT_PAPERS: readonly GrantPaper[] = [
     authors: "Andrew, Joeun, Arian, Emilia, Arth, Zhijing",
     topic: "Multi-Agent",
     areas: ["control"],
-    sections: ["p1.3.1"],
+    sections: ["p1.3.1", "ca.6"],
   },
   {
     id: "case-for-moral-agents",
@@ -766,7 +769,7 @@ export const GRANT_PAPERS: readonly GrantPaper[] = [
     authors: "Yves, Joeun, Zhijing",
     topic: "Post-Training",
     areas: ["alignment"],
-    sections: ["p1.3.2", "p1.1.2"],
+    sections: ["p1.3.2", "p1.1.2", "ca.2"],
     alsoListedAs: "listed twice on the sheet, once per cycle",
   },
   {
@@ -776,7 +779,7 @@ export const GRANT_PAPERS: readonly GrantPaper[] = [
     authors: "Colomban, Arth, Pepijn, Zhijing",
     topic: "Post-Training",
     areas: ["alignment"],
-    sections: ["p1.3.2"],
+    sections: ["p1.3.2", "ca.2"],
   },
   {
     id: "evolutionary-cooperation",
@@ -785,7 +788,7 @@ export const GRANT_PAPERS: readonly GrantPaper[] = [
     authors: "Mariana",
     topic: "Post-Training",
     areas: ["alignment"],
-    sections: ["p1.3.2"],
+    sections: ["p1.3.2", "ca.2"],
   },
   {
     id: "evolution-of-cooperation",
@@ -841,7 +844,7 @@ export const GRANT_PAPERS: readonly GrantPaper[] = [
     venue: "AAAI 100%",
     authors: "Khai",
     areas: ["construction"],
-    sections: [],
+    sections: ["ca.5"],
   },
   {
     id: "vlm-3d-reasoning",
@@ -881,7 +884,7 @@ export const GRANT_PAPERS: readonly GrantPaper[] = [
     venue: "55.55%",
     authors: "Khai",
     areas: [],
-    sections: [],
+    sections: ["ca.2"],
   },
   {
     id: "prune-ground",
@@ -891,7 +894,7 @@ export const GRANT_PAPERS: readonly GrantPaper[] = [
       "Duc Cao Dinh, Khai Le-Duc, Florent Draye, Chris Ngo, Terry Jingchen Zhang, Bernhard Schölkopf, Zhijing Jin",
     topic: "Multimodality",
     areas: [],
-    sections: [],
+    sections: ["ca.5"],
     alsoListedAs: "listed twice on the sheet, once per cycle",
   },
   {
@@ -901,7 +904,7 @@ export const GRANT_PAPERS: readonly GrantPaper[] = [
     authors: "Jiarui, Lechen, Yongjin, Yinghui, Yingheng Wang, Weihao Xuan, Zhijing, Mona",
     topic: "Distillation",
     areas: [],
-    sections: [],
+    sections: ["ca.2"],
   },
   {
     id: "hybrid-distillation",
@@ -910,7 +913,7 @@ export const GRANT_PAPERS: readonly GrantPaper[] = [
     venue: "",
     authors: "",
     areas: [],
-    sections: [],
+    sections: ["ca.2"],
   },
   {
     id: "memory-mechanisms",
@@ -919,7 +922,7 @@ export const GRANT_PAPERS: readonly GrantPaper[] = [
     authors: "Andrei, Atirath, Shuquan (Logan), Zhijing Jin, Nicolas Papernot",
     topic: "Memory",
     areas: [],
-    sections: [],
+    sections: ["ca.5"],
   },
 ];
 

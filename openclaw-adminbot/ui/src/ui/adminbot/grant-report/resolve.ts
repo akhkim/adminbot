@@ -80,7 +80,7 @@ const RULES: readonly {
   {
     test: /eval hacking|contamination|reward hack|benchmark validity|data attribution|influence function/u,
     areas: ["evals"],
-    sections: ["p1.1.1", "p1.1.1.A"],
+    sections: ["p1.1.1", "p1.1.1.A", "ca.4"],
   },
   {
     test: /eval awareness|evaluation awareness|situational awareness|sandbag/u,
@@ -100,12 +100,24 @@ const RULES: readonly {
   {
     test: /adversarial|robust|jailbreak|prompt injection|tamper|unlearn|defen[cs]e|erasure|harmful|safeguard|honeypot/u,
     areas: ["alignment", "construction"],
-    sections: ["p1.1.3"],
+    sections: ["p1.1.3", "ca.1"],
   },
   {
     test: /causal|generali[sz]ation|fine-?tun|forget|training dynamics|curriculum|distribution shift|entangle|grokking/u,
     areas: ["construction"],
-    sections: ["p1.1.4"],
+    sections: ["p1.1.4", "ca.3"],
+  },
+  // The two rules below place work only on the Canadian proposal: neither is safety work by the
+  // review's definition, so they claim no area, and EuroSafe has no section for them.
+  {
+    test: /distill|post-?train|knowledge injection|\brlvr\b|reinforcement learning|cross-lingual|transferab/u,
+    areas: [],
+    sections: ["ca.2"],
+  },
+  {
+    test: /privacy|private training|pruning|quantiz|efficient inference|mixture-of-experts/u,
+    areas: [],
+    sections: ["ca.5"],
   },
   {
     test: /power concentration|autocrat|democra|election|governance|political|revisionism|deliberation|pluralistic/u,
