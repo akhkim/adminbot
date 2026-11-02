@@ -1,6 +1,6 @@
 // Papers following the PI's OpenReview: what the sync writes, what it leaves to people, and what
 // it stops chasing once OpenReview shows the paper submitted.
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ADMINBOT_LAB_OVERLEAF_HOST } from "../contracts/overleaf.js";
 import type { OpenReviewEvidence } from "../workflows/papers/openreview-paper-sync.js";
 import { AdminBotService } from "./service.js";
@@ -15,6 +15,19 @@ function unwrap<T>(
 }
 
 const NOW = "2026-10-24T08:55:00.000Z";
+
+// The service stamps slot writes (`provided_at`) with the wall clock, and the sync only closes an
+// ARR feedback request filed before that cycle's cutoff (2026-11-02 for ARR October 2026). Left on
+// the real clock, the closing case passed until the cutoff and failed every day after it. Only
+// Date is faked: the service's own timers have nothing to do with it.
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date(NOW));
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 function lab() {
   const service = new AdminBotService();
