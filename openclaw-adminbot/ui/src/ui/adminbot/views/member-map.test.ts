@@ -444,6 +444,58 @@ afterEach(() => {
 });
 
 describe("renderMemberMap", () => {
+  it("counts only members in the headline and alumni and everyone else apart", async () => {
+    const container = await draw(
+      parseMemberMap({
+        mode: "full",
+        places: [
+          {
+            key: "toronto",
+            label: "Toronto",
+            country: "Canada",
+            lat: 43.65,
+            lon: -79.38,
+            members: [
+              { member_id: "a", name: "Ada", role: "member" },
+              { member_id: "b", name: "Bo", role: "alumni" },
+            ],
+          },
+          {
+            key: "zurich",
+            label: "Zurich",
+            country: "Switzerland",
+            lat: 47.37,
+            lon: 8.54,
+            members: [{ member_id: "c", name: "Cy", role: "acquaintance" }],
+          },
+        ],
+        unplaced_count: 0,
+        counts: {
+          placed: 3,
+          unplaced: 0,
+          unknown: 0,
+          members: 1,
+          member_places: 1,
+          by_role: { alumni: 1, acquaintance: 1 },
+        },
+      }),
+    );
+    const headline = container
+      .querySelector(".member-map__sub")!
+      .textContent!.replace(/\s+/gu, " ");
+    expect(headline).toContain("1 members across 1 cities · 1 alumni · 1 others");
+    expect(
+      container.querySelector('[data-testid="member-map-others"]')?.getAttribute("title"),
+    ).toBe("1 acquaintance");
+  });
+
+  it("keeps the old everyone-counted headline for a service that sends no roles", async () => {
+    const container = await draw(parseMemberMap(summary));
+    const headline = container.querySelector(".member-map__sub")!.textContent!;
+    expect(headline).toContain("13 members across 2 cities");
+    expect(container.querySelector('[data-testid="member-map-alumni"]')).toBeNull();
+  });
+
   it("plots one marker per city and lists them by headcount", async () => {
     const container = await draw(parseMemberMap(summary));
     // Scoped to the card: the full-screen view renders its own copy of the plot.

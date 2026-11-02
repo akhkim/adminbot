@@ -2651,6 +2651,14 @@
   white-space: nowrap;
 }
 
+/* Who a non-member on the map is ("alumni", "acquaintance"), so they don't read as members. */
+.member-map__role {
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  font-style: italic;
+  white-space: nowrap;
+}
+
 /* --- Search --- */
 
 /* A box over the map rather than a filter on it: picking a result flies to that city and lights

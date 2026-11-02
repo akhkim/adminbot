@@ -5,6 +5,7 @@ import {
   memberMapVisibility,
   isHiddenFromMemberMap,
   memberMapMemo,
+  memberMapRole,
   resolveCountry,
   resolveLoginCity,
   resolvePlace,
@@ -125,6 +126,7 @@ describe("buildMemberMap", () => {
         source: "login",
         precision: "country",
         source_label: "IP · approx.",
+        role: "untyped",
         approximate: true,
       },
     ]);
@@ -153,6 +155,7 @@ describe("buildMemberMap", () => {
         // The map row is dated by the observation that placed it: here, the live IP reading.
         located_at: "2026-01-05T00:00:00.000Z",
         source_label: expect.stringMatching(/^IP \d+d ago · approx\.$/u),
+        role: "untyped",
         approximate: true,
       },
       {
@@ -161,6 +164,7 @@ describe("buildMemberMap", () => {
         source: "login",
         precision: "country",
         source_label: "IP · approx.",
+        role: "untyped",
         approximate: true,
       },
     ]);
@@ -226,6 +230,7 @@ describe("buildMemberMap", () => {
         source: "login",
         precision: "country",
         source_label: "IP · approx.",
+        role: "untyped",
         approximate: true,
       },
     ]);
@@ -368,6 +373,7 @@ describe("buildMemberMap", () => {
         source: "roster",
         precision: "city",
         source_label: "profile",
+        role: "untyped",
       });
     });
 
@@ -397,7 +403,7 @@ describe("buildMemberMap", () => {
         places: [],
         unplaced: [],
         absent: [{ member_id: "t", name: "Tess", reason: "hidden" }],
-        counts: { placed: 0, unplaced: 0, unknown: 0 },
+        counts: { placed: 0, unplaced: 0, unknown: 0, members: 0, member_places: 0, by_role: {} },
       });
       expect(JSON.stringify(hidden)).not.toMatch(/Toronto|Lyon/);
 
@@ -428,15 +434,36 @@ describe("buildMemberMap", () => {
 
     const byLabel = new Map(map.places.map((place) => [place.label, place]));
     expect(byLabel.get("Zürich")?.members).toEqual([
-      { member_id: "a", name: "Ada", source: "slack", precision: "city", source_label: "Slack" },
+      {
+        member_id: "a",
+        name: "Ada",
+        source: "slack",
+        precision: "city",
+        source_label: "Slack",
+        role: "untyped",
+      },
     ]);
     // Bo has a Slack id but no Slack location, so the roster is used.
     expect(byLabel.get("Toronto")?.members).toEqual([
-      { member_id: "b", name: "Bo", source: "roster", precision: "city", source_label: "profile" },
+      {
+        member_id: "b",
+        name: "Bo",
+        source: "roster",
+        precision: "city",
+        source_label: "profile",
+        role: "untyped",
+      },
     ]);
     // Where somebody is right now beats where they live.
     expect(byLabel.get("Paris")?.members).toEqual([
-      { member_id: "c", name: "Cy", source: "roster", precision: "city", source_label: "profile" },
+      {
+        member_id: "c",
+        name: "Cy",
+        source: "roster",
+        precision: "city",
+        source_label: "profile",
+        role: "untyped",
+      },
     ]);
     expect(byLabel.has("Berlin")).toBe(false);
   });
@@ -468,7 +495,14 @@ describe("buildMemberMap", () => {
       member({ id: "b", name: "Bo", location: "somewhere nice" }),
       member({ id: "c", name: "Cy" }),
     ]);
-    expect(map.counts).toEqual({ placed: 1, unplaced: 1, unknown: 1 });
+    expect(map.counts).toEqual({
+      placed: 1,
+      unplaced: 1,
+      unknown: 1,
+      members: 0,
+      member_places: 0,
+      by_role: { untyped: 1 },
+    });
     expect(map.unplaced).toEqual([
       { member_id: "b", name: "Bo", raw: "somewhere nice", source: "roster" },
       { member_id: "c", name: "Cy" },
@@ -478,7 +512,14 @@ describe("buildMemberMap", () => {
   it("lists a member with only a roster timezone as having no location", () => {
     const map = buildMemberMap([member({ id: "a", name: "Ada", timezone: "Europe/London" })]);
     expect(map.places).toEqual([]);
-    expect(map.counts).toEqual({ placed: 0, unplaced: 0, unknown: 1 });
+    expect(map.counts).toEqual({
+      placed: 0,
+      unplaced: 0,
+      unknown: 1,
+      members: 0,
+      member_places: 0,
+      by_role: {},
+    });
     expect(map.absent).toEqual([{ member_id: "a", name: "Ada", reason: "no_location" }]);
   });
 
@@ -572,7 +613,14 @@ describe("isHiddenFromMemberMap", () => {
     );
     expect(map.places.map((place) => place.key)).toEqual(["toronto"]);
     expect(map.unplaced).toEqual([]);
-    expect(map.counts).toEqual({ placed: 1, unplaced: 0, unknown: 0 });
+    expect(map.counts).toEqual({
+      placed: 1,
+      unplaced: 0,
+      unknown: 0,
+      members: 0,
+      member_places: 0,
+      by_role: { untyped: 1 },
+    });
   });
 
   it("keeps hidden rows out of places and unplaced, so the API never returns them", () => {
@@ -596,7 +644,14 @@ describe("isHiddenFromMemberMap", () => {
       "real",
     ]);
     expect(map.unplaced).toEqual([]);
-    expect(map.counts).toEqual({ placed: 1, unplaced: 0, unknown: 0 });
+    expect(map.counts).toEqual({
+      placed: 1,
+      unplaced: 0,
+      unknown: 0,
+      members: 0,
+      member_places: 0,
+      by_role: { untyped: 1 },
+    });
     expect(JSON.stringify(map)).not.toMatch(/optout|do not contact|London/i);
   });
 });
@@ -884,5 +939,37 @@ describe("member map precedence with the check-in and the Slack zone", () => {
         slack_tz_observed_at: ago(1),
       })?.tz_mismatch,
     ).toBeUndefined();
+  });
+});
+
+describe("memberMapRole", () => {
+  it("counts full members and working coauthors as members, and alumni first", () => {
+    expect(memberMapRole({ member_type: "full, adminbot-admin" })).toBe("member");
+    expect(memberMapRole({ member_type: "coauthor-major" })).toBe("member");
+    expect(memberMapRole({ member_type: "alumni, coauthor-major" })).toBe("alumni");
+    expect(memberMapRole({ status: "alumni", member_type: "full" })).toBe("alumni");
+    expect(memberMapRole({ member_type: "acquaintance, nonresearch" })).toBe("acquaintance");
+    expect(memberMapRole({ member_type: "disappearing-coauthor" })).toBe("disappearing-coauthor");
+    expect(memberMapRole({})).toBe("untyped");
+  });
+
+  it("keeps member_type alumni on the map but out of the members count", () => {
+    const map = buildMemberMap([
+      member({ id: "a", name: "Ada", member_type: "full", current_city: "Toronto" }),
+      member({ id: "b", name: "Bo", member_type: "alumni", current_city: "Toronto" }),
+      member({ id: "c", name: "Cy", member_type: "acquaintance", current_city: "Paris" }),
+      member({ id: "d", name: "Di", status: "alumni", current_city: "Paris" }),
+    ]);
+    expect(map.counts).toMatchObject({
+      placed: 3,
+      members: 1,
+      member_places: 1,
+      by_role: { alumni: 1, acquaintance: 1 },
+    });
+    expect(map.places.flatMap((place) => place.members.map((m) => [m.name, m.role]))).toEqual([
+      ["Ada", "member"],
+      ["Bo", "alumni"],
+      ["Cy", "acquaintance"],
+    ]);
   });
 });

@@ -53,6 +53,11 @@ export type MemberMapMember = {
   ip_ignored?: "suspected_vpn";
   /** When the IP reading behind a `login` placement was taken. */
   ip_observed_at?: string;
+  /**
+   * Who they are to the lab: `member` (full member or coauthor), `alumni`, or the first word of
+   * their Member Type ("acquaintance"), `untyped` when blank. Absent from an older service.
+   */
+  role?: string;
 };
 
 /**
@@ -108,7 +113,18 @@ export type MemberMap = {
   placeAttribution?: { text: string; url: string };
   /** Members whose written location the gazetteer could not place. A count only — see below. */
   unplaced: number;
-  counts: { placed: number; unplaced: number; unknown: number };
+  counts: {
+    placed: number;
+    unplaced: number;
+    unknown: number;
+    /**
+     * Placed people who count as members, how many places they are in, and everyone else placed by
+     * their role. All three are absent from an older service, which counted everyone as a member.
+     */
+    members?: number;
+    memberPlaces?: number;
+    byRole?: Record<string, number>;
+  };
   /**
    * Admin only (`full`): everyone active who is not on the map, with why, so the search can answer
    * "Ada: location hidden" instead of finding nobody. Absent from an older service, which the
@@ -323,6 +339,7 @@ function toPlace(raw: RawPlace): MemberMapPlace | null {
           source_label?: unknown;
           ip_ignored?: unknown;
           ip_observed_at?: unknown;
+          role?: unknown;
         };
         if (!isRenderableName(record?.name)) {
           return [];
@@ -342,6 +359,7 @@ function toPlace(raw: RawPlace): MemberMapPlace | null {
           typeof record.source_label === "string" ? record.source_label.trim().slice(0, 80) : "";
         const ipObservedAt =
           typeof record.ip_observed_at === "string" ? record.ip_observed_at.trim() : "";
+        const role = typeof record.role === "string" ? record.role.trim().slice(0, 40) : "";
         const member: MemberMapMember = {
           member_id: String(record.member_id ?? ""),
           name: record.name,
@@ -358,6 +376,7 @@ function toPlace(raw: RawPlace): MemberMapPlace | null {
           ...(ipObservedAt && !Number.isNaN(Date.parse(ipObservedAt))
             ? { ip_observed_at: ipObservedAt }
             : {}),
+          ...(role ? { role } : {}),
         };
         return [member];
       })
@@ -404,7 +423,16 @@ export function parseMemberMap(body: unknown): MemberMap | null {
   if (!raw || !Array.isArray(raw.places)) {
     return null;
   }
-  const counts = (raw.counts ?? {}) as { placed?: unknown; unplaced?: unknown; unknown?: unknown };
+  const counts = (raw.counts ?? {}) as {
+    placed?: unknown;
+    unplaced?: unknown;
+    unknown?: unknown;
+    members?: unknown;
+    member_places?: unknown;
+    by_role?: unknown;
+  };
+  const members = asNumber(counts.members);
+  const memberPlaces = asNumber(counts.member_places);
   const places = raw.places
     .map((place) => toPlace(place as RawPlace))
     .filter((place): place is MemberMapPlace => place !== null)
@@ -429,8 +457,24 @@ export function parseMemberMap(body: unknown): MemberMap | null {
       placed: asNumber(counts.placed) || 0,
       unplaced: asNumber(counts.unplaced) || 0,
       unknown: asNumber(counts.unknown) || 0,
+      ...(Number.isNaN(members) ? {} : { members }),
+      ...(Number.isNaN(memberPlaces) ? {} : { memberPlaces }),
+      ...(Number.isNaN(members) ? {} : { byRole: toRoleCounts(counts.by_role) }),
     },
   };
+}
+
+function toRoleCounts(raw: unknown): Record<string, number> {
+  const byRole: Record<string, number> = {};
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    for (const [role, value] of Object.entries(raw)) {
+      const count = asNumber(value);
+      if (role.trim() && count > 0) {
+        byRole[role.trim().slice(0, 40)] = count;
+      }
+    }
+  }
+  return byRole;
 }
 
 /**
