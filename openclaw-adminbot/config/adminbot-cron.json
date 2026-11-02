@@ -3,7 +3,8 @@
     "purpose": "Every recurring AdminBot pass, in one place. scripts/adminbot-cron-sync.sh applies it.",
     "why": "Registration used to be a `pnpm openclaw cron add` block copied out of whichever doc happened to describe that feature. Three of the fourteen wrappers had one; the rest were registered by hand on the host and existed nowhere in the repo, so 'what does AdminBot run, and when' could only be answered by reading the gateway's cron store on Aurora. A missing job is silent: nobody is nudged and nothing errors.",
     "schedules": "Cron expressions in the gateway's timezone. Staggered on purpose -- these all hit the same service on the same box, and a 05:00 pile-up makes one slow pass look like an outage.",
-    "adding": "Add an entry here and run the sync. Do not `cron add` by hand: a job that is only on the host is a job the next deploy forgets."
+    "adding": "Add an entry here and run the sync. Do not `cron add` by hand: a job that is only on the host is a job the next deploy forgets.",
+    "retiring": "A job the store should no longer run goes in `retired` with the reason. The sync removes a stored job only when its name is listed there; anything else it does not recognise is reported and left alone."
   },
   "jobs": [
     {
@@ -510,6 +511,16 @@
       "cron": "50 * * * *",
       "argv": ["bash", "scripts/adminbot-automation-health-cron.sh"],
       "timeoutSeconds": 300
+    }
+  ],
+  "retired": [
+    {
+      "name": "Vector roster sync",
+      "reason": "Hand-registered monthly copy of adminbot-vector-roster: same script, old /h/405 release path, no health-check wrapper."
+    },
+    {
+      "name": "adminbot-email-automation",
+      "reason": "Hand-registered agent-turn job that had the model run scripts/adminbot-email-automation.ts with exec/write/message tools. adminbot-email runs the same pass hourly as a plain command."
     }
   ]
 }

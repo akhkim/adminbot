@@ -82,6 +82,7 @@ export function executorWithOnboardingGuide(
     | ((proposal: AdminBotStoredProposal) => Promise<AdminBotExecutorOutcome>)
     | undefined,
   dcsRoster: () => DcsRosterSheetWriter | undefined,
+  claimEmailAttempt: (proposal: AdminBotStoredProposal) => void,
 ): AdminBotActionExecutor {
   return {
     async execute(proposal) {
@@ -126,6 +127,7 @@ export function executorWithOnboardingGuide(
         return { handled: false, reason: "template_id and email are required" };
       }
       const result = await send({
+        before_email: () => claimEmailAttempt(proposal),
         template_id: templateId,
         name,
         email,

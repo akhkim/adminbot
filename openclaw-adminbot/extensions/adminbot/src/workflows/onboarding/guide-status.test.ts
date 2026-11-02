@@ -37,7 +37,7 @@ describe("onboarding send status", () => {
     ).toBe("failed");
     expect(memberGuideStatus(member, [], []).status).toBe("not_queued");
     expect(memberGuideStatus({ ...member, member_type: "external-prof" }, [], []).status).toBe(
-      "not_applicable",
+      "not_queued",
     );
     expect(
       memberGuideStatus(

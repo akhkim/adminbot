@@ -1,10 +1,10 @@
+import { assistantRoutes } from "./assistant.js";
 // Every authenticated route, zone by zone, in the order the old if-chain tried them. No two zones
 // claim the same method and path, so the zone order only has to keep each zone's own order.
-
-import { assistantRoutes } from "./assistant.js";
 import { automationHealthRoutes } from "./automation-health.js";
 import { badgesRoutes } from "./badges.js";
 import { calendarRoutes } from "./calendar.js";
+import { collaboratorChatRoutes } from "./collaborator-chats.js";
 import { conferencePapersRoutes } from "./conference-papers.js";
 import { deadlinesRoutes } from "./deadlines.js";
 import { directoryRoutes } from "./directory.js";
@@ -45,6 +45,7 @@ export const AUTHENTICATED_ROUTES: readonly Route[] = [
   ...workspaceRoutes,
   ...badgesRoutes,
   ...paperAdminRoutes,
+  ...collaboratorChatRoutes,
   ...labSharingRoutes,
   ...travelRoutes,
   ...eventsRoutes,

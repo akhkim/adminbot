@@ -20,6 +20,7 @@ export type SlackDirectoryUser = {
   id: string;
   deleted: boolean;
   is_bot: boolean;
+  is_invited_user?: boolean;
   is_app_user: boolean;
   /** Multi-channel guest. */
   is_restricted: boolean;
@@ -48,7 +49,12 @@ export type SlackAccountKind =
   | "placeholder";
 
 /** The roster fields this sync may write. A field outside this list is never touched. */
-export const SLACK_ROSTER_SYNC_FIELDS = ["name", "slack_user_id", "avatar_url", "timezone"] as const;
+export const SLACK_ROSTER_SYNC_FIELDS = [
+  "name",
+  "slack_user_id",
+  "avatar_url",
+  "timezone",
+] as const;
 export type SlackRosterSyncField = (typeof SLACK_ROSTER_SYNC_FIELDS)[number];
 
 export type SlackRosterFieldChange = {
@@ -406,11 +412,19 @@ export function planSlackRosterSync(params: {
     // out -- and the roster's own name (often the member's own edit) is never "fixed" back.
     const optOutReason = member ? rosterOptOutReason(member) : undefined;
     if (kind === "opted_out" || optOutReason) {
-      optOut(member, user.id, optOutReason ?? slackOptOutReason(user) ?? "asks not to be contacted");
+      optOut(
+        member,
+        user.id,
+        optOutReason ?? slackOptOutReason(user) ?? "asks not to be contacted",
+      );
       continue;
     }
     if (kind === "bot" || kind === "slackbot") {
-      plan.skipped.push({ slack_user_id: user.id, kind, ...(member ? { member_id: member.id } : {}) });
+      plan.skipped.push({
+        slack_user_id: user.id,
+        kind,
+        ...(member ? { member_id: member.id } : {}),
+      });
       continue;
     }
     if (kind === "placeholder") {
@@ -502,7 +516,12 @@ export function planSlackRosterSync(params: {
       plan.reactivations.push({ member_id: member.id, slack_user_id: user.id });
     }
     if (changes.length) {
-      plan.updates.push({ member_id: member.id, slack_user_id: user.id, matched_by: matchedBy, changes });
+      plan.updates.push({
+        member_id: member.id,
+        slack_user_id: user.id,
+        matched_by: matchedBy,
+        changes,
+      });
     } else if (!reactivated) {
       plan.unchanged += 1;
     }

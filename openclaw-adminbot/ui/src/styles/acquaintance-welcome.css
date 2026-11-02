@@ -1,0 +1,41 @@
+adminbot-acquaintance-welcome {
+  display: block;
+}
+adminbot-acquaintance-welcome .callout {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+adminbot-acquaintance-welcome label {
+  display: grid;
+  gap: 6px;
+}
+adminbot-acquaintance-welcome label:has(input[type="checkbox"]) {
+  display: flex;
+  align-items: start;
+  gap: 8px;
+}
+adminbot-acquaintance-welcome input:not([type="checkbox"]),
+adminbot-acquaintance-welcome textarea {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--input-bg, var(--bg));
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+}
+adminbot-acquaintance-welcome textarea {
+  min-height: 140px;
+}
+adminbot-acquaintance-welcome button {
+  justify-self: start;
+  max-width: 100%;
+  white-space: normal;
+}
+adminbot-acquaintance-welcome pre,
+adminbot-acquaintance-welcome p {
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}

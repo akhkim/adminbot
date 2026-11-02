@@ -134,6 +134,7 @@ export const adminBotActionTypes = [
   // nobody overlaps), with the dates, location and event page. Its own type so "who did AdminBot
   // introduce to whom, and when" is one row per introduction in the audit log.
   "slack.conference_intro",
+  "slack.collaborator_chat",
   // Writes each ICLR submission's AI-text score into one column of the lab's paper sheet
   // (ADMINBOT_ICLR_INTEGRITY_SHEET_ID). Its own type, rather than sheet.update_cells, because it is
   // auto-approved -- and the executor enforces what makes that safe: single cells, in the one
@@ -2805,6 +2806,7 @@ export type AdminBotAuditEvent = {
     // The pre-meeting pre-registration reminder, keyed by the meeting it was sent before.
     | "prereg.nudged"
     | "paper.deleted"
+    | "onboarding.email_attempted"
     | "onboarding.guide_sent"
     // One weekly pass over the sheet for joiners and re-typed members. Its timestamp is what the
     // next pass reads to know which applied type changes it has already seen.
@@ -2874,6 +2876,7 @@ export type AdminBotAuditEvent = {
     | "logistics_request.submitted"
     | "logistics_request.status_changed"
     | "logistics_request.withdrawn"
+    | "logistics_request.deleted"
     // The signed document going back to the member who asked for it, and the copies being dropped
     // once it has.
     | "logistics_request.signed_document_sent"

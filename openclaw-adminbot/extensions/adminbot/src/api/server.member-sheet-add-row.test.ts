@@ -130,7 +130,7 @@ describe("addMemberSheetRow", () => {
     ]);
   });
 
-  it("skips the mail for a Member Type whose onboarding is access alone", async () => {
+  it("sends a basic welcome as well as the separate Slack invitation", async () => {
     const { service, executed } = harness();
     const result = await addRow(service, source(), { ...ADA, member_type: "acquaintance" });
 
@@ -138,14 +138,29 @@ describe("addMemberSheetRow", () => {
       throw new Error(result.error.message);
     }
     expect(result.member.status).toBe("done");
-    expect(result.onboarding.status).toBe("skipped");
-    // No guide mints their Slack Connect invite, so enrollment files it on its own -- the one
-    // thing the access design gives an acquaintance that AdminBot can do.
+    expect(result.onboarding).toMatchObject({ status: "done", template_id: "welcome" });
     expect(executed.map((proposal) => proposal.type)).toEqual([
       "sheet.append_rows",
       "slack.connect_invite",
+      "onboarding.send_guide",
     ]);
     expect(result.member_type_change?.privilege_level.to).toBe("external_collaborator");
+  });
+
+  it("still sends the basic welcome when the Slack invitation fails", async () => {
+    const { service, executed } = harness({ "slack.connect_invite": "Slack is unavailable" });
+    const result = await addRow(service, source(), { ...ADA, member_type: "acquaintance" });
+    if ("error" in result) {
+      throw new Error(result.error.message);
+    }
+    expect(result.onboarding).toMatchObject({ status: "done", template_id: "welcome" });
+    expect(result.member_type_change?.steps).toContainEqual(
+      expect.objectContaining({ step: "slack", status: "failed", detail: "Slack is unavailable" }),
+    );
+    expect(executed.map((proposal) => proposal.type)).toEqual([
+      "sheet.append_rows",
+      "onboarding.send_guide",
+    ]);
   });
 
   it("refuses somebody already on the sheet, and writes nothing", async () => {

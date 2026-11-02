@@ -121,3 +121,26 @@ Edit the source profile/author links in AdminBot; protected PaperList cells are 
 by the next export. The refresh preserves the existing two-tab atomic write and protections.
 
 Regression: `python3 scripts/adminbot-sheet-tweet-tags-test.py` and `python3 scripts/adminbot-sheet-export-test.py`.
+
+## Recommendation-letter filter
+
+The full PeopleList export includes `Recommendation letters (last 6 months / upcoming)` in
+Research. It is recomputed from AdminBot's recorded recommendation-letter requests at each
+snapshot; editing the sheet is not an input path.
+
+- `Upcoming letter`: at least one explicit letter deadline is today or later, including beyond
+  six months. Application deadlines are not used.
+- `Recent request / letter`: a request was submitted, or an explicit letter deadline fell,
+  within the last six calendar months through today. Dates use Toronto's snapshot date;
+  month-end boundaries clamp to the last day of the month. Completed requests still count.
+- `Unknown date`: a recorded request cannot be placed reliably because its submission or
+  letter date is missing/invalid and no known date qualifies.
+- `No matching request recorded`: no qualifying request is in this database. This does **not**
+  mean the member does not want a letter or has not asked elsewhere.
+- `Unknown — requests unavailable`: this snapshot has no logistics-request table.
+
+Withdrawn and declined requests do not qualify. The column exports no school names,
+application details, letter text, attachments or inferred intent. It does not decide eligibility
+or send reminders. Unrecorded future plans remain unknown. A published column requires the
+reviewed exporter to be installed and the existing authorized refresh job to succeed; a PR is
+not proof the live sheet changed.

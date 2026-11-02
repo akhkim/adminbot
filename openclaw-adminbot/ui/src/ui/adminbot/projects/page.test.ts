@@ -3,9 +3,11 @@
 // Carried over from the old card's tests when the card became this page: where the paper is aimed,
 // its details and their autosave, the venue decision, completion, blockers, delete, the lab-wide
 // and the X-thread drafting on the Social tab.
+import { render } from "lit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AdminBotPaperRecord } from "../controllers/admin.ts";
 import { paperSteps } from "../data/paper-steps.ts";
+import { renderProjectPage } from "./page.ts";
 import { drawPage, emptyCycle, makeState, overviewRow, paper } from "./projects.test-helpers.ts";
 import { resetProjectsSessionState } from "./view.ts";
 
@@ -726,14 +728,33 @@ describe("the lane tabs", () => {
     expect(archival.container.querySelector('[data-testid="paper-feedback"]')).toBeNull();
   });
 
+  // Changing tabs is choosing what to look at. Landing on a folded strip cost a second click.
+  it("opens the section on every tab change, even after it was folded", () => {
+    const { container, state, props } = drawPage({ tab: "writing", slots: { p1: cycle } });
+    const section = (branch: string) =>
+      container.querySelector<HTMLDetailsElement>(
+        `[data-testid="paper-slots-branch-p1-${branch}"]`,
+      );
+    section("core")!.open = false;
+    for (const [tab, branch] of [
+      ["archival", "archive"],
+      ["venue", "venue"],
+      ["writing", "core"],
+    ] as const) {
+      render(renderProjectPage(state, props, "p1", tab), container);
+      expect(section(branch)?.open, tab).toBe(true);
+    }
+  });
+
   // A field whose upstream evidence is not in yet is still a field: authors file things in the
   // order they happen, and the service takes any slot at any stage.
   it("lets any field be filled at any stage, as the service does", async () => {
     const { container, slotWrites } = drawPage({ tab: "writing", slots: { p1: cycle } });
-    const deck = container.querySelector(
-      '[data-testid="paper-slots-branch-p1-core"] adminbot-paper-slot-deck',
-    ) as unknown as { updateComplete: Promise<unknown> };
-    await deck.updateComplete;
+    // The tab lands on its section already open, every field listed.
+    expect(
+      container.querySelector<HTMLDetailsElement>('[data-testid="paper-slots-branch-p1-core"]')
+        ?.open,
+    ).toBe(true);
     const field = container.querySelector<HTMLInputElement>(
       '[data-testid="paper-slot-p1-pdf_ready"]',
     )!;
