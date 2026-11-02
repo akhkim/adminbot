@@ -1,10 +1,11 @@
 // The daily directory sync reads Slack's zone for every linked active member, including the ones
-// who never signed in to AdminBot -- the only map signal those members ever produce. Synthetic data.
+// who never signed in to AdminBot. The zone is kept (it feeds the clock cross-check), but a zone
+// alone never puts anyone on the map. Synthetic data.
 import { describe, expect, it, vi } from "vitest";
 import { AdminBotService } from "./service.js";
 
 describe("Slack zone for members who never use AdminBot", () => {
-  it("stamps slack_tz on a linked member with no sign-in, and the map places them by it", async () => {
+  it("stamps slack_tz on a linked member with no sign-in, and keeps them off the map", async () => {
     const service = new AdminBotService();
     const saved = service.upsertLabMember({
       id: "never-signed-in",
@@ -20,11 +21,10 @@ describe("Slack zone for members who never use AdminBot", () => {
     expect(fetchSlackTimezones).toHaveBeenCalledWith(["U-QUIET"]);
 
     const coverage = service.memberMapCoverage();
-    expect(coverage.ok && coverage.payload.counts.timezone).toBe(1);
+    expect(coverage.ok && coverage.payload.counts.timezone).toBe(0);
     expect(coverage.ok && coverage.payload.stale[0]).toMatchObject({
       member_id: "never-signed-in",
-      placed_by: "timezone",
-      place_label: "Tokyo",
+      placed_by: "unplaced",
     });
     expect(coverage.ok && coverage.payload.stale[0]?.last_seen_at).toBeUndefined();
   });

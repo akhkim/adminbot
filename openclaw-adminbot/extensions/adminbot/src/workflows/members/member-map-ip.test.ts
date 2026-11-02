@@ -100,7 +100,7 @@ describe("the IP city on the map", () => {
     expect(placed?.ip_observed_at).toBeUndefined();
   });
 
-  it("falls back to the device zone's city, then the Slack zone's, when nothing is stated", () => {
+  it("leaves the member off the map when only a device or Slack zone is left", () => {
     const vpn = {
       ...ipFrom("Toronto", "Ontario", "CA"),
       last_ip_observed_at: ago(0),
@@ -114,15 +114,8 @@ describe("the IP city on the map", () => {
         slack_tz: "Europe/Berlin",
         slack_tz_observed_at: ago(1),
       }),
-    ).toMatchObject({
-      label: "Zürich",
-      source: "device",
-      precision: "timezone",
-      source_label: "device time zone · IP ignored (VPN?)",
-    });
-    expect(
-      placeOf({ ...vpn, slack_tz: "Europe/Berlin", slack_tz_observed_at: ago(1) }),
-    ).toMatchObject({ label: "Berlin", source: "slack", ip_ignored: "suspected_vpn" });
+    ).toBeUndefined();
+    expect(placeOf({ ...vpn, slack_tz: "Europe/Berlin", slack_tz_observed_at: ago(1) })).toBeUndefined();
   });
 
   it("does not let a VPN exit's country place the member either", () => {
@@ -429,13 +422,13 @@ describe("a timezone that contradicts the stated country", () => {
     expect(placed).toMatchObject({ label: "Nigeria", precision: "country" });
   });
 
-  it("still uses a zone in the stated country", () => {
+  it("pins the stated country even when the zone is in it", () => {
     const placed = placeOf({ location: "Somewhere, Canada", timezone: "America/Toronto" });
-    expect(placed).toMatchObject({ label: "Toronto", precision: "timezone" });
+    expect(placed).toMatchObject({ label: "Canada", precision: "country" });
   });
 
-  it("still uses a zone when nothing names a country", () => {
+  it("never places a member whose only location is a zone", () => {
     const placed = placeOf({ location: "America/Los_Angeles", timezone: "America/Los_Angeles" });
-    expect(placed).toMatchObject({ label: "Los Angeles", precision: "timezone" });
+    expect(placed).toBeUndefined();
   });
 });
