@@ -1,5 +1,6 @@
 // The ingest end to end: which paper a review lands on, what it ticks, and what it refuses.
 import { describe, expect, it } from "vitest";
+import type { PaperMentorReviewRequester } from "../connectors/papermentor-review.js";
 import { ADMINBOT_LAB_OVERLEAF_HOST } from "../contracts/overleaf.js";
 import type { AdminBotPaperMentorRunInput } from "../contracts/papermentor.js";
 import { AdminBotMemoryStore } from "../persistence/memory.js";
@@ -285,5 +286,199 @@ describe("what the nudge says about PaperMentor", () => {
 
     const message = preview(service, "2026-10-24T09:00:00.000Z");
     expect(message).not.toContain("PaperMentor review done");
+  });
+});
+
+describe("requestPaperMentorReviews", () => {
+  // A paper filed since the project link was retired: the share link is all it carries.
+  const RESOLVED = "65f2a1c9d4e3b7a801f6abcd";
+
+  function shared(shareUrl = SHARE_URL, extra: Array<[string, string]> = []) {
+    const store = new AdminBotMemoryStore();
+    const service = new AdminBotService(store);
+    unwrap(service.upsertLabMember({ id: "ada", name: "Ada Lovelace", privilege_level: "member" }));
+    unwrap(
+      service.upsertPaper({
+        id: "p1",
+        title: "Causal Garden Planning",
+        authors: ["Ada Lovelace"],
+        current_step: "overleaf_writing",
+        first_author_member_id: "ada",
+        venue: "ICLR 2026",
+      }),
+    );
+    for (const [slot, url] of [["overleaf_share", shareUrl], ...extra]) {
+      unwrap(
+        service.setPaperSlot({
+          paperId: "p1",
+          slot,
+          input: { url },
+          memberId: "ada",
+          privileged: true,
+        }),
+      );
+    }
+    return { store, service };
+  }
+
+  function requester(answer: Awaited<ReturnType<PaperMentorReviewRequester>>) {
+    const calls: Array<{ target: unknown; venue?: string }> = [];
+    const request: PaperMentorReviewRequester = async (target, options = {}) => {
+      calls.push({ target, ...(options.venue ? { venue: options.venue } : {}) });
+      return answer;
+    };
+    return { calls, request };
+  }
+
+  it("names the papers due on a dry run and asks for nothing", async () => {
+    const { service } = shared();
+    const { calls, request } = requester({ status: "started", project_id: RESOLVED });
+
+    const result = unwrap(await service.requestPaperMentorReviews("admin", request));
+    expect(result).toMatchObject({
+      dry_run: true,
+      due: 1,
+      requests: [{ paper_id: "p1", reason: "never", status: "would_request" }],
+    });
+    expect(calls).toEqual([]);
+  });
+
+  it("asks by the share link, and writes back the project so the review can find its paper", async () => {
+    const { store, service } = shared();
+    const { calls, request } = requester({ status: "started", project_id: RESOLVED });
+
+    const result = unwrap(
+      await service.requestPaperMentorReviews("cron", request, { dryRun: false }),
+    );
+    expect(result.requests).toEqual([
+      {
+        paper_id: "p1",
+        title: "Causal Garden Planning",
+        reason: "never",
+        status: "started",
+        project_id: RESOLVED,
+      },
+    ]);
+    expect(calls).toEqual([{ target: { share_link: SHARE_URL }, venue: "iclr_2026" }]);
+    expect(store.getPaper("p1")?.artifacts?.overleaf_edit_url).toBe(
+      `https://${ADMINBOT_LAB_OVERLEAF_HOST}/project/${RESOLVED}`,
+    );
+
+    // The review the Overleaf then ran arrives through the ordinary collector and lands here.
+    const recorded = unwrap(service.recordPaperMentorRun("cron", { ...RUN, project_id: RESOLVED }));
+    expect(recorded).toMatchObject({ paper_id: "p1", review_slot: "provided" });
+    expect(
+      store
+        .listAuditEvents()
+        .filter((event) => event.type.startsWith("papermentor."))
+        .map((event) => event.type),
+    ).toEqual(
+      expect.arrayContaining(["papermentor.project_linked", "papermentor.review_requested"]),
+    );
+  });
+
+  it("does not ask about a reviewed paper until its review goes stale", async () => {
+    const { service } = shared();
+    const { request } = requester({ status: "started", project_id: RESOLVED });
+    unwrap(await service.requestPaperMentorReviews("cron", request, { dryRun: false }));
+    unwrap(
+      service.recordPaperMentorRun(
+        "cron",
+        { ...RUN, project_id: RESOLVED },
+        {
+          nowIso: "2026-09-12T12:00:00.000Z",
+        },
+      ),
+    );
+
+    const soon = unwrap(
+      await service.requestPaperMentorReviews("cron", request, {
+        dryRun: false,
+        nowIso: "2026-09-20T09:00:00.000Z",
+      }),
+    );
+    expect(soon.due).toBe(0);
+    const later = unwrap(
+      await service.requestPaperMentorReviews("cron", request, {
+        dryRun: false,
+        nowIso: "2026-10-24T09:00:00.000Z",
+      }),
+    );
+    expect(later.requests).toMatchObject([{ paper_id: "p1", reason: "stale" }]);
+  });
+
+  it("never sends a share link from overleaf.com", async () => {
+    const { service } = shared("https://www.overleaf.com/1234567890abcdefghijkl");
+    const { calls, request } = requester({ status: "started", project_id: RESOLVED });
+
+    const result = unwrap(
+      await service.requestPaperMentorReviews("cron", request, { dryRun: false }),
+    );
+    expect(result.due).toBe(0);
+    expect(calls).toEqual([]);
+  });
+
+  it("stops the pass when the Overleaf is busy, and records the refusal", async () => {
+    const { store, service } = shared();
+    const { request } = requester({ status: "busy", project_id: RESOLVED });
+
+    const result = unwrap(
+      await service.requestPaperMentorReviews("cron", request, { dryRun: false }),
+    );
+    expect(result.requests).toMatchObject([{ paper_id: "p1", status: "busy" }]);
+    expect(
+      store.listAuditEvents().find((event) => event.type === "papermentor.review_requested")
+        ?.details,
+    ).toMatchObject({ paper_id: "p1", status: "busy" });
+  });
+
+  it("answers 503 to a live pass when no Overleaf secret is configured", async () => {
+    const { service } = shared();
+    const result = await service.requestPaperMentorReviews("cron", undefined, { dryRun: false });
+    expect(result).toMatchObject({ ok: false, status: 503 });
+  });
+});
+
+describe("what the nudge says about a share link", () => {
+  it("tells an author whose share link is on overleaf.com that it has to move first", () => {
+    const store = new AdminBotMemoryStore();
+    const service = new AdminBotService(store);
+    unwrap(
+      service.upsertLabMember({
+        receives_nudges: true,
+        id: "ada",
+        name: "Ada Lovelace",
+        privilege_level: "member",
+        slack_user_id: "U-ADA",
+      } as never),
+    );
+    unwrap(
+      service.upsertPaper({
+        id: "p1",
+        title: "Causal Garden Planning",
+        authors: ["Ada Lovelace"],
+        current_step: "overleaf_writing",
+        first_author_member_id: "ada",
+        venue: "ICLR 2027",
+        deadline: "2099-01-01",
+      }),
+    );
+    for (const [slot, url] of [
+      ["project_folder", "https://docs.google.com/document/d/xyz"],
+      ["overleaf_share", "https://www.overleaf.com/1234567890abcdefghijkl"],
+    ] as const) {
+      unwrap(
+        service.setPaperSlot({
+          paperId: "p1",
+          slot,
+          input: { url },
+          memberId: "ada",
+          privileged: true,
+        }),
+      );
+    }
+    const { batches } = unwrap(service.collectPaperNudgeBatches());
+    const message = batches.find((batch) => batch.member_id === "ada")?.message ?? "";
+    expect(message).toContain(`move the project to ${ADMINBOT_LAB_OVERLEAF_HOST}`);
   });
 });

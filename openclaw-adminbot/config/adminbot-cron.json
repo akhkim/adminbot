@@ -383,6 +383,16 @@
       "timeoutSeconds": 900
     },
     {
+      "name": "adminbot-papermentor-reviews",
+      "description": "Ask PaperMentor to review the papers at their review step whose edit link is on the lab's Overleaf",
+      "cron": "2 8-20/2 * * *",
+      "argv": [
+        "bash",
+        "scripts/adminbot-papermentor-review-cron.sh"
+      ],
+      "timeoutSeconds": 600
+    },
+    {
       "name": "adminbot-papermentor-runs",
       "description": "Collect PaperMentor's cached reviews and record them against their papers",
       "cron": "35 * * * *",

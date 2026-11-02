@@ -380,7 +380,12 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
       "Overleaf's “Anyone with this link can edit” URL, from the Share menu with link sharing " +
       "turned on. Treat it as a credential: it grants write access to whoever holds it, without " +
       "an invitation and without appearing in the project's member list, and everyone who can " +
-      "read this paper's record can use it.",
+      "read this paper's record can use it. " +
+      // The automated review resolves this link on the lab's Overleaf -- the instance that minted
+      // it -- so a link from anywhere else cannot be reviewed without the author moving the draft.
+      `For PaperMentor to review the paper automatically, the link must be from the lab's ` +
+      `PaperMentor Overleaf (${ADMINBOT_LAB_OVERLEAF_HOST}); a link from ${OVERLEAF_COM_HOST} ` +
+      "cannot be reviewed until the project is moved there.",
     example: `https://${OVERLEAF_COM_HOST}/1234567890abcdefghijkl#a1b2c3`,
   },
   overleaf_edit: {

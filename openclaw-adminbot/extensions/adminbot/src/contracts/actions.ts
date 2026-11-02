@@ -2769,6 +2769,12 @@ export type AdminBotAuditEvent = {
     // only the first, so "when did we last hear from PaperMentor about this paper" has an answer
     // even on the days it re-sent the review it sent yesterday. Counts only -- see the table.
     | "papermentor.run_recorded"
+    // AdminBot asked the lab's Overleaf to review a paper at its review step, and what it said.
+    // One row per request, including the refusals, so a paper that is never reviewed has a trail.
+    | "papermentor.review_requested"
+    // The project a paper's share link resolved to, written onto the paper so the review that
+    // follows can find it. The row names the link it replaced, if any.
+    | "papermentor.project_linked"
     // A paper moving itself along the trunk on the strength of its own evidence, and the slots
     // that released the step. The audit row is the proof: "why is this paper at submission" has an
     // answer that names four pieces of evidence rather than "somebody changed a dropdown".
