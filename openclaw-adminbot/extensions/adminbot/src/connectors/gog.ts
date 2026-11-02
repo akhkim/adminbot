@@ -2,6 +2,7 @@ import { execFile as execFileCallback } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 import type { AdminBotStoredProposal } from "../contracts/actions.js";
 import type { AdminBotDriveProbe } from "../contracts/drive-links.js";
@@ -1084,6 +1085,100 @@ function appendBoolean(args: string[], flag: string, value: unknown): void {
   }
 }
 
+// The member-type-change "save is approval" flow fires two calendar calls per event across every
+// meeting series at once, and Google's per-user calendar burst limit is only a few requests a
+// second, so the roster-save that touched several series kept tripping 403 rateLimitExceeded. Every
+// gog command runs through createGogCapture, so the cure lives here and covers every caller: calls
+// go out single-file with a small gap between them, and a transient rate-limit is retried with
+// exponential backoff. Both are overridable from the environment for a deployment that is paced
+// differently.
+const GOG_MIN_INTERVAL_MS = Math.max(0, Number(process.env.ADMINBOT_GOG_MIN_INTERVAL_MS) || 300);
+const GOG_RATE_LIMIT_RETRIES = Math.max(
+  0,
+  Number(process.env.ADMINBOT_GOG_RATE_LIMIT_RETRIES) || 4,
+);
+const GOG_RETRY_BASE_MS = 500;
+const GOG_RETRY_JITTER_MS = 250;
+
+/**
+ * Whether an error is Google's transient per-user burst limit (403 rateLimitExceeded /
+ * userRateLimitExceeded, or a raw 429), which another try a moment later will clear.
+ *
+ * The daily `quotaExceeded` is deliberately excluded: it is not transient, and retrying it only
+ * spends the rest of the day's quota faster. gog surfaces the reason on stderr, and the thrown
+ * error carries it there and on its message.
+ */
+export function isTransientGogRateLimit(error: unknown): boolean {
+  const failure = error as { stderr?: unknown; message?: unknown };
+  const text = [failure?.stderr, failure?.message]
+    .filter((part): part is string => typeof part === "string")
+    .join(" ");
+  return /userRateLimitExceeded|rateLimitExceeded/u.test(text) || /\b429\b/u.test(text);
+}
+
+type GogRetryOptions = {
+  retries?: number;
+  isTransient?: (error: unknown) => boolean;
+  backoffMs?: (attempt: number) => number;
+  sleep?: (ms: number) => Promise<void>;
+};
+
+/**
+ * Runs `attempt`, retrying only a transient rate-limit with exponential backoff and jitter, as
+ * Google's guidance asks. A non-transient error is rethrown at once, unchanged, so the caller's
+ * error formatting and fail-closed behavior are untouched. The timing seams are injectable so a
+ * test never actually waits.
+ */
+export async function withGogRateLimitRetry<T>(
+  attempt: () => Promise<T>,
+  options: GogRetryOptions = {},
+): Promise<T> {
+  const retries = options.retries ?? GOG_RATE_LIMIT_RETRIES;
+  const isTransient = options.isTransient ?? isTransientGogRateLimit;
+  const backoffMs =
+    options.backoffMs ??
+    ((attemptIndex) =>
+      GOG_RETRY_BASE_MS * 2 ** attemptIndex + Math.floor(Math.random() * GOG_RETRY_JITTER_MS));
+  const sleep = options.sleep ?? delay;
+  const run = async (attemptIndex: number): Promise<T> => {
+    try {
+      return await attempt();
+    } catch (error) {
+      if (attemptIndex >= retries || !isTransient(error)) {
+        throw error;
+      }
+      await sleep(backoffMs(attemptIndex));
+      return run(attemptIndex + 1);
+    }
+  };
+  return run(0);
+}
+
+// One chain for every gog command in the process: each waits for the one before it and for the
+// minimum gap, so a loop that fires dozens of calls spreads them out instead of bursting. A failed
+// call still advances the chain (the chain swallows its own rejection) so one failure cannot wedge
+// the rest.
+let gogPaceChain: Promise<unknown> = Promise.resolve();
+let gogLastFinishedAt = 0;
+function pacedGog<T>(task: () => Promise<T>): Promise<T> {
+  const result = gogPaceChain.then(async () => {
+    const wait = gogLastFinishedAt + GOG_MIN_INTERVAL_MS - Date.now();
+    if (wait > 0) {
+      await delay(wait);
+    }
+    try {
+      return await task();
+    } finally {
+      gogLastFinishedAt = Date.now();
+    }
+  });
+  gogPaceChain = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  return result;
+}
+
 function createGogRunner(env: NodeJS.ProcessEnv | undefined): GogRun {
   const capture = createGogCapture(env);
   return async (args) => {
@@ -1091,34 +1186,23 @@ function createGogRunner(env: NodeJS.ProcessEnv | undefined): GogRun {
   };
 }
 
-// Google refuses a rate-limited request before applying it, so trying the same command again is
-// safe. A burst (a membership sweep inviting a dozen people) otherwise failed every call past the
-// quota, and each failure became an approval somebody had to redo by hand.
-const GOG_RATE_LIMIT_RETRY_MS = [5_000, 20_000];
-export const isGogRateLimit = (message: string) =>
-  /\b(?:user)?ratelimitexceeded\b|\(429\b/iu.test(message);
-
 function createGogCapture(env: NodeJS.ProcessEnv | undefined): GogCapture {
-  return async (args) => {
-    for (let attempt = 0; ; attempt += 1) {
+  return (args) =>
+    pacedGog(async () => {
       try {
-        const result = await execFile(GOG_EXECUTABLE, args, {
-          env: env ?? process.env,
-          maxBuffer: GOG_MAX_OUTPUT_BYTES,
-          timeout: GOG_TIMEOUT_MS,
-          windowsHide: true,
+        return await withGogRateLimitRetry(async () => {
+          const result = await execFile(GOG_EXECUTABLE, args, {
+            env: env ?? process.env,
+            maxBuffer: GOG_MAX_OUTPUT_BYTES,
+            timeout: GOG_TIMEOUT_MS,
+            windowsHide: true,
+          });
+          return result.stdout;
         });
-        return result.stdout;
       } catch (error) {
-        const message = formatGogError(error);
-        const delay = GOG_RATE_LIMIT_RETRY_MS[attempt];
-        if (delay === undefined || !isGogRateLimit(message)) {
-          throw new Error(message, { cause: error });
-        }
-        await new Promise((resolve) => setTimeout(resolve, delay));
+        throw new Error(formatGogError(error), { cause: error });
       }
-    }
-  };
+    });
 }
 
 function formatGogError(error: unknown): string {

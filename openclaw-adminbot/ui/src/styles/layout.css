@@ -11106,9 +11106,9 @@ adminbot-deadline-timezone {
   background: color-mix(in srgb, var(--branch-accent) 1%, transparent);
 }
 
-/* Inside a deck every card shares one transparency; state still reads via the status pill. */
-:is(.my-work-item, .paper-legacy__card-parts) .paper-slot-deck .paper-slot,
-:is(.my-work-item, .paper-legacy__card-parts) .paper-slot-deck .paper-slot--blocked {
+/* Inside a branch list every card shares one transparency; state still reads via the status pill. */
+:is(.my-work-item, .paper-legacy__card-parts) .paper-slots__list .paper-slot,
+:is(.my-work-item, .paper-legacy__card-parts) .paper-slots__list .paper-slot--blocked {
   opacity: 1;
   background: color-mix(in srgb, var(--branch-accent) 1%, transparent);
 }
@@ -11360,66 +11360,17 @@ adminbot-deadline-timezone {
   margin-bottom: var(--space-3);
 }
 
-/* â”€â”€ Branch slot deck â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-   One field at a time; arrows page through. The active card spans the branch's full inner
-   width instead of sharing a grid, so long inputs and hints get room to breathe. */
-.paper-slot-deck__bar {
+/* Branch field list: every field of the branch at once, stacked full width. It replaced a
+   one-card-at-a-time deck whose arrows hid the rest of the checklist. */
+.paper-slots__list {
   display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--space-2);
-  margin-bottom: var(--space-2);
+  flex-direction: column;
+  gap: var(--space-3);
 }
 
-.paper-slot-deck__count {
-  margin-inline-end: auto;
-  font-size: var(--control-ui-text-xs);
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.paper-slot-deck__arrow {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: 1px solid var(--branch-border, var(--border));
-  border-radius: 50%;
-  background: transparent;
-  color: var(--text);
-  cursor: pointer;
-}
-
-.paper-slot-deck__arrow:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--branch-accent) 14%, transparent);
-}
-
-.paper-slot-deck__arrow:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
-
-.paper-slot-deck__arrow svg {
-  width: 14px;
-  height: 14px;
-  stroke: currentColor;
-  fill: none;
-}
-
-/* The shared chevron glyph, mirrored to point back. */
-.paper-slot-deck__arrow--prev svg {
-  transform: scaleX(-1);
-}
-
-.paper-slot-deck__item[hidden] {
-  display: none;
-}
-
-/* The active card owns the row: full width, natural height (the old grid forced a tall
-   minimum on every card whether it needed it or not). */
-:is(.my-work-item, .paper-legacy__card-parts) .paper-slot-deck .paper-slot {
+/* Each card owns its row: full width, natural height (the old grid forced a tall minimum on
+   every card whether it needed it or not). */
+:is(.my-work-item, .paper-legacy__card-parts) .paper-slots__list .paper-slot {
   width: 100%;
   min-height: 0;
 }

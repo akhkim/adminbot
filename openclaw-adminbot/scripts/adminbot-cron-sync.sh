@@ -16,6 +16,8 @@
 #
 # It never removes a job the manifest does not mention. Deleting somebody's ad-hoc job because it
 # is not in a file they have not read is not this script's call to make; it names them instead.
+# The one exception is the manifest's `retired` list: a job named there was looked at and judged
+# redundant, so it is removed (never with --only).
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -150,7 +152,20 @@ for job in manifest["jobs"]:
         args.append("--no-deliver")
     print(f"{verb}\t{name}\t" + " ".join(shlex.quote(a) for a in args))
 
-for name in sorted(known - {job["name"] for job in manifest["jobs"]}):
+# Retired jobs are removed by name. Only names somebody wrote into the manifest qualify, so a job
+# the store has and the manifest does not know is still never removed just for being unknown. A
+# name listed as both live and retired is a manifest mistake, and guessing which half was meant
+# could delete a live job.
+retired = [entry["name"] for entry in manifest.get("retired", [])]
+clash = set(retired) & {job["name"] for job in manifest["jobs"]}
+if clash:
+    raise SystemExit("Manifest lists jobs as both live and retired: " + ", ".join(sorted(clash)))
+if not only:
+    for name in retired:
+        if name in known:
+            print(f"remove\t{name}\trm {shlex.quote(ids[name])}")
+
+for name in sorted(known - {job["name"] for job in manifest["jobs"]} - set(retired)):
     print(f"unmanaged\t{name}\t")
 PY
 
@@ -170,7 +185,7 @@ while IFS=$'\t' read -r verb name args <&3; do
     unchanged)
       unchanged=$((unchanged + 1))
       ;;
-    add|edit)
+    add|edit|remove)
       if [[ "$DRY_RUN" == "1" ]]; then
         printf 'adminbot-cron-sync: would %s %s\n' "$verb" "$name"
         continue

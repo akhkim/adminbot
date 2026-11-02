@@ -992,6 +992,41 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/collaborator-chats": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** GET /collaborator-chats */
+    get: operations["get-collaborator-chats"];
+    put?: never;
+    /** POST /collaborator-chats */
+    post: operations["post-collaborator-chats"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/collaborator-chats/{collaborator_chats_id}/prepare": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** POST /collaborator-chats/{collaborator_chats_id}/prepare */
+    post: operations["post-collaborator-chats-by-collaborator-chats-id-prepare"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/conferences/{conferences_id}/trip": {
     parameters: {
       query?: never;
@@ -1782,6 +1817,40 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/lab/members/{members_id}/onboarding/welcome/preview": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** POST /lab/members/{members_id}/onboarding/welcome/preview */
+    post: operations["post-lab-members-by-members-id-onboarding-welcome-preview"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/lab/members/{members_id}/onboarding/welcome/queue": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** POST /lab/members/{members_id}/onboarding/welcome/queue */
+    post: operations["post-lab-members-by-members-id-onboarding-welcome-queue"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/lab/members/{members_id}/recent-edits": {
     parameters: {
       query?: never;
@@ -2259,7 +2328,8 @@ export interface paths {
     /** PUT /logistics/requests/{requests_id} */
     put: operations["put-logistics-requests-by-requests-id"];
     post?: never;
-    delete?: never;
+    /** DELETE /logistics/requests/{requests_id} */
+    delete: operations["delete-logistics-requests-by-requests-id"];
     options?: never;
     head?: never;
     patch?: never;
@@ -5015,6 +5085,7 @@ export interface components {
         | "paper_integrity.alert"
         | "paper_integrity.report"
         | "slack.conference_intro"
+        | "slack.collaborator_chat"
         | "paper_integrity.sheet_scores"
         | "slack.invite_to_channel"
         | "slack.remove_from_channel"
@@ -5154,6 +5225,7 @@ export interface components {
         | "research_theme_invites.swept"
         | "prereg.nudged"
         | "paper.deleted"
+        | "onboarding.email_attempted"
         | "onboarding.guide_sent"
         | "onboarding_sweep.ran"
         | "members.disengagement_swept"
@@ -5212,6 +5284,7 @@ export interface components {
         | "logistics_request.submitted"
         | "logistics_request.status_changed"
         | "logistics_request.withdrawn"
+        | "logistics_request.deleted"
         | "logistics_request.signed_document_sent"
         | "logistics_request.files_cleared"
         | "rec_letter_freeze.recorded"
@@ -5804,6 +5877,15 @@ export interface components {
     AdminBotMemberNudgeSkip: {
       member_id: string;
       reason: string;
+    } & {
+      [key: string]: unknown;
+    };
+    CollaboratorChatRequest: {
+      id: string;
+      owner_id: string;
+      context: string;
+      participant_ids: string[];
+      created_at: string;
     } & {
       [key: string]: unknown;
     };
@@ -7977,6 +8059,9 @@ export interface components {
       [key: string]: unknown;
     };
     AdminBotOnboardingSendRequest: {
+      before_email?: {
+        [key: string]: unknown;
+      };
       template_id: string;
       interview?: components["schemas"]["InterviewInvitation"];
       name: string;
@@ -9010,6 +9095,7 @@ export interface components {
         | "paper_integrity.alert"
         | "paper_integrity.report"
         | "slack.conference_intro"
+        | "slack.collaborator_chat"
         | "paper_integrity.sheet_scores"
         | "slack.invite_to_channel"
         | "slack.remove_from_channel"
@@ -9089,6 +9175,7 @@ export interface components {
         | "paper_integrity.alert"
         | "paper_integrity.report"
         | "slack.conference_intro"
+        | "slack.collaborator_chat"
         | "paper_integrity.sheet_scores"
         | "slack.invite_to_channel"
         | "slack.remove_from_channel"
@@ -13017,6 +13104,242 @@ export interface operations {
       };
     };
   };
+  "get-collaborator-chats": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            requests: (
+              | ({
+                  id: string;
+                  owner_id: string;
+                  context: string;
+                  participant_ids: string[];
+                  created_at: string;
+                  action: components["schemas"]["AdminBotStoredProposal"];
+                  receipt: {
+                    [key: string]: string;
+                  };
+                } & {
+                  [key: string]: unknown;
+                })
+              | ({
+                  id: string;
+                  owner_id: string;
+                  context: string;
+                  participant_ids: string[];
+                  created_at: string;
+                  action?: unknown;
+                  receipt?: unknown;
+                } & {
+                  [key: string]: unknown;
+                })
+            )[];
+            members: ({
+              id: string;
+              name: string;
+            } & {
+              [key: string]: unknown;
+            })[];
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "post-collaborator-chats": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          context?: string;
+          participant_ids?: string[];
+        } & {
+          [key: string]: unknown;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            request: components["schemas"]["CollaboratorChatRequest"];
+            status: string;
+            message: string;
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Server response */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "post-collaborator-chats-by-collaborator-chats-id-prepare": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        collaborator_chats_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            action: components["schemas"]["AdminBotStoredProposal"];
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Server response */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Server response */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
+            readiness:
+              | ({
+                  /** @constant */
+                  ready: false;
+                  reason: string;
+                  waiting_member_ids?: unknown;
+                  slack_user_ids?: unknown;
+                } & {
+                  [key: string]: unknown;
+                })
+              | ({
+                  /** @constant */
+                  ready: false;
+                  reason: string;
+                  waiting_member_ids: string[];
+                  slack_user_ids?: unknown;
+                } & {
+                  [key: string]: unknown;
+                });
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Server response */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
   "put-conferences-by-conferences-id-trip": {
     parameters: {
       query?: never;
@@ -16192,6 +16515,246 @@ export interface operations {
       };
     };
   };
+  "post-lab-members-by-members-id-onboarding-welcome-preview": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        members_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          subject?: string;
+          body?: string;
+          resend?: boolean;
+          preview_hash?: unknown;
+        } & {
+          [key: string]: unknown;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            status: string;
+            detail: string;
+            proposal_id: string;
+            template_id: string;
+            email: string;
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Server response */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Server response */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Server response */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Server response */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "post-lab-members-by-members-id-onboarding-welcome-queue": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        members_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          subject?: string;
+          body?: string;
+          resend?: boolean;
+          preview_hash?: unknown;
+        } & {
+          [key: string]: unknown;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            status: string;
+            detail: string;
+            proposal_id: string;
+            template_id: string;
+            email: string;
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Server response */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Server response */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Server response */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Server response */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
   "get-lab-members-by-members-id-recent-edits": {
     parameters: {
       query?: {
@@ -18014,6 +18577,62 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["AdminBotLogisticsRequest"];
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "delete-logistics-requests-by-requests-id": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        requests_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Server response */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Successful service result */
+      "2XX": {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            /** @constant */
+            deleted: true;
+            id: string;
+          } & {
+            [key: string]: unknown;
+          };
         };
       };
       /** @description Authentication, authorization, validation, policy, or connector error */
@@ -21043,6 +21662,9 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          before_email?: {
+            [key: string]: unknown;
+          };
           template_id: string;
           interview?: components["schemas"]["InterviewInvitation"];
           name: string;
@@ -25392,6 +26014,7 @@ export interface operations {
             | "paper_integrity.alert"
             | "paper_integrity.report"
             | "slack.conference_intro"
+            | "slack.collaborator_chat"
             | "paper_integrity.sheet_scores"
             | "slack.invite_to_channel"
             | "slack.remove_from_channel"

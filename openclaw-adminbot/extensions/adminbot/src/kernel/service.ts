@@ -1,3 +1,5 @@
+import { beginCollaboratorChatExecution } from "./service.collaborator-chats.js";
+import type { createCollaboratorChatRequestStore } from "../persistence/collaborator-chat-requests.js";
 import { createHash, randomUUID } from "node:crypto";
 import type {
   CalendarMembershipReader,
@@ -5,7 +7,6 @@ import type {
 } from "../connectors/calendar-membership.js";
 import type { ReverseGeocoder } from "../connectors/reverse-geocode.js";
 import type { AdminBotExternalCollaboratorSubgroup } from "../contracts/actions.js";
-import type { AdminBotApiToken, AdminBotApiTokenUsage } from "../contracts/api-tokens.js";
 import {
   adminBotActionTypes,
   ADMINBOT_ONBOARDING_CATCH_UP_ROUND,
@@ -116,6 +117,7 @@ import {
   type AdminBotUpdateSource,
   type AdminBotUpdateSubject,
 } from "../contracts/activity-log.js";
+import type { AdminBotApiToken, AdminBotApiTokenUsage } from "../contracts/api-tokens.js";
 import {
   ADMINBOT_BADGE_CATEGORY_MAX,
   ADMINBOT_BADGE_DESCRIPTION_MAX,
@@ -622,6 +624,7 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
     query: LabSharingDiscoveryQuery,
     after?: DiscoveryPosition,
   ): DiscoveredHelpRequest[];
+  collaboratorChatRequestStore?(): ReturnType<typeof createCollaboratorChatRequestStore>;
   saveProposal(proposal: AdminBotStoredProposal): void;
   getProposal(actionId: string): AdminBotStoredProposal | undefined;
   updateProposal(proposal: AdminBotStoredProposal): void;
@@ -1363,6 +1366,7 @@ const DEFAULT_ACTION_POLICIES = {
   "calendar.reschedule": approvalPolicy("T3", ["admin"]),
   "calendar.cancel": approvalPolicy("T3", ["admin"]),
   "email.draft": approvalPolicy("T1", ["admin"]),
+  "slack.collaborator_chat": approvalPolicy("T3", ["admin"]),
   "email.send": approvalPolicy("T3", ["admin"]),
   // T3 with the other outward mail, and deliberately not auto even though the recipient and the
   // copy are both computed rather than caller-supplied. Approving it is the moment somebody looks
@@ -1904,17 +1908,15 @@ export class AdminBotService {
     proposal: AdminBotActionProposal,
   ): AdminBotStoredProposal | undefined {
     const hash = payloadHash(proposal.proposed_payload);
-    return this.store
-      .listProposalsByType(proposal.type)
-      .find(
-        (stored) =>
-          (stored.status === "pending" || stored.status === "approved") &&
-          // Proposals filed before every action carried a payload (Aug-Sep 2026) have none to
-          // compare, so none can be "the same". Hashing that absence threw inside this find, and one
-          // such approved invite left every channel sweep that filed a new invite with a 500.
-          stored.proposed_payload !== undefined &&
-          payloadHash(stored.proposed_payload) === hash,
-      );
+    return this.store.listProposalsByType(proposal.type).find(
+      (stored) =>
+        (stored.status === "pending" || stored.status === "approved") &&
+        // Proposals filed before every action carried a payload (Aug-Sep 2026) have none to
+        // compare, so none can be "the same". Hashing that absence threw inside this find, and one
+        // such approved invite left every channel sweep that filed a new invite with a 500.
+        stored.proposed_payload !== undefined &&
+        payloadHash(stored.proposed_payload) === hash,
+    );
   }
 
   /**
@@ -3033,6 +3035,14 @@ export class AdminBotService {
     if (membershipError) {
       return this.executionFailure(proposal, membershipError.status, membershipError.message);
     }
+    const chatClaim = proposal.type === "slack.collaborator_chat"
+      ? beginCollaboratorChatExecution(this.store, proposal, Boolean(this.options.executor))
+      : undefined;
+    if (chatClaim && !chatClaim.ok) {
+      return serviceError(chatClaim.status, chatClaim.message);
+    }
+    const collaboratorEffects = chatClaim?.ok ? chatClaim.effects : undefined;
+    const collaboratorReceiptKey = chatClaim?.ok ? chatClaim.key : "";
     let handled: boolean;
     let delivered = true;
     let notDeliveredReason = "";
@@ -3171,6 +3181,11 @@ export class AdminBotService {
         delivered = outcome.delivered !== false;
         notDeliveredReason = outcome.reason ?? "";
         artifacts = outcome.artifacts ?? {};
+        if (collaboratorEffects) {
+          collaboratorEffects.finishEffect(collaboratorReceiptKey,
+            artifacts.outcome ? { ...artifacts, action_id: actionId }
+              : { outcome: "unknown", action_id: actionId });
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : "connector execution failed";
         return this.executionFailure(proposal, 502, message);
@@ -3188,6 +3203,9 @@ export class AdminBotService {
     // nothing may be stored as executed. The proposal stays approved and no execution result is
     // saved, so flipping the switch and executing again really delivers rather than replaying a
     // cached answer.
+    if (!delivered && collaboratorEffects) {
+      return this.executionFailure(proposal, 409, "Slack outcome is uncertain; inspect the retained conversation receipt before any further action.");
+    }
     if (!delivered) {
       const result: AdminBotExecutionResult = { ...baseResult, status: "simulated" };
       this.recordAudit({
@@ -11611,6 +11629,36 @@ export class AdminBotService {
   }
 
   /**
+   * The lab removing a request outright.
+   *
+   * Admin-only, and for what withdrawal cannot reach: an old request the requester will never come
+   * back to close, or one filed under a program the lab no longer handles. Withdrawal stays the
+   * requester's, and "declined" would put an answer on the record that nobody gave, so this is the
+   * one way an admin clears a row. The audit line keeps who removed what, since the row itself is
+   * gone.
+   */
+  deleteLogisticsRequest(
+    requestId: string,
+    actor: string,
+  ): AdminBotServiceResponse<{ deleted: true; id: string }> {
+    const existing = this.store.getLogisticsRequest(requestId);
+    if (!existing || !this.store.deleteLogisticsRequest(requestId)) {
+      return serviceError(404, `unknown logistics request ${requestId}`);
+    }
+    this.recordAudit({
+      type: "logistics_request.deleted",
+      actor,
+      details: {
+        request_id: requestId,
+        kind: existing.kind,
+        member_id: existing.member_id,
+        status: existing.status,
+      },
+    });
+    return { ok: true, status: 200, payload: { deleted: true, id: requestId } };
+  }
+
+  /**
    * The member correcting what they already sent.
    *
    * A resubmit rather than a patch: the form posts the whole request back, so the record is rebuilt
@@ -14533,6 +14581,10 @@ export class AdminBotService {
   queueOnboardingGuideForMember(params: {
     memberId: string;
     actor: string;
+    subjectOverride?: string;
+    bodyOverride?: string;
+    /** A minimal contact email while the role-specific guide still needs setup or review. */
+    basicWelcome?: boolean;
     slackChannels?: readonly string[];
     /** The Onboarding tab's per-row address override; the record's email otherwise. */
     email?: string;
@@ -14548,18 +14600,46 @@ export class AdminBotService {
     if (!member) {
       return serviceError(404, `no member ${params.memberId}`);
     }
-    const email = params.email?.trim() || member.email?.trim() || "";
+    const email =
+      params.email?.trim() ||
+      (params.basicWelcome ? adminBotOutreachEmail(member) : member.email?.trim()) ||
+      "";
     if (!email) {
       return serviceError(
         422,
         `${member.name || member.id} has no email address, so there is nowhere to send an onboarding guide`,
       );
     }
-    const template = templateForMemberType(member.member_type);
+    const template = params.basicWelcome
+      ? { ok: true as const, templateId: "welcome" }
+      : templateForMemberType(member.member_type);
     if (!template.ok) {
       return serviceError(422, template.reason);
     }
     const recipient = email.toLowerCase();
+    if (params.basicWelcome && !params.resend && !params.subjectOverride && !params.bodyOverride) {
+      // Only reuse the unedited standard welcome for this exact person. Enrollment approval
+      // must not approve a manually rewritten email or somebody else's pending proposal.
+      const matching = this.store.listProposalsByType("onboarding.send_guide").filter((stored) => {
+        const payload = (stored.proposed_payload ?? {}) as Record<string, unknown>;
+        return (
+          ["pending", "approved", "executed"].includes(stored.status) &&
+          Object.keys(payload).length === 4 &&
+          payload.template_id === "welcome" &&
+          payload.member_id === member.id &&
+          payload.name === member.name &&
+          payload.email === email
+        );
+      });
+      const existing = matching.find((stored) => stored.status === "executed") ?? matching[0];
+      if (existing) {
+        return {
+          ok: true,
+          status: 200,
+          payload: { proposal_id: existing.id, template_id: "welcome", email },
+        };
+      }
+    }
     // The same two ledgers `sweepOnboardingMail` keys on -- a guide already sent, and one already
     // waiting for an approver. Pressing Add member twice on one id, or adding somebody the weekly
     // sweep has already picked up, must not put a second copy of the same mail in front of them.
@@ -14617,6 +14697,8 @@ export class AdminBotService {
         name: member.name,
         email,
         member_id: member.id,
+        ...(params.subjectOverride ? { subject_override: params.subjectOverride } : {}),
+        ...(params.bodyOverride ? { body_override: params.bodyOverride } : {}),
         // The first send already filed this person's DCS roster row; a second row would ask DCS
         // for a second account under a second password.
         ...(resend ? { resend: true, add_dcs_roster_row: false } : {}),

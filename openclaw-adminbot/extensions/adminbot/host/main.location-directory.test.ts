@@ -14,8 +14,10 @@ vi.mock("node:child_process", async () => {
 import {
   createIpLocationResolver,
   createSlackDirectoryEmailResolver,
+  createSlackLocationReader,
   createSlackTimezoneReader,
   isNonRoutableIp,
+  mapWithConcurrency,
 } from "./main.js";
 
 function mockExecFileSuccess(stdout: string) {
@@ -208,5 +210,79 @@ describe("createSlackDirectoryEmailResolver", () => {
     await expect(createSlackDirectoryEmailResolver("/repo")(["a@cs.toronto.edu"])).rejects.toThrow(
       "Slack directory lookup failed",
     );
+  });
+});
+
+describe("mapWithConcurrency", () => {
+  it("returns results in input order", async () => {
+    const out = await mapWithConcurrency([1, 2, 3, 4, 5], 2, async (n) => n * 10);
+    expect(out).toEqual([10, 20, 30, 40, 50]);
+  });
+
+  it("never runs more than `limit` workers at once", async () => {
+    let active = 0;
+    let peak = 0;
+    const out = await mapWithConcurrency(
+      Array.from({ length: 12 }, (_unused, index) => index),
+      4,
+      async (index) => {
+        active += 1;
+        peak = Math.max(peak, active);
+        await new Promise((resolve) => {
+          setTimeout(resolve, 5);
+        });
+        active -= 1;
+        return index;
+      },
+    );
+    expect(out).toEqual(Array.from({ length: 12 }, (_unused, index) => index));
+    // 12 items through a pool of 4 keeps it full, and nothing ever exceeds it.
+    expect(peak).toBe(4);
+  });
+
+  it("handles an empty list and a limit above the length", async () => {
+    expect(await mapWithConcurrency([], 4, async () => 1)).toEqual([]);
+    expect(await mapWithConcurrency([1, 2], 9, async (n) => n)).toEqual([1, 2]);
+  });
+});
+
+describe("createSlackLocationReader", () => {
+  const userInfoMock = (byUser: Record<string, unknown>) =>
+    execFileMock.mockImplementation(
+      (
+        _cmd: string,
+        args: string[],
+        _opts: unknown,
+        callback: (error: unknown, result?: { stdout: string; stderr: string }) => void,
+      ) => {
+        const userId = args[args.indexOf("--user-id") + 1] ?? "";
+        if (!(userId in byUser)) {
+          callback(new Error(`no such user ${userId}`));
+          return;
+        }
+        callback(null, { stdout: JSON.stringify({ user: byUser[userId] }), stderr: "" });
+      },
+    );
+
+  afterEach(() => execFileMock.mockReset());
+
+  it("prefers a profile location field, falls back to tz, and omits members Slack has nothing for", async () => {
+    userInfoMock({
+      U1: { profile: { fields: { Xf0: { value: "Berlin" } } }, tz: "Europe/Berlin" },
+      U2: { tz: "America/Toronto" },
+      U3: { profile: { fields: {} } },
+    });
+    const located = await createSlackLocationReader("/repo")(["U1", "U2", "U3"]);
+    expect(located.get("U1")).toBe("Berlin");
+    expect(located.get("U2")).toBe("America/Toronto");
+    expect(located.has("U3")).toBe(false);
+    expect(located.size).toBe(2);
+  });
+
+  it("skips a member whose lookup fails without dropping the rest", async () => {
+    userInfoMock({ UOK: { tz: "UTC" } });
+    const located = await createSlackLocationReader("/repo")(["UOK", "UBAD"]);
+    expect(located.get("UOK")).toBe("UTC");
+    expect(located.has("UBAD")).toBe(false);
   });
 });

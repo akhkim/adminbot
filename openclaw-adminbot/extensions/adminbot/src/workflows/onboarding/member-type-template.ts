@@ -7,10 +7,8 @@
  * is the one whose onboarding covers the others. Someone who is `full, coauthor-major` needs the
  * full-member setup, which already includes everything the coauthor mail would have said.
  *
- * These roles send no mail at all. Their onboarding is the access-level algorithm granting the
- * subgroup's access items in the backend (collaborator-subgroups.ts), which is why `acquaintance`
- * and `external_prof` no longer have templates and `coauthor_discussant_designer` never did. A row
- * carrying only those is refused here rather than silently mailed something close enough.
+ * Every collaboration role gets at least a basic welcome. More involved roles keep their
+ * specific guides; the basic welcome grants no additional access and needs no provisioning.
  */
 import type { AdminBotMemberType } from "../../contracts/actions.js";
 
@@ -32,8 +30,8 @@ const TEMPLATE_BY_TYPE: readonly (readonly [token: AdminBotMemberType, templateI
   ["interviewee", "interviewee"],
 ];
 
-/** Roles whose whole onboarding happens in the backend, with no mail. */
-export const NO_MAIL_MEMBER_TYPES: readonly AdminBotMemberType[] = [
+/** Roles that get the common welcome, with their access provisioned separately. */
+export const BASIC_WELCOME_MEMBER_TYPES: readonly AdminBotMemberType[] = [
   "acquaintance",
   "coauthor-discussant-or-designer",
   "external-prof",
@@ -64,16 +62,17 @@ export function templateForMemberType(memberType: string | undefined): MemberTyp
   }
   // Widened for the lookup: `tokens` is whatever the sheet cell held, which is exactly the case
   // this is checking for, so it must not be narrowed to the known vocabulary first.
-  const noMail = tokens.filter((token) =>
-    (NO_MAIL_MEMBER_TYPES as readonly string[]).includes(token),
+  const basic = tokens.find((token) =>
+    (BASIC_WELCOME_MEMBER_TYPES as readonly string[]).includes(token),
   );
-  if (noMail.length > 0) {
-    return {
-      ok: false,
-      reason:
-        `${noMail.join(", ")} sends no onboarding mail; the access-level algorithm grants the ` +
-        "subgroup's access items in the backend and that is the whole onboarding",
-    };
+  if (basic) {
+    return { ok: true, templateId: "welcome", token: basic };
   }
   return { ok: false, reason: `no onboarding template for member type "${tokens.join(", ")}"` };
+}
+
+/** The basic welcome must not suppress the separate Slack invitation. */
+export function memberGuideProvidesSlackConnect(memberType: string | undefined): boolean {
+  const template = templateForMemberType(memberType);
+  return template.ok && template.templateId !== "welcome";
 }

@@ -12,9 +12,11 @@ import {
   createGogDriveProbe,
   appendGogSheetRows,
   buildIntegrityScoreArgs,
+  isTransientGogRateLimit,
   readGogSheetRows,
   readGogSheetTabs,
   readDriveFileBase64,
+  withGogRateLimitRetry,
 } from "./gog.js";
 
 function proposal(
@@ -1017,19 +1019,69 @@ describe("readDriveFileBase64", () => {
   });
 });
 
-describe("gog rate-limit retry", () => {
-  it("retries Google's quota refusals and nothing else", async () => {
-    const { isGogRateLimit } = await import("./gog.js");
-    expect(
-      isGogRateLimit(
-        "gog command failed (exit 7): Google API error (403 rateLimitExceeded): Rate Limit Exceeded",
+describe("gog rate-limit handling", () => {
+  const rateLimited = () =>
+    Object.assign(new Error("gog command failed"), {
+      stderr: "Google API error (403 rateLimitExceeded): Rate Limit Exceeded",
+    });
+
+  it("treats the per-user burst limit as transient but not the daily quota", () => {
+    expect(isTransientGogRateLimit(rateLimited())).toBe(true);
+    expect(isTransientGogRateLimit({ message: "userRateLimitExceeded" })).toBe(true);
+    expect(isTransientGogRateLimit({ stderr: "HTTP 429 Too Many Requests" })).toBe(true);
+    // The daily cap is not transient: retrying it only spends the rest of the day's quota faster.
+    expect(isTransientGogRateLimit({ stderr: "Google API error (403 quotaExceeded)" })).toBe(false);
+    expect(isTransientGogRateLimit(new Error("event not found"))).toBe(false);
+  });
+
+  it("retries a transient rate limit and then succeeds, backing off between tries", async () => {
+    let calls = 0;
+    const slept: number[] = [];
+    const result = await withGogRateLimitRetry(
+      async () => {
+        calls += 1;
+        if (calls < 3) {
+          throw rateLimited();
+        }
+        return "ok";
+      },
+      {
+        sleep: async (ms) => {
+          slept.push(ms);
+        },
+        backoffMs: (attempt) => attempt + 1,
+      },
+    );
+    expect(result).toBe("ok");
+    expect(calls).toBe(3);
+    expect(slept).toEqual([1, 2]);
+  });
+
+  it("does not retry a non-transient error", async () => {
+    let calls = 0;
+    await expect(
+      withGogRateLimitRetry(
+        async () => {
+          calls += 1;
+          throw new Error("event not found");
+        },
+        { sleep: async () => {} },
       ),
-    ).toBe(true);
-    expect(isGogRateLimit("Google API error (403 userRateLimitExceeded)")).toBe(true);
-    expect(isGogRateLimit("Google API error (429 Too Many Requests)")).toBe(true);
-    expect(
-      isGogRateLimit("Google API error (403 forbidden): The caller does not have permission"),
-    ).toBe(false);
-    expect(isGogRateLimit("Google API error (404 notFound)")).toBe(false);
+    ).rejects.toThrow("event not found");
+    expect(calls).toBe(1);
+  });
+
+  it("gives up after the retry budget and rethrows the original rate-limit error", async () => {
+    let calls = 0;
+    await expect(
+      withGogRateLimitRetry(
+        async () => {
+          calls += 1;
+          throw rateLimited();
+        },
+        { retries: 2, sleep: async () => {}, backoffMs: () => 0 },
+      ),
+    ).rejects.toMatchObject({ stderr: expect.stringContaining("rateLimitExceeded") });
+    expect(calls).toBe(3);
   });
 });

@@ -81,6 +81,7 @@ describe("what the row says", () => {
       dcsRosterEntryValues(
         member({
           member_type: "coauthor-major",
+          role: "PhD Student",
           at_uoft: true,
           dcs_username: " ALovelace ",
           compute_access: ["UofT-AI-Slurm", "UofT-slack-only"],
@@ -92,9 +93,9 @@ describe("what the row says", () => {
       adminbot_internal_id: "ada-lovelace",
       dcs_username: "alovelace",
       non_dcs_email: "ada@example.test",
-      career_stage: "coauthor-major",
+      career_stage: "grad student (at uoft)",
       at_uoft_or_not: "yes",
-      permission: "UofT-slack-only, UofT-AI-Slurm",
+      permission: "UofT-CSlab-noDiskusage-justSlack, UofT-AI-Slurm",
       date_of_this_row_change: "2026-10-20",
     });
   });
@@ -103,7 +104,8 @@ describe("what the row says", () => {
   it("writes an unknown as a blank and defaults to the newcomer-safe permission", () => {
     const values = dcsRosterEntryValues(member(), now);
     expect(values.at_uoft_or_not).toBe("");
-    expect(values.permission).toBe("UofT-slack-only");
+    expect(values.permission).toBe("UofT-CSlab-noDiskusage-justSlack");
+    expect(values.career_stage).toBe("");
     expect(dcsRosterEntryValues(member({ at_uoft: false }), now).at_uoft_or_not).toBe("no");
   });
 
@@ -115,7 +117,7 @@ describe("what the row says", () => {
     ).toBe("UofT-H100");
     expect(
       dcsRosterEntryValues(member({ compute_access: ["vector-basic-A100"] }), now).permission,
-    ).toBe("UofT-slack-only");
+    ).toBe("UofT-CSlab-noDiskusage-justSlack");
   });
 
   it("never puts the DCS account's own address in the non-DCS column", () => {
@@ -147,9 +149,9 @@ describe("laying the row out under the live header", () => {
       "ada-lovelace",
       "ada",
       "ada@example.test",
-      "full",
       "",
-      "UofT-slack-only",
+      "",
+      "UofT-CSlab-noDiskusage-justSlack",
       "",
       "2026-10-20",
     ]);
@@ -160,7 +162,7 @@ describe("laying the row out under the live header", () => {
     const reordered = ["adminbot_internal_id", "permission", "full_name", "notes"];
     expect(dcsRosterRowForHeader([reordered], values)).toEqual([
       "ada-lovelace",
-      "UofT-slack-only",
+      "UofT-CSlab-noDiskusage-justSlack",
       "Ada Lovelace",
     ]);
   });

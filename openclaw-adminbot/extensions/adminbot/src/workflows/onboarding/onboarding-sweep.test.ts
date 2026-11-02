@@ -110,12 +110,10 @@ describe("who the weekly onboarding sweep mails", () => {
     expect(out.mail).toEqual([]);
   });
 
-  // A promotion to a tier whose onboarding is access grants rather than mail sends nothing, and
-  // says so rather than going quiet.
-  it("sends nothing for a type whose onboarding is backend-only", () => {
+  it("plans the basic welcome for a lightweight collaboration role", () => {
     const out = sweep({ appliedChanges: [{ member_id: "ada", to: "external-prof" }] });
-    expect(out.mail).toEqual([]);
-    expect(out.skipped[0]?.reason).toContain("sends no onboarding mail");
+    expect(out.mail).toMatchObject([{ member_id: "ada", template_id: "welcome" }]);
+    expect(out.skipped).toEqual([]);
   });
 
   it("refuses to create a row whose id already belongs to somebody else", () => {

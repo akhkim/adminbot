@@ -43,7 +43,6 @@ import { icons } from "../../icons.ts";
 import type { PaperflowStageRow, PaperSlotRow } from "../api/papers.ts";
 import type { MemberOption } from "./member-select.ts";
 import { renderPaperCoauthors, type PaperAuthorLink } from "./paper-coauthors.ts";
-import "./paper-slot-deck.ts";
 import { renderPaperFeedback } from "./paper-feedback.ts";
 import { renderPaperImpact } from "./paper-impact.ts";
 
@@ -1068,8 +1067,9 @@ export function renderPaperSlots(props: PaperSlotsProps) {
         if (props.branch && branch !== props.branch) {
           return nothing;
         }
-        // Every field stays in the deck once shown -- settled ones keep rendering with their
-        // done pill rather than vanishing, so flipping through reviews history too.
+        // Every field is listed at once, settled ones included with their done pill rather than
+        // vanishing, so the section reads as the branch's whole checklist. It used to be a
+        // one-card-at-a-time deck, which hid five of six fields behind arrow clicks.
         // The feedback requests and the impact statement have their own forms above.
         const slots = topLevelSlots(branch).filter(
           (slot) => !slot.startsWith("feedback_") && !isPaperImpactSlot(slot),
@@ -1081,10 +1081,14 @@ export function renderPaperSlots(props: PaperSlotsProps) {
         if (slots.length === 0 && !(branch === "venue" && (props.stages?.length ?? 0) > 0)) {
           return nothing;
         }
+        // Opened when a lane tab picked this branch: the tab is the choice of what to look at, so
+        // landing on a collapsed strip made every tab change cost a second click. A fresh element
+        // is drawn per tab, so a section somebody folds stays folded until they switch tabs.
         return html`
           <details
             class=${`paper-slots__group ${branchNumber === null ? "paper-slots__group--trunk" : "paper-slots__group--branch"}`}
             data-testid=${`paper-slots-branch-${props.paperId}-${branch}`}
+            ?open=${Boolean(props.branch)}
           >
             <summary class="paper-slots__group-head">
               <h4 class="paper-slots__group-title">
@@ -1101,10 +1105,7 @@ export function renderPaperSlots(props: PaperSlotsProps) {
               >
             </summary>
             <p class="paper-slots__group-blurb">${BRANCH_BLURBS[branch]}</p>
-            <adminbot-paper-slot-deck
-              class="paper-slots__deck"
-              .items=${renderGroupedSlots(props, slots)}
-            ></adminbot-paper-slot-deck>
+            <div class="paper-slots__list">${renderGroupedSlots(props, slots)}</div>
             ${branch === "venue" ? renderStages(props) : nothing}
           </details>
         `;

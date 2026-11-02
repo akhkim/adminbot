@@ -29,7 +29,15 @@ const DCS_HEADER = [
   "date_of_this_row_change",
 ];
 // Somebody already holding `minnie`, so the filing has to take the next candidate.
-const HOLDS_MINNIE = ["Mina Other", "mina-other", "minnie", "", "full", "", "UofT-slack-only"];
+const HOLDS_MINNIE = [
+  "Mina Other",
+  "mina-other",
+  "minnie",
+  "",
+  "",
+  "",
+  "UofT-CSlab-noDiskusage-justSlack",
+];
 
 const running: Array<ReturnType<typeof createAdminBotMockService>> = [];
 
@@ -264,9 +272,10 @@ describe("a Lab Members tab save that makes somebody a major coauthor or a full 
       // `minnie` is taken on the sheet, so the next candidate.
       "minor",
       "minnie@lab.test",
-      "coauthor-major",
+      // career_stage: no role or UofT affiliation on the record, so none of the four values fits.
       "",
-      "UofT-slack-only",
+      "",
+      "UofT-CSlab-noDiskusage-justSlack",
       // UTORid: nothing on the record says it, so it is left for the sysadmin.
       "",
     ]);
@@ -293,7 +302,8 @@ describe("a Lab Members tab save that makes somebody a major coauthor or a full 
     const steps = await save(baseUrl, token, "cora", { member_type: "full" });
 
     expect(dcsStep(steps)?.status).toBe("done");
-    expect(appended.map((row) => [row[1], row[4]])).toEqual([["cora", "full"]]);
+    // career_stage no longer carries the Member Type; Cora's record has no role or affiliation.
+    expect(appended.map((row) => [row[1], row[4]])).toEqual([["cora", ""]]);
   });
 
   it("files a row for a new full member added on the Members tab", async () => {
@@ -304,11 +314,13 @@ describe("a Lab Members tab save that makes somebody a major coauthor or a full 
       name: "Nova Newcomer",
       email: "nova@lab.test",
       member_type: "full",
+      role: "PhD Student",
+      at_uoft: true,
     });
 
     expect(dcsStep(steps)?.status).toBe("done");
-    expect(appended.map((row) => row.slice(0, 5))).toEqual([
-      ["Nova Newcomer", "nova-newcomer", "nova", "nova@lab.test", "full"],
+    expect(appended.map((row) => row.slice(0, 6))).toEqual([
+      ["Nova Newcomer", "nova-newcomer", "nova", "nova@lab.test", "grad student (at uoft)", "yes"],
     ]);
   });
 });
@@ -397,7 +409,7 @@ describe("the weekly sweep's joiners", () => {
     expect((await approveAndRun(baseUrl, token, enroll!)).status).toBe(200);
 
     expect(appended.map((row) => row.slice(0, 5))).toEqual([
-      ["Ada Lovelace", "ada-lovelace", "ada", "ada@example.test", "full"],
+      ["Ada Lovelace", "ada-lovelace", "ada", "ada@example.test", ""],
     ]);
     // The enrollment was the admin's decision; the row it owes follows without a second card.
     expectWrittenDirectly(mock, dcsProposals(mock)[0]);
@@ -417,9 +429,7 @@ describe("a type changed in the spreadsheet", () => {
     expect(synced.dcs_roster).toEqual([
       expect.objectContaining({ step: "dcs_roster", status: "done", target: "Minnie Minor" }),
     ]);
-    expect(appended.map((row) => [row[1], row[2], row[4]])).toEqual([
-      ["minnie", "minnie", "coauthor-major"],
-    ]);
+    expect(appended.map((row) => [row[1], row[2], row[4]])).toEqual([["minnie", "minnie", ""]]);
     expectWrittenDirectly(mock, dcsProposals(mock)[0]);
     const pending = mock.service.listPending();
     expect(

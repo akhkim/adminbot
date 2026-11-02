@@ -19,7 +19,7 @@
  * on, so a reader scanning a column sees the escalation rather than an alphabet.
  */
 export const adminBotComputeAccessValues = [
-  "UofT-slack-only",
+  "UofT-CSlab-noDiskusage-justSlack",
   "UofT-cslab",
   "UofT-AI-Slurm",
   "UofT-RTX6000-maple-etc",
@@ -91,12 +91,12 @@ export const adminBotComputeAccessRegistry: Record<
   AdminBotComputeAccess,
   AdminBotComputeAccessDefinition
 > = {
-  "UofT-slack-only": {
+  "UofT-CSlab-noDiskusage-justSlack": {
     provider: "dcs",
-    label: "Slack-only account",
+    label: "CSLab account, no disk quota (Slack only)",
     provisioned: true,
     newcomerSafe: true,
-    note: "Can send email; no AI Slurm cluster and none of the private servers.",
+    note: "Can send email; no disk quota, no AI Slurm cluster and none of the private servers.",
   },
   "UofT-cslab": {
     provider: "dcs",
@@ -196,6 +196,26 @@ export const adminBotComputeAccessRegistry: Record<
   },
 };
 
+/**
+ * Earlier spellings of a value, mapped to the one the DCS sheet uses now.
+ *
+ * The sheet renamed `UofT-slack-only` to `UofT-CSlab-noDiskusage-justSlack` on 2026-11-01, but
+ * member records saved before then still carry the old string. Without this map
+ * `normalizeComputeAccess` would drop it as unrecognised, and a stored grant would disappear from
+ * the `permission` cell.
+ */
+const adminBotLegacyComputeAccessAliases: Readonly<Record<string, AdminBotComputeAccess>> = {
+  "UofT-slack-only": "UofT-CSlab-noDiskusage-justSlack",
+};
+
+/** A value as the vocabulary spells it today: trimmed, with a retired spelling replaced. */
+export function canonicalComputeAccess(value: string): string {
+  const trimmed = value.trim();
+  return Object.hasOwn(adminBotLegacyComputeAccessAliases, trimmed)
+    ? adminBotLegacyComputeAccessAliases[trimmed]
+    : trimmed;
+}
+
 /** Whether a string is access this deployment recognises at all, live or reserved. */
 export function isAdminBotComputeAccess(value: string): value is AdminBotComputeAccess {
   return Object.hasOwn(adminBotComputeAccessRegistry, value);
@@ -225,7 +245,7 @@ export function newcomerSafeComputeAccess(): AdminBotComputeAccess[] {
  * with the same access produce the same string and a diff against the sheet is not noise.
  */
 export function normalizeComputeAccess(values: readonly string[]): AdminBotComputeAccess[] {
-  const held = new Set(values.map((value) => value.trim()).filter(isAdminBotComputeAccess));
+  const held = new Set(values.map(canonicalComputeAccess).filter(isAdminBotComputeAccess));
   return adminBotAllComputeAccessValues.filter((value) => held.has(value));
 }
 
