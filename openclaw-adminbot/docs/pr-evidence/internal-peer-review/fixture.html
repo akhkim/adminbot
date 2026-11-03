@@ -1,0 +1,9 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Internal peer review — synthetic fixture</title><body><main style="max-width:860px;margin:24px auto;padding:16px"><p>Synthetic actual component — no network providers, invitation or document access</p><adminbot-internal-peer-review></adminbot-internal-peer-review></main><script type="module">
+import '/src/styles.css';import '/src/ui/adminbot/views/internal-peer-review.ts';import {saveStoredMemberSession} from '/src/ui/adminbot/auth/session.ts';
+document.documentElement.dataset.theme=new URL(location).searchParams.get('theme')==='light'?'light':'dark';
+saveStoredMemberSession({sessionToken:'synthetic-fixture-session',expiresAt:'2099-01-01T00:00:00Z'});
+const fixtureKey="adminbot-synthetic-peer-review-fixture";
+let draft=JSON.parse(sessionStorage.getItem(fixtureKey)||"null");
+window.fetch=async(url,init={})=>({ok:true,json:async()=>{if(init.method==='PUT'){const data=JSON.parse(init.body);draft={revision:(draft?.revision??0)+1,data:data.data};sessionStorage.setItem(fixtureKey,JSON.stringify(draft));return {draft,detail:'Private draft saved. No invitation sent, assignment accepted or document access granted.'};}return {draft,suggestions:[{member_id:'reader-example',name:'Reader Example',matched_topics:['causal inference']}]};}});
+const element=document.querySelector('adminbot-internal-peer-review');element.paperId='synthetic-paper';element.sessionToken='synthetic-fixture-session';
+</script></body></html>

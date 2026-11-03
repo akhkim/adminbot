@@ -1,0 +1,18 @@
+.internal-peer-review label {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0;
+}
+.internal-peer-review input,
+.internal-peer-review textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+}
+.internal-peer-review textarea {
+  min-height: 90px;
+}
+.internal-peer-review li {
+  overflow-wrap: anywhere;
+  margin: 8px 0;
+}

@@ -356,6 +356,7 @@ Website: `/papers, /announcements, /grant-report, /professor, /arr-eligible-revi
 | `get-openreview-load-forms`                                               | GET `/openreview/load-forms`                                              |
 | `get-openreview-status`                                                   | GET `/openreview/status`                                                  |
 | `get-openreview-suggest-reviewers`                                        | GET `/openreview/suggest-reviewers`                                       |
+| `get-papers-by-papers-id-internal-peer-review`                            | GET `/papers/{papers_id}/internal-peer-review`                            |
 | `get-papers-by-papers-id-recent-edits`                                    | GET `/papers/{papers_id}/recent-edits`                                    |
 | `get-papers-by-papers-id`                                                 | GET `/papers/{papers_id}`                                                 |
 | `get-papers-conference-rosters`                                           | GET `/papers/conference-rosters`                                          |
@@ -398,6 +399,7 @@ Website: `/papers, /announcements, /grant-report, /professor, /arr-eligible-revi
 | `post-papers-weekly-updates-run`                                          | POST `/papers/weekly-updates/run`                                         |
 | `post-papers-x-draft`                                                     | POST `/papers/x-draft`                                                    |
 | `put-papers-by-papers-id-attendees`                                       | PUT `/papers/{papers_id}/attendees`                                       |
+| `put-papers-by-papers-id-internal-peer-review`                            | PUT `/papers/{papers_id}/internal-peer-review`                            |
 | `put-papers-by-papers-id-reimbursements-by-reimbursements-id`             | PUT `/papers/{papers_id}/reimbursements/{reimbursements_id}`              |
 | `put-papers-by-papers-id`                                                 | PUT `/papers/{papers_id}`                                                 |
 

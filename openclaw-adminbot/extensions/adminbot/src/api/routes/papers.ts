@@ -1,7 +1,3 @@
-// Paper records, their evidence slots, and the per-paper cycle.
-//
-// Cut from server.ts's handleAuthenticatedRoute. Each route states its audience with a guard
-// decorator from guards.ts; the order below is the order the old if-chain tried them in.
 import type { AdminBotPaperRecordInput } from "../../contracts/actions.js";
 import { paperInvolvesMember } from "../../contracts/paper-involvement.js";
 import type { AdminBotPaperSlotInput } from "../../contracts/paper-slots.js";
@@ -17,6 +13,11 @@ import {
   principalActor,
   privilegedOnly,
 } from "./guards.js";
+// Paper records, their evidence slots, and the per-paper cycle.
+//
+// Cut from server.ts's handleAuthenticatedRoute. Each route states its audience with a guard
+// decorator from guards.ts; the order below is the order the old if-chain tried them in.
+import { internalPeerReviewRoutes } from "./internal-peer-review.js";
 import { readListPage, limitParam } from "./query-params.js";
 import { del, get, patch, post, put, type Route, type RouteHandler } from "./router.js";
 import { principalRole, sendNotModified, versionEtag } from "./version-etag.js";
@@ -25,6 +26,7 @@ import { principalRole, sendNotModified, versionEtag } from "./version-etag.js";
 export const LINKEDIN_DRAFT_BODY_LIMIT_BYTES = Math.ceil(20 * 1024 * 1024 * 1.4);
 
 export const papersRoutes: readonly Route[] = [
+  ...internalPeerReviewRoutes,
   get(/^\/papers\/([^/]+)\/recent-edits$/u, ({ res, url, principal, ctx, params }) => {
     const { service } = ctx;
     // The viewer goes to the service, which owns the ownership rule -- the same shape
