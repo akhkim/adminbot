@@ -69,6 +69,23 @@ def slot_label(slot):
     return SLOT_LABELS.get(slot, slot.replace('_', ' ').capitalize())
 
 
+def open_blockers(artifacts):
+    """Still-open blockers, newest first, read as the website reads them.
+
+    The website keeps every blocker in `blocker_log` and marks fixed ones with `resolved_at`. The
+    single `blocker_*` keys are what the feature wrote before the log existed; they are only a
+    fallback, because they keep the first blocker ever filed even after it is resolved.
+    """
+    try:
+        log = json.loads(artifacts.get('blocker_log') or '[]')
+    except (TypeError, ValueError):
+        log = []  # A corrupt log is treated as no history, as the website does.
+    log = [e for e in log if isinstance(e, dict) and isinstance(e.get('title'), str)] if isinstance(log, list) else []
+    if not log and str(artifacts.get('blocker_title') or '').strip():
+        log = [{'title': artifacts['blocker_title'].strip(), 'note': artifacts.get('blocker_note') or ''}]
+    return [e for e in log if not e.get('resolved_at')]
+
+
 def review_type(slot):
     """feedback_arr -> 'ARR feedback'; the PI sees what the review is for, never a conference."""
     kind = slot.removeprefix('feedback_')
@@ -1244,7 +1261,8 @@ def paper_row(record, members, slots, deadlines, now, access=None, openreview=()
         'Stage': STAGES.get(stage, stage or ''),
         'Lead': record.get('lead_owner') or name(owner_id),
         'Incomplete': '\n'.join(incomplete),
-        'Blocker / next step': '\n'.join(str(x) for x in [artifacts.get('blocker_title'), artifacts.get('blocker_note'),
+        'Blocker / next step': '\n'.join(str(x) for x in [*(part for entry in open_blockers(artifacts)
+                                                           for part in (entry.get('title'), entry.get('note'))),
                                                          record.get('next_action')] if x),
         'Link problems': '\n'.join(link_problems),
         'Still missing': ', '.join(sorted(slot_label(r['slot']) for r in slots if r['status'] == 'missing')),

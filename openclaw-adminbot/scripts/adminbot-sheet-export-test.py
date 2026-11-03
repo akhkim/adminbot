@@ -38,6 +38,16 @@ row = exporter.paper_row({'id': 'p', 'title': 'T', 'lead_owner_member_id': 'pers
     {'person': {'name': 'Ada'}}, [], [], NOW)
 assert row['Lead'] == 'Ada' and row['Last updated'] == '2026-09-30 (Wed)'  # 8 PM Toronto the previous day
 assert row['Blocker / next step'] == 'Awaiting data\nNeed updated dataset\nReview draft'
+# The log wins over the old single keys, and resolved entries stay out of the sheet.
+logged = exporter.paper_row({'id': 'q', 'title': 'Q', 'artifacts': {
+        'blocker_title': '[Test 1] - Bloker', 'blocker_note': 'blocker reporting test', 'blocker_log': json.dumps([
+            {'title': 'Approval for arXiv preprint', 'note': 'Waiting for PI approval', 'at': '2026-10-01T05:06:33Z'},
+            {'title': '[Test 1] - Bloker', 'note': 'blocker reporting test', 'resolved_at': '2026-08-18T01:29:06Z'}])}},
+    {}, [], [], NOW)
+assert logged['Blocker / next step'] == 'Approval for arXiv preprint\nWaiting for PI approval'
+assert exporter.paper_row({'id': 'r', 'title': 'R', 'artifacts': {'blocker_title': 'Old', 'blocker_log': json.dumps(
+    [{'title': 'Old', 'resolved_at': '2026-08-18T00:00:00Z'}])}}, {}, [], [], NOW)['Blocker / next step'] == ''
+assert exporter.open_blockers({'blocker_log': 'not json', 'blocker_title': 'Legacy'}) == [{'title': 'Legacy', 'note': ''}]
 assert row['Review link'] == [('Overleaf edit 🔒', 'https://www.overleaf.com/project/123'),
     ('arXiv', 'https://arxiv.org/abs/1234.5678'), ('Submission', 'https://example.test/paper?id=12')]
 assert row['Link problems'] == 'Overleaf edit: project link opens only for people invited to the project'
