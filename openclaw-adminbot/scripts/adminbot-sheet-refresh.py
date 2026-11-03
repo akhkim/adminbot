@@ -26,10 +26,9 @@ PAPER_WIDTHS = {'Paper': 260, 'Urgency': 190, 'PI review': 150, 'Review for': 17
                 'Venue deadline (Toronto)': 260, 'OpenReview': 300, 'Stage': 170, 'Lead': 150,
                 'Incomplete': 260, 'Blocker / next step': 280, 'Link problems': 240, 'Still missing': 260, 'Authors': 360,
                 'All artifact statuses': 300, 'Venue (as entered)': 220, 'Venue': 230, 'Conference': 150, 'Checks': 240, exporter.PAPER_ID: 160,
-                'Paper state': 190, 'Year': 70, 'Track': 100, 'Presentation': 110, 'Submission history': 280, 'Source': 200,
                 'tweet tags to copy': 420}
 # Columns with a closed set of values get a dropdown of the values in use, so each filters by picking one.
-PAPER_DROPDOWNS = ('Stage', 'Paper state', 'Conference', 'Year', 'Track', 'Presentation', 'Source')
+PAPER_DROPDOWNS = ('Stage', 'Conference')
 
 
 # PI review values drawn in bold red: the PI acts, or somebody must fix the link or the category.
@@ -341,15 +340,14 @@ def refresh_requests(batch, properties):
             requests.append({'addTable': {'table': table}})
         views = [(title + ' sort and filter', None, None)]
         if title == 'PaperList':
-            for obsolete in ('Awaiting PI approval', 'By PI approval', 'By review category'):
+            for obsolete in ('Awaiting PI approval', 'By PI approval', 'By review category', 'By paper state', 'By year', 'By track'):
                 requests.extend({'deleteFilterView': {'filterId': v['filterViewId']}}
                                 for v in p.get('filterViews', []) if v['title'] == obsolete)
             # The export is already ordered by urgency, so the queue view only filters.
             views += [('PI review queue', None, ('PI review', 'Needs PI review')), ('Incomplete', None, ('Incomplete', None)),
                       ('By PI review status', 'PI review', None), ('By review type', 'Review for', None),
                       ('By conference', 'Conference', None), ('By venue', 'Venue', None), ('By stage', 'Stage', None),
-                      ('Blocked', None, ('PI review', 'Blocked: link access')), ('By paper state', 'Paper state', None),
-                      ('By year', 'Year', None), ('By track', 'Track', None)]
+                      ('Blocked', None, ('PI review', 'Blocked: link access'))]
         else:
             views += [('Full members', None, ('member_type', 'full', 'TEXT_CONTAINS')),
                       ('By joined date', 'join_date', None),
