@@ -743,6 +743,11 @@ function submitSettingsForm(event: Event, props: AdminBotProps): void {
       ? { meeting_minimum_minutes: meetingFloor }
       : {}),
     head_professor_member_id: getFormValue(data, "headProfessorMemberId"),
+    // Sent on every save; the server lets an admin re-send the list unchanged but only the head
+    // professor change it, the same rule as the head professor field above.
+    pi_approver_member_ids: getFormValue(data, "piApproverMemberIds")
+      .split(/[\s,]+/u)
+      .filter(Boolean),
     lab_manager_member_id: getFormValue(data, "labManagerMemberId"),
     head_professor_whatsapp: getFormValue(data, "headProfessorWhatsapp"),
     applicant_sheet_id: getFormValue(data, "applicantSheetId"),
@@ -804,6 +809,14 @@ function renderSettings(
               <input
                 name="headProfessorMemberId"
                 .value=${settings.head_professor_member_id ?? ""}
+              />
+            </label>
+            <label class="adminbot-form__field">
+              <span>PI approvers (member ids, comma-separated)</span>
+              <input
+                name="piApproverMemberIds"
+                placeholder="andrew-kim"
+                .value=${(settings.pi_approver_member_ids ?? []).join(", ")}
               />
             </label>
             <label class="adminbot-form__field">

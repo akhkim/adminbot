@@ -28840,6 +28840,12 @@
                   "head_professor_member_id": {
                     "type": "string"
                   },
+                  "pi_approver_member_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
                   "head_professor_whatsapp": {
                     "type": "string"
                   },
@@ -43798,6 +43804,12 @@
           "head_professor_member_id": {
             "type": "string"
           },
+          "pi_approver_member_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "head_professor_whatsapp": {
             "type": "string"
           },
@@ -43905,6 +43917,12 @@
           },
           "head_professor_member_id": {
             "type": "string"
+          },
+          "pi_approver_member_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "head_professor_whatsapp": {
             "type": "string"
