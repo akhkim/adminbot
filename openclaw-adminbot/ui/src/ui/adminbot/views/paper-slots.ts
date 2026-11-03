@@ -40,7 +40,9 @@ import {
   type AdminBotPaperSlotDefinition,
 } from "../../../../../extensions/adminbot/src/contracts/paper-slots.js";
 import { icons } from "../../icons.ts";
+import "./internal-peer-review.ts";
 import type { PaperflowStageRow, PaperSlotRow } from "../api/papers.ts";
+import { loadStoredMemberSession } from "../auth/session.ts";
 import type { MemberOption } from "./member-select.ts";
 import { renderPaperCoauthors, type PaperAuthorLink } from "./paper-coauthors.ts";
 import { renderPaperFeedback } from "./paper-feedback.ts";
@@ -693,6 +695,12 @@ export function renderPaperDetails(props: Pick<PaperSlotsProps, "paperId" | "det
         <span class="paper-slots__group-chevron" aria-hidden="true">${icons.chevronDown}</span>
       </summary>
       <div class="paper-slots__details-body">
+        ${save
+          ? html`<adminbot-internal-peer-review
+              .paperId=${props.paperId}
+              .sessionToken=${loadStoredMemberSession()?.sessionToken ?? ""}
+            ></adminbot-internal-peer-review>`
+          : nothing}
         <!-- The picker when the caller can supply the roster, the old text box otherwise (the admin
              grid and any surface that has not been given a member list yet). Both write the same
              record; only the picker records *who* each name is. -->

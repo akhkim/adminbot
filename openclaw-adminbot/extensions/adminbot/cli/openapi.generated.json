@@ -22368,6 +22368,367 @@
         }
       }
     },
+    "/papers/{papers_id}/internal-peer-review": {
+      "get": {
+        "operationId": "get-papers-by-papers-id-internal-peer-review",
+        "summary": "GET /papers/{papers_id}/internal-peer-review",
+        "tags": [
+          "papers"
+        ],
+        "x-source": "src/api/routes/internal-peer-review.ts",
+        "parameters": [
+          {
+            "name": "papers_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "draft": {
+                      "$ref": "#/components/schemas/MemberDraft"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "draft",
+                    "detail"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "put-papers-by-papers-id-internal-peer-review",
+        "summary": "PUT /papers/{papers_id}/internal-peer-review",
+        "tags": [
+          "papers"
+        ],
+        "x-source": "src/api/routes/internal-peer-review.ts",
+        "parameters": [
+          {
+            "name": "papers_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "data": {},
+                  "revision": {
+                    "type": "number"
+                  },
+                  "mutation_id": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true,
+                "x-schema-coverage": "inferred from property access or downstream casts; semantic validation remains server-side"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "draft": {
+                      "$ref": "#/components/schemas/MemberDraft"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "draft",
+                    "detail"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/papers/{papers_id}/progress": {
       "patch": {
         "operationId": "patch-papers-by-papers-id-progress",
