@@ -157,7 +157,8 @@ export function auditFunding(raw: unknown, now = Date.now()): FundingAudit {
   }
   function evaluate(p: Predicate): Evaluation {
     if (
-      (p.kind === "affiliation" && (!p.author || !input.paper.authors.includes(p.author))) ||
+      (p.kind === "affiliation" &&
+        (!p.author || input.paper.authors.filter((author) => author === p.author).length !== 1)) ||
       (p.kind !== "affiliation" && p.author !== undefined)
     ) {
       return {

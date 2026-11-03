@@ -16,7 +16,7 @@ No new controller, model calls, grant defaults or external effects at creation.
 
 ## Verification
 
-- 47 focused tests in six files pass: declarative OR/AND, explicit true/false vs
+- 56 focused tests in seven files (including API/CLI route contracts) pass: declarative OR/AND, explicit true/false vs
   missing facts, independent affiliation scope, multi-turn versus multi-agent,
   changed/missing/expired sources, contradictory facts, actual usage requirements,
   outside coauthor support, paper/order binding and forged findings/erased credits.
@@ -27,11 +27,14 @@ No new controller, model calls, grant defaults or external effects at creation.
   remain blocked after approval. No real bridge/model/private provider contacted.
 - Extension typecheck passes. New workflow/service/HTTP tests and plugin entry
   lint clean; touched adapter retains exactly its baseline 10 lint findings and
-  its test retains one baseline optional-chaining finding (compared to base
-  3f5971d9 source). No baseline cleanup is included.
+  its test retains one baseline optional-chaining finding. Touched service and
+  paper-admin route lint findings also match original base3f5971d9 source
+  (route retains two redundant-spread findings). No baseline cleanup is included.
 - Directory-size and whitespace checks pass.
-- Full application build and exact-head CI: pending at initial preparation;
-  current PR/owner receipt records final results.
+- Local full application build PASS (263.1 seconds, including UI build). Preview
+  routing and final guards changed during/after that run, so final-source build
+  proof requires exact-head CI rather than the earlier local bundle. Current
+  PR/owner receipt records the final CI result.
 
 No UI changes: interaction/screenshot evidence passes are not applicable to this
 backend audit. Rendered PR verification is separate from actual live app proof.

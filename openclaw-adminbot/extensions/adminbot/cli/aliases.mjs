@@ -1,6 +1,7 @@
 // Human conveniences only. These point at generated operation IDs, contain no
 // URLs or schemas, and never implement server business rules.
 export const aliases = {
+  "papers funding-audit": { operation: "post-papers-funding-audit" },
   "auth login": { operation: "post-auth-login" },
   "auth whoami": { operation: "get-auth-session" },
   "auth status": { operation: "get-auth-session" },

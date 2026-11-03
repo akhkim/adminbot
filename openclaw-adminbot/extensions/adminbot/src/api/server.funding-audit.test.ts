@@ -6,7 +6,10 @@ import { createAdminBotMockService } from "./server.js";
 
 describe("funding audit CLI to real proposal route", () => {
   it("returns server-computed per-funder findings without executing external effects", async () => {
-    const mock = createAdminBotMockService({ serviceToken: "synthetic-cli" });
+    const mock = createAdminBotMockService({
+      serviceToken: "synthetic-cli",
+      calendarInviteRunner: async () => {},
+    });
     await new Promise<void>((resolve) => {
       mock.server.listen(0, "127.0.0.1", resolve);
     });

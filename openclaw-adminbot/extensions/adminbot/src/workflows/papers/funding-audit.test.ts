@@ -182,6 +182,24 @@ describe("source-backed funding audit", () => {
     ];
     expect(auditFunding(input).findings[0].decision).toBe("unknown");
   });
+  it("leaves identical author entries unresolved rather than attaching affiliation to the wrong person", () => {
+    const input = fundingInput();
+    input.paper.authors = ["Shared Name", "Shared Name"];
+    input.rules[0].anyOf = [
+      { allOf: [{ kind: "affiliation", key: "Institute A", author: "Shared Name" }] },
+    ];
+    input.facts = [
+      {
+        kind: "affiliation",
+        key: "Institute A",
+        author: "Shared Name",
+        value: true,
+        sourceId: "paper",
+        evidence: "Only one of these authors is affiliated.",
+      },
+    ];
+    expect(auditFunding(input).findings[0].decision).toBe("unknown");
+  });
   it("refuses forged findings, erased credits and missing funding input before execution", () => {
     const input = fundingInput();
     const payload = buildOverleafEditPayload({
