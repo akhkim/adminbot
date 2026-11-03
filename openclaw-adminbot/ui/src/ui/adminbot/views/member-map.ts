@@ -460,10 +460,62 @@ function renderAvatars(place: MemberMapPlace) {
   `;
 }
 
+/**
+ * "56 members across 23 cities · 12 alumni · 14 others". Only members are counted as members;
+ * alumni and everyone else on the map are counted apart, the others' roles in the hover title. An
+ * older service sends no roles, so it keeps the old everyone-is-a-member line.
+ */
+function renderHeadlineCounts(map: MemberMap) {
+  const { members, memberPlaces, byRole } = map.counts;
+  if (members === undefined || memberPlaces === undefined || !byRole) {
+    return t("dashboard.memberMap.headline", {
+      count: String(map.counts.placed),
+      cities: String(map.places.length),
+    });
+  }
+  const alumni = byRole.alumni ?? 0;
+  const others = Object.entries(byRole)
+    .filter(([role]) => role !== "alumni")
+    .toSorted(
+      ([leftRole, left], [rightRole, right]) => right - left || leftRole.localeCompare(rightRole),
+    );
+  const otherCount = others.reduce((sum, [, count]) => sum + count, 0);
+  return html`${t("dashboard.memberMap.headline", {
+    count: String(members),
+    cities: String(memberPlaces),
+  })}${alumni > 0
+    ? html` ·
+        <span data-testid="member-map-alumni"
+          >${t("dashboard.memberMap.headlineAlumni", { count: String(alumni) })}</span
+        >`
+    : nothing}${otherCount > 0
+    ? html` ·
+        <span
+          data-testid="member-map-others"
+          title=${others.map(([role, count]) => `${count} ${roleLabel(role)}`).join(", ")}
+          >${t("dashboard.memberMap.headlineOthers", { count: String(otherCount) })}</span
+        >`
+    : nothing}`;
+}
+
+/** The role word shown beside a non-member's name: "alumni", "acquaintance", "coauthor minor". */
+function roleLabel(role: string): string {
+  return role === "untyped" ? t("dashboard.memberMap.roleUntyped") : role.replaceAll("-", " ");
+}
+
+function renderRole(member: MemberMapMember) {
+  return member.role && member.role !== "member"
+    ? html`<span class="member-map__role" data-testid="member-map-role"
+        >${roleLabel(member.role)}</span
+      >`
+    : nothing;
+}
+
 function renderPersonLine(member: MemberMapMember, sources: boolean, now: number) {
   const source = sources ? memberSource(member, now) : undefined;
   return html`<li>
     <span class="member-map__name">${member.name}</span>
+    ${renderRole(member)}
     ${source
       ? html`<span class="member-map__source" data-testid="member-map-source">${source}</span>`
       : nothing}
@@ -580,6 +632,7 @@ function renderTooltip(
                     ${renderAvatar(member)}
                     <span class="member-map__person-text">
                       <span class="member-map__name">${member.name}</span>
+                      ${renderRole(member)}
                       ${focus.sources && memberSource(member, focus.now)
                         ? html`<span class="member-map__source" data-testid="member-map-source"
                             >${memberSource(member, focus.now)}</span
@@ -723,10 +776,7 @@ function renderFoot(map: MemberMap, sources: boolean, onToggleSources: () => voi
             </li>`
           : nothing}
         ${map.places.some((place) => place.guessed)
-          ? html`<li
-              data-testid="member-map-guessed"
-              title=${t("dashboard.memberMap.guessedNote")}
-            >
+          ? html`<li data-testid="member-map-guessed" title=${t("dashboard.memberMap.guessedNote")}>
               <span class="member-map__key member-map__key--guessed"></span>${t(
                 "dashboard.memberMap.legendGuessed",
               )}
@@ -1203,9 +1253,7 @@ class AdminbotMemberMap extends LitElement {
                 >
                   ${person
                     ? renderAvatar(result.member)
-                    : html`<span
-                        class=${swatchClass(result.place)}
-                      ></span>`}
+                    : html`<span class=${swatchClass(result.place)}></span>`}
                   <span class="member-map__search-text">
                     <span class="member-map__search-name">${name}</span>
                     <span class="member-map__search-where">${where}</span>
@@ -1955,10 +2003,7 @@ class AdminbotMemberMap extends LitElement {
       now,
     };
     const updated = map.loadedAt === undefined ? undefined : updatedAgo(map.loadedAt, now);
-    const headline = html`${t("dashboard.memberMap.headline", {
-      count: String(map.counts.placed),
-      cities: String(map.places.length),
-    })}${updated
+    const headline = html`${renderHeadlineCounts(map)}${updated
       ? html`<span class="member-map__updated" data-testid="member-map-updated">
           · ${updated}</span
         >`

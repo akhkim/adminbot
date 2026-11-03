@@ -51,7 +51,11 @@
 // provider ("London", "Ontario", "CA"). Anything none of the sources can place is reported under
 // `unplaced` with what was written, rather than guessed at or dropped.
 
-import type { AdminBotLabMember } from "../../contracts/actions.js";
+import {
+  adminBotIsAlumniMember,
+  adminBotMemberTypeTokens,
+  type AdminBotLabMember,
+} from "../../contracts/actions.js";
 import { isDoNotContact } from "./do-not-contact.js";
 import {
   ADMINBOT_TZ_MISMATCH_HOURS,
@@ -839,7 +843,41 @@ export type AdminBotMapMember = {
   located_at?: string;
   /** Set when the member's fresh Slack zone keeps a clock over two hours from where they are placed. */
   tz_mismatch?: AdminBotTimezoneMismatch;
+  /** Who they are to the lab, for the headline and the list (see memberMapRole). */
+  role: AdminBotMapRole;
 };
+
+/**
+ * Who a person on the map is to the lab: `member` (a full member or a coauthor carrying work with
+ * the lab), `alumni`, or for everyone else the first word of their Member Type ("acquaintance",
+ * "interviewee"), `untyped` when the column is blank. The headline counts only `member`; the rest
+ * are on the map and listed under their own word, not passed off as members.
+ */
+export type AdminBotMapRole = string;
+
+// Member Type words that make someone count as a member on the map: full members and the coauthors
+// doing the work with them. Not `disappearing-coauthor`, which is the same word for much less.
+const MAP_MEMBER_TYPES = new Set([
+  "full",
+  "coauthor-major",
+  "coauthor-minor",
+  "coauthor-discussant-or-designer",
+  "own-pace-advisee",
+]);
+
+export function memberMapRole(
+  member: Pick<AdminBotLabMember, "status" | "member_type">,
+): AdminBotMapRole {
+  // Alumni first: "alumni, coauthor-major" has left, whatever else the row says.
+  if (adminBotIsAlumniMember(member)) {
+    return "alumni";
+  }
+  const tokens = adminBotMemberTypeTokens(member.member_type).filter(Boolean);
+  if (tokens.some((token) => MAP_MEMBER_TYPES.has(token))) {
+    return "member";
+  }
+  return tokens[0] ?? "untyped";
+}
 
 export type AdminBotMapPlaceGroup = AdminBotMapPlace & {
   members: AdminBotMapMember[];
@@ -885,11 +923,23 @@ export type AdminBotMemberMap = {
    * and those who hid themselves. Admin payload only, as `not_on_map`; never in the summary.
    */
   absent: AdminBotMapAbsentMember[];
-  counts: { placed: number; unplaced: number; unknown: number };
+  counts: AdminBotMapCounts;
 };
 
-// Statuses whose members have left; keeping them would show the lab as bigger and more
-// spread out than it is.
+export type AdminBotMapCounts = {
+  placed: number;
+  unplaced: number;
+  unknown: number;
+  /** Placed people whose role is `member`, and how many places they are in. */
+  members: number;
+  member_places: number;
+  /** Placed people who are not members, by role ("alumni", "acquaintance", ...). */
+  by_role: Record<string, number>;
+};
+
+// Statuses whose members have left. Other features read this map (local lunches, meetups), so
+// they stay off it. Alumni recorded only in Member Type stay on, labelled `alumni` (memberMapRole)
+// and kept out of the members headline.
 const DEPARTED_STATUSES = new Set(["alumni"]);
 
 // Names a roster row gets when the name cell holds no name at all: a blank exported as "null", a
@@ -1689,6 +1739,7 @@ export function buildMemberMap(
       ...(resolution.source === "login" ? { approximate: true as const } : {}),
       source_label: sourceLabel(resolution, ipIgnored, resolveOptions.now),
       ...mismatchFor(member, resolution, resolveOptions.now),
+      role: memberMapRole(member),
     });
     groups.set(resolution.place.key, group);
   }
@@ -1709,6 +1760,7 @@ export function buildMemberMap(
       placed: places.reduce((sum, place) => sum + place.members.length, 0),
       unplaced: unplaced.length - unknown,
       unknown,
+      ...roleCounts(places),
     },
   };
 }
@@ -1876,6 +1928,27 @@ export function memberMapMemo(): (
 
 /** One entry of `not_on_map`: a name and why, and nothing else -- no id, text, city or time. */
 export type AdminBotNotOnMapEntry = { name: string; reason: AdminBotMapAbsenceReason };
+
+function roleCounts(
+  places: readonly AdminBotMapPlaceGroup[],
+): Pick<AdminBotMapCounts, "members" | "member_places" | "by_role"> {
+  let members = 0;
+  let memberPlaces = 0;
+  const byRole: Record<string, number> = {};
+  for (const place of places) {
+    let here = 0;
+    for (const member of place.members) {
+      if (member.role === "member") {
+        here += 1;
+      } else {
+        byRole[member.role] = (byRole[member.role] ?? 0) + 1;
+      }
+    }
+    members += here;
+    memberPlaces += here > 0 ? 1 : 0;
+  }
+  return { members, member_places: memberPlaces, by_role: byRole };
+}
 
 /**
  * The privileged map as sent: who is where, and how many are unplaced. The unplaced entries with

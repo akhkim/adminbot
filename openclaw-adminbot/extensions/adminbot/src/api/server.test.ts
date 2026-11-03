@@ -1230,7 +1230,7 @@ describe("AdminBot mock service", () => {
     const anonymousText = await anonymous.text();
     expect(anonymousText).not.toContain("Ada");
     expect(anonymousText).not.toContain("Zedunia");
-    expect(anonymousText).not.toContain("members");
+    expect(anonymousText).not.toMatch(/"members"\s*:\s*\[/u);
     expect(anonymousText).not.toContain("Halvard");
     expect(anonymousText).not.toContain("not_on_map");
     const anonymousBody = JSON.parse(anonymousText) as {
@@ -1253,7 +1253,7 @@ describe("AdminBot mock service", () => {
     const asMemberText = await asMember.text();
     expect(asMemberText).not.toContain("Ada");
     expect(asMemberText).not.toContain("Zedunia");
-    expect(asMemberText).not.toContain("members");
+    expect(asMemberText).not.toMatch(/"members"\s*:\s*\[/u);
     expect(asMemberText).not.toContain("Halvard");
     expect(asMemberText).not.toContain("not_on_map");
     const asMemberBody = JSON.parse(asMemberText) as {

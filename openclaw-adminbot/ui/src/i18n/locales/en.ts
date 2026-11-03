@@ -1381,6 +1381,9 @@ export const en: TranslationMap = {
     memberMap: {
       title: "Where the lab is",
       headline: "{count} members across {cities} cities",
+      headlineAlumni: "{count} alumni",
+      headlineOthers: "{count} others",
+      roleUntyped: "no role set",
       placeCount: "{place} — {count} members",
       plotAria: "Map of {count} lab members across {cities} cities",
       unplaced: "{count} members whose location could not be placed on the map.",
