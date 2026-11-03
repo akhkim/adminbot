@@ -197,6 +197,7 @@ it("requires explicit paper-specific evidence even when a legacy issue says ok",
   payload.affiliationPolicy!.issues = [
     {
       author: "Unknown",
+      authorReference: { index: 0, value: "Unknown" },
       status: "ok",
       message: "Reviewed wording",
       expectedAffiliation: "Example University",
@@ -207,5 +208,35 @@ it("requires explicit paper-specific evidence even when a legacy issue says ok",
     source: "Author's paper-specific written confirmation",
     workPeriod: "Synthetic project work during 2025",
   };
+  expect(() => assertOverleafPayloadReady(payload)).not.toThrow();
+});
+
+it("treats repeated spaces and tabs as equivalent affiliation wording", () => {
+  const payload = buildOverleafEditPayload({
+    title: "Synthetic",
+    authors: ["author"],
+    overleafEditUrl: "https://www.overleaf.com/project/abc",
+    requestedEdits: "Check",
+    mode: "affiliation_check",
+    members: [
+      {
+        id: "author",
+        name: "Display Name",
+        privilege_level: "member",
+        access: [],
+        affiliation: "Example   University",
+        notes: "Affiliation: Example\tUniversity",
+        created_at: "2026-01-01",
+        updated_at: "2026-01-01",
+      },
+    ],
+  });
+  const issue = payload.affiliationPolicy!.issues[0];
+  expect(issue.message).not.toContain("Conflicting");
+  expect(issue.status).toBe("confirm");
+  expect(issue.author).toBe("Display Name");
+  expect(issue.authorReference).toEqual({ index: 0, value: "author" });
+  issue.status = "ok";
+  issue.confirmation = { source: "Synthetic author confirmation", workPeriod: "2025" };
   expect(() => assertOverleafPayloadReady(payload)).not.toThrow();
 });

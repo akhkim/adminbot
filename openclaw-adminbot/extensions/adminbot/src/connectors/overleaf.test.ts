@@ -137,6 +137,7 @@ it.each([false, true])(
           issues: [
             {
               author: "Example Author",
+              authorReference: { index: 0, value: "Example Author" },
               status: "ok",
               message: "Explicitly reviewed",
               expectedAffiliation: "Example University",
@@ -158,6 +159,68 @@ it.each([false, true])(
       expect(fetchImpl).toHaveBeenCalledOnce();
     } else {
       await expect(attempt).rejects.toThrow(/confirmation evidence/);
+      expect(fetchImpl).not.toHaveBeenCalled();
+    }
+  },
+);
+
+it.each(["duplicate", "unrelated", "missing", "reordered-authors", "missing-reference", "valid"])(
+  "requires one-to-one immutable author references before a bridge call: %s",
+  async (scenario) => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      text: async () => "accepted",
+    })) as OverleafFetch;
+    const executor = createAdminBotOverleafExecutor({
+      fetchImpl,
+      env: {
+        OVERLEAF_API_BASE_URL: "https://bridge.example.test",
+        OVERLEAF_ACCESS_TOKEN: "synthetic-token",
+      },
+    });
+    const issue = (index: number, value: string) => ({
+      author: value,
+      status: "ok",
+      authorReference: { index, value },
+      expectedAffiliation: "Example University",
+      message: "Confirmed",
+      confirmation: { source: "Paper-specific author confirmation", workPeriod: "Synthetic2025" },
+    });
+    const issues: Array<Record<string, unknown>> = [issue(0, "Alice"), issue(1, "Bob")];
+    if (scenario === "duplicate") {
+      issues[1] = issue(0, "Alice");
+    }
+    if (scenario === "unrelated") {
+      issues[0] = issue(0, "Carol");
+      issues[1] = issue(1, "Dan");
+    }
+    if (scenario === "missing") {
+      issues.pop();
+    }
+    if (scenario === "missing-reference") {
+      delete issues[1].authorReference;
+    }
+    const attempt = executor.execute(
+      proposal({
+        action: "apply_overleaf_project_edits",
+        mode: "affiliation_check",
+        paper: {
+          title: "Synthetic",
+          authors: scenario === "reordered-authors" ? ["Bob", "Alice"] : ["Alice", "Bob"],
+          overleafEditUrl: "https://www.overleaf.com/project/abc",
+        },
+        requestedEdits: "Apply confirmed wording",
+        targetFiles: ["main.tex"],
+        affiliationPolicy: { source: "synthetic-policy", rules: [], issues },
+      }),
+    );
+    if (scenario === "valid") {
+      await expect(attempt).resolves.toEqual({ handled: true });
+      expect(fetchImpl).toHaveBeenCalledOnce();
+    } else {
+      await expect(attempt).rejects.toThrow(/requires confirmation/);
       expect(fetchImpl).not.toHaveBeenCalled();
     }
   },

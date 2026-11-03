@@ -5,6 +5,8 @@ export type AdminBotOverleafEditMode = "manual" | "affiliation_check";
 
 export type AdminBotOverleafAffiliationIssue = {
   author: string;
+  /** Original immutable author entry; display names may differ from input member IDs. */
+  authorReference?: { index: number; value: string };
   status: "ok" | "confirm" | "missing";
   message: string;
   expectedAffiliation?: string;
@@ -115,7 +117,22 @@ export function assertOverleafPayloadReady(payload: AdminBotOverleafEditPayload)
     if (!issues?.length || issues.length !== payload.paper.authors.length) {
       throw new Error("Overleaf affiliation check requires confirmation for every author.");
     }
+    const seen = new Set<number>();
     for (const issue of issues) {
+      const reference = issue.authorReference;
+      if (
+        !reference ||
+        !Number.isInteger(reference.index) ||
+        reference.index < 0 ||
+        reference.index >= payload.paper.authors.length ||
+        seen.has(reference.index) ||
+        reference.value !== payload.paper.authors[reference.index]
+      ) {
+        throw new Error(
+          "Overleaf affiliation check requires confirmation with one-to-one original author references; refresh legacy approvals.",
+        );
+      }
+      seen.add(reference.index);
       if (
         issue.status === "ok" &&
         (!issue.expectedAffiliation?.trim() ||
@@ -145,10 +162,12 @@ function auditAffiliations(
   authors: string[],
   members: AdminBotLabMember[],
 ): AdminBotOverleafAffiliationIssue[] {
-  return authors.map((author) => {
+  return authors.map((author, index) => {
+    const authorReference = { index, value: author };
     const member = findMember(author, members);
     if (!member) {
       return {
+        authorReference,
         author,
         status: "missing",
         message:
@@ -164,6 +183,7 @@ function auditAffiliations(
     );
     if (structured && conflictingNote) {
       return {
+        authorReference,
         author: member.name,
         status: "confirm",
         message: `Conflicting records: structured affiliation is "${structured}"; legacy affiliation note is "${conflictingNote}". Confirm exact institutions for this paper and work period; do not merge or choose silently.`,
@@ -175,6 +195,7 @@ function auditAffiliations(
     const recorded = structured || legacy || mainAffiliation;
     if (recorded) {
       return {
+        authorReference,
         author: member.name,
         status: "confirm",
         message: `${structured ? "Structured affiliation" : "Unverified legacy affiliation note"}: ${recorded}. Confirm that these exact independent institutions apply to this paper's work period before editing. No additional Jinesis, UofT or Vector association is inferred.`,
@@ -182,6 +203,7 @@ function auditAffiliations(
       };
     }
     return {
+      authorReference,
       author: member.name,
       status: "confirm",
       message:
