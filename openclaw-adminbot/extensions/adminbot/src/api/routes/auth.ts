@@ -20,8 +20,8 @@ import {
   principalActor,
   requireMemberPrivileged,
   approverIdentityFor,
-  isHeadProfessorAtKeyboard,
-  requireHeadProfessor,
+  canDecideNewMembers,
+  requireNewMemberDecider,
 } from "./guards.js";
 import { memberOnboardingDeps } from "./onboarding.js";
 import { deviceClock, remoteIp } from "./origin.js";
@@ -242,7 +242,8 @@ export async function handleAuthRoute(
 }
 
 // Registration review is admin/service-only, so it resolves a principal even though it lives under
-// the otherwise-public /auth/ prefix. Reading the queue is any admin's; deciding it is the PI's.
+// the otherwise-public /auth/ prefix. Reading the queue is any admin's; deciding it is the PI's,
+// or an approver's the host named (see canDecideNewMembers).
 export async function handleRegistrationRoute(
   req: IncomingMessage,
   res: ServerResponse,
@@ -265,8 +266,9 @@ export async function handleRegistrationRoute(
       : "pending";
     sendJson(res, 200, {
       registrations: await ctx.auth.listRegistrations(status),
-      // Whether this viewer may approve or reject: admins read the queue, only the PI decides it.
-      can_decide: isHeadProfessorAtKeyboard(ctx, principal),
+      // Whether this viewer may approve or reject: admins read the queue, the PI (or an approver
+      // the host named) decides it.
+      can_decide: canDecideNewMembers(ctx, principal),
     });
     return;
   }
@@ -275,7 +277,7 @@ export async function handleRegistrationRoute(
     // A sign-up is a new member asking in, so it is the PI's decision exactly as a member request
     // is; admins can still read the queue above. The privilege check stays first so the service
     // principal keeps its own refusal rather than being told it is not the PI.
-    if (!requireMemberPrivileged(res, principal) || !requireHeadProfessor(res, ctx, principal)) {
+    if (!requireMemberPrivileged(res, principal) || !requireNewMemberDecider(res, ctx, principal)) {
       return;
     }
     const approved = await ctx.auth.approveRegistration(decodeURIComponent(approve[1]), decidedBy);
@@ -312,7 +314,7 @@ export async function handleRegistrationRoute(
   }
   const reject = /^\/auth\/registrations\/([^/]+)\/reject$/u.exec(url.pathname);
   if (req.method === "POST" && reject?.[1]) {
-    if (!requireMemberPrivileged(res, principal) || !requireHeadProfessor(res, ctx, principal)) {
+    if (!requireMemberPrivileged(res, principal) || !requireNewMemberDecider(res, ctx, principal)) {
       return;
     }
     sendAuthResult(

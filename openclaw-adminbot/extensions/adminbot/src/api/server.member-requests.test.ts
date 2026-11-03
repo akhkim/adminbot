@@ -4,7 +4,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { AdminBotLabMember, AdminBotLabMemberInput } from "../contracts/actions.js";
 import { withCompleteProfile } from "../contracts/profile-completion.test-helpers.js";
-import { createAdminBotMockService } from "./server.js";
+import { createAdminBotMockService, parseMemberApproverIds } from "./server.js";
 
 const SERVICE_TOKEN = "test-service-token";
 
@@ -23,7 +23,7 @@ afterEach(async () => {
   }
 });
 
-async function startService() {
+async function startService(options: { memberApproverIds?: string[] } = {}) {
   const calendarShares: string[] = [];
   const mock = createAdminBotMockService({
     serviceToken: SERVICE_TOKEN,
@@ -32,6 +32,8 @@ async function startService() {
     },
     accountApprovedEmailRunner: async () => {},
     dcsFormRunner: async () => {},
+    // Pinned to none unless a test names some, so a developer's own environment cannot open the gate.
+    memberApproverIds: options.memberApproverIds ?? [],
   });
   await new Promise<void>((resolve, reject) => {
     mock.server.once("error", reject);
@@ -112,12 +114,18 @@ type RequestView = {
   meetings?: string[];
 };
 
-async function lab() {
-  const { baseUrl, mock, calendarShares } = await startService();
+async function lab(options: { memberApproverIds?: string[] } = {}) {
+  const { baseUrl, mock, calendarShares } = await startService(options);
   seedMember(mock, {
     id: "admin",
     name: "Admin",
     email: "admin@cs.toronto.edu",
+    privilege_level: "admin",
+  });
+  seedMember(mock, {
+    id: "andy",
+    name: "Andy",
+    email: "andy@cs.toronto.edu",
     privilege_level: "admin",
   });
   seedMember(mock, {
@@ -143,6 +151,7 @@ async function lab() {
     throw new Error(settings.error.message);
   }
   const admin = await memberToken(mock, baseUrl, "admin", "admin@cs.toronto.edu");
+  const andy = await memberToken(mock, baseUrl, "andy", "andy@cs.toronto.edu");
   const pi = await memberToken(mock, baseUrl, "zhijing", "zhijing@cs.toronto.edu");
   const pat = await memberToken(mock, baseUrl, "pat", "pat@cs.toronto.edu");
   const sam = await memberToken(mock, baseUrl, "sam", "sam@cs.toronto.edu");
@@ -154,7 +163,38 @@ async function lab() {
     });
   const list = async (token: string, query = "") =>
     ((await (await call(token, query)).json()) as { requests: RequestView[] }).requests;
-  return { baseUrl, mock, admin, pi, pat, sam, call, list, calendarShares };
+  return { baseUrl, mock, admin, andy, pi, pat, sam, call, list, calendarShares };
+}
+
+/** One pending sign-up (a roster row claimed by its owner), and a way to decide it. */
+async function pendingSignUp(baseUrl: string, mock: ReturnType<typeof createAdminBotMockService>) {
+  seedMember(mock, { id: "kim", name: "Kim", email: "kim@cs.toronto.edu" });
+  await fetch(`${baseUrl}/auth/claim`, {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify({
+      member_id: "kim",
+      email: "kim@cs.toronto.edu",
+      password: "correcthorse",
+    }),
+  });
+  const queue = async (token: string) =>
+    (await (
+      await fetch(`${baseUrl}/auth/registrations?status=pending`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+    ).json()) as { registrations: Array<{ id: string; member_id?: string }>; can_decide: boolean };
+  const decide = async (token: string, decision: "approve" | "reject") => {
+    const registration = (await queue(SERVICE_TOKEN)).registrations.find(
+      (entry) => entry.member_id === "kim",
+    );
+    return fetch(`${baseUrl}/auth/registrations/${registration?.id}/${decision}`, {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: `Bearer ${token}` }),
+      body: "{}",
+    });
+  };
+  return { queue, decide };
 }
 
 const ADA = {
@@ -490,5 +530,99 @@ describe("member requests", () => {
     expect((await call(sam, `/${request.id}`, "DELETE")).status).toBe(403);
     expect((await call(pat, `/${request.id}`, "DELETE")).status).toBe(200);
     expect(await list(pat)).toEqual([]);
+  });
+});
+
+// ADMINBOT_MEMBER_APPROVER_IDS: the host names admins who decide new members alongside the PI.
+describe("named member approvers", () => {
+  it("lets a named admin approve and reject member requests, and no other admin", async () => {
+    const { mock, admin, andy, pat, call, list } = await lab({ memberApproverIds: ["andy"] });
+    const first = ((await (await call(pat, "", "POST", ADA)).json()) as { request: RequestView })
+      .request;
+    expect((await list(andy))[0]).toMatchObject({ status: "pending", can_decide: true });
+    expect((await list(admin))[0]).toMatchObject({ status: "pending", can_decide: false });
+    expect((await call(admin, `/${first.id}/approve`, "POST", {})).status).toBe(403);
+    expect((await call(andy, `/${first.id}/approve`, "POST", {})).status).toBe(200);
+    expect(roster(mock).some((member) => member.email === ADA.email)).toBe(true);
+
+    const second = (
+      (await (
+        await call(pat, "", "POST", { ...ADA, name: "Grace Hopper", email: "grace@example.org" })
+      ).json()) as { request: RequestView }
+    ).request;
+    expect((await call(admin, `/${second.id}/reject`, "POST", {})).status).toBe(403);
+    expect((await call(andy, `/${second.id}/reject`, "POST", {})).status).toBe(200);
+    expect(roster(mock).some((member) => member.email === "grace@example.org")).toBe(false);
+  });
+
+  it("lets a named admin approve and reject sign-ups", async () => {
+    const approving = await lab({ memberApproverIds: ["andy"] });
+    const signUp = await pendingSignUp(approving.baseUrl, approving.mock);
+    expect((await signUp.queue(approving.andy)).can_decide).toBe(true);
+    expect((await signUp.queue(approving.admin)).can_decide).toBe(false);
+    expect((await signUp.decide(approving.admin, "approve")).status).toBe(403);
+    expect((await signUp.decide(approving.andy, "approve")).status).toBe(200);
+
+    const rejecting = await lab({ memberApproverIds: ["andy"] });
+    const second = await pendingSignUp(rejecting.baseUrl, rejecting.mock);
+    expect((await second.decide(rejecting.admin, "reject")).status).toBe(403);
+    expect((await second.decide(rejecting.andy, "reject")).status).toBe(200);
+  });
+
+  // The list delegates an admin decision; it does not turn a member or collaborator into an admin.
+  it("ignores a named member or collaborator who is not an admin", async () => {
+    const { pat, sam, call, list } = await lab({ memberApproverIds: ["pat", "sam"] });
+    const { request } = (await (await call(pat, "", "POST", ADA)).json()) as {
+      request: RequestView;
+    };
+    expect((await list(pat))[0]).toMatchObject({ can_decide: false });
+    expect((await call(pat, `/${request.id}/approve`, "POST", {})).status).toBe(403);
+    expect((await call(sam, `/${request.id}/reject`, "POST", {})).status).toBe(403);
+  });
+
+  it("refuses a named approver's view-as session, and the service token", async () => {
+    const { baseUrl, mock, andy, pat, call } = await lab({ memberApproverIds: ["andy", "pat"] });
+    const { request } = (await (await call(pat, "", "POST", ADA)).json()) as {
+      request: RequestView;
+    };
+    const viewing = await fetch(`${baseUrl}/auth/impersonate`, {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: `Bearer ${andy}` }),
+      body: JSON.stringify({ member_id: "admin" }),
+    });
+    const asAdmin = ((await viewing.json()) as { session_token: string }).session_token;
+    expect((await call(asAdmin, `/${request.id}/approve`, "POST", {})).status).toBe(403);
+    const signUp = await pendingSignUp(baseUrl, mock);
+    expect((await signUp.decide(SERVICE_TOKEN, "approve")).status).toBe(403);
+  });
+
+  // Deciding new members is all the list grants: naming the PI stays the PI's alone.
+  it("does not let a named approver change who the PI is", async () => {
+    const { baseUrl, mock, andy } = await lab({ memberApproverIds: ["andy"] });
+    const moved = await fetch(`${baseUrl}/settings`, {
+      method: "PUT",
+      headers: jsonHeaders({ Authorization: `Bearer ${andy}` }),
+      body: JSON.stringify({ head_professor_member_id: "andy" }),
+    });
+    expect(moved.status).toBe(403);
+    expect(mock.service.headProfessorMemberId()).toBe("zhijing");
+  });
+
+  it("decides nothing when no approver is named", async () => {
+    const { andy, pat, call } = await lab();
+    const { request } = (await (await call(pat, "", "POST", ADA)).json()) as {
+      request: RequestView;
+    };
+    expect((await call(andy, `/${request.id}/approve`, "POST", {})).status).toBe(403);
+  });
+
+  it("reads the host list comma- or space-separated, without blanks or repeats", () => {
+    expect(parseMemberApproverIds(" andrew-kim, ada  grace,,andrew-kim ")).toEqual([
+      "andrew-kim",
+      "ada",
+      "grace",
+    ]);
+    expect(parseMemberApproverIds(undefined)).toEqual([]);
+    expect(parseMemberApproverIds("  ")).toEqual([]);
   });
 });

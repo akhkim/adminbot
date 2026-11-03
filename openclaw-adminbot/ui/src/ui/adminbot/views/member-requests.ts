@@ -272,7 +272,7 @@ function renderAdminRequest(request: MemberRequestView, props: MemberRequestsPro
       ? html`<div class="adminbot-form__actions">
           ${renderRequestEditor(request, props)}
           <span class="muted" data-testid="member-request-pi-only"
-            >Only the PI can approve or decline a new member.</span
+            >Only the PI or a named approver can approve or decline a new member.</span
           >
         </div>`
       : renderDecisionControls(request, props, busy)}

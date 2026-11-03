@@ -53,12 +53,12 @@ import type { AdminBotRouteContext } from "./context.js";
 import {
   adminSessionOnly,
   approverIdentityFor,
-  isHeadProfessorAtKeyboard,
+  canDecideNewMembers,
   isPrivileged,
   memberOnly,
   principalActor,
   privilegedOnly,
-  requireHeadProfessor,
+  requireNewMemberDecider,
   requireMemberPrivileged,
   requirePrivileged,
 } from "./guards.js";
@@ -855,7 +855,7 @@ export async function handleMemberRequestRoute(
     }
     // What approving would grant, worked out the same way the save will work it out, so the admin
     // reads "this makes them an admin" on the card rather than finding out afterwards.
-    const canDecide = isHeadProfessorAtKeyboard(ctx, principal);
+    const canDecide = canDecideNewMembers(ctx, principal);
     sendJson(res, 200, {
       requests: result.payload.requests.map((request) => ({
         ...request,
@@ -896,8 +896,9 @@ export async function handleMemberRequestRoute(
   }
   const decision = /^\/lab\/members\/requests\/([^/]+)\/(approve|reject)$/u.exec(url.pathname);
   if (req.method === "POST" && decision?.[1] && decision[2]) {
-    // The PI and nobody else, admins included: who joins the lab is not an admin write.
-    if (!requireHeadProfessor(res, ctx, principal)) {
+    // The PI, or an approver the host named; other admins not: who joins the lab is not an admin
+    // write.
+    if (!requireNewMemberDecider(res, ctx, principal)) {
       return;
     }
     const requestId = decodeURIComponent(decision[1]);

@@ -580,6 +580,8 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     publicDeadlineLimiter: createPublicDeadlineLimiter(),
     trustProxyHeaders:
       options.trustProxyHeaders ?? trimmedEnv(process.env.ADMINBOT_TRUST_PROXY) === "1",
+    memberApproverIds:
+      options.memberApproverIds ?? parseMemberApproverIds(process.env.ADMINBOT_MEMBER_APPROVER_IDS),
     llmRouter,
     failedRequestLedger,
   };
@@ -838,6 +840,18 @@ function envInteger(name: string, fallback: number): number {
 function trimmedEnv(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed || undefined;
+}
+
+/** `ADMINBOT_MEMBER_APPROVER_IDS` as a list: comma- or space-separated, blanks dropped. */
+export function parseMemberApproverIds(value: string | undefined): string[] {
+  return [
+    ...new Set(
+      (value ?? "")
+        .split(/[\s,]+/u)
+        .map((id) => id.trim())
+        .filter(Boolean),
+    ),
+  ];
 }
 
 async function listen(server: Server, port: number, host: string): Promise<void> {
