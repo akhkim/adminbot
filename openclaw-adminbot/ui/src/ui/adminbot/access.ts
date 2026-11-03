@@ -56,8 +56,7 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   adminbotConferencePapers: "anonymous",
   adminbotReferenceChecker: "member",
 
-  // Members. The roster is lab-internal but not a governance surface, and chat is how members talk
-  // to AdminBot at all.
+  // Members. The roster is lab-internal but not a governance surface.
   adminbotMembers: "member",
   adminbotArrReviewers: "member",
   // Names and counts from the lab's own CVs, for the whole lab to read -- it replaces a list kept in
@@ -80,7 +79,10 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   adminbotSignatures: "member",
   adminbotRecLetters: "member",
   adminbotMeetingRequests: "member",
-  chat: "member",
+  // Chat is retired: members use the pages and Slack instead, and it no longer sits in anyone's
+  // sidebar (app-render). It stays admin-level only so the Sessions and Cron views can still open a
+  // run's transcript; a member who follows an old /chat link lands on their dashboard.
+  chat: "admin",
   // Nothing behind it yet; member-level so the placeholder sits with the tools it will join.
   // Home for anyone signed in. Every card on it is gated on the viewer's own role, so the page
   // never needs privilege beyond having an account.

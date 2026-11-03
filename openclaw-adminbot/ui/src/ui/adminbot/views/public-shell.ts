@@ -197,7 +197,7 @@ export function renderPublicShell(state: AppViewState) {
                 event.preventDefault();
                 // The landing page is what `renderApp` shows for a visitor whose tab is not one
                 // of the anonymous-open surfaces, so leave the open surface and land on root.
-                state.tab = "chat";
+                state.tab = "dashboard";
                 window.history.pushState({}, "", normalizeBasePath(state.basePath ?? "") || "/");
               }}
             >
