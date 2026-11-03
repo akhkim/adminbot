@@ -148,8 +148,30 @@ export async function mapImportColumns(
   return mapping && typeof mapping === "object" ? mapping : {};
 }
 
-/** One paper waiting on the head professor's yes to post. */
+/**
+ * The parts of the PI queue, in the order the service ranks them (workflows/papers/paper-queue.ts):
+ * the hard-clock camera-ready first, a rejection's next steps last.
+ */
+export const piReviewCategoryLabels = {
+  camera_ready: "Camera-ready",
+  safety_impact: "Safety impact",
+  arxiv_release: "arXiv release",
+  under_review: "Under review",
+  after_rejection: "After rejection",
+} as const;
+
+export type PiReviewCategory = keyof typeof piReviewCategoryLabels;
+
+/** One paper waiting on the head professor. */
 export type PiReviewRow = {
+  /** Absent only from a service that predates categories. */
+  category?: PiReviewCategory;
+  /** The venue's hard deadline for this row, when one is known. */
+  hardDeadline?: string;
+  /** Whole days left until `hardDeadline` when the service read the queue; negative when past. */
+  daysLeft?: number;
+  /** What OpenReview says about the paper, on rows the OpenReview reading added. */
+  openreview?: { status: string; stage?: string; note: string };
   feedback?: PaperFeedback & { label: string; slot: string };
   /** A safety-related impact statement waiting on the PI's read. */
   impact?: {
@@ -192,6 +214,23 @@ function readImpact(value: unknown): Pick<PiReviewRow, "impact"> {
       reasons: Array.isArray(raw.reasons)
         ? raw.reasons.filter((reason): reason is string => typeof reason === "string")
         : [],
+    },
+  };
+}
+
+function readOpenReview(value: unknown): Pick<PiReviewRow, "openreview"> {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+  const raw = value as Record<string, unknown>;
+  if (typeof raw.status !== "string" || typeof raw.note !== "string") {
+    return {};
+  }
+  return {
+    openreview: {
+      status: raw.status,
+      note: raw.note,
+      ...(typeof raw.stage === "string" ? { stage: raw.stage } : {}),
     },
   };
 }
@@ -253,6 +292,16 @@ export async function fetchPiReviewQueue(
         paperId,
         title,
         authors,
+        ...(typeof row.category === "string" && row.category in piReviewCategoryLabels
+          ? { category: row.category as PiReviewCategory }
+          : {}),
+        ...(typeof row.hard_deadline === "string" && Number.isFinite(Date.parse(row.hard_deadline))
+          ? { hardDeadline: row.hard_deadline }
+          : {}),
+        ...(typeof row.days_left === "number" && Number.isFinite(row.days_left)
+          ? { daysLeft: row.days_left }
+          : {}),
+        ...readOpenReview(row.openreview),
         ...(typeof row.venue === "string" ? { venue: row.venue } : {}),
         ...(typeof row.waiting_since === "string" ? { waitingSince: row.waiting_since } : {}),
         ...(typeof row.drive_pdf_url === "string" ? { drivePdfUrl: row.drive_pdf_url } : {}),

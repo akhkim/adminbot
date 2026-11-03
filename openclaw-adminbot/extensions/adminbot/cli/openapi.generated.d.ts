@@ -8982,6 +8982,24 @@ export interface components {
       [key: string]: unknown;
     };
     PiReviewRow: {
+      /** @enum {string} */
+      category:
+        | "camera_ready"
+        | "under_review"
+        | "safety_impact"
+        | "arxiv_release"
+        | "after_rejection";
+      hard_deadline?: string;
+      days_left?: number;
+      openreview?: {
+        /** @enum {string} */
+        status: "rejected" | "withdrawn" | "accepted" | "under_review" | "desk_rejected";
+        /** @enum {string} */
+        stage?: "conference" | "reviews_out" | "rebuttal" | "decision" | "camera_ready";
+        note: string;
+      } & {
+        [key: string]: unknown;
+      };
       feedback?: {
         reason: string;
         url: string;
