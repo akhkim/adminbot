@@ -1,7 +1,14 @@
-# UI evidence handoff — not yet verified
+# Internal peer review evidence
 
-This is an actual Lit component/production-style fixture with synthetic local state and mocked API. It does not contact any provider or persist a real nomination.
+Actual Lit component and production styles with synthetic data and mocked API, captured through supported computer use on 3 November 2026. No provider request, invitation, assignment or document access was exercised.
 
-Copy fixture.html to ui/.artifacts/internal-peer-review-preview.html, start Vite locally, and open that path using supported computer-use tools. Exercise Load → edit incomplete purpose/link → nominate Reader Example → Save private draft; verify no-send/no-access wording and reload persistence within the fixture (synthetic draft only in sessionStorage under adminbot-synthetic-peer-review-fixture; no production persistence proof). Verify error/stale/session behavior using focused tests plus real API fixture if needed. Check desktop,390x844 mobile, light/dark, keyboard and long strings. Inspect saved files/actual encoding, then rendered PR at pinned head. No screenshot or visual verification is claimed in this PR yet.
+Verified expand → load → edit purpose and HTTPS link → nominate Reader Example → save, then browser reload and load retained all three fields. This fixture uses sessionStorage; real SQLite persistence, ownership, revisions, invalid nominees and stale sessions are covered separately by API/store/UI tests. Keyboard focus reached the native controls; nomination disables once selected. Desktop and requested390×844 viewport light/dark were inspected. Captures are native JPEG bytes; mobile browser capture is compositor-scaled and labelled accordingly.
 
-UI evidence is a release/review completion gate. The current developer environment lacks supported browser/CUA tools; EA may collect the three passes. Do not send real requests or grant manuscript access as a test.
+- [Desktop dark, saved](desktop-dark.jpg)
+- [Desktop light, reloaded](desktop-light.jpg)
+- [Mobile dark](mobile-dark.jpg)
+- [Mobile light](mobile-light.jpg)
+
+All four saved images were reopened and inspected for readable labels, overflow, clipping and privacy. Rendered PR images are checked after publishing and before readiness. Fixture does not establish production deployment.
+
+To reproduce, copy fixture.html to ui/.artifacts/internal-peer-review-preview.html and serve with the existing Vite UI. Synthetic state uses adminbot-synthetic-peer-review-fixture in sessionStorage.
