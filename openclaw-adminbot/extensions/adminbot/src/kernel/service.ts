@@ -740,6 +740,8 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   }): AdminBotBadgeSuggestion[];
   /** Removes one roster row. False when there was nothing to remove. */
   deleteLabMember(memberId: string): boolean;
+  retiredMemberTarget(memberId: string): string | undefined;
+  retireLabMember(memberId: string, survivorId: string, at: string): void;
   /**
    * Repoints every record that names one member at another, returning what moved per table.
    *
@@ -3712,6 +3714,13 @@ export class AdminBotService {
     origin: AdminBotWriteOrigin = {},
     prepareOnly = false,
   ): AdminBotServiceResponse<AdminBotLabMember> {
+    const retiredTarget = this.store.retiredMemberTarget(member.id);
+    if (retiredTarget) {
+      return serviceError(
+        409,
+        `member id "${member.id}" was retired by a merge into "${retiredTarget}"; reconcile the import source instead of recreating it`,
+      );
+    }
     if (Array.isArray(member.milestones)) {
       member = {
         ...member,
@@ -6203,6 +6212,9 @@ export class AdminBotService {
     if (params.survivorId === params.duplicateId) {
       return serviceError(400, "a member cannot be merged into themselves");
     }
+    if (this.store.retiredMemberTarget(params.survivorId)) {
+      return serviceError(409, "the merge survivor uses a retired member id; reconcile that duplicate first");
+    }
     const survivor = this.store.getLabMember(params.survivorId);
     if (!survivor) {
       return serviceError(404, "member not found");
@@ -6230,7 +6242,7 @@ export class AdminBotService {
     reconcileBirthdayEvent(this.birthdayDeps, merged);
     const moved = this.store.reassignMemberReferences(params.duplicateId, params.survivorId);
     this.store.revokeSessionsForMember(params.duplicateId, now);
-    this.store.deleteLabMember(params.duplicateId);
+    this.store.retireLabMember(params.duplicateId, params.survivorId, now);
     this.recordAudit({
       type: "lab_member.merged",
       actor: params.actorId,
@@ -6261,6 +6273,9 @@ export class AdminBotService {
     newId: string;
     actorId: string;
   }): AdminBotServiceResponse<{ member: AdminBotLabMember; changed: Record<string, number> }> {
+    if (this.store.retiredMemberTarget(params.memberId)) {
+      return serviceError(409, "this member id was retired by a merge; reconcile the duplicate instead of renaming it");
+    }
     const newId = params.newId.trim();
     if (!MEMBER_ID_PATTERN.test(newId)) {
       return serviceError(
@@ -6288,6 +6303,9 @@ export class AdminBotService {
         409,
         `"${params.memberId}" is also a word the records use (an access level, status or type), so renaming it would rewrite those too; it has to be changed by hand`,
       );
+    }
+    if (this.store.retiredMemberTarget(newId)) {
+      return serviceError(409, `member id "${newId}" was retired by a merge and cannot be reused`);
     }
     if (this.store.getLabMember(newId)) {
       return serviceError(409, `member id "${newId}" is already taken`);
