@@ -22,6 +22,7 @@ import {
   sensitiveInfoSchema,
   settingsSchema,
 } from "./src/contracts/tool-schemas.js";
+import { fundingAuditInputSchema } from "./src/workflows/papers/funding-audit.js";
 
 const adminBotConfigSchema = Type.Object(
   {
@@ -160,7 +161,7 @@ const adminbotPlugin = defineToolPlugin({
       name: "adminbot_prepare_overleaf_paper_edit",
       label: "AdminBot prepare Overleaf paper edit",
       description:
-        "Prepare approval-gated Overleaf source edits from a paper project link. Can run affiliation checks against the AdminBot member list and supplied affiliation policy before any approved write.",
+        "Prepare approval-gated Overleaf source edits from a paper project link. Can run affiliation checks or source-backed funding checks. funding_check requires fundingAudit with private declarative rules, source revisions/freshness and paper-specific facts; unknown conditions block execution.",
       optional: true,
       parameters: Type.Object({
         paperId: Type.Optional(Type.String()),
@@ -170,12 +171,13 @@ const adminbotPlugin = defineToolPlugin({
         requestedEdits: Type.String({ minLength: 1 }),
         targetFiles: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
         mode: Type.Optional(
-          Type.Unsafe<"manual" | "affiliation_check">({
+          Type.Unsafe<"manual" | "affiliation_check" | "funding_check">({
             type: "string",
-            enum: ["manual", "affiliation_check"],
+            enum: ["manual", "affiliation_check", "funding_check"],
           }),
         ),
         policySource: Type.Optional(Type.String()),
+        fundingAudit: Type.Optional(fundingAuditInputSchema),
         evidence: evidenceArray,
         idempotencyKey: Type.Optional(Type.String()),
         controlUiConfirmed: Type.Optional(Type.Boolean()),

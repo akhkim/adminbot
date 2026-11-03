@@ -22,6 +22,7 @@ import type {
 import { paperStepProgress } from "../../contracts/paper-progress.js";
 import { resolveCalendarSource } from "../../workflows/calendar/source.js";
 import { selectUnreviewedApplicants } from "../../workflows/members/applicant-sheet.js";
+import type { FundingAuditInput } from "../../workflows/papers/funding-audit.js";
 import {
   buildOverleafEditPayload,
   type AdminBotOverleafEditMode,
@@ -115,6 +116,7 @@ type PaperOverleafEditParams = EvidenceParams & {
   targetFiles?: string[];
   mode?: AdminBotOverleafEditMode;
   policySource?: string;
+  fundingAudit?: FundingAuditInput;
   idempotencyKey?: string;
 };
 
@@ -329,7 +331,9 @@ export function createAdminBotToolHandlers(
     },
     prepareOverleafPaperEdit: async (params: PaperOverleafEditParams) => {
       const [membersResult, papersResult] = await Promise.all([
-        client.listLabMembers(signal),
+        params.mode === "funding_check"
+          ? Promise.resolve({ members: [] })
+          : client.listLabMembers(signal),
         params.paperId ? client.listPapers(signal) : Promise.resolve(undefined),
       ]);
       const members = readArray<AdminBotLabMember>(membersResult, "members");
@@ -354,6 +358,7 @@ export function createAdminBotToolHandlers(
         mode: params.mode,
         members,
         policySource: params.policySource,
+        fundingAudit: params.fundingAudit,
       });
       const issues =
         payload.affiliationPolicy?.issues.filter((issue) => issue.status !== "ok") ?? [];
@@ -372,6 +377,7 @@ export function createAdminBotToolHandlers(
             mode: payload.mode,
             target_files: payload.targetFiles,
             affiliation_issues: payload.affiliationPolicy?.issues ?? [],
+            ...(payload.fundingAudit ? { funding_findings: payload.fundingAudit.findings } : {}),
           },
           evidence: params.evidence,
           proposed_payload: payload,

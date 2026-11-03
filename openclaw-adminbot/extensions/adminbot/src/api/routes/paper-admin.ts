@@ -5,6 +5,7 @@
 
 import { randomUUID } from "node:crypto";
 import { parsePaperMentorRunInput } from "../../contracts/papermentor.js";
+import { auditFunding, type FundingAuditInput } from "../../workflows/papers/funding-audit.js";
 import { gatherOpenReviewPaperEvidence } from "../../workflows/papers/openreview-paper-sync-sources.js";
 import {
   asString,
@@ -32,6 +33,19 @@ import {
 import { get, post, type Route } from "./router.js";
 
 export const paperAdminRoutes: readonly Route[] = [
+  post(
+    "/papers/funding-audit",
+    privilegedOnly(async ({ req, res }) => {
+      const body = (await readJson(req)) as FundingAuditInput;
+      try {
+        sendJson(res, 200, auditFunding(body));
+      } catch (error) {
+        sendJson(res, 400, {
+          error: { message: error instanceof Error ? error.message : "Invalid funding audit" },
+        });
+      }
+    }),
+  ),
   post(
     "/papers/import/columns",
     memberOnly(async ({ req, res, ctx }) => {

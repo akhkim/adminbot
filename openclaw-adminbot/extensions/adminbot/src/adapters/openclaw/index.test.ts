@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { FetchLike } from "../../api/client.js";
+import { fundingInput } from "../../workflows/papers/funding-audit.test-helpers.js";
 import { defaultAdminBotConfig, createAdminBotToolHandlers } from "./index.js";
 
 function captureFetch() {
@@ -22,6 +23,36 @@ function captureFetch() {
 }
 
 describe("AdminBot tool handlers", () => {
+  it("passes source-backed funding findings into the existing T4 proposal without reading the roster", async () => {
+    const input = fundingInput();
+    const now = new Date();
+    input.sources = input.sources.map((source) => ({
+      ...source,
+      checkedAt: new Date(now.getTime() - 1000).toISOString(),
+      expiresAt: new Date(now.getTime() + 60000).toISOString(),
+    }));
+    const { fetchImpl, calls } = captureFetch();
+    const tools = createAdminBotToolHandlers(defaultAdminBotConfig, { fetchImpl });
+    await tools.prepareOverleafPaperEdit({
+      ...input.paper,
+      mode: "funding_check",
+      fundingAudit: input,
+      requestedEdits: "Review source-confirmed credits; preserve all coauthor support.",
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      url: "http://127.0.0.1:8765/proposals",
+      body: {
+        type: "paper.overleaf_edit",
+        risk_tier: "T4",
+        target: { funding_findings: [{ id: "grant-a", decision: "include" }] },
+        proposed_payload: {
+          mode: "funding_check",
+          fundingAudit: { preservedCredits: input.existingCredits },
+        },
+      },
+    });
+  });
   it("maps privacy reasoning to the local service route", async () => {
     const { fetchImpl, calls } = captureFetch();
     const tools = createAdminBotToolHandlers(defaultAdminBotConfig, { fetchImpl });

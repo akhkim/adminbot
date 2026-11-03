@@ -2287,3 +2287,80 @@ After this change is released, a signed-in browser with an older read-only devic
 its credential once on a scope mismatch. If recovery fails, sign out and back in. Do not grant
 broad write scope manually to repair member chat. Both the gateway and the Control UI must be
 updated; this code change does not approve or deploy a production device by itself.
+
+#### Source-backed funding and acknowledgement audit
+
+Use the same `adminbot_prepare_overleaf_paper_edit` tool with `mode="funding_check"`
+and `fundingAudit` input. The input schema is exported from
+`extensions/adminbot/src/workflows/papers/funding-audit.ts`. Supply privately reviewed
+policy conditions and paper-specific facts; no lab grant list or template is bundled.
+The tool skips the roster in this mode. It does not classify topics from a title,
+combine author affiliations, or infer eligibility from membership, email or access.
+
+Inspect findings without creating a proposal or editing anything:
+
+```bash
+adminbot papers funding-audit --file /private/path/paper-audit-input.json
+```
+
+This authenticated administrator/operator route runs the same evaluator and returns
+findings. It neither stores a proposal nor invokes a connector. The file contains
+the audit input below directly, rather than the proposal envelope. No private source
+is automatically fetched, and no resource/provider is called.
+
+When an exact edit is ready for review, the existing CLI can create the same audited
+proposal, without a separate controller:
+
+```bash
+adminbot proposals create --file /private/path/acknowledgement-proposal.json
+```
+
+The JSON body uses `type: "paper.overleaf_edit"`, a `summary`, and `proposed_payload`
+with `action: "apply_overleaf_project_edits"`, `mode: "funding_check"`, `paper`
+(`title`, original ordered `authors`, `overleafEditUrl`), `requestedEdits`,
+`targetFiles`, and `fundingAudit: { "input": { ... } }`. The generic proposal service
+computes findings before hashing, replacing any caller-supplied findings. Creation
+returns the pending proposal, per-funder findings, exact hash and two-admin gate.
+Creation is not execution; review the entire immutable payload in Pending Actions.
+
+Input contains:
+
+- `paper`: exact title, original authors, Overleaf project URL and research `workPeriod`.
+- `sources`: unique IDs, `kind` (`policy`, `manuscript`, `author_confirmation`,
+  `usage_receipt`), private `location`, reviewed `revision`, freshly `observedRevision`,
+  `checkedAt`, and a deliberately chosen `expiresAt` recheck deadline.
+- `rules`: unique credit IDs/labels, `kind` (`funder`, `resource`, `tool`), policy
+  `sourceId`, and bounded declarative `anyOf: [{ allOf: [...] }]` alternatives.
+  Each predicate has an exact `kind` and `key`; affiliation also names the exact
+  original `author` entry. No executable predicates, regex classifiers or fuzzy matching.
+- `facts`: matching predicates with explicit boolean `value`, `sourceId` and a
+  concise `evidence` reference for this paper/work period. False needs evidence too;
+  absence is unknown. Topic/affiliation facts require manuscript or author confirmation;
+  actual resource/tool use requires a usage receipt or explicit author confirmation.
+- `existingCredits`: verbatim text in original order, `id`, `scope` (`policy` or
+  `coauthor`), optionally `sourceId` and `evidence`. Preserve outside coauthor support
+  even when absent from this policy, and retain unverified credits pending review.
+
+For example, a synthetic funding condition `(Institute A AND topic-x) OR topic-y` is
+`anyOf: [{allOf:[{kind:"affiliation",key:"Institute A",author:"Author A"},
+{kind:"topic",key:"topic-x"}]},{allOf:[{kind:"topic",key:"topic-y"}]}]`.
+Institution associations remain independent. `multi-turn` is a different topic key
+from `multi-agent`; neither implies the other. Resource/tool rules must require
+`resource_used`/`tool_used` with their own credit ID in **every** alternative.
+
+Findings are `include` (condition met), `exclude` (explicitly not met), or `unknown`
+(missing/conflicting evidence, changed/missing/expired source). They are candidate
+credit decisions, not permission to erase existing support or copy the entire
+acknowledgement template. `preservedCredits` retains all supplied existing credits.
+Prepare a narrow, exact requested edit and review its effects on all coauthor credits.
+Unknown findings block the Overleaf connector even after approval. The connector
+recomputes findings and freshness before its first bridge call; paper/order mismatch
+or changed findings require a new immutable proposal and fresh approvals.
+
+Source observations are operator assertions, not independently fetched proof.
+This audit performs no model/provider call, private source download or grant-eligibility
+verification. A source changing after its last observation cannot be detected until
+it is re-observed or its deadline expires. Refresh private source revisions and
+paper-time confirmations before review. The existing configured Overleaf bridge
+must apply the reviewed edits and preservation constraints; no live bridge,
+manuscript changes or deployed behavior is established by a local audit test.
