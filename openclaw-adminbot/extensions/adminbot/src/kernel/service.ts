@@ -3524,6 +3524,13 @@ export class AdminBotService {
     return this.resolveSettings().head_professor_member_id?.trim() || undefined;
   }
 
+  /** The members settings name as PI approvers, trimmed; empty when none are named. */
+  piApproverMemberIds(): string[] {
+    return (this.resolveSettings().pi_approver_member_ids ?? [])
+      .map((id) => id.trim())
+      .filter(Boolean);
+  }
+
   /**
    * The Slack Connect invite already minted for this address and channel, if any.
    *
@@ -3574,6 +3581,11 @@ export class AdminBotService {
     const papersAcceptanceMpiEmails = settings.papers_acceptance_mpi_emails
       ?.map((address) => address.trim())
       .filter(Boolean);
+    // Replaced wholesale, blanks and repeats dropped. An empty array is a real answer -- "nobody
+    // but the head professor" -- and clears the list.
+    const piApproverMemberIds = settings.pi_approver_member_ids
+      ? [...new Set(settings.pi_approver_member_ids.map((id) => id.trim()).filter(Boolean))]
+      : undefined;
     const applicantLastReviewedAt = normalizeOptionalString(settings.applicant_last_reviewed_at);
     const groupMeetingTime = normalizeOptionalString(settings.group_meeting_time);
     const groupMeetingTimezone = normalizeOptionalString(settings.group_meeting_timezone);
@@ -3621,6 +3633,9 @@ export class AdminBotService {
         : {}),
       ...(headProfessorMemberId ? { head_professor_member_id: headProfessorMemberId } : {}),
       ...(headProfessorWhatsapp ? { head_professor_whatsapp: headProfessorWhatsapp } : {}),
+      ...(piApproverMemberIds === undefined
+        ? {}
+        : { pi_approver_member_ids: piApproverMemberIds }),
       ...(locationAudienceCity === undefined
         ? {}
         : { location_audience_city: locationAudienceCity }),
@@ -3670,6 +3685,7 @@ export class AdminBotService {
         paper_escalation_business_days: next.paper_escalation_business_days,
         cv_recency_window_months: next.cv_recency_window_months,
         has_head_professor_member_id: Boolean(next.head_professor_member_id),
+        pi_approver_member_ids: next.pi_approver_member_ids ?? [],
         has_lab_manager_member_id: Boolean(next.lab_manager_member_id),
         has_applicant_sheet_id: Boolean(next.applicant_sheet_id),
         ...(next.applicant_last_reviewed_at
@@ -7317,6 +7333,7 @@ export class AdminBotService {
       valueText: params.input.value_text,
       memberId: params.memberId,
       headProfessorMemberId: this.resolveSettings().head_professor_member_id,
+      piApproverMemberIds: this.resolveSettings().pi_approver_member_ids,
     });
     if (piDenial) {
       return serviceError(403, piDenial);

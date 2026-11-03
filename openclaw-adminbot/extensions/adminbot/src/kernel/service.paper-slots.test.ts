@@ -1038,6 +1038,47 @@ describe("PI review completion authorization", () => {
       }).ok,
     ).toBe(true);
   });
+
+  it("lets a named PI approver approve publication, and nobody else", () => {
+    const service = new AdminBotService();
+    seed(service);
+    unwrap(
+      service.updateSettings({
+        head_professor_member_id: "ada",
+        pi_approver_member_ids: [" bob ", "bob", ""],
+      }),
+    );
+    expect(service.piApproverMemberIds()).toEqual(["bob"]);
+    expect(
+      service.setPaperSlot({
+        paperId: "p1",
+        slot: "pi_approval",
+        input: { done: true },
+        memberId: "carol",
+        privileged: true,
+      }).status,
+    ).toBe(403);
+    expect(
+      service.setPaperSlot({
+        paperId: "p1",
+        slot: "pi_approval",
+        input: { done: true },
+        memberId: "bob",
+        privileged: true,
+      }).ok,
+    ).toBe(true);
+    // An empty list is "nobody but the head professor", not "leave it as it was".
+    unwrap(service.updateSettings({ pi_approver_member_ids: [] }));
+    expect(
+      service.setPaperSlot({
+        paperId: "p1",
+        slot: "pi_approval",
+        input: { done: false },
+        memberId: "bob",
+        privileged: true,
+      }).status,
+    ).toBe(403);
+  });
 });
 
 it("keeps resubmission feedback visible after rejection without reopening publication approval", () => {

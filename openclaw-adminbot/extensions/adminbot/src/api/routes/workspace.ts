@@ -105,6 +105,21 @@ export const workspaceRoutes: readonly Route[] = [
         sendJson(res, 403, { error: { message: "only the PI can change who the PI is" } });
         return;
       }
+      // The PI approvers share her publication approval, so the same rule holds: an admin who could
+      // edit the list could add themselves to it. Compared as sets -- reordering is not a change.
+      const approvers = new Set(service.piApproverMemberIds());
+      const wanted = new Set(
+        (body.pi_approver_member_ids ?? []).map((id) => id.trim()).filter(Boolean),
+      );
+      if (
+        head !== undefined &&
+        body.pi_approver_member_ids !== undefined &&
+        (wanted.size !== approvers.size || [...wanted].some((id) => !approvers.has(id))) &&
+        !isHeadProfessorAtKeyboard(ctx, principal)
+      ) {
+        sendJson(res, 403, { error: { message: "only the PI can change who approves for the PI" } });
+        return;
+      }
       sendServiceResult(res, service.updateSettings(body));
     }),
   ),

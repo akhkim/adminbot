@@ -1,5 +1,5 @@
 // Head-professor gate on PI review slots, cut from service.ts so it stays under its file-size
-// ratchet. Pure: the service supplies the configured head professor and returns the 403.
+// ratchet. Pure: the service supplies the configured PI reviewers and returns the 403.
 import { parsePaperFeedback } from "../contracts/paper-feedback.js";
 import {
   mergePaperImpactWrite,
@@ -10,25 +10,41 @@ import {
 } from "../contracts/paper-impact.js";
 
 /**
- * Why this write needs the head professor and the writer is not them, or null when it may go
- * ahead. Approving publication, and marking feedback reviewed or noted, are the PI's alone.
+ * Who may give the PI's review: the head professor, plus the members settings name as PI
+ * approvers. Blank ids are dropped so an unset setting never matches a writer with no id.
+ */
+export function piReviewerIds(params: {
+  headProfessorMemberId?: string | null;
+  piApproverMemberIds?: readonly string[] | null;
+}): string[] {
+  return [params.headProfessorMemberId, ...(params.piApproverMemberIds ?? [])]
+    .map((id) => id?.trim() ?? "")
+    .filter(Boolean);
+}
+
+/**
+ * Why this write needs a PI reviewer and the writer is not one, or null when it may go ahead.
+ * Approving publication, and marking feedback reviewed or noted, belong to the head professor and
+ * the PI approvers settings name next to her.
  */
 export function piReviewSlotDenial(params: {
   slot: string;
   valueText?: string | null;
   memberId?: string;
   headProfessorMemberId?: string | null;
+  piApproverMemberIds?: readonly string[] | null;
 }): string | null {
-  if (params.memberId === params.headProfessorMemberId?.trim()) {
+  const writer = params.memberId?.trim();
+  if (writer && piReviewerIds(params).includes(writer)) {
     return null;
   }
   if (params.slot === "pi_approval") {
-    return "Only the head professor can approve publication.";
+    return "Only the head professor or a PI approver can approve publication.";
   }
   if (params.slot.startsWith("feedback_") && params.valueText) {
     const feedback = parsePaperFeedback(params.valueText);
     if (feedback?.reviewed || feedback?.review_note) {
-      return "Only the head professor can record paper feedback completion.";
+      return "Only the head professor or a PI approver can record paper feedback completion.";
     }
   }
   return null;

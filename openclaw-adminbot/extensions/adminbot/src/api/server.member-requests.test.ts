@@ -464,6 +464,25 @@ describe("member requests", () => {
     expect(mock.service.headProfessorMemberId()).toBe("admin");
   });
 
+  it("does not let an admin add themselves as a PI approver", async () => {
+    const { baseUrl, mock, admin, pi } = await lab();
+    const put = (token: string, approvers: string[]) =>
+      fetch(`${baseUrl}/settings`, {
+        method: "PUT",
+        headers: jsonHeaders({ Authorization: `Bearer ${token}` }),
+        body: JSON.stringify({ pi_approver_member_ids: approvers }),
+      });
+    expect((await put(admin, ["admin"])).status).toBe(403);
+    expect(mock.service.piApproverMemberIds()).toEqual([]);
+    expect((await put(pi, ["admin", "bob"])).status).toBe(200);
+    expect(mock.service.piApproverMemberIds()).toEqual(["admin", "bob"]);
+    // Re-sending the same list, in any order, is what a Settings save does.
+    expect((await put(admin, ["bob", "admin"])).status).toBe(200);
+    expect((await put(admin, ["bob"])).status).toBe(403);
+    expect((await put(pi, [])).status).toBe(200);
+    expect(mock.service.piApproverMemberIds()).toEqual([]);
+  });
+
   it("refuses the service principal and anonymous callers", async () => {
     const { baseUrl, call } = await lab();
     expect((await call(SERVICE_TOKEN, "", "POST", ADA)).status).toBe(403);

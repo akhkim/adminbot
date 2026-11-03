@@ -431,6 +431,8 @@ export type AdminBotSettings = {
   paper_escalation_business_days: number;
   cv_recency_window_months: number;
   head_professor_member_id?: string;
+  /** Members who approve publication and mark feedback reviewed alongside the head professor. */
+  pi_approver_member_ids?: string[];
   lab_manager_member_id?: string;
   head_professor_whatsapp?: string;
   applicant_sheet_id?: string;
