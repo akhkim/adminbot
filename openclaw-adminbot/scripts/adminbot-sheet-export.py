@@ -42,10 +42,10 @@ VENUE_NOTES = {
     'subliminal-learning-through-useful-math': 'Not ARR (per PI, Oct 11 2026)',
     'uka-clinical-post-training': 'Not ARR (per PI, Oct 11 2026)',
 }
-# Plain-language layout: what the PI acts on first, links next, record-keeping detail last.
-PAPERS = ('Paper', 'Urgency', 'PI review', 'Paper state', 'Review for', 'Review link', 'Due (Toronto)', 'Authors', 'tweet tags to copy',
-          'Requested by', 'Requested on', 'Request note', 'Conference', 'Year', 'Track', 'Presentation', 'Venue',
-          'Venue deadline (Toronto)', 'OpenReview', 'Submission history', 'Source', 'Stage', 'Lead', 'Incomplete', 'Blocker / next step', 'Link problems', 'Still missing', 'Mentor review', 'Co-author feedback', 'Accepted',
+# Matches the column order the PI set in the live PaperList tab: title, urgency and links first, record-keeping last.
+PAPERS = ('Paper', 'Urgency', 'Review link', 'Authors', 'Review for', 'Due (Toronto)', 'PI review', 'tweet tags to copy',
+          'Requested by', 'Requested on', 'Request note', 'Conference', 'Venue', 'Venue deadline (Toronto)',
+          'OpenReview', 'Stage', 'Lead', 'Incomplete', 'Blocker / next step', 'Link problems', 'Still missing', 'Mentor review', 'Co-author feedback', 'Accepted',
           'Going to conference', 'Started', 'Last updated', 'Feedback givers', 'Checks',
           'Venue (as entered)', 'All artifact statuses', PAPER_ID)
 LINK_COLUMNS = ('Review link',)

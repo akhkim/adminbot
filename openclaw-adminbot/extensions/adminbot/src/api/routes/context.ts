@@ -155,6 +155,11 @@ export type AdminBotRouteContext = {
    * `canDecideNewMembers` in guards.ts for what this does and does not grant.
    */
   memberApproverIds: readonly string[];
+  /**
+   * Member ids who may give the PI's paper review alongside her. See `canGivePiReview` in
+   * guards.ts for what this does and does not grant.
+   */
+  piApproverIds: readonly string[];
   llmRouter: LlmLoadRouter;
   failedRequestLedger: FailedExternalRequestLedger;
 };
@@ -249,6 +254,9 @@ export type AdminBotMockServiceOptions = {
   // rather than a /settings field on purpose: an admin who could edit the list could grant
   // themselves the decision the PI gate exists to keep from admins.
   memberApproverIds?: readonly string[];
+  // Members who approve publication and mark paper feedback reviewed alongside the PI. Falls back
+  // to process.env.ADMINBOT_PI_APPROVER_IDS, and is host configuration for the same reason.
+  piApproverIds?: readonly string[];
   referenceScanDependencies?: ReferenceScanDependencies;
   pdfReferenceChecker?: PdfReferenceChecker;
   // Automatic citation checks of the OpenReview account's own submissions. Injecting a reader

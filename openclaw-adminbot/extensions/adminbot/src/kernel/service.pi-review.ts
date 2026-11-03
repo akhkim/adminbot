@@ -1,5 +1,5 @@
 // Head-professor gate on PI review slots, cut from service.ts so it stays under its file-size
-// ratchet. Pure: the service supplies the configured head professor and returns the 403.
+// ratchet. Pure: the service supplies the head professor and whether the writer is a PI approver, and returns the 403.
 import { parsePaperFeedback } from "../contracts/paper-feedback.js";
 import {
   mergePaperImpactWrite,
@@ -10,25 +10,32 @@ import {
 } from "../contracts/paper-impact.js";
 
 /**
- * Why this write needs the head professor and the writer is not them, or null when it may go
- * ahead. Approving publication, and marking feedback reviewed or noted, are the PI's alone.
+ * Why this write needs a PI reviewer and the writer is not one, or null when it may go ahead.
+ * Approving publication, and marking feedback reviewed or noted, belong to the head professor and
+ * the PI approvers the host names next to her. Whether the writer is one of those approvers is the
+ * route's call (api/routes/pi-approvers.ts), since it depends on the session, not only the id.
  */
 export function piReviewSlotDenial(params: {
   slot: string;
   valueText?: string | null;
   memberId?: string;
   headProfessorMemberId?: string | null;
+  piApprover?: boolean;
+  /** An admin "viewing as" the writer: never the PI's own yes, whoever is being viewed. */
+  viewAs?: boolean;
 }): string | null {
-  if (params.memberId === params.headProfessorMemberId?.trim()) {
+  const writer = params.memberId?.trim();
+  const head = params.headProfessorMemberId?.trim();
+  if (params.piApprover || (!params.viewAs && writer && head && writer === head)) {
     return null;
   }
   if (params.slot === "pi_approval") {
-    return "Only the head professor can approve publication.";
+    return "Only the head professor or a PI approver can approve publication.";
   }
   if (params.slot.startsWith("feedback_") && params.valueText) {
     const feedback = parsePaperFeedback(params.valueText);
     if (feedback?.reviewed || feedback?.review_note) {
-      return "Only the head professor can record paper feedback completion.";
+      return "Only the head professor or a PI approver can record paper feedback completion.";
     }
   }
   return null;

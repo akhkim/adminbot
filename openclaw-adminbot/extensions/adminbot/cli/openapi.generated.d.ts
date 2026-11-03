@@ -9361,6 +9361,7 @@ export interface components {
       paper_escalation_business_days: number;
       cv_recency_window_months: number;
       head_professor_member_id?: string;
+      pi_approver_member_ids?: string[];
       head_professor_whatsapp?: string;
       location_audience_city?: string;
       location_audience_zone?: string;

@@ -582,6 +582,8 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       options.trustProxyHeaders ?? trimmedEnv(process.env.ADMINBOT_TRUST_PROXY) === "1",
     memberApproverIds:
       options.memberApproverIds ?? parseMemberApproverIds(process.env.ADMINBOT_MEMBER_APPROVER_IDS),
+    piApproverIds:
+      options.piApproverIds ?? parseMemberApproverIds(process.env.ADMINBOT_PI_APPROVER_IDS),
     llmRouter,
     failedRequestLedger,
   };
@@ -842,7 +844,7 @@ function trimmedEnv(value: string | undefined): string | undefined {
   return trimmed || undefined;
 }
 
-/** `ADMINBOT_MEMBER_APPROVER_IDS` as a list: comma- or space-separated, blanks dropped. */
+/** `ADMINBOT_MEMBER_APPROVER_IDS` (or `ADMINBOT_PI_APPROVER_IDS`) as a list: comma- or space-separated, blanks dropped. */
 export function parseMemberApproverIds(value: string | undefined): string[] {
   return [
     ...new Set(

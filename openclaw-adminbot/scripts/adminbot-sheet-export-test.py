@@ -174,7 +174,7 @@ assert {r['range']['sheetId'] for r in clears} == {1, 2}
 assert len([r for r in requests if 'addTable' in r]) == 2
 assert [r['range']['startRowIndex'] for r in clears] == [1, 0]
 assert clears[1]['fields'] == 'userEnteredValue,userEnteredFormat'
-assert len([r for r in requests if 'addFilterView' in r]) == 17
+assert len([r for r in requests if 'addFilterView' in r]) == 14
 paper_table = [r['addTable']['table'] for r in requests if 'addTable' in r and r['addTable']['table']['name'] == 'PaperList'][0]
 dropdowns = {c['columnName'] for c in paper_table['columnProperties'] if c['columnType'] == 'DROPDOWN'}
 assert dropdowns <= set(refresh.PAPER_DROPDOWNS), dropdowns
@@ -228,7 +228,7 @@ assert note['rows'][0]['values'][0]['note'].startswith('Papers by PI review stat
 stage_view = next(r['addFilterView']['filter'] for r in requests
                   if r.get('addFilterView', {}).get('filter', {}).get('title') == 'By stage')
 assert stage_view['sortSpecs'][0]['dimensionIndex'] == exporter.PAPERS.index('Stage')
-assert exporter.PAPERS[:7] == ('Paper', 'Urgency', 'PI review', 'Paper state', 'Review for', 'Review link', 'Due (Toronto)')
+assert exporter.PAPERS[:7] == ('Paper', 'Urgency', 'Review link', 'Authors', 'Review for', 'Due (Toronto)', 'PI review')
 queue = next(r['addFilterView']['filter'] for r in requests
              if r.get('addFilterView', {}).get('filter', {}).get('title') == 'PI review queue')
 assert queue['criteria'] == {str(exporter.PAPERS.index('PI review')): {'condition': {
@@ -251,11 +251,13 @@ assert updated_table['range']['endRowIndex'] == len(direct['data'][1]['values'])
 assert updated_table['columnProperties'][exporter.PAPERS.index('Stage')]['columnType'] == 'TEXT'  # No stage supplied in this synthetic row.
 assert not any('deleteBanding' in r for r in converted)
 paper_views = [r['addFilterView']['filter'] for r in converted if 'tableId' in r.get('addFilterView', {}).get('filter', {})]
-assert [v['title'] for v in paper_views] == ['PaperList sort and filter', 'PI review queue', 'Incomplete', 'By PI review status', 'By review type', 'By conference', 'By venue', 'By stage', 'Blocked', 'By paper state', 'By year', 'By track']
+assert [v['title'] for v in paper_views] == ['PaperList sort and filter', 'PI review queue', 'Incomplete', 'By PI review status', 'By review type', 'By conference', 'By venue', 'By stage', 'Blocked']
 assert all(v['tableId'] == 'paper-table' and 'range' not in v for v in paper_views)
 properties['PaperList']['filterViews'] = [{'title': 'By stage', 'filterViewId': 43, 'tableId': 'paper-table'},
-                                         {'title': 'Awaiting PI approval', 'filterViewId': 44, 'tableId': 'paper-table'}]
+                                         {'title': 'Awaiting PI approval', 'filterViewId': 44, 'tableId': 'paper-table'},
+                                         {'title': 'By paper state', 'filterViewId': 45, 'tableId': 'paper-table'}]
 migrated = refresh.refresh_requests(direct, properties)
+assert {r['deleteFilterView']['filterId'] for r in migrated if 'deleteFilterView' in r} >= {44, 45}
 stage_update = next(r['updateFilterView'] for r in migrated
                     if r.get('updateFilterView', {}).get('filter', {}).get('filterViewId') == 43)
 assert stage_update['fields'] == 'range,namedRangeId,tableId,sortSpecs'
@@ -535,7 +537,7 @@ assert dateless['PI review'] == 'Past deadline', dateless['Urgency']
 live = exporter.paper_row({'id': 'l', 'title': 'L', 'venue': 'ICLR 2027', 'current_step': 'overleaf_writing'}, members,
                           [slot('feedback_other', at='2026-10-20T12:00:00Z')], [], LATER)
 assert sorted([missed['_sort'], live['_sort']])[0] == live['_sort']
-assert exporter.PAPERS.index('Authors') == exporter.PAPERS.index('Due (Toronto)') + 1
+assert exporter.PAPERS.index('Authors') == exporter.PAPERS.index('Review link') + 1
 # Approaching venue deadlines lead whatever the review status, grouped by deadline then conference;
 # a deadline beyond the window, or a paper with none, keeps the review order below them.
 def iclr_paper(pid, steps, deadlines):

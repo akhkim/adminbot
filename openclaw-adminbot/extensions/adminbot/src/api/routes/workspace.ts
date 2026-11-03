@@ -84,7 +84,18 @@ export const workspaceRoutes: readonly Route[] = [
     "/settings",
     privilegedOnly(({ res, ctx }) => {
       const { service } = ctx;
-      sendServiceResult(res, service.getSettings());
+      const settings = service.getSettings();
+      // The PI approvers are host configuration (ADMINBOT_PI_APPROVER_IDS), not a stored setting:
+      // reported here so the Control UI and CLI can see them, never accepted by the PUT below.
+      sendServiceResult(
+        res,
+        settings.ok && settings.payload
+          ? {
+              ...settings,
+              payload: { ...settings.payload, pi_approver_member_ids: [...ctx.piApproverIds] },
+            }
+          : settings,
+      );
     }),
   ),
   put(

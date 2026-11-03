@@ -1038,6 +1038,24 @@ describe("PI review completion authorization", () => {
       }).ok,
     ).toBe(true);
   });
+
+  it("lets a writer the route vouches for as a PI approver approve publication, and nobody else", () => {
+    const service = new AdminBotService();
+    seed(service);
+    unwrap(service.updateSettings({ head_professor_member_id: "ada" }));
+    const approve = (memberId: string, piApprover?: boolean) =>
+      service.setPaperSlot({
+        paperId: "p1",
+        slot: "pi_approval",
+        input: { done: true },
+        memberId,
+        privileged: true,
+        ...(piApprover === undefined ? {} : { piApprover }),
+      });
+    expect(approve("carol").status).toBe(403);
+    expect(approve("carol", false).status).toBe(403);
+    expect(approve("bob", true).ok).toBe(true);
+  });
 });
 
 it("keeps resubmission feedback visible after rejection without reopening publication approval", () => {

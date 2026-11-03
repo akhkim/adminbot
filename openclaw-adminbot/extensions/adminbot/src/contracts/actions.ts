@@ -2053,6 +2053,12 @@ export type AdminBotSettings = {
   paper_escalation_business_days: number;
   cv_recency_window_months: number;
   head_professor_member_id?: string;
+  /**
+   * Read-only: the members the host names in ADMINBOT_PI_APPROVER_IDS, who approve publication and
+   * mark paper feedback reviewed alongside the head professor. GET /settings reports it; PUT
+   * ignores it, since an admin who could edit the list could add themselves.
+   */
+  pi_approver_member_ids?: string[];
   head_professor_whatsapp?: string;
   /**
    * The city a standing local event's guest list is drawn from ("Zurich"), and the zone that city

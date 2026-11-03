@@ -7307,6 +7307,10 @@ export class AdminBotService {
     input: AdminBotPaperSlotInput;
     memberId: string;
     privileged: boolean;
+    /** The writer is a PI approver the host names (api/routes/guards.ts `canGivePiReview`). */
+    piApprover?: boolean;
+    /** The write comes from an admin's "view as" session rather than the writer's own. */
+    viewAs?: boolean;
   }): AdminBotServiceResponse<{ slot: AdminBotPaperSlotRecord }> {
     const context = this.paperSlotContext(params);
     if (!context.ok) {
@@ -7317,6 +7321,8 @@ export class AdminBotService {
       valueText: params.input.value_text,
       memberId: params.memberId,
       headProfessorMemberId: this.resolveSettings().head_professor_member_id,
+      piApprover: params.piApprover,
+      viewAs: params.viewAs,
     });
     if (piDenial) {
       return serviceError(403, piDenial);
