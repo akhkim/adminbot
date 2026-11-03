@@ -1911,12 +1911,13 @@ export class AdminBotService {
         return { ok: true, status: 200, payload: outstanding };
       }
     }
+    let auditedProposal: AdminBotActionProposal;
     try {
-      proposal = prepareOverleafFundingProposal(proposal);
+      auditedProposal = prepareOverleafFundingProposal(proposal);
     } catch (error) {
       return serviceError(400, error instanceof Error ? error.message : "Invalid funding audit");
     }
-    const stored = this.prepareProposal(proposal);
+    const stored = this.prepareProposal(auditedProposal);
     this.store.saveProposal(stored);
     this.auditProposalCreation(stored);
     return { ok: true, status: 200, payload: stored };
