@@ -603,7 +603,9 @@ def pi_requests(slots, links):
                              'by': row.get('provided_by_member_id'), 'url': safe_link(payload.get('url')),
                              'note': str(payload.get('reason') or '').strip(),
                              'hard': parse_time(payload.get('hard_deadline') or ''),
-                             'soft': parse_time(payload.get('soft_deadline') or '')})
+                             'soft': parse_time(payload.get('soft_deadline') or ''),
+                             # The PI marked this round read: the next move is the authors'.
+                             'feedback_given': payload.get('reviewed') is True})
     ack = by_slot.get('authors_ack', {})
     if ack.get('status') == 'provided':
         missing = [label for label, column in (('PDF', 'PDF'),) if not links[column]]
@@ -613,7 +615,7 @@ def pi_requests(slots, links):
                              ' PDF link missing or invalid.' if missing else ''),
                          'settled': approval.get('status') in ('provided', 'waived')})
     for request in requests:
-        request['pending'] = not (request.get('settled') or (
+        request['pending'] = not (request.get('settled') or request.get('feedback_given') or (
             approved_at and request['at'] and approved_at >= request['at']))
     return requests, approved_at
 
@@ -677,6 +679,7 @@ PI_REVIEW_RULES = (
     ('Submitted on OpenReview', 'OpenReview: under review, or an ARR submission settled the request'),
     ('Past deadline', 'The only pending request is ARR feedback whose cycle has closed'),
     ('Approved', 'PI approval recorded after every request; shown as "Approved <date>"'),
+    ('Feedback given, author revising', 'The PI marked the latest feedback request reviewed; the authors queue again when ready'),
     ('Waiting on author', f'Before submission, a hard venue deadline within {REVIEW_LEAD_DAYS} days, nothing sent for PI review'),
     ('No PI review needed', f'Nothing requested and no deadline asks for one: past submission, or no deadline in {REVIEW_LEAD_DAYS} days'),
     ('Accepted elsewhere', 'Accepted per AdminBot at a venue the PI\'s OpenReview does not show'),
@@ -702,6 +705,9 @@ def pi_review_status(top, requests, approved_at, review, record, stage, deadline
         return 'Past deadline'
     if approved_at:
         return 'Approved ' + toronto(approved_at, False)
+    latest = max((r for r in requests if r['at']), key=lambda r: r['at'], default=None)
+    if latest and latest.get('feedback_given'):
+        return 'Feedback given, author revising'
     if outcome:
         return f'Other: OpenReview status {outcome}'
     if record.get('venue_decision') == 'accept' or record.get('accepted_venue'):

@@ -105,19 +105,28 @@ references before a desk rejection.
   - `unreadable` is final for that version: no bibliography heading, encrypted, over 300
     references, or more than 20% of the bibliography in chunks that could not be split into single
     entries. What the clean entries showed is still stored, but no email is raised.
-  - `failed` (download error, 60-minute timeout, more than 20% of entries unchecked because
-    Crossref, OpenAlex or DBLP did not answer) is retried by later sweeps, up to three attempts.
-  - "Not found" is only claimed when Crossref and DBLP both answered. OpenAlex, Semantic Scholar
-    and arXiv are consulted but not required: OpenAlex gives an IP without an API key only a small
-    shared daily budget (set `OPENALEX_API_KEY` to use one), and the other two throttle anonymous
-    clients constantly.
+  - `failed` (download error, 60-minute timeout, more than 20% of entries unchecked because the
+    databases did not answer) is retried by later sweeps: three attempts for a hard failure, ten
+    for a partial check. A retry resumes: references already settled for the same PDF bytes are
+    kept and only the open ones are looked up again, and a try that settles more than any before
+    it does not spend an attempt. A reference that matched a record in any paper or version is
+    reused rather than looked up again; a `not_found` or `review` from another paper never is.
+  - "Not found" is only claimed when Crossref and at least one broad index -- DBLP, OpenAlex or
+    Semantic Scholar -- answered. No single one of them is required because none is dependable:
+    since November 2026 DBLP serves every API client an Anubis bot wall (its SPARQL endpoint
+    still answers, but only ever as evidence that a work exists, never that it does not), OpenAlex
+    gives an IP without an API key only a small shared daily budget (set `OPENALEX_API_KEY` to use
+    one), and Semantic Scholar throttles anonymous clients constantly. arXiv is consulted but never
+    required.
   - Review-mode line numbers, ACL/ICML/NeurIPS/ICLR bibliography styles, alphabetic labels and
     hundred-author team reports are handled. Measured on this account's 328 submissions
     (2026-09-23), 272 split cleanly enough to check.
 - **Pacing and back-off.** A database that answers 429 or 503, or refuses connections, is left
-  alone for its `Retry-After` (15 minutes if it gives none, at most 6 hours), shared by every check
-  in the process. While Crossref or DBLP is backing off, the sweep does not start or stops before
-  the next paper, and a paper interrupted by it does not spend a retry. Papers are a minute apart.
+  alone for its `Retry-After` (15 minutes if it gives none, at most 6 hours; an hour for DBLP's bot
+  wall), shared by every check in the process. While Crossref, or every broad index at once, is
+  backing off, the sweep does not start; a running sweep waits out a back-off of up to 20 minutes
+  before the next paper and stops for a longer one. A paper interrupted by it does not spend a
+  retry. Papers are a minute apart.
   A placeholder upload with no text is recorded as such and checked when the paper is uploaded.
 - **Notification.** A completed check with any `not_found` citation creates an
   `email.send` proposal (listing its `review` items too; those alone do not) to `ADMINBOT_CITATION_CHECK_NOTIFY` (default: the first
@@ -189,7 +198,7 @@ without `--dry-run`.
   columns the payload names.
 - **Confirmed hallucinated citations.** The Slack ids in
   `ADMINBOT_ICLR_CITATION_REPORT_SLACK_USERS` get a DM with the exact references, once per version,
-  when a completed citation check (Crossref and DBLP both answered) has `not_found` findings. A
+  when a completed citation check (Crossref and a broad index answered) has `not_found` findings. A
   `failed` check, an `unavailable` lookup or a `review` finding sends nothing.
 - **Cutoff.** The check stops for good at `ADMINBOT_ICLR_INTEGRITY_UNTIL`, which defaults to
   2026-09-26 08:00 Toronto time (the end of the ICLR 2027 run). After that time a run starts

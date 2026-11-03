@@ -9,9 +9,10 @@ import {
 import { parseGeneric } from "../third-party/references-validation/plain-text-parser.js";
 import { checkWithFallback } from "../third-party/references-validation/search-service.js";
 import {
+  BROAD_INDEX_SOURCES,
   lookupContext,
   referenceUserAgent,
-  REQUIRED_SOURCES,
+  REQUIRED_SOURCE,
   sourceCooldownUntil,
 } from "./reference-check.http.js";
 
@@ -27,10 +28,19 @@ export type ReferenceFinding = {
 };
 export type ReferenceReport = { findings: ReferenceFinding[] };
 export type ReferenceProgress = { completed: number; total: number; finding?: ReferenceFinding };
+export type PdfReferenceCheckOptions = {
+  /**
+   * Findings already settled for exact citation strings, used instead of a lookup. The sweep passes
+   * what an earlier, partial try of the same PDF resolved, so each retry only asks about what is
+   * still open: progress made against rate-limited databases is kept rather than redone.
+   */
+  known?: ReadonlyMap<string, ReferenceFinding>;
+};
 export type PdfReferenceChecker = (
   pdf: Uint8Array,
   signal: AbortSignal,
   onProgress?: (progress: ReferenceProgress) => void,
+  options?: PdfReferenceCheckOptions,
 ) => Promise<ReferenceReport>;
 
 export class ReferenceCheckError extends Error {}
@@ -42,21 +52,36 @@ export const NO_TEXT_LAYER =
 /** An entry this long is several references the splitter could not separate. */
 export const OVERSIZED_REFERENCE = 2000;
 
-// Crossref (journals, the ACL Anthology) and DBLP (CS venues, arXiv) have generous anonymous limits.
-// OpenAlex now allows an anonymous IP only a tiny shared daily budget, and Semantic Scholar and
-// arXiv throttle constantly: requiring any of them would leave most references unchecked.
-const REQUIRED_DATABASES = REQUIRED_SOURCES;
+// A "not found" needs Crossref (journals, the ACL Anthology) and at least one broad fuzzy-search
+// index -- DBLP, OpenAlex or Semantic Scholar -- to have answered. Any one is enough because none is
+// dependable alone: DBLP now walls off API clients entirely, OpenAlex allows an anonymous IP a tiny
+// daily budget, and Semantic Scholar throttles constantly. arXiv is never required: it holds only
+// preprints. DBLP's SPARQL endpoint never counts as answering "no" (see searchDblpViaSparql).
 /** When the databases a "not found" depends on can next be asked; undefined if they can now. */
 export function requiredDatabasesPausedUntil(
   cooldowns: Map<string, number>,
   now = Date.now(),
 ): number | undefined {
-  // Per source, not per host: DBLP is paused only when every one of its hosts is.
+  // Per source, not per host: DBLP is paused only when every one of its hosts is. The broad
+  // indexes are paused only when all of them are, since any one of them answering is enough.
   const until = Math.max(
-    0,
-    ...[...REQUIRED_DATABASES].map((source) => sourceCooldownUntil(cooldowns, source)),
+    sourceCooldownUntil(cooldowns, REQUIRED_SOURCE),
+    Math.min(...BROAD_INDEX_SOURCES.map((source) => sourceCooldownUntil(cooldowns, source))),
   );
   return until > now ? until : undefined;
+}
+
+/** Whether a lookup heard enough to stand behind a "not found" (see requiredDatabasesPausedUntil). */
+export function enoughDatabasesAnswered(failures: Set<string>, available: Set<string>): boolean {
+  return (
+    !failures.has(REQUIRED_SOURCE) &&
+    BROAD_INDEX_SOURCES.some((source) => available.has(source) && !failures.has(source))
+  );
+}
+
+/** A finding that came from databases answering, as opposed to one left open. */
+export function isSettledFinding(finding: ReferenceFinding): boolean {
+  return finding.status !== "unavailable" && !finding.oversized_chars;
 }
 
 // Informational, not a discrepancy: ML papers are routinely cited from arXiv alone.
@@ -232,7 +257,7 @@ export function createPdfReferenceChecker(
   } = {},
 ): PdfReferenceChecker {
   const userAgent = referenceUserAgent(options.contactEmail ?? resolveAdminBotDriveAccount());
-  return async (pdf, signal, onProgress) => {
+  return async (pdf, signal, onProgress, checkOptions) => {
     const references = await (options.extract ?? extractPdfReferences)(pdf, {
       maxReferences: options.maxReferences,
       allowOversized: options.allowOversized,
@@ -253,6 +278,13 @@ export function createPdfReferenceChecker(
           // Sized by entries, not names: a 300-author team report is one entry.
           oversized_chars: condenseAuthorRuns(citation).length,
         };
+        findings.push(finding);
+        onProgress?.({ completed: findings.length, total: references.length, finding });
+        continue;
+      }
+      const known = checkOptions?.known?.get(citation);
+      if (known && known.citation === citation && isSettledFinding(known)) {
+        const finding = { ...known };
         findings.push(finding);
         onProgress?.({ completed: findings.length, total: references.length, finding });
         continue;
@@ -284,11 +316,9 @@ export function createPdfReferenceChecker(
         !result.retracted &&
         !result.issues.some((issue) => !INFORMATIONAL_ISSUE.test(issue));
       // A rate-limited database may hold the work; with requireAllDatabases, "not found" is only
-      // claimed once the broad-coverage databases answered. Semantic Scholar and arXiv throttle
-      // anonymous clients constantly, so requiring them would mean never reporting anything.
+      // claimed once Crossref and at least one broad-coverage index answered.
       const incomplete =
-        options.requireAllDatabases === true &&
-        [...failures].some((source) => REQUIRED_DATABASES.has(source));
+        options.requireAllDatabases === true && !enoughDatabasesAnswered(failures, available);
       const status =
         !available.size || (incomplete && !matched && !result.exists)
           ? "unavailable"

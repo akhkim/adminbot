@@ -12,7 +12,6 @@ import {
   resolveAccessRole,
   resolveAccessibleTab,
   visibleTabsForMember,
-  visibleTabsForRole,
   type AccessRole,
 } from "./adminbot/access.ts";
 import { submitFeedback } from "./adminbot/api/workspace.ts";
@@ -3200,13 +3199,8 @@ export function renderApp(state: AppViewState) {
             </div>
             <div class="sidebar-shell__footer">
               <div class="sidebar-utility-group">
-                <!-- Was an external link to docs.openclaw.ai, which documented the upstream operator
-                     tool rather than this lab. Chat holds the slot now, and lives in the footer
-                     rather than in a nav group so it stays put at the bottom of the sidebar while
-                     the groups above it scroll. -->
-                ${visibleTabsForRole(["chat"], accessRole).map((tab) =>
-                  renderTab(state, tab, { collapsed: navCollapsed }),
-                )}
+                <!-- Chat sat here until it was retired for everyone. It is reachable only from
+                     the Sessions and Cron views now, to read a run's transcript (see access.ts). -->
                 <div class="sidebar-mode-switch">${renderTopbarThemeModeToggle(state)}</div>
                 ${state.memberId ? renderChangePasswordTrigger(state, navCollapsed) : nothing}
                 <button

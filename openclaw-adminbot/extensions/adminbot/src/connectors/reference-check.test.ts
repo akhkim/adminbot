@@ -6,6 +6,7 @@ import {
   referenceFetch,
 } from "./reference-check.http.js";
 import {
+  type ReferenceFinding,
   createPdfReferenceChecker,
   extractPdfFullText,
   extractPdfMainText,
@@ -218,30 +219,81 @@ describe("References-Validation integration", () => {
     }
   });
 
-  it("with requireAllDatabases, claims not found only when Crossref, OpenAlex and DBLP answered", async () => {
+  it("with requireAllDatabases, claims not found only when Crossref and a broad index answered", async () => {
     const extract = async () => [
       "Doe, J. (2024). An entirely invented synthetic research title. Test Journal.",
     ];
-    const statusWhen = async (throttled: string) => {
+    const statusWhen = async (...throttled: string[]) => {
       const check = createPdfReferenceChecker({
         extract,
         requireAllDatabases: true,
         requestIntervalMs: 0,
         fetch: vi.fn(async (input) =>
-          String(input).includes(throttled)
+          throttled.some((host) => String(input).includes(host))
             ? new Response("rate limited", { status: 429 })
             : emptyDatabase(input),
         ),
       });
       return (await check(new Uint8Array(), signal())).findings[0];
     };
-    // Semantic Scholar and OpenAlex throttle anonymous clients; that alone must not hide a miss.
+    // Any one broad index answering is enough: each of them is regularly out on its own.
     expect((await statusWhen("api.semanticscholar.org")).status).toBe("not_found");
     expect((await statusWhen("api.openalex.org")).status).toBe("not_found");
-    // DBLP out entirely -- both of its hosts -- still leaves the reference unconfirmed.
-    const partial = await statusWhen("https://dblp.");
-    expect(partial.status).toBe("unavailable");
-    expect(partial.explanation).toContain("not fully checked");
+    // DBLP walls off API clients entirely now; that must not leave every reference unchecked.
+    expect((await statusWhen("https://dblp.", "sparql.dblp.org")).status).toBe("not_found");
+    expect((await statusWhen("https://dblp.", "sparql.dblp.org", "api.openalex.org")).status).toBe(
+      "not_found",
+    );
+    // Every broad index out, or Crossref out, still leaves the reference unconfirmed.
+    for (const hosts of [
+      ["https://dblp.", "sparql.dblp.org", "api.openalex.org", "api.semanticscholar.org"],
+      ["api.crossref.org"],
+    ]) {
+      const partial = await statusWhen(...hosts);
+      expect(partial.status).toBe("unavailable");
+      expect(partial.explanation).toContain("not fully checked");
+    }
+  });
+
+  it("uses a settled finding it is handed instead of looking the citation up", async () => {
+    const known: ReferenceFinding = {
+      citation,
+      status: "matched",
+      explanation: "A matching record was found.",
+      source: "CrossRef",
+    };
+    const other = "Doe, J. (2024). An entirely invented synthetic research title.";
+    const fetcher = vi.fn(async (input: string | URL | Request) => emptyDatabase(input));
+    const check = createPdfReferenceChecker({
+      extract: async () => [citation, other],
+      requestIntervalMs: 0,
+      fetch: fetcher,
+    });
+    const progress: string[] = [];
+    const { findings } = await check(
+      new Uint8Array(),
+      signal(),
+      ({ finding }) => {
+        if (finding) {
+          progress.push(finding.citation);
+        }
+      },
+      { known: new Map([[citation, known]]) },
+    );
+    expect(findings[0]).toEqual(known);
+    expect(findings[1]).toMatchObject({ citation: other, status: "not_found" });
+    expect(progress).toEqual([citation, other]);
+    // Only the open reference reached the databases.
+    expect(
+      fetcher.mock.calls.some(([url]) =>
+        decodeURIComponent(String(url)).includes("reference matching"),
+      ),
+    ).toBe(false);
+    // An unsettled finding is no answer: it is looked up again.
+    const again = await check(new Uint8Array(), signal(), undefined, {
+      known: new Map([[other, { citation: other, status: "unavailable", explanation: "" }]]),
+    });
+    expect(again.findings[1]?.status).toBe("not_found");
   });
 
   it("with allowOversized, checks clean entries and never looks up an unsplittable chunk", async () => {
@@ -292,9 +344,8 @@ describe("References-Validation integration", () => {
     expect(cooldowns.get("api.openalex.org")! - before).toBeGreaterThanOrEqual(119_000);
     expect(cooldowns.get("dblp.org")! - before).toBeGreaterThanOrEqual(14 * 60_000);
     expect(cooldowns.get("dblp.uni-trier.de")! - before).toBeGreaterThanOrEqual(14 * 60_000);
-    expect(requiredDatabasesPausedUntil(cooldowns)).toBe(
-      Math.min(cooldowns.get("dblp.org")!, cooldowns.get("dblp.uni-trier.de")!),
-    );
+    // Semantic Scholar still answers, so a "not found" is still possible: nothing to pause for.
+    expect(requiredDatabasesPausedUntil(cooldowns)).toBeUndefined();
     const hostsCalled = (from: number) =>
       new Set(fetcher.mock.calls.slice(from).map(([url]) => new URL(String(url)).hostname));
     const calls = fetcher.mock.calls.length;
@@ -437,6 +488,10 @@ describe("References-Validation integration", () => {
           queries.push(url.searchParams.get("query") ?? "");
           return Response.json({ results: { bindings: [] } });
         }
+        // The other broad indexes out too, so SPARQL is all that could have said "no".
+        if (url.hostname === "api.openalex.org" || url.hostname === "api.semanticscholar.org") {
+          return new Response("rate limited", { status: 429 });
+        }
         return emptyDatabase(input);
       });
       const check = createPdfReferenceChecker({
@@ -447,13 +502,15 @@ describe("References-Validation integration", () => {
         fetch: fetcher,
       });
 
+      const before = Date.now();
       const { findings } = await check(new Uint8Array(), signal());
 
       expect(findings[0]?.status).toBe("unavailable");
       expect(queries.length).toBeGreaterThan(0);
       expect(queries[0]).toContain('ql:contains-word "synthetic"');
-      expect(cooldowns.get("dblp.org")).toBeGreaterThan(Date.now());
-      expect(cooldowns.get("dblp.uni-trier.de")).toBeGreaterThan(Date.now());
+      // A bot wall is backed off for an hour, not the quarter hour of a rate limit.
+      expect(cooldowns.get("dblp.org")! - before).toBeGreaterThanOrEqual(59 * 60_000);
+      expect(cooldowns.get("dblp.uni-trier.de")! - before).toBeGreaterThanOrEqual(59 * 60_000);
     });
 
     it("returns SPARQL rows in the search API's shape, authors in order", async () => {
@@ -565,6 +622,39 @@ describe("References-Validation integration", () => {
         "deep",
       ]);
     });
+  });
+
+  it("pauses only when Crossref, or every broad index, is backing off", () => {
+    const now = 1_000_000;
+    const at = (minutes: number) => now + minutes * 60_000;
+    const paused = (entries: Array<[string, number]>) =>
+      requiredDatabasesPausedUntil(new Map(entries), now);
+    expect(paused([["api.crossref.org", at(2)]])).toBe(at(2));
+    expect(
+      paused([
+        ["dblp.org", at(60)],
+        ["dblp.uni-trier.de", at(60)],
+        ["api.openalex.org", at(300)],
+      ]),
+    ).toBeUndefined();
+    // Every broad index out: the pause lasts until the first of them is back.
+    expect(
+      paused([
+        ["dblp.org", at(60)],
+        ["dblp.uni-trier.de", at(45)],
+        ["api.openalex.org", at(300)],
+        ["api.semanticscholar.org", at(15)],
+      ]),
+    ).toBe(at(15));
+    expect(
+      paused([
+        ["api.crossref.org", at(30)],
+        ["dblp.org", at(60)],
+        ["dblp.uni-trier.de", at(45)],
+        ["api.openalex.org", at(300)],
+        ["api.semanticscholar.org", at(15)],
+      ]),
+    ).toBe(at(30));
   });
 
   it("bounds Retry-After and reads HTTP dates", () => {
