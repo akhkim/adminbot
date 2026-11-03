@@ -14,6 +14,7 @@
 import { createHash } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import {
+  isSettledFinding,
   NO_TEXT_LAYER,
   ReferenceCheckError,
   type PdfReferenceChecker,
@@ -176,6 +177,29 @@ export class OpenReviewCitationWatch {
   }
 
   /**
+   * What earlier checks already settled, by exact citation string, so this one only looks up the
+   * rest. Everything settled for these same bytes -- an earlier, partial try -- and, from any paper
+   * or version, a reference that matched a record: a match does not stop being one, and the lab's
+   * papers cite each other's references constantly. A "not found" or "review" from another paper
+   * is not carried over: those are what a re-upload is meant to change, and they deserve a fresh look.
+   */
+  private knownFindings(submissionId: string, pdfSha256: string): Map<string, ReferenceFinding> {
+    const known = new Map<string, ReferenceFinding>();
+    for (const check of this.deps.store.listOpenReviewCitationChecks()) {
+      const sameBytes = check.submission_id === submissionId && check.pdf_sha256 === pdfSha256;
+      for (const finding of check.findings ?? []) {
+        if (isSettledFinding(finding) && (sameBytes || finding.status === "matched")) {
+          // Same bytes win over another paper's match of the same string.
+          if (sameBytes || !known.has(finding.citation)) {
+            known.set(finding.citation, finding);
+          }
+        }
+      }
+    }
+    return known;
+  }
+
+  /**
    * Sort key for what to check next, compared element by element.
    *
    * First, papers edited in the last month ahead of the historical backlog. A PI's history is
@@ -280,9 +304,31 @@ export class OpenReviewCitationWatch {
       return;
     }
     const signal = AbortSignal.timeout(this.deps.checkTimeoutMs ?? DEFAULT_CHECK_TIMEOUT_MS);
+    const known = this.knownFindings(submission.id, pdfSha256);
+    // The best any earlier try of these bytes got: a try that beats it made progress.
+    const settledBefore = Math.max(
+      0,
+      ...store
+        .listOpenReviewCitationChecks(submission.id)
+        .filter((check) => check.pdf_sha256 === pdfSha256)
+        .map((check) => (check.findings ?? []).filter(isSettledFinding).length),
+    );
+    // What the checker reported as it went, so a check cut short still keeps what it settled.
+    const progress: ReferenceFinding[] = [];
     let findings: ReferenceFinding[];
     try {
-      findings = (await this.deps.check(bytes, signal)).findings;
+      findings = (
+        await this.deps.check(
+          bytes,
+          signal,
+          ({ finding }) => {
+            if (finding) {
+              progress.push(finding);
+            }
+          },
+          { known },
+        )
+      ).findings;
     } catch (error) {
       if (error instanceof ReferenceCheckError) {
         // Deterministic for these bytes; its messages are fixed strings, safe to store and show.
@@ -299,10 +345,14 @@ export class OpenReviewCitationWatch {
         return;
       }
       summary.failed++;
+      // Kept so the next try resumes from them; a failed row is never read as clean.
+      const settled = progress.filter(isSettledFinding);
       store.saveOpenReviewCitationCheck({
         ...base,
+        attempts: settled.length > settledBefore ? base.attempts - 1 : base.attempts,
         pdf_sha256: pdfSha256,
         status: "failed",
+        ...(settled.length ? { findings: settled } : {}),
         error: signal.aborted
           ? "The check did not finish in time."
           : "The reference check could not be completed.",
@@ -338,14 +388,18 @@ export class OpenReviewCitationWatch {
       return;
     }
     if (unchecked > total * MAX_UNCHECKED_SHARE) {
-      // The databases, not the paper: a back-off mid-check does not use up one of its retries.
-      const backingOff = Boolean(this.deps.pausedUntil?.());
+      // The databases, not the paper: a back-off mid-check does not use up one of its retries, and
+      // neither does a try that settled more references than any before it -- the next one resumes
+      // from there, so a long bibliography finishes over several tries instead of running out.
+      const keepRetry =
+        Boolean(this.deps.pausedUntil?.()) ||
+        findings.filter(isSettledFinding).length > settledBefore;
       // Too little was actually checked; recording this as complete would read as a clean paper.
       // A later sweep retries, by which time a rate-limited database has usually recovered.
       summary.failed++;
       store.saveOpenReviewCitationCheck({
         ...base,
-        attempts: backingOff ? base.attempts - 1 : base.attempts,
+        attempts: keepRetry ? base.attempts - 1 : base.attempts,
         pdf_sha256: pdfSha256,
         status: "failed",
         // Kept so the lab sheet can name the references that could not be confirmed. A failed
@@ -398,7 +452,7 @@ export class OpenReviewCitationWatch {
         subject: `Citation check: ${flagged.length} reference(s) to review in “${check.title}”`,
         body: [
           `AdminBot checked the references of the latest uploaded version of “${check.title}” (${check.venue_id || "OpenReview"}).`,
-          `${notFound} reference(s) had no match in Crossref, Semantic Scholar, OpenAlex, DBLP or arXiv, and ${flagged.length - notFound} matched a record whose details differ.`,
+          `${notFound} reference(s) had no match in Crossref or in the broad indexes that answered (DBLP, OpenAlex, Semantic Scholar), nor on arXiv, and ${flagged.length - notFound} matched a record whose details differ.`,
           "These are automated findings for human review, not proof of fabrication. Please correct any real errors and upload a new version; it will be checked again automatically.",
           `https://openreview.net/forum?id=${check.submission_id}`,
           ...listed.map(
