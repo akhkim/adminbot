@@ -316,6 +316,21 @@ assert done['PI review'] == 'Approved Thu Oct 1, 2026' and done['Urgency'] == ''
 again = exporter.paper_row({'id': 'd', 'title': 'D'}, members, [slot('feedback_other', at='2026-10-03T00:00:00Z'),
     slot('pi_approval', at='2026-10-02T00:00:00Z')], [], NOW)
 assert again['PI review'] == 'Needs PI review' and again['Review for'] == 'Other feedback'
+# Feedback the PI marked reviewed leaves her queue: the ball is in the authors' court until they ask again.
+sent = exporter.paper_row({'id': 'f', 'title': 'F', 'current_step': 'overleaf_writing'}, members,
+    [slot('feedback_arxiv', at='2026-10-03T00:00:00Z', reviewed=True)], [], NOW)
+assert sent['PI review'] == 'Feedback given, author revising' and sent['Urgency'] == '', sent['PI review']
+assert sent['Review for'] == 'arXiv feedback' and sent['Requested by'] == ''
+# The authors queue the next round (a fresh request on another slot): back in the PI's queue.
+requeued = exporter.paper_row({'id': 'g', 'title': 'G', 'current_step': 'overleaf_writing'}, members,
+    [slot('feedback_arr', at='2026-10-01T00:00:00Z', reviewed=True), slot('authors_ack', at='2026-10-04T00:00:00Z')],
+    [], NOW)
+assert requeued['PI review'] == 'Needs PI review' and requeued['Review for'] == 'Publication approval'
+# Approval recorded after the reviewed round still reads as approved.
+approved = exporter.paper_row({'id': 'h', 'title': 'H'}, members,
+    [slot('feedback_arxiv', at='2026-10-01T00:00:00Z', reviewed=True), slot('pi_approval', at='2026-10-02T00:00:00Z')],
+    [], NOW)
+assert approved['PI review'].startswith('Approved '), approved['PI review']
 # Row-29 regression: share link stored in an invalid overleaf_edit slot and a /read/ view link both appear.
 moral = exporter.paper_row({'id': 'e', 'title': 'E'}, members, [
     slot('overleaf_edit', 'invalid', invalid='the link must be a /project/ URL', link='https://www.overleaf.com/358abc#d4'),
