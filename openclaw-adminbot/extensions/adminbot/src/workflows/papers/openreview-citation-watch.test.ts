@@ -45,6 +45,7 @@ function setup(options: {
   pdf?: (id: string) => Uint8Array | Promise<Uint8Array>;
   check?: PdfReferenceChecker;
   notifyEmail?: string | null;
+  checkTimeoutMs?: number;
 }) {
   const store = new AdminBotMemoryStore();
   const service = new AdminBotService(store);
@@ -65,6 +66,7 @@ function setup(options: {
     service,
     reader,
     check,
+    ...(options.checkTimeoutMs ? { checkTimeoutMs: options.checkTimeoutMs } : {}),
     ...(options.notifyEmail === null
       ? {}
       : { notifyEmail: options.notifyEmail ?? "lab-admin@example.test" }),
@@ -535,17 +537,118 @@ describe("OpenReview citation watch", () => {
     const unavailable = { ...notFound, status: "unavailable" as const };
     const { store, check, sweep } = setup({
       submissions: [submission()],
+      pdf: () => Buffer.from("%PDF-same-bytes"),
       check: async () => ({ findings: [matched, unavailable, unavailable] }),
     });
-    for (let i = 0; i < MAX_PARTIAL_CHECK_ATTEMPTS + 2; i++) {
+    for (let i = 0; i < MAX_PARTIAL_CHECK_ATTEMPTS + 3; i++) {
       await sweep();
     }
     expect(MAX_PARTIAL_CHECK_ATTEMPTS).toBeGreaterThan(MAX_CITATION_CHECK_ATTEMPTS);
-    expect(check).toHaveBeenCalledTimes(MAX_PARTIAL_CHECK_ATTEMPTS);
+    // The first try settled a reference, which is progress and costs no retry; every try after
+    // it settled nothing new.
+    expect(check).toHaveBeenCalledTimes(MAX_PARTIAL_CHECK_ATTEMPTS + 1);
     expect(store.getOpenReviewCitationCheck("paperAAAA", "/pdf/v1.pdf")).toMatchObject({
       status: "failed",
       attempts: MAX_PARTIAL_CHECK_ATTEMPTS,
     });
+  });
+
+  // DBLP walling off API clients left every paper with the same references unanswered, and each
+  // retry started the bibliography over. A retry now asks only about what is still open.
+  it("resumes a partial check, looking up only the references still open", async () => {
+    const citations = ["Ref one.", "Ref two.", "Ref three.", "Ref four."];
+    // Each try, the databases answer for two more references than before.
+    let answerable = 2;
+    const looked: string[][] = [];
+    const { store, check, sweep } = setup({
+      submissions: [submission()],
+      pdf: () => Buffer.from("%PDF-same-bytes"),
+      check: async (_pdf, _signal, onProgress, options) => {
+        const asked: string[] = [];
+        const findings = citations.map((citation, index): ReferenceFinding => {
+          const known = options?.known?.get(citation);
+          if (known) {
+            return known;
+          }
+          asked.push(citation);
+          return index < answerable
+            ? { citation, status: "matched", explanation: "A matching record was found." }
+            : { citation, status: "unavailable", explanation: "Not fully checked." };
+        });
+        looked.push(asked);
+        findings.forEach((finding, index) =>
+          onProgress?.({ completed: index + 1, total: findings.length, finding }),
+        );
+        answerable += 2;
+        return { findings };
+      },
+    });
+
+    await sweep();
+    expect(store.getOpenReviewCitationCheck("paperAAAA", "/pdf/v1.pdf")).toMatchObject({
+      status: "failed",
+      error: "About 2 of 4 references could not be checked.",
+      // Progress was made, so no retry was spent.
+      attempts: 0,
+    });
+    await sweep();
+    expect(check).toHaveBeenCalledTimes(2);
+    expect(looked).toEqual([citations, ["Ref three.", "Ref four."]]);
+    expect(store.getOpenReviewCitationCheck("paperAAAA", "/pdf/v1.pdf")).toMatchObject({
+      status: "completed",
+    });
+  });
+
+  it("keeps what a check cut short by the time limit had settled", async () => {
+    let tries = 0;
+    const seen: Array<string[]> = [];
+    const { store, sweep } = setup({
+      submissions: [submission()],
+      pdf: () => Buffer.from("%PDF-same-bytes"),
+      checkTimeoutMs: 20,
+      check: async (_pdf, signal, onProgress, options) => {
+        seen.push([...(options?.known?.keys() ?? [])]);
+        if (tries++ === 0) {
+          onProgress?.({ completed: 1, total: 2, finding: matched });
+          onProgress?.({
+            completed: 2,
+            total: 2,
+            finding: { ...notFound, status: "unavailable" },
+          });
+          await new Promise((_, reject) =>
+            signal.addEventListener("abort", () => reject(signal.reason)),
+          );
+        }
+        return { findings: [matched, notFound] };
+      },
+    });
+    await sweep();
+    expect(store.getOpenReviewCitationCheck("paperAAAA", "/pdf/v1.pdf")).toMatchObject({
+      status: "failed",
+      error: "The check did not finish in time.",
+      // Only what was settled is kept; the next try starts from it without spending a retry.
+      findings: [matched],
+      attempts: 0,
+    });
+    await sweep();
+    expect(seen[1]).toEqual([matched.citation]);
+    expect(store.getOpenReviewCitationCheck("paperAAAA", "/pdf/v1.pdf")?.status).toBe("completed");
+  });
+
+  it("reuses another paper's matched reference, never its not-found", async () => {
+    let current = [submission()];
+    const knownSeen: Array<string[]> = [];
+    const { sweep } = setup({
+      submissions: () => current,
+      check: async (_pdf, _signal, _progress, options) => {
+        knownSeen.push([...(options?.known?.keys() ?? [])]);
+        return { findings: [matched, notFound] };
+      },
+    });
+    await sweep();
+    current = [submission({ id: "paperBBBB", pdf_path: "/pdf/other.pdf", modified_at: 2 })];
+    await sweep();
+    expect(knownSeen).toEqual([[], [matched.citation]]);
   });
 
   // Evaluation Awareness had spent all three tries on unanswered lookups; it is owed more.

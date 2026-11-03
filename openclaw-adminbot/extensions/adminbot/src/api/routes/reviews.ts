@@ -229,7 +229,10 @@ export function createOpenReviewCitationWatch(
     reader,
     pausedUntil: () => requiredDatabasesPausedUntil(cooldowns),
     pauseBetweenMs: options.citationWatchChecker ? 0 : 60_000,
-    maxPauseWaitMs: options.citationWatchChecker ? 0 : 90_000,
+    // A standard 429 back-off is a quarter hour. Waiting it out inside the running sweep beats
+    // ending it: the next cron start is up to half an hour away, and a sweep that stopped after
+    // every paper got through one paper per run.
+    maxPauseWaitMs: options.citationWatchChecker ? 0 : 20 * 60_000,
     check:
       options.citationWatchChecker ??
       createPdfReferenceChecker({

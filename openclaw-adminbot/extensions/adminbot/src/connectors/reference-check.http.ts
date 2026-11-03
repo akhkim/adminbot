@@ -38,12 +38,29 @@ export function referenceUserAgent(contactEmail: string | undefined): string {
 }
 
 /**
- * The two databases a "not found" depends on (see reference-check.ts). Only these are waited for:
- * the others are optional, and OpenAlex's cooldown after its daily budget runs out lasts hours.
+ * What a "not found" depends on (see reference-check.ts): Crossref, plus at least one of the broad
+ * fuzzy-search indexes. DBLP alone used to be required, until it put its whole site -- search API
+ * included -- behind an Anubis proof-of-work wall (seen 2026-11) that no API client passes. Every
+ * lookup then counted DBLP as unreachable and the sweep could finish nothing.
+ */
+export const REQUIRED_SOURCE = "api.crossref.org";
+export const BROAD_INDEX_SOURCES = [
+  "dblp.org",
+  "api.openalex.org",
+  "api.semanticscholar.org",
+] as const;
+
+/**
+ * The databases whose short back-offs the sweep waits out rather than failing the lookup. Not
+ * OpenAlex or Semantic Scholar: OpenAlex's cooldown after its daily budget runs out lasts hours,
+ * and Semantic Scholar throttles so often that waiting on it would stall every reference.
  */
 export const REQUIRED_SOURCES = new Set(["api.crossref.org", "dblp.org"]);
 
 const DEFAULT_COOLDOWN_MS = 15 * 60_000;
+// A bot wall is not a rate limit that lifts in minutes; asking every quarter hour only adds to the
+// traffic it is there to stop.
+const BOT_WALL_COOLDOWN_MS = 60 * 60_000;
 // A reset connection from anyone but DBLP is a network blip, not a ban: Crossref dropped one
 // connection in fifty-odd on Aurora, and fifteen minutes of cooldown on a required database
 // failed the rest of that paper.
@@ -384,7 +401,7 @@ async function fetchFromHost(
     // DBLP's bot wall answers 200 with an HTML page. Treated as the host refusing, with the same
     // back-off, so every lookup does not go on knocking on a host that has stopped answering.
     if (response.ok && source === DBLP && host !== DBLP_SPARQL && /not a bot/iu.test(body)) {
-      context.cooldowns?.set(host, Date.now() + DEFAULT_COOLDOWN_MS);
+      context.cooldowns?.set(host, Date.now() + BOT_WALL_COOLDOWN_MS);
       throw new Error("DBLP answered with a bot challenge");
     }
     if (response.ok && host === DBLP_SPARQL) {
