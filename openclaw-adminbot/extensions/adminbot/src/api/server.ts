@@ -96,6 +96,10 @@ import {
   createPublicDeadlineLimiter,
   handlePublicDeadlineProposal,
 } from "./server.public-deadline-proposals.js";
+import {
+  handlePaperMentorAffiliations,
+  PAPERMENTOR_AFFILIATIONS_PATH,
+} from "./server.papermentor-affiliations.js";
 import { servePublicRoute } from "./server.public.js";
 
 // Long enough that a deploy's restart has settled before CVs start downloading.
@@ -236,6 +240,9 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
   // the client keeps the URL it already connects with.
   const gatewayUrl = trimmedEnv(options.gatewayUrl ?? process.env.ADMINBOT_GATEWAY_WS_URL);
   const serviceToken = trimmedEnv(options.serviceToken ?? process.env.ADMINBOT_SERVICE_TOKEN);
+  const paperMentorToken = trimmedEnv(
+    options.paperMentorToken ?? process.env.ADMINBOT_PAPERMENTOR_TOKEN,
+  );
   const ipinfoToken = trimmedEnv(options.ipinfoToken ?? process.env.IPINFO_TOKEN);
   const geoipMmdbPath = trimmedEnv(options.geoipMmdbPath ?? process.env.ADMINBOT_GEOIP_MMDB_PATH);
   const ipGeolocation = selectIpGeolocator({ mmdbPath: geoipMmdbPath, ipinfoToken });
@@ -524,6 +531,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       ? { reimbursementWorkflow: options.reimbursementWorkflow }
       : {}),
     ...(serviceToken ? { serviceToken } : {}),
+    ...(paperMentorToken ? { paperMentorToken } : {}),
     ...(options.devicePairingApprover
       ? { devicePairingApprover: options.devicePairingApprover }
       : {}),
@@ -753,6 +761,14 @@ async function routeRequest(req: IncomingMessage, res: ServerResponse, ctx: Admi
       ctx.publicDeadlineLimiter,
       remoteIp(req, ctx.trustProxyHeaders),
       DEADLINE_VENUES,
+    );
+    return;
+  }
+
+  // PaperMentor's roster read, on its own token (./server.papermentor-affiliations.ts).
+  if (url.pathname === PAPERMENTOR_AFFILIATIONS_PATH) {
+    await handlePaperMentorAffiliations(req, res, ctx.paperMentorToken, () =>
+      ctx.store.listLabMembers(),
     );
     return;
   }
