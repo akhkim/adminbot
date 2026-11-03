@@ -42881,6 +42881,55 @@
       "PiReviewRow": {
         "type": "object",
         "properties": {
+          "category": {
+            "type": "string",
+            "enum": [
+              "camera_ready",
+              "under_review",
+              "safety_impact",
+              "arxiv_release",
+              "after_rejection"
+            ]
+          },
+          "hard_deadline": {
+            "type": "string"
+          },
+          "days_left": {
+            "type": "number"
+          },
+          "openreview": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "rejected",
+                  "withdrawn",
+                  "accepted",
+                  "under_review",
+                  "desk_rejected"
+                ]
+              },
+              "stage": {
+                "type": "string",
+                "enum": [
+                  "conference",
+                  "reviews_out",
+                  "rebuttal",
+                  "decision",
+                  "camera_ready"
+                ]
+              },
+              "note": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "note"
+            ],
+            "additionalProperties": true
+          },
           "feedback": {
             "type": "object",
             "properties": {
@@ -42993,6 +43042,7 @@
           }
         },
         "required": [
+          "category",
           "paper_id",
           "title",
           "authors",
