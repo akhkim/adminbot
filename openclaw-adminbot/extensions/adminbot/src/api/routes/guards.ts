@@ -145,6 +145,21 @@ export function requireNewMemberDecider(
   return false;
 }
 
+/**
+ * Whether the person at the keyboard is a PI approver the host names in `ADMINBOT_PI_APPROVER_IDS`
+ * (`piApproverIds`): an admin, in their own session, who may approve publication and mark paper
+ * feedback reviewed alongside the PI. Same terms as `canDecideNewMembers`, and a separate list
+ * because sharing the PI's paper review is not deciding who joins. The PI herself is checked where
+ * the slot is written (kernel/service.pi-review.ts); this answers only for the people named next to
+ * her, and grants nothing else she holds.
+ */
+export function canGivePiReview(ctx: AdminBotRouteContext, principal: AdminBotPrincipal): boolean {
+  if (principal.kind !== "member" || principal.impersonator || !isPrivileged(principal)) {
+    return false;
+  }
+  return ctx.piApproverIds.includes(principal.member.id);
+}
+
 export function principalActor(principal: AdminBotPrincipal): string {
   if (principal.kind === "service") {
     return "service";

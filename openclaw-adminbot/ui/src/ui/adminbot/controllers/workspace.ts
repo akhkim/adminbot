@@ -17,7 +17,6 @@ export type AdminBotSettingsSaveInput = {
   meeting_minimum_minutes?: number;
   cv_recency_window_months?: number;
   head_professor_member_id?: string;
-  pi_approver_member_ids?: string[];
   lab_manager_member_id?: string;
   head_professor_whatsapp?: string;
   applicant_sheet_id?: string;

@@ -1039,45 +1039,22 @@ describe("PI review completion authorization", () => {
     ).toBe(true);
   });
 
-  it("lets a named PI approver approve publication, and nobody else", () => {
+  it("lets a writer the route vouches for as a PI approver approve publication, and nobody else", () => {
     const service = new AdminBotService();
     seed(service);
-    unwrap(
-      service.updateSettings({
-        head_professor_member_id: "ada",
-        pi_approver_member_ids: [" bob ", "bob", ""],
-      }),
-    );
-    expect(service.piApproverMemberIds()).toEqual(["bob"]);
-    expect(
+    unwrap(service.updateSettings({ head_professor_member_id: "ada" }));
+    const approve = (memberId: string, piApprover?: boolean) =>
       service.setPaperSlot({
         paperId: "p1",
         slot: "pi_approval",
         input: { done: true },
-        memberId: "carol",
+        memberId,
         privileged: true,
-      }).status,
-    ).toBe(403);
-    expect(
-      service.setPaperSlot({
-        paperId: "p1",
-        slot: "pi_approval",
-        input: { done: true },
-        memberId: "bob",
-        privileged: true,
-      }).ok,
-    ).toBe(true);
-    // An empty list is "nobody but the head professor", not "leave it as it was".
-    unwrap(service.updateSettings({ pi_approver_member_ids: [] }));
-    expect(
-      service.setPaperSlot({
-        paperId: "p1",
-        slot: "pi_approval",
-        input: { done: false },
-        memberId: "bob",
-        privileged: true,
-      }).status,
-    ).toBe(403);
+        ...(piApprover === undefined ? {} : { piApprover }),
+      });
+    expect(approve("carol").status).toBe(403);
+    expect(approve("carol", false).status).toBe(403);
+    expect(approve("bob", true).ok).toBe(true);
   });
 });
 

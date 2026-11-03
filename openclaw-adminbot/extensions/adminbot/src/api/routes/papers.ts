@@ -8,6 +8,7 @@ import { asString, readJson, readRecord, sendJson, sendServiceResult } from "../
 import { handlePaperProgress } from "../server.paper-progress.js";
 import {
   adminSessionOnly,
+  canGivePiReview,
   isPrivileged,
   memberOnly,
   principalActor,
@@ -192,6 +193,7 @@ export const papersRoutes: readonly Route[] = [
         input: body as AdminBotPaperSlotInput,
         memberId: principal.kind === "member" ? principal.member.id : principalActor(principal),
         privileged: isPrivileged(principal),
+        piApprover: canGivePiReview(ctx, principal),
       }),
     );
   }),

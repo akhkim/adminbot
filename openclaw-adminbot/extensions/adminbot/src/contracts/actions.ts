@@ -1960,13 +1960,6 @@ export type AdminBotSettingsInput = {
   // too tight and a real move lands as backfilled, too wide and "recently" stops meaning it.
   cv_recency_window_months?: number;
   head_professor_member_id?: string;
-  /**
-   * Members who may give the PI's review alongside the head professor: approve publication and
-   * mark paper feedback reviewed. Not the head professor's other rights -- approving new members,
-   * reviewing impact statements and naming the PI stay hers. Changed only by the head professor
-   * once one is named (api/routes/workspace.ts), for the same reason naming the PI is.
-   */
-  pi_approver_member_ids?: string[];
   // Contact number the onboarding "what to expect" note hands to direct mentees. Governance
   // config rather than a repo constant: it is a real phone number, so it never belongs in the
   // source tree, and /settings is admin-gated on read as well as write.
@@ -2060,7 +2053,11 @@ export type AdminBotSettings = {
   paper_escalation_business_days: number;
   cv_recency_window_months: number;
   head_professor_member_id?: string;
-  /** See AdminBotSettingsInput.pi_approver_member_ids. */
+  /**
+   * Read-only: the members the host names in ADMINBOT_PI_APPROVER_IDS, who approve publication and
+   * mark paper feedback reviewed alongside the head professor. GET /settings reports it; PUT
+   * ignores it, since an admin who could edit the list could add themselves.
+   */
   pi_approver_member_ids?: string[];
   head_professor_whatsapp?: string;
   /**

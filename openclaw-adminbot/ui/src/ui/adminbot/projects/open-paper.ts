@@ -1,7 +1,7 @@
 // Opening one paper from a list that names it: Active Papers' rows and My Desk's PI review queue.
 //
 // Everybody lands on the paper's project page -- the page its authors work on -- except the head
-// professor and the PI approvers settings name next to her, who get the review dialog
+// professor and the PI approvers the host names next to her, who get the review dialog
 // (review-dialog.ts): the manuscript, the feedback asked of the PI, and publication approval,
 // rather than the authors' whole checklist. Which one opens is a matter of presentation; the
 // service checks every write either way.

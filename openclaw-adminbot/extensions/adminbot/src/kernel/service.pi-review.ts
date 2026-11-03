@@ -1,5 +1,5 @@
 // Head-professor gate on PI review slots, cut from service.ts so it stays under its file-size
-// ratchet. Pure: the service supplies the configured PI reviewers and returns the 403.
+// ratchet. Pure: the service supplies the head professor and whether the writer is a PI approver, and returns the 403.
 import { parsePaperFeedback } from "../contracts/paper-feedback.js";
 import {
   mergePaperImpactWrite,
@@ -10,32 +10,21 @@ import {
 } from "../contracts/paper-impact.js";
 
 /**
- * Who may give the PI's review: the head professor, plus the members settings name as PI
- * approvers. Blank ids are dropped so an unset setting never matches a writer with no id.
- */
-export function piReviewerIds(params: {
-  headProfessorMemberId?: string | null;
-  piApproverMemberIds?: readonly string[] | null;
-}): string[] {
-  return [params.headProfessorMemberId, ...(params.piApproverMemberIds ?? [])]
-    .map((id) => id?.trim() ?? "")
-    .filter(Boolean);
-}
-
-/**
  * Why this write needs a PI reviewer and the writer is not one, or null when it may go ahead.
  * Approving publication, and marking feedback reviewed or noted, belong to the head professor and
- * the PI approvers settings name next to her.
+ * the PI approvers the host names next to her. Whether the writer is one of those approvers is the
+ * route's call (api/routes/pi-approvers.ts), since it depends on the session, not only the id.
  */
 export function piReviewSlotDenial(params: {
   slot: string;
   valueText?: string | null;
   memberId?: string;
   headProfessorMemberId?: string | null;
-  piApproverMemberIds?: readonly string[] | null;
+  piApprover?: boolean;
 }): string | null {
   const writer = params.memberId?.trim();
-  if (writer && piReviewerIds(params).includes(writer)) {
+  const head = params.headProfessorMemberId?.trim();
+  if (params.piApprover || (writer && head && writer === head)) {
     return null;
   }
   if (params.slot === "pi_approval") {

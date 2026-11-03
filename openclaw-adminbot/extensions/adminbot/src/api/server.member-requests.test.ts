@@ -23,7 +23,7 @@ afterEach(async () => {
   }
 });
 
-async function startService(options: { memberApproverIds?: string[] } = {}) {
+async function startService(options: { memberApproverIds?: string[]; piApproverIds?: string[] } = {}) {
   const calendarShares: string[] = [];
   const mock = createAdminBotMockService({
     serviceToken: SERVICE_TOKEN,
@@ -34,6 +34,7 @@ async function startService(options: { memberApproverIds?: string[] } = {}) {
     dcsFormRunner: async () => {},
     // Pinned to none unless a test names some, so a developer's own environment cannot open the gate.
     memberApproverIds: options.memberApproverIds ?? [],
+    piApproverIds: options.piApproverIds ?? [],
   });
   await new Promise<void>((resolve, reject) => {
     mock.server.once("error", reject);
@@ -114,7 +115,7 @@ type RequestView = {
   meetings?: string[];
 };
 
-async function lab(options: { memberApproverIds?: string[] } = {}) {
+async function lab(options: { memberApproverIds?: string[]; piApproverIds?: string[] } = {}) {
   const { baseUrl, mock, calendarShares } = await startService(options);
   seedMember(mock, {
     id: "admin",
@@ -464,23 +465,42 @@ describe("member requests", () => {
     expect(mock.service.headProfessorMemberId()).toBe("admin");
   });
 
-  it("does not let an admin add themselves as a PI approver", async () => {
-    const { baseUrl, mock, admin, pi } = await lab();
-    const put = (token: string, approvers: string[]) =>
-      fetch(`${baseUrl}/settings`, {
-        method: "PUT",
+  // The PI approvers the host names share her paper review, on the same terms as the member
+  // approvers: an admin, in their own session. The list is the host's; /settings only reports it.
+  it("lets a host-named PI approver approve publication, and keeps the list off /settings", async () => {
+    const { baseUrl, admin, andy, pat } = await lab({ piApproverIds: ["andy", "pat"] });
+    const send = (token: string, method: string, route: string, body?: unknown) =>
+      fetch(`${baseUrl}${route}`, {
+        method,
         headers: jsonHeaders({ Authorization: `Bearer ${token}` }),
-        body: JSON.stringify({ pi_approver_member_ids: approvers }),
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
-    expect((await put(admin, ["admin"])).status).toBe(403);
-    expect(mock.service.piApproverMemberIds()).toEqual([]);
-    expect((await put(pi, ["admin", "bob"])).status).toBe(200);
-    expect(mock.service.piApproverMemberIds()).toEqual(["admin", "bob"]);
-    // Re-sending the same list, in any order, is what a Settings save does.
-    expect((await put(admin, ["bob", "admin"])).status).toBe(200);
-    expect((await put(admin, ["bob"])).status).toBe(403);
-    expect((await put(pi, [])).status).toBe(200);
-    expect(mock.service.piApproverMemberIds()).toEqual([]);
+    const paper = await send(admin, "PUT", "/papers/p1", {
+      title: "Causal abstraction",
+      authors: ["Pat"],
+      current_step: "overleaf_writing",
+      first_author_member_id: "pat",
+      venue: "ICLR 2027",
+      deadline: "2099-01-01",
+    });
+    expect(paper.status).toBe(200);
+    const approve = (token: string) =>
+      send(token, "PUT", "/papers/p1/slots/pi_approval", { done: true });
+    expect((await approve(admin)).status).toBe(403);
+    // Named, but a member rather than an admin: naming grants nothing on its own.
+    expect((await approve(pat)).status).toBe(403);
+    const viewing = await send(admin, "POST", "/auth/impersonate", { member_id: "andy" });
+    const asAndy = ((await viewing.json()) as { session_token: string }).session_token;
+    expect((await approve(asAndy)).status).toBe(403);
+    expect((await approve(andy)).status).toBe(200);
+
+    const approvers = async () =>
+      ((await (await send(admin, "GET", "/settings")).json()) as {
+        pi_approver_member_ids?: string[];
+      }).pi_approver_member_ids;
+    expect(await approvers()).toEqual(["andy", "pat"]);
+    await send(admin, "PUT", "/settings", { pi_approver_member_ids: ["admin"] });
+    expect(await approvers()).toEqual(["andy", "pat"]);
   });
 
   it("refuses the service principal and anonymous callers", async () => {

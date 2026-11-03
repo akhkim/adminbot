@@ -988,6 +988,14 @@ fall out of step. The say-once key carries when the package became ready, so a p
 A missing `arxiv_paper_password` does not hold the decision up: the row says the package is
 incomplete and she can still say yes, because that is the authors' errand and not her decision.
 
+The host can name admins who give this yes alongside her, in `ADMINBOT_PI_APPROVER_IDS`
+(comma-separated member ids in the service env file): they may tick `pi_approval` and mark paper
+feedback reviewed, and the Control UI opens the PI review dialog for them. They are held to the
+same terms as `ADMINBOT_MEMBER_APPROVER_IDS` -- an admin session of their own, never a "view as"
+one -- and the impact-statement hold applies to them as it does to her. Nothing else of hers is
+shared. `GET /settings` reports the list as `pi_approver_member_ids`; `PUT /settings` ignores it,
+since an admin who could edit it could add themselves.
+
 ## PaperMentor reviews
 
 Every paper is reviewed by PaperMentor -- the multi-agent reviewer built into the lab's own
