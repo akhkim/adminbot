@@ -210,6 +210,8 @@ export const papersRoutes: readonly Route[] = [
           slot: decodeURIComponent(params[2]),
           reason: String(body?.reason ?? ""),
           memberId: principalActor(principal),
+          piApprover: canGivePiReview(ctx, principal),
+          viewAs: principal.kind === "member" && principal.impersonator !== undefined,
         }),
       );
     }),

@@ -306,6 +306,16 @@ describe("the paper fields the slots hang off", () => {
     ).toMatchObject({ venue_decision: "accept" });
   });
 
+  it("keeps an admin from waiving the PI's approval unless they are a named PI approver", () => {
+    const service = new AdminBotService();
+    seed(service);
+    unwrap(service.upsertLabMember({ id: "zj", name: "Admin", privilege_level: "admin" } as never));
+    const waive = (extra: { piApprover?: boolean; viewAs?: boolean } = {}) =>
+      service.waivePaperSlot({ paperId: "p1", slot: "pi_approval", reason: "approved elsewhere", memberId: "zj", ...extra });
+    expect(waive()).toMatchObject({ ok: false, status: 403 });
+    expect(waive({ piApprover: true })).toMatchObject({ ok: true });
+  });
+
   it("still saves the other fields of a paper accepted before the rule, link or no link", () => {
     const service = new AdminBotService();
     seed(service);
