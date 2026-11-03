@@ -33,7 +33,7 @@ import type { LabBroadcast } from "../api/lab-sharing.ts";
 import type { LogisticsRequest } from "../api/logistics.ts";
 import type { MemberProfileOverviewRow } from "../api/members.ts";
 import { escalatedNudgeTotal, type EscalatedNudgeRow } from "../api/nudges.ts";
-import type { PiReviewRow } from "../api/paper-admin.ts";
+import { piReviewCategoryLabels, type PiReviewRow } from "../api/paper-admin.ts";
 import type { AdminBotPaperRecord } from "../controllers/admin.ts";
 import { renderDateControl } from "../date-control.ts";
 
@@ -732,6 +732,32 @@ function broadcastBox(props: ProfessorViewProps) {
 }
 
 /** A week out, which is the span "broadcast from Zhijing for this week" actually means. */
+/**
+ * A row's hard deadline with how long is left, so the urgency is the first thing read: "Due Nov
+ * 27, 2026 -- 23 days left", or how far past it is.
+ */
+export function renderHardDeadline(row: Pick<PiReviewRow, "hardDeadline" | "daysLeft">) {
+  if (!row.hardDeadline) {
+    return nothing;
+  }
+  const date = new Date(row.hardDeadline).toLocaleString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    timeZoneName: "short",
+  });
+  const days = row.daysLeft;
+  const left =
+    days === undefined
+      ? ""
+      : days < 0
+        ? ` — ${-days} day${days === -1 ? "" : "s"} overdue`
+        : days === 0
+          ? " — due today"
+          : ` — ${days} day${days === 1 ? "" : "s"} left`;
+  return html`<strong data-testid="pi-review-hard-deadline">Due ${date}${left}</strong>`;
+}
+
 function defaultExpiryDate(now = new Date()): string {
   return new Date(now.getTime() + 7 * 86_400_000).toISOString().slice(0, 10);
 }
@@ -777,9 +803,17 @@ export function renderProfessorView(props: ProfessorViewProps) {
                       props.onOpenPaper
                         ? props.onOpenPaper(row.paperId)
                         : props.onOpen("adminbotPapers"),
-                    body: html`<strong>${row.title}</strong>
+                    body: html`${row.category
+                        ? html`<span class="pill" data-testid="pi-review-category"
+                            >${piReviewCategoryLabels[row.category]}</span
+                          >`
+                        : nothing}
+                      <strong>${row.title}</strong>
                       <span class="muted">${row.authors.join(", ")}</span>
-                      ${row.impact
+                      ${row.hardDeadline ? renderHardDeadline(row) : nothing}
+                      ${row.openreview
+                        ? html`<span>${row.openreview.note}</span>`
+                        : row.impact
                         ? html`<strong
                               ><span class="pill" data-testid="pi-review-high-priority"
                                 >High priority</span
@@ -834,7 +868,11 @@ export function renderProfessorView(props: ProfessorViewProps) {
                           href=${row.drivePdfUrl}
                           target="_blank"
                           rel="noreferrer noopener"
-                          >${row.feedback ? "Open manuscript" : t("professor.piReview.pdf")}</a
+                          >${row.openreview
+                            ? "Open on OpenReview"
+                            : row.feedback
+                              ? "Open manuscript"
+                              : t("professor.piReview.pdf")}</a
                         >`
                       : undefined,
                   }),

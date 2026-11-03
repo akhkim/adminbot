@@ -525,6 +525,11 @@ import {
 } from "../workflows/papers/papermentor-nudges.js";
 import { paperFeedbackQueue, paperImpactQueue } from "../workflows/papers/pi-review.js";
 import {
+  buildCameraReadyNotice,
+  openReviewPaperQueue,
+  rankPaperQueue,
+} from "../workflows/papers/paper-queue.js";
+import {
   buildPiReviewNotice,
   isAwaitingPiReview,
   piReviewLedgerSubject,
@@ -7908,6 +7913,9 @@ export class AdminBotService {
       if (plan.slotWrites.length) {
         this.syncOnePaperStage(current, "openreview", nowIso, ledger);
       }
+      if (plan.sync.status === "accepted") {
+        this.tellPiOfCameraReady(paper.id, plan.sync.fingerprint, nowIso, ledger);
+      }
     }
     // Counted per submission, not per report: one paper is usually several e-mails.
     const keyOf = (item: OpenReviewEvidence) => normalizedTitle(item.title) || item.forums[0] || "";
@@ -7919,6 +7927,50 @@ export class AdminBotService {
         .filter((key) => key && !matchedKeys.has(key)),
     ).size;
     return { ok: true, status: 200, payload: report };
+  }
+
+  /**
+   * Tell the head professor, once per acceptance, that a camera-ready is now on her queue and how
+   * many days it has. Before this an acceptance only reached the first author, so the hard
+   * deadline was something she found out about rather than something she was told.
+   */
+  private tellPiOfCameraReady(
+    paperId: string,
+    fingerprint: string,
+    nowIso: string,
+    ledger: Map<string, AdminBotNudgeLedgerRecord>,
+  ): void {
+    const paper = this.store.getPaper(paperId);
+    const headProfessorId = this.resolveSettings().head_professor_member_id?.trim();
+    if (!paper || !headProfessorId) {
+      return;
+    }
+    const [row] = openReviewPaperQueue(
+      [
+        {
+          paper,
+          slots: this.store.listPaperSlots(paperId),
+          evidence: this.store.listPaperflowEvidence(paperId),
+        },
+      ],
+      this.deadlineReadModel(DEADLINE_VENUES),
+      new Date(nowIso),
+    );
+    const subject = `camera_ready|${paperId}|${fingerprint}`;
+    if (row?.category !== "camera_ready" || this.hasNudgeBeenSaid(ledger, "pi_review", subject)) {
+      return;
+    }
+    const notice = buildCameraReadyNotice(row);
+    this.store.saveMemberNotification({
+      id: `notif_${randomUUID()}`,
+      member_id: headProfessorId,
+      kind: "paper_slot",
+      title: notice.title,
+      body: notice.body,
+      tab: "adminbotProfessor",
+      created_at: nowIso,
+    });
+    this.markNudgeSaid("pi_review", subject, headProfessorId, nowIso);
   }
 
   /**
@@ -8426,17 +8478,28 @@ export class AdminBotService {
     const candidates = this.store
       .listPapers()
       .map((paper) => ({ paper, slots: this.paperRows().listPaperSlots(paper.id) }));
+    const open = candidates.filter(({ paper }) => !isPaperClosed(paper));
     return {
       ok: true,
       status: 200,
       payload: {
-        papers: [
-          // Safety-related impact statements come first: the head professor asked for them at high priority.
-          ...paperImpactQueue(candidates.filter(({ paper }) => !isPaperClosed(paper))),
+        // One list in reading order: camera-ready first, then safety impact, arXiv, under review
+        // and rejections, each by nearest hard deadline (workflows/papers/paper-queue.ts).
+        papers: rankPaperQueue([
+          ...paperImpactQueue(open),
           // A previous venue rejection does not cancel an explicit request to review a revision.
           ...paperFeedbackQueue(candidates),
-          ...piReviewQueue(candidates.filter(({ paper }) => !isPaperClosed(paper))),
-        ],
+          ...piReviewQueue(open),
+          // What OpenReview says each submitted paper needs next, for every venue.
+          ...openReviewPaperQueue(
+            candidates.map((candidate) => ({
+              ...candidate,
+              evidence: this.paperRows().listPaperflowEvidence(candidate.paper.id),
+            })),
+            this.deadlineReadModel(DEADLINE_VENUES),
+            new Date(),
+          ),
+        ]),
       },
     };
   }

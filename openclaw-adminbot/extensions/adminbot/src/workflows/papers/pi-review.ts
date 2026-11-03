@@ -13,7 +13,10 @@
 //
 // Derived, not stored. The queue is a function of the slots, so a paper leaves it the moment she
 // ticks the box or an admin waives it, and there is no second list to fall out of step.
-import type { AdminBotPaperRecord } from "../../contracts/actions.js";
+import type {
+  AdminBotPaperOpenReviewSync,
+  AdminBotPaperRecord,
+} from "../../contracts/actions.js";
 import {
   parsePaperFeedback,
   paperFeedbackSlots,
@@ -30,9 +33,23 @@ import {
   isAdminBotPaperSlotSettled,
   type AdminBotPaperSlotRecord,
 } from "../../contracts/paper-slots.js";
+import type { AdminBotPaperflowStage } from "../../contracts/paperflow-stages.js";
+import type { PaperQueueCategory } from "./paper-queue.js";
 
 /** One paper waiting on the PI, with the evidence that says it is ready to be looked at. */
 export type PiReviewRow = {
+  /** What kind of decision this is; the queue is read category by category (paper-queue.ts). */
+  category: PaperQueueCategory;
+  /** The venue's hard deadline for this row, as an ISO instant, when one is known. */
+  hard_deadline?: string;
+  /** Whole days until `hard_deadline` when the queue was read; negative once it has passed. */
+  days_left?: number;
+  /** What OpenReview says about the paper, for rows the OpenReview reading put here. */
+  openreview?: {
+    status: AdminBotPaperOpenReviewSync["status"];
+    stage?: AdminBotPaperflowStage;
+    note: string;
+  };
   feedback?: PaperFeedback & { label: string; slot: string };
   /** A safety-related impact statement waiting on the PI's read. */
   impact?: Pick<PaperImpactStatus, "statement" | "verdict" | "source" | "reasons" | "override">;
@@ -86,6 +103,7 @@ export function piReviewQueue(candidates: readonly PiReviewCandidate[]): PiRevie
       const drivePdf = slot("drive_pdf_arxiv")?.url;
       const waitingSince = slot("authors_ack")?.provided_at;
       const row: PiReviewRow = {
+        category: "arxiv_release",
         paper_id: candidate.paper.id,
         title: candidate.paper.title,
         authors: candidate.paper.authors,
@@ -132,6 +150,13 @@ export function buildPiReviewNotice(row: PiReviewRow): { title: string; body: st
   };
 }
 
+/** Which part of the queue a feedback request belongs to: the stage the revision is for. */
+const feedbackCategory: Record<keyof typeof paperFeedbackSlots, PaperQueueCategory> = {
+  feedback_camera_ready: "camera_ready",
+  feedback_arxiv: "arxiv_release",
+  feedback_arr: "under_review",
+};
+
 /** Explicit feedback requests use the same durable paper slots and admin queue read permissions. */
 export function paperFeedbackQueue(candidates: readonly PiReviewCandidate[]): PiReviewRow[] {
   return candidates
@@ -146,6 +171,7 @@ export function paperFeedbackQueue(candidates: readonly PiReviewCandidate[]): Pi
         }
         return [
           {
+            category: feedbackCategory[row.slot as keyof typeof paperFeedbackSlots],
             paper_id: paper.id,
             title: paper.title,
             authors: paper.authors,
@@ -185,6 +211,7 @@ export function paperImpactQueue(candidates: readonly PiReviewCandidate[]): PiRe
       }
       return [
         {
+          category: "safety_impact" as const,
           paper_id: paper.id,
           title: paper.title,
           authors: paper.authors,
