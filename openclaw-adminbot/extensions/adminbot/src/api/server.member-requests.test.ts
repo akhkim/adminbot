@@ -493,6 +493,10 @@ describe("member requests", () => {
     const asAndy = ((await viewing.json()) as { session_token: string }).session_token;
     expect((await approve(asAndy)).status).toBe(403);
     expect((await approve(andy)).status).toBe(200);
+    // Nor is viewing as the PI her yes: that is still the admin at the keyboard.
+    const viewingPi = await send(admin, "POST", "/auth/impersonate", { member_id: "zhijing" });
+    const asPi = ((await viewingPi.json()) as { session_token: string }).session_token;
+    expect((await approve(asPi)).status).toBe(403);
 
     const approvers = async () =>
       ((await (await send(admin, "GET", "/settings")).json()) as {

@@ -21,10 +21,12 @@ export function piReviewSlotDenial(params: {
   memberId?: string;
   headProfessorMemberId?: string | null;
   piApprover?: boolean;
+  /** An admin "viewing as" the writer: never the PI's own yes, whoever is being viewed. */
+  viewAs?: boolean;
 }): string | null {
   const writer = params.memberId?.trim();
   const head = params.headProfessorMemberId?.trim();
-  if (params.piApprover || (writer && head && writer === head)) {
+  if (params.piApprover || (!params.viewAs && writer && head && writer === head)) {
     return null;
   }
   if (params.slot === "pi_approval") {

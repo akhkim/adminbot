@@ -194,6 +194,7 @@ export const papersRoutes: readonly Route[] = [
         memberId: principal.kind === "member" ? principal.member.id : principalActor(principal),
         privileged: isPrivileged(principal),
         piApprover: canGivePiReview(ctx, principal),
+        viewAs: principal.kind === "member" && principal.impersonator !== undefined,
       }),
     );
   }),
