@@ -1,8 +1,38 @@
-import { Readable } from "node:stream";
+import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { run } from "../../cli/adminbot.mjs";
 import { fundingInput } from "../workflows/papers/funding-audit.test-helpers.js";
 import { createAdminBotMockService } from "./server.js";
+
+function invokeCli(
+  args: string[],
+  input: unknown,
+  baseUrl: string,
+): Promise<{ code: number | null; out: string; err: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      process.execPath,
+      [fileURLToPath(new URL("../../cli/adminbot.mjs", import.meta.url)), ...args, "--file", "-"],
+      {
+        env: { ADMINBOT_URL: baseUrl, ADMINBOT_TOKEN: "synthetic-cli" },
+        stdio: ["pipe", "pipe", "pipe"],
+      },
+    );
+    let out = "",
+      err = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      out += chunk;
+    });
+    child.stderr.on("data", (chunk: string) => {
+      err += chunk;
+    });
+    child.once("error", reject);
+    child.once("close", (code) => resolve({ code, out, err }));
+    child.stdin.end(JSON.stringify(input));
+  });
+}
 
 describe("funding audit CLI to real proposal route", () => {
   it("returns server-computed per-funder findings without executing external effects", async () => {
@@ -25,22 +55,11 @@ describe("funding audit CLI to real proposal route", () => {
         expiresAt: new Date(Date.now() + 60000).toISOString(),
       }));
       const before = mock.store.listProposalsByType("paper.overleaf_edit").length;
-      let previewOut = "",
-        previewErr = "";
-      const previewCode = await run(["papers", "funding-audit", "--file", "-"], {
-        env: { ADMINBOT_URL: `http://127.0.0.1:${address.port}`, ADMINBOT_TOKEN: "synthetic-cli" },
-        stdin: Readable.from([JSON.stringify(input)]),
-        stdout: {
-          write: (value: string) => {
-            previewOut += value;
-          },
-        },
-        stderr: {
-          write: (value: string) => {
-            previewErr += value;
-          },
-        },
-      });
+      const {
+        code: previewCode,
+        out: previewOut,
+        err: previewErr,
+      } = await invokeCli(["papers", "funding-audit"], input, `http://127.0.0.1:${address.port}`);
       expect(previewErr).toBe("");
       expect(previewCode).toBe(0);
       expect(JSON.parse(previewOut)).toMatchObject({
@@ -72,22 +91,11 @@ describe("funding audit CLI to real proposal route", () => {
           fundingAudit: { input, findings: [{ id: "forged", decision: "exclude" }] },
         },
       };
-      let out = "",
-        err = "";
-      const code = await run(["proposals", "create", "--file", "-"], {
-        env: { ADMINBOT_URL: `http://127.0.0.1:${address.port}`, ADMINBOT_TOKEN: "synthetic-cli" },
-        stdin: Readable.from([JSON.stringify(body)]),
-        stdout: {
-          write: (value: string) => {
-            out += value;
-          },
-        },
-        stderr: {
-          write: (value: string) => {
-            err += value;
-          },
-        },
-      });
+      const { code, out, err } = await invokeCli(
+        ["proposals", "create"],
+        body,
+        `http://127.0.0.1:${address.port}`,
+      );
       expect(err).toBe("");
       expect(code).toBe(0);
       const result = JSON.parse(out);
