@@ -90,12 +90,13 @@ metadata, author approvals, and timing.
 Include exact file ids or hashes and an idempotency key tied to venue, paper id,
 and version.
 
-For funding/acknowledgement checks use that same tool with `mode="funding_check"`
+For funding/acknowledgement checks use `adminbot_prepare_overleaf_paper_edit`
+with `mode="funding_check"`
 and private `fundingAudit` input (see docs/tools/adminbot.md). Review source-backed
 boolean facts for this paper's work period and declarative AND/OR conditions.
 Do not infer funding from current roster/access, multi-agent from multi-turn, or
-compute/tool use from a grant/topic mention. Unknown or stale conditions block
-execution; preserve other-coauthor and unverified credits in original order.
+compute/tool use from a grant/topic mention. Unknown audit findings block
+execution of audited payloads; preserve other-coauthor and unverified credits in original order.
 Never paste the whole conditional template as the acknowledgement. The existing
 CLI `proposals create --file` path computes the same findings before hashing.
 
