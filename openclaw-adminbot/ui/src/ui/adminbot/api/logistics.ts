@@ -252,6 +252,27 @@ export async function updateLogisticsRequest(
   return { ok: true, value: result.body as LogisticsRequest };
 }
 
+/** An admin removing a request outright. The service refuses anyone else. */
+export async function deleteLogisticsRequest(
+  requestId: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ deleted: true; id: string }>> {
+  const result = await authedJson(
+    baseUrl,
+    `/logistics/requests/${encodeURIComponent(requestId)}`,
+    "DELETE",
+    sessionToken,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  return { ok: true, value: result.body as { deleted: true; id: string } };
+}
+
 export async function withdrawLogisticsRequest(
   requestId: string,
   sessionToken: string,

@@ -110,4 +110,11 @@ describe("onboarding email send and resend", () => {
     await click("Confirm");
     expect(element.querySelector('[role="alert"]')?.textContent).toContain("already queued");
   });
+  it("keeps acquaintance sends behind the exact-copy preview instead of the quick-send button", async () => {
+    await mount("not_queued");
+    element.requirePreview = true;
+    await flush();
+    expect(button("Send onboarding email")).toBeUndefined();
+    expect(mocks.queue).not.toHaveBeenCalled();
+  });
 });

@@ -17,6 +17,7 @@ const NOTHING_TO_SEND = new Set(["", "unknown", "pending", "approved", "not_appl
 
 export class MemberGuideStatus extends LitElement {
   @property({ type: String }) memberId = "";
+  @property({ type: Boolean }) requirePreview = false;
   @state() private detail = "Open this panel to check the onboarding email.";
   @state() private status = "";
   @state() private busy = false;
@@ -116,6 +117,7 @@ export class MemberGuideStatus extends LitElement {
     await this.refresh();
   }
   private renderSend() {
+    if (this.requirePreview) return nothing;
     if (NOTHING_TO_SEND.has(this.status)) return nothing;
     const label = REACHED.has(this.status) ? "Resend onboarding email" : "Send onboarding email";
     if (!this.confirming)

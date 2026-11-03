@@ -82,6 +82,8 @@ Website: `/onboarding` · Who: admin
 | `get-onboarding-interviewers`                                | GET `/onboarding/interviewers`                              |
 | `post-lab-members-by-members-id-onboarding-by-onboarding-id` | POST `/lab/members/{members_id}/onboarding/{onboarding_id}` |
 | `post-lab-members-by-members-id-onboarding-guide`            | POST `/lab/members/{members_id}/onboarding/guide`           |
+| `post-lab-members-by-members-id-onboarding-welcome-preview`  | POST `/lab/members/{members_id}/onboarding/welcome/preview` |
+| `post-lab-members-by-members-id-onboarding-welcome-queue`    | POST `/lab/members/{members_id}/onboarding/welcome/queue`   |
 | `post-members-dcs-roster-backfill`                           | POST `/members/dcs-roster/backfill` (dry-run)               |
 | `post-members-roster-sync`                                   | POST `/members/roster-sync` (dry-run)                       |
 | `post-members-slack-roster-sync`                             | POST `/members/slack-roster/sync` (dry-run)                 |
@@ -254,6 +256,7 @@ Website: `/signatures, /rec-letters, /meeting-requests` · Who: member (queues: 
 | -------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
 | `delete-logistics-eligibility-attestations-by-eligibility-attestations-id` | DELETE `/logistics/eligibility-attestations/{eligibility_attestations_id}` |
 | `delete-logistics-freeze-incidents-by-freeze-incidents-id`                 | DELETE `/logistics/freeze-incidents/{freeze_incidents_id}`                 |
+| `delete-logistics-requests-by-requests-id`                                 | DELETE `/logistics/requests/{requests_id}`                                 |
 | `get-logistics-call-sheet`                                                 | GET `/logistics/call-sheet`                                                |
 | `get-logistics-eligibility-attestations`                                   | GET `/logistics/eligibility-attestations`                                  |
 | `get-logistics-eligibility-me`                                             | GET `/logistics/eligibility/me`                                            |
@@ -384,6 +387,7 @@ Website: `/papers, /announcements, /grant-report, /professor, /arr-eligible-revi
 | `post-papers-openreview-sync-run`                                         | POST `/papers/openreview-sync/run` (dry-run)                              |
 | `post-papers-paperflow-evidence`                                          | POST `/papers/paperflow-evidence`                                         |
 | `post-papers-paperflow-stages-run`                                        | POST `/papers/paperflow-stages/run`                                       |
+| `post-papers-papermentor-reviews-run`                                     | POST `/papers/papermentor/reviews/run` (dry-run)                          |
 | `post-papers-papermentor-runs`                                            | POST `/papers/papermentor/runs`                                           |
 | `post-papers-pre-registration-run`                                        | POST `/papers/pre-registration/run`                                       |
 | `post-papers-project-channels-run`                                        | POST `/papers/project-channels/run`                                       |
@@ -454,6 +458,16 @@ Website: `/deadlines` · Who: anyone (proposals: member)
 | `post-deadline-recommendations-preview`                             | POST `/deadline-recommendations/preview`                            |
 | `post-internal-deadlines-extract-schedule`                          | POST `/internal/deadlines/extract-schedule`                         |
 | `post-public-deadline-proposals`                                    | POST `/public/deadline-proposals`                                   |
+
+## Collaborator chat requests
+
+Website: `/lab-sharing` · Who: admin
+
+| Operation ID                                               | Route                                                      |
+| ---------------------------------------------------------- | ---------------------------------------------------------- |
+| `get-collaborator-chats`                                   | GET `/collaborator-chats`                                  |
+| `post-collaborator-chats-by-collaborator-chats-id-prepare` | POST `/collaborator-chats/{collaborator_chats_id}/prepare` |
+| `post-collaborator-chats`                                  | POST `/collaborator-chats`                                 |
 
 ## Lab sharing
 

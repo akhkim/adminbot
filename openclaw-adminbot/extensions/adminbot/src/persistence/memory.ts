@@ -1,3 +1,4 @@
+import { createCollaboratorChatRequestStore } from "./collaborator-chat-requests.js";
 /**
  * In-memory service store.
  *
@@ -197,6 +198,8 @@ function compareIndexedPageText(left: string, right: string): number {
 }
 
 export class AdminBotMemoryStore implements AdminBotServiceStore {
+  private readonly collaboratorChats = createCollaboratorChatRequestStore();
+  collaboratorChatRequestStore() { return this.collaboratorChats; }
   private readonly referenceScans = new Map<string, ReferenceScan>();
   getReferenceScan(submissionId: string, pdfHash: string): ReferenceScan | undefined {
     return this.referenceScans.get(JSON.stringify([submissionId, pdfHash]));

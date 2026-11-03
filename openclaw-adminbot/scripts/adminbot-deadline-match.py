@@ -4,28 +4,34 @@ AdminBot deadline matcher (Output 2, step 1).
 
 Maps lab papers to the UPCOMING deadlines in deadlines.json:
 
-  ONGOING papers ("Paper submissions" tab)  -> target venue via the `Venue`
-      column (freeform, e.g. "EMNLP 100%", "NeurIPS 100%", "90% ARR Aug",
-      "ICLR 77.77%").  High-confidence, deterministic.
+  ONGOING papers (the AdminBot service's own paper records) -> target venue via
+      each paper's `venue` string (e.g. "ICLR 2027"), for every in-flight paper
+      -- one that still has a venue and no accept/reject verdict yet.
+      High-confidence, deterministic.
 
   READY papers ("Formatted Papers" tab, Year >= currentYear-1) -> candidate
       NeurIPS 2026 workshops via TOPIC match (keyword + curated concept boosts).
       Fuzzy: emitted as SUGGESTIONS that a human confirms before any nudge.
 
-Input rows come from local CSV exports or are read from the sheets through
-`gog` as GOG_ACCOUNT, which the sheets must be shared with. Output: matches.json.
+Ongoing papers are read from the AdminBot service DB by default -- the lab's live
+paper tracking, which the old "Paper submissions" sheet drifts behind. The sheet
+stays available as a fallback, and a local CSV for tests. Ready papers (the
+workshop SUGGESTIONS) still come from the "Formatted Papers" sheet through `gog`
+as GOG_ACCOUNT. Output: matches.json.
 
 Env / args:
-  --ongoing-csv PATH   --ready-csv PATH        (local CSV; overrides the sheet)
+  --ongoing-csv PATH   --ready-csv PATH        (local CSV; overrides the source)
   --now YYYY-MM-DD      (default: today)        --out matches.json
-Sheet IDs (used only if no local CSV given):
-  ADMINBOT_ONGOING_SHEET_ID (tab "Paper submissions", gid 846550934) required
-  ADMINBOT_READY_SHEET_ID   (tab "Formatted Papers",  gid 1634319760) optional;
-      unset skips the ready->workshop suggestions and still writes the ongoing
-      matches
+Ongoing source (default: the service DB):
+  ADMINBOT_SERVICE_BASE_URL (default http://127.0.0.1:8765), ADMINBOT_SERVICE_TOKEN
+  ADMINBOT_ONGOING_SOURCE=sheet -> read the "Paper submissions" tab instead,
+      which then needs ADMINBOT_ONGOING_SHEET_ID (gid 846550934)
+Ready source (the "Formatted Papers" sheet):
+  ADMINBOT_READY_SHEET_ID (gid 1634319760) optional; unset skips the ready->
+      workshop suggestions and still writes the ongoing matches
   GOG_BIN (default ~/.local/bin/gog), GOG_ACCOUNT
 """
-import csv, json, os, re, sys, math, argparse, subprocess
+import csv, json, os, re, sys, math, argparse, subprocess, urllib.request
 from collections import Counter, defaultdict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -41,6 +47,13 @@ TARGET_TO_GROUP = {
     "ICLR 2027":               "ICLR 2027",
     "NeurIPS 2026 Workshop":   "NeurIPS 2026 Workshops",
 }
+
+# Where the ongoing papers come from. The AdminBot service DB -- the lab's live paper tracking -- is
+# the source of truth; the "Paper submissions" sheet it used to read drifts behind it.
+SERVICE_BASE = os.environ.get("ADMINBOT_SERVICE_BASE_URL", "http://127.0.0.1:8765")
+# A paper is in flight -- still aiming at a venue, worth a deadline reminder -- until the lab records
+# the venue's verdict. accept and reject both mean the submission deadline is behind it.
+ONGOING_EXCLUDED_DECISIONS = {"accept", "reject"}
 
 
 def classify_ongoing(v):
@@ -202,6 +215,78 @@ def read_csv(local, sheet_id, gid, tab, env_name, required=True, run=gog_json):
     raise SystemExit(f"{env_name} is not set and no CSV was given: nothing to read the {tab!r} tab from")
 
 
+def build_ongoing(title, venue, authors, venues):
+    """One ongoing match, or None when the paper is not aimed at a venue with an upcoming deadline."""
+    if not title or not venue:
+        return None
+    tgt = classify_ongoing(venue)
+    if not tgt or tgt not in TARGET_TO_GROUP:
+        return None
+    grp = TARGET_TO_GROUP[tgt]
+    if grp not in venues:
+        return None
+    return dict(kind="ongoing", title=title, raw_venue=venue, target=tgt,
+                venue_group=grp, deadline_id=venues[grp]["id"], deadline_aoe=venues[grp]["deadline_aoe"],
+                authors=authors, confirmed=True)
+
+
+def ongoing_from_rows(rows, venues):
+    """Ongoing matches from sheet/CSV rows: col 1 title, 2 venue, 3 authors; header/section rows skipped."""
+    out = []
+    for r in rows or []:
+        if len(r) < 4:
+            continue
+        t, v, au = (r[1] or "").strip(), (r[2] or "").strip(), (r[3] or "").strip()
+        if not t or t.lower() == "title" or t.lower().startswith(("sorting", "first batch", "second batch")):
+            continue
+        m = build_ongoing(t, v, split_authors(au), venues)
+        if m:
+            out.append(m)
+    return out
+
+
+def fetch_papers_from_service():
+    """Every paper the AdminBot service holds, read over the loopback API as the service token."""
+    base = SERVICE_BASE.rstrip("/")
+    token = os.environ.get("ADMINBOT_SERVICE_TOKEN", "").strip()
+    headers = {"User-Agent": "jinesis-adminbot/1.0"}
+    if token:
+        headers["Authorization"] = "Bearer " + token
+    # GET /papers caps limit at 100, so page through in hundreds.
+    papers, offset, limit = [], 0, 100
+    while True:
+        url = f"{base}/papers?limit={limit}&offset={offset}"
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=30) as resp:
+                data = json.load(resp)
+        except Exception as e:
+            raise SystemExit(f"could not read papers from the AdminBot service at {base}: {e}")
+        batch = data.get("papers", [])
+        papers.extend(batch)
+        offset += len(batch)
+        total = data.get("total")
+        if not batch or len(batch) < limit or (total is not None and offset >= total):
+            return papers
+
+
+def ongoing_from_service(venues):
+    """Ongoing matches from the service DB: in-flight papers (venue set, no accept/reject verdict)."""
+    out = []
+    for p in fetch_papers_from_service():
+        venue = (p.get("venue") or "").strip()
+        if not venue:
+            continue
+        if (p.get("venue_decision") or "").strip().lower() in ONGOING_EXCLUDED_DECISIONS:
+            continue
+        authors = p.get("authors")
+        authors = ([str(a).strip() for a in authors if str(a).strip()]
+                   if isinstance(authors, list) else split_authors(str(authors or "")))
+        m = build_ongoing((p.get("title") or "").strip(), venue, authors, venues)
+        if m:
+            out.append(m)
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ongoing-csv"); ap.add_argument("--ready-csv")
@@ -220,22 +305,20 @@ def main():
         if group not in venues or venue["deadline_aoe"] < venues[group]["deadline_aoe"]:
             venues[group] = venue
 
-    # ONGOING
-    rows = read_csv(a.ongoing_csv, os.environ.get("ADMINBOT_ONGOING_SHEET_ID", "").strip(), "846550934",
-                    "Paper submissions", "ADMINBOT_ONGOING_SHEET_ID")
-    ongoing = []
-    for r in rows:
-        if len(r) < 4:
-            continue
-        t, v, au = (r[1] or "").strip(), (r[2] or "").strip(), (r[3] or "").strip()
-        if not t or not v or t.lower() == "title" or t.lower().startswith(("sorting", "first batch", "second batch")):
-            continue
-        tgt = classify_ongoing(v)
-        if tgt and tgt in TARGET_TO_GROUP and TARGET_TO_GROUP[tgt] in venues:
-            grp = TARGET_TO_GROUP[tgt]
-            ongoing.append(dict(kind="ongoing", title=t, raw_venue=v, target=tgt,
-                                venue_group=grp, deadline_id=venues[grp]["id"], deadline_aoe=venues[grp]["deadline_aoe"],
-                                authors=split_authors(au), confirmed=True))
+    # ONGOING. The AdminBot service DB -- the lab's live paper tracking -- is the source of truth.
+    # --ongoing-csv (tests) and ADMINBOT_ONGOING_SOURCE=sheet (fallback) still read the old
+    # "Paper submissions" tab.
+    if a.ongoing_csv:
+        ongoing = ongoing_from_rows(read_csv(a.ongoing_csv, "", "846550934",
+                                             "Paper submissions", "ADMINBOT_ONGOING_SHEET_ID"), venues)
+        print("ongoing source: local CSV")
+    elif os.environ.get("ADMINBOT_ONGOING_SOURCE", "").strip().lower() == "sheet":
+        ongoing = ongoing_from_rows(read_csv(None, os.environ.get("ADMINBOT_ONGOING_SHEET_ID", "").strip(),
+                                             "846550934", "Paper submissions", "ADMINBOT_ONGOING_SHEET_ID"), venues)
+        print("ongoing source: Paper submissions sheet")
+    else:
+        ongoing = ongoing_from_service(venues)
+        print(f"ongoing source: AdminBot service ({SERVICE_BASE})")
 
     # READY -> workshop suggestions. Topic-match against every workshop; each match
     # carries its own venue/deadline (so a lone NLP4PI match keeps its Aug 3 date).

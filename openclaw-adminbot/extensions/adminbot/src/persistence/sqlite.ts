@@ -92,6 +92,7 @@ import {
   type AdminBotSlackConnectInvite,
 } from "../kernel/service.js";
 import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
+import { createCollaboratorChatRequestStore } from "./collaborator-chat-requests.js";
 import { withApiTokenAttribution } from "../workflows/identity/api-token-context.js";
 import {
   labMemberRowReader,
@@ -290,6 +291,10 @@ export function sqliteServiceOptions({
 }
 
 export class AdminBotSqliteStore implements AdminBotServiceStore {
+  collaboratorChatRequestStore() {
+    return createCollaboratorChatRequestStore(this.db);
+  }
+
   memberDraftStore() {
     return createMemberDraftStore(this.db);
   }

@@ -10,8 +10,9 @@
 // parenthesised link, then the claim, so a section pastes in without reformatting.
 
 import { SAFETY_AREAS, SAFETY_AREA_BY_ID, SOURCE, type SafetyAreaId } from "./areas.ts";
+import { DEFAULT_PROPOSAL, PROPOSALS, type GrantProposal } from "./proposals.ts";
 import type { ClassifiedPaper } from "./resolve.ts";
-import { GRANT_SECTIONS, type GrantSection, type TrackRecord } from "./sections.ts";
+import type { GrantSection, TrackRecord } from "./sections.ts";
 
 /** Papers in the current submission cycle -- everything except the already-published prior work. */
 export function pipelinePapers(papers: readonly ClassifiedPaper[]): readonly ClassifiedPaper[] {
@@ -41,7 +42,7 @@ export function papersForSection(
 
 export function descendantIds(sectionId: string): readonly string[] {
   const found: string[] = [];
-  for (const section of GRANT_SECTIONS) {
+  for (const section of PROPOSALS.flatMap((proposal) => proposal.sections)) {
     if (section.parent === sectionId) {
       found.push(section.id, ...descendantIds(section.id));
     }
@@ -49,9 +50,23 @@ export function descendantIds(sectionId: string): readonly string[] {
   return found;
 }
 
-/** Lab output that no part of the technical agenda claims. Counted, not hidden. */
-export function unmappedPapers(papers: readonly ClassifiedPaper[]): readonly ClassifiedPaper[] {
-  return papers.filter((paper) => !paper.published && paper.sections.length === 0);
+/** The ids a paper carries that belong to this proposal; a paper holds ids from all of them. */
+export function sectionsInProposal(
+  paper: ClassifiedPaper,
+  proposal: GrantProposal = DEFAULT_PROPOSAL,
+): readonly string[] {
+  const ids = new Set(proposal.sections.map((section) => section.id));
+  return paper.sections.filter((id) => ids.has(id));
+}
+
+/** Lab output that no part of this proposal claims. Counted, not hidden. */
+export function unmappedPapers(
+  papers: readonly ClassifiedPaper[],
+  proposal: GrantProposal = DEFAULT_PROPOSAL,
+): readonly ClassifiedPaper[] {
+  return papers.filter(
+    (paper) => !paper.published && sectionsInProposal(paper, proposal).length === 0,
+  );
 }
 
 /** Papers the six-area taxonomy has no home for -- technical AGI safety is not all the lab does. */
@@ -114,15 +129,16 @@ export function trackRecordMarkdown(record: TrackRecord): string {
 
 /** One section as a document-ready block: heading, the "Track record" label, then the bullets. */
 export function sectionMarkdown(section: GrantSection): string {
-  const heading = `${"#".repeat(section.depth)} ${section.number}: ${section.title}`;
+  const label = section.number ? `${section.number}: ${section.title}` : section.title;
+  const heading = `${"#".repeat(section.depth)} ${label}`;
   return [heading, "", "**Track record**", "", trackRecordMarkdown(section.trackRecord), ""].join(
     "\n",
   );
 }
 
 /** Every section's track record, in document order. This is what Task 2 hands back. */
-export function allTrackRecordsMarkdown(): string {
-  return GRANT_SECTIONS.map(sectionMarkdown).join("\n");
+export function allTrackRecordsMarkdown(proposal: GrantProposal = DEFAULT_PROPOSAL): string {
+  return proposal.sections.map(sectionMarkdown).join("\n");
 }
 
 /**
@@ -132,11 +148,14 @@ export function allTrackRecordsMarkdown(): string {
  * a funding document, and a guess that arrives there looking like a curated judgment is exactly the
  * failure this whole three-tier scheme exists to prevent.
  */
-export function areaMapMarkdown(papers: readonly ClassifiedPaper[]): string {
+export function areaMapMarkdown(
+  papers: readonly ClassifiedPaper[],
+  proposal: GrantProposal = DEFAULT_PROPOSAL,
+): string {
   const header = ["| Paper | Venue | Areas | Proposal sections |", "| --- | --- | --- | --- |"];
   const rows = papers.map((paper) => {
     const areas = paper.areas.map((id) => SAFETY_AREA_BY_ID[id].name).join(", ") || "—";
-    const sections = paper.sections.join(", ") || "—";
+    const sections = sectionsInProposal(paper, proposal).join(", ") || "—";
     // Pipes inside a title would break the table; the sheet has none today, but a paper renamed
     // tomorrow should not silently produce a broken export.
     const title = paper.title.replaceAll("|", "\\|");
@@ -147,14 +166,17 @@ export function areaMapMarkdown(papers: readonly ClassifiedPaper[]): string {
 }
 
 /** Both halves of the report, with the provenance header a grant reader needs. */
-export function fullReportMarkdown(papers: readonly ClassifiedPaper[]): string {
+export function fullReportMarkdown(
+  papers: readonly ClassifiedPaper[],
+  proposal: GrantProposal = DEFAULT_PROPOSAL,
+): string {
   const inferred = papers.filter((paper) => paper.origin !== "curated").length;
   return [
     "# Grant report — paper coverage and track record",
     "",
     `Papers read live from the AdminBot store, unioned with the \`${SOURCE.sheet.tab}\` tab of`,
     `[${SOURCE.sheet.title}](${SOURCE.sheet.url}) as of ${SOURCE.compiledOn}, against`,
-    `[${SOURCE.proposal.title}](${SOURCE.proposal.url}).`,
+    `${proposal.url ? `[${proposal.title}](${proposal.url})` : proposal.title}.`,
     `Area taxonomy: ${SOURCE.taxonomy.title} (${SOURCE.taxonomy.attribution}), ${SOURCE.taxonomy.url}.`,
     "",
     inferred > 0
@@ -163,10 +185,10 @@ export function fullReportMarkdown(papers: readonly ClassifiedPaper[]): string {
     "",
     "## Task 1 — Papers mapped to the six areas",
     "",
-    areaMapMarkdown(papers),
+    areaMapMarkdown(papers, proposal),
     "",
     "## Task 2 — Track record by proposal section",
     "",
-    allTrackRecordsMarkdown(),
+    allTrackRecordsMarkdown(proposal),
   ].join("\n");
 }

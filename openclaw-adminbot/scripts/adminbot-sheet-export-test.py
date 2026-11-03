@@ -752,3 +752,40 @@ assert (poster['Conference'], poster['Year'], poster['Track'], poster['Presentat
     'ICLR', '2027', 'Main', 'Poster', 'AdminBot'), poster
 assert set(exporter.PAPER_STATE_VALUES) >= {emnlp()['Paper state'], demo['Paper state']}
 print('PASS: Conference, Year, Track, Presentation and Paper state fill from OpenReview, then AdminBot')
+
+# Recommendation-letter filter reads only submitted requests and explicit letter dates.
+letters = sqlite3.connect(':memory:')
+letters.execute('CREATE TABLE adminbot_logistics_requests(member_id TEXT, submitted_at TEXT, payload_json TEXT)')
+def letter(member, submitted, deadlines=(), status='submitted', kind='recommendation_letters'):
+    letters.execute('INSERT INTO adminbot_logistics_requests VALUES (?,?,?)', (member, submitted, json.dumps({
+        'kind': kind, 'status': status, 'schools': [{'letter_deadline': date, 'school': 'PRIVATE_SCHOOL'} for date in deadlines],
+        'description': 'PRIVATE_LETTER', 'attachments': [{'data_base64': 'PRIVATE_FILE'}]})))
+letter('recent', '2026-10-20T00:00:00Z')
+letter('boundary', '2026-04-28T04:00:00Z', ['2026-04-28'])
+letter('old', '2025-01-01T00:00:00Z', ['2025-02-01'])
+letter('future', '2025-01-01T00:00:00Z', ['2028-01-01'])
+letter('undated', 'invalid', ['not-a-date'])
+letter('partial-dates', '2025-01-01T00:00:00Z', ['2025-02-01', 'invalid'])
+letter('withdrawn', '2026-10-20T00:00:00Z', ['2027-01-01'], 'withdrawn')
+letter('declined', '2026-10-20T00:00:00Z', ['2027-01-01'], 'declined')
+letter('other', '2026-10-20T00:00:00Z', ['2027-01-01'], kind='book_meeting')
+letter('mixed', 'invalid', ['invalid'])
+letter('mixed', '2026-10-20T00:00:00Z', ['2027-01-01'])
+letter('completed', '2026-10-20T00:00:00Z', ['2026-10-25'], 'completed')
+before = letters.total_changes
+windows = exporter.recommendation_letter_windows(letters, '2026-10-28T12:00:00Z')
+assert windows == {'recent': 'Recent request / letter', 'boundary': 'Recent request / letter',
+                   'future': 'Upcoming letter', 'undated': 'Unknown date', 'partial-dates': 'Unknown date', 'mixed': 'Upcoming letter',
+                   'completed': 'Recent request / letter'}
+assert letters.total_changes == before
+assert 'PRIVATE' not in json.dumps(windows)
+# Calendar months clamp month-end correctly; a Toronto midnight boundary is inclusive.
+letter('month-end', '2026-02-28T05:00:00Z', ['2026-02-28'])
+assert exporter.recommendation_letter_windows(letters, '2026-08-31T12:00:00Z')['month-end'] == 'Recent request / letter'
+assert 'boundary' not in exporter.recommendation_letter_windows(letters, '2026-10-29T12:00:00Z')
+member = {'id': 'unrecorded', 'name': 'Synthetic Member'}
+values = exporter.full_people_values(letters, [member], [], '2026-10-28T12:00:00Z')
+assert values[1][values[0].index('recommendation_letter_window')] == 'No matching request recorded'
+missing = exporter.full_people_values(sqlite3.connect(':memory:'), [member], [], '2026-10-28T12:00:00Z')
+assert missing[1][missing[0].index('recommendation_letter_window')] == 'Unknown — requests unavailable'
+print('PASS: letter window calendar boundaries, future requests, unknown versus absent, settled states, privacy and read-only export')

@@ -134,6 +134,7 @@ export const adminBotActionTypes = [
   // nobody overlaps), with the dates, location and event page. Its own type so "who did AdminBot
   // introduce to whom, and when" is one row per introduction in the audit log.
   "slack.conference_intro",
+  "slack.collaborator_chat",
   // Writes each ICLR submission's AI-text score into one column of the lab's paper sheet
   // (ADMINBOT_ICLR_INTEGRITY_SHEET_ID). Its own type, rather than sheet.update_cells, because it is
   // auto-approved -- and the executor enforces what makes that safe: single cells, in the one
@@ -1716,6 +1717,19 @@ export type AdminBotLabMemberInput = {
    */
   dcs_username?: string;
   /**
+   * What this record absorbed in admin merges: the retired records' ids, and the addresses and
+   * Slack accounts that were theirs rather than this record's own. Written only by
+   * mergeLabMembers (see absorbedIdentity).
+   *
+   * The daily imports read them so a merged duplicate is recognized as this person. Without them
+   * the Slack roster sync and the onboarding sheet sweep re-created every merged duplicate the next
+   * morning: the merge keeps one Slack id and one login email, so the other account and the sheet
+   * row's address matched nobody.
+   */
+  former_member_ids?: string[];
+  alternate_emails?: string[];
+  alternate_slack_user_ids?: string[];
+  /**
    * Whether this person holds a UofT affiliation, which is what makes a DCS account sponsorable.
    *
    * Its own field rather than a reading of `affiliation`: that column is free text and is empty
@@ -2755,6 +2769,12 @@ export type AdminBotAuditEvent = {
     // only the first, so "when did we last hear from PaperMentor about this paper" has an answer
     // even on the days it re-sent the review it sent yesterday. Counts only -- see the table.
     | "papermentor.run_recorded"
+    // AdminBot asked the lab's Overleaf to review a paper at its review step, and what it said.
+    // One row per request, including the refusals, so a paper that is never reviewed has a trail.
+    | "papermentor.review_requested"
+    // The project a paper's share link resolved to, written onto the paper so the review that
+    // follows can find it. The row names the link it replaced, if any.
+    | "papermentor.project_linked"
     // A paper moving itself along the trunk on the strength of its own evidence, and the slots
     // that released the step. The audit row is the proof: "why is this paper at submission" has an
     // answer that names four pieces of evidence rather than "somebody changed a dropdown".
@@ -2786,6 +2806,7 @@ export type AdminBotAuditEvent = {
     // The pre-meeting pre-registration reminder, keyed by the meeting it was sent before.
     | "prereg.nudged"
     | "paper.deleted"
+    | "onboarding.email_attempted"
     | "onboarding.guide_sent"
     // One weekly pass over the sheet for joiners and re-typed members. Its timestamp is what the
     // next pass reads to know which applied type changes it has already seen.
@@ -2855,6 +2876,7 @@ export type AdminBotAuditEvent = {
     | "logistics_request.submitted"
     | "logistics_request.status_changed"
     | "logistics_request.withdrawn"
+    | "logistics_request.deleted"
     // The signed document going back to the member who asked for it, and the copies being dropped
     // once it has.
     | "logistics_request.signed_document_sent"
@@ -3330,6 +3352,12 @@ export type AdminBotMemberNotification = {
    * member already has.
    */
   escalated_at?: string;
+  /**
+   * When AdminBot saw that what this asked for is done or no longer applies: the failing job
+   * recovered, the weekly line was written, the workshop deadlines went by. A resolved notification
+   * leaves the dashboard and is marked read, so it also drains from the escalation queue.
+   */
+  resolved_at?: string;
 };
 
 /**

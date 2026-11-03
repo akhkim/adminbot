@@ -236,3 +236,58 @@ describe("rosterRowForMember", () => {
     ).toBeUndefined();
   });
 });
+
+// A sheet row that belonged to a record an admin merged away is that person, not a joiner -- but
+// it does not get to rewrite the type the admin kept on the survivor.
+describe("planRosterSync with merged records", () => {
+  const survivor = member({
+    id: "terry",
+    email: "terry@example.org",
+    member_type: "full, adminbot-admin",
+    former_member_ids: ["terry-zhang"],
+    alternate_emails: ["terry@cs.example.edu"],
+  });
+
+  it("recognizes the retired row by address without proposing a type change", () => {
+    const sheet = parseRosterSheet(HEADER, [
+      row(9, ["Terry Zhang", "", "", "terry@cs.example.edu", "full"]),
+    ]);
+    const result = planRosterSync({ sheet, members: [survivor] });
+    expect(result.additions).toEqual([]);
+    expect(result.member_type_changes).toEqual([]);
+    expect(result.absent).toEqual([]);
+  });
+
+  it("recognizes the retired row by its old AdminBot id", () => {
+    const sheet = parseRosterSheet(HEADER, [
+      row(9, ["Terry Zhang", "terry-zhang", "", "", "full"]),
+    ]);
+    const result = planRosterSync({ sheet, members: [survivor] });
+    expect(result.additions).toEqual([]);
+    expect(result.member_type_changes).toEqual([]);
+  });
+
+  // The retired row must not become the "first" row and push the survivor's own row aside.
+  it("still applies the survivor's own row when the retired one comes first", () => {
+    const sheet = parseRosterSheet(HEADER, [
+      row(9, ["Terry Zhang", "", "", "terry@cs.example.edu", "full"]),
+      row(10, ["Terry", "", "terry@example.org", "", "full, adminbot-admin, alumni"]),
+    ]);
+    const result = planRosterSync({ sheet, members: [survivor] });
+    expect(result.member_type_changes).toEqual([
+      expect.objectContaining({ member_id: "terry", sheet_row: 10 }),
+    ]);
+    expect(result.duplicates).toEqual([]);
+  });
+
+  it("never lets a retired identity outrank somebody's own record", () => {
+    const owner = member({ id: "owner", email: "terry@cs.example.edu", member_type: "full" });
+    const sheet = parseRosterSheet(HEADER, [
+      row(9, ["Owner", "", "", "terry@cs.example.edu", "coauthor-major"]),
+    ]);
+    const result = planRosterSync({ sheet, members: [survivor, owner] });
+    expect(result.member_type_changes).toEqual([
+      expect.objectContaining({ member_id: "owner", to: "coauthor-major" }),
+    ]);
+  });
+});

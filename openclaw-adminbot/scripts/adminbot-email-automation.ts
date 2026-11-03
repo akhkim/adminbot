@@ -23,6 +23,7 @@ import { loadConfig } from "../src/config/config.js";
 import type { OpenClawConfig } from "../src/config/types/openclaw.js";
 import { resolveSecretInputString } from "../src/secrets/resolve-secret-input-string.js";
 import { downloadLinkedDriveFiles } from "./adminbot-drive-download.js";
+import { deliveryFailureReason, parseDeliveryFailure } from "./adminbot-email-bounce.js";
 import { adminbotServiceDatabasePath } from "./adminbot-service-database.js";
 import {
   AdminBotEmailModel,
@@ -1849,6 +1850,33 @@ export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
           continue;
         }
       }
+      // Also deterministic: a bounce is AdminBot's own mail coming back. The classifier would park it
+      // as an opaque `unknown`; this parks it with the dead address and the server's reply instead,
+      // which is what a reviewer needs to fix the member record.
+      const bounce = parseDeliveryFailure(message);
+      if (bounce) {
+        try {
+          if (
+            await state.begin(message, {
+              category: "delivery_failure",
+              reason: deliveryFailureReason(bounce),
+            })
+          ) {
+            await state.finish(message.id, "needs_review", deliveryFailureReason(bounce));
+            summary.needs_review += 1;
+            await file(message.id, "needs_review");
+          } else {
+            summary.skipped += 1;
+          }
+        } catch (error) {
+          summary.failed += 1;
+          summary.errors.push(
+            `${message.id}: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          await file(message.id, "failed");
+        }
+        continue;
+      }
       const onboarding =
         (await state.getOnboarding(message.threadId)) ??
         (await state.getOnboarding(normalizeAddress(message.from)));
@@ -1926,6 +1954,11 @@ if (isMainModule(import.meta.url)) {
         summary.failed > 0 &&
         process.env.ADMINBOT_EMAIL_ALLOW_PARTIAL !== "1"
       ) {
+        // The summary goes to stdout, but the cron heartbeat reports the last stderr line, so a
+        // failed pass without this line reads "Last error: none recorded" on the health check.
+        console.error(
+          `email automation: ${summary.failed} message(s) failed; latest: ${summary.errors.at(-1) ?? "no error text"}`,
+        );
         process.exitCode = 1;
       }
     })
@@ -1933,6 +1966,10 @@ if (isMainModule(import.meta.url)) {
       console.error(
         error instanceof Error ? (error.stack ?? error.message) : String(error),
       );
+      // Last, so the cron heartbeat reports the message rather than the stack's bottom frame.
+      if (error instanceof Error && error.stack) {
+        console.error(`email automation: ${error.message}`);
+      }
       process.exitCode = 1;
     });
 }

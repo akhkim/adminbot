@@ -362,6 +362,21 @@ describe("member map projection", () => {
     expect(500.5 * close.k + close.x).toBeCloseTo(400);
     expect(100.5 * close.k + close.y).toBeCloseTo(200);
   });
+
+  // Scrolling on at the zoom limit used to slide the map toward its bottom-right corner, because
+  // the offsets were worked out for the uncapped zoom.
+  it("holds the point under the cursor when zooming past the limit", () => {
+    const size = { width: 800, height: 400 };
+    const [px, py] = [300, 150];
+    let view = zoomAt(fitViewport(size), 16, px, py, size);
+    expect(view.k).toBeCloseTo(fitViewport(size).k * 16);
+    const under = { x: (px - view.x) / view.k, y: (py - view.y) / view.k };
+    for (let tick = 0; tick < 10; tick += 1) {
+      view = zoomAt(view, 1.5, px, py, size);
+    }
+    expect((px - view.x) / view.k).toBeCloseTo(under.x);
+    expect((py - view.y) / view.k).toBeCloseTo(under.y);
+  });
 });
 
 // --- The element ---
@@ -797,6 +812,47 @@ describe("renderMemberMap", () => {
     const cityOnly = await draw(parseMemberMap(summary));
     expect(cityOnly.querySelector(".member-map__marker--approximate")).toBeNull();
     expect(cityOnly.querySelector('[data-testid="member-map-approximate"]')).toBeNull();
+  });
+
+  // A time zone names one city for a whole region: everyone on America/New_York lands on New
+  // York. Drawing that like a stated city is how the map came to over-claim New York and LA.
+  it("draws time-zone-only places as hollow rings, and a mixed city solid", async () => {
+    const tz = (member_id: string, name: string) => ({ member_id, name, precision: "timezone" });
+    const container = await draw(
+      parseMemberMap({
+        mode: "full",
+        places: [
+          {
+            key: "new-york",
+            label: "New York",
+            country: "United States",
+            lat: 40.71,
+            lon: -74.01,
+            members: [tz("a", "Ada"), tz("b", "Bob")],
+          },
+          {
+            key: "london",
+            label: "London",
+            country: "United Kingdom",
+            lat: 51.51,
+            lon: -0.13,
+            members: [
+              { member_id: "c", name: "Cy", precision: "city" },
+              tz("d", "Di"),
+              tz("e", "Ed"),
+            ],
+          },
+        ],
+      }),
+    );
+    const guessed = container.querySelectorAll(".member-map__body .member-map__marker--guessed");
+    expect(guessed).toHaveLength(1);
+    expect(guessed[0]?.getAttribute("aria-label")).toContain("New York");
+    expect(container.querySelector('[data-testid="member-map-guessed"]')).not.toBeNull();
+
+    const firm = await draw(parseMemberMap(FOUR_MEMBER_TORONTO));
+    expect(firm.querySelector(".member-map__marker--guessed")).toBeNull();
+    expect(firm.querySelector('[data-testid="member-map-guessed"]')).toBeNull();
   });
 
   it("labels the busiest cities on the card and more of them full screen, none overlapping", async () => {

@@ -1,8 +1,14 @@
+import { beginCollaboratorChatExecution } from "./service.collaborator-chats.js";
+import type { createCollaboratorChatRequestStore } from "../persistence/collaborator-chat-requests.js";
 import { createHash, randomUUID } from "node:crypto";
 import type {
   CalendarMembershipReader,
   CalendarAccessReader,
 } from "../connectors/calendar-membership.js";
+import type {
+  PaperMentorReviewRequester,
+  PaperMentorReviewRequestStatus,
+} from "../connectors/papermentor-review.js";
 import type { ReverseGeocoder } from "../connectors/reverse-geocode.js";
 import type { AdminBotExternalCollaboratorSubgroup } from "../contracts/actions.js";
 import {
@@ -188,6 +194,7 @@ import type { LabHelpRequest } from "../contracts/lab-sharing.js";
 import type { AdminBotLocationShareRecord } from "../contracts/lab-travel.js";
 import {
   findDuplicateMembers,
+  absorbedIdentity,
   planMemberMerge,
   type MemberDuplicatePair,
   type MemberMergeConflict,
@@ -216,7 +223,11 @@ import {
   type AdminBotOpportunityStatus,
   type AdminBotOpportunityView,
 } from "../contracts/opportunities.js";
-import { adminBotOverleafProjectRef } from "../contracts/overleaf.js";
+import {
+  adminBotOverleafProjectRef,
+  adminBotOverleafShareRef,
+  resolveAdminBotLabOverleafHost,
+} from "../contracts/overleaf.js";
 import {
   adminBotArxivId,
   adminBotOpenReviewForumId,
@@ -273,6 +284,7 @@ import {
   type AdminBotPaperflowStage,
 } from "../contracts/paperflow-stages.js";
 import {
+  ADMINBOT_PAPERMENTOR_SERVICE_TOKEN_ENV,
   adminBotPaperMentorRunId,
   type AdminBotPaperMentorRun,
   type AdminBotPaperMentorRunInput,
@@ -502,6 +514,12 @@ import {
   paperflowStageEmail,
 } from "../workflows/papers/paperflow-stages.js";
 import {
+  adminBotPaperMentorAutoReviewLimit,
+  paperMentorAutoReviewCandidate,
+  paperMentorAutoReviewQueue,
+  type PaperMentorAutoReviewCandidate,
+} from "../workflows/papers/papermentor-auto-review.js";
+import {
   reviewProvesFixesMerged,
   type PaperMentorContext,
 } from "../workflows/papers/papermentor-nudges.js";
@@ -530,9 +548,11 @@ import {
 } from "./service.active-channels.js";
 import {
   automationHealthIssues,
+  SLACK_CONNECT_INVITE_REASONS,
   slackInviteBlockFor,
   slackInviteBlocks,
   type AutomationHealthIssue,
+  type SlackInviteBlock,
 } from "./service.automation-health.js";
 import {
   birthdayProposalStillCurrent,
@@ -619,6 +639,7 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
     query: LabSharingDiscoveryQuery,
     after?: DiscoveryPosition,
   ): DiscoveredHelpRequest[];
+  collaboratorChatRequestStore?(): ReturnType<typeof createCollaboratorChatRequestStore>;
   saveProposal(proposal: AdminBotStoredProposal): void;
   getProposal(actionId: string): AdminBotStoredProposal | undefined;
   updateProposal(proposal: AdminBotStoredProposal): void;
@@ -1362,6 +1383,7 @@ const DEFAULT_ACTION_POLICIES = {
   "calendar.reschedule": approvalPolicy("T3", ["admin"]),
   "calendar.cancel": approvalPolicy("T3", ["admin"]),
   "email.draft": approvalPolicy("T1", ["admin"]),
+  "slack.collaborator_chat": approvalPolicy("T3", ["admin"]),
   "email.send": approvalPolicy("T3", ["admin"]),
   // T3 with the other outward mail, and deliberately not auto even though the recipient and the
   // copy are both computed rather than caller-supplied. Approving it is the moment somebody looks
@@ -1903,17 +1925,15 @@ export class AdminBotService {
     proposal: AdminBotActionProposal,
   ): AdminBotStoredProposal | undefined {
     const hash = payloadHash(proposal.proposed_payload);
-    return this.store
-      .listProposalsByType(proposal.type)
-      .find(
-        (stored) =>
-          (stored.status === "pending" || stored.status === "approved") &&
-          // Proposals filed before every action carried a payload (Aug-Sep 2026) have none to
-          // compare, so none can be "the same". Hashing that absence threw inside this find, and one
-          // such approved invite left every channel sweep that filed a new invite with a 500.
-          stored.proposed_payload !== undefined &&
-          payloadHash(stored.proposed_payload) === hash,
-      );
+    return this.store.listProposalsByType(proposal.type).find(
+      (stored) =>
+        (stored.status === "pending" || stored.status === "approved") &&
+        // Proposals filed before every action carried a payload (Aug-Sep 2026) have none to
+        // compare, so none can be "the same". Hashing that absence threw inside this find, and one
+        // such approved invite left every channel sweep that filed a new invite with a 500.
+        stored.proposed_payload !== undefined &&
+        payloadHash(stored.proposed_payload) === hash,
+    );
   }
 
   /**
@@ -3032,6 +3052,14 @@ export class AdminBotService {
     if (membershipError) {
       return this.executionFailure(proposal, membershipError.status, membershipError.message);
     }
+    const chatClaim = proposal.type === "slack.collaborator_chat"
+      ? beginCollaboratorChatExecution(this.store, proposal, Boolean(this.options.executor))
+      : undefined;
+    if (chatClaim && !chatClaim.ok) {
+      return serviceError(chatClaim.status, chatClaim.message);
+    }
+    const collaboratorEffects = chatClaim?.ok ? chatClaim.effects : undefined;
+    const collaboratorReceiptKey = chatClaim?.ok ? chatClaim.key : "";
     let handled: boolean;
     let delivered = true;
     let notDeliveredReason = "";
@@ -3170,6 +3198,11 @@ export class AdminBotService {
         delivered = outcome.delivered !== false;
         notDeliveredReason = outcome.reason ?? "";
         artifacts = outcome.artifacts ?? {};
+        if (collaboratorEffects) {
+          collaboratorEffects.finishEffect(collaboratorReceiptKey,
+            artifacts.outcome ? { ...artifacts, action_id: actionId }
+              : { outcome: "unknown", action_id: actionId });
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : "connector execution failed";
         return this.executionFailure(proposal, 502, message);
@@ -3187,6 +3220,9 @@ export class AdminBotService {
     // nothing may be stored as executed. The proposal stays approved and no execution result is
     // saved, so flipping the switch and executing again really delivers rather than replaying a
     // cached answer.
+    if (!delivered && collaboratorEffects) {
+      return this.executionFailure(proposal, 409, "Slack outcome is uncertain; inspect the retained conversation receipt before any further action.");
+    }
     if (!delivered) {
       const result: AdminBotExecutionResult = { ...baseResult, status: "simulated" };
       this.recordAudit({
@@ -3285,9 +3321,88 @@ export class AdminBotService {
           this.store.listAuditEvents(),
           (id) => this.failedInviteProposal(id),
           now,
+          // A rejected proposal hands the person back to the manual list: the admin said no to
+          // the invitation, not to the person being in the channel.
+          (block) => {
+            const status = this.slackConnectProposalFor(block)?.status;
+            return status !== undefined && status !== "rejected";
+          },
         ),
       },
     };
+  }
+
+  /**
+   * The Slack Connect proposal standing in for a refused channel invite, if one was filed.
+   *
+   * Matched on the address and channel in its payload, not on the member id, because the address is
+   * what Slack is asked to invite and the member's address can change after the proposal was filed.
+   */
+  private slackConnectProposalFor(block: SlackInviteBlock): AdminBotStoredProposal | undefined {
+    const email = this.slackConnectAddress(block)?.toLowerCase();
+    if (!email) {
+      return undefined;
+    }
+    return this.store.listProposalsByType("slack.connect_invite").find((proposal) => {
+      const payload = (proposal.proposed_payload ?? {}) as Record<string, unknown>;
+      return (
+        typeof payload.email === "string" &&
+        payload.email.trim().toLowerCase() === email &&
+        typeof payload.channel === "string" &&
+        payload.channel.replace(/^#/u, "").toLowerCase() === block.channel
+      );
+    });
+  }
+
+  /** Where a Slack Connect invite for a refused invite would go: the member's roster address. */
+  private slackConnectAddress(block: SlackInviteBlock): string | undefined {
+    if (block.scope !== "member" || !SLACK_CONNECT_INVITE_REASONS.has(block.reason)) {
+      return undefined;
+    }
+    const member = this.store
+      .listLabMembers()
+      .find((entry) => entry.slack_user_id?.trim() === block.user_id);
+    const email = member ? adminBotOutreachEmail(member) : "";
+    return email || undefined;
+  }
+
+  /**
+   * One Slack Connect proposal per person Slack refused because they are in another workspace.
+   *
+   * Filed, never executed: an invitation mails somebody outside the lab, so `slack.connect_invite`
+   * waits for an admin (T3). Filed once per address and channel whatever became of it -- an admin who
+   * rejected it has decided, and asking again every hour would undo that decision by attrition.
+   */
+  private proposeSlackConnectInvites(now: Date): string[] {
+    const filed: string[] = [];
+    for (const block of slackInviteBlocks(
+      this.store.listAuditEvents(),
+      (id) => this.failedInviteProposal(id),
+      now,
+    )) {
+      const email = this.slackConnectAddress(block);
+      if (!email || this.slackConnectProposalFor(block)) {
+        continue;
+      }
+      const member = this.store
+        .listLabMembers()
+        .find((entry) => entry.slack_user_id?.trim() === block.user_id);
+      const created = this.createProposal({
+        type: "slack.connect_invite",
+        summary: `Invite ${member?.name ?? email} to #${block.channel} through Slack Connect: they are in another Slack workspace, so the bot cannot add them directly (${block.reason})`,
+        target: { service: "slack", channel: "slack", target: email },
+        proposed_payload: {
+          email,
+          channel: block.channel,
+          ...(member ? { member_id: member.id } : {}),
+        },
+        undo_plan: "Revoke the invitation in the channel's Slack Connect settings.",
+      });
+      if (created.ok) {
+        filed.push(created.payload.id);
+      }
+    }
+    return filed;
   }
 
   /**
@@ -3302,7 +3417,15 @@ export class AdminBotService {
   raiseAutomationHealthAlerts(
     actor: string,
     now = new Date(),
-  ): AdminBotServiceResponse<{ issues: number; alerted: string[]; admins: number }> {
+  ): AdminBotServiceResponse<{
+    issues: number;
+    alerted: string[];
+    admins: number;
+    connect_invites_proposed: string[];
+  }> {
+    // Before the issues are read, so a person who just got a proposal is not also reported as a
+    // manual invite on the same pass.
+    const connectInvitesProposed = this.proposeSlackConnectInvites(now);
     const health = this.automationHealth(now);
     if (!health.ok) {
       return health;
@@ -3340,6 +3463,25 @@ export class AdminBotService {
       });
       alerted.push(issue.key);
     }
+    // And the other way: an alert whose issue is gone (the job ran clean, the failures aged out of
+    // the 24h window) comes off the dashboard. Matched on the title, which is the issue's label and
+    // does not carry the counts that change from pass to pass.
+    const open = new Set(health.payload.issues.map((issue) => issue.label));
+    for (const admin of admins) {
+      for (const notification of this.store.listMemberNotifications(admin.id)) {
+        if (
+          notification.kind === "automation" &&
+          !notification.resolved_at &&
+          !open.has(notification.title)
+        ) {
+          this.store.saveMemberNotification({
+            ...notification,
+            read_at: notification.read_at ?? nowIso,
+            resolved_at: nowIso,
+          });
+        }
+      }
+    }
     if (alerted.length > 0) {
       this.recordAudit({
         type: "automation_health.alerted",
@@ -3350,7 +3492,12 @@ export class AdminBotService {
     return {
       ok: true,
       status: 200,
-      payload: { issues: health.payload.issues.length, alerted, admins: admins.length },
+      payload: {
+        issues: health.payload.issues.length,
+        alerted,
+        admins: admins.length,
+        connect_invites_proposed: connectInvitesProposed,
+      },
     };
   }
 
@@ -5727,7 +5874,7 @@ export class AdminBotService {
           recipient_member_ids: [memberId],
           message: buildWeeklyUpdateMessage({ titles, weekStart }),
           kind: "nudge",
-          title: "This week's paper update",
+          title: WEEKLY_UPDATE_NUDGE_TITLE,
           tab: "myWork",
           // Not important: a skipped week is a gap in a log, and next Monday asks again.
         },
@@ -6081,12 +6228,15 @@ export class AdminBotService {
       survivor as unknown as Record<string, unknown>,
       duplicate as unknown as Record<string, unknown>,
     );
-    const merged: AdminBotLabMember = {
+    const patched: AdminBotLabMember = {
       ...survivor,
       ...(patch as Partial<AdminBotLabMember>),
       id: survivor.id,
       updated_at: now,
     };
+    // Remembered so the daily imports recognize the retired record's id, addresses and Slack
+    // account as this person instead of re-creating the duplicate the next morning.
+    const merged: AdminBotLabMember = { ...patched, ...absorbedIdentity(patched, duplicate) };
     reconcileBirthdayEvent(this.birthdayDeps, duplicate, true);
     this.store.saveLabMember(merged);
     reconcileBirthdayEvent(this.birthdayDeps, merged);
@@ -7392,6 +7542,155 @@ export class AdminBotService {
   }
 
   /**
+   * Ask PaperMentor to review the papers at their review step, so nobody has to press the button.
+   *
+   * Which papers is workflows/papers/papermentor-auto-review.ts: open, unsubmitted, never reviewed
+   * or reviewed too long ago, and on the lab's own Overleaf. The request names the paper by the
+   * edit share link its author gave, and the lab's Overleaf answers with the project it resolved
+   * that link to. That id is written onto the paper, which is how the review -- arriving later
+   * through the ordinary collector -- finds the paper it belongs to.
+   *
+   * Dry run unless the caller says otherwise, like the other sweeps a person may run by hand. A
+   * live pass asks for at most `limit` reviews and stops early when the Overleaf says it is busy.
+   * Asking twice is harmless: the Overleaf runs at most one automated review per project a day.
+   */
+  async requestPaperMentorReviews(
+    actor: string,
+    requester: PaperMentorReviewRequester | undefined,
+    options: { dryRun?: boolean; limit?: number; nowIso?: string } = {},
+  ): Promise<
+    AdminBotServiceResponse<{
+      dry_run: boolean;
+      /** Every paper at its review step, of which `requests` are the ones asked about this pass. */
+      due: number;
+      requests: Array<{
+        paper_id: string;
+        title: string;
+        reason: PaperMentorAutoReviewCandidate["reason"];
+        status: PaperMentorReviewRequestStatus | "would_request";
+        project_id?: string;
+        message?: string;
+      }>;
+    }>
+  > {
+    const nowIso = options.nowIso ?? new Date().toISOString();
+    const now = new Date(nowIso);
+    const dryRun = options.dryRun !== false;
+    const limit = options.limit ?? adminBotPaperMentorAutoReviewLimit;
+    const due = this.withPaperTables(() =>
+      paperMentorAutoReviewQueue(
+        this.store.listPapers().flatMap((paper) => {
+          const [latest] = this.paperRows().listPaperMentorRuns(paper.id);
+          const candidate = paperMentorAutoReviewCandidate({
+            paper,
+            slots: this.paperRows().listPaperSlots(paper.id),
+            ...(latest ? { latest } : {}),
+            now,
+          });
+          return candidate ? [candidate] : [];
+        }),
+      ),
+    );
+    const batch = due.slice(0, limit);
+    if (dryRun) {
+      return {
+        ok: true,
+        status: 200,
+        payload: {
+          dry_run: true,
+          due: due.length,
+          requests: batch.map(({ paper_id, title, reason }) => ({
+            paper_id,
+            title,
+            reason,
+            status: "would_request" as const,
+          })),
+        },
+      };
+    }
+    if (!requester) {
+      return serviceError(
+        503,
+        `automated PaperMentor reviews are not configured; set ${ADMINBOT_PAPERMENTOR_SERVICE_TOKEN_ENV}`,
+      );
+    }
+    const requests = [];
+    for (const candidate of batch) {
+      const outcome = await requester(
+        candidate.target,
+        candidate.venue ? { venue: candidate.venue } : {},
+      );
+      if (outcome.project_id) {
+        this.rememberPaperMentorProject(candidate.paper_id, outcome.project_id, actor, nowIso);
+      }
+      this.recordAudit({
+        type: "papermentor.review_requested",
+        actor,
+        details: {
+          paper_id: candidate.paper_id,
+          reason: candidate.reason,
+          status: outcome.status,
+          ...(outcome.project_id ? { project_id: outcome.project_id } : {}),
+          ...(outcome.message ? { message: outcome.message } : {}),
+        },
+      });
+      requests.push({
+        paper_id: candidate.paper_id,
+        title: candidate.title,
+        reason: candidate.reason,
+        status: outcome.status,
+        ...(outcome.project_id ? { project_id: outcome.project_id } : {}),
+        ...(outcome.message ? { message: outcome.message } : {}),
+      });
+      // The Overleaf is running as many as it will; the rest wait for the next pass.
+      if (outcome.status === "busy") {
+        break;
+      }
+    }
+    return { ok: true, status: 200, payload: { dry_run: false, due: due.length, requests } };
+  }
+
+  /**
+   * Write the project a paper's share link resolved to onto the paper, as its project link.
+   *
+   * `artifacts.overleaf_edit_url` is the field the ingest and the nudge already read a project id
+   * from, and the one the grid shows as the paper's Overleaf edit URL -- which this is. The id is
+   * inert on its own: opening it still takes an invitation, unlike the share link it came from.
+   */
+  private rememberPaperMentorProject(
+    paperId: string,
+    projectId: string,
+    actor: string,
+    nowIso: string,
+  ): void {
+    const paper = this.store.getPaper(paperId);
+    if (!paper) {
+      return;
+    }
+    const existing = paper.artifacts?.overleaf_edit_url;
+    if (existing && adminBotOverleafProjectRef(existing)?.projectId === projectId) {
+      return;
+    }
+    this.store.savePaper({
+      ...paper,
+      artifacts: {
+        ...paper.artifacts,
+        overleaf_edit_url: `https://${resolveAdminBotLabOverleafHost()}/project/${projectId}`,
+      },
+      updated_at: (paper.updated_at ?? "") < nowIso ? nowIso : paper.updated_at,
+    });
+    this.recordAudit({
+      type: "papermentor.project_linked",
+      actor,
+      details: {
+        paper_id: paperId,
+        project_id: projectId,
+        ...(existing ? { replaced: existing } : {}),
+      },
+    });
+  }
+
+  /**
    * The paper a project id belongs to, by the link its author keeps.
    *
    * The evidence slot is asked first and the legacy `artifacts.overleaf_edit_url` second, because
@@ -8152,7 +8451,12 @@ export class AdminBotService {
   ): PaperMentorContext {
     const link =
       stored.find((row) => row.slot === "overleaf_edit")?.url ?? paper.artifacts?.overleaf_edit_url;
-    const project = link ? adminBotOverleafProjectRef(link) : undefined;
+    // The share link stands in for a project link until the first review resolves it: where it is
+    // hosted is all the nudge needs, and an overleaf.com link is exactly the case worth catching.
+    const share = stored.find((row) => row.slot === "overleaf_share")?.url;
+    const project =
+      (link ? adminBotOverleafProjectRef(link) : undefined) ??
+      (share ? adminBotOverleafShareRef(share) : undefined);
     const [latest] = this.paperRows().listPaperMentorRuns(paper.id);
     return {
       ...(project ? { project: { lab: project.lab, host: project.host } } : {}),
@@ -9367,9 +9671,28 @@ export class AdminBotService {
     const stamped: Array<{ item: NudgeItem; memberId: string }> = [];
     const linkProblemsByPaper = this.options.paperLinkProblems?.() ?? new Map<string, string[]>();
 
+    // The cadence is per person as well as per item. Items fall due on their own clocks, so a
+    // per-item interval alone lets a gap that opened yesterday send a second message two days after
+    // the first. Whoever got this message inside the interval waits, and the new item goes out with
+    // the next one.
+    const recentlyMessaged = new Set(
+      this.store
+        .listNudgeLedger()
+        .filter(
+          (entry) =>
+            PAPER_NUDGE_DOMAINS.has(entry.domain) &&
+            entry.last_nudged_at &&
+            Date.parse(entry.last_nudged_at) > now.getTime() - PAPER_SLOT_NUDGE_INTERVAL_MS,
+        )
+        .map((entry) => entry.member_id),
+    );
+
     const enqueue = (memberId: string, paper: AdminBotPaperRecord, item: NudgeItem) => {
       const key = `${item.domain}|${item.subjectId}|${memberId}`;
-      if (!isNudgeDue(ledger.get(key), now, PAPER_SLOT_NUDGE_INTERVAL_MS)) {
+      if (
+        recentlyMessaged.has(memberId) ||
+        !isNudgeDue(ledger.get(key), now, PAPER_SLOT_NUDGE_INTERVAL_MS)
+      ) {
         return;
       }
       const forMember = byRecipient.get(memberId) ?? new Map();
@@ -9528,7 +9851,7 @@ export class AdminBotService {
           recipient_member_ids: [memberId],
           message: this.composeNudgeMessage(groups, now),
           kind: "paper_slot",
-          title: "Evidence still missing on your paper",
+          title: EVIDENCE_NUDGE_TITLE,
           tab: "myWork",
           // Important: a missing submission link or camera-ready is the kind of gap that costs a
           // paper its venue, and the deadline does not move because nobody read the DM.
@@ -11157,11 +11480,61 @@ export class AdminBotService {
     // Clear it on the first read as well as on the last profile save, so deployment heals existing
     // rows without asking everybody at 100% to edit and save an arbitrary field again.
     this.clearResolvedProfileNotifications(member);
+    this.resolveSettledNotifications(member.id);
     return {
       ok: true,
       status: 200,
       payload: { notifications: this.store.listMemberNotifications(memberId) },
     };
+  }
+
+  /**
+   * Take a nudge off the dashboard once what it asked for is done or no longer applies.
+   *
+   * Every notification used to stay until the end of time, so the dashboard filled with things
+   * that had long stopped being true: a workshop list whose deadlines were two months gone, last
+   * week's "write your weekly line", a job failure that recovered days ago. Each kind is settled by
+   * the cheapest check that can tell. Automation alerts are settled by the hourly health pass,
+   * which already has the live issue list (see raiseAutomationHealthAlerts). Nothing is deleted:
+   * the row is stamped resolved and read, so the popup stops and the escalation queue drains.
+   */
+  private resolveSettledNotifications(memberId: string, now = new Date()): void {
+    const nowIso = now.toISOString();
+    let owesWeeklyLine: Map<string, boolean> | undefined;
+    for (const notification of this.store.listMemberNotifications(memberId)) {
+      if (notification.resolved_at || notification.kind === "automation") {
+        continue;
+      }
+      const ageMs = now.getTime() - Date.parse(notification.created_at);
+      let settled: boolean;
+      if (notification.title === WEEKLY_UPDATE_NUDGE_TITLE) {
+        // Settled when every line it asked for is written, or once the week it asked about is over
+        // and the next Sunday sweep has had its turn to ask afresh.
+        const weekStart = adminBotWeekStart(new Date(notification.created_at));
+        owesWeeklyLine ??= new Map();
+        let owes = owesWeeklyLine.get(weekStart);
+        if (owes === undefined) {
+          const gaps = this.collectWeeklyUpdateGaps(notification.created_at);
+          owes = !gaps.ok || gaps.payload.gaps.some((gap) => gap.member_id === memberId);
+          owesWeeklyLine.set(weekStart, owes);
+        }
+        settled = !owes || ageMs > WEEKLY_UPDATE_NUDGE_SHELF_LIFE_MS;
+      } else {
+        // An escalated nudge is the head professor's to close, not the clock's.
+        const shelfLife =
+          notification.title === EVIDENCE_NUDGE_TITLE
+            ? EVIDENCE_NUDGE_SHELF_LIFE_MS
+            : NOTIFICATION_SHELF_LIFE_MS[notification.kind];
+        settled = !notification.escalated_at && shelfLife !== undefined && ageMs > shelfLife;
+      }
+      if (settled) {
+        this.store.saveMemberNotification({
+          ...notification,
+          read_at: notification.read_at ?? nowIso,
+          resolved_at: nowIso,
+        });
+      }
+    }
   }
 
   private clearResolvedProfileNotifications(member: AdminBotLabMember): void {
@@ -11440,6 +11813,36 @@ export class AdminBotService {
     });
     this.auditClearedFiles(existing, stored, memberId);
     return { ok: true, status: 200, payload: stored };
+  }
+
+  /**
+   * The lab removing a request outright.
+   *
+   * Admin-only, and for what withdrawal cannot reach: an old request the requester will never come
+   * back to close, or one filed under a program the lab no longer handles. Withdrawal stays the
+   * requester's, and "declined" would put an answer on the record that nobody gave, so this is the
+   * one way an admin clears a row. The audit line keeps who removed what, since the row itself is
+   * gone.
+   */
+  deleteLogisticsRequest(
+    requestId: string,
+    actor: string,
+  ): AdminBotServiceResponse<{ deleted: true; id: string }> {
+    const existing = this.store.getLogisticsRequest(requestId);
+    if (!existing || !this.store.deleteLogisticsRequest(requestId)) {
+      return serviceError(404, `unknown logistics request ${requestId}`);
+    }
+    this.recordAudit({
+      type: "logistics_request.deleted",
+      actor,
+      details: {
+        request_id: requestId,
+        kind: existing.kind,
+        member_id: existing.member_id,
+        status: existing.status,
+      },
+    });
+    return { ok: true, status: 200, payload: { deleted: true, id: requestId } };
   }
 
   /**
@@ -14275,7 +14678,11 @@ export class AdminBotService {
       appliedChanges,
       memberById: (memberId) => this.store.getLabMember(memberId),
       alreadyMailed,
-      knownMemberIds: new Set(members.map((member) => member.id)),
+      // Retired ids too: a merged duplicate's name slug must not be handed out again to the sheet
+      // row that created it in the first place.
+      knownMemberIds: new Set(
+        members.flatMap((member) => [member.id, ...(member.former_member_ids ?? [])]),
+      ),
     });
 
     const created: string[] = [];
@@ -14361,6 +14768,10 @@ export class AdminBotService {
   queueOnboardingGuideForMember(params: {
     memberId: string;
     actor: string;
+    subjectOverride?: string;
+    bodyOverride?: string;
+    /** A minimal contact email while the role-specific guide still needs setup or review. */
+    basicWelcome?: boolean;
     slackChannels?: readonly string[];
     /** The Onboarding tab's per-row address override; the record's email otherwise. */
     email?: string;
@@ -14376,18 +14787,46 @@ export class AdminBotService {
     if (!member) {
       return serviceError(404, `no member ${params.memberId}`);
     }
-    const email = params.email?.trim() || member.email?.trim() || "";
+    const email =
+      params.email?.trim() ||
+      (params.basicWelcome ? adminBotOutreachEmail(member) : member.email?.trim()) ||
+      "";
     if (!email) {
       return serviceError(
         422,
         `${member.name || member.id} has no email address, so there is nowhere to send an onboarding guide`,
       );
     }
-    const template = templateForMemberType(member.member_type);
+    const template = params.basicWelcome
+      ? { ok: true as const, templateId: "welcome" }
+      : templateForMemberType(member.member_type);
     if (!template.ok) {
       return serviceError(422, template.reason);
     }
     const recipient = email.toLowerCase();
+    if (params.basicWelcome && !params.resend && !params.subjectOverride && !params.bodyOverride) {
+      // Only reuse the unedited standard welcome for this exact person. Enrollment approval
+      // must not approve a manually rewritten email or somebody else's pending proposal.
+      const matching = this.store.listProposalsByType("onboarding.send_guide").filter((stored) => {
+        const payload = (stored.proposed_payload ?? {}) as Record<string, unknown>;
+        return (
+          ["pending", "approved", "executed"].includes(stored.status) &&
+          Object.keys(payload).length === 4 &&
+          payload.template_id === "welcome" &&
+          payload.member_id === member.id &&
+          payload.name === member.name &&
+          payload.email === email
+        );
+      });
+      const existing = matching.find((stored) => stored.status === "executed") ?? matching[0];
+      if (existing) {
+        return {
+          ok: true,
+          status: 200,
+          payload: { proposal_id: existing.id, template_id: "welcome", email },
+        };
+      }
+    }
     // The same two ledgers `sweepOnboardingMail` keys on -- a guide already sent, and one already
     // waiting for an approver. Pressing Add member twice on one id, or adding somebody the weekly
     // sweep has already picked up, must not put a second copy of the same mail in front of them.
@@ -14445,6 +14884,8 @@ export class AdminBotService {
         name: member.name,
         email,
         member_id: member.id,
+        ...(params.subjectOverride ? { subject_override: params.subjectOverride } : {}),
+        ...(params.bodyOverride ? { body_override: params.bodyOverride } : {}),
         // The first send already filed this person's DCS roster row; a second row would ask DCS
         // for a second account under a second password.
         ...(resend ? { resend: true, add_dcs_roster_row: false } : {}),
@@ -16647,18 +17088,46 @@ function serviceError<T>(status: number, message: string): AdminBotServiceRespon
 // often as it likes -- daily is fine, and gives a member who fills their profile in on day one a
 // prompt exit from the list -- but nobody is nudged about the same gap more than once per window.
 const MANDATORY_FIELDS_REMINDER_INTERVAL_MS = 3 * 24 * 60 * 60 * 1000;
+const WEEKLY_UPDATE_NUDGE_TITLE = "This week's paper update";
+// Eight days: the Sunday sweep asks about the week just ending, so its nudge stays up through the
+// following week and gives way to the next Sunday's.
+const WEEKLY_UPDATE_NUDGE_SHELF_LIFE_MS = 8 * 24 * 60 * 60 * 1000;
+
+// Re-sent once a week while a slot is still open (PAPER_SLOT_NUDGE_INTERVAL_MS), so a week-old copy
+// is either superseded by a newer one or about evidence that has since been filed. By title
+// rather than kind: the head professor's PI-review notice is a `paper_slot` too, and it is sent once.
+const EVIDENCE_NUDGE_TITLE = "Evidence still missing on your paper";
+const EVIDENCE_NUDGE_SHELF_LIFE_MS = 8 * 24 * 60 * 60 * 1000;
+
+// How long a notification of each kind is worth showing when nothing settles it sooner. A workshop
+// suggestion is about deadlines a few weeks out and is re-sent by any pass that still finds a match;
+// a month-old one-off nudge is past acting on. A kind missing from here (meeting attendance,
+// profile, the PI-review notice) stays until something settles it.
+const NOTIFICATION_SHELF_LIFE_MS: Partial<Record<string, number>> = {
+  workshop: 14 * 24 * 60 * 60 * 1000,
+  nudge: 30 * 24 * 60 * 60 * 1000,
+};
+
 const RESOLVED_PROFILE_NOTIFICATION_TITLES = new Set([
   "Your profile is missing a required field",
   "Your profile is missing required fields",
   "Your profile needs some info",
 ]);
 
-// The same idea one level down: a *slot* is left alone for three days after it was nudged about.
-// Per-slot rather than per-paper, so filling in two of four artifacts genuinely quiets those two
-// and the next pass chases only what is still open.
-const PAPER_SLOT_NUDGE_INTERVAL_MS = 3 * 24 * 60 * 60 * 1000;
+// The same idea one level down: a *slot* is left alone for a week after it was nudged about, and so
+// is the person (see `sweepPaperNudges`). Per-slot as well as per-person, so filling in two of four
+// artifacts genuinely quiets those two and the next pass chases only what is still open. It was
+// three days, and people found a DM about the same paper twice a week nagging.
+const PAPER_SLOT_NUDGE_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
+// Everything `sweepPaperNudges` sends, which all goes out in the one evidence message.
+const PAPER_NUDGE_DOMAINS: ReadonlySet<AdminBotNudgeDomain> = new Set([
+  "paper_slot",
+  "social_consent",
+  "conference_attendance",
+  "paper_reimbursement",
+]);
 
-// A venue-cycle stage is asked about once a week, not every three days like a slot. The author
+// A venue-cycle stage is asked about once a week, the same as a slot. The author
 // cannot make the answer arrive any sooner -- the venue decides when reviews land -- so a tighter
 // cadence buys nothing and spends the one thing that makes these mails work, which is that
 // receiving one still means something.

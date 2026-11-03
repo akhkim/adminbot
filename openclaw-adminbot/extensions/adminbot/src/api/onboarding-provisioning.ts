@@ -82,6 +82,7 @@ export function executorWithOnboardingGuide(
     | ((proposal: AdminBotStoredProposal) => Promise<AdminBotExecutorOutcome>)
     | undefined,
   dcsRoster: () => DcsRosterSheetWriter | undefined,
+  claimEmailAttempt: (proposal: AdminBotStoredProposal) => void,
 ): AdminBotActionExecutor {
   return {
     async execute(proposal) {
@@ -102,7 +103,12 @@ export function executorWithOnboardingGuide(
           return { handled: false, reason: "no Slack Connect inviter is configured" };
         }
         const payload = (proposal.proposed_payload ?? {}) as Record<string, unknown>;
-        const result = await invite(typeof payload.email === "string" ? payload.email : "");
+        // A channel in the payload is the one a refused channel invite was for (see the automation
+        // health pass); without one it is the #friends-and-collaborators invite.
+        const result = await invite(
+          typeof payload.email === "string" ? payload.email : "",
+          typeof payload.channel === "string" ? payload.channel : undefined,
+        );
         return result.ok
           ? {
               handled: true,
@@ -126,6 +132,7 @@ export function executorWithOnboardingGuide(
         return { handled: false, reason: "template_id and email are required" };
       }
       const result = await send({
+        before_email: () => claimEmailAttempt(proposal),
         template_id: templateId,
         name,
         email,

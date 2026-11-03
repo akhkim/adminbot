@@ -20,6 +20,7 @@ const manifest = JSON.parse(
   fs.readFileSync(path.join(repoRoot, "config/adminbot-cron.json"), "utf8"),
 ) as {
   jobs: Array<{ name: string; cron: string; argv: string[]; timeoutSeconds?: number }>;
+  retired?: Array<{ name: string; reason: string }>;
 };
 
 /** A store row for `job` as the gateway lists it after the sync has applied the manifest. */
@@ -62,6 +63,7 @@ function greedyStub(existing: string): string {
     `#!/usr/bin/env bash\n` +
       `if [[ "$1" == "cron" && "$2" == "list" ]]; then echo '${existing}'; exit 0; fi\n` +
       `cat >/dev/null\n` +
+      `if [[ "$2" == "rm" ]]; then printf 'CALL rm %s\\n' "$3"; exit 0; fi\n` +
       `printf 'CALL %s %s\\n' "$2" "$4"\n`,
     { mode: 0o755 },
   );
@@ -174,5 +176,60 @@ describe("scripts/adminbot-cron-sync.sh", () => {
     const output = run(greedyStub(JSON.stringify(rows)), ["--dry-run"]);
     expect(output.match(/would edit/gu)).toHaveLength(1);
     expect(output).toContain(`would edit ${manifest.jobs[0].name}`);
+  });
+
+  describe("retired jobs", () => {
+    const retired = manifest.retired ?? [];
+    const store = () =>
+      JSON.stringify({
+        jobs: [
+          ...manifest.jobs.map(storedRow),
+          ...retired.map((entry, i) => ({ name: entry.name, id: `retired-${i}` })),
+          { name: "someones-own-job", id: "unmanaged" },
+        ],
+      });
+
+    it("never lists a name as both live and retired, and says why each one went", () => {
+      const live = new Set(manifest.jobs.map((job) => job.name));
+      expect(retired.length).toBeGreaterThan(0);
+      for (const entry of retired) {
+        expect(live.has(entry.name), entry.name).toBe(false);
+        expect(entry.reason.trim(), entry.name).not.toBe("");
+      }
+    });
+
+    it("removes each retired job by id and nothing else", () => {
+      const output = run(greedyStub(store()));
+      expect([...output.matchAll(/^CALL rm (\S+)$/gmu)].map((m) => m[1])).toEqual(
+        retired.map((_, i) => `retired-${i}`),
+      );
+      for (const entry of retired) {
+        expect(output).toContain(`adminbot-cron-sync: remove ${entry.name}`);
+        expect(output).not.toContain(`${entry.name} is in the store but not in the manifest`);
+      }
+      // A job nobody retired is still reported and left alone, however unfamiliar.
+      expect(output).toContain("someones-own-job is in the store but not in the manifest");
+      expect(output).not.toContain("CALL rm unmanaged");
+      expect(output).not.toMatch(/^CALL (add|edit) /mu);
+    });
+
+    it("only names the removals on a dry run", () => {
+      const output = run(greedyStub(store()), ["--dry-run"]);
+      for (const entry of retired) {
+        expect(output).toContain(`would remove ${entry.name}`);
+      }
+      expect(output).not.toContain("CALL ");
+    });
+
+    it("removes nothing when syncing one job with --only", () => {
+      const output = run(greedyStub(store()), ["--only", manifest.jobs[0].name]);
+      expect(output).not.toContain("CALL rm");
+      expect(output).not.toContain("remove ");
+    });
+
+    it("does nothing once the retired jobs are gone", () => {
+      const output = run(greedyStub(JSON.stringify({ jobs: manifest.jobs.map(storedRow) })));
+      expect(output).not.toContain("CALL ");
+    });
   });
 });

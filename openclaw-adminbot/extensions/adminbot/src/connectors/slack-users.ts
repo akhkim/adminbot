@@ -1,3 +1,4 @@
+import { isSlackDefaultAvatar } from "../workflows/members/slack-avatar.js";
 /**
  * Reads the whole Slack workspace member list (`users.list`) for the roster sync.
  *
@@ -9,7 +10,6 @@ import type {
   SlackDirectoryReader,
   SlackDirectoryUser,
 } from "../workflows/members/slack-roster-sync.js";
-import { isSlackDefaultAvatar } from "../workflows/members/slack-avatar.js";
 import { adminBotSlackBotToken } from "./slack-admin.js";
 
 /** The fetch this reader needs: SlackAdminFetch plus response headers, for Retry-After. */
@@ -36,6 +36,7 @@ const MAX_RETRY_AFTER_SECONDS = 120;
 const DEFAULT_RETRY_AFTER_SECONDS = 30;
 
 type RawSlackUser = {
+  is_invited_user?: boolean;
   id?: unknown;
   deleted?: unknown;
   is_bot?: unknown;
@@ -90,6 +91,7 @@ export function normalizeSlackUser(raw: RawSlackUser): SlackDirectoryUser {
     is_app_user: raw.is_app_user === true,
     is_restricted: raw.is_restricted === true,
     is_ultra_restricted: raw.is_ultra_restricted === true,
+    ...(raw.is_invited_user === true ? { is_invited_user: true } : {}),
     ...Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined)),
   };
 }

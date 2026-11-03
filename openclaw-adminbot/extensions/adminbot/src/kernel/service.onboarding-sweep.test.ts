@@ -135,3 +135,38 @@ describe("the weekly onboarding sheet sweep", () => {
     expect(stored(service, "grace-hopper")).toBeUndefined();
   });
 });
+
+// The live failure: an admin merged the record the sweep had created into the person's real one,
+// and the next morning's sweep created it again from the same sheet row, under the same id.
+describe("the sweep after an admin merge", () => {
+  it("does not re-create the record that was merged away", () => {
+    const service = new AdminBotService();
+    unwrap(
+      service.upsertLabMember({
+        id: "terry-jingchen-zhang",
+        name: "Terry Jingchen Zhang",
+        email: "terry@example.org",
+        member_type: "full",
+      } as never),
+    );
+    const row = sheet([
+      { row: 91, name: "Terry Zhang", email: "terry@cs.example.edu", type: "full" },
+    ]);
+    expect(unwrap(run(service, row)).created).toEqual(["terry-zhang"]);
+    unwrap(
+      service.mergeLabMembers({
+        survivorId: "terry-jingchen-zhang",
+        duplicateId: "terry-zhang",
+        actorId: "admin",
+      }),
+    );
+
+    const again = unwrap(run(service, row));
+    expect(again.created).toEqual([]);
+    expect(stored(service, "terry-zhang")).toBeUndefined();
+    expect(stored(service, "terry-jingchen-zhang")).toMatchObject({
+      former_member_ids: ["terry-zhang"],
+      alternate_emails: ["terry@cs.example.edu"],
+    });
+  });
+});

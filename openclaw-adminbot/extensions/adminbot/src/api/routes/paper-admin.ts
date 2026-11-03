@@ -239,6 +239,28 @@ export const paperAdminRoutes: readonly Route[] = [
       );
     }),
   ),
+  // Ask PaperMentor to review the papers at their review step. Dry run unless the body says
+  // `dry_run: false`, so a hand-run call names the papers before it asks for anything; the cron
+  // passes false. Answers 503 on a live pass when no Overleaf secret is configured.
+  post(
+    "/papers/papermentor/reviews/run",
+    privilegedOnly(async ({ req, res, principal, ctx }) => {
+      const { service } = ctx;
+      const body = readRecord(await readJsonOrEmpty(req));
+      const limit =
+        typeof body.limit === "number" && Number.isInteger(body.limit)
+          ? Math.min(Math.max(body.limit, 1), 20)
+          : undefined;
+      sendServiceResult(
+        res,
+        await service.requestPaperMentorReviews(
+          principalActor(principal),
+          ctx.paperMentorReviewRequester,
+          { dryRun: body.dry_run !== false, ...(limit ? { limit } : {}) },
+        ),
+      );
+    }),
+  ),
   post(
     /^\/papers\/conference-rosters\/([^/]+)\/channel-invites$/u,
     adminSessionOnly(async ({ res, params, ctx }) => {

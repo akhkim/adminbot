@@ -250,15 +250,47 @@ export function planRosterSync(params: {
     }
   }
 
+  // Ids and addresses a member absorbed in a merge. Indexed apart from the live ones and consulted
+  // only when those miss, so a retired identity can never outrank somebody's own record.
+  const byFormerId = new Map<string, AdminBotLabMember>();
+  const byAlternateAddress = new Map<string, AdminBotLabMember>();
+  for (const member of members) {
+    for (const id of member.former_member_ids ?? []) {
+      if (!byId.has(id) && !byFormerId.has(id)) {
+        byFormerId.set(id, member);
+      }
+    }
+    for (const address of member.alternate_emails ?? []) {
+      const key = address.trim().toLowerCase();
+      if (key && !byAddress.has(key) && !byAlternateAddress.has(key)) {
+        byAlternateAddress.set(key, member);
+      }
+    }
+  }
+
   const member_type_changes: RosterMemberTypeChange[] = [];
   const additions: RosterAddition[] = [];
   const matchedRows = new Map<string, number[]>();
+  const recognized = new Set<string>();
   let unchanged = 0;
 
   for (const row of sheet.rows) {
     const matched =
       (row.member_id ? byId.get(row.member_id) : undefined) ??
       row.emails.map((email) => byAddress.get(email)).find(Boolean);
+    const absorbedBy = matched
+      ? undefined
+      : ((row.member_id ? byFormerId.get(row.member_id) : undefined) ??
+        row.emails.map((email) => byAlternateAddress.get(email)).find(Boolean));
+    if (absorbedBy) {
+      // The row of a record an admin merged away. It is this person, so it is neither a joiner nor
+      // a reason to call them absent -- but its Member Type does not drive theirs: the admin kept
+      // the survivor's answer when merging, and this row is the half they chose to retire. Kept out
+      // of matchedRows so it cannot shadow the survivor's own row as the "first" one either.
+      recognized.add(absorbedBy.id);
+      unchanged += 1;
+      continue;
+    }
     if (!matched) {
       const gmail = row.emails.find(adminBotIsGmailAddress);
       additions.push({
@@ -292,7 +324,7 @@ export function planRosterSync(params: {
 
   const absent: RosterAbsence[] = [];
   for (const member of members) {
-    if (matchedRows.has(member.id)) {
+    if (matchedRows.has(member.id) || recognized.has(member.id)) {
       continue;
     }
     absent.push({

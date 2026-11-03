@@ -147,3 +147,52 @@ export function adminBotOverleafProjectRef(
     lab: host === labHost || host.endsWith(`.${labHost}`),
   };
 }
+
+/** Overleaf's share tokens: one path segment, the same shape the `overleaf_share` slot accepts. */
+const SHARE_TOKEN = /^[A-Za-z0-9]{12,64}$/u;
+
+export type AdminBotOverleafShareRef = {
+  /** The link as the member gave it. A credential: only ever sent to the instance that minted it. */
+  url: string;
+  host: string;
+  /** Whether the link is on the lab's own Overleaf, the only place PaperMentor can resolve it. */
+  lab: boolean;
+};
+
+/**
+ * The "Anyone with this link can edit" link a member gave, or nothing when the link is not one.
+ *
+ * Since the project link was retired this is the only Overleaf link most papers carry, and it
+ * names a token rather than a project. AdminBot never turns it into a request of its own: it is
+ * handed, whole, to the lab's Overleaf -- the instance that minted it -- which resolves it to the
+ * project PaperMentor reviews. A share link on overleaf.com names a project PaperMentor cannot
+ * see, and `lab: false` says so.
+ */
+export function adminBotOverleafShareRef(
+  raw: string,
+  env: NodeJS.ProcessEnv = currentEnv(),
+): AdminBotOverleafShareRef | undefined {
+  let url: URL;
+  try {
+    url = new URL(raw.trim());
+  } catch {
+    return undefined;
+  }
+  if (url.protocol !== "https:") {
+    return undefined;
+  }
+  const host = url.hostname.toLowerCase();
+  if (!isAdminBotOverleafHost(host, env)) {
+    return undefined;
+  }
+  const segments = url.pathname.split("/").filter(Boolean);
+  if (segments.length !== 1 || !SHARE_TOKEN.test(segments[0] ?? "")) {
+    return undefined;
+  }
+  const labHost = resolveAdminBotLabOverleafHost(env);
+  return {
+    url: url.toString(),
+    host,
+    lab: host === labHost || host.endsWith(`.${labHost}`),
+  };
+}

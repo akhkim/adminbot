@@ -1,3 +1,4 @@
+import "./collaborator-chats.ts";
 // Lab Sharing tab (Collaborate): six panels --
 //   1. Director status strip (availability, timezone, progress, a way to flag a blocker)
 //   2. Seek help -- pick a project, describe what's needed, tag it, then post a general call or
@@ -20,10 +21,9 @@
 // needed wiring. That stopped being true when the five panels landed, and a reader who believed it
 // had no way to tell which half of the page to trust.
 import { html, nothing } from "lit";
-import "./lab-sharing-how-to.ts";
 import { t } from "../../../i18n/index.ts";
 import type { AppViewState } from "../../app-view-state.ts";
-import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
+import { loadStoredMemberSession } from "../auth/session.ts";
 import {
   askAdminBotLabSharingMember,
   closeAdminBotLabSharingRequest,
@@ -1445,6 +1445,12 @@ export function renderLabSharing(state: AppViewState) {
   return html`
     <div class="lab-sharing" data-testid="lab-sharing" aria-busy=${loading ? "true" : "false"}>
       ${renderLoadNotices(state)}
+      ${session && state.memberPrivilegeLevel === "admin"
+        ? html`<adminbot-collaborator-chats
+            .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
+            .sessionToken=${session.sessionToken}
+          ></adminbot-collaborator-chats>`
+        : nothing}
       ${loading
         ? html`<div class="muted lab-sharing__loading" role="status">
             ${t("labSharing.loading")}
@@ -1464,10 +1470,6 @@ export function renderLabSharing(state: AppViewState) {
           loading: state.adminBotMemberMapLoading,
         })
       }
-      <lab-sharing-how-to
-        .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
-        .sessionToken=${session?.sessionToken ?? ""}
-      ></lab-sharing-how-to>
       ${renderLabSharingResources(state.basePath, Boolean(session?.sessionToken))}
     </div>
   `;

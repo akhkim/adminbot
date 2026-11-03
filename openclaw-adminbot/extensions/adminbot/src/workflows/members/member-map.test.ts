@@ -178,7 +178,7 @@ describe("buildMemberMap", () => {
           last_login_country: "Germany",
           location: "Toronto",
         }),
-        // No stated city: the timezone's city beats a login country.
+        // No stated city: a timezone places nobody, so the login country is all there is.
         member({ id: "d", name: "Di", slack_user_id: "U4", last_login_country: "Germany" }),
         // Slack has nothing at all: the stated roster location wins over an inferred login.
         member({ id: "b", name: "Bo", last_login_country: "India", location: "Toronto" }),
@@ -196,8 +196,8 @@ describe("buildMemberMap", () => {
     );
     expect(byMemberId.get("a")?.place.label).toBe("Toronto");
     expect(byMemberId.get("a")?.member).toMatchObject({ source: "roster", precision: "city" });
-    expect(byMemberId.get("d")?.place.label).toBe("Zürich");
-    expect(byMemberId.get("d")?.member).toMatchObject({ source: "slack", precision: "timezone" });
+    expect(byMemberId.get("d")?.place.label).toBe("Germany");
+    expect(byMemberId.get("d")?.member).toMatchObject({ source: "login", precision: "country" });
     expect(byMemberId.get("b")?.place.label).toBe("Toronto");
     expect(byMemberId.get("b")?.member.source).toBe("roster");
     expect(byMemberId.get("c")?.place.label).toBe("Japan");
@@ -318,7 +318,7 @@ describe("buildMemberMap", () => {
       expect(map.places[0]).toMatchObject({ key: "london-on", country: "Canada" });
     });
 
-    it("never lets a country-only sign-in beat a stated or timezone city", () => {
+    it("never lets a country-only sign-in beat a stated city", () => {
       const map = buildMemberMap(
         [
           member({ id: "s", name: "Sa", slack_user_id: "U1", last_login_country: "DE" }),
@@ -327,8 +327,14 @@ describe("buildMemberMap", () => {
         new Map([["U1", "America/Toronto"]]),
         { loginCity: true, now },
       );
-      expect(map.places.map((place) => place.key).toSorted()).toEqual(["san-francisco", "toronto"]);
-      expect(map.places.some((place) => place.key === "country:germany")).toBe(false);
+      expect(map.places.map((place) => place.key).toSorted()).toEqual([
+        "country:germany",
+        "san-francisco",
+      ]);
+      // Ro's stated city wins; only Sa, with nothing but a Slack zone, falls back to the country.
+      expect(map.places.find((place) => place.key === "country:germany")?.members).toEqual([
+        expect.objectContaining({ member_id: "s" }),
+      ]);
     });
 
     it("outranks every stated city while it is fresh", () => {
@@ -469,10 +475,11 @@ describe("buildMemberMap", () => {
     ]);
   });
 
-  it("places a member by the roster timezone when nothing else is written", () => {
+  it("lists a member with only a roster timezone as having no location", () => {
     const map = buildMemberMap([member({ id: "a", name: "Ada", timezone: "Europe/London" })]);
-    expect(map.places[0]).toMatchObject({ key: "london" });
-    expect(map.places[0]?.members[0]).toMatchObject({ source: "roster", precision: "timezone" });
+    expect(map.places).toEqual([]);
+    expect(map.counts).toEqual({ placed: 0, unplaced: 0, unknown: 1 });
+    expect(map.absent).toEqual([{ member_id: "a", name: "Ada", reason: "no_location" }]);
   });
 
   it("pins a written country at the country, never at a guessed city", () => {
@@ -826,21 +833,16 @@ describe("member map precedence with the check-in and the Slack zone", () => {
     ).toMatchObject({ label: "Zürich", source: "roster" });
   });
 
-  it("4. a fresh Slack zone beats the roster timezone, and a stale one does not", () => {
-    expect(
-      placeOf({
-        timezone: "America/Toronto",
-        slack_tz: "America/Vancouver",
-        slack_tz_observed_at: ago(2),
-      }),
-    ).toMatchObject({ label: "Vancouver", source: "slack", precision: "timezone" });
-    expect(
-      placeOf({
-        timezone: "America/Toronto",
-        slack_tz: "America/Vancouver",
-        slack_tz_observed_at: ago(60),
-      }),
-    ).toMatchObject({ label: "Toronto", source: "roster" });
+  it("4. no timezone, fresh or stale, places a member", () => {
+    for (const observedAt of [ago(2), ago(60)]) {
+      expect(
+        placeOf({
+          timezone: "America/Toronto",
+          slack_tz: "America/Vancouver",
+          slack_tz_observed_at: observedAt,
+        }),
+      ).toBeUndefined();
+    }
   });
 
   it("flags a Slack zone over two hours off a stated city, and never moves the pin for it", () => {
@@ -863,8 +865,8 @@ describe("member map precedence with the check-in and the Slack zone", () => {
       slack_tz: "Europe/Berlin",
       slack_tz_observed_at: ago(1),
     });
-    expect(placed).toMatchObject({ label: "Berlin", source: "slack", ip_ignored: "suspected_vpn" });
-    expect(placed?.source_label).toBe("Slack time zone · IP ignored (VPN?)");
+    // With the IP set aside, only the Slack zone is left, and a zone places nobody.
+    expect(placed).toBeUndefined();
   });
 
   it("does not flag a neighbouring zone or a country-level pin", () => {

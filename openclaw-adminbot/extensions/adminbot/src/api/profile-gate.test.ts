@@ -56,3 +56,31 @@ it("blocks feature requests, permits only self repair, and unlocks from persiste
     expect((await call("/papers")).status).toBe(200);
   }
 });
+
+it("lets a view-as session read an incomplete member's pages, while a direct session stays locked", async () => {
+  mock = createAdminBotMockService({ serviceToken: "test-operator" });
+  // Member-tier with a mandatory field cleared: the gate blocks this on a real login.
+  const seeded = mock.service.upsertLabMember({
+    ...COMPLETE_PROFILE,
+    arr_reviewer_qualified: null,
+  });
+  expect(seeded.ok).toBe(true);
+  if (!seeded.ok) throw new Error(seeded.error.message);
+  // The same incomplete member, but seen through an admin's "view as": principal carries an
+  // impersonator, so the lock is lifted and the admin can inspect their pages.
+  vi.spyOn(mock.auth, "resolveSession").mockResolvedValue({
+    kind: "member",
+    member: seeded.payload,
+    session: { id: "view-session", member_id: "ada", expires_at: "2099-01-01T00:00:00Z" },
+    impersonator: { id: "root", name: "Root", privilege_level: "admin" },
+  } as never);
+  await new Promise<void>((resolve) => mock!.server.listen(0, "127.0.0.1", resolve));
+  const address = mock.server.address();
+  if (!address || typeof address === "string") throw new Error("no address");
+  const call = (route: string) =>
+    fetch(`http://127.0.0.1:${address.port}${route}`, {
+      headers: { Authorization: "Bearer view-token", "Content-Type": "application/json" },
+    });
+  expect((await call("/papers")).status).toBe(200);
+  expect((await call("/lab/members/self")).status).toBe(200);
+});

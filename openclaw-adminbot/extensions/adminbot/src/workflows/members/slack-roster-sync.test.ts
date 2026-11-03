@@ -189,7 +189,10 @@ describe("planSlackRosterSync", () => {
   });
 
   it("flags a deactivated account once and clears the flag on return", () => {
-    const deactivated = plan([slack("U1", { deleted: true })], [member("m1", { slack_user_id: "U1" })]);
+    const deactivated = plan(
+      [slack("U1", { deleted: true })],
+      [member("m1", { slack_user_id: "U1" })],
+    );
     expect(deactivated.deactivations).toEqual([{ member_id: "m1", slack_user_id: "U1" }]);
     expect(deactivated.removals).toEqual([]);
     const flagged = member("m1", {
@@ -221,7 +224,10 @@ describe("planSlackRosterSync", () => {
   });
 
   it("proposes removal for an unmatched roster test record", () => {
-    const result = plan([slack("U1")], [member("m-ph", { name: "placeholder", email: "ph@example.com" })]);
+    const result = plan(
+      [slack("U1")],
+      [member("m-ph", { name: "placeholder", email: "ph@example.com" })],
+    );
     expect(result.removals.map((row) => row.member_id)).toEqual(["m-ph"]);
   });
 
@@ -304,5 +310,46 @@ describe("slackRosterSyncRefusal", () => {
     const users = Array.from({ length: 12 }, (_, i) => slack(`UN${i}`));
     expect(slackRosterSyncRefusal(plan(users, []), 20)).toMatch(/refusing to apply 12/);
     expect(slackRosterSyncRefusal(plan(users.slice(0, 3), []), 20)).toBeUndefined();
+  });
+});
+
+// The account behind a duplicate an admin merged away. Before merges remembered it, every one of
+// these was imported again the next morning as `name-2`.
+describe("a merged person's second Slack account", () => {
+  it("is recognized by its Slack id and neither creates nor rewrites anything", () => {
+    const result = plan(
+      [
+        slack("UKEEP", { real_name: "Eric Example" }),
+        slack("USECOND", { real_name: "Eric Example", email: "eric@cs.lab.test" }),
+      ],
+      [
+        member("eric", {
+          slack_user_id: "UKEEP",
+          alternate_slack_user_ids: ["USECOND"],
+          former_member_ids: ["eric-example"],
+        }),
+      ],
+    );
+    expect(result.creates).toEqual([]);
+    // Only the record's own account may refresh it; the other account's avatar is not theirs.
+    expect(result.updates.every((update) => update.slack_user_id === "UKEEP")).toBe(true);
+    expect(result.deactivations).toEqual([]);
+  });
+
+  it("is recognized by an absorbed address when no Slack id was remembered", () => {
+    const result = plan(
+      [slack("UOTHER", { real_name: "Yara Example", email: "Yara@CS.Lab.Test" })],
+      [member("yara", { slack_user_id: "UYARA", alternate_emails: ["yara@cs.lab.test"] })],
+    );
+    expect(result.creates).toEqual([]);
+    expect(result.updates).toEqual([]);
+  });
+
+  it("does not hand a retired id out again to a new account", () => {
+    const result = plan(
+      [slack("UNEW", { real_name: "Ada Example" })],
+      [member("someone", { former_member_ids: ["ada-example"] })],
+    );
+    expect(result.creates.map((create) => create.member.id)).toEqual(["ada-example-2"]);
   });
 });

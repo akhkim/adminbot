@@ -8,6 +8,7 @@ import {
   createOpenReviewForumProbe,
   createOpenReviewNotesReader,
 } from "../connectors/openreview-notes.js";
+import { paperMentorReviewRequesterFromEnv } from "../connectors/papermentor-review.js";
 import {
   createGptZeroBibliographyScanner,
   createPublicOpenReviewPdfReader,
@@ -41,6 +42,7 @@ import { createAdminBotSensitiveInfoDocument } from "../privacy/sensitive-info-d
 import { createEventDraftRunner } from "../workflows/calendar/event-draft.js";
 import { createCalendarEventsReader } from "../workflows/calendar/events.js";
 import { resolveLabCalendar } from "../workflows/calendar/lab-calendar.js";
+import { createCollaboratorChatRequestStore } from "../persistence/collaborator-chat-requests.js";
 import { DEADLINE_VENUES } from "../workflows/deadlines/generated/dataset.js";
 import { readDeadlineDataset } from "../workflows/deadlines/runtime-dataset.js";
 import { createAccountApprovedEmailRunner } from "../workflows/identity/account-approved-email.js";
@@ -143,6 +145,28 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       () => onboardingArms.slackConnect,
       () => onboardingArms.enroll,
       () => onboardingArms.dcsRoster,
+      (proposal) => {
+        // A distinct, permanent effect key. Unlike the outer execution lease this never expires
+        // or releases on exception: a timeout may mean the provider already accepted the mail.
+        const key = `onboarding-email:${proposal.id}`;
+        if (!store.claimExecution(key, proposal.id, new Date().toISOString(), "")) {
+          throw new Error(
+            "This onboarding email was already attempted. Delivery is unknown or recorded; reconcile provider receipts before any resend. Do not retry this action.",
+          );
+        }
+        store.recordAudit({
+          id: `aud_${randomUUID()}`,
+          timestamp: new Date().toISOString(),
+          type: "onboarding.email_attempted",
+          actor: proposal.approvals.at(-1)?.approver_id ?? "adminbot",
+          details: {
+            action_id: proposal.id,
+            outcome: "unknown",
+            reason:
+              "Mail attempt claimed before provider call; reconcile if execution does not finish.",
+          },
+        });
+      },
     );
   // GeoNames for the "Use my precise location" control. Built before the service, which owns the
   // only code that sees a position; the route context gets its credit for the map.
@@ -218,6 +242,8 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
   // Built here rather than injected from the launcher, like the geolocator above: both are pure
   // functions of the environment, and the composition root has nothing to add to either.
   const venuePapersReader = options.venuePapersReader ?? createOpenReviewNotesReader();
+  const paperMentorReviewRequester =
+    options.paperMentorReviewRequester ?? paperMentorReviewRequesterFromEnv();
   const embedder = options.embedder ?? createOllamaEmbedder();
   const embeddingModel =
     options.embeddingModel ?? process.env.ADMINBOT_EMBED_MODEL?.trim() ?? "embeddinggemma:latest";
@@ -471,6 +497,8 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     service,
     store,
     memberDrafts,
+    collaboratorChats:
+      store.collaboratorChatRequestStore?.() ?? createCollaboratorChatRequestStore(),
     auth,
     apiTokens,
     privacyBroker,
@@ -508,6 +536,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     ...(options.cvScanDeps ? { cvScanDeps: options.cvScanDeps } : {}),
     ...(options.cvDigestPublisher ? { cvDigestPublisher: options.cvDigestPublisher } : {}),
     publicationMailingRunner: options.publicationMailingRunner ?? createPublicationMailingRunner(),
+    ...(paperMentorReviewRequester ? { paperMentorReviewRequester } : {}),
     ...(venuePapersReader ? { venuePapersReader } : {}),
     embedder,
     embeddingModel,
@@ -777,7 +806,10 @@ async function handleAuthenticatedRoute(
     // Re-read the row on every request: a saved answer unlocks immediately, and clearing it
     // locks again even when the member's session predates the change.
     const member = ctx.store.getLabMember(principal.member.id);
-    if (!member || isBlockedByProfile(member, req.method, url.pathname)) {
+    if (
+      !member ||
+      isBlockedByProfile(member, req.method, url.pathname, Boolean(principal.impersonator))
+    ) {
       sendJson(res, 403, {
         error: {
           code: "profile_incomplete",

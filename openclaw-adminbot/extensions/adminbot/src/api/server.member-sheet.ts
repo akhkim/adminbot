@@ -29,7 +29,7 @@ import {
   type RosterSheetParse,
   sameMemberType,
 } from "../workflows/members/roster-sync.js";
-import { composeOnboardingGuide } from "../workflows/onboarding/guide.js";
+import { composeOnboardingGuide, onboardingWelcomeReplyTo } from "../workflows/onboarding/guide.js";
 import { templateForMemberType } from "../workflows/onboarding/member-type-template.js";
 import { memberIdForRow } from "../workflows/onboarding/onboarding-sweep.js";
 import type { NewMemberGuideStep, NewMemberOnboardingResult } from "./server.member-onboarding.js";
@@ -407,7 +407,10 @@ async function planOnboardFromMemberSheet(
       subject: composed.guide.subject ?? "",
       body: composed.guide.body,
       // AdminBot sends from a mailbox nobody reads, and these mails invite a reply.
-      reply_to: env.ADMINBOT_REPLY_TO?.trim() || "akim@cs.toronto.edu",
+      reply_to:
+        template.templateId === "welcome"
+          ? onboardingWelcomeReplyTo(env)
+          : env.ADMINBOT_REPLY_TO?.trim() || "akim@cs.toronto.edu",
     });
   }
 
@@ -610,9 +613,25 @@ export async function executeApproved(
   }
   // A connector that recognized the action but did not perform it answers `simulated`: nothing
   // reached the outside world, so the step must not be reported as done.
-  return executed.payload.status === "executed"
-    ? { ok: true }
-    : { ok: false, reason: "approved, but the connector did not carry it out; see the audit log" };
+  if (executed.payload.status === "executed") {
+    return { ok: true };
+  }
+  const delivery = service
+    .listAuditEvents()
+    .findLast(
+      (event) =>
+        event.action_id === proposal.id &&
+        event.type === "execution.simulated" &&
+        event.details?.idempotency_key === idempotencyKey,
+    );
+  const reason = delivery?.details?.not_delivered_reason;
+  return {
+    ok: false,
+    reason:
+      typeof reason === "string" && reason.trim()
+        ? reason
+        : "approved, but the connector did not carry it out; see the audit log",
+  };
 }
 
 function hasAddress(cell: string | undefined, addresses: ReadonlySet<string>): boolean {
