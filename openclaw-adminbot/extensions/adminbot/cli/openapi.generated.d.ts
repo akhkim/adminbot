@@ -7209,6 +7209,7 @@ export interface components {
       source_label?: string;
       located_at?: string;
       tz_mismatch?: components["schemas"]["AdminBotTimezoneMismatch"];
+      role: string;
     } & {
       [key: string]: unknown;
     };
@@ -7216,6 +7217,18 @@ export interface components {
       slack_tz: string;
       place_tz: string;
       hours: number;
+    } & {
+      [key: string]: unknown;
+    };
+    AdminBotMapCounts: {
+      placed: number;
+      unplaced: number;
+      unknown: number;
+      members: number;
+      member_places: number;
+      by_role: {
+        [key: string]: number;
+      };
     } & {
       [key: string]: unknown;
     };
@@ -19485,13 +19498,7 @@ export interface operations {
                 };
                 attribution?: components["schemas"]["IpGeolocationAttribution"];
                 places: components["schemas"]["AdminBotMapPlaceGroup"][];
-                counts: {
-                  placed: number;
-                  unplaced: number;
-                  unknown: number;
-                } & {
-                  [key: string]: unknown;
-                };
+                counts: components["schemas"]["AdminBotMapCounts"];
                 unplaced?: ({
                   member_id: string;
                   name: string;
@@ -19516,13 +19523,7 @@ export interface operations {
                 };
                 attribution?: components["schemas"]["IpGeolocationAttribution"];
                 places: components["schemas"]["AdminBotMapPlaceSummary"][];
-                counts: {
-                  placed: number;
-                  unplaced: number;
-                  unknown: number;
-                } & {
-                  [key: string]: unknown;
-                };
+                counts: components["schemas"]["AdminBotMapCounts"];
                 mode: string;
               } & {
                 [key: string]: unknown;

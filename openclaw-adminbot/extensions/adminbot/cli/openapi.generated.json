@@ -16126,24 +16126,7 @@
                           }
                         },
                         "counts": {
-                          "type": "object",
-                          "properties": {
-                            "placed": {
-                              "type": "number"
-                            },
-                            "unplaced": {
-                              "type": "number"
-                            },
-                            "unknown": {
-                              "type": "number"
-                            }
-                          },
-                          "required": [
-                            "placed",
-                            "unplaced",
-                            "unknown"
-                          ],
-                          "additionalProperties": true
+                          "$ref": "#/components/schemas/AdminBotMapCounts"
                         },
                         "unplaced": {
                           "type": "array",
@@ -16228,24 +16211,7 @@
                           }
                         },
                         "counts": {
-                          "type": "object",
-                          "properties": {
-                            "placed": {
-                              "type": "number"
-                            },
-                            "unplaced": {
-                              "type": "number"
-                            },
-                            "unknown": {
-                              "type": "number"
-                            }
-                          },
-                          "required": [
-                            "placed",
-                            "unplaced",
-                            "unknown"
-                          ],
-                          "additionalProperties": true
+                          "$ref": "#/components/schemas/AdminBotMapCounts"
                         },
                         "mode": {
                           "type": "string"
@@ -37134,13 +37100,17 @@
           },
           "tz_mismatch": {
             "$ref": "#/components/schemas/AdminBotTimezoneMismatch"
+          },
+          "role": {
+            "type": "string"
           }
         },
         "required": [
           "member_id",
           "name",
           "source",
-          "precision"
+          "precision",
+          "role"
         ],
         "additionalProperties": true
       },
@@ -37161,6 +37131,41 @@
           "slack_tz",
           "place_tz",
           "hours"
+        ],
+        "additionalProperties": true
+      },
+      "AdminBotMapCounts": {
+        "type": "object",
+        "properties": {
+          "placed": {
+            "type": "number"
+          },
+          "unplaced": {
+            "type": "number"
+          },
+          "unknown": {
+            "type": "number"
+          },
+          "members": {
+            "type": "number"
+          },
+          "member_places": {
+            "type": "number"
+          },
+          "by_role": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "number"
+            }
+          }
+        },
+        "required": [
+          "placed",
+          "unplaced",
+          "unknown",
+          "members",
+          "member_places",
+          "by_role"
         ],
         "additionalProperties": true
       },
