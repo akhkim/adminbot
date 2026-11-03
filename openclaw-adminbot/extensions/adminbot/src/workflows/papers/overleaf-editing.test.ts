@@ -42,7 +42,7 @@ describe("AdminBot Overleaf editing helpers", () => {
     );
     expect(payload.affiliationPolicy?.issues).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ author: "Alice Doe", status: "ok" }),
+        expect.objectContaining({ author: "Alice Doe", status: "confirm" }),
         expect.objectContaining({ author: "Zhijing Jin", status: "confirm" }),
         expect.objectContaining({ author: "unknown", status: "missing" }),
       ]),
@@ -96,4 +96,116 @@ describe("AdminBot Overleaf editing helpers", () => {
       expect(() => assertOverleafPayloadReady(payload)).toThrow(/must be an https project link/u);
     }
   });
+});
+
+it.each([
+  [
+    { affiliation: "Example University", notes: "Affiliation: Former Institute" },
+    "Example University",
+    "Conflicting",
+  ],
+  [
+    { affiliation: "Vector Institute", notes: "met Jinesis colleagues" },
+    "Vector Institute",
+    "Structured",
+  ],
+  [{ affiliation: "University of Toronto" }, "University of Toronto", "Structured"],
+  [{ affiliation: "Jinesis Lab" }, "Jinesis Lab", "Structured"],
+  [
+    { affiliation: "Example University; Vector Institute" },
+    "Example University; Vector Institute",
+    "Structured",
+  ],
+  [{ notes: "Previously visited Jinesis" }, undefined, "No explicit"],
+  [{ notes: "Affiliation: Historical Institute" }, "Historical Institute", "Unverified legacy"],
+])(
+  "requires paper-time confirmation without conflating institutions: %j",
+  (fields, expected, message) => {
+    const payload = buildOverleafEditPayload({
+      title: "Synthetic paper",
+      authors: ["author"],
+      overleafEditUrl: "https://www.overleaf.com/project/abc",
+      requestedEdits: "Check author institutions",
+      mode: "affiliation_check",
+      members: [
+        {
+          id: "author",
+          name: "Synthetic Author",
+          privilege_level: "member",
+          access: [],
+          created_at: "2026-01-01",
+          updated_at: "2026-01-01",
+          ...fields,
+        },
+      ],
+    });
+    expect(payload.affiliationPolicy?.issues[0]).toMatchObject({
+      status: "confirm",
+      message: expect.stringContaining(message),
+    });
+    expect(payload.affiliationPolicy?.issues[0].expectedAffiliation).toBe(expected);
+    expect(() => assertOverleafPayloadReady(payload)).toThrow(/requires confirmation/);
+    expect(payload.paper.authors).toEqual(["author"]);
+  },
+);
+it("leaves ambiguous authors unresolved rather than selecting the first roster match", () => {
+  const member = {
+    name: "Same Name",
+    privilege_level: "member" as const,
+    access: [],
+    affiliation: "Example University",
+    created_at: "2026-01-01",
+    updated_at: "2026-01-01",
+  };
+  const payload = buildOverleafEditPayload({
+    title: "Synthetic",
+    authors: ["Same Name", "unknown"],
+    overleafEditUrl: "https://www.overleaf.com/project/abc",
+    requestedEdits: "Check",
+    mode: "affiliation_check",
+    members: [
+      { ...member, id: "one" },
+      { ...member, id: "two" },
+    ],
+  });
+  expect(payload.affiliationPolicy?.issues.map((issue) => issue.status)).toEqual([
+    "missing",
+    "missing",
+  ]);
+  expect(payload.paper.authors).toEqual(["Same Name", "unknown"]);
+});
+it("preserves the existing explicitly reviewed payload contract", () => {
+  const payload = buildOverleafEditPayload({
+    title: "Synthetic",
+    authors: ["Unknown"],
+    overleafEditUrl: "https://www.overleaf.com/project/abc",
+    requestedEdits: "Apply explicitly confirmed author wording",
+    members: [],
+  });
+  expect(() => assertOverleafPayloadReady(payload)).not.toThrow();
+});
+
+it("requires explicit paper-specific evidence even when a legacy issue says ok", () => {
+  const payload = buildOverleafEditPayload({
+    title: "Synthetic",
+    authors: ["Unknown"],
+    overleafEditUrl: "https://www.overleaf.com/project/abc",
+    requestedEdits: "Apply confirmed author wording",
+    mode: "affiliation_check",
+    members: [],
+  });
+  payload.affiliationPolicy!.issues = [
+    {
+      author: "Unknown",
+      status: "ok",
+      message: "Reviewed wording",
+      expectedAffiliation: "Example University",
+    },
+  ];
+  expect(() => assertOverleafPayloadReady(payload)).toThrow(/confirmation evidence/);
+  payload.affiliationPolicy!.issues[0].confirmation = {
+    source: "Author's paper-specific written confirmation",
+    workPeriod: "Synthetic project work during 2025",
+  };
+  expect(() => assertOverleafPayloadReady(payload)).not.toThrow();
 });

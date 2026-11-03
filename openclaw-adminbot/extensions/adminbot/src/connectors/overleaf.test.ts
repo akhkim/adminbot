@@ -103,3 +103,62 @@ describe("AdminBot Overleaf executor", () => {
     ).rejects.toThrow(/requires confirmation/u);
   });
 });
+
+it.each([false, true])(
+  "gates an affiliation edit on paper-specific evidence before contacting the bridge (%s)",
+  async (confirmed) => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      text: async () => "accepted",
+    })) as OverleafFetch;
+    const executor = createAdminBotOverleafExecutor({
+      fetchImpl,
+      env: {
+        OVERLEAF_API_BASE_URL: "https://bridge.example.test",
+        OVERLEAF_ACCESS_TOKEN: "synthetic-token",
+      },
+    });
+    const attempt = executor.execute(
+      proposal({
+        action: "apply_overleaf_project_edits",
+        mode: "affiliation_check",
+        paper: {
+          title: "Synthetic",
+          authors: ["Example Author"],
+          overleafEditUrl: "https://www.overleaf.com/project/abc",
+        },
+        requestedEdits: "Use confirmed independent institutions",
+        targetFiles: ["main.tex"],
+        affiliationPolicy: {
+          source: "synthetic-policy",
+          rules: [],
+          issues: [
+            {
+              author: "Example Author",
+              status: "ok",
+              message: "Explicitly reviewed",
+              expectedAffiliation: "Example University",
+              ...(confirmed
+                ? {
+                    confirmation: {
+                      source: "Author's written paper-specific confirmation",
+                      workPeriod: "Synthetic project period2025",
+                    },
+                  }
+                : {}),
+            },
+          ],
+        },
+      }),
+    );
+    if (confirmed) {
+      await expect(attempt).resolves.toEqual({ handled: true });
+      expect(fetchImpl).toHaveBeenCalledOnce();
+    } else {
+      await expect(attempt).rejects.toThrow(/confirmation evidence/);
+      expect(fetchImpl).not.toHaveBeenCalled();
+    }
+  },
+);

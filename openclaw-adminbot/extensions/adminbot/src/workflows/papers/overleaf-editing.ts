@@ -8,6 +8,8 @@ export type AdminBotOverleafAffiliationIssue = {
   status: "ok" | "confirm" | "missing";
   message: string;
   expectedAffiliation?: string;
+  /** Explicit paper-specific evidence retained in the immutable payload reviewed by approvers. */
+  confirmation?: { source: string; workPeriod: string };
 };
 
 export type AdminBotOverleafEditPayload = {
@@ -74,11 +76,13 @@ export function buildOverleafEditPayload(
     payload.affiliationPolicy = {
       source: input.policySource ?? "affiliation-policy.md",
       rules: [
-        `Use exactly "${JINESIS_AFFILIATION}" for members whose main affiliation is Jinesis.`,
-        `Use exactly "${ZHIJING_MPI_AFFILIATION}" for Zhijing's German-side affiliation.`,
+        `The combined display wording "${JINESIS_AFFILIATION}" is conditional on main Jinesis affiliation AND explicit paper-specific confirmation of every listed institution; it is not evidence of individual eligibility.`,
+        `Only after explicit confirmation for this paper, use "${ZHIJING_MPI_AFFILIATION}" for Zhijing's German-side affiliation.`,
         'Never use "Jinesis AI Lab".',
         "Do not infer EuroSafeAI eligibility or company-sponsored affiliation without explicit evidence.",
         "Preserve exact current institutional wording for collaborators paid by another professor or institute.",
+        "Jinesis, University of Toronto and Vector are independent associations; membership, access and email are not affiliation evidence.",
+        "Recorded affiliations and historical notes require confirmation for this paper and its work period before editing; do not add institutions from display wording.",
       ],
       issues: auditAffiliations(authors, input.members),
     };
@@ -106,6 +110,26 @@ export function assertOverleafPayloadReady(payload: AdminBotOverleafEditPayload)
   if (!payload.requestedEdits.trim()) {
     throw new Error("requested Overleaf edits are required");
   }
+  if (payload.mode === "affiliation_check") {
+    const issues = payload.affiliationPolicy?.issues;
+    if (!issues?.length || issues.length !== payload.paper.authors.length) {
+      throw new Error("Overleaf affiliation check requires confirmation for every author.");
+    }
+    for (const issue of issues) {
+      if (
+        issue.status === "ok" &&
+        (!issue.expectedAffiliation?.trim() ||
+          typeof issue.confirmation?.source !== "string" ||
+          !issue.confirmation.source.trim() ||
+          typeof issue.confirmation?.workPeriod !== "string" ||
+          !issue.confirmation.workPeriod.trim())
+      ) {
+        throw new Error(
+          "Overleaf affiliation check requires confirmation evidence and paper work period; refresh legacy approvals.",
+        );
+      }
+    }
+  }
   const blockingIssues =
     payload.affiliationPolicy?.issues.filter((issue) => issue.status !== "ok") ?? [];
   if (blockingIssues.length) {
@@ -127,48 +151,53 @@ function auditAffiliations(
       return {
         author,
         status: "missing",
-        message: "Author is not present in the AdminBot member list; ask for exact affiliation.",
+        message:
+          "Author cannot be uniquely matched in the AdminBot member list; confirm identity and exact affiliation.",
       };
     }
-    const notes = member.notes ?? "";
-    const explicitAffiliation = readNoteValue(notes, "Affiliation");
-    if (explicitAffiliation) {
-      return {
-        author: member.name,
-        status: "ok",
-        message: `Use recorded affiliation: ${explicitAffiliation}`,
-        expectedAffiliation: explicitAffiliation,
-      };
-    }
-    if (member.id.toLowerCase() === "zhijing" || member.name.toLowerCase().includes("zhijing")) {
+    const structured = member.affiliation?.trim();
+    const legacy = readNoteValue(member.notes ?? "", "Affiliation");
+    const mainAffiliation = readNoteValue(member.notes ?? "", "Main affiliation");
+    const normalized = (value: string) => value.toLowerCase().replace(/\s+/gu, " ").trim();
+    const conflictingNote = [legacy, mainAffiliation].find(
+      (value) => value && structured && normalized(structured) !== normalized(value),
+    );
+    if (structured && conflictingNote) {
       return {
         author: member.name,
         status: "confirm",
-        message:
-          "Zhijing requires exact German-side affiliation and any paper-specific additional affiliations.",
-        expectedAffiliation: ZHIJING_MPI_AFFILIATION,
+        message: `Conflicting records: structured affiliation is "${structured}"; legacy affiliation note is "${conflictingNote}". Confirm exact institutions for this paper and work period; do not merge or choose silently.`,
+        expectedAffiliation: structured,
       };
     }
-    if (/main affiliation:\s*jinesis/i.test(notes) || /\bjinesis\b/i.test(notes)) {
+    // The roster records a present association, not where this particular work was done.
+    // Even matching old notes cannot establish paper-time eligibility or additional institutions.
+    const recorded = structured || legacy || mainAffiliation;
+    if (recorded) {
       return {
         author: member.name,
-        status: "ok",
-        message: `Use Jinesis main affiliation: ${JINESIS_AFFILIATION}`,
-        expectedAffiliation: JINESIS_AFFILIATION,
+        status: "confirm",
+        message: `${structured ? "Structured affiliation" : "Unverified legacy affiliation note"}: ${recorded}. Confirm that these exact independent institutions apply to this paper's work period before editing. No additional Jinesis, UofT or Vector association is inferred.`,
+        expectedAffiliation: recorded,
       };
     }
     return {
       author: member.name,
       status: "confirm",
       message:
-        "No exact affiliation is recorded in member notes; ask the user/student before editing.",
+        "No explicit institution association is recorded. Incidental lab mentions, membership, access and email do not establish affiliation; ask the author for exact institutions and paper-work-period confirmation.",
     };
   });
 }
 
 function findMember(author: string, members: AdminBotLabMember[]): AdminBotLabMember | undefined {
   const normalized = normalize(author);
-  return members.find((member) => member.id === author || normalize(member.name) === normalized);
+  const exact = members.find((member) => member.id === author);
+  if (exact) {
+    return exact;
+  }
+  const matches = members.filter((member) => normalize(member.name) === normalized);
+  return matches.length === 1 ? matches[0] : undefined;
 }
 
 function readNoteValue(notes: string, label: string): string | undefined {
