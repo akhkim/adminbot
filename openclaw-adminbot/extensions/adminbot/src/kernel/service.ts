@@ -7418,10 +7418,26 @@ export class AdminBotService {
     slot: string;
     reason: string;
     memberId: string;
+    /** The route vouches that the writer is a host-named PI approver (`canGivePiReview`). */
+    piApprover?: boolean;
+    /** The write comes from an admin's "view as" session rather than the writer's own. */
+    viewAs?: boolean;
   }): AdminBotServiceResponse<{ slot: AdminBotPaperSlotRecord }> {
     const context = this.paperSlotContext({ ...params, privileged: true });
     if (!context.ok) {
       return context.error;
+    }
+    // Waiving the PI's yes settles it as surely as ticking it, so it answers to the same gate:
+    // otherwise any admin could clear a paper for posting without the PI or a named approver.
+    const piDenial = piReviewSlotDenial({
+      slot: params.slot,
+      memberId: params.memberId,
+      headProfessorMemberId: this.resolveSettings().head_professor_member_id,
+      piApprover: params.piApprover,
+      viewAs: params.viewAs,
+    });
+    if (piDenial) {
+      return serviceError(403, piDenial);
     }
     const result = waivePaperSlot({
       existing: context.existing,

@@ -497,6 +497,12 @@ describe("member requests", () => {
     const viewingPi = await send(admin, "POST", "/auth/impersonate", { member_id: "zhijing" });
     const asPi = ((await viewingPi.json()) as { session_token: string }).session_token;
     expect((await approve(asPi)).status).toBe(403);
+    // A waiver settles the PI's yes too, so it answers to the same rule as a tick.
+    const waive = (token: string) =>
+      send(token, "POST", "/papers/p1/slots/pi_approval/waive", { reason: "approved elsewhere" });
+    expect((await waive(admin)).status).toBe(403);
+    expect((await waive(asPi)).status).toBe(403);
+    expect((await waive(andy)).status).toBe(200);
 
     const approvers = async () =>
       ((await (await send(admin, "GET", "/settings")).json()) as {
