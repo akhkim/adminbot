@@ -135,6 +135,7 @@ export type AdminBotRouteContext = {
   /** Grants lab-calendar read access, silently. Shared with auth so both use one runner. */
   inviteToLabCalendar: CalendarInviteRunner;
   serviceToken?: string;
+  paperMentorToken?: string;
   devicePairingApprover?: DevicePairingApprover;
   deviceTokenIssuer?: DeviceTokenIssuer;
   referenceScans: ReferenceScans;
@@ -226,6 +227,8 @@ export type AdminBotMockServiceOptions = {
   emailAutomationRunner?: () => Promise<unknown>;
   reimbursementWorkflow?: AdminBotReimbursementWorkflow;
   serviceToken?: string;
+  /** Opens POST /papermentor/author-affiliations and nothing else. Unset, that route is 404. */
+  paperMentorToken?: string;
   gatewayToken?: string;
   gatewayUrl?: string;
   // Free-tier IPinfo Lite token, used to stamp a coarse (country-level) location on a member's
