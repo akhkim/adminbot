@@ -9,6 +9,8 @@ Verified expand → load → edit purpose and HTTPS link → nominate Reader Exa
 - [Mobile dark](mobile-dark.jpg)
 - [Mobile light](mobile-light.jpg)
 
-All four saved images were reopened and inspected for readable labels, overflow, clipping and privacy. Rendered PR images are checked after publishing and before readiness. Fixture does not establish production deployment.
+All saved images were reopened and inspected for readable labels, overflow, clipping and privacy. Rendered PR images are checked after publishing and before readiness. Fixture does not establish production deployment.
 
 To reproduce, copy fixture.html to ui/.artifacts/internal-peer-review-preview.html and serve with the existing Vite UI. Synthetic state uses adminbot-synthetic-peer-review-fixture in sessionStorage.
+
+Desktop-detail.jpg is an unmodified native-resolution crop of desktop-dark.jpg, added after the full context image proved too small at normal PR scale.
