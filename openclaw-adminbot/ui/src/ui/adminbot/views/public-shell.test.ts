@@ -80,7 +80,7 @@ describe("renderPublicShell", () => {
     const state = createState();
     const host = renderShell(state);
     host.querySelector<HTMLAnchorElement>('[data-testid="public-shell-back"]')?.click();
-    expect(state.tab).toBe("chat");
+    expect(state.tab).toBe("dashboard");
   });
 
   afterEach(() => {

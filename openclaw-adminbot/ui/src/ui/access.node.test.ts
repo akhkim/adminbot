@@ -123,8 +123,8 @@ describe("visibleTabsForRole", () => {
 
   it("adds the roster and the shared tools for a member", () => {
     // Sidebar order: the dashboard, then My Info, then Lab Sharing with the recordings and the
-    // roster under it, then the three requests, then the shared tools. `chat` is absent because no
-    // group lists it -- it renders in the pinned sidebar footer instead.
+    // roster under it, then the three requests, then the shared tools. `chat` is absent: it is
+    // retired, and no group lists it.
     expect(visibleTabsForRole(ALL_TABS, "member")).toEqual([
       "dashboard",
       // The viewer's own checklist, marked done against their own record.
@@ -318,5 +318,15 @@ describe("Getting Started, once it is finished", () => {
   it("does not change who may reach the page", () => {
     expect(canAccessTab("gettingStarted", "member")).toBe(true);
     expect(resolveAccessibleTab("gettingStarted", "member")).toBe("gettingStarted");
+  });
+});
+
+describe("retired chat", () => {
+  // Retired for everyone: no member reaches it, and an old /chat link sends them home. Admins keep
+  // the route only so Sessions and Cron can open a run's transcript; it is in nobody's sidebar.
+  it("is closed to members and kept for admins' transcript links", () => {
+    expect(canAccessTab("chat", "member")).toBe(false);
+    expect(resolveAccessibleTab("chat", "member")).toBe("dashboard");
+    expect(canAccessTab("chat", "admin")).toBe(true);
   });
 });

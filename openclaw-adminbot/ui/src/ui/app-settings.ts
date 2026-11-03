@@ -751,7 +751,7 @@ export function syncTabWithLocation(host: SettingsHost, replace: boolean) {
     return;
   }
   const fromRoot = pathIsRoot(window.location.pathname, host.basePath);
-  const resolved = tabFromPath(window.location.pathname, host.basePath) ?? "chat";
+  const resolved = tabFromPath(window.location.pathname, host.basePath) ?? "dashboard";
   setTabFromRoute(host, resolved);
   // After the selection above, which clears the flag as any navigation does. The member session
   // has not resumed yet, so who is looking is not knowable here; this records that the question is
