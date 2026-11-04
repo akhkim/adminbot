@@ -66,6 +66,16 @@ export const logisticsRoutes: readonly Route[] = [
       );
     }),
   ),
+  // The signature request, filed on the lab's Google Form on the member's own behalf. It is served
+  // by handleLogisticsRoute with the request routes, but it is not under /logistics/requests, so it
+  // needs its own entry: when the route chain was split into these tables (2026-10-07) only that
+  // prefix was forwarded, and every in-app signature request answered 404 "not found" for weeks.
+  post(
+    "/logistics/signature-form",
+    memberOnly(async ({ req, res, url, ctx, principal }) => {
+      await handleLogisticsRoute(req, res, url, ctx.service, principal.member);
+    }),
+  ),
   // The WhatsApp call queue: which open `book_meeting` requests have a doc prep document that can
   // actually be opened, and a proposal to put those on Zhijing's tab. Admin-gated on both verbs --
   // GET names every member with an open call request and what they want to talk about, which is
