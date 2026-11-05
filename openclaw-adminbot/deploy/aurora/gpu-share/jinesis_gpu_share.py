@@ -54,10 +54,25 @@ def _env_int(name: str, default: int) -> int:
     return int(raw) if raw else default
 
 
+def default_runtime_base() -> str:
+    """Where the per-user runtime directory lives when GATE_RUNTIME_DIR is not set.
+
+    XDG_RUNTIME_DIR first; then /run/user/<uid>, which is what systemd's %t names and is present
+    whenever the user manager runs -- a non-interactive ssh session often has no XDG_RUNTIME_DIR,
+    and falling straight to /tmp made `status` read an empty directory and report "down" while
+    the gate was serving. /tmp only when neither exists.
+    """
+    xdg = os.environ.get("XDG_RUNTIME_DIR", "").strip()
+    if xdg:
+        return xdg
+    run_user = f"/run/user/{os.getuid()}"
+    if os.path.isdir(run_user):
+        return run_user
+    return f"/tmp/jinesis-gpu-share-{os.getuid()}"
+
+
 def runtime_dir() -> Path:
-    base = os.environ.get("GATE_RUNTIME_DIR") or os.path.join(
-        os.environ.get("XDG_RUNTIME_DIR", f"/tmp/jinesis-gpu-share-{os.getuid()}"), "jinesis-gpu7"
-    )
+    base = os.environ.get("GATE_RUNTIME_DIR") or os.path.join(default_runtime_base(), "jinesis-gpu7")
     path = Path(base)
     path.mkdir(mode=0o700, parents=True, exist_ok=True)
     os.chmod(path, 0o700)

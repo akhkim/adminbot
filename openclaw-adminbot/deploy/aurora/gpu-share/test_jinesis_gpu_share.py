@@ -245,6 +245,21 @@ class GpuShareTest(unittest.TestCase):
         mode = os.stat(self.env["GATE_RUNTIME_DIR"]).st_mode & 0o777
         self.assertEqual(mode, 0o700)
 
+    def test_without_xdg_runtime_dir_it_uses_the_user_run_dir(self) -> None:
+        saved = os.environ.pop("XDG_RUNTIME_DIR", None)
+        try:
+            expected = f"/run/user/{os.getuid()}"
+            if os.path.isdir(expected):
+                self.assertEqual(share.default_runtime_base(), expected)
+            else:
+                self.assertEqual(share.default_runtime_base(), f"/tmp/jinesis-gpu-share-{os.getuid()}")
+            os.environ["XDG_RUNTIME_DIR"] = "/somewhere/xdg"
+            self.assertEqual(share.default_runtime_base(), "/somewhere/xdg")
+        finally:
+            os.environ.pop("XDG_RUNTIME_DIR", None)
+            if saved is not None:
+                os.environ["XDG_RUNTIME_DIR"] = saved
+
     def test_gate_refuses_to_listen_beyond_loopback(self) -> None:
         self.assertEqual(share.main(["gate", "--host", "0.0.0.0", "--port", "0"]), 2)
 
