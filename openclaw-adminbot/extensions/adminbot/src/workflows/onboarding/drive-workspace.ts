@@ -1,10 +1,11 @@
 // Provisions a member's Google Drive workspace by copying the lab's prototype folder.
 //
 // Drive cannot copy a folder -- `files.copy` on one returns 403 cannotCopyFile -- so this is
-// mkdir, then a copy per child, then the share. The prototype is flat (six items, no subfolders),
-// so there is no recursion here on purpose: adding it would be untested code for a shape the
-// prototype does not have. If the prototype ever grows a subfolder, `listPrototypeChildren`
-// reports it and provisioning fails loudly rather than silently producing a partial workspace.
+// mkdir, then a copy per child, then the share. A subfolder in the prototype is made again with
+// `mkdir --parent` and its own children copied into it, recursively. The prototype was flat until
+// it gained `yyyymmdd_ProjectName` (2026-11), and the flat-only copier then refused every
+// full-member send; recursion is bounded by MAX_PROTOTYPE_DEPTH so a prototype that grows a deep
+// tree still fails loudly rather than producing a workspace nobody checked.
 //
 // Verified against the live prototype before this shipped, including that shortcuts copy as
 // shortcuts (keeping their targets) rather than duplicating what they point at.
@@ -49,19 +50,11 @@ function readJson(stdout: string, what: string): Record<string, unknown> {
 
 function listPrototypeChildren(payload: Record<string, unknown>): DriveChild[] {
   const files = Array.isArray(payload.files) ? payload.files : [];
-  const children = files.map((entry) => entry as DriveChild);
-  const nested = children.filter((child) => child.mimeType === FOLDER_MIME);
-  if (nested.length > 0) {
-    // Copying this correctly needs recursion, which the flat prototype never exercised. Fail
-    // rather than hand someone a workspace that silently lost a folder.
-    throw new Error(
-      `prototype folder now contains subfolders (${nested
-        .map((child) => child.name)
-        .join(", ")}); the copier only handles a flat prototype`,
-    );
-  }
-  return children;
+  return files.map((entry) => entry as DriveChild);
 }
+
+/** Folder levels under the prototype the copier will recreate: today's prototype has one. */
+const MAX_PROTOTYPE_DEPTH = 3;
 
 /**
  * A Drive query for folders of exactly this name owned by the account, with the name quoted the
@@ -69,10 +62,8 @@ function listPrototypeChildren(payload: Record<string, unknown>): DriveChild[] {
  */
 export function driveWorkspaceLookupQuery(folderName: string): string {
   const quoted = folderName.replaceAll("\\", "\\\\").replaceAll("'", "\\'");
-  return `name = '${quoted}' and mimeType = '${DRIVE_FOLDER_MIME}' and trashed = false and 'me' in owners`;
+  return `name = '${quoted}' and mimeType = '${FOLDER_MIME}' and trashed = false and 'me' in owners`;
 }
-
-const DRIVE_FOLDER_MIME = "application/vnd.google-apps.folder";
 
 /**
  * Returns the person's Drive workspace: the existing folder of that name if there is one,
@@ -132,7 +123,7 @@ export function createDriveWorkspaceProvisioner(
         typeof file === "object" &&
         typeof (file as { id?: unknown }).id === "string" &&
         (file as { name?: unknown }).name === name &&
-        ((file as { mimeType?: unknown }).mimeType ?? DRIVE_FOLDER_MIME) === DRIVE_FOLDER_MIME,
+        ((file as { mimeType?: unknown }).mimeType ?? FOLDER_MIME) === FOLDER_MIME,
     );
     if (found) {
       const shared = readJson(
@@ -172,13 +163,43 @@ export function createDriveWorkspaceProvisioner(
       throw new Error("gog drive mkdir did not return a folder id");
     }
 
-    try {
-      for (const child of children) {
+    // A subfolder is made again inside the new workspace and its own children copied into it;
+    // files and shortcuts are copied as before (shortcuts keep their targets).
+    const copyChildren = async (
+      entries: DriveChild[],
+      parentId: string,
+      depth: number,
+    ): Promise<void> => {
+      for (const child of entries) {
         if (!child.id || !child.name) {
           throw new Error("prototype child is missing an id or name");
         }
-        await run(gogArgs("copy", child.id, child.name, "--parent", folderId));
+        if (child.mimeType !== FOLDER_MIME) {
+          await run(gogArgs("copy", child.id, child.name, "--parent", parentId));
+          continue;
+        }
+        if (depth >= MAX_PROTOTYPE_DEPTH) {
+          throw new Error(
+            `prototype folder nests deeper than ${MAX_PROTOTYPE_DEPTH} levels at "${child.name}"; refusing to copy it`,
+          );
+        }
+        const made = readJson(
+          await run(gogArgs("mkdir", child.name, "--parent", parentId)),
+          "drive mkdir",
+        );
+        const subfolderId = (made.folder as { id?: string } | undefined)?.id;
+        if (!subfolderId) {
+          throw new Error("gog drive mkdir did not return a folder id");
+        }
+        const inner = listPrototypeChildren(
+          readJson(await run(gogArgs("ls", "--parent", child.id, "--max", "1000")), "drive ls"),
+        );
+        await copyChildren(inner, subfolderId, depth + 1);
       }
+    };
+
+    try {
+      await copyChildren(children, folderId, 0);
       // `--force` is required for an `anyone` grant non-interactively; without it gog refuses and
       // the folder would be created but never shared.
       const shared = readJson(
