@@ -2318,6 +2318,10 @@ export const en: TranslationMap = {
       send: "Send the signature request",
       sending: "Sending…",
       submitted: "Filed on the lab's signature form.",
+      signInNeeded:
+        "The lab's form only takes responses from a signed-in Google account, so this one needs your click. Your answers are already filled in: check them and press Submit.",
+      openPrefilled: "Open the form with your answers filled in",
+      notFiled: "The form did not take the request. Open the form yourself to file it.",
       openForm: "Open the form yourself",
       dropTitle: "Drop documents here, or click to choose",
       dropHint: "PDF, Word, or a photo of the page.",

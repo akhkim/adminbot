@@ -3,8 +3,10 @@ import {
   SIGNATURE_FORM_EMAIL_FIELD,
   SIGNATURE_FORM_FIELDS,
   SIGNATURE_FORM_SIGN_IN_REQUIRED,
+  SIGNATURE_FORM_VIEW_URL,
   dateParts,
   signatureFormBody,
+  signatureFormPrefillUrl,
   submitSignatureForm,
 } from "./signature-form.js";
 
@@ -58,6 +60,29 @@ describe("the body Google is sent", () => {
   });
 });
 
+// What the member opens when the form wants them signed in: every answer already in place.
+describe("the prefilled form link", () => {
+  it("is the form's own page with each answer under its question id", () => {
+    const url = new URL(signatureFormPrefillUrl({ ...REQUEST, email: "ada@example.test" })!);
+    expect(`${url.origin}${url.pathname}`).toBe(SIGNATURE_FORM_VIEW_URL);
+    expect(url.pathname.endsWith("/viewform")).toBe(true);
+    expect(url.searchParams.get("usp")).toBe("pp_url");
+    expect(url.searchParams.get(SIGNATURE_FORM_FIELDS.name)).toBe("Ada Lovelace");
+    expect(url.searchParams.get(SIGNATURE_FORM_FIELDS.driveUrl)).toBe(REQUEST.driveUrl);
+    // A prefill takes the date question as one ISO value, unlike the POST's three parts.
+    expect(url.searchParams.get(SIGNATURE_FORM_FIELDS.deadline)).toBe("2026-09-30");
+    expect(url.searchParams.get(SIGNATURE_FORM_FIELDS.context)).toBe(REQUEST.context);
+    // A signed-in response records the account's own email.
+    expect(url.searchParams.has(SIGNATURE_FORM_EMAIL_FIELD)).toBe(false);
+  });
+
+  it("leaves the optional context out, and refuses a date that is not one", () => {
+    const url = new URL(signatureFormPrefillUrl({ ...REQUEST, context: " " })!);
+    expect(url.searchParams.has(SIGNATURE_FORM_FIELDS.context)).toBe(false);
+    expect(signatureFormPrefillUrl({ ...REQUEST, deadline: "soon" })).toBeUndefined();
+  });
+});
+
 describe("dateParts", () => {
   it("takes an ISO date and drops the leading zeros Google does not want", () => {
     expect(dateParts("2026-01-05")).toEqual({ year: "2026", month: "1", day: "5" });
@@ -99,7 +124,11 @@ describe("submitSignatureForm", () => {
       { status: 403 },
     ]) {
       const result = await submitSignatureForm(REQUEST, { post: vi.fn(async () => answer) });
-      expect(result).toEqual({ ok: false, error: SIGNATURE_FORM_SIGN_IN_REQUIRED });
+      expect(result).toEqual({
+        ok: false,
+        error: SIGNATURE_FORM_SIGN_IN_REQUIRED,
+        prefillUrl: signatureFormPrefillUrl(REQUEST),
+      });
     }
     // Any other redirect is still just a refusal.
     const elsewhere = await submitSignatureForm(REQUEST, {

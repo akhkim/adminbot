@@ -514,6 +514,28 @@ describe("POST /logistics/signature-form", () => {
     expect(await res.json()).toEqual({ error: { message: "the form answered 500" } });
   });
 
+  // The form only takes signed-in responses: the member gets the form with their answers in it.
+  it("hands back a prefilled form when Google wants the member signed in", async () => {
+    submitSignatureForm.mockClear();
+    submitSignatureForm.mockResolvedValueOnce({
+      ok: false,
+      error: "the lab's signature form only accepts signed-in responses",
+      prefillUrl: "https://docs.google.com/forms/d/e/synthetic/viewform?usp=pp_url",
+    });
+    const lab = await startLab();
+    const res = await fetch(`${lab.baseUrl}/logistics/signature-form`, {
+      method: "POST",
+      headers: { ...asMember(lab, "ada"), "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      submitted: false,
+      sign_in_required: true,
+      prefill_url: "https://docs.google.com/forms/d/e/synthetic/viewform?usp=pp_url",
+    });
+  });
+
   it("refuses a caller without a member session, including the service principal", async () => {
     submitSignatureForm.mockClear();
     const lab = await startLab();

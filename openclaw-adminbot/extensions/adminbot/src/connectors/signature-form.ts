@@ -23,7 +23,9 @@
  * account email in the form's own email column. The form collects emails as "Responder input" --
  * Google's `emailAddress` field, which needs no sign-in. Set to "Verified" instead, the form
  * accepts responses only from a signed-in Google account, which a server-side POST can never be:
- * Google redirects it to its login page, and that is reported as the form requiring sign-in.
+ * Google redirects it to its login page. Google has no API for submitting a response either, so
+ * then the member files it themselves -- but not from scratch: the result carries a prefilled link
+ * to the form with every answer already in it, and the member only has to press Submit.
  */
 
 /** The form's own response endpoint -- the `/d/e/<id>/` spelling, which is the public one. */
@@ -38,6 +40,12 @@ export const SIGNATURE_FORM_FIELDS = {
   deadline: "entry.1132435368",
   context: "entry.1028961965",
 } as const;
+
+/** The form's own page, which takes `entry.<id>` answers as a prefill (`usp=pp_url`). */
+export const SIGNATURE_FORM_VIEW_URL = SIGNATURE_FORM_RESPONSE_URL.replace(
+  /\/formResponse$/u,
+  "/viewform",
+);
 
 /** Google's own field for a form that collects emails as "Responder input". */
 export const SIGNATURE_FORM_EMAIL_FIELD = "emailAddress";
@@ -57,7 +65,14 @@ export type SignatureFormSubmission = {
   email?: string;
 };
 
-export type SignatureFormResult = { ok: true } | { ok: false; error: string };
+export type SignatureFormResult =
+  | { ok: true }
+  | {
+      ok: false;
+      error: string;
+      /** Set when the form wants a signed-in response: the form with these answers filled in. */
+      prefillUrl?: string;
+    };
 
 /** Injected in tests. Defaults to the runtime's own fetch. */
 export type FormPoster = (
@@ -143,6 +158,28 @@ export function signatureFormBody(input: SignatureFormSubmission): URLSearchPara
 }
 
 /**
+ * The form's page with this request's answers filled in, for the member to submit signed in.
+ *
+ * Same answers as the POST, from the same validated input; a date question takes the ISO date as
+ * one value here. The email is left out: a form that wants a sign-in records the account's own.
+ */
+export function signatureFormPrefillUrl(input: SignatureFormSubmission): string | undefined {
+  if (!dateParts(input.deadline)) {
+    return undefined;
+  }
+  const url = new URL(SIGNATURE_FORM_VIEW_URL);
+  url.searchParams.set("usp", "pp_url");
+  url.searchParams.set(SIGNATURE_FORM_FIELDS.name, input.name.trim());
+  url.searchParams.set(SIGNATURE_FORM_FIELDS.driveUrl, input.driveUrl.trim());
+  url.searchParams.set(SIGNATURE_FORM_FIELDS.deadline, input.deadline.trim());
+  const context = input.context?.trim();
+  if (context) {
+    url.searchParams.set(SIGNATURE_FORM_FIELDS.context, context);
+  }
+  return url.toString();
+}
+
+/**
  * Files one signature request on the form.
  *
  * Never throws: the caller is a route answering a member who is watching, and a thrown fetch is
@@ -169,12 +206,15 @@ export async function submitSignatureForm(
     if (status >= 200 && status < 300) {
       return { ok: true };
     }
-    return {
-      ok: false,
-      error: signInRequired(status, location)
-        ? SIGNATURE_FORM_SIGN_IN_REQUIRED
-        : `the form answered ${status}`,
-    };
+    if (signInRequired(status, location)) {
+      const prefillUrl = signatureFormPrefillUrl(input);
+      return {
+        ok: false,
+        error: SIGNATURE_FORM_SIGN_IN_REQUIRED,
+        ...(prefillUrl ? { prefillUrl } : {}),
+      };
+    }
+    return { ok: false, error: `the form answered ${status}` };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }

@@ -203,6 +203,16 @@ export async function submitLogisticsRequest(
 }
 
 /**
+ * What filing the signature request came to. `submitted: false` with a `prefill_url` means the form
+ * only takes signed-in responses: the link is the form with the member's answers already in it.
+ */
+export type SignatureFormAnswer = {
+  submitted: boolean;
+  sign_in_required?: boolean;
+  prefill_url?: string;
+};
+
+/**
  * Files the signature request on the lab's Google Form.
  *
  * Posted through AdminBot rather than from the browser: the form's first column is who is asking,
@@ -212,7 +222,7 @@ export async function submitSignatureFormRequest(
   input: { drive_url: string; deadline: string; context?: string },
   sessionToken: string,
   baseUrl: string,
-): Promise<AuthResult<{ submitted: boolean }>> {
+): Promise<AuthResult<SignatureFormAnswer>> {
   const result = await authedJson(
     baseUrl,
     "/logistics/signature-form",
@@ -226,7 +236,7 @@ export async function submitSignatureFormRequest(
   if (!result.response.ok) {
     return { ok: false, ...calendarFailure(result.response, result.body) };
   }
-  return { ok: true, value: result.body as { submitted: boolean } };
+  return { ok: true, value: result.body as SignatureFormAnswer };
 }
 
 /** Replaces the content of a request nobody has picked up yet. The service refuses the rest. */

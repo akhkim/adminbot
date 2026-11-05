@@ -155,6 +155,8 @@ export type AdminBotLogisticsProps = {
     sendingForm: boolean;
     formError: string | null;
     formSent: boolean;
+    /** The form with the member's answers in it, when Google wants them signed in to submit. */
+    formPrefillUrl?: string | null;
   };
   meeting: RequestSaveProps & {
     rows: MeetingRequestRow[];
@@ -1286,6 +1288,21 @@ function renderSignatureRequest(props: SignatureProps) {
               data-testid="logistics-signature-error"
             >
               ${props.formError}
+            </p>`
+          : nothing}
+        ${props.formPrefillUrl
+          ? html`<p class="logistics-signature__status" data-testid="logistics-signature-prefill">
+              ${t("logistics.signature.signInNeeded")}
+              <a
+                class="logistics-signature__link"
+                href=${props.formPrefillUrl}
+                target="_blank"
+                rel="noreferrer noopener"
+                data-testid="logistics-signature-prefill-link"
+              >
+                ${t("logistics.signature.openPrefilled")}
+                <span aria-hidden="true">${icons.externalLink}</span>
+              </a>
             </p>`
           : nothing}
         ${props.formSent

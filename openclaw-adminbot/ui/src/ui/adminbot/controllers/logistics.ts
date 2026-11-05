@@ -69,6 +69,8 @@ export type AdminBotLogisticsHost = {
   adminBotSignatureError: string | null;
   /** Set once the form accepted it, so the tab says so instead of looking like nothing happened. */
   adminBotSignatureSubmitted: boolean;
+  /** The form with the member's answers in it, when Google wants them signed in to submit it. */
+  adminBotSignaturePrefillUrl: string | null;
 };
 
 export type DeskLettersState = {
@@ -559,6 +561,7 @@ export async function submitAdminBotSignatureForm(host: AdminBotLogisticsHost): 
   host.adminBotSignatureSubmitting = true;
   host.adminBotSignatureError = null;
   host.adminBotSignatureSubmitted = false;
+  host.adminBotSignaturePrefillUrl = null;
   try {
     const form = host.adminBotSignatureForm;
     const result = await submitSignatureFormRequest(
@@ -572,6 +575,18 @@ export async function submitAdminBotSignatureForm(host: AdminBotLogisticsHost): 
     );
     if (!result.ok) {
       host.adminBotSignatureError = failureText(result, wire.baseUrl);
+      return false;
+    }
+    if (!result.value.submitted) {
+      // The form wants the member signed in. Only a link to the lab's own form is offered: the
+      // service builds it, but an href is still checked before it is drawn. The typed answers stay,
+      // since nothing has been filed yet.
+      const prefill = result.value.prefill_url;
+      if (prefill && prefill.startsWith("https://docs.google.com/forms/")) {
+        host.adminBotSignaturePrefillUrl = prefill;
+      } else {
+        host.adminBotSignatureError = t("logistics.signature.notFiled");
+      }
       return false;
     }
     host.adminBotSignatureSubmitted = true;

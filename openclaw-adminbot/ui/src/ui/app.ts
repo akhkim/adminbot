@@ -780,6 +780,7 @@ export class OpenClawApp extends LitElement {
   @state() adminBotSignatureSubmitting = false;
   @state() adminBotSignatureError: string | null = null;
   @state() adminBotSignatureSubmitted = false;
+  @state() adminBotSignaturePrefillUrl: string | null = null;
   @state() adminBotLogisticsEditingId: string | null = null;
   @state() adminBotLogisticsSigningId: string | null = null;
   @state() adminBotRecLetter = createRecLetterEligibilityState();

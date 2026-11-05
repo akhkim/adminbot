@@ -338,12 +338,14 @@ export function renderLogisticsSurface(state: AppViewState, scope: AdminBotSurfa
           // than what is on screen.
           state.adminBotSignatureSubmitted = false;
           state.adminBotSignatureError = null;
+          state.adminBotSignaturePrefillUrl = null;
           requestHostUpdate?.();
         },
         onSendForm: () => submitAdminBotSignatureForm(state).finally(() => requestHostUpdate?.()),
         sendingForm: state.adminBotSignatureSubmitting,
         formError: state.adminBotSignatureError,
         formSent: state.adminBotSignatureSubmitted,
+        formPrefillUrl: state.adminBotSignaturePrefillUrl,
         saving: state.adminBotLogisticsSaving,
         savedAt: state.adminBotLogisticsSavedAt,
         saveError: state.adminBotLogisticsSaveError,
