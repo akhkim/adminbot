@@ -166,3 +166,77 @@ describe("createDriveWorkspaceProvisioner", () => {
     );
   });
 });
+
+const FOLDER = "application/vnd.google-apps.folder";
+
+/**
+ * A Drive with a folder tree: `ls --parent X` answers X's children, the lookup for an existing
+ * workspace finds nothing, and every mkdir hands out the next id.
+ */
+function treeRunner(tree: Record<string, Array<{ id: string; name: string; mimeType?: string }>>) {
+  let made = 0;
+  return vi.fn(async (args: string[]) => {
+    const command = args[args.indexOf("drive") + 1];
+    const parent = args.includes("--parent") ? args[args.indexOf("--parent") + 1] : undefined;
+    if (command === "ls") {
+      return JSON.stringify({ files: parent ? (tree[parent] ?? []) : [] });
+    }
+    if (command === "mkdir") {
+      made += 1;
+      return JSON.stringify({ folder: { id: `made-${made}` } });
+    }
+    if (command === "share") {
+      return JSON.stringify({ link: "https://drive.example/made-1" });
+    }
+    return "{}";
+  });
+}
+
+describe("a prototype with subfolders", () => {
+  // The live prototype gained `yyyymmdd_ProjectName` with two docs in it, and the flat-only copier
+  // then refused every full-member send.
+  it("recreates the subfolder inside the workspace and copies what is in it", async () => {
+    const run = treeRunner({
+      [PROTOTYPE]: [
+        { id: "guide", name: "Guidebook shortcut" },
+        { id: "proj", name: "yyyymmdd_ProjectName", mimeType: FOLDER },
+      ],
+      proj: [
+        { id: "notes", name: "Meeting Notes" },
+        { id: "brain", name: "Brainstorming" },
+      ],
+    });
+    const provision = createDriveWorkspaceProvisioner({ prototypeFolderId: PROTOTYPE, run });
+
+    await expect(provision({ folderName: "Zhijing-Ada", includeContents: true })).resolves.toEqual({
+      folderId: "made-1",
+      link: "https://drive.example/made-1",
+    });
+    const calls = run.mock.calls.map((call) => call[0].slice(call[0].indexOf("drive") + 1));
+    // The workspace, then the subfolder inside it.
+    expect(calls).toContainEqual(["mkdir", "Zhijing-Ada"]);
+    expect(calls).toContainEqual(["mkdir", "yyyymmdd_ProjectName", "--parent", "made-1"]);
+    // Top-level files go into the workspace; the subfolder's files into the new subfolder.
+    expect(calls).toContainEqual(["copy", "guide", "Guidebook shortcut", "--parent", "made-1"]);
+    expect(calls).toContainEqual(["copy", "notes", "Meeting Notes", "--parent", "made-2"]);
+    expect(calls).toContainEqual(["copy", "brain", "Brainstorming", "--parent", "made-2"]);
+    // The folder itself is never handed to `copy`, which Drive refuses for folders.
+    expect(calls.some((call) => call[0] === "copy" && call[1] === "proj")).toBe(false);
+  });
+
+  it("refuses a tree deeper than it will copy, and removes the half-built workspace", async () => {
+    const run = treeRunner({
+      [PROTOTYPE]: [{ id: "l1", name: "one", mimeType: FOLDER }],
+      l1: [{ id: "l2", name: "two", mimeType: FOLDER }],
+      l2: [{ id: "l3", name: "three", mimeType: FOLDER }],
+      l3: [{ id: "l4", name: "four", mimeType: FOLDER }],
+    });
+    const provision = createDriveWorkspaceProvisioner({ prototypeFolderId: PROTOTYPE, run });
+
+    await expect(provision({ folderName: "Zhijing-Ada", includeContents: true })).rejects.toThrow(
+      /nests deeper than 3 levels/u,
+    );
+    const calls = run.mock.calls.map((call) => call[0].slice(call[0].indexOf("drive") + 1));
+    expect(calls).toContainEqual(["delete", "made-1", "--force"]);
+  });
+});
