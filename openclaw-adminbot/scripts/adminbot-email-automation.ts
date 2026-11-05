@@ -194,7 +194,39 @@ type GuidedDraftRequest = {
   guidance: string;
   requiredFacts: string[];
   requiredVerbatim?: string[];
+  /**
+   * Lines the code places itself instead of trusting the model to copy them. Each replaces any
+   * line of the draft matching `replacing` -- the model's own attempt at it -- and goes in just
+   * above the signature paragraph. Applied before every check, so the result is still held to
+   * requiredVerbatim, the link and address rules, and the signature.
+   */
+  exactLines?: Array<{ line: string; replacing: RegExp }>;
 };
+
+/**
+ * `body` with `line` in it exactly once: any line matching `replacing` is dropped, and `line` goes
+ * in as its own paragraph before the last paragraph (the sign-off), or at the end if there is only
+ * one. The talk-list reply needed this: the local model kept re-typing the LaTeX entry --
+ * backslashes doubled or dropped -- so the verbatim check refused every draft and the request
+ * could never be delivered.
+ */
+export function placeExactLine(body: string, line: string, replacing: RegExp): string {
+  const kept = body
+    .split("\n")
+    .filter((text) => text.includes(line) || !replacing.test(text))
+    .join("\n")
+    .replace(/\n{3,}/gu, "\n\n")
+    .trimEnd();
+  if (kept.includes(line)) {
+    return kept;
+  }
+  const paragraphs = kept.split(/\n\s*\n/u);
+  if (paragraphs.length < 2) {
+    return `${kept}\n\n${line}`;
+  }
+  const signOff = paragraphs.pop() ?? "";
+  return [...paragraphs, line, signOff].join("\n\n");
+}
 
 function loadDotEnv(filePath: string): void {
   if (!fs.existsSync(filePath)) return;
@@ -473,6 +505,9 @@ async function draftGuidedEmail(
     guidance: request.guidance,
     requiredFacts: request.requiredFacts,
   });
+  for (const exact of request.exactLines ?? []) {
+    draft.body = placeExactLine(draft.body, exact.line, exact.replacing);
+  }
   const allowedText = request.requiredFacts.join("\n");
   for (const value of request.requiredVerbatim ?? []) {
     if (!draft.body.includes(value)) {
@@ -1654,6 +1689,9 @@ async function processMessage(
           `The recipient is ${adminRecipient()}.`,
         ],
         requiredVerbatim: [latex],
+        // The model writes the message; the code writes the entry. Any line where it tried to
+        // reproduce the entry (anything mentioning cvtalk) is replaced by the exact one.
+        exactLines: [{ line: latex, replacing: /cvtalk/iu }],
       });
       await state.effect(message.id, "send_talk_entry", () =>
         google.send(adminRecipient(), draft.subject, draft.body),

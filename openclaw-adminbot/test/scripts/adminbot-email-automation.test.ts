@@ -13,6 +13,7 @@ import {
   resolveEmailAutomationSlackAccount,
   StateStore,
   type EmailMessage,
+  placeExactLine,
 } from "../../scripts/adminbot-email-automation.js";
 import type { ModelClassification } from "../../scripts/adminbot-email-model.js";
 import type { OpenClawConfig } from "../../src/config/types/openclaw.js";
@@ -354,6 +355,41 @@ describe("adminbot email automation", () => {
     ).toBe(
       "\\item \\cvtalk{Emergent AI Safety Risks in Multi-Agent LLMs}{(Upcoming) Invited Keynote at the Cooperative AI Foundation Summer School 2026, Toronto, Canada}{2026/8/3-4}",
     );
+  });
+
+  // The local model kept re-typing the LaTeX entry, so the talk-list reply failed its verbatim
+  // check every time. The code now places the exact line itself.
+  describe("placeExactLine", () => {
+    const LINE =
+      "\\item \\cvtalk{Keynote}{(Upcoming) ELLIS Winter School 2027, Jena, Germany}{2027/3/1}";
+
+    it("replaces the model's mangled copy with the exact line, above the sign-off", () => {
+      const body = [
+        "Hi,",
+        "",
+        "The CV entry for the ELLIS talk is ready:",
+        "",
+        "\\\\item \\\\cvtalk{Keynote}{ELLIS Winter School 2027}{2027/3/1}",
+        "",
+        "Best,",
+        "Zhijing",
+      ].join("\n");
+      const placed = placeExactLine(body, LINE, /cvtalk/iu);
+      expect(placed.split(LINE)).toHaveLength(2);
+      expect(placed).not.toContain("\\\\item");
+      expect(placed.endsWith("Best,\nZhijing")).toBe(true);
+      expect(placed.indexOf(LINE)).toBeLessThan(placed.indexOf("Best,"));
+    });
+
+    it("adds the line when the model left it out entirely", () => {
+      const placed = placeExactLine("Hi,\n\nThe entry is below.\n\nBest,\nZhijing", LINE, /cvtalk/iu);
+      expect(placed).toBe(`Hi,\n\nThe entry is below.\n\n${LINE}\n\nBest,\nZhijing`);
+    });
+
+    it("leaves a draft that already has the exact line alone", () => {
+      const body = `Hi,\n\n${LINE}\n\nBest,\nZhijing`;
+      expect(placeExactLine(body, LINE, /cvtalk/iu)).toBe(body);
+    });
   });
 
   describe("outcomeLabelChange", () => {
