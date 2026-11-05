@@ -13,6 +13,18 @@ import { withCompleteProfile } from "../contracts/profile-completion.test-helper
 import type { CallSheetSource } from "./call-sheet-config.js";
 import { createAdminBotMockService } from "./server.js";
 
+// The Google Form itself is never reached from a test: the route is what is under test here, and
+// the connector's own mapping is covered in connectors/signature-form.test.ts.
+const submitSignatureForm = vi.hoisted(() =>
+  vi.fn(async (_input: unknown): Promise<{ ok: true } | { ok: false; error: string }> => ({
+    ok: true,
+  })),
+);
+vi.mock("../connectors/signature-form.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../connectors/signature-form.js")>()),
+  submitSignatureForm,
+}));
+
 const SERVICE_TOKEN = "test-service-token";
 const PASSWORD = "correcthorse";
 
@@ -450,6 +462,66 @@ describe("logistics request routes", () => {
       headers: asMember(lab, "ada"),
     });
     expect(res.status).toBe(404);
+  });
+});
+
+// The route-table split forwarded only /logistics/requests to the logistics handler, so this path
+// fell through to the router's 404 and the tab showed "not found" on every submission.
+describe("POST /logistics/signature-form", () => {
+  const body = {
+    drive_url: "https://drive.google.com/file/d/synthetic-document-id/view",
+    deadline: "2026-11-06",
+    context: "A synthetic letter to sign.",
+    // Ignored: the form's first column comes from the roster, never from the page.
+    name: "somebody else",
+  };
+
+  it("files a member's request with the roster's name, not one the page sends", async () => {
+    submitSignatureForm.mockClear();
+    const lab = await startLab();
+    const res = await fetch(`${lab.baseUrl}/logistics/signature-form`, {
+      method: "POST",
+      headers: { ...asMember(lab, "ada"), "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ submitted: true });
+    expect(submitSignatureForm).toHaveBeenCalledTimes(1);
+    expect(submitSignatureForm.mock.calls[0]?.[0]).toEqual({
+      name: "ada",
+      driveUrl: body.drive_url,
+      deadline: body.deadline,
+      context: body.context,
+    });
+  });
+
+  // The handler answers 502; the wire sends it as 500 so Cloudflare does not swap in its own page
+  // and hide the reason (see wireStatus in server.http.ts).
+  it("reports a form failure with the reason", async () => {
+    submitSignatureForm.mockClear();
+    submitSignatureForm.mockResolvedValueOnce({ ok: false, error: "the form answered 500" });
+    const lab = await startLab();
+    const res = await fetch(`${lab.baseUrl}/logistics/signature-form`, {
+      method: "POST",
+      headers: { ...asMember(lab, "ada"), "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ error: { message: "the form answered 500" } });
+  });
+
+  it("refuses a caller without a member session, including the service principal", async () => {
+    submitSignatureForm.mockClear();
+    const lab = await startLab();
+    for (const headers of [{}, { Authorization: `Bearer ${SERVICE_TOKEN}` }]) {
+      const res = await fetch(`${lab.baseUrl}/logistics/signature-form`, {
+        method: "POST",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      expect(res.status).toBe(401);
+    }
+    expect(submitSignatureForm).not.toHaveBeenCalled();
   });
 });
 
