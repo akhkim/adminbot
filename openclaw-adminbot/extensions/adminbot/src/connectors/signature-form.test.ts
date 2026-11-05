@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  SIGNATURE_FORM_EMAIL_FIELD,
   SIGNATURE_FORM_FIELDS,
+  SIGNATURE_FORM_SIGN_IN_REQUIRED,
   dateParts,
   signatureFormBody,
   submitSignatureForm,
@@ -33,6 +35,16 @@ describe("the body Google is sent", () => {
     expect(body?.get(`${SIGNATURE_FORM_FIELDS.deadline}_month`)).toBe("9");
     expect(body?.get(`${SIGNATURE_FORM_FIELDS.deadline}_day`)).toBe("30");
     expect(body?.get(SIGNATURE_FORM_FIELDS.deadline)).toBeNull();
+  });
+
+  // The form collects emails as "Responder input": Google's own field, no sign-in needed.
+  it("records the member's account email in the form's email column", () => {
+    const body = signatureFormBody({ ...REQUEST, email: " ada@example.test " });
+    expect(body?.get(SIGNATURE_FORM_EMAIL_FIELD)).toBe("ada@example.test");
+    expect(signatureFormBody(REQUEST)?.has(SIGNATURE_FORM_EMAIL_FIELD)).toBe(false);
+    expect(
+      signatureFormBody({ ...REQUEST, email: "not an address" })?.has(SIGNATURE_FORM_EMAIL_FIELD),
+    ).toBe(false);
   });
 
   // The question is optional, and an empty answer is different from an answer of "".
@@ -70,9 +82,30 @@ describe("submitSignatureForm", () => {
   });
 
   it("reports a refusal rather than pretending it landed", async () => {
-    const post = vi.fn(async () => ({ status: 401 }));
+    const post = vi.fn(async () => ({ status: 500 }));
     const result = await submitSignatureForm(REQUEST, { post });
-    expect(result).toEqual({ ok: false, error: "the form answered 401" });
+    expect(result).toEqual({ ok: false, error: "the form answered 500" });
+  });
+
+  // A form that collects verified emails sends an anonymous POST to Google's login page. That is
+  // the form's setting, not a transient failure, and the member is told what to do about it.
+  it("says so when the form will only take a signed-in response", async () => {
+    for (const answer of [
+      {
+        status: 302,
+        location: "https://accounts.google.com/ServiceLogin?service=wise&continue=x",
+      },
+      { status: 401 },
+      { status: 403 },
+    ]) {
+      const result = await submitSignatureForm(REQUEST, { post: vi.fn(async () => answer) });
+      expect(result).toEqual({ ok: false, error: SIGNATURE_FORM_SIGN_IN_REQUIRED });
+    }
+    // Any other redirect is still just a refusal.
+    const elsewhere = await submitSignatureForm(REQUEST, {
+      post: vi.fn(async () => ({ status: 302, location: "https://docs.google.com/forms/x" })),
+    });
+    expect(elsewhere).toEqual({ ok: false, error: "the form answered 302" });
   });
 
   // The member is watching the button; a thrown fetch has to come back as a sentence.

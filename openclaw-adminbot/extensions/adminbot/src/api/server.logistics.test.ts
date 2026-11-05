@@ -16,9 +16,11 @@ import { createAdminBotMockService } from "./server.js";
 // The Google Form itself is never reached from a test: the route is what is under test here, and
 // the connector's own mapping is covered in connectors/signature-form.test.ts.
 const submitSignatureForm = vi.hoisted(() =>
-  vi.fn(async (_input: unknown): Promise<{ ok: true } | { ok: false; error: string }> => ({
-    ok: true,
-  })),
+  vi.fn(
+    async (_input: unknown): Promise<{ ok: true } | { ok: false; error: string }> => ({
+      ok: true,
+    }),
+  ),
 );
 vi.mock("../connectors/signature-form.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../connectors/signature-form.js")>()),
@@ -472,11 +474,12 @@ describe("POST /logistics/signature-form", () => {
     drive_url: "https://drive.google.com/file/d/synthetic-document-id/view",
     deadline: "2026-11-06",
     context: "A synthetic letter to sign.",
-    // Ignored: the form's first column comes from the roster, never from the page.
+    // Ignored: the form's name and email come from the roster, never from the page.
     name: "somebody else",
+    email: "somebody-else@example.test",
   };
 
-  it("files a member's request with the roster's name, not one the page sends", async () => {
+  it("files a member's request with the roster's name and email, not ones the page sends", async () => {
     submitSignatureForm.mockClear();
     const lab = await startLab();
     const res = await fetch(`${lab.baseUrl}/logistics/signature-form`, {
@@ -492,6 +495,7 @@ describe("POST /logistics/signature-form", () => {
       driveUrl: body.drive_url,
       deadline: body.deadline,
       context: body.context,
+      email: "ada@cs.toronto.edu",
     });
   });
 

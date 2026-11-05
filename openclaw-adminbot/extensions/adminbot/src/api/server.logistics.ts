@@ -39,6 +39,8 @@ const LOGISTICS_BODY_LIMIT_BYTES = Math.ceil(MAX_REQUEST_BYTES * 1.4);
 export type LogisticsRouteMember = {
   id: string;
   name?: string;
+  /** The AdminBot account email, recorded in the signature form's email column. */
+  email?: string;
   privilege_level: string;
 };
 
@@ -135,6 +137,8 @@ export async function handleLogisticsRoute(
       driveUrl: asString(body.drive_url),
       deadline: asString(body.deadline),
       ...(asString(body.context) ? { context: asString(body.context) } : {}),
+      // Likewise the account's email, never one the page sends: it is how the form says who asked.
+      ...(member.email?.trim() ? { email: member.email.trim() } : {}),
     });
     if (!result.ok) {
       sendJson(res, 502, { error: { message: result.error } });
