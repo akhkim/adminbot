@@ -60,8 +60,8 @@ function buildOnboardingStepDefinitions(): Array<Omit<AdminBotMemberOnboardingSt
       category: "Getting started",
       required: true,
       detail:
-        "A 1:1 Google Drive folder with Zhijing is shared with you when your account is " +
-        "approved — no action needed to create it.",
+        "A 1:1 Google Drive folder with Zhijing is created for you and linked in your welcome " +
+        "email — no action needed to create it.",
       bullets: [
         {
           text: "The internal mentee handbook should already be in it.",

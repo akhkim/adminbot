@@ -438,7 +438,9 @@ If the call time doesn't work, just decline the call and the suggestion and an a
     subject: `Welcome to the Jinesis Lab – Onboarding Steps`,
     // No template lists `first_name`: it is an optional value token, so an unnamed recipient gets
     // "Hi!" rather than a refusal. See OPTIONAL_VALUE_TOKENS in guide.ts.
-    required: [],
+    // Provisioned at send time, never typed: guide-sender creates the folder because the copy
+    // asks for it, and reuses the member's existing one on a resend.
+    required: ["drive_folder_link"],
     // Interim wording: accounts were bulk-created for the roster with one shared temporary
     // password, so this tells people to sign in and change it rather than to sign up. It goes back
     // to pointing at /signup once that backfill is no longer how members get an account.
@@ -447,6 +449,8 @@ If the call time doesn't work, just decline the call and the suggestion and an a
 Thank you for your interest in joining the Jinesis Lab with Prof. Zhijing Jin! We're excited to have you on board. Our lab has recently developed an online lab management portal. Please follow the steps below:
 
 If you already have an @cs.toronto.edu email, an account has already been created for you. Sign in at https://jinesis-admin.vercel.app with that email address and the temporary password "{portal_password}", then change it from Change password in the sidebar. Once you are in, follow the onboarding guide in the portal.
+
+Your 1:1 Google Drive folder with Zhijing is here: {drive_folder_link}. It already holds the lab's starter documents, and it is where you share your CV, progress updates, and anything Zhijing should read. The lab guidebook answers most questions about how the lab works; please read it early: {guidebook_link}
 
 If you do not have an @cs.toronto.edu email yet, you will receive an email asking about your preferred email username. If possible, feel free to prioritize a username like "firstname@cs.toronto.edu" or "lastname@cs.toronto.edu". If those are taken, you can try {first_letter_of_first_name}{full_last_name}@cs.toronto.edu, e.g., "{email_format_example}". If all of the above are taken, feel free to customize a username that reflects your first and last name reasonably well, so we can use it for professional communications with senior external collaborators.
 
@@ -458,6 +462,30 @@ Best regards,
 Jinesis Lab`,
   },
 
+  {
+    // The two links the member welcome did not carry for a while. Until 2026-11 that mail had no
+    // {drive_folder_link}, and guide-sender provisions from what the outgoing copy asks for, so no
+    // member got their 1:1 folder -- and the guidebook only reached people through that folder.
+    // This is the catch-up for them, and works as a standalone "here are your links" mail after.
+    // Listed with the full-member templates in guide-sender so the folder gets the prototype's
+    // contents, and the provisioner reuses a folder of the same name rather than making a second.
+    id: "member_drive_folder",
+    kind: "supplement",
+    subject: `Your Jinesis Drive folder and the lab guidebook`,
+    required: ["drive_folder_link"],
+    body: `Hi {first_name},
+
+Two links that should have come with your welcome email:
+
+1. Your 1:1 Google Drive folder with Zhijing: {drive_folder_link}. It already holds the lab's starter documents, and it is where you share your CV, progress updates, and anything Zhijing should read.
+
+2. The lab guidebook: {guidebook_link}. It answers most questions about how the lab works, so please check it first when something comes up.
+
+If either link does not open for you, reply here and we will sort it out.
+
+Best regards,
+Jinesis Lab`,
+  },
   {
     id: "own_pace_advisee",
     kind: "subgroup",

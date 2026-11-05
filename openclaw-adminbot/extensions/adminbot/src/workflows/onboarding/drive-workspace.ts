@@ -64,9 +64,21 @@ function listPrototypeChildren(payload: Record<string, unknown>): DriveChild[] {
 }
 
 /**
- * Copies the prototype into a new folder named `folderName`, makes it link-editable, and returns
- * the link. Cleans up its own folder when a later step fails, so a failed send never leaves a
- * half-built workspace that looks provisioned.
+ * A Drive query for folders of exactly this name owned by the account, with the name quoted the
+ * way the Drive query language wants: backslash and single quote escaped, nothing else.
+ */
+export function driveWorkspaceLookupQuery(folderName: string): string {
+  const quoted = folderName.replaceAll("\\", "\\\\").replaceAll("'", "\\'");
+  return `name = '${quoted}' and mimeType = '${DRIVE_FOLDER_MIME}' and trashed = false and 'me' in owners`;
+}
+
+const DRIVE_FOLDER_MIME = "application/vnd.google-apps.folder";
+
+/**
+ * Returns the person's Drive workspace: the existing folder of that name if there is one,
+ * otherwise a new copy of the prototype. Either way it is link-editable and the link comes back.
+ * Cleans up its own folder when a later step fails, so a failed send never leaves a half-built
+ * workspace that looks provisioned.
  */
 export function createDriveWorkspaceProvisioner(
   options: {
@@ -105,6 +117,37 @@ export function createDriveWorkspaceProvisioner(
     if (!name) {
       throw new Error("a folder name is required to provision a Drive workspace");
     }
+    // One folder per person. The welcome is sent more than once -- a resend, or the catch-up mail
+    // for members whose welcome never carried the link -- and every send used to mkdir a fresh
+    // copy, so a member could end up with two folders and Zhijing reading the wrong one. A folder
+    // of exactly this name owned by this account is that person's: it is shared again (the grant
+    // is idempotent) and its link returned, and nothing is copied into it a second time.
+    const existing = readJson(
+      await run(gogArgs("ls", "--query", driveWorkspaceLookupQuery(name), "--max", "10")),
+      "drive ls",
+    );
+    const found = (Array.isArray(existing.files) ? existing.files : []).find(
+      (file): file is { id: string } =>
+        Boolean(file) &&
+        typeof file === "object" &&
+        typeof (file as { id?: unknown }).id === "string" &&
+        (file as { name?: unknown }).name === name &&
+        ((file as { mimeType?: unknown }).mimeType ?? DRIVE_FOLDER_MIME) === DRIVE_FOLDER_MIME,
+    );
+    if (found) {
+      const shared = readJson(
+        await run(gogArgs("share", found.id, "--to", "anyone", "--role", "writer", "--force")),
+        "drive share",
+      );
+      return {
+        folderId: found.id,
+        link:
+          typeof shared.link === "string" && shared.link
+            ? shared.link
+            : `https://drive.google.com/drive/folders/${found.id}`,
+      };
+    }
+
     // Not read at all for an empty workspace: listing the prototype only exists to copy it, and a
     // prototype that has gone missing should not fail a send that was never going to touch it.
     // `--max 0` means "no limit" for `drive tree` but is rejected by `drive ls`, which is how a

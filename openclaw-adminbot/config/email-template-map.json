@@ -65,6 +65,7 @@
     "slightly_better_than_emails": "Subgroup onboarding for the lightest collaboration tier. No doc section yet.",
     "member": "Full-member onboarding. The doc covers the external tiers; the internal welcome has never been in it.",
     "member_rejection": "Application outcome for a full-member applicant. No doc section yet.",
+    "member_drive_folder": "Catch-up mail with a full member's 1:1 Drive folder and the guidebook link, for members whose welcome went out before it carried them. Completes the code-only member welcome, so it has no doc section either.",
     "member_what_to_expect": "The supplement appended to the member welcome. Its prose lives in the doc's second tab (What to Expect), which this checker does not read -- the tab is written as guidance for people, not as a mail body."
   }
 }
