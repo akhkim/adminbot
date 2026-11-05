@@ -51,7 +51,12 @@ describe("renderEmailBodyHtml", () => {
   // The whole point of the html alternative: no output line is long enough for a client to be
   // tempted to wrap it, and no *source* line was ever wrapped either.
   it("carries the member template's copy with its structure intact", () => {
-    const composed = composeOnboardingGuide("member", { first_name: "Ada" }, {});
+    const composed = composeOnboardingGuide(
+      "member",
+      // The welcome links the member's provisioned Drive folder; the sender fills it in.
+      { first_name: "Ada", drive_folder_link: "https://drive.example/fld" },
+      {},
+    );
     expect(composed.ok).toBe(true);
     if (!composed.ok) {
       return;

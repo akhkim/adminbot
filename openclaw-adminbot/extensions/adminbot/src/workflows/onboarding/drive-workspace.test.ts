@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createDriveWorkspaceProvisioner } from "./drive-workspace.js";
+import { createDriveWorkspaceProvisioner, driveWorkspaceLookupQuery } from "./drive-workspace.js";
 
 const PROTOTYPE = "proto-folder";
 
@@ -69,7 +69,57 @@ describe("createDriveWorkspaceProvisioner", () => {
 
     await provision({ folderName: "Zhijing-Ada", includeContents: false });
 
-    expect(commandsIn(run)).not.toContain("ls");
+    // The one `ls` left is the lookup for the person's own folder, never the prototype.
+    expect(run.mock.calls.some((call) => call[0].includes(PROTOTYPE))).toBe(false);
+  });
+
+  // A resend, or the catch-up mail, must land the member in the folder they already have.
+  it("reuses the person's existing folder instead of making a second one", async () => {
+    const run = vi.fn(async (args: string[]) => {
+      const command = args[args.indexOf("drive") + 1];
+      if (command === "ls" && args.includes("--query")) {
+        return JSON.stringify({
+          files: [
+            {
+              id: "old-folder",
+              name: "Zhijing-Ada",
+              mimeType: "application/vnd.google-apps.folder",
+            },
+          ],
+        });
+      }
+      if (command === "share") {
+        return JSON.stringify({ link: "https://drive.example/old-folder" });
+      }
+      throw new Error(`unexpected drive ${command}`);
+    });
+    const provision = createDriveWorkspaceProvisioner({ prototypeFolderId: PROTOTYPE, run });
+
+    await expect(provision({ folderName: "Zhijing-Ada", includeContents: true })).resolves.toEqual({
+      folderId: "old-folder",
+      link: "https://drive.example/old-folder",
+    });
+    const commands = run.mock.calls.map((call) => call[0][call[0].indexOf("drive") + 1]);
+    expect(commands).toEqual(["ls", "share"]);
+  });
+
+  // Drive's `name =` is exact, but a folder whose name only resembles it is not the person's.
+  it("makes a new folder when no folder of exactly that name exists", async () => {
+    const run = runnerFor(CHILDREN);
+    const provision = createDriveWorkspaceProvisioner({ prototypeFolderId: PROTOTYPE, run });
+
+    await expect(
+      provision({ folderName: "Zhijing-Ada", includeContents: true }),
+    ).resolves.toMatchObject({ folderId: "new-folder" });
+    expect(commandsIn(run)).toContain("mkdir");
+  });
+
+  it("asks Drive for exactly that name, quoted", () => {
+    expect(driveWorkspaceLookupQuery("Zhijing-AdaLovelace")).toBe(
+      "name = 'Zhijing-AdaLovelace' and mimeType = 'application/vnd.google-apps.folder' and trashed = false and 'me' in owners",
+    );
+    // A name with a quote in it cannot end the string early.
+    expect(driveWorkspaceLookupQuery("Zhijing-O'Brien")).toContain("name = 'Zhijing-O\\'Brien'");
   });
 
   it("still refuses to copy from an empty prototype", async () => {

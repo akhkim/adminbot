@@ -73,6 +73,15 @@ const DEFAULTED_DEPLOYMENT_TOKENS = {
     fallback:
       "https://docs.google.com/document/d/1wKAZCWfyXypKvP9hG7XUcDsdVqD3TqLDES-lQJL48UY/edit?usp=drive_link",
   },
+  // The lab guidebook ("Guidebook for Jinesis Research Mentees"). The member welcome and the
+  // Drive-folder catch-up mail link it; one document for the whole lab, so configured here like
+  // the what-to-expect handbook. The doc itself is link-shared for commenting, so the link is
+  // what gives a new member access -- nobody has to be added to it by address.
+  guidebook_link: {
+    varName: "ADMINBOT_GUIDEBOOK_URL",
+    fallback:
+      "https://docs.google.com/document/d/1H9Bt4z9uvDtieujh8Wp9YXDeLDhkq7vsKYGUvPnktN8/edit",
+  },
 } as const;
 
 /**

@@ -53,7 +53,11 @@ const GOG_TIMEOUT_MS = 45_000;
  * the send path is what decides which onboarding someone is getting, and a recipient is often not
  * on the roster yet at the moment the folder is created.
  */
-const FULL_MEMBER_TEMPLATE_IDS = new Set(["member", "member_what_to_expect"]);
+const FULL_MEMBER_TEMPLATE_IDS = new Set([
+  "member",
+  "member_what_to_expect",
+  "member_drive_folder",
+]);
 
 /**
  * The mail whose Slack Connect invitation travels separately, and the template that carries it.

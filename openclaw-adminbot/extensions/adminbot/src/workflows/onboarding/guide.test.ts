@@ -242,7 +242,11 @@ describe("composeOnboardingGuide", () => {
   // comes from the environment with a generic fallback -- it is an example, so an unconfigured
   // deployment still sends rather than refusing.
   it("leaves the member template's example tokens alone", () => {
-    const result = composeOnboardingGuide("member", { first_name: "Ada" }, ENV);
+    const result = composeOnboardingGuide(
+      "member",
+      { first_name: "Ada", drive_folder_link: MEMBER_DRIVE_LINK },
+      ENV,
+    );
     expect(result.ok).toBe(true);
     if (!result.ok) {
       return;
@@ -268,14 +272,22 @@ describe("composeOnboardingGuide", () => {
     expect(result.guide.body).toContain("akim@cs.toronto.edu");
 
     expect(result.guide.body).toContain('e.g., "zjin@cs.toronto.edu"');
-    const configured = composeOnboardingGuide("member", { first_name: "Ada" }, {
-      ...ENV,
-      ADMINBOT_EMAIL_FORMAT_EXAMPLE: "aa@cs.example.edu",
-    } satisfies NodeJS.ProcessEnv);
+    const configured = composeOnboardingGuide(
+      "member",
+      { first_name: "Ada", drive_folder_link: MEMBER_DRIVE_LINK },
+      {
+        ...ENV,
+        ADMINBOT_EMAIL_FORMAT_EXAMPLE: "aa@cs.example.edu",
+      } satisfies NodeJS.ProcessEnv,
+    );
     expect(configured.ok ? configured.guide.body : "").toContain('e.g., "aa@cs.example.edu"');
 
     // `first_name` is optional: no name means "Hi!" rather than a refusal or a stray comma.
-    const anonymous = composeOnboardingGuide("member", {}, ENV);
+    const anonymous = composeOnboardingGuide(
+      "member",
+      { drive_folder_link: MEMBER_DRIVE_LINK },
+      ENV,
+    );
     expect(anonymous.ok).toBe(true);
     expect(anonymous.ok ? anonymous.guide.body : "").toMatch(/^Hi!\n/u);
     expect(anonymous.ok ? anonymous.guide.body : "").not.toMatch(/\{first_name\}/u);
@@ -290,7 +302,13 @@ describe("composeOnboardingGuide", () => {
     // ADMINBOT_CONTACT_EMAILS and composes on a deployment that never set it. No template
     // references {contact_emails} any more -- if one does again, this is the guard that should be
     // restored alongside it.
-    expect(composeOnboardingGuide("member", { first_name: "Ada" }, {})).toMatchObject({
+    expect(
+      composeOnboardingGuide(
+        "member",
+        { first_name: "Ada", drive_folder_link: MEMBER_DRIVE_LINK },
+        {},
+      ),
+    ).toMatchObject({
       ok: true,
     });
   });
@@ -307,9 +325,13 @@ describe("composeOnboardingGuide", () => {
   });
 
   it("falls back to the shipped example when a defaulted token is still a placeholder", () => {
-    const result = composeOnboardingGuide("member", { first_name: "Ada" }, {
-      ADMINBOT_EMAIL_FORMAT_EXAMPLE: "REPLACE_ME_WITH_AN_EXAMPLE_ADDRESS",
-    } satisfies NodeJS.ProcessEnv);
+    const result = composeOnboardingGuide(
+      "member",
+      { first_name: "Ada", drive_folder_link: MEMBER_DRIVE_LINK },
+      {
+        ADMINBOT_EMAIL_FORMAT_EXAMPLE: "REPLACE_ME_WITH_AN_EXAMPLE_ADDRESS",
+      } satisfies NodeJS.ProcessEnv,
+    );
     expect(result.ok).toBe(true);
     // The illustration a recipient reads must never be the operator's unfilled placeholder.
     expect(result.ok ? result.guide.body : "").toContain('e.g., "zjin@cs.toronto.edu"');
@@ -347,6 +369,11 @@ const SBTE_VALUES = {
   sender_name: "Zhijing",
   timeline: "two weeks",
 } as const;
+
+// The member welcome links the member's 1:1 Drive folder, so every member send provisions one.
+// The tests below are about the DCS roster and the credentials mail, not the folder.
+const MEMBER_DRIVE_LINK = "https://drive.example/fld";
+const stubDriveWorkspace = async () => ({ folderId: "fld", link: MEMBER_DRIVE_LINK });
 
 describe("onboarding sender", () => {
   it("asks for every missing value at once, before provisioning anything", async () => {
@@ -427,7 +454,12 @@ describe("onboarding sender", () => {
       candidates,
     });
     const sendEmail = vi.fn().mockResolvedValue(undefined);
-    const send = createAdminBotOnboardingSender({ env: ENV, addDcsRosterRow, sendEmail });
+    const send = createAdminBotOnboardingSender({
+      env: ENV,
+      addDcsRosterRow,
+      sendEmail,
+      provisionDriveWorkspace: stubDriveWorkspace,
+    });
 
     const unasked = await send({
       template_id: "member",
@@ -465,6 +497,7 @@ describe("onboarding sender", () => {
   it("mails the credentials as their own message, and keeps them out of the payload", async () => {
     const sendEmail = vi.fn().mockResolvedValue(undefined);
     const send = createAdminBotOnboardingSender({
+      provisionDriveWorkspace: stubDriveWorkspace,
       env: ENV,
       sendEmail,
       addDcsRosterRow: vi.fn().mockResolvedValue({
@@ -517,6 +550,7 @@ describe("onboarding sender", () => {
   it("lets a re-send opt out", async () => {
     const addDcsRosterRow = vi.fn().mockResolvedValue(undefined);
     const send = createAdminBotOnboardingSender({
+      provisionDriveWorkspace: stubDriveWorkspace,
       env: ENV,
       addDcsRosterRow,
       sendEmail: vi.fn().mockResolvedValue(undefined),
@@ -536,6 +570,7 @@ describe("onboarding sender", () => {
   it("reports a failed DCS roster filing without failing the send", async () => {
     const sendEmail = vi.fn().mockResolvedValue(undefined);
     const send = createAdminBotOnboardingSender({
+      provisionDriveWorkspace: stubDriveWorkspace,
       env: ENV,
       sendEmail,
       addDcsRosterRow: vi.fn().mockRejectedValue(new Error("the sheet answered 503")),
@@ -565,6 +600,7 @@ describe("onboarding sender", () => {
       .mockResolvedValueOnce(undefined)
       .mockRejectedValueOnce(new Error("mailbox full"));
     const send = createAdminBotOnboardingSender({
+      provisionDriveWorkspace: stubDriveWorkspace,
       env: ENV,
       sendEmail,
       addDcsRosterRow: vi.fn().mockResolvedValue({
