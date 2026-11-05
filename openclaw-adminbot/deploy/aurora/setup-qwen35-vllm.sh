@@ -266,8 +266,11 @@ Environment=VLLM_NO_USAGE_STATS=1
 # every user on Aurora.
 EnvironmentFile=$VLLM_ENV_FILE
 ExecStart=$VENV/bin/vllm serve $MODEL_ID --host 127.0.0.1 --port $PORT --trust-remote-code --quantization modelopt_fp4 --kv-cache-dtype fp8 --tensor-parallel-size 1 --max-model-len $MAX_MODEL_LEN --gpu-memory-utilization $GPU_MEMORY_UTILIZATION --reasoning-parser qwen3 --enable-auto-tool-choice --tool-call-parser qwen3_coder --generation-config vllm --enable-chunked-prefill --enable-prefix-caching --max-num-seqs 2 --max-num-batched-tokens 8192
-Restart=on-failure
-RestartSec=10
+# always, not on-failure: on 2026-10-07 the server got a SIGTERM, exited 0, and stayed down for four
+# weeks while every model-backed job failed. A deliberate `systemctl stop` still stops it. 60s apart
+# so a GPU that another job holds is retried slowly rather than in a tight loop.
+Restart=always
+RestartSec=60
 TimeoutStartSec=20min
 TimeoutStopSec=2min
 UMask=0077

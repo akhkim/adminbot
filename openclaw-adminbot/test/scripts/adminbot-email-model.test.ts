@@ -25,6 +25,39 @@ describe("AdminBot email model", () => {
     );
   });
 
+  // After a long outage the watermark is weeks old; a one-off catch-up pass widens the cap to reach it.
+  it("widens the lookback for a catch-up pass when the operator asks", () => {
+    const watermark = new Date("2026-06-20T00:00:00Z");
+    expect(gmailScanQuery(watermark, NOW, { ...BOT, ADMINBOT_EMAIL_MAX_LOOKBACK_DAYS: "30" })).toBe(
+      `in:inbox after:${Math.floor(watermark.getTime() / 1000)} -from:adminbot@example.com`,
+    );
+    // Wider than the watermark needs still stops at the watermark.
+    expect(
+      gmailScanQuery(new Date("2026-07-18T11:00:00Z"), NOW, {
+        ...BOT,
+        ADMINBOT_EMAIL_MAX_LOOKBACK_DAYS: "30",
+      }),
+    ).toBe("in:inbox after:1784372400 -from:adminbot@example.com");
+  });
+
+  it("refuses a lookback override that is not a whole number of days in range", () => {
+    for (const value of ["0", "61", "7.5", "a week", "-3"]) {
+      expect(() =>
+        gmailScanQuery(new Date("2026-01-01T00:00:00Z"), NOW, {
+          ...BOT,
+          ADMINBOT_EMAIL_MAX_LOOKBACK_DAYS: value,
+        }),
+      ).toThrow(/ADMINBOT_EMAIL_MAX_LOOKBACK_DAYS/u);
+    }
+    // Blank is unset: the default week.
+    expect(
+      gmailScanQuery(new Date("2026-01-01T00:00:00Z"), NOW, {
+        ...BOT,
+        ADMINBOT_EMAIL_MAX_LOOKBACK_DAYS: " ",
+      }),
+    ).toBe("in:inbox after:1783771200 -from:adminbot@example.com");
+  });
+
   // No `before:`. It bounded nothing the watermark does not, and it is how a clock a few seconds
   // ahead of Gmail's loses a message for good.
   it("puts no upper bound on the window", () => {

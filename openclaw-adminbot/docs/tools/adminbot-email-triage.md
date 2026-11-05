@@ -107,6 +107,22 @@ The cron run itself prints a JSON summary (`found`, `completed`, `failed`, `need
 `skipped`, `errors`) and exits non-zero when anything failed, so a bad pass shows red in the
 Control UI's Cron tab rather than passing silently.
 
+## After an outage
+
+Every message needs the local model (`jinesis-vllm`, `127.0.0.1:8000`). While it is down, each pass
+files what it finds as `AdminBot/Error` with `local model unreachable … (ECONNREFUSED)`, and the
+watermark stays where it was, so nothing is dropped. Once the model is back, the next pass retries
+every unsettled message it can reach — but a pass only reaches back **7 days**. For a longer
+outage, run one catch-up pass with a wider cap (whole days, at most 60):
+
+```bash
+cd /w/406/adminbot/current
+ADMINBOT_EMAIL_MAX_LOOKBACK_DAYS=35 bash scripts/adminbot-email-cron.sh
+```
+
+Settled mail is skipped before it reaches the model, so the wide pass only re-reads what failed.
+Leave the variable out of `adminbot.env`; the hourly job should keep its one-week cap.
+
 ## Related
 
 - [PaperFlow stage nudges](/tools/adminbot-paperflow-nudges) — the bcc loop this pass closes
