@@ -47,6 +47,7 @@ type DrawOptions = {
   sendingForm?: boolean;
   formError?: string | null;
   formSent?: boolean;
+  formPrefillUrl?: string | null;
   submitBlocked?: SubmitBlock | null;
   hasContent?: boolean;
   editing?: boolean;
@@ -226,6 +227,7 @@ function draw(options: DrawOptions = {}): Drawn {
         sendingForm: options.sendingForm ?? false,
         formError: options.formError ?? null,
         formSent: options.formSent ?? false,
+        formPrefillUrl: options.formPrefillUrl ?? null,
         saving: options.saving ?? false,
         savedAt: options.savedAt ?? null,
         saveError: options.saveError ?? null,
@@ -630,6 +632,24 @@ describe("the signature Google Form signpost", () => {
       container.querySelector("[data-testid='logistics-signature-error']")?.textContent,
     ).toContain("401");
     expect(container.querySelector("[data-testid='logistics-signature-form-link']")).not.toBeNull();
+  });
+
+  // The form only takes signed-in responses: one click to the form with the answers in it.
+  it("offers the prefilled form when Google wants the member signed in", () => {
+    const prefill = "https://docs.google.com/forms/d/e/synthetic/viewform?usp=pp_url";
+    const { container } = draw({ signatureEditing: false, formPrefillUrl: prefill });
+    const link = container.querySelector<HTMLAnchorElement>(
+      "[data-testid='logistics-signature-prefill-link']",
+    );
+    expect(link?.getAttribute("href")).toBe(prefill);
+    expect(link?.getAttribute("target")).toBe("_blank");
+    expect(container.querySelector("[data-testid='logistics-signature-error']")).toBeNull();
+    expect(container.querySelector("[data-testid='logistics-signature-submitted']")).toBeNull();
+    expect(
+      draw({ signatureEditing: false }).container.querySelector(
+        "[data-testid='logistics-signature-prefill']",
+      ),
+    ).toBeNull();
   });
 
   it("says so once it landed", () => {

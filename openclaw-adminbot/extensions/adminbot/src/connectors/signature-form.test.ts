@@ -1,8 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  SIGNATURE_FORM_EMAIL_FIELD,
   SIGNATURE_FORM_FIELDS,
+  SIGNATURE_FORM_SIGN_IN_REQUIRED,
+  SIGNATURE_FORM_VIEW_URL,
   dateParts,
   signatureFormBody,
+  signatureFormPrefillUrl,
   submitSignatureForm,
 } from "./signature-form.js";
 
@@ -35,6 +39,16 @@ describe("the body Google is sent", () => {
     expect(body?.get(SIGNATURE_FORM_FIELDS.deadline)).toBeNull();
   });
 
+  // The form collects emails as "Responder input": Google's own field, no sign-in needed.
+  it("records the member's account email in the form's email column", () => {
+    const body = signatureFormBody({ ...REQUEST, email: " ada@example.test " });
+    expect(body?.get(SIGNATURE_FORM_EMAIL_FIELD)).toBe("ada@example.test");
+    expect(signatureFormBody(REQUEST)?.has(SIGNATURE_FORM_EMAIL_FIELD)).toBe(false);
+    expect(
+      signatureFormBody({ ...REQUEST, email: "not an address" })?.has(SIGNATURE_FORM_EMAIL_FIELD),
+    ).toBe(false);
+  });
+
   // The question is optional, and an empty answer is different from an answer of "".
   it("leaves the optional context out when it is blank", () => {
     expect(
@@ -43,6 +57,29 @@ describe("the body Google is sent", () => {
     expect(
       signatureFormBody({ ...REQUEST, context: undefined })?.has(SIGNATURE_FORM_FIELDS.context),
     ).toBe(false);
+  });
+});
+
+// What the member opens when the form wants them signed in: every answer already in place.
+describe("the prefilled form link", () => {
+  it("is the form's own page with each answer under its question id", () => {
+    const url = new URL(signatureFormPrefillUrl({ ...REQUEST, email: "ada@example.test" })!);
+    expect(`${url.origin}${url.pathname}`).toBe(SIGNATURE_FORM_VIEW_URL);
+    expect(url.pathname.endsWith("/viewform")).toBe(true);
+    expect(url.searchParams.get("usp")).toBe("pp_url");
+    expect(url.searchParams.get(SIGNATURE_FORM_FIELDS.name)).toBe("Ada Lovelace");
+    expect(url.searchParams.get(SIGNATURE_FORM_FIELDS.driveUrl)).toBe(REQUEST.driveUrl);
+    // A prefill takes the date question as one ISO value, unlike the POST's three parts.
+    expect(url.searchParams.get(SIGNATURE_FORM_FIELDS.deadline)).toBe("2026-09-30");
+    expect(url.searchParams.get(SIGNATURE_FORM_FIELDS.context)).toBe(REQUEST.context);
+    // A signed-in response records the account's own email.
+    expect(url.searchParams.has(SIGNATURE_FORM_EMAIL_FIELD)).toBe(false);
+  });
+
+  it("leaves the optional context out, and refuses a date that is not one", () => {
+    const url = new URL(signatureFormPrefillUrl({ ...REQUEST, context: " " })!);
+    expect(url.searchParams.has(SIGNATURE_FORM_FIELDS.context)).toBe(false);
+    expect(signatureFormPrefillUrl({ ...REQUEST, deadline: "soon" })).toBeUndefined();
   });
 });
 
@@ -70,9 +107,34 @@ describe("submitSignatureForm", () => {
   });
 
   it("reports a refusal rather than pretending it landed", async () => {
-    const post = vi.fn(async () => ({ status: 401 }));
+    const post = vi.fn(async () => ({ status: 500 }));
     const result = await submitSignatureForm(REQUEST, { post });
-    expect(result).toEqual({ ok: false, error: "the form answered 401" });
+    expect(result).toEqual({ ok: false, error: "the form answered 500" });
+  });
+
+  // A form that collects verified emails sends an anonymous POST to Google's login page. That is
+  // the form's setting, not a transient failure, and the member is told what to do about it.
+  it("says so when the form will only take a signed-in response", async () => {
+    for (const answer of [
+      {
+        status: 302,
+        location: "https://accounts.google.com/ServiceLogin?service=wise&continue=x",
+      },
+      { status: 401 },
+      { status: 403 },
+    ]) {
+      const result = await submitSignatureForm(REQUEST, { post: vi.fn(async () => answer) });
+      expect(result).toEqual({
+        ok: false,
+        error: SIGNATURE_FORM_SIGN_IN_REQUIRED,
+        prefillUrl: signatureFormPrefillUrl(REQUEST),
+      });
+    }
+    // Any other redirect is still just a refusal.
+    const elsewhere = await submitSignatureForm(REQUEST, {
+      post: vi.fn(async () => ({ status: 302, location: "https://docs.google.com/forms/x" })),
+    });
+    expect(elsewhere).toEqual({ ok: false, error: "the form answered 302" });
   });
 
   // The member is watching the button; a thrown fetch has to come back as a sentence.

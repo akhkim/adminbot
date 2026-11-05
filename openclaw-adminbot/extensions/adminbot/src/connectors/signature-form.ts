@@ -18,6 +18,14 @@
  * Google answers 200 with an HTML confirmation page and no machine-readable receipt, so "it
  * worked" means the POST succeeded. A response that is not 2xx is reported to the member as a
  * failure with the form's link, which is the state the tab was in before this existed.
+ *
+ * Who asked is recorded twice: the roster name in the first question, and the member's AdminBot
+ * account email in the form's own email column. The form collects emails as "Responder input" --
+ * Google's `emailAddress` field, which needs no sign-in. Set to "Verified" instead, the form
+ * accepts responses only from a signed-in Google account, which a server-side POST can never be:
+ * Google redirects it to its login page. Google has no API for submitting a response either, so
+ * then the member files it themselves -- but not from scratch: the result carries a prefilled link
+ * to the form with every answer already in it, and the member only has to press Submit.
  */
 
 /** The form's own response endpoint -- the `/d/e/<id>/` spelling, which is the public one. */
@@ -33,6 +41,19 @@ export const SIGNATURE_FORM_FIELDS = {
   context: "entry.1028961965",
 } as const;
 
+/** The form's own page, which takes `entry.<id>` answers as a prefill (`usp=pp_url`). */
+export const SIGNATURE_FORM_VIEW_URL = SIGNATURE_FORM_RESPONSE_URL.replace(
+  /\/formResponse$/u,
+  "/viewform",
+);
+
+/** Google's own field for a form that collects emails as "Responder input". */
+export const SIGNATURE_FORM_EMAIL_FIELD = "emailAddress";
+
+/** What a member is told when the form will not take a response without a Google sign-in. */
+export const SIGNATURE_FORM_SIGN_IN_REQUIRED =
+  'the lab\'s signature form only accepts signed-in responses, so AdminBot cannot file it: open the form yourself, or ask its owner to collect emails as "Responder input"';
+
 export type SignatureFormSubmission = {
   name: string;
   /** The document to sign, as a link. The form asks for a link; it has no upload question. */
@@ -40,21 +61,54 @@ export type SignatureFormSubmission = {
   /** ISO `YYYY-MM-DD`, as the date input produces it. */
   deadline: string;
   context?: string;
+  /** The member's AdminBot account email, for the form's email column. */
+  email?: string;
 };
 
-export type SignatureFormResult = { ok: true } | { ok: false; error: string };
+export type SignatureFormResult =
+  | { ok: true }
+  | {
+      ok: false;
+      error: string;
+      /** Set when the form wants a signed-in response: the form with these answers filled in. */
+      prefillUrl?: string;
+    };
 
 /** Injected in tests. Defaults to the runtime's own fetch. */
-export type FormPoster = (url: string, body: URLSearchParams) => Promise<{ status: number }>;
+export type FormPoster = (
+  url: string,
+  body: URLSearchParams,
+) => Promise<{ status: number; location?: string }>;
 
 const postForm: FormPoster = async (url, body) => {
+  // Not followed: a redirect is Google sending an anonymous response to its login page, and
+  // following it only turns that into an unexplained 401.
   const response = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body,
+    redirect: "manual",
   });
-  return { status: response.status };
+  await response.body?.cancel().catch(() => undefined);
+  return { status: response.status, location: response.headers.get("location") ?? undefined };
 };
+
+/** Whether Google answered by asking for a sign-in rather than taking the response. */
+function signInRequired(status: number, location: string | undefined): boolean {
+  if (status === 401 || status === 403) {
+    return true;
+  }
+  if (status < 300 || status >= 400 || !location) {
+    return false;
+  }
+  try {
+    return new URL(location).hostname === "accounts.google.com";
+  } catch {
+    return false;
+  }
+}
+
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u;
 
 /**
  * Splits an ISO date into the three fields a Google date question expects.
@@ -96,7 +150,33 @@ export function signatureFormBody(input: SignatureFormSubmission): URLSearchPara
   if (context) {
     body.set(SIGNATURE_FORM_FIELDS.context, context);
   }
+  const email = input.email?.trim();
+  if (email && EMAIL.test(email)) {
+    body.set(SIGNATURE_FORM_EMAIL_FIELD, email);
+  }
   return body;
+}
+
+/**
+ * The form's page with this request's answers filled in, for the member to submit signed in.
+ *
+ * Same answers as the POST, from the same validated input; a date question takes the ISO date as
+ * one value here. The email is left out: a form that wants a sign-in records the account's own.
+ */
+export function signatureFormPrefillUrl(input: SignatureFormSubmission): string | undefined {
+  if (!dateParts(input.deadline)) {
+    return undefined;
+  }
+  const url = new URL(SIGNATURE_FORM_VIEW_URL);
+  url.searchParams.set("usp", "pp_url");
+  url.searchParams.set(SIGNATURE_FORM_FIELDS.name, input.name.trim());
+  url.searchParams.set(SIGNATURE_FORM_FIELDS.driveUrl, input.driveUrl.trim());
+  url.searchParams.set(SIGNATURE_FORM_FIELDS.deadline, input.deadline.trim());
+  const context = input.context?.trim();
+  if (context) {
+    url.searchParams.set(SIGNATURE_FORM_FIELDS.context, context);
+  }
+  return url.toString();
 }
 
 /**
@@ -122,10 +202,19 @@ export async function submitSignatureForm(
   }
   const post = deps.post ?? postForm;
   try {
-    const { status } = await post(deps.url ?? SIGNATURE_FORM_RESPONSE_URL, body);
-    return status >= 200 && status < 300
-      ? { ok: true }
-      : { ok: false, error: `the form answered ${status}` };
+    const { status, location } = await post(deps.url ?? SIGNATURE_FORM_RESPONSE_URL, body);
+    if (status >= 200 && status < 300) {
+      return { ok: true };
+    }
+    if (signInRequired(status, location)) {
+      const prefillUrl = signatureFormPrefillUrl(input);
+      return {
+        ok: false,
+        error: SIGNATURE_FORM_SIGN_IN_REQUIRED,
+        ...(prefillUrl ? { prefillUrl } : {}),
+      };
+    }
+    return { ok: false, error: `the form answered ${status}` };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }

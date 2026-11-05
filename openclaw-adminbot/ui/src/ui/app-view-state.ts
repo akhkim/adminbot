@@ -645,6 +645,7 @@ export type AppViewState = {
   adminBotSignatureSubmitting: boolean;
   adminBotSignatureError: string | null;
   adminBotSignatureSubmitted: boolean;
+  adminBotSignaturePrefillUrl: string | null;
 
   // The request the forms are currently holding a correction to, or null when what is on screen is
   // a new request. Submit sends a PUT for the first and a POST for the second.

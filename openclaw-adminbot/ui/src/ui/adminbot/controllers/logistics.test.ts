@@ -19,6 +19,7 @@ import {
   sendAdminBotSignedDocuments,
   setAdminBotLogisticsRequestStatus,
   submitAdminBotLogisticsRequest,
+  submitAdminBotSignatureForm,
   withdrawAdminBotLogisticsRequest,
   type AdminBotLogisticsHost,
 } from "./logistics.ts";
@@ -72,6 +73,73 @@ const json = (body: unknown, status = 200) =>
     status,
     headers: { "Content-Type": "application/json" },
   });
+
+// The signature form, filed on the lab's Google Form through the service.
+describe("the signature form", () => {
+  beforeEach(async () => {
+    await resetAdminBotOfflineMemory();
+    vi.stubGlobal("localStorage", createStorageMock());
+    saveStoredMemberSession({ sessionToken: "tok", expiresAt: "later" });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    clearStoredMemberSession();
+  });
+
+  const typed = {
+    driveUrl: "https://drive.google.com/file/d/synthetic/view",
+    deadline: "2026-11-06",
+    context: "A synthetic letter.",
+  };
+  const signatureHost = (): AdminBotLogisticsHost => ({
+    ...createHost(),
+    adminBotLogisticsCallSheetNote: null,
+    adminBotSignatureForm: { ...typed },
+    adminBotSignatureSubmitting: false,
+    adminBotSignatureError: null,
+    adminBotSignatureSubmitted: false,
+    adminBotSignaturePrefillUrl: null,
+  });
+
+  it("says it landed and clears what was typed", async () => {
+    const host = signatureHost();
+    routedFetch({ "/logistics/signature-form": () => json({ submitted: true }) });
+    expect(await submitAdminBotSignatureForm(host)).toBe(true);
+    expect(host.adminBotSignatureSubmitted).toBe(true);
+    expect(host.adminBotSignatureForm).toEqual({ driveUrl: "", deadline: "", context: "" });
+    expect(host.adminBotSignaturePrefillUrl).toBeNull();
+  });
+
+  // The form only takes signed-in responses: nothing was filed, so the answers stay on screen and
+  // the member gets the form with them filled in.
+  it("offers the prefilled form when Google wants the member signed in", async () => {
+    const host = signatureHost();
+    const prefill = "https://docs.google.com/forms/d/e/synthetic/viewform?usp=pp_url";
+    routedFetch({
+      "/logistics/signature-form": () =>
+        json({ submitted: false, sign_in_required: true, prefill_url: prefill }),
+    });
+    expect(await submitAdminBotSignatureForm(host)).toBe(false);
+    expect(host.adminBotSignaturePrefillUrl).toBe(prefill);
+    expect(host.adminBotSignatureSubmitted).toBe(false);
+    expect(host.adminBotSignatureError).toBeNull();
+    expect(host.adminBotSignatureForm).toEqual(typed);
+    expect(host.adminBotSignatureSubmitting).toBe(false);
+  });
+
+  it("never draws a link that is not the lab's Google Form", async () => {
+    const host = signatureHost();
+    routedFetch({
+      "/logistics/signature-form": () =>
+        json({ submitted: false, prefill_url: "javascript:alert(1)" }),
+    });
+    expect(await submitAdminBotSignatureForm(host)).toBe(false);
+    expect(host.adminBotSignaturePrefillUrl).toBeNull();
+    expect(host.adminBotSignatureError).toBeTruthy();
+  });
+});
 
 describe("logistics controller", () => {
   beforeEach(async () => {
