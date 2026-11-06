@@ -13,7 +13,20 @@ Three commands, one file, standard library only (it runs under whatever python3 
            request preempts any registered borrowers, waits for the GPU to empty, wakes the
            model, and only then is forwarded.
 
-  borrow   `borrow -- <command...>` waits until the model is asleep, then runs the command in its
+           The port is shared: AdminBot's agent, chat.safe.eu (private-chat) and AdminBot's email
+           automation all call it. Interactive callers come first. A request is *background* when
+           it carries `X-Jinesis-Priority: background`, or when the process that opened the
+           connection runs as this account and its command line matches GATE_BACKGROUND_COMMANDS
+           (the email automation, until every release sends the header). Everything else --
+           chat.safe.eu included, and any other account's process -- is interactive. A background
+           request waits while any interactive request is in flight, at most
+           GATE_BACKGROUND_MAX run at once, and one that has waited GATE_BACKGROUND_STARVE_SECONDS
+           goes ahead alone so a busy chat cannot stall the email run forever. With
+           GATE_VLLM_PRIORITY=1 (vLLM started with --scheduling-policy priority) background
+           requests also carry a lower vLLM priority, so vLLM's own scheduler serves chat first
+           once they are admitted.
+
+  borrow  `borrow -- <command...>` waits until the model is asleep, then runs the command in its
            own process group and registers it, so the gate can stop it: SIGTERM first (time to
            checkpoint), SIGKILL after GATE_PREEMPT_GRACE_SECONDS. A job that must not be cut off
            mid-step should checkpoint on SIGTERM.
@@ -82,6 +95,15 @@ def runtime_dir() -> Path:
 
 def vllm_socket() -> str:
     return os.environ.get("VLLM_UDS") or str(runtime_dir() / "vllm.sock")
+
+
+PRIORITY_HEADER = "X-Jinesis-Priority"
+DEFAULT_BACKGROUND_COMMANDS = "adminbot-email-automation"
+
+
+def background_commands() -> list[str]:
+    raw = os.environ.get("GATE_BACKGROUND_COMMANDS", DEFAULT_BACKGROUND_COMMANDS)
+    return [part.strip() for part in raw.split(",") if part.strip()]
 
 
 STATE_AWAKE = "awake"
@@ -199,6 +221,77 @@ def gpu_free_mib(gpu_uuid: str) -> int | None:
 
 
 # ---------------------------------------------------------------------------------------------
+# Who is calling: the client end of a loopback connection, read from /proc
+
+
+def loopback_peer(peer_port: int, server_port: int) -> tuple[int, int] | None:
+    """(uid, socket inode) of the client end of a loopback TCP connection to the gate.
+
+    The kernel records the owning uid of every socket in /proc/net/tcp*, readable by anyone, so
+    this cannot be forged by the caller. The client row is the one whose local port is the
+    peer's and whose remote port is the gate's.
+    """
+    want_local, want_remote = f"{peer_port:04X}", f"{server_port:04X}"
+    for table in ("/proc/net/tcp", "/proc/net/tcp6"):
+        try:
+            with open(table) as handle:
+                next(handle, None)
+                for line in handle:
+                    fields = line.split()
+                    if len(fields) < 10:
+                        continue
+                    if (
+                        fields[1].rsplit(":", 1)[-1] == want_local
+                        and fields[2].rsplit(":", 1)[-1] == want_remote
+                    ):
+                        return int(fields[7]), int(fields[9])
+        except (OSError, ValueError):
+            continue
+    return None
+
+
+def socket_owner_cmdline(inode: int) -> str | None:
+    """The command line of this account's process holding socket `inode`, if any.
+
+    Only this account's processes are searched: their fd tables are the only ones readable, and
+    only they may be demoted by command line (another account's caller is always interactive).
+    """
+    target = f"socket:[{inode}]"
+    me = os.getuid()
+    for pid in os.listdir("/proc"):
+        if not pid.isdigit():
+            continue
+        try:
+            if os.stat(f"/proc/{pid}").st_uid != me:
+                continue
+            fds = os.listdir(f"/proc/{pid}/fd")
+        except OSError:
+            continue
+        for fd in fds:
+            try:
+                if os.readlink(f"/proc/{pid}/fd/{fd}") != target:
+                    continue
+                with open(f"/proc/{pid}/cmdline", "rb") as handle:
+                    return handle.read().replace(b"\0", b" ").decode(errors="replace").strip()
+            except OSError:
+                continue
+    return None
+
+
+def classify_request(header_value: str | None, peer: tuple[int, int] | None) -> bool:
+    """True when the request is background work that must yield to interactive callers."""
+    if (header_value or "").strip().lower() == "background":
+        return True
+    if peer is None or peer[0] != os.getuid():
+        return False
+    commands = background_commands()
+    if not commands:
+        return False
+    cmdline = socket_owner_cmdline(peer[1]) or ""
+    return any(command in cmdline for command in commands)
+
+
+# ---------------------------------------------------------------------------------------------
 # Talking to vLLM over its Unix socket
 
 
@@ -245,9 +338,18 @@ class Gate:
         self.wake_free_mib = _env_int("GATE_WAKE_FREE_MIB", 70000)
         self.wake_timeout = _env_int("GATE_WAKE_TIMEOUT_SECONDS", 300)
         self.gpu_uuid = os.environ.get("GATE_GPU_UUID", "").strip()
+        # Background admission. The waits stay under the email client's 180s request timeout, so
+        # a held request is answered (served, or 503 to retry next run) rather than abandoned.
+        self.background_max = max(1, _env_int("GATE_BACKGROUND_MAX", 2))
+        self.background_starve_seconds = _env_int("GATE_BACKGROUND_STARVE_SECONDS", 60)
+        self.background_max_wait = _env_int("GATE_BACKGROUND_MAX_WAIT_SECONDS", 150)
+        self.vllm_priority = os.environ.get("GATE_VLLM_PRIORITY", "").strip() == "1"
+        self.background_vllm_priority = _env_int("GATE_BACKGROUND_VLLM_PRIORITY", 10)
         self.cond = threading.Condition()
         self.state = STATE_DOWN
         self.inflight = 0
+        self.interactive = 0
+        self.background = 0
         self.last_activity = time.monotonic()
         self.wake_error: str | None = None
 
@@ -332,6 +434,36 @@ class Gate:
             self.last_activity = time.monotonic()
             self.cond.notify_all()
 
+    def admit(self, background: bool) -> None:
+        """Take a priority slot: interactive at once, background only when interactive is idle.
+
+        Raises RuntimeError when a background request has waited GATE_BACKGROUND_MAX_WAIT_SECONDS.
+        """
+        with self.cond:
+            if not background:
+                self.interactive += 1
+                return
+            started = time.monotonic()
+            while True:
+                waited = time.monotonic() - started
+                if self.interactive == 0 and self.background < self.background_max:
+                    break
+                # Starvation guard: one background request at a time still gets through.
+                if self.background == 0 and waited >= self.background_starve_seconds:
+                    break
+                if waited >= self.background_max_wait:
+                    raise RuntimeError("the model is busy with interactive requests; retry later")
+                self.cond.wait(timeout=1.0)
+            self.background += 1
+
+    def leave(self, background: bool) -> None:
+        with self.cond:
+            if background:
+                self.background -= 1
+            else:
+                self.interactive -= 1
+            self.cond.notify_all()
+
     def maybe_sleep(self) -> None:
         with self.cond:
             idle = time.monotonic() - self.last_activity
@@ -369,7 +501,9 @@ def make_handler(gate: Gate) -> type[http.server.BaseHTTPRequestHandler]:
         server_version = "jinesis-gpu-gate"
 
         def log_message(self, format: str, *args: object) -> None:  # noqa: A002
-            pass  # Request lines would put model traffic in the journal; nothing to keep.
+            # The stock request line carries the query string; the gate logs its own line
+            # (path, priority class, caller uid, status, duration -- never content) instead.
+            pass
 
         def _deny(self, status: int, message: str) -> None:
             body = json.dumps({"error": {"message": message}}).encode()
@@ -396,28 +530,53 @@ def make_handler(gate: Gate) -> type[http.server.BaseHTTPRequestHandler]:
                 return
             length = int(self.headers.get("Content-Length") or 0)
             body = self.rfile.read(length) if length else None
-            if needs_model:
+            if not needs_model:
+                self._forward(body)
+                return
+            started = time.monotonic()
+            peer = loopback_peer(self.client_address[1], self.server.server_address[1])
+            background = classify_request(self.headers.get(PRIORITY_HEADER), peer)
+            label = "background" if background else "interactive"
+            uid = peer[0] if peer else "?"
+            try:
+                gate.admit(background)
+            except RuntimeError as exc:
+                gate.log(f"{self.command} {path} {label} uid={uid} 503 after {time.monotonic() - started:.1f}s held")
+                self._deny(503, str(exc))
+                return
+            status = 503
+            try:
                 try:
                     gate.acquire()
                 except RuntimeError as exc:
                     self._deny(503, str(exc))
                     return
-            try:
-                self._forward(body)
-            finally:
-                if needs_model:
+                try:
+                    if background and gate.vllm_priority:
+                        body = with_vllm_priority(body, gate.background_vllm_priority)
+                    status = self._forward(body)
+                finally:
                     gate.release()
+            finally:
+                gate.leave(background)
+                gate.log(f"{self.command} {path} {label} uid={uid} {status} {time.monotonic() - started:.1f}s")
 
-        def _forward(self, body: bytes | None) -> None:
+        def _forward(self, body: bytes | None) -> int:
             conn = UnixHTTPConnection(vllm_socket())
             try:
-                headers = {k: v for k, v in self.headers.items() if k.lower() not in HOP_BY_HOP}
+                headers = {
+                    k: v
+                    for k, v in self.headers.items()
+                    if k.lower() not in HOP_BY_HOP and k.lower() not in ("content-length", PRIORITY_HEADER.lower())
+                }
+                if body is not None:
+                    headers["Content-Length"] = str(len(body))
                 conn.request(self.command, self.path, body=body, headers=headers)
                 upstream = conn.getresponse()
             except OSError as exc:
                 conn.close()
                 self._deny(502, f"model server unreachable: {exc}")
-                return
+                return 502
             try:
                 self.send_response(upstream.status)
                 for key, value in upstream.getheaders():
@@ -440,10 +599,26 @@ def make_handler(gate: Gate) -> type[http.server.BaseHTTPRequestHandler]:
             finally:
                 conn.close()
                 self.close_connection = True
+            return upstream.status
 
         do_GET = do_POST = do_PUT = do_DELETE = do_PATCH = do_HEAD = _handle  # noqa: N815
 
     return Handler
+
+
+def with_vllm_priority(body: bytes | None, priority: int) -> bytes | None:
+    """The JSON body with vLLM's `priority` field set (lower is served first), unless the caller
+    set one. Anything that is not a JSON object passes through untouched."""
+    if not body:
+        return body
+    try:
+        payload = json.loads(body)
+    except ValueError:
+        return body
+    if not isinstance(payload, dict) or "priority" in payload:
+        return body
+    payload["priority"] = priority
+    return json.dumps(payload).encode()
 
 
 def run_gate(host: str, port: int) -> None:

@@ -30,6 +30,7 @@ class FakeVllm:
     def __init__(self, socket_path: str, sleeping: bool = False) -> None:
         self.sleeping = sleeping
         self.calls: list[str] = []
+        self.forwarded: list[object] = []
         fake = self
 
         class Handler(http.server.BaseHTTPRequestHandler):
@@ -71,7 +72,14 @@ class FakeVllm:
                     fake.sleeping = False
                     self._reply(200, {})
                 elif self.path.startswith("/v1/"):
-                    self._reply(200, {"echo": json.loads(body or b"{}")})
+                    fake.forwarded.append(json.loads(body or b"{}"))
+                    self._reply(
+                        200,
+                        {
+                            "echo": json.loads(body or b"{}"),
+                            "priority_header": self.headers.get("X-Jinesis-Priority"),
+                        },
+                    )
                 else:
                     self._reply(200, {"reached": self.path})
 
@@ -126,10 +134,12 @@ class GpuShareTest(unittest.TestCase):
                 os.environ[key] = value
         shutil.rmtree(self.dir, ignore_errors=True)
 
-    def request(self, method: str, path: str, body: object | None = None) -> tuple[int, dict]:
+    def request(
+        self, method: str, path: str, body: object | None = None, extra_headers: dict | None = None
+    ) -> tuple[int, dict]:
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=30)
         payload = json.dumps(body).encode() if body is not None else None
-        headers = {"Authorization": "Bearer test-key"}
+        headers = {"Authorization": "Bearer test-key", **(extra_headers or {})}
         if payload is not None:
             headers["Content-Type"] = "application/json"
         conn.request(method, path, body=payload, headers=headers)
@@ -262,6 +272,132 @@ class GpuShareTest(unittest.TestCase):
 
     def test_gate_refuses_to_listen_beyond_loopback(self) -> None:
         self.assertEqual(share.main(["gate", "--host", "0.0.0.0", "--port", "0"]), 2)
+
+    # -- interactive first, background (email automation) after ---------------------------
+
+    BACKGROUND = {"X-Jinesis-Priority": "background"}
+
+    def background_request_in_thread(self) -> dict:
+        result: dict = {}
+
+        def run() -> None:
+            result["status"], result["body"] = self.request(
+                "POST", "/v1/chat/completions", {"job": "email"}, self.BACKGROUND
+            )
+            result["at"] = time.monotonic()
+
+        thread = threading.Thread(target=run, daemon=True)
+        thread.start()
+        result["thread"] = thread
+        return result
+
+    def test_background_waits_while_an_interactive_request_is_in_flight(self) -> None:
+        self.gate.admit(False)  # a chat.safe.eu request mid-stream
+        held = self.background_request_in_thread()
+        time.sleep(1.5)
+        self.assertEqual(self.fake.forwarded, [], "background reached vLLM while chat was in flight")
+        released_at = time.monotonic()
+        self.gate.leave(False)
+        held["thread"].join(timeout=10)
+        self.assertEqual(held["status"], 200)
+        self.assertGreaterEqual(held["at"], released_at)
+        self.assertEqual(self.fake.forwarded, [{"job": "email"}])
+
+    def test_interactive_never_waits_for_background(self) -> None:
+        self.gate.admit(True)
+        self.gate.admit(True)  # background at its cap
+        started = time.monotonic()
+        status, body = self.request("POST", "/v1/chat/completions", {"job": "chat"})
+        self.assertEqual((status, body["echo"]), (200, {"job": "chat"}))
+        self.assertLess(time.monotonic() - started, 1.0)
+        self.gate.leave(True)
+        self.gate.leave(True)
+
+    def test_background_concurrency_is_capped(self) -> None:
+        self.gate.background_max = 1
+        self.gate.admit(True)
+        held = self.background_request_in_thread()
+        time.sleep(1.5)
+        self.assertEqual(self.fake.forwarded, [])
+        self.gate.leave(True)
+        held["thread"].join(timeout=10)
+        self.assertEqual(held["status"], 200)
+
+    def test_a_starved_background_request_goes_ahead_alone(self) -> None:
+        self.gate.background_starve_seconds = 1
+        self.gate.admit(False)  # chat never goes idle
+        held = self.background_request_in_thread()
+        held["thread"].join(timeout=10)
+        self.assertEqual(held["status"], 200)
+        self.gate.leave(False)
+
+    def test_background_gives_up_with_503_rather_than_hang(self) -> None:
+        self.gate.background_starve_seconds = 60
+        self.gate.background_max_wait = 1
+        self.gate.admit(False)
+        status, body = self.request("POST", "/v1/chat/completions", {"job": "email"}, self.BACKGROUND)
+        self.gate.leave(False)
+        self.assertEqual(status, 503)
+        self.assertIn("busy with interactive", body["error"]["message"])
+        self.assertEqual(self.fake.forwarded, [])
+        self.assertEqual(self.gate.background, 0)
+
+    def test_priority_header_is_not_forwarded_and_vllm_priority_is_opt_in(self) -> None:
+        status, body = self.request("POST", "/v1/chat/completions", {"job": "email"}, self.BACKGROUND)
+        self.assertEqual((status, body["echo"], body["priority_header"]), (200, {"job": "email"}, None))
+        self.gate.vllm_priority = True
+        status, body = self.request("POST", "/v1/chat/completions", {"job": "email"}, self.BACKGROUND)
+        self.assertEqual(body["echo"], {"job": "email", "priority": 10})
+        # Interactive requests keep vLLM's default priority (0, ahead of background's 10).
+        status, body = self.request("POST", "/v1/chat/completions", {"job": "chat"})
+        self.assertEqual(body["echo"], {"job": "chat"})
+        self.assertEqual((self.gate.interactive, self.gate.background), (0, 0))
+
+    def test_with_vllm_priority_leaves_non_objects_and_caller_priorities_alone(self) -> None:
+        self.assertEqual(share.with_vllm_priority(b"not json", 10), b"not json")
+        self.assertEqual(share.with_vllm_priority(b"[1]", 10), b"[1]")
+        self.assertEqual(share.with_vllm_priority(b'{"priority": -1}', 10), b'{"priority": -1}')
+        self.assertIsNone(share.with_vllm_priority(None, 10))
+
+    def test_recognizes_the_email_automation_by_its_command_line(self) -> None:
+        import socket
+
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(1)
+        server_port = listener.getsockname()[1]
+        child = subprocess.Popen(
+            [
+                sys.executable,
+                "-c",
+                "import socket, sys, time\n"
+                f"s = socket.create_connection(('127.0.0.1', {server_port}))\n"
+                "time.sleep(30)",
+                "scripts/adminbot-email-automation.ts",
+            ],
+            start_new_session=True,
+        )
+        self.children.append(child)
+        try:
+            listener.settimeout(10)
+            conn, (_host, peer_port) = listener.accept()
+            peer = share.loopback_peer(peer_port, server_port)
+            self.assertIsNotNone(peer)
+            self.assertEqual(peer[0], os.getuid())
+            os.environ.pop("GATE_BACKGROUND_COMMANDS", None)
+            self.assertTrue(share.classify_request(None, peer))
+            os.environ["GATE_BACKGROUND_COMMANDS"] = "some-other-job"
+            self.assertFalse(share.classify_request(None, peer))
+            os.environ["GATE_BACKGROUND_COMMANDS"] = ""
+            self.assertFalse(share.classify_request(None, peer))
+            # Another account's caller is interactive whatever it runs; the header still demotes.
+            self.assertFalse(share.classify_request(None, (os.getuid() + 1, peer[1])))
+            self.assertTrue(share.classify_request("Background", None))
+            self.assertFalse(share.classify_request(None, None))
+            conn.close()
+        finally:
+            os.environ.pop("GATE_BACKGROUND_COMMANDS", None)
+            listener.close()
 
 
 if __name__ == "__main__":

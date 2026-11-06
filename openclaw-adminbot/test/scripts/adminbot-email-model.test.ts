@@ -107,7 +107,11 @@ describe("AdminBot email model", () => {
     expect(fetchMock).toHaveBeenCalledOnce();
     const [url, init] = fetchMock.mock.calls[0] ?? [];
     expect(url).toBe("http://127.0.0.1:8000/v1/chat/completions");
-    expect(init?.headers).toMatchObject({ authorization: "Bearer test-key" });
+    // Background-labelled, so the shared gate lets chat.safe.eu and AdminBot's agent go first.
+    expect(init?.headers).toMatchObject({
+      authorization: "Bearer test-key",
+      "x-jinesis-priority": "background",
+    });
     const payload = JSON.parse(String(init?.body)) as Record<string, unknown>;
     expect(payload).toMatchObject({
       model: "nvidia/Qwen3.5-122B-A10B-NVFP4",
