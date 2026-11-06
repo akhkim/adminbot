@@ -8986,6 +8986,7 @@ export interface components {
       category:
         | "camera_ready"
         | "under_review"
+        | "proofreading"
         | "safety_impact"
         | "arxiv_release"
         | "after_rejection";
@@ -9009,6 +9010,12 @@ export interface components {
         review_note?: string;
         label: string;
         slot: string;
+      } & {
+        [key: string]: unknown;
+      };
+      proofreading?: {
+        venue: string;
+        note: string;
       } & {
         [key: string]: unknown;
       };
