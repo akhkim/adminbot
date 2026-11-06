@@ -17,6 +17,28 @@ has priority on it, but most of the day the model is idle, so other jobs under t
   unauthenticated control endpoints (`/collective_rpc`, `/update_weights`, …). Those are reachable
   only on the private socket, never from the shared loopback port.
 
+## Who goes first on the shared endpoint
+
+`127.0.0.1:8000` is one endpoint for several callers: chat.safe.eu (private-chat), AdminBot's
+agent, and AdminBot's email automation. Interactive callers come first; the email batch yields.
+
+- A request is **background** when it sends `X-Jinesis-Priority: background` (the email model
+  client does), or when the connecting process runs as this account and its command line contains
+  one of `GATE_BACKGROUND_COMMANDS` (default `adminbot-email-automation`, which covers releases
+  that predate the header). The caller is read from `/proc/net/tcp`, so it cannot be faked.
+- Everything else is **interactive** — chat.safe.eu, AdminBot's agent, any other account.
+- Background requests wait while any interactive request is in flight, and at most
+  `GATE_BACKGROUND_MAX` (default 2) run at once, so chat always finds the model's batch nearly
+  empty. One that has waited `GATE_BACKGROUND_STARVE_SECONDS` (default 60) goes ahead alone, so a
+  busy chat slows the email run rather than stopping it; after `GATE_BACKGROUND_MAX_WAIT_SECONDS`
+  (default 150, under the email client's 180s timeout) it gets a 503 and the next run retries.
+- Optional: start vLLM with `--scheduling-policy priority` and set `GATE_VLLM_PRIORITY=1` on the
+  gate, and background requests also carry vLLM `priority: 10` (`GATE_BACKGROUND_VLLM_PRIORITY`),
+  so vLLM itself preempts them for chat under memory pressure. Leave it off otherwise: vLLM
+  rejects a non-zero priority under its default FCFS policy.
+- The gate logs one line per `/v1` request — path, class, caller uid, status, duration, never
+  content: `journalctl --user -u jinesis-vllm-gate -f`.
+
 ## Borrowing the GPU
 
 ```bash

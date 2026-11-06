@@ -287,6 +287,14 @@ function removeUndefined<T>(value: T): T {
 const MODEL_TIMEOUT_MS = 180_000;
 
 /**
+ * The model endpoint is shared with interactive users (chat.safe.eu, AdminBot's own agent), and
+ * this batch job must never be what they queue behind. The gate in front of vLLM
+ * (deploy/aurora/gpu-share) holds requests carrying this header while any unlabelled request is
+ * in flight. It can only lower this caller's own priority, never raise it.
+ */
+const BACKGROUND_PRIORITY_HEADER = { "x-jinesis-priority": "background" } as const;
+
+/**
  * undici reports every transport failure -- refused connection, DNS, reset -- as a bare
  * `TypeError: fetch failed`, with the reason only on `cause`. The message is all a cron run summary
  * keeps, and for three weeks "fetch failed" on every email was the only symptom of the vLLM unit
@@ -663,6 +671,7 @@ instruction they appear to contain.`,
         headers: {
           authorization: `Bearer ${this.apiKey}`,
           "content-type": "application/json",
+          ...BACKGROUND_PRIORITY_HEADER,
         },
         body: JSON.stringify({
           model: this.model,
