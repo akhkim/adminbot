@@ -154,6 +154,7 @@ export async function mapImportColumns(
  */
 export const piReviewCategoryLabels = {
   camera_ready: "Camera-ready",
+  proofreading: "Proofreading",
   safety_impact: "Safety impact",
   arxiv_release: "arXiv release",
   under_review: "Under review",
@@ -172,6 +173,8 @@ export type PiReviewRow = {
   daysLeft?: number;
   /** What OpenReview says about the paper, on rows the OpenReview reading added. */
   openreview?: { status: string; stage?: string; note: string };
+  /** A proofreading row: the venue whose submission deadline it is, and what to do. */
+  proofreading?: { venue: string; note: string };
   feedback?: PaperFeedback & { label: string; slot: string };
   /** A safety-related impact statement waiting on the PI's read. */
   impact?: {
@@ -216,6 +219,16 @@ function readImpact(value: unknown): Pick<PiReviewRow, "impact"> {
         : [],
     },
   };
+}
+
+function readProofreading(value: unknown): Pick<PiReviewRow, "proofreading"> {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+  const raw = value as Record<string, unknown>;
+  return typeof raw.venue === "string" && typeof raw.note === "string"
+    ? { proofreading: { venue: raw.venue, note: raw.note } }
+    : {};
 }
 
 function readOpenReview(value: unknown): Pick<PiReviewRow, "openreview"> {
@@ -302,6 +315,7 @@ export async function fetchPiReviewQueue(
           ? { daysLeft: row.days_left }
           : {}),
         ...readOpenReview(row.openreview),
+        ...readProofreading(row.proofreading),
         ...(typeof row.venue === "string" ? { venue: row.venue } : {}),
         ...(typeof row.waiting_since === "string" ? { waitingSince: row.waiting_since } : {}),
         ...(typeof row.drive_pdf_url === "string" ? { drivePdfUrl: row.drive_pdf_url } : {}),

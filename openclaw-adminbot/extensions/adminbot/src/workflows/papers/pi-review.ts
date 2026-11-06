@@ -51,6 +51,8 @@ export type PiReviewRow = {
     note: string;
   };
   feedback?: PaperFeedback & { label: string; slot: string };
+  /** For a proofreading row: the venue whose submission deadline it is, and what to do. */
+  proofreading?: { venue: string; note: string };
   /** A safety-related impact statement waiting on the PI's read. */
   impact?: Pick<PaperImpactStatus, "statement" | "verdict" | "source" | "reasons" | "override">;
   /** Rows the PI asked to see first. Absent is ordinary priority. */
