@@ -813,6 +813,10 @@ export function renderProfessorView(props: ProfessorViewProps) {
                       ${row.hardDeadline ? renderHardDeadline(row) : nothing}
                       ${row.openreview
                         ? html`<span>${row.openreview.note}</span>`
+                        : row.proofreading
+                        ? html`<span data-testid="pi-review-proofreading"
+                            >${row.proofreading.note}</span
+                          >`
                         : row.impact
                         ? html`<strong
                               ><span class="pill" data-testid="pi-review-high-priority"

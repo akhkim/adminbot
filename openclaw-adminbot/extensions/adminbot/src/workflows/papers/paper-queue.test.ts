@@ -8,11 +8,14 @@ import type {
 import type { AdminBotPaperSlotRecord } from "../../contracts/paper-slots.js";
 import type { AdminBotPaperflowEvidenceRecord } from "../../contracts/paperflow-stages.js";
 import {
+  aoeToIso,
   buildCameraReadyNotice,
   cameraReadyDeadline,
   daysLeft,
   openReviewPaperQueue,
+  proofreadingPaperQueue,
   rankPaperQueue,
+  submissionDeadline,
 } from "./paper-queue.js";
 import type { PiReviewRow } from "./pi-review.js";
 
@@ -100,6 +103,110 @@ describe("cameraReadyDeadline", () => {
 
   it("has no date for a venue the dataset does not carry one for", () => {
     expect(cameraReadyDeadline("NeurIPS 2026", dataset, now)).toBeUndefined();
+  });
+});
+
+// A published deadline proposal stores its stage as an instant. Read as an AoE wall clock it put
+// the NeurIPS 2026 camera-ready (Nov 6 AoE) twelve hours late on her queue.
+describe("aoeToIso", () => {
+  it("reads a bare wall clock as Anywhere on Earth", () => {
+    expect(aoeToIso("2026-11-06 23:59")).toBe("2026-11-07T11:59:00.000Z");
+    expect(aoeToIso("2026-11-06")).toBe("2026-11-07T11:59:59.000Z");
+  });
+
+  it("keeps a timestamp that carries its own offset", () => {
+    expect(aoeToIso("2026-11-07T11:59:00.000Z")).toBe("2026-11-07T11:59:00.000Z");
+    expect(aoeToIso("2026-11-06T23:59:00-12:00")).toBe("2026-11-07T11:59:00.000Z");
+  });
+
+  it("gives the NeurIPS camera-ready stage a proposal added its real instant", () => {
+    const neurips = [
+      {
+        venue_group: "NeurIPS 2026",
+        venue_family: "NeurIPS",
+        entry_type: "rebuttal",
+        schedule: [{ milestone: "camera_ready", label: "Camera-ready", date: "2026-11-07T11:59:00.000Z" }],
+      },
+    ];
+    for (const venue of ["NeurIPS 2026", "NeurIPS 2026 Position Paper Track", "NeurIPS 2026 Evaluations and Datasets Track"]) {
+      expect(cameraReadyDeadline(venue, neurips, now)).toBe("2026-11-07T11:59:00.000Z");
+    }
+  });
+});
+
+describe("proofreadingPaperQueue", () => {
+  // CLeaR 2027 as the deadline proposal published it: the year only in the name.
+  const clear = [
+    {
+      name: "CLeaR 2027",
+      venue_group: "CLeaR",
+      venue_family: "CLeaR",
+      venue_type: "conference",
+      entry_type: "main_conference",
+      milestone: "direct_submission",
+      deadline_aoe: "2026-11-16 23:59:00",
+      deadline_at: "2026-11-17T11:59:00.000Z",
+    },
+  ];
+  const draft = (overrides: Partial<AdminBotPaperRecord> = {}): AdminBotPaperRecord => ({
+    id: "p2",
+    title: "Causal Proofreading",
+    authors: ["Ada Lovelace"],
+    current_step: "overleaf_writing",
+    venue: "CLeaR 2027",
+    created_at: "2026-09-01T00:00:00.000Z",
+    updated_at: "2026-10-30T00:00:00.000Z",
+    ...overrides,
+  });
+
+  it("finds the submission deadline of a record that carries its year only in its name", () => {
+    expect(submissionDeadline("CLeaR 2027", clear, now)).toEqual({
+      deadline: "2026-11-17T11:59:00.000Z",
+      name: "CLeaR 2027",
+    });
+  });
+
+  it("puts a paper headed to a near deadline under proofreading, with the clock", () => {
+    const [row] = proofreadingPaperQueue([{ paper: draft() }], clear, now);
+    expect(row).toMatchObject({
+      paper_id: "p2",
+      category: "proofreading",
+      hard_deadline: "2026-11-17T11:59:00.000Z",
+      days_left: 13,
+      venue: "CLeaR 2027",
+      proofreading: { venue: "CLeaR 2027" },
+    });
+    expect(row?.proofreading?.note).toContain("due 2026-11-17");
+  });
+
+  it("leaves out papers already submitted there, decided, too far off, or past", () => {
+    const submittedThere = draft({
+      openreview_sync: {
+        fingerprint: "f",
+        source: "author_results",
+        applied_at: "2026-11-01T00:00:00.000Z",
+        status: "under_review",
+        venue: "CLeaR 2027",
+      },
+    });
+    expect(proofreadingPaperQueue([{ paper: submittedThere }], clear, now)).toEqual([]);
+    expect(proofreadingPaperQueue([{ paper: draft({ venue_decision: "accept" }) }], clear, now)).toEqual([]);
+    expect(proofreadingPaperQueue([{ paper: draft() }], clear, new Date("2026-08-01T00:00:00.000Z"))).toEqual([]);
+    expect(proofreadingPaperQueue([{ paper: draft() }], clear, new Date("2026-11-18T00:00:00.000Z"))).toEqual([]);
+    expect(proofreadingPaperQueue([{ paper: draft({ venue: "Unknown Venue 2027" }) }], clear, now)).toEqual([]);
+  });
+
+  it("still lists a paper whose OpenReview record is from an earlier venue", () => {
+    const resubmitting = draft({
+      openreview_sync: {
+        fingerprint: "f",
+        source: "author_results",
+        applied_at: "2026-09-25T00:00:00.000Z",
+        status: "rejected",
+        venue: "NeurIPS 2026",
+      },
+    });
+    expect(proofreadingPaperQueue([{ paper: resubmitting }], clear, now)).toHaveLength(1);
   });
 });
 

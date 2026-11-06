@@ -464,6 +464,32 @@ describe("renderProfessorView", () => {
     expect(row?.textContent).toContain("Disguised harmful requests.");
   });
 
+  // A paper headed to CLeaR is proofread before the submission deadline, not after it.
+  it("shows a proofreading row with its label, its note and the submission clock", () => {
+    const { container } = draw({
+      piReview: [
+        piReviewRow({
+          title: "Causal Proofreading",
+          category: "proofreading",
+          hardDeadline: "2026-11-17T11:59:00.000Z",
+          daysLeft: 13,
+          proofreading: {
+            venue: "CLeaR 2027",
+            note: "Submission to CLeaR 2027 is due 2026-11-17. Proofread before it goes in.",
+          },
+        }),
+      ],
+    });
+    const row = container.querySelector('[data-testid="professor-pi-review"] .professor__row');
+    expect(row?.querySelector('[data-testid="pi-review-category"]')?.textContent).toContain(
+      "Proofreading",
+    );
+    expect(row?.querySelector('[data-testid="pi-review-proofreading"]')?.textContent).toContain(
+      "Submission to CLeaR 2027 is due 2026-11-17",
+    );
+    expect(row?.textContent).toContain("13");
+  });
+
   it("caps a long queue and offers the rest as a control rather than as a count", () => {
     const letters = Array.from({ length: 8 }, (_, index) =>
       request({ id: `r${index}`, deadline_at: `2026-0${(index % 9) + 1}-01T00:00:00Z` }),

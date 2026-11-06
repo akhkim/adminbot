@@ -42886,6 +42886,7 @@
             "enum": [
               "camera_ready",
               "under_review",
+              "proofreading",
               "safety_impact",
               "arxiv_release",
               "after_rejection"
@@ -42963,6 +42964,22 @@
               "url",
               "label",
               "slot"
+            ],
+            "additionalProperties": true
+          },
+          "proofreading": {
+            "type": "object",
+            "properties": {
+              "venue": {
+                "type": "string"
+              },
+              "note": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "venue",
+              "note"
             ],
             "additionalProperties": true
           },

@@ -7,6 +7,7 @@
 // queue, one category per paper, ranked so the thing with a hard clock is read first:
 //
 //   camera_ready     accepted, and the camera-ready is not confirmed       -- a hard deadline
+//   proofreading     headed to a venue whose submission deadline is near  -- a hard deadline
 //   safety_impact    a safety-related impact statement waiting on her read
 //   arxiv_release    the arXiv package waiting on her yes
 //   under_review     submitted: reviews pending, rebuttal open, or decision pending
@@ -26,6 +27,7 @@ import type { PiReviewRow } from "./pi-review.js";
 
 export const paperQueueCategories = [
   "camera_ready",
+  "proofreading",
   "safety_impact",
   "arxiv_release",
   "under_review",
@@ -36,6 +38,7 @@ export type PaperQueueCategory = (typeof paperQueueCategories)[number];
 
 export const paperQueueCategoryLabels: Record<PaperQueueCategory, string> = {
   camera_ready: "Camera-ready",
+  proofreading: "Proofreading",
   safety_impact: "Safety impact",
   arxiv_release: "arXiv release",
   under_review: "Under review",
@@ -53,6 +56,7 @@ export type PaperQueueCandidate = {
 };
 
 type DatasetRecord = {
+  name?: unknown;
   venue_type?: unknown;
   entry_type?: unknown;
   venue_group?: unknown;
@@ -71,8 +75,18 @@ function venueKey(label: string): { family: string; year: number } | undefined {
   return family && Number.isInteger(year) ? { family, year } : undefined;
 }
 
-/** The dataset's AoE wall-clock time as an instant: "2026-10-01 23:59:59" AoE is 11:59:59Z the next day. */
-function aoeToIso(date: string): string | undefined {
+/**
+ * The dataset's AoE wall-clock time as an instant: "2026-10-01 23:59:59" AoE is 11:59:59Z the next
+ * day. A value that carries its own offset (or Z) is already an instant and is read as one: the
+ * stages a published deadline proposal adds are stored that way, and reading their wall clock as
+ * AoE put the NeurIPS 2026 camera-ready (Nov 6 AoE, 2026-11-07T11:59Z) twelve hours late.
+ */
+export function aoeToIso(date: string): string | undefined {
+  const trimmed = date.trim();
+  if (/T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})$/u.test(trimmed)) {
+    const instant = Date.parse(trimmed);
+    return Number.isFinite(instant) ? new Date(instant).toISOString() : undefined;
+  }
   const match = /^(\d{4}-\d{2}-\d{2})(?:[ T](\d{2}:\d{2}(?::\d{2})?))?/u.exec(date);
   if (!match) {
     return undefined;
@@ -111,7 +125,7 @@ export function cameraReadyDeadline(
     if (isWorkshop !== workshop || /demo/iu.test(textOf(record.entry_type))) {
       continue;
     }
-    const recordKey = venueKey(`${textOf(record.venue_family) || group} ${group}`);
+    const recordKey = datasetRecordKey(record);
     if (recordKey?.family !== key.family || recordKey.year !== key.year) {
       continue;
     }
@@ -125,6 +139,122 @@ export function cameraReadyDeadline(
   }
   const sorted = dates.toSorted();
   return sorted.find((iso) => Date.parse(iso) >= now.getTime()) ?? sorted.at(-1);
+}
+
+/**
+ * A dataset record's venue family and year. The name is read too: a record published through a
+ * deadline proposal can carry its year only there ("CLeaR 2027" grouped as "CLeaR"), and without
+ * it no venue could ever match the record.
+ */
+function datasetRecordKey(record: DatasetRecord): { family: string; year: number } | undefined {
+  const group = textOf(record.venue_group);
+  return venueKey(`${textOf(record.venue_family) || group} ${group} ${textOf(record.name)}`);
+}
+
+/** How far ahead a submission deadline puts a paper on her queue for proofreading. */
+export const PROOFREADING_WINDOW_DAYS = 45;
+const SUBMISSION_MILESTONES = new Set([
+  "direct_submission",
+  "full_paper",
+  "submission",
+  "paper",
+  "paper_submission",
+]);
+
+/**
+ * The next submission deadline the dataset publishes for this venue, as an ISO instant, with the
+ * record's name. Main-conference rows unless the label says workshop, as for the camera-ready.
+ */
+export function submissionDeadline(
+  venue: string,
+  dataset: readonly unknown[],
+  now: Date,
+): { deadline: string; name: string } | undefined {
+  const key = venueKey(venue);
+  if (!key) {
+    return undefined;
+  }
+  const workshop = /workshop/iu.test(venue);
+  let best: { deadline: string; name: string } | undefined;
+  for (const raw of dataset) {
+    const record = (raw ?? {}) as DatasetRecord & Record<string, unknown>;
+    const group = textOf(record.venue_group);
+    const isWorkshop =
+      record.venue_type === "workshop" ||
+      record.entry_type === "workshop" ||
+      /workshop/iu.test(group);
+    if (isWorkshop !== workshop || record.stale === true) {
+      continue;
+    }
+    if (!SUBMISSION_MILESTONES.has(textOf(record.milestone))) {
+      continue;
+    }
+    const recordKey = datasetRecordKey(record);
+    if (recordKey?.family !== key.family || recordKey.year !== key.year) {
+      continue;
+    }
+    const at = textOf(record.deadline_at);
+    const deadline = at ? aoeToIso(at) : aoeToIso(textOf(record.deadline_aoe));
+    if (!deadline || Date.parse(deadline) < now.getTime()) {
+      continue;
+    }
+    if (!best || deadline < best.deadline) {
+      best = { deadline, name: textOf(record.name) || group || venue };
+    }
+  }
+  return best;
+}
+
+/**
+ * Papers headed to a venue whose submission deadline is within PROOFREADING_WINDOW_DAYS, so her
+ * proofreading happens before the deadline rather than after it.
+ *
+ * Read off the card's target venue, because these papers are not on OpenReview yet: a submission
+ * the sync has already seen at that venue leaves this list and is the OpenReview rows' business,
+ * and so does a paper that already has a decision. A venue the dataset has no upcoming submission
+ * deadline for gives no row -- there is no clock to put on it.
+ */
+export function proofreadingPaperQueue(
+  candidates: readonly { paper: AdminBotPaperRecord }[],
+  dataset: readonly unknown[],
+  now: Date,
+): PiReviewRow[] {
+  return candidates.flatMap(({ paper }) => {
+    const target = textOf(paper.venue);
+    const key = target ? venueKey(target) : undefined;
+    if (!key || paper.venue_decision === "accept" || paper.venue_decision === "reject") {
+      return [];
+    }
+    const synced = paper.openreview_sync ? venueKey(paper.openreview_sync.venue) : undefined;
+    if (synced && synced.family === key.family && synced.year === key.year) {
+      return [];
+    }
+    const due = submissionDeadline(target, dataset, now);
+    if (!due) {
+      return [];
+    }
+    const left = daysLeft(due.deadline, now);
+    if (left > PROOFREADING_WINDOW_DAYS) {
+      return [];
+    }
+    return [
+      {
+        paper_id: paper.id,
+        title: paper.title,
+        authors: paper.authors,
+        venue: target,
+        waiting_since: paper.updated_at,
+        package_complete: true,
+        category: "proofreading" as const,
+        hard_deadline: due.deadline,
+        days_left: left,
+        proofreading: {
+          venue: due.name,
+          note: `Submission to ${due.name} is due ${due.deadline.slice(0, 10)}. Proofread before it goes in.`,
+        },
+      },
+    ];
+  });
 }
 
 /** Whole days until the deadline, rounded down; negative once it has passed. */

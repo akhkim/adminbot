@@ -527,6 +527,7 @@ import { paperFeedbackQueue, paperImpactQueue } from "../workflows/papers/pi-rev
 import {
   buildCameraReadyNotice,
   openReviewPaperQueue,
+  proofreadingPaperQueue,
   rankPaperQueue,
 } from "../workflows/papers/paper-queue.js";
 import {
@@ -8515,6 +8516,8 @@ export class AdminBotService {
             this.deadlineReadModel(DEADLINE_VENUES),
             new Date(),
           ),
+          // Papers headed to a venue whose submission deadline is near: her proofreading clock.
+          ...proofreadingPaperQueue(open, this.deadlineReadModel(DEADLINE_VENUES), new Date()),
         ]),
       },
     };
