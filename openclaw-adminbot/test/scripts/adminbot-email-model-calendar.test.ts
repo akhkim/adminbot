@@ -29,9 +29,9 @@ const event = {
 };
 
 describe("AdminBot calendar extraction", () => {
-  // The lab's rule since 2026-11: the Jinesis calendar for everything except flights and
-  // faculty-only events, even when the email asks for "my" calendar.
-  it("tells the model the personal calendar is only for flights and faculty-only events", async () => {
+  // The lab's rule since 2026-11: the Jinesis calendar only for talks and events lab members
+  // attend; everything else, and anything unclear, on Zhijing's trips-and-advising calendar.
+  it("tells the model the lab calendar is only for talks and lab members' events", async () => {
     const fetchMock = respondingWith({ calendar: "lab", events: [event] });
     await new AdminBotEmailModel(fetchMock).calendar({
       from: "pi@example.edu",
@@ -39,10 +39,13 @@ describe("AdminBot calendar extraction", () => {
       body: "Please add this seminar to my calendar.",
     });
     const instruction = JSON.stringify(sentPayload(fetchMock).messages[0]?.content);
-    expect(instruction).toContain('calendar: \\"personal\\" only for a flight');
-    expect(instruction).toContain("faculty");
-    expect(instruction).toContain('requests that ask for \\"my\\" or the personal calendar');
-    // The old rule sent all travel and every "my calendar" request to the personal calendar.
+    expect(instruction).toContain('calendar: \\"lab\\" (the Jinesis calendar) only for a talk');
+    expect(instruction).toContain("an event lab members attend");
+    expect(instruction).toContain(
+      "advising and\\none-on-one meetings, faculty-only events, and personal appointments",
+    );
+    expect(instruction).toContain('When unsure, use \\"personal\\".');
+    // The old rule defaulted to the lab calendar for anything that was not travel or "my" calendar.
     expect(instruction).not.toContain("trains, hotels); otherwise");
   });
 
