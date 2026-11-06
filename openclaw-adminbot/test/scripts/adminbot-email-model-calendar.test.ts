@@ -29,6 +29,23 @@ const event = {
 };
 
 describe("AdminBot calendar extraction", () => {
+  // The lab's rule since 2026-11: the Jinesis calendar for everything except flights and
+  // faculty-only events, even when the email asks for "my" calendar.
+  it("tells the model the personal calendar is only for flights and faculty-only events", async () => {
+    const fetchMock = respondingWith({ calendar: "lab", events: [event] });
+    await new AdminBotEmailModel(fetchMock).calendar({
+      from: "pi@example.edu",
+      subject: "Seminar",
+      body: "Please add this seminar to my calendar.",
+    });
+    const instruction = JSON.stringify(sentPayload(fetchMock).messages[0]?.content);
+    expect(instruction).toContain('calendar: \\"personal\\" only for a flight');
+    expect(instruction).toContain("faculty");
+    expect(instruction).toContain('requests that ask for \\"my\\" or the personal calendar');
+    // The old rule sent all travel and every "my calendar" request to the personal calendar.
+    expect(instruction).not.toContain("trains, hotels); otherwise");
+  });
+
   it("uses an all-day range only when the email has no time", async () => {
     const fetchMock = respondingWith({ calendar: "lab", events: [event] });
     const model = new AdminBotEmailModel(fetchMock);
