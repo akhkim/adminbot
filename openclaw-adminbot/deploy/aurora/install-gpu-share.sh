@@ -59,6 +59,9 @@ Environment=VLLM_SERVER_DEV_MODE=1
 Environment=GATE_RUNTIME_DIR=$RUNTIME
 Environment=GATE_PREEMPT_GRACE_SECONDS=$GRACE_SECONDS
 ExecStartPre=/bin/mkdir -p -m 0700 $RUNTIME
+# A socket left by a previous run makes bind() fail with "Address already in use" and the unit
+# crash-loops (seen 2026-11-05: 32 restarts before anyone noticed).
+ExecStartPre=/bin/rm -f $RUNTIME/vllm.sock
 ExecStartPre=-$PYTHON $SHARE_DIR/jinesis_gpu_share.py preempt
 ExecStart=
 ExecStart=$SOCKET_EXEC
