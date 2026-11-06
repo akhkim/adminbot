@@ -51,9 +51,12 @@ have lost.
 
 Two calendars take events. The lab calendar (`ADMINBOT_LAB_EMAIL`) is readable by every member.
 Zhijing's personal calendar (`ADMINBOT_PERSONAL_CALENDAR_ID`, "Jin Trips and Advising Meetings",
-with a hardcoded default in the script) is where her flights and other travel go. The extractor
-picks `personal` for travel and for requests that ask for "my" or the personal calendar, or say not
-to use the lab one; `lab` otherwise. Only a configured sender may target the personal calendar —
+with a hardcoded default in the script) takes everything except talks and lab members' events:
+flights, trains, hotels and other travel, advising and one-on-one meetings, faculty-only events and
+personal appointments, and anything the extractor is unsure about. The lab (Jinesis) calendar takes
+only talks (seminars, invited talks, lectures, keynotes) and events lab members attend (group
+meetings, reading groups, workshops, socials) — the lab's call, 2026-11. Only a configured sender
+may target the personal calendar —
 anyone else asking for it is held for review rather than moved onto the lab calendar, where an
 itinerary would be visible to the whole lab.
 
