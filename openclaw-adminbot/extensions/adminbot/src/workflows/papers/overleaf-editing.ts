@@ -1,7 +1,17 @@
-import type { AdminBotLabMember, AdminBotPaperRecord } from "../../contracts/actions.js";
+import type {
+  AdminBotActionProposal,
+  AdminBotLabMember,
+  AdminBotPaperRecord,
+} from "../../contracts/actions.js";
 import { adminBotOverleafHosts, adminBotOverleafProjectRef } from "../../contracts/overleaf.js";
+import {
+  auditFunding,
+  assertFundingAuditReady,
+  type FundingAudit,
+  type FundingAuditInput,
+} from "./funding-audit.js";
 
-export type AdminBotOverleafEditMode = "manual" | "affiliation_check";
+export type AdminBotOverleafEditMode = "manual" | "affiliation_check" | "funding_check";
 
 export type AdminBotOverleafAffiliationIssue = {
   author: string;
@@ -21,6 +31,7 @@ export type AdminBotOverleafEditPayload = {
   };
   requestedEdits: string;
   targetFiles: string[];
+  fundingAudit?: FundingAudit;
   affiliationPolicy?: {
     source: string;
     rules: string[];
@@ -39,6 +50,7 @@ export type BuildOverleafEditPayloadInput = {
   mode?: AdminBotOverleafEditMode;
   members: AdminBotLabMember[];
   policySource?: string;
+  fundingAudit?: FundingAuditInput;
 };
 
 const DEFAULT_TARGET_FILES = ["main.tex"];
@@ -83,6 +95,17 @@ export function buildOverleafEditPayload(
       issues: auditAffiliations(authors, input.members),
     };
   }
+  if (mode === "funding_check" || input.fundingAudit) {
+    const audit = auditFunding(input.fundingAudit);
+    if (
+      audit.input.paper.title !== title ||
+      audit.input.paper.overleafEditUrl !== overleafEditUrl ||
+      JSON.stringify(audit.input.paper.authors) !== JSON.stringify(authors)
+    ) {
+      throw new Error("Funding audit must match this exact paper and original author order.");
+    }
+    payload.fundingAudit = audit;
+  }
   return payload;
 }
 
@@ -105,6 +128,12 @@ export function assertOverleafPayloadReady(payload: AdminBotOverleafEditPayload)
   }
   if (!payload.requestedEdits.trim()) {
     throw new Error("requested Overleaf edits are required");
+  }
+  if (payload.mode === "funding_check" && !payload.fundingAudit) {
+    throw new Error("Funding check requires source-backed audit input.");
+  }
+  if (payload.fundingAudit) {
+    assertFundingAuditReady(payload.fundingAudit, payload.paper);
   }
   const blockingIssues =
     payload.affiliationPolicy?.issues.filter((issue) => issue.status !== "ok") ?? [];
@@ -182,4 +211,30 @@ function normalize(value: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
+}
+
+/** Shared creation boundary: CLI and agent proposals store server-computed findings before hashing. */
+export function prepareOverleafFundingProposal(
+  proposal: AdminBotActionProposal,
+): AdminBotActionProposal {
+  if (proposal.type !== "paper.overleaf_edit") {
+    return proposal;
+  }
+  const payload = proposal.proposed_payload as AdminBotOverleafEditPayload | undefined;
+  if (!payload || (payload.mode !== "funding_check" && !payload.fundingAudit)) {
+    return proposal;
+  }
+  const audit = auditFunding(payload.fundingAudit?.input);
+  if (
+    audit.input.paper.title !== payload.paper?.title ||
+    audit.input.paper.overleafEditUrl !== payload.paper?.overleafEditUrl ||
+    JSON.stringify(audit.input.paper.authors) !== JSON.stringify(payload.paper?.authors)
+  ) {
+    throw new Error("Funding audit must match this exact paper and original author order.");
+  }
+  return {
+    ...proposal,
+    proposed_payload: { ...payload, fundingAudit: audit },
+    target: { ...proposal.target, funding_findings: audit.findings },
+  };
 }

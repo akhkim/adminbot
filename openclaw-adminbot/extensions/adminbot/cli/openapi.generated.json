@@ -24172,6 +24172,307 @@
         }
       }
     },
+    "/papers/funding-audit": {
+      "post": {
+        "operationId": "post-papers-funding-audit",
+        "summary": "POST /papers/funding-audit",
+        "tags": [
+          "papers"
+        ],
+        "x-source": "src/api/routes/paper-admin.ts",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "paper": {
+                    "type": "object",
+                    "properties": {
+                      "title": {
+                        "type": "string"
+                      },
+                      "authors": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "overleafEditUrl": {
+                        "type": "string"
+                      },
+                      "workPeriod": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "title",
+                      "authors",
+                      "overleafEditUrl",
+                      "workPeriod"
+                    ],
+                    "additionalProperties": true
+                  },
+                  "sources": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "location": {
+                          "type": "string"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "policy",
+                            "manuscript",
+                            "author_confirmation",
+                            "usage_receipt"
+                          ]
+                        },
+                        "revision": {
+                          "type": "string"
+                        },
+                        "observedRevision": {
+                          "type": "string"
+                        },
+                        "checkedAt": {
+                          "type": "string"
+                        },
+                        "expiresAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "location",
+                        "kind",
+                        "revision",
+                        "observedRevision",
+                        "checkedAt",
+                        "expiresAt"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "rules": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "funder",
+                            "resource",
+                            "tool"
+                          ]
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "sourceId": {
+                          "type": "string"
+                        },
+                        "anyOf": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "allOf": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "author": {
+                                      "type": "string"
+                                    },
+                                    "kind": {
+                                      "type": "string",
+                                      "enum": [
+                                        "affiliation",
+                                        "topic",
+                                        "resource_used",
+                                        "tool_used"
+                                      ]
+                                    },
+                                    "key": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "key"
+                                  ],
+                                  "additionalProperties": true
+                                }
+                              }
+                            },
+                            "required": [
+                              "allOf"
+                            ],
+                            "additionalProperties": true
+                          }
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "kind",
+                        "label",
+                        "sourceId",
+                        "anyOf"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "facts": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "author": {
+                          "type": "string"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "affiliation",
+                            "topic",
+                            "resource_used",
+                            "tool_used"
+                          ]
+                        },
+                        "evidence": {
+                          "type": "string"
+                        },
+                        "key": {
+                          "type": "string"
+                        },
+                        "sourceId": {
+                          "type": "string"
+                        },
+                        "value": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "evidence",
+                        "key",
+                        "sourceId",
+                        "value"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "existingCredits": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "evidence": {
+                          "type": "string"
+                        },
+                        "sourceId": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "scope": {
+                          "type": "string",
+                          "enum": [
+                            "policy",
+                            "coauthor"
+                          ]
+                        },
+                        "text": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "scope",
+                        "text"
+                      ],
+                      "additionalProperties": true
+                    }
+                  }
+                },
+                "required": [
+                  "paper",
+                  "sources",
+                  "rules",
+                  "facts",
+                  "existingCredits"
+                ],
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FundingAudit"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/papers/import/columns": {
       "post": {
         "operationId": "post-papers-import-columns",
@@ -42332,6 +42633,336 @@
           "skipped",
           "deferred",
           "failed"
+        ],
+        "additionalProperties": true
+      },
+      "FundingAudit": {
+        "type": "object",
+        "properties": {
+          "input": {
+            "type": "object",
+            "properties": {
+              "paper": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  },
+                  "authors": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "overleafEditUrl": {
+                    "type": "string"
+                  },
+                  "workPeriod": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "title",
+                  "authors",
+                  "overleafEditUrl",
+                  "workPeriod"
+                ],
+                "additionalProperties": true
+              },
+              "sources": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "location": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "policy",
+                        "manuscript",
+                        "author_confirmation",
+                        "usage_receipt"
+                      ]
+                    },
+                    "revision": {
+                      "type": "string"
+                    },
+                    "observedRevision": {
+                      "type": "string"
+                    },
+                    "checkedAt": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "location",
+                    "kind",
+                    "revision",
+                    "observedRevision",
+                    "checkedAt",
+                    "expiresAt"
+                  ],
+                  "additionalProperties": true
+                }
+              },
+              "rules": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "funder",
+                        "resource",
+                        "tool"
+                      ]
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "sourceId": {
+                      "type": "string"
+                    },
+                    "anyOf": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "allOf": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "author": {
+                                  "type": "string"
+                                },
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "affiliation",
+                                    "topic",
+                                    "resource_used",
+                                    "tool_used"
+                                  ]
+                                },
+                                "key": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "key"
+                              ],
+                              "additionalProperties": true
+                            }
+                          }
+                        },
+                        "required": [
+                          "allOf"
+                        ],
+                        "additionalProperties": true
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "kind",
+                    "label",
+                    "sourceId",
+                    "anyOf"
+                  ],
+                  "additionalProperties": true
+                }
+              },
+              "facts": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "author": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "affiliation",
+                        "topic",
+                        "resource_used",
+                        "tool_used"
+                      ]
+                    },
+                    "evidence": {
+                      "type": "string"
+                    },
+                    "key": {
+                      "type": "string"
+                    },
+                    "sourceId": {
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "evidence",
+                    "key",
+                    "sourceId",
+                    "value"
+                  ],
+                  "additionalProperties": true
+                }
+              },
+              "existingCredits": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "evidence": {
+                      "type": "string"
+                    },
+                    "sourceId": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "scope": {
+                      "type": "string",
+                      "enum": [
+                        "policy",
+                        "coauthor"
+                      ]
+                    },
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "scope",
+                    "text"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            },
+            "required": [
+              "paper",
+              "sources",
+              "rules",
+              "facts",
+              "existingCredits"
+            ],
+            "additionalProperties": true
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FundingFinding"
+            }
+          },
+          "preservedCredits": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "evidence": {
+                  "type": "string"
+                },
+                "sourceId": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "scope": {
+                  "type": "string",
+                  "enum": [
+                    "policy",
+                    "coauthor"
+                  ]
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "scope",
+                "text"
+              ],
+              "additionalProperties": true
+            }
+          }
+        },
+        "required": [
+          "input",
+          "findings",
+          "preservedCredits"
+        ],
+        "additionalProperties": true
+      },
+      "FundingFinding": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "funder",
+              "resource",
+              "tool"
+            ]
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "unknown",
+              "include",
+              "exclude"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "sourceId": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "kind",
+          "decision",
+          "reason",
+          "sourceId",
+          "evidence"
         ],
         "additionalProperties": true
       },

@@ -1,3 +1,4 @@
+import { prepareOverleafFundingProposal } from "../workflows/papers/overleaf-editing.js";
 import { beginCollaboratorChatExecution } from "./service.collaborator-chats.js";
 import type { createCollaboratorChatRequestStore } from "../persistence/collaborator-chat-requests.js";
 import { createHash, randomUUID } from "node:crypto";
@@ -1916,7 +1917,13 @@ export class AdminBotService {
         return { ok: true, status: 200, payload: outstanding };
       }
     }
-    const stored = this.prepareProposal(proposal);
+    let auditedProposal: AdminBotActionProposal;
+    try {
+      auditedProposal = prepareOverleafFundingProposal(proposal);
+    } catch (error) {
+      return serviceError(400, error instanceof Error ? error.message : "Invalid funding audit");
+    }
+    const stored = this.prepareProposal(auditedProposal);
     this.store.saveProposal(stored);
     this.auditProposalCreation(stored);
     return { ok: true, status: 200, payload: stored };

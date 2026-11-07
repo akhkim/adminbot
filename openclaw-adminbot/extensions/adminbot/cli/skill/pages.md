@@ -383,6 +383,7 @@ Website: `/papers, /announcements, /grant-report, /professor, /arr-eligible-revi
 | `post-papers-conference-rosters-by-conference-rosters-id-channel-invites` | POST `/papers/conference-rosters/{conference_rosters_id}/channel-invites` |
 | `post-papers-conference-rosters-by-conference-rosters-id-intros`          | POST `/papers/conference-rosters/{conference_rosters_id}/intros`          |
 | `post-papers-evidence-verify-run`                                         | POST `/papers/evidence/verify/run`                                        |
+| `post-papers-funding-audit`                                               | POST `/papers/funding-audit`                                              |
 | `post-papers-import-columns`                                              | POST `/papers/import/columns`                                             |
 | `post-papers-linkedin-draft`                                              | POST `/papers/linkedin-draft`                                             |
 | `post-papers-openreview-sync-run`                                         | POST `/papers/openreview-sync/run` (dry-run)                              |

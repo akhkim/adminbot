@@ -3859,6 +3859,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/papers/funding-audit": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** POST /papers/funding-audit */
+    post: operations["post-papers-funding-audit"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/papers/import/columns": {
     parameters: {
       query?: never;
@@ -8807,6 +8824,100 @@ export interface components {
       skipped: number;
       deferred: number;
       failed: number;
+    } & {
+      [key: string]: unknown;
+    };
+    FundingAudit: {
+      input: {
+        paper: {
+          title: string;
+          authors: string[];
+          overleafEditUrl: string;
+          workPeriod: string;
+        } & {
+          [key: string]: unknown;
+        };
+        sources: ({
+          id: string;
+          location: string;
+          /** @enum {string} */
+          kind: "policy" | "manuscript" | "author_confirmation" | "usage_receipt";
+          revision: string;
+          observedRevision: string;
+          checkedAt: string;
+          expiresAt: string;
+        } & {
+          [key: string]: unknown;
+        })[];
+        rules: ({
+          id: string;
+          /** @enum {string} */
+          kind: "funder" | "resource" | "tool";
+          label: string;
+          sourceId: string;
+          anyOf: ({
+            allOf: ({
+              author?: string;
+              /** @enum {string} */
+              kind: "affiliation" | "topic" | "resource_used" | "tool_used";
+              key: string;
+            } & {
+              [key: string]: unknown;
+            })[];
+          } & {
+            [key: string]: unknown;
+          })[];
+        } & {
+          [key: string]: unknown;
+        })[];
+        facts: ({
+          author?: string;
+          /** @enum {string} */
+          kind: "affiliation" | "topic" | "resource_used" | "tool_used";
+          evidence: string;
+          key: string;
+          sourceId: string;
+          value: boolean;
+        } & {
+          [key: string]: unknown;
+        })[];
+        existingCredits: ({
+          evidence?: string;
+          sourceId?: string;
+          id: string;
+          /** @enum {string} */
+          scope: "policy" | "coauthor";
+          text: string;
+        } & {
+          [key: string]: unknown;
+        })[];
+      } & {
+        [key: string]: unknown;
+      };
+      findings: components["schemas"]["FundingFinding"][];
+      preservedCredits: ({
+        evidence?: string;
+        sourceId?: string;
+        id: string;
+        /** @enum {string} */
+        scope: "policy" | "coauthor";
+        text: string;
+      } & {
+        [key: string]: unknown;
+      })[];
+    } & {
+      [key: string]: unknown;
+    };
+    FundingFinding: {
+      id: string;
+      label: string;
+      /** @enum {string} */
+      kind: "funder" | "resource" | "tool";
+      /** @enum {string} */
+      decision: "unknown" | "include" | "exclude";
+      reason: string;
+      sourceId: string;
+      evidence: string[];
     } & {
       [key: string]: unknown;
     };
@@ -24357,6 +24468,123 @@ export interface operations {
               [key: string]: unknown;
             })[];
             checked: number;
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "post-papers-funding-audit": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          paper: {
+            title: string;
+            authors: string[];
+            overleafEditUrl: string;
+            workPeriod: string;
+          } & {
+            [key: string]: unknown;
+          };
+          sources: ({
+            id: string;
+            location: string;
+            /** @enum {string} */
+            kind: "policy" | "manuscript" | "author_confirmation" | "usage_receipt";
+            revision: string;
+            observedRevision: string;
+            checkedAt: string;
+            expiresAt: string;
+          } & {
+            [key: string]: unknown;
+          })[];
+          rules: ({
+            id: string;
+            /** @enum {string} */
+            kind: "funder" | "resource" | "tool";
+            label: string;
+            sourceId: string;
+            anyOf: ({
+              allOf: ({
+                author?: string;
+                /** @enum {string} */
+                kind: "affiliation" | "topic" | "resource_used" | "tool_used";
+                key: string;
+              } & {
+                [key: string]: unknown;
+              })[];
+            } & {
+              [key: string]: unknown;
+            })[];
+          } & {
+            [key: string]: unknown;
+          })[];
+          facts: ({
+            author?: string;
+            /** @enum {string} */
+            kind: "affiliation" | "topic" | "resource_used" | "tool_used";
+            evidence: string;
+            key: string;
+            sourceId: string;
+            value: boolean;
+          } & {
+            [key: string]: unknown;
+          })[];
+          existingCredits: ({
+            evidence?: string;
+            sourceId?: string;
+            id: string;
+            /** @enum {string} */
+            scope: "policy" | "coauthor";
+            text: string;
+          } & {
+            [key: string]: unknown;
+          })[];
+        } & {
+          [key: string]: unknown;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["FundingAudit"];
+        };
+      };
+      /** @description Server response */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
           } & {
             [key: string]: unknown;
           };
