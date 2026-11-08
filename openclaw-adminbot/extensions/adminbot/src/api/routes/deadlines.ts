@@ -52,12 +52,11 @@ export const deadlinesRoutes: readonly Route[] = [
         const idempotencyKey = String(req.headers["idempotency-key"] ?? "").trim();
         sendServiceResult(
           res,
-          service.submitDeadlineProposal(
+          await service.submitMemberDeadlineProposal(
             deadlineProposalInput(body),
             principal.member.id,
             idempotencyKey,
             DEADLINE_VENUES,
-            undefined,
             asString(body.targetDeadlineId) || undefined,
           ),
         );

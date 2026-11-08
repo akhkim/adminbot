@@ -1542,16 +1542,18 @@ class AdminbotDeadlinesView extends LitElement {
     this.proposalFailure = "";
     this.requestUpdate();
     try {
+      let published = false;
       if (this.editingProposalId) {
         await this.proposalStore.revise(this.editingProposalId, validation.value);
       } else {
         this.proposalSubmissionKey ||= crypto.randomUUID();
         if (this.memberId && this.accessRole !== "anonymous") {
-          await this.proposalStore.submit(
+          const result = await this.proposalStore.submit(
             validation.value,
             this.proposalSubmissionKey,
             this.correctionTarget?.id,
           );
+          published = result.status === "published";
         } else {
           await this.proposalStore.submitPublic(validation.value, this.proposalSubmissionKey, {
             name: String(data.get("submitterName") ?? ""),
@@ -1561,14 +1563,14 @@ class AdminbotDeadlinesView extends LitElement {
       }
       form.reset();
       this.proposalFormOpen = false;
-      this.proposalNotice = this.editingProposalId
-        ? "A revised deadline is ready for administrator approval."
-        : "Proposal submitted for administrator review. It is not public until approved." +
-          // Members are told to "add members" to a new deadline, but recommendations need a
-          // published deadline to point at, so the button cannot appear on the form itself.
-          (this.memberId && this.accessRole !== "anonymous" && !this.correctionTarget
-            ? " Once it is published, open it on the board and choose Recommend to let lab members know."
-            : "");
+      this.proposalNotice = published
+        ? "Deadline published. Open it on the board and choose Recommend to let lab members know."
+        : this.editingProposalId
+          ? "A revised deadline is ready for administrator approval."
+          : "Proposal submitted for administrator review. It is not public until approved.";
+      if (published) {
+        await this.loadPublishedDeadlines();
+      }
       this.editingProposalId = "";
       this.proposalSubmissionKey = "";
       this.clearProposalDraft();
@@ -1669,6 +1671,11 @@ class AdminbotDeadlinesView extends LitElement {
           (stage) => stage.kind !== "period" && stage.milestone !== "notification_by",
         )
       : [];
+    const publishesImmediately =
+      Boolean(this.memberId) &&
+      this.accessRole !== "anonymous" &&
+      !editing &&
+      !this.correctionTarget;
     const parentConferences = parentConferenceOptions(this.venues);
     const parentConference = value?.parentConference ?? "";
     const deadlineDate = this.proposalDraftDate ?? value?.deadlineDate ?? "";
@@ -1693,7 +1700,9 @@ class AdminbotDeadlinesView extends LitElement {
           </button>
         </div>
         <p class="deadline-proposal__helper">
-          Proposals remain private until an administrator approves and publishes them.
+          ${publishesImmediately
+            ? "Your deadline will be published immediately."
+            : "Proposals remain private until an administrator approves and publishes them."}
         </p>
         <form class="deadline-proposal__form" @submit=${this.submitProposal}>
           ${!this.memberId || this.accessRole === "anonymous"
@@ -1936,7 +1945,9 @@ class AdminbotDeadlinesView extends LitElement {
                   : "Submitting…"
                 : editing
                   ? "Save revision for review"
-                  : "Submit for review"}
+                  : publishesImmediately
+                    ? "Add deadline"
+                    : "Submit for review"}
             </button>
           </div>
         </form>

@@ -30,6 +30,144 @@ function unwrap<T>(
   return result.payload;
 }
 
+describe("member deadline publication", () => {
+  it.each([undefined, "another-venue"])(
+    "rejects mixed targets with stage venue %s",
+    async (venueId) => {
+      const store = new AdminBotMemoryStore();
+      const service = new AdminBotService(store);
+      unwrap(
+        service.upsertLabMember({ id: "member-1", name: "Test Member", privilege_level: "member" }),
+      );
+      const original = unwrap(
+        await service.submitMemberDeadlineProposal(input(), "member-1", "original"),
+      );
+      const before = service.deadlineReadModel([]);
+
+      const result = await service.submitMemberDeadlineProposal(
+        input({
+          deadlineDate: "2027-02-01",
+          stage: {
+            operation: "add",
+            milestone: "abstract",
+            label: "Abstract registration",
+            ...(venueId ? { venueId } : {}),
+          },
+        }),
+        "member-1",
+        "mixed-targets",
+        [],
+        original.deadline_id,
+      );
+
+      expect(result).toMatchObject({
+        ok: false,
+        status: 400,
+        error: { message: "Stage and venue targets do not match." },
+      });
+      expect(service.deadlineReadModel([])).toEqual(before);
+      expect(store.listPublishedDeadlines()).toHaveLength(1);
+      expect(unwrap(service.listDeadlineProposals()).proposals).toHaveLength(1);
+    },
+  );
+
+  it.each(["member", "admin"] as const)("publishes and audits a %s addition once", async (role) => {
+    const store = new AdminBotMemoryStore();
+    const service = new AdminBotService(store);
+    unwrap(service.upsertLabMember({ id: "member-1", name: "Test Member", privilege_level: role }));
+    const results = await Promise.all([
+      service.submitMemberDeadlineProposal(input(), "member-1", "new-deadline"),
+      service.submitMemberDeadlineProposal(input(), "member-1", "new-deadline"),
+    ]);
+    const published = unwrap(results[0]);
+    expect(published.status).toBe("published");
+    expect(unwrap(results[1]).id).toBe(published.id);
+    expect(store.listPublishedDeadlines()).toMatchObject([
+      { published_by_member_id: "member-1", deadline: input() },
+    ]);
+    expect(store.listPublishedDeadlines()).toHaveLength(1);
+    expect(
+      service.listAuditEvents().filter((event) => event.type === "deadline_proposal.published"),
+    ).toMatchObject([{ actor: "member-1" }]);
+    expect(service.listAuditEvents().some((event) => event.type === "proposal.auto_approved")).toBe(
+      true,
+    );
+
+    const revision = unwrap(
+      service.reviseDeadlineProposal(published.id, input({ note: "Review this" }), "admin-1"),
+    );
+    expect(revision.status).toBe("pending");
+    await service.submitMemberDeadlineProposal(input(), "member-1", "new-deadline");
+    expect(unwrap(service.listDeadlineProposals()).proposals[0].status).toBe("pending");
+    expect(store.listPublishedDeadlines()).toHaveLength(1);
+
+    const correction = unwrap(
+      await service.submitMemberDeadlineProposal(
+        input({ deadlineDate: "2026-10-10" }),
+        "member-1",
+        "correction",
+        [],
+        published.deadline_id,
+      ),
+    );
+    expect(correction.status).toBe("pending");
+    const stage = unwrap(
+      await service.submitMemberDeadlineProposal(
+        input({
+          stage: {
+            operation: "add",
+            milestone: "abstract",
+            label: "Abstract registration",
+            venueId: published.deadline_id,
+          },
+        }),
+        "member-1",
+        "new-stage",
+      ),
+    );
+    expect(stage.status).toBe("published");
+    expect(service.deadlineReadModel([])[0]).toMatchObject({
+      schedule: expect.arrayContaining([expect.objectContaining({ milestone: "abstract" })]),
+    });
+  });
+
+  it("keeps visitors, tools and old submissions moderated and rejects invalid member submissions", async () => {
+    const store = new AdminBotMemoryStore();
+    const service = new AdminBotService(store);
+    unwrap(
+      service.upsertLabMember({ id: "member-1", name: "Test Member", privilege_level: "member" }),
+    );
+    for (const id of ["missing-member", "visitor:deadline:test"]) {
+      expect(await service.submitMemberDeadlineProposal(input(), id, "no-auth")).toMatchObject({
+        ok: false,
+        status: 401,
+      });
+    }
+    expect(
+      await service.submitMemberDeadlineProposal(
+        input({ homepageUrl: "invalid" }),
+        "member-1",
+        "invalid",
+      ),
+    ).toMatchObject({ ok: false, status: 400 });
+    const old = unwrap(service.submitDeadlineProposal(input(), "member-1", "old"));
+    expect(
+      unwrap(await service.submitMemberDeadlineProposal(input(), "member-1", "old")).status,
+    ).toBe("pending");
+    const visitor = unwrap(
+      service.submitDeadlineProposal(input(), "visitor:deadline:test", "visitor"),
+    );
+    expect(visitor.status).toBe("pending");
+    for (const proposal of [old, visitor]) {
+      expect(await service.execute(proposal.action_id, { dry_run: false })).toMatchObject({
+        ok: false,
+        status: 409,
+      });
+    }
+    expect(store.listPublishedDeadlines()).toEqual([]);
+  });
+});
+
 describe("deadline read model", () => {
   const compiled = [
     {

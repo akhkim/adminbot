@@ -2459,6 +2459,41 @@ export class AdminBotService {
     );
   }
 
+  /** Only the authenticated member route uses this path; visitors and tools still need review. */
+  async submitMemberDeadlineProposal(
+    input: DeadlineProposalInput,
+    memberId: string,
+    idempotencyKey: string,
+    existingDeadlines: readonly unknown[] = [],
+    targetDeadlineId?: string,
+  ): Promise<AdminBotServiceResponse<DeadlineProposalView>> {
+    const submitted = this.submitDeadlineProposal(
+      input,
+      memberId,
+      idempotencyKey,
+      existingDeadlines,
+      undefined,
+      targetDeadlineId,
+      true,
+    );
+    // Pending corrections, old moderated submissions, and completed retries stay as they are.
+    if (!submitted.ok || submitted.payload.status !== "approved") {
+      return submitted;
+    }
+    const actionId = submitted.payload.action_id;
+    const executed = await this.execute(actionId, {
+      dry_run: false,
+      idempotency_key: `deadline-publication:${actionId}`,
+    });
+    if (!executed.ok) {
+      return executed;
+    }
+    return {
+      ...submitted,
+      payload: this.deadlineProposalViewForAction(this.store.getProposal(actionId)!)!,
+    };
+  }
+
   submitDeadlineProposal(
     input: DeadlineProposalInput,
     submitterMemberId: string,
@@ -2466,10 +2501,17 @@ export class AdminBotService {
     existingDeadlines: readonly unknown[] = [],
     submitterContact?: DeadlineSubmitterContact,
     targetDeadlineId?: string,
+    authenticatedMember = false,
   ): AdminBotServiceResponse<DeadlineProposalView> {
     const memberId = submitterMemberId.trim();
     const key = idempotencyKey.trim();
     if (!memberId) {
+      return serviceError(401, "member session required");
+    }
+    if (
+      authenticatedMember &&
+      (!this.store.getLabMember(memberId) || memberId.startsWith("visitor:deadline:"))
+    ) {
       return serviceError(401, "member session required");
     }
     if (!key || key.length > 200) {
@@ -2493,10 +2535,8 @@ export class AdminBotService {
       }
     }
     const stage = validation.value.stage;
-    if (stage?.venueId) {
-      if (targetDeadlineId && targetDeadlineId !== stage.venueId) {
-        return serviceError(400, "Stage and venue targets do not match.");
-      }
+    if (stage && targetDeadlineId && targetDeadlineId !== stage.venueId) {
+      return serviceError(400, "Stage and venue targets do not match.");
     }
     const targetId = stage?.venueId ?? targetDeadlineId;
     const proposalId = `dlp_${randomUUID()}`;
@@ -2532,6 +2572,15 @@ export class AdminBotService {
       createdByMemberId: memberId,
       idempotencyKey: `deadline-submit:${memberId}:${key}`,
     });
+    // Adding deadlines is trusted for signed-in members. Changing an existing date still needs review.
+    if (authenticatedMember && (!targetId || stage?.operation === "add")) {
+      action.status = "approved";
+      action.approval_requirement = {
+        requires_approval: false,
+        approver_roles: [],
+        min_approvals: 0,
+      };
+    }
     const saved = this.store.saveDeadlineProposalSubmission(action, memberId, key);
     if (saved.created) {
       this.auditProposalCreation(saved.proposal);
@@ -2753,7 +2802,7 @@ export class AdminBotService {
           : []),
       ],
       proposed_payload: payload,
-      rationale: "Publish a submitted deadline after administrator review.",
+      rationale: "Publish a submitted deadline.",
       undo_plan: "Publish a corrected revision; prior revisions remain in the audit history.",
       ...(params.idempotencyKey ? { idempotency_key: params.idempotencyKey } : {}),
     });
@@ -3075,7 +3124,11 @@ export class AdminBotService {
       if (!publication) {
         return this.executionFailure(proposal, 400, "deadline publication payload is invalid");
       }
-      const publishedBy = proposal.approvals.at(-1)?.approver_id;
+      const publishedBy =
+        proposal.approvals.at(-1)?.approver_id ??
+        (!proposal.approval_requirement.requires_approval
+          ? this.store.getLabMember(publication.submitter_member_id)?.id
+          : undefined);
       if (!publishedBy) {
         return this.executionFailure(proposal, 409, "deadline publication has no named approver");
       }
