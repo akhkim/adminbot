@@ -789,10 +789,17 @@ describe("renderDeadlines", () => {
     expect(list).toHaveBeenCalledTimes(1);
   });
 
-  it("lets a signed-in member submit a pending server-backed proposal", async () => {
+  it("publishes a signed-in member addition and refreshes the board", async () => {
     const container = document.createElement("div");
     document.body.append(container);
     const store = new TestProposalStore();
+    const originalSubmit = store.submit.bind(store);
+    vi.spyOn(store, "submit").mockImplementation(async (input, key) => {
+      const proposal = await originalSubmit(input, key);
+      proposal.status = "published";
+      return proposal;
+    });
+    const reload = vi.spyOn(store, "listPublished");
     render(
       renderDeadlines({ role: "member", memberId: "member-1", proposalStore: store }),
       container,
@@ -802,7 +809,8 @@ describe("renderDeadlines", () => {
     buttonNamed(container, "Propose a new deadline").click();
     await settle(container);
     expect(container.querySelector('[data-testid="deadline-review-proposals"]')).toBeNull();
-    expect(container.textContent).toContain("remain private until an administrator");
+    expect(container.textContent).toContain("Your deadline will be published immediately.");
+    expect(buttonNamed(container, "Add deadline")).toBeDefined();
     expect(
       container.querySelector<HTMLDialogElement>('[data-testid="deadline-proposal-drawer"]')?.open,
     ).toBe(true);
@@ -844,14 +852,13 @@ describe("renderDeadlines", () => {
 
     expect(store.proposals).toHaveLength(1);
     expect(store.proposals[0]).toMatchObject({
-      status: "pending",
+      status: "published",
       submitter_member_id: "member-1",
       deadline: { name: "Example Workshop", parentConference: "New Conference" },
     });
-    expect(container.textContent).toContain("It is not public until approved.");
-    expect(container.textContent).toContain(
-      "Once it is published, open it on the board and choose Recommend to let lab members know.",
-    );
+    expect(container.textContent).toContain("Deadline published.");
+    expect(container.textContent).not.toContain("It is not public until approved.");
+    expect(reload).toHaveBeenCalledTimes(2);
     expect(container.querySelector('[data-testid="deadline-proposal-form-panel"]')).toBeNull();
     expect(
       container.querySelector<HTMLDialogElement>('[data-testid="deadline-proposal-drawer"]')?.open,

@@ -91,7 +91,7 @@ async function createSession(
 }
 
 describe("deadline proposal API", () => {
-  it("enforces member submission and administrator review, then publishes publicly", async () => {
+  it("publishes member additions immediately and keeps administrator revisions moderated", async () => {
     const { mock, baseUrl } = await startService();
     try {
       const memberToken = await createSession(mock, "member-one", "member");
@@ -122,10 +122,28 @@ describe("deadline proposal API", () => {
       });
       expect(submittedResponse.status).toBe(201);
       const submitted = (await submittedResponse.json()) as DeadlineProposalView;
-      expect(submitted.status).toBe("pending");
+      expect(submitted.status).toBe("published");
       expect(submitted).toMatchObject({
         submitter_name: "member-one",
         submitter_email: "member-one@cs.toronto.edu",
+      });
+
+      const immediateBoard = await (await fetch(`${baseUrl}/deadlines`)).json();
+      expect(immediateBoard.items).toContainEqual(expect.objectContaining({ name: input().name }));
+      const retry = await fetch(`${baseUrl}/deadline-proposals`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${memberToken}`,
+          "Content-Type": "application/json",
+          "Idempotency-Key": "api-submit-1",
+        },
+        body: JSON.stringify({ ...input(), name: "Retry must not replace the deadline" }),
+      });
+      expect(retry.status).toBe(200);
+      await expect(retry.json()).resolves.toMatchObject({
+        id: submitted.id,
+        status: "published",
+        deadline: input(),
       });
 
       const otherSubmittedResponse = await fetch(`${baseUrl}/deadline-proposals`, {
@@ -225,16 +243,15 @@ describe("deadline proposal API", () => {
         }),
       );
 
-      const rejectedSubmission = await fetch(`${baseUrl}/deadline-proposals`, {
+      const rejected = otherSubmitted;
+      await fetch(`${baseUrl}/deadline-proposals/${encodeURIComponent(rejected.id)}/revisions`, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${memberToken}`,
+          Authorization: `Bearer ${adminToken}`,
           "Content-Type": "application/json",
-          "Idempotency-Key": "api-submit-2",
         },
-        body: JSON.stringify({ ...input(), name: "Rejected Workshop" }),
+        body: JSON.stringify({ ...input(), name: "Rejected revision" }),
       });
-      const rejected = (await rejectedSubmission.json()) as DeadlineProposalView;
       const rejection = await fetch(
         `${baseUrl}/deadline-proposals/${encodeURIComponent(rejected.id)}/reject`,
         {
@@ -308,6 +325,8 @@ describe("public deadline proposals", () => {
           body: JSON.stringify({
             ...body,
             submitter_member_id: "admin-one",
+            authenticatedMember: true,
+            approval_requirement: { requires_approval: false },
             submitter_contact: { name: "  Taylor Visitor  ", email: " taylor@example.org " },
           }),
         });
