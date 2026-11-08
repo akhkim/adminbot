@@ -4389,7 +4389,8 @@ describe("the member location timeline", () => {
     await memberToken(baseUrl, "ada", "Ada Attendee", "member", { location: "Toronto" });
     const member = await memberToken(baseUrl, "bo", "Bo Other");
     const admin = await memberToken(baseUrl, "root", "Root Admin", "admin");
-    observeLogin(baseUrl, "ada", "Germany", "2026-08-10T09:00:00.000Z");
+    // Keep both observations within the rolling 90-day lookup window.
+    observeLogin(baseUrl, "ada", "Germany", new Date(Date.now() - 7 * 86_400_000).toISOString());
     observeLogin(baseUrl, "ada", "Germany", new Date().toISOString());
 
     expect(
