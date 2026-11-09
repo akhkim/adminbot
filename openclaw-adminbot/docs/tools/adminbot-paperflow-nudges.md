@@ -46,6 +46,28 @@ speaks, so an earlier venue's reviews do not close the resubmission's stages. Th
 lists what it closed under `stages_closed`, and a dry run lists what it would close. The paper
 card labels such a rung "Seen on OpenReview" and shows the forum id.
 
+## What the head professor hears from OpenReview
+
+The same pass also tells the head professor what OpenReview newly says about the lab's papers. It
+writes one AdminBot notification per pass (linked to My Desk; nothing goes to Slack or email),
+listing each paper with its new lines:
+
+| Line                                    | When                                                                                                                             |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| "Reviews are out."                      | The pass closed `reviews_out` for a paper still under review                                                                     |
+| "Rejected" / "Desk rejected"            | The pass closed `decision` on a rejection (an acceptance has its own camera-ready notice)                                        |
+| "_Form_ due _date_"                     | An author form on the forum (rebuttal, revision, camera-ready, checklist, ...) is open, not yet answered, and due within 45 days |
+| "Reviewers or chairs have posted N ..." | A comment signed by a reviewer, area chair, action editor or program chair, posted in the last 7 days                            |
+
+The author-results snapshot reads every invitation on each recent accepted or under-review forum
+and keeps only author deadlines: forms the paper's `Authors` group is invited to that carry a due
+date. Withdrawal, deletion and comment forms (always open, no deadline) and committee-side forms
+are dropped, and so are deadlines more than 45 days out, which on OpenReview are usually a venue's
+typo. A venue with one rebuttal form per review reports them as one line with "_k_ of _n_
+answered". Each line is said once (the say-once ledger, under `openreview|<paper>|...`), so a
+moved deadline or a new comment is news again and an unchanged one is not. The sync report lists
+the lines under `updates`, and a dry run lists what it would say without writing anything.
+
 ## Who gets the email
 
 The **first full member in the author list**, walking the authors in order:

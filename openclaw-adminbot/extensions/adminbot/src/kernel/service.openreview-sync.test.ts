@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ADMINBOT_LAB_OVERLEAF_HOST } from "../contracts/overleaf.js";
 import type { OpenReviewEvidence } from "../workflows/papers/openreview-paper-sync.js";
-import { AdminBotService } from "./service.js";
+import { AdminBotMemoryStore, AdminBotService } from "./service.js";
 
 function unwrap<T>(
   result: { ok: true; payload: T } | { ok: false; error: { message: string } },
@@ -29,8 +29,8 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-function lab() {
-  const service = new AdminBotService();
+function lab(store = new AdminBotMemoryStore()) {
+  const service = new AdminBotService(store);
   unwrap(
     service.upsertLabMember({
       id: "ada",
@@ -261,5 +261,86 @@ describe("syncing papers from OpenReview", () => {
       }),
     );
     expect(report).toMatchObject({ matched: 0, unmatched_submissions: 1 });
+  });
+
+  it("tells the head professor once, in one notice, what OpenReview newly says", () => {
+    const store = new AdminBotMemoryStore();
+    const service = lab(store);
+    writeUp(service);
+    const live: OpenReviewEvidence = {
+      ...submitted,
+      stages: { reviews_out: "2026-10-23T09:00:00+00:00" },
+      author_tasks: [
+        {
+          kind: "rebuttal",
+          name: "Rebuttal",
+          due: "2026-10-30T11:59:00+00:00",
+          open: true,
+          forms: 3,
+          done: 1,
+        },
+        // Already met, closed, or a venue's far-off date: none of these is news.
+        {
+          kind: "revision",
+          name: "Rebuttal Revision",
+          due: "2026-10-31T11:59:00+00:00",
+          open: true,
+          forms: 1,
+          done: 1,
+        },
+        {
+          kind: "form",
+          name: "Responsible NLP Checklist",
+          due: "2026-10-20T11:59:00+00:00",
+          open: false,
+          forms: 1,
+          done: 0,
+        },
+        {
+          kind: "camera_ready",
+          name: "Camera Ready",
+          due: "2027-07-10T11:59:00+00:00",
+          open: true,
+          forms: 1,
+          done: 0,
+        },
+      ],
+      discussion: { comments: 2, last_at: "2026-10-24T06:00:00+00:00" },
+    };
+    const preview = unwrap(
+      service.syncPapersFromOpenReview({ evidence: [live], dryRun: true, nowIso: NOW }),
+    );
+    expect(preview.updates.map((update) => update.line)).toEqual([
+      "Reviews are out.",
+      "Rebuttal due 2026-10-30 11:59 UTC; 1 of 3 answered.",
+      "Reviewers or chairs have posted 2 comments; the latest on 2026-10-24 06:00 UTC.",
+    ]);
+    expect(store.listMemberNotifications("zhijing")).toEqual([]);
+
+    unwrap(service.syncPapersFromOpenReview({ evidence: [live], dryRun: false, nowIso: NOW }));
+    const [notice, ...others] = store.listMemberNotifications("zhijing");
+    expect(others).toEqual([]);
+    expect(notice).toMatchObject({ kind: "paper_slot", tab: "adminbotProfessor" });
+    expect(notice.title).toBe("OpenReview: news on 1 paper");
+    expect(notice.body).toContain('"Causal Garden Planning" (ARR October 2026)');
+    expect(notice.body).toContain("- Rebuttal due 2026-10-30 11:59 UTC; 1 of 3 answered.");
+    expect(store.listMemberNotifications("ada")).toEqual([]);
+
+    // The same snapshot again says nothing; a new comment is the only news on the pass after.
+    const again = unwrap(
+      service.syncPapersFromOpenReview({ evidence: [live], dryRun: false, nowIso: NOW }),
+    );
+    expect(again.updates).toEqual([]);
+    const later = unwrap(
+      service.syncPapersFromOpenReview({
+        evidence: [{ ...live, discussion: { comments: 3, last_at: "2026-10-24T08:00:00+00:00" } }],
+        dryRun: false,
+        nowIso: NOW,
+      }),
+    );
+    expect(later.updates.map((update) => update.line)).toEqual([
+      "Reviewers or chairs have posted 3 comments; the latest on 2026-10-24 08:00 UTC.",
+    ]);
+    expect(store.listMemberNotifications("zhijing")).toHaveLength(2);
   });
 });

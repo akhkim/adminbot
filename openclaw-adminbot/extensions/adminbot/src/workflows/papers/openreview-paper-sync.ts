@@ -47,6 +47,27 @@ export type OpenReviewEvidenceSource = "author_results" | "citation_checks";
 export const openReviewProvableStages = ["reviews_out", "rebuttal", "decision"] as const;
 export type OpenReviewProvableStage = (typeof openReviewProvableStages)[number];
 
+/** What an author deadline on the forum is for, as the bridge classifies its form. */
+export const openReviewTaskKinds = ["rebuttal", "revision", "camera_ready", "form"] as const;
+export type OpenReviewTaskKind = (typeof openReviewTaskKinds)[number];
+
+/**
+ * One author deadline open (or just closed) on the submission's forum: a form the paper's Authors
+ * group is invited to, with a due date. A venue that opens one rebuttal per review reports them
+ * as one task, `forms` of them, `done` answered.
+ */
+export type OpenReviewAuthorTask = {
+  kind: OpenReviewTaskKind;
+  /** The form's own name, as the venue calls it ("Rebuttal", "Responsible NLP Checklist"). */
+  name: string;
+  due: string;
+  /** When OpenReview stops taking it, often days after `due`. */
+  closes?: string;
+  open: boolean;
+  forms: number;
+  done: number;
+};
+
 export type OpenReviewEvidence = {
   source: OpenReviewEvidenceSource;
   status: OpenReviewOutcome;
@@ -75,6 +96,10 @@ export type OpenReviewEvidence = {
    * means nothing proves the stage yet, never that the stage was skipped.
    */
   stages?: Partial<Record<OpenReviewProvableStage, string>>;
+  /** Author deadlines on the forum, earliest first. Read for notices only, never fingerprinted. */
+  author_tasks?: OpenReviewAuthorTask[];
+  /** Comments reviewers and chairs have posted on the forum: how many, and the latest's date. */
+  discussion?: { comments: number; last_at?: string };
 };
 
 const OUTCOMES = new Set<OpenReviewOutcome>([
@@ -196,6 +221,46 @@ function stagesOf(value: unknown): OpenReviewEvidence["stages"] {
   return Object.keys(stages).length ? stages : undefined;
 }
 
+function countOf(value: unknown): number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : 0;
+}
+
+const TASK_KINDS = new Set<string>(openReviewTaskKinds);
+
+function authorTasksOf(value: unknown): OpenReviewAuthorTask[] | undefined {
+  const tasks = (Array.isArray(value) ? value : []).flatMap((raw): OpenReviewAuthorTask[] => {
+    const task = asRecord(raw);
+    const kind = asText(task.kind);
+    const due = asText(task.due);
+    if (!TASK_KINDS.has(kind) || !due || !Number.isFinite(Date.parse(due))) {
+      return [];
+    }
+    const closes = asText(task.closes);
+    return [
+      {
+        kind: kind as OpenReviewTaskKind,
+        name: asText(task.name) || kind.replace("_", " "),
+        due,
+        ...(closes && Number.isFinite(Date.parse(closes)) ? { closes } : {}),
+        open: task.open === true,
+        forms: Math.max(1, countOf(task.forms)),
+        done: countOf(task.done),
+      },
+    ];
+  });
+  return tasks.length ? tasks : undefined;
+}
+
+function discussionOf(value: unknown): OpenReviewEvidence["discussion"] {
+  const raw = asRecord(value);
+  const comments = countOf(raw.comments);
+  if (!comments) {
+    return undefined;
+  }
+  const lastAt = asText(raw.last_at);
+  return { comments, ...(lastAt ? { last_at: lastAt } : {}) };
+}
+
 function compact(evidence: OpenReviewEvidence): OpenReviewEvidence {
   return Object.fromEntries(
     Object.entries(evidence).filter(([, value]) => value !== undefined && value !== ""),
@@ -233,6 +298,8 @@ export function evidenceFromAuthorResults(snapshot: unknown): OpenReviewEvidence
         observed_at: fetchedAt,
         reference: asText(entry.id) || undefined,
         stages: stagesOf(entry.stages),
+        author_tasks: authorTasksOf(entry.author_tasks),
+        discussion: discussionOf(entry.discussion),
       }),
     ];
   });

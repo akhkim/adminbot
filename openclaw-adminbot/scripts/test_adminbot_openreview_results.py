@@ -166,6 +166,70 @@ class AuthorResultsTests(unittest.TestCase):
         for name in ("Revision", "Official_Comment", "Withdrawal", None):
             self.assertFalse(bridge.is_camera_ready(f"x/Submission1/-/{name}" if name else None), name)
 
+    def test_task_kinds(self):
+        cases = {
+            "Rebuttal": "rebuttal", "Author_Response": "rebuttal", "Author_Final_Response": "rebuttal",
+            "Rebuttal_Revision": "revision", "Author_Revision": "revision", "Camera-Ready_Revision": "camera_ready",
+            "Final_Revision": "camera_ready", "Responsible_NLP_Checklist": "form", "Full_Submission": "form",
+            "Withdrawal": None, "Deletion": None, "Official_Comment": None, "Author_AC_Confidential_Comment": None,
+            "Review_Issue_Report": None, "Desk_Rejection": None, "PC_Revision": None, "Official_Review": None,
+            "Decision": None, "Article_Endorsement": None,
+        }
+        for name, kind in cases.items():
+            self.assertEqual(bridge.task_kind(f"V/Submission1/-/{name}"), kind, name)
+
+    def test_author_tasks_keep_only_dated_author_forms(self):
+        now = bridge.datetime.datetime(2026, 11, 10, tzinfo=bridge.datetime.timezone.utc)
+        ms = lambda day: int(bridge.datetime.datetime(2026, 11, day, tzinfo=bridge.datetime.timezone.utc).timestamp() * 1000)
+        authors = ["V", "V/Submission1/Authors"]
+        form = lambda name, due, closes=None, invitees=authors: SimpleNamespace(
+            id=f"V/Submission1/{name}", duedate=due, expdate=closes, invitees=invitees)
+        forms = [
+            # One rebuttal per review, collapsed into one task; the authors answered one of two.
+            form("Official_Review1/-/Rebuttal", ms(20), ms(20)),
+            form("Official_Review2/-/Rebuttal", ms(20), ms(20)),
+            form("-/Rebuttal_Revision", ms(19), ms(21)),
+            form("-/Responsible_NLP_Checklist", ms(1), ms(3)),       # closed a week ago: still shown
+            form("-/Supplementary_Materials", ms(1) - 30 * 86_400_000),  # closed long ago: gone
+            form("-/Withdrawal", None, ms(30)),                     # open-ended, not a deadline
+            form("-/Official_Comment", ms(20)),                     # discussion, not a deadline
+            form("-/Full_Submission", ms(25), invitees=["~"]),      # not the authors' form
+        ]
+        replies = [note("reb1", ["V/Submission1/Official_Review1/-/Rebuttal"], forum="p1")]
+        edits = [SimpleNamespace(tcdate=ms(9), invitation="V/Submission1/-/Rebuttal_Revision")]
+        tasks = bridge.author_tasks_of(forms, edits, replies, now)
+        self.assertEqual([(t["kind"], t["name"], t["open"], t["forms"], t["done"]) for t in tasks], [
+            ("form", "Responsible NLP Checklist", False, 1, 0),
+            ("revision", "Rebuttal Revision", True, 1, 1),
+            ("rebuttal", "Rebuttal", True, 2, 1),
+        ])
+        self.assertEqual((tasks[2]["due"], tasks[2]["closes"]), ("2026-11-20T00:00:00+00:00", "2026-11-20T00:00:00+00:00"))
+
+    def test_under_review_papers_carry_their_tasks(self):
+        paper = note("u1", title="T", venue="Submitted to ICLR 2027", venueid="ICLR.cc/2027/Conference/Submission")
+        form = SimpleNamespace(id="ICLR.cc/2027/Conference/Submission1/-/Rebuttal_Revision", duedate=4_102_444_800_000,
+                               expdate=None, invitees=["ICLR.cc/2027/Conference/Submission1/Authors"])
+        [entry] = self.results([paper], {}, {}, {"u1": [form]})
+        self.assertEqual(entry["author_tasks"], [{"kind": "revision", "name": "Rebuttal Revision",
+                                                  "due": "2100-01-01T00:00:00+00:00", "closes": None,
+                                                  "open": True, "forms": 1, "done": 0}])
+        self.assertNotIn("camera_ready", entry)
+
+    def test_discussion_counts_committee_comments_only(self):
+        def comment(id, signature, invitation="V/Submission1/-/Official_Comment", at=1_762_000_000_000):
+            reply = note(id, [invitation], forum="p1", comment="private words")
+            reply.signatures, reply.cdate = [signature], at
+            return reply
+        replies = [
+            comment("c1", "V/Submission1/Reviewer_ab12"),
+            comment("c2", "V/Submission1/Area_Chair_xy", at=1_762_100_000_000),
+            comment("c3", "V/Submission1/Authors", at=1_762_200_000_000),
+            comment("c4", "V/Submission1/Reviewer_ab12", invitation="V/Submission1/-/Official_Review"),
+            comment("c5", "~Someone_Public1", invitation="V/Submission1/-/Public_Comment"),
+        ]
+        self.assertEqual(bridge.discussion_of(replies), {"comments": 2, "last_at": "2025-11-02T16:13:20+00:00"})
+        self.assertIsNone(bridge.discussion_of(replies[2:]))
+
     def test_folds_the_arr_submission_into_its_commitment(self):
         arr = note("arrForum", title="Old Name", venue="ACL ARR 2026 May Submission",
                    venueid="aclweb.org/ACL/ARR/2026/May/Submission")
