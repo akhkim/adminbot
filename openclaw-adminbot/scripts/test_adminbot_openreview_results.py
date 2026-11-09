@@ -83,15 +83,88 @@ class AuthorResultsTests(unittest.TestCase):
         self.assertEqual(entry["meta_review"], {"overall_assessment": 3.5})
         self.assertNotIn("secret words", output.getvalue())
 
-    def results(self, notes, replies, edits=None):
-        client = Mock()
+    def results(self, notes, replies, edits=None, invitations=None, client=None):
+        client = client or Mock()
         client.profile = SimpleNamespace(id="~Synthetic_PI1")
         client.get_all_notes.side_effect = lambda content=None, forum=None: notes if content else replies.get(forum, [])
         client.get_note_edits.side_effect = lambda note_id: (edits or {}).get(note_id, [])
+        client.get_all_invitations.side_effect = lambda replyForum, expired: (invitations or {}).get(replyForum, [])
         output = io.StringIO()
         with patch.object(bridge, "connect", return_value=client), contextlib.redirect_stdout(output):
             bridge.cmd_author_results(SimpleNamespace())
         return json.loads(output.getvalue())["submissions"]
+
+    def test_camera_ready_reports_the_form_dates_and_the_uploads(self):
+        paper = note("nips1", title="T", venue="NeurIPS 2026 poster", venueid="NeurIPS.cc/2026/Conference")
+        form = SimpleNamespace(id="NeurIPS.cc/2026/Conference/Submission1/-/Camera_Ready_Revision",
+                               duedate=1_762_516_740_000, expdate=1_762_948_740_000)
+        other = SimpleNamespace(id="NeurIPS.cc/2026/Conference/Submission1/-/Official_Comment", duedate=None)
+        edits = {"nips1": [
+            SimpleNamespace(tcdate=1_750_000_000_000, invitation="NeurIPS.cc/2026/Conference/-/Submission",
+                            note=SimpleNamespace(content={})),
+            SimpleNamespace(tcdate=1_762_400_000_000, invitation=form.id, note=SimpleNamespace(content={})),
+            SimpleNamespace(tcdate=1_762_500_000_000, invitation=form.id, note=SimpleNamespace(content={})),
+        ]}
+        client = Mock()
+        [entry] = self.results([paper], {}, edits, {"nips1": [other, form]}, client)
+        self.assertEqual(entry["camera_ready"], {
+            "due": "2025-11-07T11:59:00+00:00",
+            "closes": "2025-11-12T11:59:00+00:00",
+            "uploads": 2,
+            "last_upload_at": "2025-11-07T07:20:00+00:00",
+        })
+        # Expired forms too: a camera-ready that was missed is the one worth seeing.
+        client.get_all_invitations.assert_called_once_with(replyForum="nips1", expired=True)
+
+    def test_camera_ready_with_no_upload_yet_and_no_form(self):
+        paper = note("w1", title="T", venue="FAST 2026", venueid="NeurIPS.cc/2026/Workshop/FAST")
+        form = SimpleNamespace(id="NeurIPS.cc/2026/Workshop/FAST/Submission1/-/Camera_Ready",
+                               duedate=1_762_516_740_000, expdate=None)
+        [entry] = self.results([paper], {}, {}, {"w1": [form]})
+        self.assertEqual(entry["camera_ready"],
+                         {"due": "2025-11-07T11:59:00+00:00", "closes": None, "uploads": 0, "last_upload_at": None})
+        [entry] = self.results([paper], {}, {}, {})
+        self.assertIsNone(entry["camera_ready"])
+
+    def test_camera_ready_is_only_looked_up_for_recent_acceptances(self):
+        rejected = note("r1", title="T", venue="", venueid="NeurIPS.cc/2026/Conference/Rejected_Submission")
+        client = Mock()
+        [entry] = self.results([rejected], {}, client=client)
+        self.assertNotIn("camera_ready", entry)
+        client.get_all_invitations.assert_not_called()
+
+        old = note("old1", title="T", venue="NeurIPS 2020 poster", venueid="NeurIPS.cc/2020/Conference")
+        old.cdate = 1_590_000_000_000
+        upload = SimpleNamespace(tcdate=1_603_000_000_000, invitation="NeurIPS.cc/2020/Conference/Paper1/-/Camera_Ready_Revision",
+                                 note=SimpleNamespace(content={}))
+        client = Mock()
+        [entry] = self.results([old], {}, {"old1": [upload]}, client=client)
+        # The uploads still come from the edit history; only the form lookup is skipped.
+        self.assertEqual(entry["camera_ready"], {"due": None, "closes": None, "uploads": 1,
+                                                 "last_upload_at": "2020-10-18T05:46:40+00:00"})
+        client.get_all_invitations.assert_not_called()
+
+    def test_unreadable_invitations_leave_the_uploads(self):
+        paper = note("i1", title="T", venue="ICLR 2026 Poster", venueid="ICLR.cc/2026/Conference")
+        upload = SimpleNamespace(tcdate=1_762_400_000_000, invitation="ICLR.cc/2026/Conference/Submission1/-/Camera_Ready_Revision",
+                                 note=SimpleNamespace(content={}))
+        client = Mock()
+        client.profile = SimpleNamespace(id="~Synthetic_PI1")
+        client.get_all_notes.side_effect = lambda content=None, forum=None: [paper] if content else []
+        client.get_note_edits.side_effect = lambda note_id: [upload]
+        client.get_all_invitations.side_effect = RuntimeError("forbidden")
+        output = io.StringIO()
+        with patch.object(bridge, "connect", return_value=client), contextlib.redirect_stdout(output):
+            bridge.cmd_author_results(SimpleNamespace())
+        [entry] = json.loads(output.getvalue())["submissions"]
+        self.assertEqual(entry["camera_ready"]["uploads"], 1)
+        self.assertIsNone(entry["camera_ready"]["due"])
+
+    def test_camera_ready_invitation_names(self):
+        for name in ("Camera_Ready_Revision", "Camera_Ready", "Camera-Ready", "camera_ready_submission"):
+            self.assertTrue(bridge.is_camera_ready(f"x/Submission1/-/{name}"), name)
+        for name in ("Revision", "Official_Comment", "Withdrawal", None):
+            self.assertFalse(bridge.is_camera_ready(f"x/Submission1/-/{name}" if name else None), name)
 
     def test_folds_the_arr_submission_into_its_commitment(self):
         arr = note("arrForum", title="Old Name", venue="ACL ARR 2026 May Submission",
