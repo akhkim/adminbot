@@ -82,6 +82,28 @@ describe("onboarding email send and resend", () => {
     );
   });
 
+  it("sends a guide still waiting in Pending Actions now, instead of hiding the button", async () => {
+    await mount("pending");
+    await click("Send onboarding email now");
+    expect(element.textContent).toContain("replaces the draft waiting in Pending Actions");
+    await click("Confirm");
+    expect(mocks.queue).toHaveBeenCalledTimes(1);
+    // Not a resend: the guide never reached them, so the service files a fresh first send.
+    expect(mocks.queue.mock.calls[0]?.[4]).toEqual({ resend: false });
+    expect(element.textContent).toContain("sent to synthetic@example.test");
+  });
+
+  it("does not report a guide still waiting for approval as sent", async () => {
+    mocks.queue.mockResolvedValue({
+      ok: true,
+      value: { status: "queued", detail: "waiting for approval to send to synthetic@example.test" },
+    });
+    await mount("not_queued");
+    await click("Send onboarding email");
+    await click("Confirm");
+    expect(element.querySelector("[data-kind='error'], .danger, [role='alert']")).toBeTruthy();
+  });
+
   it("sends nothing when the admin cancels", async () => {
     await mount("failed");
     await click("Send onboarding email");

@@ -179,6 +179,35 @@ describe("interview invitation route", () => {
       privilege_level: "external_collaborator",
     });
   });
+  it("sends an admin's own invitation now, on their approval, through the same gate", async () => {
+    const { mock, post, payload, sender } = await setup();
+    seedMember(mock, {
+      id: "boss",
+      name: "boss",
+      email: "boss@example.com",
+      privilege_level: "admin",
+      slack_user_id: "UBOSS",
+    });
+    const baseUrl = `http://127.0.0.1:${(mock.server.address() as { port: number }).port}`;
+    const admin = await memberToken(mock, baseUrl, "boss", "boss@example.com");
+
+    const res = await post(payload, admin);
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      status: "executed",
+      execution: { status: "executed" },
+    });
+    const proposal = mock.store.listProposalsByType("onboarding.send_guide")[0];
+    expect(proposal.status).toBe("executed");
+    expect(proposal.approvals).toEqual([
+      expect.objectContaining({ approver_role: "admin", approver_id: "boss" }),
+    ]);
+    expect(sender).toHaveBeenLastCalledWith(
+      expect.objectContaining({ interview: payload.interview }),
+    );
+    expect(sender.mock.calls.at(-1)?.[0].preview).not.toBe(true);
+  });
   it("rejects the shared service token and invalid interviewer selections", async () => {
     const { post, payload, sender } = await setup();
     expect((await post(payload, SERVICE_TOKEN)).status).toBe(403);

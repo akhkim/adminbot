@@ -96,7 +96,7 @@ Website: `/onboarding` · Who: admin
 | `post-onboarding-by-onboarding-id-nudge`                     | POST `/onboarding/{onboarding_id}/nudge`                    |
 | `post-onboarding-chase-run`                                  | POST `/onboarding/chase/run`                                |
 | `post-onboarding-guide`                                      | POST `/onboarding/guide`                                    |
-| `post-onboarding-interview-invitation`                       | POST `/onboarding/interview-invitation`                     |
+| `post-onboarding-interview-invitation`                       | POST `/onboarding/interview-invitation` (dry-run)           |
 | `post-onboarding-sheet-sweep-run`                            | POST `/onboarding/sheet-sweep/run` (dry-run)                |
 
 ## Member requests

@@ -139,6 +139,29 @@ export async function saveMemberSheetEdits(host: AdminBotMemberSheetHost): Promi
       return;
     }
     host.memberSheetSaveResult = result.value;
+    // Written now, on this admin's approval: show the new values in the grid, which still holds
+    // the cells as read, rather than the old ones the edits were clearing.
+    if (result.value.execution?.status === "executed" && host.memberSheet) {
+      const conflicted = new Set(
+        result.value.conflicts.map((conflict) =>
+          memberSheetCellKey(conflict.sheet_row, conflict.column),
+        ),
+      );
+      const written = new Map(
+        edits
+          .filter((edit) => !conflicted.has(memberSheetCellKey(edit.sheet_row, edit.column)))
+          .map((edit) => [memberSheetCellKey(edit.sheet_row, edit.column), edit.value]),
+      );
+      host.memberSheet = {
+        ...host.memberSheet,
+        rows: host.memberSheet.rows.map((row) => ({
+          ...row,
+          cells: row.cells.map(
+            (cell, column) => written.get(memberSheetCellKey(row.sheet_row, column)) ?? cell,
+          ),
+        })),
+      };
+    }
     // Cells that made it into a proposal are settled; the ones that conflicted stay pending so
     // the operator can see their value against the newer one and decide.
     if (result.value.conflicts.length === 0) {

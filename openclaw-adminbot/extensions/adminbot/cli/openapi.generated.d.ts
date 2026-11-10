@@ -5089,6 +5089,7 @@ export interface components {
       artifacts?: {
         [key: string]: string;
       };
+      not_delivered_reason?: string;
     } & {
       [key: string]: unknown;
     };
@@ -7820,6 +7821,20 @@ export interface components {
       })[];
       unchanged: number;
       touches_access: boolean;
+      execution?:
+        | ({
+            /** @constant */
+            status: "executed";
+          } & {
+            [key: string]: unknown;
+          })
+        | ({
+            /** @constant */
+            status: "not_executed";
+            reason: string;
+          } & {
+            [key: string]: unknown;
+          });
     } & {
       [key: string]: unknown;
     };
@@ -20731,7 +20746,37 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["MemberSheetEditResult"];
+          "application/json":
+            | components["schemas"]["MemberSheetEditResult"]
+            | ({
+                proposal: components["schemas"]["AdminBotStoredProposal"];
+                execution:
+                  | ({
+                      status: string;
+                    } & {
+                      [key: string]: unknown;
+                    })
+                  | ({
+                      status: string;
+                      reason: string;
+                    } & {
+                      [key: string]: unknown;
+                    });
+                updates: components["schemas"]["AdminBotSheetValueRange"][];
+                conflicts: ({
+                  sheet_row: number;
+                  column: number;
+                  header: string;
+                  expected: string;
+                  actual: string;
+                } & {
+                  [key: string]: unknown;
+                })[];
+                unchanged: number;
+                touches_access: boolean;
+              } & {
+                [key: string]: unknown;
+              });
         };
       };
       /** @description Server response */
@@ -20813,7 +20858,37 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["MemberSheetEditResult"];
+          "application/json":
+            | components["schemas"]["MemberSheetEditResult"]
+            | ({
+                proposal: components["schemas"]["AdminBotStoredProposal"];
+                execution:
+                  | ({
+                      status: string;
+                    } & {
+                      [key: string]: unknown;
+                    })
+                  | ({
+                      status: string;
+                      reason: string;
+                    } & {
+                      [key: string]: unknown;
+                    });
+                updates: components["schemas"]["AdminBotSheetValueRange"][];
+                conflicts: ({
+                  sheet_row: number;
+                  column: number;
+                  header: string;
+                  expected: string;
+                  actual: string;
+                } & {
+                  [key: string]: unknown;
+                })[];
+                unchanged: number;
+                touches_access: boolean;
+              } & {
+                [key: string]: unknown;
+              });
         };
       };
       /** @description Server response */
@@ -21837,11 +21912,108 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          preview?: unknown;
+        } & {
           [key: string]: unknown;
         };
       };
     };
     responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            execution:
+              | ({
+                  status: string;
+                } & {
+                  [key: string]: unknown;
+                })
+              | ({
+                  status: string;
+                  reason: string;
+                } & {
+                  [key: string]: unknown;
+                });
+            /** @enum {string} */
+            type:
+              | "reference.scan"
+              | "slack.send_message"
+              | "slack.profile_photo_update"
+              | "slack.channel_naming_notify_owner"
+              | "slack.rename_channel"
+              | "calendar.create_tentative_hold"
+              | "calendar.create_birthday"
+              | "calendar.send_invite"
+              | "calendar.add_attendees"
+              | "calendar.remove_attendees"
+              | "calendar.grant_lab_calendar"
+              | "calendar.revoke_lab_calendar"
+              | "calendar.reschedule"
+              | "calendar.cancel"
+              | "email.draft"
+              | "email.send"
+              | "onboarding.send_guide"
+              | "lab_member.enroll"
+              | "dcs_roster.add_row"
+              | "lab_member.remove"
+              | "reimbursement.submit"
+              | "social_media.post_publicly"
+              | "paper_publish.prepare"
+              | "paper.overleaf_edit"
+              | "paper_publish.submit"
+              | "paper_publish.nudge_author"
+              | "paper_publish.escalate_to_pi"
+              | "join_form.classify"
+              | "logistics.send_signed_document"
+              | "logistics.rec_letter_reminder"
+              | "email_review.resolve"
+              | "member_nudge.send"
+              | "member_nudge.escalate"
+              | "paper_integrity.alert"
+              | "paper_integrity.report"
+              | "slack.conference_intro"
+              | "slack.collaborator_chat"
+              | "paper_integrity.sheet_scores"
+              | "slack.invite_to_channel"
+              | "slack.remove_from_channel"
+              | "slack.connect_invite"
+              | "slack.create_channel"
+              | "openreview.nudge"
+              | "openreview.warning"
+              | "deadline.publish"
+              | "deadline.recommend"
+              | "sheet.update_cells"
+              | "sheet.append_rows"
+              | "slides.sync_working_groups";
+            /** @enum {string} */
+            risk_tier: "T0" | "T1" | "T2" | "T3" | "T4";
+            summary: string;
+            target?: {
+              [key: string]: unknown;
+            };
+            evidence?: components["schemas"]["AdminBotEvidencePointer"][];
+            proposed_payload?: unknown;
+            rationale?: string;
+            undo_plan?: string;
+            idempotency_key?: string;
+            dry_run?: boolean;
+            id: string;
+            payload_hash: string;
+            /** @enum {string} */
+            status: "executed" | "pending" | "approved" | "rejected";
+            approval_requirement: components["schemas"]["AdminBotApprovalRequirement"];
+            approvals: components["schemas"]["AdminBotApprovalRequest"][];
+            created_at: string;
+            updated_at: string;
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
       /** @description Server response */
       403: {
         headers: {

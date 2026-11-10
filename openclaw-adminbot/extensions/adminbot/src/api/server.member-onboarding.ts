@@ -115,10 +115,10 @@ export type NewMemberGuideStep =
  * Step 3: the onboarding guide, if this person's Member Type is one the access design mails.
  *
  * Queued through `queueOnboardingGuideForMember`, which refuses a second copy of a guide already
- * sent or waiting -- so a person reached by two paths is mailed once. With an approver it is also
- * approved and sent now. Standard full-member guides use the enrollment admin’s approval
- * automatically. Other approved members receive the basic welcome while a fuller guide awaits
- * setup or review; unattended imports still wait in Pending Actions.
+ * sent -- so a person reached by two paths is mailed once. With an approver -- the admin whose
+ * click on an admin-only tab this is -- it is approved as them and sent now, whatever the template:
+ * that click is the approval, and a copy still waiting in Pending Actions is replaced by the one
+ * sent. Without one (the sheet sweep, cron, the agent) it waits in Pending Actions.
  */
 export async function queueNewMemberGuide(
   deps: Pick<NewMemberOnboardingDeps, "service" | "approver" | "actor">,
@@ -127,16 +127,19 @@ export async function queueNewMemberGuide(
     email?: string;
     values?: Record<string, string>;
     slackChannels?: readonly string[];
-    send?: boolean;
     /** Internal fallback; never substitutes for completing the role-specific guide. */
     basicWelcome?: boolean;
     /** See `queueOnboardingGuideForMember`: an admin mailing the guide again on purpose. */
     resend?: boolean;
   } = {},
 ): Promise<NewMemberGuideStep> {
+  // Replacing a waiting copy is safe only for a caller whose approval the guide policy accepts;
+  // anyone else would retire the copy and then fail to approve its replacement.
+  const sendsNow = deps.approver?.approver_role === "admin";
   const queued = deps.service.queueOnboardingGuideForMember({
     memberId,
     actor: deps.actor,
+    ...(sendsNow && !options.basicWelcome ? { replaceWaiting: true } : {}),
     ...(options.basicWelcome ? { basicWelcome: true } : {}),
     ...(options.email ? { email: options.email } : {}),
     ...(options.values ? { values: options.values } : {}),
@@ -180,9 +183,8 @@ export async function queueNewMemberGuide(
     }
     return `; basic welcome ${welcome.status}: ${"reason" in welcome ? welcome.reason : welcome.detail}`;
   };
-  // Reuse the admin's approval for the standard full guide or minimal welcome. An unattended
-  // spreadsheet import never supplies that approval for itself.
-  if ((!options.send && templateId !== "member" && templateId !== "welcome") || !deps.approver) {
+  // An unattended path -- the sheet sweep, cron, the agent -- never supplies an approval for itself.
+  if (!deps.approver) {
     return {
       status: "queued",
       proposal_id: proposalId,
@@ -227,7 +229,8 @@ export async function onboardNewMember(
   input: AdminBotLabMemberInput,
   options: {
     origin: { source: "admin" | "import"; actor: string };
-    guide: "none" | "queue" | "send";
+    /** `send`: approved by `deps.approver` and sent now; queued when there is no approver. */
+    guide: "none" | "send";
     skipSheet?: string;
   },
 ): Promise<AdminBotServiceResponse<NewMemberOnboardingResult>> {
@@ -241,9 +244,7 @@ export async function onboardNewMember(
     options.skipSheet ? { skipSheet: options.skipSheet } : {},
   );
   const onboarding =
-    options.guide === "none"
-      ? undefined
-      : await queueNewMemberGuide(deps, saved.payload.id, { send: options.guide === "send" });
+    options.guide === "none" ? undefined : await queueNewMemberGuide(deps, saved.payload.id);
   return {
     ok: true,
     status: 200,

@@ -259,6 +259,32 @@ describe("the roster grid", () => {
     expect(text(host)).toContain("access column");
   });
 
+  it("says an admin's save was written, or why it was not", () => {
+    const base = {
+      proposal: { id: "act_1", status: "executed" },
+      updates: [{ range: "A1", values: [["x"]] }],
+      conflicts: [],
+      unchanged: 0,
+      touches_access: false,
+    };
+    const written = draw({
+      memberSheet: SHEET,
+      memberSheetSaveResult: { ...base, execution: { status: "executed" } },
+    });
+    expect(text(written)).toContain("Saved 1 range to the sheet");
+    expect(text(written)).not.toContain("waiting in Pending Actions");
+
+    const refused = draw({
+      memberSheet: SHEET,
+      memberSheetSaveResult: {
+        ...base,
+        proposal: { id: "act_1", status: "approved" },
+        execution: { status: "not_executed", reason: "protected range" },
+      },
+    });
+    expect(text(refused)).toContain("not written to the sheet: protected range");
+  });
+
   it("reports what onboarding queued and what it would not, with reasons", () => {
     const host = draw({
       memberSheet: SHEET,

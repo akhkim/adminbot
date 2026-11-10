@@ -1723,19 +1723,23 @@ export async function onboardSavedMember(
           ? "your session no longer has admin access"
           : // The service names what it refused -- no address, a Member Type that sends no mail, a
             // guide already sent or queued -- and that sentence is the whole value of this notice.
-            (result.message ?? "the onboarding guide could not be queued");
+            (result.message ?? "the onboarding guide could not be sent");
     return {
       kind: "error",
-      text: `Saved member ${memberId}, but their onboarding guide was not queued: ${reason}`,
+      text: `Saved member ${memberId}, but their onboarding email was not sent: ${reason}`,
     };
   }
-  return {
-    kind: "success",
-    text:
-      result.value.status === "done"
-        ? `Saved member ${memberId}. Their standard onboarding email has been sent.`
-        : `Saved member ${memberId}. Their ${result.value.template_id} onboarding email draft is queued in Pending Actions. An admin must review, approve, and execute it there; no email has been sent yet.`,
-  };
+  // An admin's save approves and sends the guide in the same request; "queued" is left only for
+  // an older service that still holds non-standard guides for review.
+  return result.value.status === "done"
+    ? {
+        kind: "success",
+        text: `Saved member ${memberId}. Their ${result.value.template_id ?? "onboarding"} onboarding email has been sent.`,
+      }
+    : {
+        kind: "error",
+        text: `Saved member ${memberId}. Their ${result.value.template_id ?? "onboarding"} onboarding email has not been sent: it is waiting in Pending Actions.`,
+      };
 }
 
 /** What the project form knows about the workspace's channels. */

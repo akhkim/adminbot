@@ -164,6 +164,29 @@ export function filterRows<Row extends { sheet_row: number; cells: string[] }>(
   );
 }
 
+/** What became of the save: written now on this admin's approval, or why it was not. */
+function renderSaveOutcome(result: AppViewState["memberSheetSaveResult"]) {
+  if (!result?.proposal) {
+    return nothing;
+  }
+  const execution = result.execution;
+  if (execution?.status === "executed") {
+    const cells = result.updates.length === 1 ? "1 range" : `${result.updates.length} ranges`;
+    return html`<div class="callout success" data-testid="sheet-save-written">
+      Saved ${cells} to the sheet.
+    </div>`;
+  }
+  if (execution?.status === "not_executed") {
+    return html`<div class="callout danger" role="alert" data-testid="sheet-save-not-written">
+      Approved, but not written to the sheet: ${execution.reason}
+    </div>`;
+  }
+  return html`<div class="callout warning" data-testid="sheet-save-queued">
+    Not written yet: the edit is waiting in Pending
+    Actions${result.touches_access ? ", and it includes an access column" : ""}.
+  </div>`;
+}
+
 function renderConflicts(state: AppViewState) {
   const conflicts = state.memberSheetSaveResult?.conflicts ?? [];
   if (conflicts.length === 0) {
@@ -597,15 +620,7 @@ export function renderMemberSheet(state: AppViewState) {
         ? html`<div class="callout danger" role="alert">${state.memberSheetError}</div>`
         : nothing}
       ${renderAddRowResult(state)} ${renderConflicts(state)} ${renderOnboardResult(state)}
-      ${renderOnboardPreview(state)}
-      ${state.memberSheetSaveResult?.proposal
-        ? html`<div class="callout success">
-            Queued as a proposal in Pending
-            Actions${state.memberSheetSaveResult.touches_access
-              ? ", including an access column — an admin has to approve it before it reaches the sheet."
-              : ". Nothing is written until it is approved."}
-          </div>`
-        : nothing}
+      ${renderOnboardPreview(state)} ${renderSaveOutcome(state.memberSheetSaveResult)}
 
       <form class="adminbot-member-filters" @submit=${(event: Event) => event.preventDefault()}>
         <label
@@ -759,9 +774,8 @@ export function renderMemberSheet(state: AppViewState) {
       </div>
       <p class="adminbot-form__hint">
         Read ${sheet.rows.length} rows and ${sheet.header.length} columns from “${sheet.tab}”. Drag
-        the grid to pan. Edits become one approval item; onboarding shows each member's email for
-        review first. Confirming sends the standard full-member guide; every other email waits for
-        approval in Pending Actions.
+        the grid to pan. Saving writes your edits to the sheet now, approved by you; onboarding
+        shows each member's email for review first, and confirming sends them.
       </p>
     </section>
   `;

@@ -1480,6 +1480,8 @@ describe("AdminBotService", () => {
 
       const executed = unwrap(await service.execute(proposal.id, { dry_run: false }));
       expect(executed.status).toBe("simulated");
+      // The caller hears why too, so a click that sent nothing is not reported as a send.
+      expect(executed.not_delivered_reason).toBe("ADMINBOT_OPENREVIEW_SEND is not set to 1");
 
       // The proposal is still approved and waiting, never executed.
       expect(

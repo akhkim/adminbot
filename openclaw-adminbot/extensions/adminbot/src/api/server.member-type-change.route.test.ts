@@ -8,6 +8,7 @@ import { withCompleteProfile } from "../contracts/profile-completion.test-helper
 import type { AdminBotCalendarEvent } from "../workflows/calendar/events.js";
 import type { AdminBotOnboardingSender } from "../workflows/onboarding/guide-sender.js";
 import { createAdminBotMockService } from "./server.js";
+import { applyMemberTypeChange } from "./server.member-type-change.js";
 
 const SERVICE_TOKEN = "test-service-token";
 const SERIES = resolveGroupMeetingEventId();
@@ -261,7 +262,7 @@ describe("PUT /lab/members/:id changing Member Type", () => {
     expect(mailed).toHaveLength(1);
   });
 
-  it("queues a non-standard guide for approval instead of sending it on the save", async () => {
+  it("sends every template's guide on the admin's save, not only the standard ones", async () => {
     const { baseUrl, mock, mailed } = await startService();
     const token = await adminToken(mock, baseUrl);
 
@@ -270,18 +271,31 @@ describe("PUT /lab/members/:id changing Member Type", () => {
     ).json()) as ChangeBody;
 
     const guide = body.member_type_change?.steps.find((step) => step.step === "guide");
-    expect(guide).toMatchObject({ status: "queued", target: "cora@lab.test" });
-    expect(mailed).toEqual([]);
+    expect(guide).toMatchObject({ status: "done", target: "cora@lab.test" });
+    expect(mailed).toEqual([{ email: "cora@lab.test", template: "coauthor_minor" }]);
     const pending = mock.service.listPending();
     expect(
       pending.ok &&
-        pending.payload.proposals.some(
-          (proposal) =>
-            proposal.type === "onboarding.send_guide" &&
-            (proposal.proposed_payload as { template_id?: string }).template_id ===
-              "coauthor_minor",
-        ),
-    ).toBe(true);
+        pending.payload.proposals.some((proposal) => proposal.type === "onboarding.send_guide"),
+    ).toBe(false);
+  });
+
+  it("still queues the guide when no admin is behind the change", async () => {
+    const { mock, mailed } = await startService();
+    const cora = mock.store.getLabMember("cora");
+    expect(cora).toBeDefined();
+
+    // The sheet sweep's shape: the same change with no approver.
+    const result = await applyMemberTypeChange(
+      { service: mock.service, actor: "sheet-sweep", recordAudit: () => {} },
+      cora!,
+      { ...cora!, member_type: "coauthor-minor" },
+    );
+
+    expect(result.steps.find((step) => step.step === "guide")).toMatchObject({
+      status: "queued",
+    });
+    expect(mailed).toEqual([]);
   });
 
   it("does not mail a guide the person has already been sent", async () => {
