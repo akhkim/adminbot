@@ -54,7 +54,10 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   adminbotNotificationDrafts: "admin",
   adminbotOpportunities: "anonymous",
   adminbotConferencePapers: "anonymous",
-  adminbotReferenceChecker: "member",
+  // A review of a zip the viewer uploads, run on the AdminBot host and handed back as files. Full
+  // members only (canAccessTab below): each review is a paid run of model calls, and the service
+  // refuses trial members and external collaborators on every /papermentor route regardless.
+  adminbotPaperMentor: "member",
 
   // Members. The roster is lab-internal but not a governance surface.
   adminbotMembers: "member",
@@ -161,7 +164,7 @@ export function canAccessTab(
   privilegeLevel: string | null = role,
 ): boolean {
   // The broad UI member role also includes trial members and external collaborators.
-  if (tab === "adminbotReferenceChecker" || tab === "events") {
+  if (tab === "adminbotPaperMentor" || tab === "events") {
     return role !== "anonymous" && (privilegeLevel === "member" || privilegeLevel === "admin");
   }
   return rank(role) >= rank(TAB_MINIMUM_ROLE[tab]);

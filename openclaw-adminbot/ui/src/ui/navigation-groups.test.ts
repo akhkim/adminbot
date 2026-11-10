@@ -93,7 +93,8 @@ describe("TAB_GROUPS", () => {
       "adminbotConferencePapers",
       // Member-only: checking a draft's references and the ARR reviewer eligibility list are
       // signed-in tools, so a visitor's sidebar shows the group without them.
-      "adminbotReferenceChecker",
+      // The PDF Reference Checker is part of PaperMentor, not a tab of its own.
+      "adminbotPaperMentor",
       "adminbotArrReviewers",
     ]);
     // Chat is no longer a group of its own: asking AdminBot something is the second half of the

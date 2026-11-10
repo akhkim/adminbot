@@ -32,7 +32,7 @@ describe("General Tools", () => {
       "adminbotOpportunities",
       "adminbotConferencePapers",
     ]);
-    expect(canAccessTab("adminbotReferenceChecker", "anonymous")).toBe(false);
+    expect(canAccessTab("adminbotPaperMentor", "anonymous")).toBe(false);
     expect(canAccessTab("events", "anonymous")).toBe(false);
   });
 
@@ -152,7 +152,9 @@ describe("visibleTabsForRole", () => {
       // Reads a public conference programme against the viewer's own interests, and writes
       // nothing.
       "adminbotConferencePapers",
-      "adminbotReferenceChecker",
+      // A review of a zip the member uploads, handed back as files, and the PDF reference check
+      // that used to be a tab of its own; full members only.
+      "adminbotPaperMentor",
       // The ARR eligible-reviewer list is member-level: it reads the lab's own roster, like Lab
       // Members, and changes nothing.
       "adminbotArrReviewers",

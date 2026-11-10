@@ -9,6 +9,7 @@ import {
   createOpenReviewNotesReader,
 } from "../connectors/openreview-notes.js";
 import { paperMentorReviewRequesterFromEnv } from "../connectors/papermentor-review.js";
+import { paperMentorUploadReviewerFromEnv } from "../connectors/papermentor-uploads.js";
 import {
   createGptZeroBibliographyScanner,
   createPublicOpenReviewPdfReader,
@@ -33,6 +34,7 @@ import {
   type AdminBotServiceOptions,
   type AdminBotServiceStore,
 } from "../kernel/service.js";
+import { createCollaboratorChatRequestStore } from "../persistence/collaborator-chat-requests.js";
 import { createMemoryFailedRequestLedger } from "../persistence/failed-requests.js";
 import { createMemberDraftStore } from "../persistence/member-drafts.js";
 import { AdminBotSqliteStore, createAdminBotSqliteService } from "../persistence/sqlite.js";
@@ -42,7 +44,6 @@ import { createAdminBotSensitiveInfoDocument } from "../privacy/sensitive-info-d
 import { createEventDraftRunner } from "../workflows/calendar/event-draft.js";
 import { createCalendarEventsReader } from "../workflows/calendar/events.js";
 import { resolveLabCalendar } from "../workflows/calendar/lab-calendar.js";
-import { createCollaboratorChatRequestStore } from "../persistence/collaborator-chat-requests.js";
 import { DEADLINE_VENUES } from "../workflows/deadlines/generated/dataset.js";
 import { readDeadlineDataset } from "../workflows/deadlines/runtime-dataset.js";
 import { createAccountApprovedEmailRunner } from "../workflows/identity/account-approved-email.js";
@@ -73,7 +74,11 @@ import {
   type DcsRosterSheetWriter,
   executorWithOnboardingGuide,
 } from "./onboarding-provisioning.js";
-import { createPdfReferenceCheckHandler } from "./pdf-reference-check.js";
+import {
+  createPaperMentorReferenceCheck,
+  createPdfReferenceCheckHandler,
+  type PdfReferenceCheckAudit,
+} from "./pdf-reference-check.js";
 import { isBlockedByProfile } from "./profile-gate.js";
 import { isAnonymousRoute, createAnonymousRateLimiter } from "./routes/anonymous.js";
 import { handleAuthRoute } from "./routes/auth.js";
@@ -93,13 +98,13 @@ import { ApiTokenRateLimitedError, resolvePrincipal } from "./routes/session.js"
 import { PayloadTooLargeError, sendJson } from "./server.http.js";
 import { executeMemberEnrollment } from "./server.member-onboarding.js";
 import {
-  createPublicDeadlineLimiter,
-  handlePublicDeadlineProposal,
-} from "./server.public-deadline-proposals.js";
-import {
   handlePaperMentorAffiliations,
   PAPERMENTOR_AFFILIATIONS_PATH,
 } from "./server.papermentor-affiliations.js";
+import {
+  createPublicDeadlineLimiter,
+  handlePublicDeadlineProposal,
+} from "./server.public-deadline-proposals.js";
 import { servePublicRoute } from "./server.public.js";
 
 // Long enough that a deploy's restart has settled before CVs start downloading.
@@ -221,17 +226,18 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     scanPdf: createGptZeroBibliographyScanner(),
   };
   referenceScans = new ReferenceScans(store, service, referenceDependencies);
+  const auditReferenceCheck = ({ actor, ...details }: PdfReferenceCheckAudit) =>
+    store.recordAudit({
+      id: `aud_${randomUUID()}`,
+      timestamp: new Date().toISOString(),
+      type: "reference_check.pdf_checked",
+      actor,
+      details,
+    });
   const checkUploadedPdf = createPdfReferenceCheckHandler(
     options.pdfReferenceChecker,
     referenceDependencies.scanPdf,
-    ({ actor, ...details }) =>
-      store.recordAudit({
-        id: `aud_${randomUUID()}`,
-        timestamp: new Date().toISOString(),
-        type: "reference_check.pdf_checked",
-        actor,
-        details,
-      }),
+    auditReferenceCheck,
   );
   const openReviewCitationWatch = createOpenReviewCitationWatch(options, store, service);
   const iclrIntegrityWatch = createIclrIntegrityWatch(options, store, service);
@@ -251,6 +257,11 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
   const venuePapersReader = options.venuePapersReader ?? createOpenReviewNotesReader();
   const paperMentorReviewRequester =
     options.paperMentorReviewRequester ?? paperMentorReviewRequesterFromEnv();
+  const paperMentorUploadReviewer =
+    options.paperMentorUploadReviewer ??
+    paperMentorUploadReviewerFromEnv(process.env, {
+      checkReferences: createPaperMentorReferenceCheck({ audit: auditReferenceCheck }),
+    });
   const embedder = options.embedder ?? createOllamaEmbedder();
   const embeddingModel =
     options.embeddingModel ?? process.env.ADMINBOT_EMBED_MODEL?.trim() ?? "embeddinggemma:latest";
@@ -513,6 +524,10 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     sensitiveInfo,
     referenceScans,
     checkUploadedPdf,
+    // GPTZero is offered only where it is configured; the page used to show it regardless.
+    referenceCheckers: referenceDependencies.scanPdf
+      ? ["references-validation", "gptzero"]
+      : ["references-validation"],
     ...(openReviewCitationWatch ? { openReviewCitationWatch } : {}),
     ...(iclrIntegrityWatch ? { iclrIntegrityWatch } : {}),
     onboardingSender,
@@ -545,6 +560,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     ...(options.cvDigestPublisher ? { cvDigestPublisher: options.cvDigestPublisher } : {}),
     publicationMailingRunner: options.publicationMailingRunner ?? createPublicationMailingRunner(),
     ...(paperMentorReviewRequester ? { paperMentorReviewRequester } : {}),
+    ...(paperMentorUploadReviewer ? { paperMentorUploadReviewer } : {}),
     ...(venuePapersReader ? { venuePapersReader } : {}),
     embedder,
     embeddingModel,

@@ -3,6 +3,7 @@ import type {
   CalendarAccessReader,
 } from "../../connectors/calendar-membership.js";
 import type { PaperMentorReviewRequester } from "../../connectors/papermentor-review.js";
+import type { PaperMentorUploadReviewer } from "../../connectors/papermentor-uploads.js";
 // What every route is handed: the principal the request resolved to, the service and its
 // connectors (AdminBotRouteContext), and the options createAdminBotMockService builds them from.
 //
@@ -19,12 +20,12 @@ import { ReferenceScans } from "../../kernel/reference-scans.js";
 import type { ActiveChannelReader } from "../../kernel/service.active-channels.js";
 import { AdminBotService, type AdminBotServiceStore } from "../../kernel/service.js";
 import type { AdminBotActionExecutor, AdminBotServiceOptions } from "../../kernel/service.js";
+import type { createCollaboratorChatRequestStore } from "../../persistence/collaborator-chat-requests.js";
 import type { FailedExternalRequestLedger } from "../../persistence/failed-requests.js";
 import type { MemberDraftStore } from "../../persistence/member-drafts.js";
 import type { AdminBotPrivacyBroker } from "../../privacy/broker.js";
 import { createLocalChat } from "../../privacy/local-chat.js";
 import type { AdminBotSensitiveInfoDocument } from "../../privacy/sensitive-info-doc.js";
-import type { createCollaboratorChatRequestStore } from "../../persistence/collaborator-chat-requests.js";
 import type { AdminBotApiTokenService } from "../../workflows/identity/api-tokens.js";
 import {
   AdminBotAuthService,
@@ -89,6 +90,8 @@ export type AdminBotRouteContext = {
   publicationMailingRunner?: PublicationMailingRunner;
   /** Asks the lab's Overleaf for a PaperMentor review. Absent leaves a live review pass answering 503. */
   paperMentorReviewRequester?: PaperMentorReviewRequester;
+  /** Reviews a zip a member uploads in the PaperMentor tab. Absent, the tab says it is not set up. */
+  paperMentorUploadReviewer?: PaperMentorUploadReviewer;
   venuePapersReader?: import("../../connectors/openreview-notes.js").OpenReviewNotesReader;
   // Always present: the server builds both from the environment, and an absent embedder would
   // make every search path optional-chained for a case that cannot happen.
@@ -140,6 +143,8 @@ export type AdminBotRouteContext = {
   deviceTokenIssuer?: DeviceTokenIssuer;
   referenceScans: ReferenceScans;
   checkUploadedPdf: ReturnType<typeof createPdfReferenceCheckHandler>;
+  /** The PDF checkers this host can run, for the PaperMentor tab's PDF-only check. */
+  referenceCheckers: ReadonlyArray<"references-validation" | "gptzero">;
   openReviewCitationWatch?: OpenReviewCitationWatch;
   iclrIntegrityWatch?: IclrIntegrityWatch;
   onboardingSender: AdminBotOnboardingSender;
@@ -289,6 +294,9 @@ export type AdminBotMockServiceOptions = {
   // Asks the lab's Overleaf for PaperMentor reviews. Injected so tests never reach an Overleaf;
   // otherwise built from ADMINBOT_PAPERMENTOR_SERVICE_TOKEN, and absent while that is unset.
   paperMentorReviewRequester?: PaperMentorReviewRequester;
+  // Runs papermentor-pdf on this host for the PaperMentor tab's uploads. Injected so tests never
+  // spawn a review; otherwise built from ADMINBOT_PAPERMENTOR_PDF_DIR, and absent while that is unset.
+  paperMentorUploadReviewer?: PaperMentorUploadReviewer;
   // Reads a venue's accepted papers from OpenReview, and turns text into vectors. Injected so the
   // conference-paper tool is testable without a network and so a deployment without OpenReview
   // credentials simply has no index job rather than a button that fails inside a connector.
