@@ -24848,6 +24848,12 @@ export interface operations {
             } & {
               [key: string]: unknown;
             })[];
+            updates: ({
+              paper_id: string;
+              line: string;
+            } & {
+              [key: string]: unknown;
+            })[];
           } & {
             [key: string]: unknown;
           };

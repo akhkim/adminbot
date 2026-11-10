@@ -18,7 +18,9 @@ Subcommands
   load-form --venue        the open reviewing-load/registration form, prefilled
   assign --venue ...       add/remove a reviewer assignment edge (never automatic)
   author-results           decision, presentation, review scores and meta-review on every own
-                           submission, with every title it has carried
+                           submission, with every title it has carried, the author deadlines
+                           open on its forum (rebuttal, revision, camera-ready, other forms)
+                           and how many comments reviewers and chairs have posted
 
 Nothing about a venue is hardcoded: role group ids, anon-group naming, the
 review invitation name, assignment invitations, and the per-submission message
@@ -881,20 +883,176 @@ def summarize_forum(replies, forum_ids=()):
     return reviews, meta_review, decision, presentation, stages
 
 
-def titles_of(client, note):
+def note_edits(client, note):
+    """The submission's edit history; an unreadable one is empty rather than fatal."""
+    try:
+        return list(client.get_note_edits(note_id=note.id))
+    except Exception:
+        return []
+
+
+def edit_time(edit):
+    return getattr(edit, "tcdate", None) or getattr(edit, "cdate", None) or 0
+
+
+def titles_of(note, edits):
     """Every title the submission has carried, current first.
 
     A paper is often retitled between submission and camera-ready, and the lab's record may hold
     either name; the edit history keeps the old ones. An unreadable history leaves the current title.
     """
     titles = [value_of(note.content, "title")]
-    try:
-        edits = list(client.get_note_edits(note_id=note.id))
-    except Exception:
-        edits = []
-    for edit in sorted(edits, key=lambda e: getattr(e, "tcdate", None) or getattr(e, "cdate", None) or 0, reverse=True):
+    for edit in sorted(edits, key=edit_time, reverse=True):
         titles.append(value_of(getattr(getattr(edit, "note", None), "content", None), "title"))
     return list(dict.fromkeys(t.strip() for t in titles if isinstance(t, str) and t.strip()))
+
+
+def is_camera_ready(invitation_id):
+    """Whether an invitation is a venue's camera-ready form.
+
+    Venues name it differently ("Camera_Ready_Revision" at NeurIPS and ICLR, "Camera_Ready" at
+    many workshops), but every variant seen so far carries "camera_ready" in its tail.
+    """
+    tail = str(invitation_id or "").rsplit("/-/", 1)[-1].lower().replace("-", "_")
+    return "camera_ready" in tail
+
+
+# Submissions older than this have long since closed every author form. Skipping their invitation
+# lookup keeps the six-hourly pass from making one extra request per paper the lab has ever had.
+FORM_LOOKBACK = datetime.timedelta(days=400)
+
+
+def forum_forms(client, forum):
+    """Every invitation on the forum the PI's account can see, expired ones included.
+
+    Expired forms are asked for because a missed deadline is exactly the case worth seeing. An
+    unreadable list is empty rather than fatal: the rest of the entry still stands.
+    """
+    try:
+        return list(client.get_all_invitations(replyForum=forum, expired=True))
+    except Exception:
+        return []
+
+
+def camera_ready_of(forms, edits):
+    """The camera-ready form's dates and the authors' uploads to it, for one accepted paper.
+
+    Uploads are edits made through the form, read from the history titles_of already fetched, so
+    they stay visible after the form closes. The dates come from the form itself. "due" is the
+    deadline the venue announces and "closes" is when OpenReview stops taking uploads, which is
+    often a few days later. None when the venue has no camera-ready form the PI's account can see.
+    """
+    uploads = sorted((edit_time(e) for e in edits if is_camera_ready(getattr(e, "invitation", None))), reverse=True)
+    # One form per paper in practice; if a venue reopens it, the latest deadline is the live one.
+    form = max((i for i in forms or [] if is_camera_ready(i.id)),
+               key=lambda i: getattr(i, "duedate", None) or 0, default=None)
+    if form is None and not uploads:
+        return None
+    return {
+        "due": iso_time(getattr(form, "duedate", None)),
+        "closes": iso_time(getattr(form, "expdate", None)),
+        "uploads": len(uploads),
+        "last_upload_at": iso_time(uploads[0]) if uploads else None,
+    }
+
+
+def invitation_tail(invitation_id):
+    return str(invitation_id or "").rsplit("/-/", 1)[-1].lower().replace("-", "_")
+
+
+# Forms on an author's forum that are not an author deadline: open-ended ones (withdrawal,
+# deletion, comments, which carry no due date) and ones the committee answers, not the authors.
+NOT_AN_AUTHOR_TASK = (
+    "withdraw", "deletion", "desk_reject", "issue_report", "comment", "endorsement",
+    "pc_revision", "official_review", "meta_review", "decision", "ethics_review", "review_rating",
+    "post_submission", "direct_upload",
+)
+
+
+def task_kind(invitation_id):
+    """'camera_ready', 'rebuttal', 'revision' or 'form' for an author deadline, else None.
+
+    Venues name the same deadline many ways (Rebuttal, Author_Response, Author_Final_Response;
+    Camera_Ready_Revision, Camera-Ready, Final_Revision), so this reads words in the tail. A form
+    it does not recognize but that is not excluded (a checklist, a licence, a full-paper upload)
+    is still a deadline the authors owe, and comes back as 'form'.
+    """
+    tail = invitation_tail(invitation_id)
+    if is_camera_ready(invitation_id) or tail == "final_revision":
+        return "camera_ready"
+    if not tail or any(word in tail for word in NOT_AN_AUTHOR_TASK):
+        return None
+    if "revision" in tail:
+        return "revision"
+    if "rebuttal" in tail or "response" in tail:
+        return "rebuttal"
+    return "form"
+
+
+def authors_invited(form):
+    return any(str(invitee).endswith("/Authors") for invitee in getattr(form, "invitees", None) or [])
+
+
+# A form that closed this recently stays in the list, so a deadline that was just missed is seen
+# rather than silently dropped.
+TASK_KEPT_AFTER_CLOSE = datetime.timedelta(days=14)
+
+
+def author_tasks_of(forms, edits, replies, now):
+    """The author deadlines on one forum, earliest first: what is due, when, and how much is done.
+
+    Only forms the paper's Authors group is invited to and that carry a due date. Some venues open
+    one form per review (a rebuttal to each); those collapse into one task, counted as forms, with
+    done = how many of them the authors have answered, by a reply or a revision made through it.
+    """
+    now_ms = now.timestamp() * 1000
+    kept_after = TASK_KEPT_AFTER_CLOSE.total_seconds() * 1000
+    groups = {}
+    for form in forms or []:
+        kind = task_kind(form.id)
+        due = getattr(form, "duedate", None)
+        if kind is None or not isinstance(due, (int, float)) or not authors_invited(form):
+            continue
+        closes = getattr(form, "expdate", None)
+        end = closes if isinstance(closes, (int, float)) else due
+        if end < now_ms - kept_after:
+            continue
+        name = form.id.rsplit("/-/", 1)[-1].replace("_", " ").replace("-", " ")
+        task = groups.setdefault((kind, name, due, closes), {
+            "kind": kind, "name": name, "due": iso_time(due), "closes": iso_time(closes),
+            "open": end > now_ms, "forms": 0, "done": 0,
+        })
+        task["forms"] += 1
+        answered = any(getattr(edit, "invitation", None) == form.id for edit in edits) or any(
+            form.id in (getattr(reply, "invitations", None) or []) for reply in replies)
+        task["done"] += int(answered)
+    return sorted(groups.values(), key=lambda task: task["due"])
+
+
+# Signatures of the people who review and decide, as opposed to the authors and the public.
+COMMITTEE_SIGNATURES = (
+    "/Reviewer", "/Area_Chair", "/Senior_Area_Chair", "/Action_Editor", "/Program_Chair",
+    "/Editors_In_Chief",
+)
+
+
+def discussion_of(replies):
+    """How many comments reviewers and chairs have posted to the authors, and when the last was.
+
+    The count, never the words. None when the committee has said nothing in the comments.
+    """
+    stamps = []
+    for reply in replies:
+        if not any("comment" in invitation_tail(i) for i in getattr(reply, "invitations", None) or []):
+            continue
+        signatures = [str(s) for s in getattr(reply, "signatures", None) or []]
+        if any(s.endswith("/Authors") for s in signatures):
+            continue
+        if any(role in s for s in signatures for role in COMMITTEE_SIGNATURES):
+            stamps.append(getattr(reply, "tcdate", None) or getattr(reply, "cdate", None) or 0)
+    if not stamps:
+        return None
+    return {"comments": len(stamps), "last_at": iso_time(max(stamps) or None)}
 
 
 def iso_time(ms):
@@ -919,6 +1077,10 @@ def fold_commitments(results):
             continue
         entry["titles"] = list(dict.fromkeys(entry["titles"] + linked["titles"]))
         entry["arr_venue_id"] = linked["venue_id"]
+        # A deadline still open on the ARR forum is still owed after the commitment.
+        if linked.get("author_tasks"):
+            entry["author_tasks"] = sorted(entry.get("author_tasks", []) + linked["author_tasks"],
+                                           key=lambda task: task["due"])
         folded.add(linked["forum"])
     return [entry for entry in results if entry["forum"] not in folded]
 
@@ -931,6 +1093,7 @@ def cmd_author_results(args):
     except Exception as exc:
         fail("notes_unreadable", str(exc))
 
+    now = datetime.datetime.now(datetime.timezone.utc)
     results = []
     for note in notes:
         content = note.content or {}
@@ -955,22 +1118,34 @@ def cmd_author_results(args):
             replies, error = [], str(exc)[:200]
         reviews, meta_review, decision, presentation, stages = summarize_forum(
             replies, {note.id, note.forum or note.id, review_forum})
+        edits = note_edits(client, note)
+        submitted_at = iso_time(getattr(note, "cdate", None))
+        outcome = outcome_of(venue_label, venue_id, " ".join(filter(None, (decision, presentation))))
         entry = {
             "id": note.id,
             "forum": note.forum or note.id,
             "review_forum": review_forum,
             "number": getattr(note, "number", None),
             "title": value_of(content, "title"),
-            "titles": titles_of(client, note),
-            "submitted_at": iso_time(getattr(note, "cdate", None)),
+            "titles": titles_of(note, edits),
+            "submitted_at": submitted_at,
             "venue": venue_label,
             "venue_id": venue_id,
             "decision": decision,
-            **outcome_of(venue_label, venue_id, " ".join(filter(None, (decision, presentation)))),
+            **outcome,
             "reviews": reviews,
             "meta_review": meta_review,
             "stages": stages,
         }
+        discussion = discussion_of(replies)
+        if discussion:
+            entry["discussion"] = discussion
+        if outcome["status"] in ("accepted", "under_review"):
+            recent = submitted_at is None or now - datetime.datetime.fromisoformat(submitted_at) <= FORM_LOOKBACK
+            forms = forum_forms(client, note.forum or note.id) if recent else []
+            entry["author_tasks"] = author_tasks_of(forms, edits, replies, now)
+            if outcome["status"] == "accepted":
+                entry["camera_ready"] = camera_ready_of(forms, edits)
         if error:
             entry["error"] = error
         results.append(entry)

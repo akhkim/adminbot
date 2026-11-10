@@ -25039,6 +25039,25 @@
                         ],
                         "additionalProperties": true
                       }
+                    },
+                    "updates": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "paper_id": {
+                            "type": "string"
+                          },
+                          "line": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "paper_id",
+                          "line"
+                        ],
+                        "additionalProperties": true
+                      }
                     }
                   },
                   "required": [
@@ -25051,7 +25070,8 @@
                     "unchanged",
                     "kept",
                     "unmatched_submissions",
-                    "stages_closed"
+                    "stages_closed",
+                    "updates"
                   ],
                   "additionalProperties": true
                 }

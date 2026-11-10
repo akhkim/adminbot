@@ -474,6 +474,11 @@ import {
   type OpenReviewFieldChange,
 } from "../workflows/papers/openreview-paper-sync.js";
 import {
+  buildOpenReviewUpdatesNotice,
+  openReviewUpdatesFor,
+  type OpenReviewUpdate,
+} from "../workflows/papers/openreview-updates.js";
+import {
   memberOwnsPaper,
   paperIdsByOwner,
   rosterNameCounts,
@@ -1795,6 +1800,11 @@ export type OpenReviewPaperSyncReport = {
   unmatched_submissions: number;
   /** PaperFlow stages a visible OpenReview reply closed (or, in a dry run, would close). */
   stages_closed: Array<{ paper_id: string; stage: string }>;
+  /**
+   * What the head professor was told (or, in a dry run, would be told) that she had not been told
+   * before: upcoming author deadlines, reviews released, rejections, committee comments.
+   */
+  updates: Array<{ paper_id: string; line: string }>;
 };
 
 export class AdminBotService {
@@ -7883,9 +7893,12 @@ export class AdminBotService {
       kept: [],
       unmatched_submissions: 0,
       stages_closed: [],
+      updates: [],
     };
     const matchedEvidence = new Set<OpenReviewEvidence>();
     const ledger = this.nudgeLedgerIndex();
+    const updates: OpenReviewUpdate[] = [];
+    const updatedPapers = new Map<string, { title: string; venue?: string }>();
     for (const paper of this.store.listPapers()) {
       const slots = this.store.listPaperSlots(paper.id);
       const match = matchPaperEvidence(paper, slots, evidence);
@@ -7896,8 +7909,21 @@ export class AdminBotService {
       report.matched += 1;
       // Ahead of the fingerprint check: a stage proof is idempotent per (paper, stage), and a
       // paper whose fields were applied long ago still needs its rebuttal rung closed.
+      const closedBefore = report.stages_closed.length;
       this.closeOpenReviewProvenStages(paper.id, match, options.dryRun, report);
       const plan = planOpenReviewSync(paper, slots, match, nowIso);
+      // Also ahead of the fingerprint check: a deadline opening or a reviewer writing back changes
+      // nothing the fingerprint covers.
+      const fresh = openReviewUpdatesFor({
+        paperId: paper.id,
+        evidence: match,
+        stagesClosed: report.stages_closed.slice(closedBefore).map((closed) => closed.stage),
+        now: new Date(nowIso),
+      }).filter((update) => !this.hasNudgeBeenSaid(ledger, "pi_review", update.subject));
+      if (fresh.length) {
+        updates.push(...fresh);
+        updatedPapers.set(paper.id, { title: paper.title, venue: plan.sync.venue });
+      }
       if (plan.unchanged) {
         report.unchanged += 1;
         continue;
@@ -7987,6 +8013,10 @@ export class AdminBotService {
         this.tellPiOfCameraReady(paper.id, plan.sync.fingerprint, nowIso, ledger);
       }
     }
+    report.updates = updates.map(({ paper_id, line }) => ({ paper_id, line }));
+    if (!options.dryRun) {
+      this.tellPiOfOpenReviewUpdates(updates, updatedPapers, nowIso);
+    }
     // Counted per submission, not per report: one paper is usually several e-mails.
     const keyOf = (item: OpenReviewEvidence) => normalizedTitle(item.title) || item.forums[0] || "";
     const matchedKeys = new Set([...matchedEvidence].map(keyOf));
@@ -8041,6 +8071,36 @@ export class AdminBotService {
       created_at: nowIso,
     });
     this.markNudgeSaid("pi_review", subject, headProfessorId, nowIso);
+  }
+
+  /**
+   * Tell the head professor, in one notification per pass, what OpenReview newly says about the
+   * lab's papers. Each line is said once: the subject goes into the say-once ledger as it is told,
+   * so the next pass only carries what changed since. Written to her own notifications, like the
+   * camera-ready notice, rather than sent anywhere outside AdminBot.
+   */
+  private tellPiOfOpenReviewUpdates(
+    updates: readonly OpenReviewUpdate[],
+    papers: ReadonlyMap<string, { title: string; venue?: string }>,
+    nowIso: string,
+  ): void {
+    const headProfessorId = this.resolveSettings().head_professor_member_id?.trim();
+    if (!updates.length || !headProfessorId) {
+      return;
+    }
+    const notice = buildOpenReviewUpdatesNotice(updates, papers);
+    this.store.saveMemberNotification({
+      id: `notif_${randomUUID()}`,
+      member_id: headProfessorId,
+      kind: "paper_slot",
+      title: notice.title,
+      body: notice.body,
+      tab: "adminbotProfessor",
+      created_at: nowIso,
+    });
+    for (const update of updates) {
+      this.markNudgeSaid("pi_review", update.subject, headProfessorId, nowIso);
+    }
   }
 
   /**
