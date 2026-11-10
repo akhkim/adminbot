@@ -2908,6 +2908,8 @@ export type AdminBotAuditEvent = {
     | "openreview.milestone_sent"
     | "openreview.milestone_blocked"
     | "openreview.assignment_changed"
+    | "openreview.login_rejected"
+    | "openreview.login_restored"
     | "member_map.refreshed"
     | "member_directory.slack_synced"
     | "profile_photo.reviewed"

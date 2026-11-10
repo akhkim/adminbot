@@ -61,7 +61,34 @@ def fail(reason, message=None, **extra):
     sys.exit(0)
 
 
-def connect():
+# Pauses before the second and third login try. Short: a cron run that cannot log in should end
+# well inside its slot, and the next scheduled run is the long retry.
+LOGIN_RETRY_DELAYS_S = (2, 8)
+
+
+def login_refused(exc):
+    """True when OpenReview answered the login and said no, as opposed to not answering.
+
+    openreview-py raises OpenReviewException carrying the API's error body (with a `status`) for
+    any answer it does not like, and lets requests' own errors through for a dropped connection or
+    a timeout. Only an answer that is not a rate limit or a server error blames the credentials:
+    reporting an outage as "auth_failed" sent people to check a password that was fine.
+    """
+    try:
+        from openreview import OpenReviewException
+    except ImportError:
+        return False
+    if not isinstance(exc, OpenReviewException):
+        return False
+    body = exc.args[0] if exc.args else None
+    status = body.get("status") if isinstance(body, dict) else None
+    return not (isinstance(status, int) and (status == 429 or status >= 500))
+
+
+def connect(sleep=None):
+    import time
+
+    sleep = sleep or time.sleep
     user = os.environ.get("OPENREVIEW_USERNAME")
     password = os.environ.get("OPENREVIEW_PASSWORD")
     if not (user and password):
@@ -71,10 +98,20 @@ def connect():
         from openreview.api import OpenReviewClient
     except ImportError as exc:
         fail("missing_dependency", f"openreview-py is not importable: {exc}")
-    try:
-        client = OpenReviewClient(baseurl=BASEURL, username=user, password=password)
-    except Exception as exc:
-        fail("auth_failed", str(exc))
+    for attempt in range(len(LOGIN_RETRY_DELAYS_S) + 1):
+        try:
+            client = OpenReviewClient(baseurl=BASEURL, username=user, password=password)
+            break
+        except Exception as exc:
+            if login_refused(exc):
+                fail("auth_failed", str(exc))
+            if attempt == len(LOGIN_RETRY_DELAYS_S):
+                fail(
+                    "openreview_unavailable",
+                    f"OpenReview did not answer the login after {attempt + 1} tries "
+                    f"({type(exc).__name__}); the credentials were not refused",
+                )
+            sleep(LOGIN_RETRY_DELAYS_S[attempt])
     if not getattr(client, "profile", None):
         fail("auth_failed", "login succeeded but no profile was returned")
     return client

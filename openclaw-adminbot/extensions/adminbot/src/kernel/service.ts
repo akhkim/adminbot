@@ -568,6 +568,7 @@ import {
 } from "./service.active-channels.js";
 import {
   automationHealthIssues,
+  openReviewLoginRejection,
   SLACK_CONNECT_INVITE_REASONS,
   slackInviteBlockFor,
   slackInviteBlocks,
@@ -2002,6 +2003,9 @@ export class AdminBotService {
   // Invite payloads do not change once proposed, and a sweep asks about the same few hundred
   // failures once per invite it considers; remembered so that is a map read, not a query.
   private readonly failedInviteProposals = new Map<string, AdminBotStoredProposal | undefined>();
+  // Whether the newest recorded OpenReview login was refused; read from the audit trail on first
+  // use, then kept here so each sweep does not rescan it. See recordOpenReviewLogin.
+  private openReviewLoginRejected: boolean | undefined;
   private failedInviteProposal(id: string): AdminBotStoredProposal | undefined {
     if (!this.failedInviteProposals.has(id)) {
       this.failedInviteProposals.set(id, this.store.getProposal(id));
@@ -3608,6 +3612,31 @@ export class AdminBotService {
         connect_invites_proposed: connectInvitesProposed,
       },
     };
+  }
+
+  /**
+   * Records whether the OpenReview account could log in, for the automation health pass.
+   *
+   * Only changes are recorded -- the first refusal, and the first success after one -- so an
+   * hourly check against a broken login is one audit event, not one per hour. The health pass
+   * turns an outstanding refusal into an admin alert and clears it once a login works again.
+   * A refusal means OpenReview answered and said no; an unreachable OpenReview is not recorded.
+   */
+  recordOpenReviewLogin(
+    source: "citation_checks" | "integrity_checks",
+    result: { ok: true } | { ok: false; error: string },
+  ): void {
+    this.openReviewLoginRejected ??= Boolean(
+      openReviewLoginRejection(this.store.listAuditEvents()),
+    );
+    if (result.ok === this.openReviewLoginRejected) {
+      this.recordAudit({
+        type: result.ok ? "openreview.login_restored" : "openreview.login_rejected",
+        actor: "adminbot",
+        details: result.ok ? { source } : { source, error: result.error },
+      });
+      this.openReviewLoginRejected = !result.ok;
+    }
   }
 
   // Anonymous reimbursement use has no member to attribute it to, so the audit trail is the only

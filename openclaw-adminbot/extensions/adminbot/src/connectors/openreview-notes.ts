@@ -17,9 +17,9 @@ import {
   type AdminBotArtifactProbe,
 } from "../contracts/paper-artifact-links.js";
 import { reviewOpenReviewIdentity } from "./openreview-identity.js";
+import { createOpenReviewSession } from "./openreview-session.js";
 
 const BASE_URL = "https://api2.openreview.net";
-const LOGIN_TIMEOUT_MS = 20_000;
 const PAGE_TIMEOUT_MS = 60_000;
 // API2 refuses anything larger and silently truncates rather than erroring.
 const PAGE_SIZE = 1000;
@@ -43,6 +43,8 @@ export type OpenReviewNotesReader = (venueId: string) => Promise<OpenReviewPaper
 export type OpenReviewNotesOptions = {
   env?: NodeJS.ProcessEnv;
   fetchImpl?: typeof globalThis.fetch;
+  /** Pause before each login retry; tests pass zeros. */
+  loginRetryDelaysMs?: readonly number[];
 };
 
 /**
@@ -61,36 +63,20 @@ export function createOpenReviewNotesReader(
   if (!username || !password) {
     return undefined;
   }
-  const fetchImpl = options.fetchImpl ?? globalThis.fetch;
-  // One token per reader, reused across venues and runs. The server keeps one reader for its whole
-  // lifetime, so the token does expire: a 401 drops it and logs in once more before giving up.
-  let token: string | undefined;
-
-  const login = async (): Promise<string> => {
-    const response = await fetchImpl(`${BASE_URL}/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: username, password }),
-      signal: AbortSignal.timeout(LOGIN_TIMEOUT_MS),
-    });
-    if (!response.ok) {
-      throw new Error(
-        `OpenReview rejected the login (${response.status}) — check OPENREVIEW_USERNAME/PASSWORD`,
-      );
-    }
-    const body = (await response.json()) as { token?: unknown };
-    if (typeof body.token !== "string" || !body.token) {
-      throw new Error("OpenReview login returned no token");
-    }
-    return body.token;
-  };
+  // One session per reader, reused across venues and runs. The server keeps one reader for its
+  // whole lifetime, so the token does expire; the session logs in again on a 401 or a 403.
+  const session = createOpenReviewSession({
+    username,
+    password,
+    ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
+    ...(options.loginRetryDelaysMs ? { loginRetryDelaysMs: options.loginRetryDelaysMs } : {}),
+  });
 
   return async (venueId: string) => {
     const venue = venueId.trim();
     if (!venue) {
       throw new Error("a venue id is required");
     }
-    token ??= await login();
     const papers: OpenReviewPaper[] = [];
     for (let offset = 0; offset < MAX_PAPERS; offset += PAGE_SIZE) {
       const query = new URLSearchParams({
@@ -98,16 +84,7 @@ export function createOpenReviewNotesReader(
         limit: String(PAGE_SIZE),
         offset: String(offset),
       });
-      const fetchPage = (bearer: string) =>
-        fetchImpl(`${BASE_URL}/notes?${query}`, {
-          headers: { Authorization: `Bearer ${bearer}` },
-          signal: AbortSignal.timeout(PAGE_TIMEOUT_MS),
-        });
-      let response = await fetchPage(token);
-      if (response.status === 401) {
-        token = await login();
-        response = await fetchPage(token);
-      }
+      const response = await session.get(`${BASE_URL}/notes?${query}`, PAGE_TIMEOUT_MS);
       if (!response.ok) {
         throw new Error(`OpenReview returned ${response.status} for ${venue}`);
       }

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { cronMaxGapMinutes } from "./service.automation-health.js";
+import type { AdminBotAuditEvent } from "../contracts/actions.js";
+import { automationHealthIssues, cronMaxGapMinutes } from "./service.automation-health.js";
 import { AdminBotMemoryStore, AdminBotService } from "./service.js";
 
 const HOUR = 60 * 60 * 1000;
@@ -323,5 +324,75 @@ describe("Slack Connect for people in another workspace", () => {
     expect(unwrap(service.automationHealth()).issues).toEqual([
       expect.objectContaining({ key: "slack-manual-invite:random-active:U-EXT,U-GUEST" }),
     ]);
+  });
+});
+
+describe("OpenReview login health", () => {
+  const login = (
+    type: "openreview.login_rejected" | "openreview.login_restored",
+    timestamp: string,
+  ): AdminBotAuditEvent => ({
+    id: `aud_${timestamp}`,
+    type,
+    actor: "adminbot",
+    timestamp,
+    details:
+      type === "openreview.login_rejected"
+        ? { source: "citation_checks", error: "OpenReview rejected the login (403)" }
+        : { source: "citation_checks" },
+  });
+  const issuesOf = (events: AdminBotAuditEvent[]) =>
+    automationHealthIssues(events, () => undefined, new Date("2026-11-10T12:00:00Z")).filter(
+      (issue) => issue.key === "openreview-login",
+    );
+
+  it("is open while the newest login was refused, and closed once one works", () => {
+    expect(issuesOf([])).toEqual([]);
+    expect(issuesOf([login("openreview.login_rejected", "2026-11-10T09:00:00.000Z")])).toEqual([
+      expect.objectContaining({
+        kind: "credentials",
+        last_seen: "2026-11-10T09:00:00.000Z",
+        detail: expect.stringContaining("OpenReview rejected the login (403)"),
+      }),
+    ]);
+    expect(
+      issuesOf([
+        login("openreview.login_rejected", "2026-11-10T09:00:00.000Z"),
+        login("openreview.login_restored", "2026-11-10T10:00:00.000Z"),
+      ]),
+    ).toEqual([]);
+    // Order in the trail does not matter, only the timestamps.
+    expect(
+      issuesOf([
+        login("openreview.login_rejected", "2026-11-10T11:00:00.000Z"),
+        login("openreview.login_restored", "2026-11-10T10:00:00.000Z"),
+      ]),
+    ).toHaveLength(1);
+  });
+
+  it("is recorded by the service only when the outcome changes", () => {
+    const { store, service } = lab(async () => ({ handled: true }));
+    service.recordOpenReviewLogin("citation_checks", { ok: true });
+    service.recordOpenReviewLogin("citation_checks", { ok: false, error: "refused" });
+    service.recordOpenReviewLogin("integrity_checks", { ok: false, error: "refused" });
+    service.recordOpenReviewLogin("integrity_checks", { ok: true });
+    service.recordOpenReviewLogin("citation_checks", { ok: true });
+    expect(
+      store
+        .listAuditEvents()
+        .filter((event) => event.type.startsWith("openreview.login"))
+        .map((event) => event.type),
+    ).toEqual(["openreview.login_rejected", "openreview.login_restored"]);
+  });
+
+  it("picks up a refusal recorded before a restart", () => {
+    const first = lab(async () => ({ handled: true }));
+    first.service.recordOpenReviewLogin("citation_checks", { ok: false, error: "refused" });
+    // A new service over the same store has no memory of it but must still clear it.
+    const restarted = new AdminBotService(first.store);
+    restarted.recordOpenReviewLogin("citation_checks", { ok: true });
+    expect(unwrap(restarted.automationHealth()).issues.map((issue) => issue.key)).not.toContain(
+      "openreview-login",
+    );
   });
 });

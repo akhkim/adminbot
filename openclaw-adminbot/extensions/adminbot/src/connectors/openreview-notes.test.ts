@@ -90,29 +90,33 @@ describe("OpenReview submission identity", () => {
 });
 
 describe("OpenReview venue reader", () => {
-  it("logs in again when a kept token has expired, and only once", async () => {
-    let logins = 0;
-    const fetchImpl = vi.fn<typeof fetch>(async (url, init) => {
-      if (String(url).endsWith("/login")) {
-        logins += 1;
-        return new Response(JSON.stringify({ token: `token-${logins}` }));
-      }
-      const auth = new Headers(init?.headers).get("Authorization");
-      if (auth === "Bearer token-1") {
-        return new Response("{}", { status: 401 });
-      }
-      return new Response(
-        JSON.stringify({ notes: [{ id: "Paper1", content: { title: { value: "A paper" } } }] }),
-      );
-    });
-    const reader = createOpenReviewNotesReader({
-      env: { OPENREVIEW_USERNAME: "reader@example.org", OPENREVIEW_PASSWORD: "synthetic" },
-      fetchImpl,
-    });
-    await expect(reader?.("Venue.cc/2026/Conference")).resolves.toHaveLength(1);
-    await expect(reader?.("Other.cc/2026/Conference")).resolves.toHaveLength(1);
-    expect(logins).toBe(2);
-  });
+  // API2 answers an expired token with a 403 on some routes; the reader used to renew only on 401.
+  it.each([401, 403])(
+    "logs in again when a kept token has expired (%i), and only once",
+    async (expired) => {
+      let logins = 0;
+      const fetchImpl = vi.fn<typeof fetch>(async (url, init) => {
+        if (String(url).endsWith("/login")) {
+          logins += 1;
+          return new Response(JSON.stringify({ token: `token-${logins}` }));
+        }
+        const auth = new Headers(init?.headers).get("Authorization");
+        if (auth === "Bearer token-1") {
+          return new Response("{}", { status: expired });
+        }
+        return new Response(
+          JSON.stringify({ notes: [{ id: "Paper1", content: { title: { value: "A paper" } } }] }),
+        );
+      });
+      const reader = createOpenReviewNotesReader({
+        env: { OPENREVIEW_USERNAME: "reader@example.org", OPENREVIEW_PASSWORD: "synthetic" },
+        fetchImpl,
+      });
+      await expect(reader?.("Venue.cc/2026/Conference")).resolves.toHaveLength(1);
+      await expect(reader?.("Other.cc/2026/Conference")).resolves.toHaveLength(1);
+      expect(logins).toBe(2);
+    },
+  );
 
   it("still fails when a fresh token is refused too", async () => {
     const fetchImpl = vi.fn<typeof fetch>(async (url) =>
@@ -129,5 +133,24 @@ describe("OpenReview venue reader", () => {
     );
     // login, refused page, one more login, refused again: no loop.
     expect(fetchImpl).toHaveBeenCalledTimes(4);
+  });
+
+  it("says the credentials were refused only when OpenReview refused them", async () => {
+    const env = { OPENREVIEW_USERNAME: "reader@example.org", OPENREVIEW_PASSWORD: "synthetic" };
+    const refused = createOpenReviewNotesReader({
+      env,
+      fetchImpl: vi.fn<typeof fetch>(async () => new Response("{}", { status: 403 })),
+    });
+    await expect(refused?.("Venue.cc/2026/Conference")).rejects.toMatchObject({
+      credentialsRejected: true,
+    });
+    const down = createOpenReviewNotesReader({
+      env,
+      fetchImpl: vi.fn<typeof fetch>(async () => new Response("{}", { status: 502 })),
+      loginRetryDelaysMs: [0, 0],
+    });
+    await expect(down?.("Venue.cc/2026/Conference")).rejects.toMatchObject({
+      credentialsRejected: false,
+    });
   });
 });
