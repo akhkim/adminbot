@@ -25,13 +25,18 @@ export const TAB_GROUPS = [
     label: "myInfo",
     tabs: ["gettingStarted", "profile", "adminbotTimeAvailability", "myWork"],
   },
-  // Everything about the people around the viewer, in one group: who can help (Collaborate), where
-  // they will be (Events), when the lab meets, and who the lab is. Events used to sit under My Info,
-  // so going from "who is at this conference" to "ask them for help" crossed two sidebar groups.
-  // Lab Members is a page of two (TAB_PAGES): the talk leaderboard ranks the same people.
+  // The people around the viewer, in one group: who the lab is, when it meets, and who can help.
+  // Lab Members leads (TAB_PAGES: the talk leaderboard ranks the same people, and the ARR-eligible
+  // reviewer list is a filter on the same roster). Collaborate sits last: it is the least active of
+  // the three now. Events moved to General Tools, beside Deadlines -- both are dated lists.
   {
     label: "labSharing",
-    tabs: ["labSharing", "events", "adminbotMeetings", "adminbotMembers"],
+    tabs: [
+      "adminbotMembers",
+      // Lab Projects goes here, directly after Lab Members.
+      "adminbotMeetings",
+      "labSharing",
+    ],
   },
   // The three logistics templates, each with its own heading. They used to be one "Logistics
   // Requests" tab whose first screen was a picker between them, which meant every request started
@@ -50,13 +55,16 @@ export const TAB_GROUPS = [
     tabs: [
       "adminbotReimbursements",
       "adminbotDeadlines",
+      // Next to Deadlines: both are dated lists, and Events is drawn from that same deadlines list.
+      "events",
       "adminbotOpportunities",
       "adminbotNotificationDrafts",
       "adminbotConferencePapers",
       // PaperMentor includes what was the PDF Reference Checker: a review checks the paper's
       // references, and a PDF-only check sits on the same page.
       "adminbotPaperMentor",
-      "adminbotArrReviewers",
+      // ARR Eligible Reviewers is no longer listed: it is a filter inside Lab Members, and its old
+      // path redirects there with the filter on (app-settings.ts).
     ],
   },
   // Only the landing tab of each multi-tab page is listed (see TAB_PAGES): the sidebar names the

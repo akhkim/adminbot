@@ -71,6 +71,25 @@ describe("showToast", () => {
     expect(dismissed).toHaveBeenCalledTimes(1);
   });
 
+  it("tells onDismiss whether it timed out or was closed", () => {
+    vi.useFakeTimers();
+    const timedOut = vi.fn();
+    showToast({ title: "Saved", onDismiss: timedOut });
+    vi.advanceTimersByTime(TOAST_DEFAULT_DURATION_MS + 1);
+    // A timeout is not the member acknowledging anything; callers that mark things read need this.
+    expect(timedOut).toHaveBeenCalledWith("timeout");
+
+    const closed = vi.fn();
+    showToast({ title: "Notice", duration: 0, onDismiss: closed });
+    document.querySelector<HTMLButtonElement>("[data-testid='toast-close']")?.click();
+    expect(closed).toHaveBeenCalledWith("closed");
+
+    const replaced = vi.fn();
+    showToast({ key: "k", title: "First", onDismiss: replaced });
+    showToast({ key: "k", title: "Second" });
+    expect(replaced).toHaveBeenCalledWith("replaced");
+  });
+
   it("clears the corner on demand", () => {
     showToast({ title: "One", duration: 0 });
     showToast({ title: "Two", duration: 0 });

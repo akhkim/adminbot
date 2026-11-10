@@ -1,9 +1,10 @@
-/* The top-right popup stack (ui/toast.ts).
+/* The bottom-right popup stack (ui/toast.ts).
    Fixed to the viewport rather than to any panel: a toast is about the session, not about whatever
-   is on screen, and it has to survive the tab underneath it changing. */
+   is on screen, and it has to survive the tab underneath it changing. Bottom rather than top: the
+   top-right corner is the header's search box, and a stack of notifications sat on top of it. */
 .toasts {
   position: fixed;
-  top: 16px;
+  bottom: 16px;
   right: 16px;
   z-index: 2000;
   display: flex;
@@ -156,10 +157,8 @@
   border-color: var(--accent);
 }
 
-/* Out of the way until the member reaches for it: the toast is something to read first, and a
-   close button glaring from every card in a stack of five is the first thing the eye lands on.
-   Keyboard focus anywhere in the toast shows it too, and a touch screen, which has no hover to
-   reveal it with, always shows it. */
+/* Always drawn. It used to stay hidden until hover, and a member who did not think to hover read
+   the toast as something that could not be closed, sitting over the page until it timed out. */
 .toast__close {
   flex: none;
   display: grid;
@@ -172,19 +171,6 @@
   background: transparent;
   color: var(--muted);
   cursor: pointer;
-  opacity: 0;
-  transition: opacity 120ms ease-out;
-}
-
-.toast:hover .toast__close,
-.toast:focus-within .toast__close {
-  opacity: 1;
-}
-
-@media (hover: none) {
-  .toast__close {
-    opacity: 1;
-  }
 }
 
 .toast__close:hover {
