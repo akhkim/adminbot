@@ -22,22 +22,28 @@ describe("paper feedback requests", () => {
     if (!written.ok) {
       return;
     }
-    const queue = paperFeedbackQueue([
-      {
-        paper: { id: "p", title: "Synthetic", authors: ["Author"] } as never,
-        slots: [written.record],
-      },
-    ]);
+    const queue = paperFeedbackQueue(
+      [
+        {
+          paper: { id: "p", title: "Synthetic", authors: ["Author"] } as never,
+          slots: [written.record],
+        },
+      ],
+      new Date("2026-10-03T00:00:00Z"),
+    );
     expect(queue[0]?.feedback?.reason).toBe(request.reason);
     expect(queue[0]?.feedback?.hard_deadline).toBe(new Date(request.hard_deadline).toISOString());
     expect(written.record.slot).toBe("feedback_arr");
     expect(
-      paperFeedbackQueue([
-        {
-          paper: { id: "p", title: "Synthetic", authors: [] } as never,
-          slots: [{ ...written.record, status: "missing" }],
-        },
-      ]),
+      paperFeedbackQueue(
+        [
+          {
+            paper: { id: "p", title: "Synthetic", authors: [] } as never,
+            slots: [{ ...written.record, status: "missing" }],
+          },
+        ],
+        new Date("2026-10-03T00:00:00Z"),
+      ),
     ).toEqual([]);
   });
   it("keeps completed feedback but removes it from the pending queue", () => {
@@ -49,12 +55,15 @@ describe("paper feedback requests", () => {
     const parsed = parsePaperFeedback(value);
     expect(parsed?.review_note).toBe("Ready after fixing Figure 2.");
     expect(
-      paperFeedbackQueue([
-        {
-          paper: { id: "p", title: "Test", authors: [] } as never,
-          slots: [{ paper_id: "p", slot: "feedback_arr", status: "provided", value_text: value }],
-        },
-      ]),
+      paperFeedbackQueue(
+        [
+          {
+            paper: { id: "p", title: "Test", authors: [] } as never,
+            slots: [{ paper_id: "p", slot: "feedback_arr", status: "provided", value_text: value }],
+          },
+        ],
+        new Date("2026-10-03T00:00:00Z"),
+      ),
     ).toEqual([]);
     expect(parsePaperFeedback(JSON.stringify({ ...request, reviewed: "yes" }))).toBeNull();
   });
@@ -73,5 +82,52 @@ describe("paper feedback requests", () => {
     expect(
       parsePaperFeedback(JSON.stringify({ reason: request.reason, url: request.url })),
     ).toEqual({ reason: request.reason, url: request.url });
+  });
+
+  // An old NeurIPS camera-ready request nobody closed sat on her queue as overdue for years.
+  it("drops a request from a past cycle off the queue but keeps a recently late one", () => {
+    const slot = (hard: string) => ({
+      paper_id: "p",
+      slot: "feedback_camera_ready" as const,
+      status: "provided" as const,
+      value_text: JSON.stringify({ ...request, soft_deadline: undefined, hard_deadline: hard }),
+    });
+    const queue = (hard: string) =>
+      paperFeedbackQueue(
+        [{ paper: { id: "p", title: "Synthetic", authors: [] } as never, slots: [slot(hard)] }],
+        new Date("2026-11-10T00:00:00Z"),
+      );
+    expect(queue("2023-10-27T12:00:00Z")).toEqual([]);
+    expect(queue("2026-10-20T12:00:00Z")).toHaveLength(1);
+  });
+
+  it("asks for the year when a new cutoff is months in the past, but lets an old one be closed", () => {
+    const now = new Date("2026-11-10T00:00:00Z");
+    const existing = { paper_id: "p", slot: "feedback_arr" as const, status: "missing" as const };
+    const wrongYear = {
+      ...request,
+      soft_deadline: undefined,
+      hard_deadline: "2025-11-20T08:00:00Z",
+    };
+    const refused = applyPaperSlotWrite({
+      existing,
+      input: { value_text: JSON.stringify(wrongYear) },
+      memberId: "m",
+      now,
+    });
+    expect(refused).toMatchObject({ ok: false, error: expect.stringMatching(/Check the year/) });
+
+    const stored = {
+      ...existing,
+      status: "provided" as const,
+      value_text: JSON.stringify(wrongYear),
+    };
+    const closed = applyPaperSlotWrite({
+      existing: stored,
+      input: { value_text: JSON.stringify({ ...wrongYear, reviewed: true }) },
+      memberId: "m",
+      now,
+    });
+    expect(closed.ok).toBe(true);
   });
 });

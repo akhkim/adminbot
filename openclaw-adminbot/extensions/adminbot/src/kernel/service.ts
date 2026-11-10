@@ -8704,29 +8704,34 @@ export class AdminBotService {
       .listPapers()
       .map((paper) => ({ paper, slots: this.paperRows().listPaperSlots(paper.id) }));
     const open = candidates.filter(({ paper }) => !isPaperClosed(paper));
+    const now = new Date();
     return {
       ok: true,
       status: 200,
       payload: {
-        // One list in reading order: camera-ready first, then safety impact, arXiv, under review
-        // and rejections, each by nearest hard deadline (workflows/papers/paper-queue.ts).
-        papers: rankPaperQueue([
-          ...paperImpactQueue(open),
-          // A previous venue rejection does not cancel an explicit request to review a revision.
-          ...paperFeedbackQueue(candidates),
-          ...piReviewQueue(open),
-          // What OpenReview says each submitted paper needs next, for every venue.
-          ...openReviewPaperQueue(
-            candidates.map((candidate) => ({
-              ...candidate,
-              evidence: this.paperRows().listPaperflowEvidence(candidate.paper.id),
-            })),
-            this.deadlineReadModel(DEADLINE_VENUES),
-            new Date(),
-          ),
-          // Papers headed to a venue whose submission deadline is near: her proofreading clock.
-          ...proofreadingPaperQueue(open, this.deadlineReadModel(DEADLINE_VENUES), new Date()),
-        ]),
+        // One list in reading order: anything past its hard deadline first, then camera-ready,
+        // safety impact, arXiv, under review and rejections, each by nearest hard deadline
+        // (workflows/papers/paper-queue.ts).
+        papers: rankPaperQueue(
+          [
+            ...paperImpactQueue(open),
+            // A previous venue rejection does not cancel an explicit request to review a revision.
+            ...paperFeedbackQueue(candidates, now),
+            ...piReviewQueue(open),
+            // What OpenReview says each submitted paper needs next, for every venue.
+            ...openReviewPaperQueue(
+              candidates.map((candidate) => ({
+                ...candidate,
+                evidence: this.paperRows().listPaperflowEvidence(candidate.paper.id),
+              })),
+              this.deadlineReadModel(DEADLINE_VENUES),
+              now,
+            ),
+            // Papers headed to a venue whose submission deadline is near: her proofreading clock.
+            ...proofreadingPaperQueue(open, this.deadlineReadModel(DEADLINE_VENUES), now),
+          ],
+          now,
+        ),
       },
     };
   }

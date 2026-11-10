@@ -13,7 +13,11 @@ import {
   type AdminBotSocialConsentRecord,
   type AdminBotSocialDraftRecord,
 } from "../../contracts/paper-cycle.js";
-import { parsePaperFeedback } from "../../contracts/paper-feedback.js";
+import {
+  isStaleDeadline,
+  parsePaperFeedback,
+  STALE_DEADLINE_DAYS,
+} from "../../contracts/paper-feedback.js";
 import {
   hasPaperImpactText,
   isEmptyPaperImpactStatement,
@@ -196,6 +200,21 @@ export function applyPaperSlotWrite(params: {
           ok: false,
           error:
             "Feedback needs a reason, an HTTPS manuscript link and valid deadline times; feedback-by cannot follow submission cutoff.",
+        };
+      }
+      // A newly entered cutoff that is months behind is almost always the wrong year (2025 typed
+      // for 2026). Stored, it would sit on the PI queue as a long-overdue item, so ask for the year
+      // instead. Only a cutoff that changed is checked: closing or noting an old request keeps
+      // its original date and must still go through.
+      const stored = existing.value_text ? parsePaperFeedback(existing.value_text) : null;
+      if (
+        !feedback.reviewed &&
+        feedback.hard_deadline !== stored?.hard_deadline &&
+        isStaleDeadline(feedback.hard_deadline, params.now)
+      ) {
+        return {
+          ok: false,
+          error: `The submission cutoff is more than ${STALE_DEADLINE_DAYS} days in the past. Check the year.`,
         };
       }
       return { ok: true, record: provided({ value_text: JSON.stringify(feedback) }) };
