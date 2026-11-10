@@ -10,6 +10,11 @@
  * Pure: the events and a proposal lookup in, the issues out. The service decides who hears about
  * them, and the ledger decides how often.
  */
+import {
+  classifyMailSendFailure,
+  type MailSendFailureKind,
+  needsOperatorForMailFailure,
+} from "../connectors/mail-send-failure.js";
 import { classifySlackInviteFailure } from "../connectors/slack-admin.js";
 import type { AdminBotAuditEvent, AdminBotStoredProposal } from "../contracts/actions.js";
 
@@ -22,6 +27,69 @@ export const SLACK_MEMBER_BLOCK_MS = 30 * 24 * HOUR_MS;
 /** Action failures inside this window, at least this often with the same error, are an issue. */
 const REPEAT_WINDOW_MS = 24 * HOUR_MS;
 const REPEAT_THRESHOLD = 3;
+/** How far back a gog credential failure still counts, absent a later success that clears it. */
+const CREDENTIAL_WINDOW_MS = 7 * 24 * HOUR_MS;
+
+/**
+ * Actions the gog executor carries out. A success of any of them after a credential failure means
+ * the token works again. member_nudge.send is left out: it goes over Slack as often as by email,
+ * and a Slack success says nothing about the Google token.
+ */
+function isGogActionType(type: string): boolean {
+  return (
+    type === "email.send" ||
+    type === "email.draft" ||
+    type === "logistics.rec_letter_reminder" ||
+    type === "logistics.send_signed_document" ||
+    type === "reimbursement.submit" ||
+    type === "paper_integrity.sheet_scores" ||
+    type.startsWith("calendar.") ||
+    type.startsWith("sheet.")
+  );
+}
+
+/**
+ * The newest gog failure that a person has to fix (expired or revoked token, missing binary), if
+ * nothing gog-backed has succeeded since. One failure is enough: unlike a flaky send, an expired
+ * token fails every mail until someone re-runs `gog auth add`, and waiting for three of them is
+ * three members who silently did not hear from the lab.
+ */
+function googleCredentialFailure(
+  // Oldest first, so a success can clear the failures before it.
+  events: readonly AdminBotAuditEvent[],
+  nowMs: number,
+): { at: string; error: string; kind: MailSendFailureKind; count: number } | undefined {
+  let latest: { at: string; error: string; kind: MailSendFailureKind; count: number } | undefined;
+  for (const event of events) {
+    const details = (event.details ?? {}) as Record<string, unknown>;
+    const error = typeof details.error === "string" ? details.error : "";
+    if (
+      (event.type === "execution.executed" &&
+        typeof details.action_type === "string" &&
+        isGogActionType(details.action_type)) ||
+      event.type === "auth.approval_email_sent" ||
+      event.type === "auth.password_reset_email_sent"
+    ) {
+      latest = undefined;
+      continue;
+    }
+    const mailFailure =
+      event.type === "auth.approval_email_failed" ||
+      event.type === "auth.password_reset_email_failed";
+    // Executor errors from gog all start "gog ..." (see formatGogError); requiring it keeps a
+    // Slack or Drive-API 401 from being reported as the Google mail token.
+    const gogFailure = event.type === "execution.failed" && /\bgog\b/u.test(error);
+    const age = nowMs - Date.parse(event.timestamp);
+    if ((!mailFailure && !gogFailure) || !(age >= 0 && age <= CREDENTIAL_WINDOW_MS)) {
+      continue;
+    }
+    const kind = classifyMailSendFailure(error);
+    if (needsOperatorForMailFailure(kind)) {
+      latest = { at: event.timestamp, error, kind, count: (latest?.count ?? 0) + 1 };
+    }
+  }
+  return latest;
+}
 
 export type AutomationHealthIssue = {
   /** Stable while the problem is the same problem; the alert ledger dedupes on it. */
@@ -32,7 +100,8 @@ export type AutomationHealthIssue = {
     | "repeating_failure"
     | "channel_blocked"
     | "needs_manual_invite"
-    | "credentials";
+    | "credentials"
+    | "google_credentials";
   label: string;
   detail: string;
   count: number;
@@ -392,6 +461,28 @@ export function automationHealthIssues(
         last_seen: entry.last,
       });
     }
+  }
+
+  // Google: an expired token or a missing gog binary stops every lab email until a person acts.
+  const credentials = googleCredentialFailure(
+    events.toSorted((left, right) => left.timestamp.localeCompare(right.timestamp)),
+    nowMs,
+  );
+  if (credentials) {
+    issues.push({
+      key: `google-credentials:${credentials.kind}`,
+      kind: "google_credentials",
+      label:
+        credentials.kind === "connector_missing"
+          ? "AdminBot cannot find gog, so lab email is not going out"
+          : "AdminBot's Google credentials need re-authorizing; lab email is not going out",
+      detail:
+        credentials.kind === "connector_missing"
+          ? `The gog CLI is not on the AdminBot service PATH. Install it or fix PATH, then retry the failed sends from the approval queue. Last error: ${normalizeError(credentials.error)}`
+          : `Google refused the stored token (expired or revoked). Re-run \`gog auth add\` for the lab account on the AdminBot host, then retry the failed sends from the approval queue. Nothing that failed was marked sent. Last error: ${normalizeError(credentials.error)}`,
+      count: credentials.count,
+      last_seen: credentials.at,
+    });
   }
 
   // Invites: a broken channel is one issue; the people the bot cannot add are one per channel.
