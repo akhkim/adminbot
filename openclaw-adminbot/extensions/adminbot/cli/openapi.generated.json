@@ -42619,6 +42619,9 @@
           "reference": {
             "type": "string"
           },
+          "camera_ready_due": {
+            "type": "string"
+          },
           "applied_at": {
             "type": "string"
           }

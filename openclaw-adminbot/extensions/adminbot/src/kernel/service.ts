@@ -447,6 +447,7 @@ import {
   authorNamesFromLinks,
   buildAuthorLinks,
 } from "../workflows/papers/author-links.js";
+import { withPaperCameraReadyDeadlines } from "../workflows/papers/camera-ready-deadlines.js";
 import {
   buildConferenceAttendance,
   canonicalConferenceTripKey,
@@ -471,6 +472,7 @@ import {
   normalizedTitle,
   openReviewStageProofs,
   planOpenReviewSync,
+  refreshedCameraReadyDue,
   type OpenReviewEvidence,
   type OpenReviewFieldChange,
 } from "../workflows/papers/openreview-paper-sync.js";
@@ -583,6 +585,7 @@ import {
   isRestrictedCalendarEvent,
   syncCalendarMembership,
 } from "./service.calendar-membership.js";
+import { reconcileCameraReadyCalendar } from "./service.camera-ready.js";
 import { beginCollaboratorChatExecution } from "./service.collaborator-chats.js";
 import {
   recommendationDirectory,
@@ -2005,8 +2008,11 @@ export class AdminBotService {
     return this.failedInviteProposals.get(id);
   }
 
-  /** What service.birthday.ts needs to propose or withdraw a member's birthday event. */
-  private get birthdayDeps() {
+  /**
+   * What service.birthday.ts and service.camera-ready.ts need to propose or withdraw a lab
+   * calendar event. Both only file proposals; an admin approves every calendar write.
+   */
+  private get calendarProposalDeps() {
     return {
       store: this.store,
       removePending: (id: string, request: { note: string }) => this.removePending(id, request),
@@ -2777,7 +2783,13 @@ export class AdminBotService {
         );
       }
     }
-    return mergePublishedDeadlines(dataset, this.store.listPublishedDeadlines());
+    // Venues only the lab's accepted papers know about (OpenReview's camera-ready form) are added
+    // after the published corrections, so a curated or approved date always wins over them.
+    return withPaperCameraReadyDeadlines(
+      mergePublishedDeadlines(dataset, this.store.listPublishedDeadlines()),
+      this.store.listPapers(),
+      new Date(),
+    );
   }
 
   /** Set once `deadlineDataset` has thrown, so the warning above is not repeated per member. */
@@ -3345,7 +3357,7 @@ export class AdminBotService {
     proposal.updated_at = now;
     this.store.updateProposal(proposal);
     this.store.saveExecutionResult(result);
-    reconcileExecutedBirthday(this.birthdayDeps, proposal, now);
+    reconcileExecutedBirthday(this.calendarProposalDeps, proposal, now);
     this.recordAudit({
       type: "execution.executed",
       action_id: actionId,
@@ -4237,7 +4249,7 @@ export class AdminBotService {
         ...(moved.timezone ? { timezone: moved.timezone } : {}),
       });
     }
-    reconcileBirthdayEvent(this.birthdayDeps, stored);
+    reconcileBirthdayEvent(this.calendarProposalDeps, stored);
     // And for the working-groups slide: a new member, or one whose themes or photo changed, is a
     // slide that no longer matches. Debounced and fire-and-forget -- a save must not wait on
     // Google, and a roster import of 150 rows should become one plan, not 150.
@@ -6336,9 +6348,9 @@ export class AdminBotService {
     // Remembered so the daily imports recognize the retired record's id, addresses and Slack
     // account as this person instead of re-creating the duplicate the next morning.
     const merged: AdminBotLabMember = { ...patched, ...absorbedIdentity(patched, duplicate) };
-    reconcileBirthdayEvent(this.birthdayDeps, duplicate, true);
+    reconcileBirthdayEvent(this.calendarProposalDeps, duplicate, true);
     this.store.saveLabMember(merged);
-    reconcileBirthdayEvent(this.birthdayDeps, merged);
+    reconcileBirthdayEvent(this.calendarProposalDeps, merged);
     const moved = this.store.reassignMemberReferences(params.duplicateId, params.survivorId);
     this.store.revokeSessionsForMember(params.duplicateId, now);
     this.store.retireLabMember(params.duplicateId, params.survivorId, now);
@@ -6608,7 +6620,7 @@ export class AdminBotService {
     // Sessions first and through the revoke path rather than the purge, so a signed-in browser
     // stops working by the route that records that it did -- same order as the merge.
     this.store.revokeSessionsForMember(member.id, now);
-    reconcileBirthdayEvent(this.birthdayDeps, member, true);
+    reconcileBirthdayEvent(this.calendarProposalDeps, member, true);
     const removed = this.store.purgeMemberReferences(member.id);
     this.store.deleteLabMember(member.id);
     this.recordAudit({
@@ -8032,6 +8044,12 @@ export class AdminBotService {
       }
       if (plan.unchanged) {
         report.unchanged += 1;
+        // The fingerprint leaves the camera-ready date out, so a date that appears after the
+        // acceptance was recorded is saved here rather than waiting for the next decision.
+        const refreshed = options.dryRun ? undefined : refreshedCameraReadyDue(paper, plan);
+        if (refreshed) {
+          this.store.savePaper({ ...paper, openreview_sync: refreshed });
+        }
         continue;
       }
       if (plan.kept) {
@@ -8122,6 +8140,13 @@ export class AdminBotService {
     report.updates = updates.map(({ paper_id, line }) => ({ paper_id, line }));
     if (!options.dryRun) {
       this.tellPiOfOpenReviewUpdates(updates, updatedPapers, nowIso);
+      // Proposals only: each camera-ready reaches the lab calendar once an admin approves it.
+      reconcileCameraReadyCalendar(
+        this.calendarProposalDeps,
+        this.store.listPapers(),
+        this.deadlineReadModel(DEADLINE_VENUES),
+        new Date(nowIso),
+      );
     }
     // Counted per submission, not per report: one paper is usually several e-mails.
     const keyOf = (item: OpenReviewEvidence) => normalizedTitle(item.title) || item.forums[0] || "";

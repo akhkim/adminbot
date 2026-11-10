@@ -8607,6 +8607,7 @@ export interface components {
       submission_id?: string;
       observed_at?: string;
       reference?: string;
+      camera_ready_due?: string;
       applied_at: string;
     } & {
       [key: string]: unknown;

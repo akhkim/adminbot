@@ -532,6 +532,37 @@ function closesFeedbackRequest(
   return cutoff === undefined || row.provided_at <= cutoff;
 }
 
+/**
+ * The earliest camera-ready due date among the submission's author tasks, as an ISO instant.
+ * OpenReview opens the camera-ready form on the forum of an accepted paper, so this is the one
+ * date the lab can read for a venue nobody added to the deadline dataset.
+ */
+export function cameraReadyDueOf(evidence: OpenReviewEvidence): string | undefined {
+  const dues = (evidence.author_tasks ?? [])
+    .filter((task) => task.kind === "camera_ready")
+    .map((task) => Date.parse(task.due))
+    .filter((instant) => Number.isFinite(instant))
+    .toSorted((left, right) => left - right);
+  return dues.length ? new Date(dues[0]).toISOString() : undefined;
+}
+
+/**
+ * The stored sync with a newly observed camera-ready date, when the fingerprint is unchanged but
+ * the date is new or moved; undefined when there is nothing to record. A due date that disappears
+ * (the form closed and the forum stopped listing it) keeps the last one seen.
+ */
+export function refreshedCameraReadyDue(
+  paper: AdminBotPaperRecord,
+  plan: OpenReviewSyncPlan,
+): AdminBotPaperOpenReviewSync | undefined {
+  const stored = paper.openreview_sync;
+  const due = plan.sync.camera_ready_due;
+  if (!plan.unchanged || !stored || !due || stored.camera_ready_due === due) {
+    return undefined;
+  }
+  return { ...stored, camera_ready_due: due };
+}
+
 export function planOpenReviewSync(
   paper: AdminBotPaperRecord,
   slots: readonly AdminBotPaperSlotRecord[],
@@ -548,6 +579,7 @@ export function planOpenReviewSync(
     ...(evidence.submission_id ? { submission_id: evidence.submission_id } : {}),
     ...(evidence.observed_at ? { observed_at: evidence.observed_at } : {}),
     ...(evidence.reference ? { reference: evidence.reference } : {}),
+    ...(cameraReadyDueOf(evidence) ? { camera_ready_due: cameraReadyDueOf(evidence) } : {}),
     applied_at: nowIso,
   };
   const plan: OpenReviewSyncPlan = {
