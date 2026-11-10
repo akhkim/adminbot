@@ -110,7 +110,7 @@ import { seedMemberSearch } from "./adminbot/member-search-seed.ts";
 import { agoLabel, alertText, nudgeAlerts } from "./adminbot/nudge-alerts.ts";
 import { configureDraftSync, retryDraftSync } from "./adminbot/offline/draft-sync.ts";
 import { needsLabPapers, papersMissingFor } from "./adminbot/papers-required.ts";
-import { ownPapers } from "./adminbot/projects/model.ts";
+import { navigateToProject, ownPapers } from "./adminbot/projects/model.ts";
 import { renderProjectsNav, type ProjectsNavState } from "./adminbot/projects/nav.ts";
 import { openPaperForViewer } from "./adminbot/projects/open-paper.ts";
 import { needsLabRoster } from "./adminbot/roster-required.ts";
@@ -620,6 +620,10 @@ const lazyNotificationDrafts = createLazyView(
 );
 const lazyTalkLeaderboard = createLazyView(
   () => import("./adminbot/views/talk-leaderboard.ts"),
+  notifyLazyViewHost,
+);
+const lazyLabProjects = createLazyView(
+  () => import("./adminbot/views/lab-projects.ts"),
   notifyLazyViewHost,
 );
 const lazyPublicShell = createLazyView(
@@ -3572,6 +3576,16 @@ export function renderApp(state: AppViewState) {
                 resolveAdminBotBaseUrl(state.settings),
                 loadStoredMemberSession()?.sessionToken ?? "",
                 state.memberId ?? "",
+              ),
+            )
+          : nothing}
+        ${state.tab === "adminbotLabProjects" && adminBotMode === "admin"
+          ? renderLazyView(lazyLabProjects, (m) =>
+              m.renderLabProjects(
+                resolveAdminBotBaseUrl(state.settings),
+                loadStoredMemberSession()?.sessionToken ?? "",
+                // The same project page My Projects opens; Back returns here.
+                (paperId) => navigateToProject(state, paperId),
               ),
             )
           : nothing}

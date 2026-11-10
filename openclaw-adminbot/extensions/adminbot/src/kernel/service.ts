@@ -457,6 +457,7 @@ import {
   paperConferenceKey,
   type ConferenceAttendanceView,
 } from "../workflows/papers/conference-attendance.js";
+import { buildLabProjects, type AdminBotLabProject } from "../workflows/papers/lab-projects.js";
 import {
   isProjectActive,
   summarizeProject,
@@ -7121,6 +7122,23 @@ export class AdminBotService {
         ),
       )
       .toSorted((left, right) => (left.deadline ?? "9999").localeCompare(right.deadline ?? "9999"));
+    return { ok: true, status: 200, payload: { projects } };
+  }
+
+  /**
+   * Every project in the lab, for the admins' Lab Projects page. The route is admin-only; the rows
+   * carry no credentials, off-roster emails or prose (workflows/papers/lab-projects.ts).
+   */
+  listLabProjects(nowIso?: string): AdminBotServiceResponse<{ projects: AdminBotLabProject[] }> {
+    const projects = buildLabProjects({
+      papers: this.store.listPapers(),
+      roster: this.store.listLabMembers(),
+      slots: (paperId) => this.store.listPaperSlots(paperId),
+      drafts: (paperId) => this.store.listSocialDrafts(paperId),
+      weeklyUpdates: this.store.listPaperWeeklyUpdates(),
+      helpRequests: this.store.listHelpRequests(),
+      now: nowIso ? new Date(nowIso) : new Date(),
+    });
     return { ok: true, status: 200, payload: { projects } };
   }
 
