@@ -5,6 +5,7 @@ import type { AdminBotPaperRecord } from "../../contracts/actions.js";
 import { ADMINBOT_LAB_OVERLEAF_HOST, ADMINBOT_OVERLEAF_URL_ENV } from "../../contracts/overleaf.js";
 import type { AdminBotSocialDraftRecord } from "../../contracts/paper-cycle.js";
 import {
+  ADMINBOT_QUICK_POINTERS_DOC_URL,
   adminBotPaperSlotRegistry,
   adminBotPaperSlots,
   adminBotRetiredPaperSlots,
@@ -840,6 +841,46 @@ it("redacts feedback reasons and manuscript links for unrelated viewers", () => 
   ];
   expect(redactPaperSlots(rows, false)[0].value_text).toBeUndefined();
   expect(redactPaperSlots(rows, true)[0].value_text).toBe(rows[0].value_text);
+});
+
+describe("talk slides after the PaperMentor review", () => {
+  const reviewed = [
+    provided("project_folder"),
+    provided("overleaf_share"),
+    provided("papermentor_review"),
+  ];
+
+  it("asks for the slides once the review is done, without waiting for the PDF", () => {
+    const open = actionablePaperSlots(paper(), reviewed, NOW).map((item) => item.slot);
+    expect(open).toContain("slides");
+    expect(open).not.toContain("pdf_ready");
+  });
+
+  it("does not ask before the review is done", () => {
+    const open = actionablePaperSlots(
+      paper(),
+      [provided("project_folder"), provided("overleaf_share")],
+      NOW,
+    ).map((item) => item.slot);
+    expect(open).not.toContain("slides");
+  });
+
+  it("stops once the slides are registered", () => {
+    const open = actionablePaperSlots(paper(), [...reviewed, provided("slides")], NOW).map(
+      (item) => item.slot,
+    );
+    expect(open).not.toContain("slides");
+  });
+
+  it("tells them to add the deck to their theme's overall slides, linking Quick Pointers", () => {
+    const item = actionablePaperSlots(paper(), reviewed, NOW).find(
+      (entry) => entry.slot === "slides",
+    );
+    expect(item?.detail).toContain("theme's overall slides");
+    expect(item?.detail).toContain(ADMINBOT_QUICK_POINTERS_DOC_URL);
+    const message = buildNudgeMessage({ groups: [{ title: "A paper", items: [item!] }], now: NOW });
+    expect(message).toContain(`<${ADMINBOT_QUICK_POINTERS_DOC_URL}|Quick Pointers>`);
+  });
 });
 
 describe("a submitted paper whose core steps were never ticked", () => {

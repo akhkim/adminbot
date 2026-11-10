@@ -17,7 +17,7 @@ flowchart TD
     PM -->|Merge low cost fixes| FX[Fixes merged]
     FX -->|Compiles cleanly| PDF[Compiled paper PDF ready]
 
-    PDF -->|Branch 1| SL[Slides]
+    PM -->|Branch 1| SL[Slides]
     PDF -->|Branch 2| XD[X post draft]
     PDF -->|Branch 2| LI[LinkedIn post draft]
     PDF -->|Branch 3| DR[Internal Drive PDF]

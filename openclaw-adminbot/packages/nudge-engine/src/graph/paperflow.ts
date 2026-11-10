@@ -190,7 +190,7 @@ export const paperflow: Graph = {
     { from: "PM", to: "FX", kind: "requires", label: "Merge low cost fixes" },
     { from: "FX", to: "PDF", kind: "requires", label: "Compiles cleanly" },
 
-    { from: "PDF", to: "SL", kind: "requires", label: "Branch 1" },
+    { from: "PM", to: "SL", kind: "requires", label: "Branch 1" },
     { from: "PDF", to: "XD", kind: "requires", label: "Branch 2" },
     { from: "PDF", to: "LI", kind: "requires", label: "Branch 2" },
     { from: "PDF", to: "DR", kind: "requires", label: "Branch 3" },
