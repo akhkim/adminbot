@@ -918,6 +918,17 @@ describe("milestoneDraftError", () => {
 });
 
 describe("the split tables and the deadline panel", () => {
+  // A fixed day, as in "the big-deadlines panel": the deadline panel and its picker read the bundled
+  // deadline dataset, so on the real clock the picker test went red once the dataset had nothing
+  // upcoming beyond the four rows the panel already shows (it did on 2026-11-09).
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-08-24T12:00:00Z"));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   const scheduled = () =>
     member({
       time_off: [
