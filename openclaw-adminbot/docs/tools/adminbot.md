@@ -533,6 +533,40 @@ has expired. A `404` from the route itself is reported as what it is: the Contro
 Vercel and the service from Aurora, so a Membership tab that reports no member-sheet route is
 talking to a service that predates it and needs a deploy, not a broken spreadsheet.
 
+### An admin's click on an admin-only tab is the approval
+
+What an admin does on an admin-only tab -- Members, Membership, the onboarding email panel, member
+requests, sign-ups, the Calendar tab -- runs when they press the button. It does not wait in
+Pending Actions. Each external step is still a typed proposal. The service approves it as that
+admin (the approver comes from their session, never from the request), executes it, and audits it,
+exactly as if the same admin had approved it in Pending Actions. This covers:
+
+- every onboarding guide sent from **Add member**, **Send/Resend onboarding email**, an approved
+  member request or sign-up, and **onboard selected rows**, whatever the template;
+- the guide a **Member Type** change owes;
+- a **Membership** grid save (`sheet.update_cells`);
+- an interview invitation sent by an admin (one a member sends still waits for an admin).
+
+Nothing is claimed that did not happen. When the connector declines (a missing template value, a
+Slack Connect failure, a delivery switch), the notice is an error that names the reason, and the
+action stays approved but unsent. `POST /actions/{id}/execute` now returns that reason as
+`not_delivered_reason` on a `simulated` result, and Pending Actions shows it instead of a green
+"simulated".
+
+A copy of a guide still waiting in Pending Actions is **retired, not approved**, when an admin sends
+the guide directly. The waiting copy may carry a subject, body or values the agent composed through
+`POST /proposals`, so it is removed (recorded as `proposal.removed`) and a fresh guide composed by
+the service is sent instead.
+
+These paths still queue, because nobody is present to approve:
+
+- the weekly sheet sweep and other cron jobs;
+- the agent's service token;
+- member sessions;
+- the Slack channel-naming sweep, which renames channels in bulk and also runs from cron;
+- birthday events filed as a side effect of a profile save;
+- any action whose policy needs two approvers.
+
 ### One onboarding, every way in
 
 A person can reach the roster six ways: **Add member** on the Members tab, approving a **member
@@ -561,8 +595,8 @@ of their own: naming a member or collaborator grants nothing, and a "view as" se
 refused. The list covers approving and declining new members only, not naming the PI. It lives in
 the host's environment rather than in Settings because any admin can edit Settings and could
 otherwise add themselves. An
-admin's click approves each step on the spot for the rest (Add member, Add row, and enrollment
-from onboard selected rows, whose mails still wait in Pending Actions), and the PI's click does
+admin's click approves each step on the spot for the rest (Add member, Add row, and onboard
+selected rows, guides included), and the PI's click does
 the same for the two above. The sweep runs with nobody present, and a spreadsheet row is not an
 authorization, so it creates each joiner at `external_collaborator` and files one
 `lab_member.enroll` per joiner. Approving that card sets the level the Member Type implies and runs
@@ -612,9 +646,9 @@ that.
 **Add member** on the Members tab creates the roster record and, unless the admin unticks **Start
 their onboarding**, puts the new member through onboarding in the same press. The record is written
 over `PUT /lab/members/{id}`; the onboarding leg is `POST /lab/members/{id}/onboarding/guide`, which
-composes nothing and sends nothing -- it files an `onboarding.send_guide` proposal for approval,
-exactly as the Onboarding section's sheet selection and the weekly sweep do. Approving it is what
-mints the Slack Connect invite, provisions the Drive folder and sends the mail. The DCS account
+files an `onboarding.send_guide` proposal and approves and executes it as the admin who pressed the
+button. Executing it is what mints the Slack Connect invite, provisions the Drive folder and sends
+the mail. The weekly sweep files the same proposal but leaves it for approval. The DCS account
 request is filed by the save itself for a new full member or major coauthor (see
 [The DCS roster sheet](#the-dcs-roster-sheet)).
 
@@ -626,26 +660,27 @@ grant.
 
 The save and the guide are reported together, and a refused guide never undoes the save. The
 reasons an admin will see are all fixable: the record has no email address, its Member Type sends no
-mail (or is blank), or that guide has already been sent to the address or is already waiting for an
-approver -- which is what pressing **Add member** twice on one id produces. Onboarding needs a real
+mail (or is blank), the guide has already been sent to the address (which is what pressing **Add
+member** twice on one id produces), or the connector declined and named why. Onboarding needs a real
 admin sign-in; over break-glass gateway access the record still saves and the notice says the guide
-was not queued.
+was not sent.
 
 Opening a member in the editor shows their **Onboarding email** status. When nothing has gone out
-(never queued, failed or rejected) it offers **Send onboarding email**; once the guide has been
-sent it offers **Resend onboarding email**, for a mail that went to spam or was never read. Both
-ask for confirmation in the panel and call the same `POST /lab/members/{id}/onboarding/guide`, a
-resend with `{"resend": true}`. A resend lifts only the "already sent" refusal: a copy still
-waiting for an approver is refused either way, and the resend is filed with
-`add_dcs_roster_row: false` so DCS is never asked for a second account. It needs an admin member
+(never queued, failed or rejected) it offers **Send onboarding email**. When a copy is waiting in
+Pending Actions it offers **Send onboarding email now**, which retires that copy and sends a fresh
+one. Once the guide has been sent it offers **Resend onboarding email**, for a mail that went to
+spam or was never read. All three ask for confirmation in the panel and call the same
+`POST /lab/members/{id}/onboarding/guide`, a resend with `{"resend": true}`, and each sends on the
+admin's approval. A resend is filed with `add_dcs_roster_row: false` so DCS is never asked for a
+second account. It needs an admin member
 session; the service token is refused.
 
 ### Changing a Member Type
 
 Changing **Member type** on an existing member on the Lab Members tab re-onboards them and
 applies it on the spot. The admin's save is the approval: each external step is still a typed
-proposal, approved by that admin, executed and audited, the same way Add row works. Only a
-non-standard guide waits in Pending Actions (below). `PUT /lab/members/{id}` does this only for a
+proposal, approved by that admin, executed and audited, the same way Add row works. That includes
+the onboarding guide (below). `PUT /lab/members/{id}` does this only for a
 genuine admin session and only when the type actually changes (compared token-wise, so
 `Coauthor-Major ` is not a change). The service token still cannot set the field.
 
@@ -671,10 +706,11 @@ genuine admin session and only when the type actually changes (compared token-wi
   hand.
 - **The new type's onboarding email**, when the new type calls for a different guide than the old
   one did (`onboarding.send_guide`). Setting a blank type to `full` sends the full-member guide;
-  `full` to `full, alumni` sends nothing, since `full` still decides the guide. The full-member and
-  alumni guides go out on the admin's save; every other guide waits in Pending Actions, as it does
-  from Add member. A guide the address has already been sent, or that is already waiting, is
-  reported as skipped rather than sent twice. Types that send no mail send nothing here either.
+  `full` to `full, alumni` sends nothing, since `full` still decides the guide. Every template's
+  guide goes out on the admin's save, as it does from Add member, and a copy still waiting in
+  Pending Actions is retired in favor of the one sent. A guide the address has already been sent is
+  reported as skipped rather than sent twice. A change with no admin behind it, such as the sheet
+  sweep, still leaves the guide in Pending Actions. Types that send no mail send nothing here either.
 
 **Meetings** is a second checkbox field listing the lab calendar's standing meetings: the Monday
 group meeting and every recurring `Theme:` and `Proj:` series (`GET /lab/meetings`, admin only).
@@ -2230,9 +2266,10 @@ project, exact task, and two lab interviewers. Search by name if an interviewer 
 current roster page. Both interviewers need a Slack user ID and email on their profiles.
 
 **Preview email** shows the candidate address, interviewer CC addresses, and task. Editing a
-field invalidates the preview. **Submit for admin approval** queues an `onboarding.send_guide`
-proposal in Pending Actions; it does not email or invite anyone. An admin reviews and approves
-the exact payload there.
+field invalidates the preview. From a member, **Submit for admin approval** queues an
+`onboarding.send_guide` proposal in Pending Actions; it does not email or invite anyone, and an
+admin reviews and approves the exact payload there. From an admin, the same button approves it as
+them and sends it now, and the notice says whether it went out.
 
 Execution creates or reuses a private candidate-specific Slack channel, checks that no other
 people occupy it, adds the two interviewers, and sends the candidate's Slack Connect invitation

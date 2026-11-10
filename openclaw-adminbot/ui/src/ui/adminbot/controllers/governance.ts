@@ -7,6 +7,7 @@ import {
   approveActionAsMember,
   executeActionAsMember,
   removePendingAction,
+  type AdminBotExecutionView,
 } from "../api/governance.ts";
 import { loadStoredMemberSession } from "../auth/session.ts";
 import {
@@ -112,10 +113,7 @@ export async function approveAdminBotAction(
       await loadAdminBot(host);
       return;
     }
-    host.adminBotNotice = {
-      kind: "success",
-      text: `${executed.value.status === "executed" ? "Approved and executed" : "Approved and simulated"} ${proposal.id}.`,
-    };
+    host.adminBotNotice = executedNotice(executed.value, `Approved and executed ${proposal.id}.`);
     await loadAdminBot(host);
   } finally {
     if (!sessionToken || loadStoredMemberSession()?.sessionToken === sessionToken) {
@@ -232,6 +230,25 @@ export async function removeSelectedPendingAdminBotActions(host: AdminBotHost): 
   }
 }
 
+/**
+ * A live run that came back `simulated` sent nothing, so it is an error, not a green "simulated":
+ * the action stays approved and unsent, and the reason is what the admin has to act on.
+ */
+function executedNotice(
+  result: AdminBotExecutionView,
+  done: string,
+): { kind: "success" | "error"; text: string } {
+  if (result.status !== "simulated") {
+    return { kind: "success", text: done };
+  }
+  return {
+    kind: "error",
+    text: `${result.action_id} was approved, but nothing was sent: ${
+      result.not_delivered_reason?.trim() || "the connector declined to deliver it"
+    }.`,
+  };
+}
+
 export async function executeAdminBotAction(
   host: AdminBotHost,
   proposal: AdminBotActionProposal,
@@ -261,10 +278,7 @@ export async function executeAdminBotAction(
       };
       return;
     }
-    host.adminBotNotice = {
-      kind: "success",
-      text: `${executed.value.status === "executed" ? "Executed" : "Simulated"} ${proposal.id}.`,
-    };
+    host.adminBotNotice = executedNotice(executed.value, `Executed ${proposal.id}.`);
     await loadAdminBot(host);
   } finally {
     if (!sessionToken || loadStoredMemberSession()?.sessionToken === sessionToken) {

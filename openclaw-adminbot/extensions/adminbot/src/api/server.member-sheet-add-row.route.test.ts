@@ -30,7 +30,7 @@ afterEach(async () => {
   }
 });
 
-async function startService() {
+async function startService(options: { rows?: string[][]; withhold?: string } = {}) {
   const executed: AdminBotStoredProposal[] = [];
   const sent: string[] = [];
   const onboardingSender = (async (request: { email: string }) => {
@@ -44,6 +44,9 @@ async function startService() {
     dcsFormRunner: async () => {},
     executor: {
       execute: async (proposal) => {
+        if (options.withhold) {
+          return { handled: true, delivered: false, reason: options.withhold };
+        }
         executed.push(proposal);
         return { handled: true };
       },
@@ -52,7 +55,7 @@ async function startService() {
     memberSheet: {
       spreadsheetId: "sheet-1",
       tab: "Roster",
-      read: vi.fn(async () => [HEADER]),
+      read: vi.fn(async () => [HEADER, ...(options.rows ?? [])]),
     },
   });
   await new Promise<void>((resolve, reject) => {
@@ -122,6 +125,68 @@ const addRow = (baseUrl: string, headers: Record<string, string>) =>
     headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify({ name: "Ada Lovelace", member_type: "full", email: "ada@lab.co" }),
   });
+
+// The Membership tab's grid Save: one admin click, so it is written now rather than queued.
+describe("POST /membership/sheet", () => {
+  const ROWS = [["Ada Lovelace", "full", "ada@lab.co", "ada@lab.co"]];
+  const save = (baseUrl: string, headers: Record<string, string>) =>
+    fetch(`${baseUrl}/membership/sheet`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...headers },
+      body: JSON.stringify({
+        edits: [{ sheet_row: 2, column: 1, value: "alumni" }],
+        expected: { "2:1": "full" },
+      }),
+    });
+
+  it("writes the edit on the admin's approval instead of queueing it", async () => {
+    const { baseUrl, mock, executed } = await startService({ rows: ROWS });
+    const token = await adminToken(mock, baseUrl);
+
+    const response = await save(baseUrl, { Authorization: `Bearer ${token}` });
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      proposal?: { status: string };
+      execution?: { status: string };
+    };
+    expect(body.execution).toEqual({ status: "executed" });
+    expect(body.proposal?.status).toBe("executed");
+    const write = executed.find((proposal) => proposal.type === "sheet.update_cells");
+    expect(write?.approvals.map((approval) => approval.approver_id)).toEqual(["admin"]);
+    const pending = mock.service.listPending();
+    expect(pending.ok && pending.payload.proposals).toEqual([]);
+  });
+
+  it("says why when the connector declines, and leaves nothing claimed as written", async () => {
+    const { baseUrl, mock, executed } = await startService({
+      rows: ROWS,
+      withhold: "sheet writes are switched off",
+    });
+    const token = await adminToken(mock, baseUrl);
+
+    const body = (await (await save(baseUrl, { Authorization: `Bearer ${token}` })).json()) as {
+      proposal?: { status: string };
+      execution?: { status: string; reason?: string };
+    };
+
+    expect(body.execution).toEqual({
+      status: "not_executed",
+      reason: "sheet writes are switched off",
+    });
+    expect(body.proposal?.status).toBe("approved");
+    expect(executed).toEqual([]);
+  });
+
+  it("refuses the service principal, so the agent cannot write the roster this way", async () => {
+    const { baseUrl, mock, executed } = await startService({ rows: ROWS });
+    const response = await save(baseUrl, { Authorization: `Bearer ${SERVICE_TOKEN}` });
+    expect(response.status).toBe(403);
+    expect(executed).toEqual([]);
+    const pending = mock.service.listPending();
+    expect(pending.ok && pending.payload.proposals).toEqual([]);
+  });
+});
 
 describe("POST /membership/sheet/rows", () => {
   it("appends, creates and sends, approved by the signed-in admin", async () => {

@@ -143,6 +143,8 @@ export type MemberSheetEditResult = {
   }[];
   unchanged: number;
   touches_access: boolean;
+  /** An admin's save is approved and written in the same request; absent from older services. */
+  execution?: { status: "executed" } | { status: "not_executed"; reason: string };
 };
 
 export type MemberSheetOnboardResult = {

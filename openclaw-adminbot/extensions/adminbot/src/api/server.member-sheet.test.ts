@@ -240,8 +240,8 @@ describe("previewing an onboarding", () => {
 
   // The preview is the mail, not a summary of it: both routes run the same plan over the same
   // sheet, so what the admin read in the panel is what confirming queues.
-  it("composes the same mails onboarding would queue, and queues none of them", async () => {
-    const { service, pending } = realService();
+  it("composes the same mails onboarding would send, and sends none of them", async () => {
+    const { service, pending, executed: ran } = realService();
     const request = { sheet_rows: [2, 3] };
     const preview = await previewOnboardFromMemberSheet(source(), request, env);
     if ("error" in preview) {
@@ -266,11 +266,16 @@ describe("previewing an onboarding", () => {
     });
     expect(preview.access_only).toEqual([]);
 
+    expect(ran).toHaveLength(0);
     const executed = await onboardRows(service, source(), request, env);
     if ("error" in executed) {
       throw new Error(executed.error.message);
     }
-    const guide = pending().find((proposal) => proposal.type === "onboarding.send_guide");
+    const guide = ran.find(
+      (proposal) =>
+        proposal.type === "onboarding.send_guide" &&
+        (proposal.proposed_payload as { template_id?: string }).template_id === "alumni",
+    );
     expect(guide?.proposed_payload).toMatchObject({ email: mail.email, template_id: "alumni" });
   });
 
@@ -286,8 +291,8 @@ describe("onboarding from the roster", () => {
     ADMINBOT_CONTACT_EMAILS: "help@lab.example",
   } as NodeJS.ProcessEnv;
 
-  it("creates the member and queues their guide, the same steps as every other path", async () => {
-    const { service, pending } = realService();
+  it("creates the member and sends their guide, the same steps as every other path", async () => {
+    const { service, pending, executed } = realService();
     const result = await onboardRows(service, source(), { sheet_rows: [2] }, env);
     if ("error" in result) {
       throw new Error(result.error.message);
@@ -298,13 +303,14 @@ describe("onboarding from the roster", () => {
         email: "yuenc2@illinois.edu",
         template_id: "alumni",
         proposal_id: expect.any(String),
-        // Only the standard full-member guide is sent on the admin's click; alumni waits.
-        status: "queued",
+        // The admin's click approves every template's guide, alumni included.
+        status: "sent",
       },
     ]);
     // An onboarding.send_guide, not a pre-rendered email.send: the send is what provisions the
     // Slack invite and the Drive folder the mail promises.
-    expect(pending().map((proposal) => proposal.type)).toEqual(["onboarding.send_guide"]);
+    expect(executed.map((proposal) => proposal.type)).toContain("onboarding.send_guide");
+    expect(pending()).toEqual([]);
     expect(result.enrolled.map((entry) => entry.member_id)).toEqual(["yuen-chen"]);
     const roster = service.listLabMembers();
     const yuen = roster.ok && roster.payload.members.find((member) => member.id === "yuen-chen");
@@ -315,7 +321,7 @@ describe("onboarding from the roster", () => {
   });
 
   it("mails an existing roster member without creating them again", async () => {
-    const { service, pending } = realService();
+    const { service, executed } = realService();
     service.upsertLabMember(
       withCompleteProfile({
         id: "yc",
@@ -329,9 +335,11 @@ describe("onboarding from the roster", () => {
       throw new Error(result.error.message);
     }
     expect(result.enrolled).toEqual([]);
-    expect(pending()[0]?.proposed_payload).toMatchObject({ member_id: "yc" });
+    expect(
+      executed.find((proposal) => proposal.type === "onboarding.send_guide")?.proposed_payload,
+    ).toMatchObject({ member_id: "yc" });
 
-    // A second run finds the guide already waiting and does not queue another copy.
+    // A second run finds the guide already sent and does not send another copy.
     const again = await onboardRows(service, source(), { sheet_rows: [2] }, env);
     if ("error" in again) {
       throw new Error(again.error.message);

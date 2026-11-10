@@ -46,6 +46,8 @@ export type AdminBotExecutionView = {
   action_id: string;
   status: "simulated" | "executed";
   dry_run: boolean;
+  /** Why nothing was sent when a live run came back `simulated`. */
+  not_delivered_reason?: string;
 };
 
 async function privilegedActionCall<T>(

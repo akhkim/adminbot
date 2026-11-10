@@ -981,6 +981,44 @@ describe("approveAdminBotAction", () => {
     });
   });
 
+  it("reports a live run that sent nothing as an error with the connector's reason", async () => {
+    saveStoredMemberSession({ sessionToken: "admin-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("/approve")) {
+        return new Response(
+          JSON.stringify({
+            ...proposal,
+            status: "approved",
+            approvals: [{ approver_role: "admin", approver_id: "zj" }],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.includes("/execute")) {
+        return new Response(
+          JSON.stringify({
+            action_id: "act_1",
+            status: "simulated",
+            dry_run: false,
+            executed_at: "2026-11-11T00:00:00Z",
+            not_delivered_reason: "missing required values: sender_name",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response(JSON.stringify({}), { status: 200 });
+    });
+
+    await approveAdminBotAction(host, proposal);
+
+    expect(host.adminBotNotice).toEqual({
+      kind: "error",
+      text: "act_1 was approved, but nothing was sent: missing required values: sender_name.",
+    });
+  });
+
   it("keeps the unreachable message when the execute request never lands", async () => {
     saveStoredMemberSession({ sessionToken: "admin-sess-tok", expiresAt: "later" });
     const { host } = createHost({});
@@ -1231,8 +1269,11 @@ describe("saveAdminBotMember — onboarding the person just added", () => {
     // The save goes first: onboarding is about a member who is on the roster by then.
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/lab/members/grace");
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ method: "PUT" });
-    expect(host.adminBotNotice?.kind).toBe("success");
-    expect(host.adminBotNotice?.text).toMatch(/queued in Pending Actions/i);
+    // An older service that still queues the guide: not a send, so it is not reported as one.
+    expect(host.adminBotNotice?.kind).toBe("error");
+    expect(host.adminBotNotice?.text).toMatch(
+      /has not been sent: it is waiting in Pending Actions/i,
+    );
   });
 
   it("reports a confirmed immediate send without directing the admin to Pending Actions", async () => {
@@ -1250,7 +1291,7 @@ describe("saveAdminBotMember — onboarding the person just added", () => {
       ),
     );
     await saveAdminBotMember(host, baseInput, { onboard: true });
-    expect(host.adminBotNotice?.text).toContain("standard onboarding email has been sent");
+    expect(host.adminBotNotice?.text).toContain("onboarding email has been sent");
     expect(host.adminBotNotice?.text).not.toContain("Pending Actions");
   });
 

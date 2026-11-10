@@ -156,6 +156,11 @@ export type MemberSheetEditResult = {
   }[];
   unchanged: number;
   touches_access: boolean;
+  /**
+   * Set when an admin's save was approved and run in the same request: `executed` once the sheet
+   * was written, `not_executed` with the connector's or the gate's reason otherwise.
+   */
+  execution?: { status: "executed" } | { status: "not_executed"; reason: string };
 };
 
 /**
@@ -572,21 +577,30 @@ const ADDRESS_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u;
  * Propose, approve as the clicking admin, and execute, in one call.
  *
  * Add row is one deliberate click by an administrator on a form that says everything it will do,
- * and "immediately" is the requirement -- so the click is the approval. A Member Type change saved
- * on the Lab Members tab is applied the same way (server.member-type-change.ts). It still goes through the
- * gate rather than around it: a typed proposal, an approval naming the admin, an execution and its
+ * and "immediately" is the requirement -- so the click is the approval. Every other admin click on
+ * an admin-only tab that files an action is applied the same way: a Member Type change on the Lab
+ * Members tab (server.member-type-change.ts), an onboarding guide sent or resent, a Membership tab
+ * save, an admin's interview invitation. It still goes through the gate rather than around it: a typed proposal, an approval naming the admin, an execution and its
  * audit, exactly what Pending Actions records when the same admin approves there.
  */
 export async function approveAndExecute(
   service: AdminBotService,
   proposal: AdminBotStoredProposal,
   approver: MemberSheetApprover,
+  note = "approved by the admin who submitted Add row",
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
   const approved = service.approve(proposal.id, {
     payload_hash: proposal.payload_hash,
     ...approver,
-    note: "approved by the admin who submitted Add row",
+    note,
   });
+  // A policy needing a second approver leaves it pending: the click was one approval, not the run.
+  if (approved.ok && approved.payload.status !== "approved") {
+    return {
+      ok: false,
+      reason: "approved once; it needs another admin's approval in Pending Actions",
+    };
+  }
   if (!approved.ok) {
     return { ok: false, reason: approved.error.message };
   }

@@ -2685,6 +2685,8 @@ export type AdminBotExecutionResult = {
   executed_at: string;
   /** What the connector reported creating (see AdminBotExecutorOutcome.artifacts). */
   artifacts?: Record<string, string>;
+  /** Why nothing was sent, when a live run came back `simulated`; absent for a dry run. */
+  not_delivered_reason?: string;
 };
 
 export type AdminBotAuditEvent = {

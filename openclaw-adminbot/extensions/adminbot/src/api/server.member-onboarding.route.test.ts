@@ -503,7 +503,7 @@ describe("the guide action", () => {
     expect((await send()).status).toBe(409);
     expect(guides).toHaveLength(1);
   });
-  it("sends an approved guide with the project channels the admin picked", async () => {
+  it("sends the guide on the admin's click, with the project channels the admin picked", async () => {
     const { baseUrl, mock, guides } = await startService();
     const token = await adminToken(mock, baseUrl);
     const saved = mock.service.upsertLabMember(
@@ -516,20 +516,81 @@ describe("the guide action", () => {
     );
     expect(saved.ok).toBe(true);
 
-    const queued = await fetch(`${baseUrl}/lab/members/cora/onboarding/guide`, {
+    const sent = await fetch(`${baseUrl}/lab/members/cora/onboarding/guide`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify({ slack_project_channels: ["proj-alg-circuit"] }),
     });
-    expect(queued.status).toBe(200);
-    const guide = pending(mock).find((proposal) => proposal.type === "onboarding.send_guide");
-    await approveAndRun(baseUrl, token, guide!);
-
-    expect(guides).toHaveLength(2);
-    expect(guides[0]).toMatchObject({ template_id: "welcome" });
-    expect(guides[1]).toMatchObject({
+    expect(sent.status).toBe(200);
+    // The click is the approval: nothing is left in Pending Actions, and only the role's own
+    // guide goes out -- no interim welcome, since the full guide is not waiting for anyone.
+    expect(await sent.json()).toMatchObject({ status: "done", template_id: "coauthor_minor" });
+    expect(pending(mock).some((proposal) => proposal.type === "onboarding.send_guide")).toBe(false);
+    expect(guides).toHaveLength(1);
+    expect(guides[0]).toMatchObject({
       email: "cora@lab.test",
       slack_project_channels: ["proj-alg-circuit"],
     });
+  });
+
+  it("replaces a guide still waiting in Pending Actions with the one it sends", async () => {
+    const { baseUrl, mock, guides } = await startService();
+    const token = await adminToken(mock, baseUrl);
+    mock.service.upsertLabMember(
+      withCompleteProfile({
+        id: "cora",
+        name: "Cora",
+        email: "cora@lab.test",
+        member_type: "coauthor-minor",
+      } as AdminBotLabMemberInput),
+    );
+    // A copy filed by an unattended path, carrying text no admin composed.
+    const waiting = mock.service.createProposal({
+      type: "onboarding.send_guide",
+      summary: "agent-filed guide",
+      proposed_payload: {
+        template_id: "coauthor_minor",
+        name: "Cora",
+        email: "cora@lab.test",
+        member_id: "cora",
+        body_override: "text nobody reviewed",
+      },
+    });
+    expect(waiting.ok).toBe(true);
+
+    const sent = await fetch(`${baseUrl}/lab/members/cora/onboarding/guide`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: "{}",
+    });
+
+    expect(sent.status).toBe(200);
+    expect(await sent.json()).toMatchObject({ status: "done" });
+    // Retired rather than approved: the mail that went out is the service-composed one.
+    expect(waiting.ok && mock.service.getProposal(waiting.payload.id)?.status).toBe("rejected");
+    expect(guides).toHaveLength(1);
+    expect(guides[0]).not.toHaveProperty("body_override");
+  });
+
+  it("refuses the agent's service token, so nothing is filed or sent", async () => {
+    const { baseUrl, mock, guides } = await startService();
+    mock.service.upsertLabMember(
+      withCompleteProfile({
+        id: "cora",
+        name: "Cora",
+        email: "cora@lab.test",
+        member_type: "coauthor-minor",
+      } as AdminBotLabMemberInput),
+    );
+
+    const refused = await fetch(`${baseUrl}/lab/members/cora/onboarding/guide`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${SERVICE_TOKEN}` },
+      body: "{}",
+    });
+
+    expect(refused.status).toBe(403);
+    expect(pending(mock).some((proposal) => proposal.type === "onboarding.send_guide")).toBe(false);
+    expect(guides).toHaveLength(0);
   });
 });

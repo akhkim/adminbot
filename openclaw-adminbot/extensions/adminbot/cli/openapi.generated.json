@@ -18093,7 +18093,103 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/MemberSheetEditResult"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/MemberSheetEditResult"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "proposal": {
+                          "$ref": "#/components/schemas/AdminBotStoredProposal"
+                        },
+                        "execution": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "status": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "status"
+                              ],
+                              "additionalProperties": true
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "status": {
+                                  "type": "string"
+                                },
+                                "reason": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "status",
+                                "reason"
+                              ],
+                              "additionalProperties": true
+                            }
+                          ]
+                        },
+                        "updates": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/AdminBotSheetValueRange"
+                          }
+                        },
+                        "conflicts": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "sheet_row": {
+                                "type": "number"
+                              },
+                              "column": {
+                                "type": "number"
+                              },
+                              "header": {
+                                "type": "string"
+                              },
+                              "expected": {
+                                "type": "string"
+                              },
+                              "actual": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "sheet_row",
+                              "column",
+                              "header",
+                              "expected",
+                              "actual"
+                            ],
+                            "additionalProperties": true
+                          }
+                        },
+                        "unchanged": {
+                          "type": "number"
+                        },
+                        "touches_access": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "proposal",
+                        "execution",
+                        "updates",
+                        "conflicts",
+                        "unchanged",
+                        "touches_access"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
             }
@@ -18227,7 +18323,103 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/MemberSheetEditResult"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/MemberSheetEditResult"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "proposal": {
+                          "$ref": "#/components/schemas/AdminBotStoredProposal"
+                        },
+                        "execution": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "status": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "status"
+                              ],
+                              "additionalProperties": true
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "status": {
+                                  "type": "string"
+                                },
+                                "reason": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "status",
+                                "reason"
+                              ],
+                              "additionalProperties": true
+                            }
+                          ]
+                        },
+                        "updates": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/AdminBotSheetValueRange"
+                          }
+                        },
+                        "conflicts": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "sheet_row": {
+                                "type": "number"
+                              },
+                              "column": {
+                                "type": "number"
+                              },
+                              "header": {
+                                "type": "string"
+                              },
+                              "expected": {
+                                "type": "string"
+                              },
+                              "actual": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "sheet_row",
+                              "column",
+                              "header",
+                              "expected",
+                              "actual"
+                            ],
+                            "additionalProperties": true
+                          }
+                        },
+                        "unchanged": {
+                          "type": "number"
+                        },
+                        "touches_access": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "proposal",
+                        "execution",
+                        "updates",
+                        "conflicts",
+                        "unchanged",
+                        "touches_access"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
             }
@@ -19884,7 +20076,9 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "properties": {},
+                "properties": {
+                  "preview": {}
+                },
                 "additionalProperties": true,
                 "x-schema-coverage": "inferred from property access or downstream casts; semantic validation remains server-side"
               }
@@ -19892,6 +20086,184 @@
           }
         },
         "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "execution": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "status"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "type": "string"
+                            },
+                            "reason": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "reason"
+                          ],
+                          "additionalProperties": true
+                        }
+                      ]
+                    },
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "reference.scan",
+                        "slack.send_message",
+                        "slack.profile_photo_update",
+                        "slack.channel_naming_notify_owner",
+                        "slack.rename_channel",
+                        "calendar.create_tentative_hold",
+                        "calendar.create_birthday",
+                        "calendar.send_invite",
+                        "calendar.add_attendees",
+                        "calendar.remove_attendees",
+                        "calendar.grant_lab_calendar",
+                        "calendar.revoke_lab_calendar",
+                        "calendar.reschedule",
+                        "calendar.cancel",
+                        "email.draft",
+                        "email.send",
+                        "onboarding.send_guide",
+                        "lab_member.enroll",
+                        "dcs_roster.add_row",
+                        "lab_member.remove",
+                        "reimbursement.submit",
+                        "social_media.post_publicly",
+                        "paper_publish.prepare",
+                        "paper.overleaf_edit",
+                        "paper_publish.submit",
+                        "paper_publish.nudge_author",
+                        "paper_publish.escalate_to_pi",
+                        "join_form.classify",
+                        "logistics.send_signed_document",
+                        "logistics.rec_letter_reminder",
+                        "email_review.resolve",
+                        "member_nudge.send",
+                        "member_nudge.escalate",
+                        "paper_integrity.alert",
+                        "paper_integrity.report",
+                        "slack.conference_intro",
+                        "slack.collaborator_chat",
+                        "paper_integrity.sheet_scores",
+                        "slack.invite_to_channel",
+                        "slack.remove_from_channel",
+                        "slack.connect_invite",
+                        "slack.create_channel",
+                        "openreview.nudge",
+                        "openreview.warning",
+                        "deadline.publish",
+                        "deadline.recommend",
+                        "sheet.update_cells",
+                        "sheet.append_rows",
+                        "slides.sync_working_groups"
+                      ]
+                    },
+                    "risk_tier": {
+                      "type": "string",
+                      "enum": [
+                        "T0",
+                        "T1",
+                        "T2",
+                        "T3",
+                        "T4"
+                      ]
+                    },
+                    "summary": {
+                      "type": "string"
+                    },
+                    "target": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    },
+                    "evidence": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AdminBotEvidencePointer"
+                      }
+                    },
+                    "proposed_payload": {},
+                    "rationale": {
+                      "type": "string"
+                    },
+                    "undo_plan": {
+                      "type": "string"
+                    },
+                    "idempotency_key": {
+                      "type": "string"
+                    },
+                    "dry_run": {
+                      "type": "boolean"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "payload_hash": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "executed",
+                        "pending",
+                        "approved",
+                        "rejected"
+                      ]
+                    },
+                    "approval_requirement": {
+                      "$ref": "#/components/schemas/AdminBotApprovalRequirement"
+                    },
+                    "approvals": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AdminBotApprovalRequest"
+                      }
+                    },
+                    "created_at": {
+                      "type": "string"
+                    },
+                    "updated_at": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "execution",
+                    "type",
+                    "risk_tier",
+                    "summary",
+                    "id",
+                    "payload_hash",
+                    "status",
+                    "approval_requirement",
+                    "approvals",
+                    "created_at",
+                    "updated_at"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
           "403": {
             "description": "Server response",
             "content": {
@@ -31638,6 +32010,9 @@
             "additionalProperties": {
               "type": "string"
             }
+          },
+          "not_delivered_reason": {
+            "type": "string"
           }
         },
         "required": [
@@ -39872,6 +40247,40 @@
           },
           "touches_access": {
             "type": "boolean"
+          },
+          "execution": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "const": "executed"
+                  }
+                },
+                "required": [
+                  "status"
+                ],
+                "additionalProperties": true
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "const": "not_executed"
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "status",
+                  "reason"
+                ],
+                "additionalProperties": true
+              }
+            ]
           }
         },
         "required": [

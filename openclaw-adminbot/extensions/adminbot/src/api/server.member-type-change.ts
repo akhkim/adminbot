@@ -363,9 +363,13 @@ export async function applyMemberTypeChange(
   //    The template decides, not the raw type: `full` -> `full, alumni` still onboards as a full
   //    member and is owed nothing new.
   if (guideDue) {
+    // The saving admin's approval covers the guide too, so a copy of it still waiting in Pending
+    // Actions is replaced by the one sent now rather than reported as already queued.
+    const approver = deps.approver?.approver_role === "admin" ? deps.approver : undefined;
     const queued = deps.service.queueOnboardingGuideForMember({
       memberId: after.id,
       actor: deps.actor,
+      ...(approver ? { replaceWaiting: true } : {}),
     });
     if (!queued.ok) {
       // 409 is a guide already sent or waiting, 422 is nobody to mail: answers, not faults.
@@ -375,14 +379,9 @@ export async function applyMemberTypeChange(
         detail: queued.error.message,
       });
     } else {
-      const { proposal_id: proposalId, email, template_id: templateId } = queued.payload;
-      // The split Add member makes: the standard full-member guide -- and the alumni guide, which
-      // this step always sent -- go out on the saving admin's approval. Every other template
-      // carries per-person copy an approver should read first, so it waits in Pending Actions.
-      const approver =
-        templateId === "member" || templateId === "alumni" || templateId === "welcome"
-          ? deps.approver
-          : undefined;
+      const { proposal_id: proposalId, email } = queued.payload;
+      // A Member Type change saved on an admin-only tab is one deliberate click, and it is the
+      // approval for every template; a change with no admin behind it (the sheet sweep) waits.
       const guide = deps.service.getProposal(proposalId);
       const sent = !approver
         ? ({ ok: "queued" } as const)

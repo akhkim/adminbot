@@ -228,7 +228,13 @@ export class InterviewInvite extends LitElement {
         throw new Error(result.error?.message || "Could not prepare the invitation.");
       }
       if (queue) {
-        this.notice = `Queued for admin approval (${result.id}). Nothing has been sent yet.`;
+        // An admin's invitation is approved and sent in the same request; a member's waits.
+        this.notice =
+          result.execution?.status === "executed"
+            ? `Sent the interview invitation (${result.id}).`
+            : result.execution?.status === "not_executed"
+              ? `The invitation was approved but not sent (${result.id}): ${result.execution.reason}`
+              : `Queued for admin approval (${result.id}). Nothing has been sent yet.`;
         this.preview = null;
         this.reviewed = "";
       } else {

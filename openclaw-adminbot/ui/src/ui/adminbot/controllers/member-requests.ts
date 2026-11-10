@@ -168,15 +168,15 @@ export async function approveAdminBotMemberRequest(
       return failure(`${added} Start their onboarding from their row.`);
     }
     const guide = await queueMemberOnboardingGuide(memberId, token, baseUrl);
-    return guide.ok
-      ? success(
-          guide.value.status === "done"
-            ? `${added} Their standard onboarding email has been sent.`
-            : `${added} Their onboarding guide is queued for approval.`,
-        )
-      : failure(
-          `${added} The onboarding guide was not queued: ${failureText(guide, "the service refused it")}. Start it from their row.`,
-        );
+    return guide.ok && guide.value.status === "done"
+      ? success(`${added} Their onboarding email has been sent.`)
+      : guide.ok
+        ? failure(
+            `${added} Their onboarding email has not been sent: it is waiting in Pending Actions.`,
+          )
+        : failure(
+            `${added} The onboarding email was not sent: ${failureText(guide, "the service refused it")}. Send it from their row.`,
+          );
   });
   if (approved) {
     await loadAdminBot(host);

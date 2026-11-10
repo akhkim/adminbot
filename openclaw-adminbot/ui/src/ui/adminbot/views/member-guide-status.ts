@@ -11,9 +11,11 @@ import {
 // Statuses the service reports once the guide has reached the person. Sending again from one of
 // these is a deliberate resend, which the service only accepts when asked for by name.
 const REACHED = new Set(["sent", "executed"]);
-// Statuses with nothing to send from here: a copy is already waiting for an approver, or the
-// Member Type's onboarding is not a mail at all.
-const NOTHING_TO_SEND = new Set(["", "unknown", "pending", "approved", "not_applicable"]);
+// Statuses with nothing to send from here: the status is not known yet, or the Member Type's
+// onboarding is not a mail at all. A copy waiting in Pending Actions is not one of them: sending
+// from here replaces it with a fresh guide and sends that one on this admin's approval.
+const NOTHING_TO_SEND = new Set(["", "unknown", "not_applicable"]);
+const WAITING = new Set(["pending", "approved"]);
 
 export class MemberGuideStatus extends LitElement {
   @property({ type: String }) memberId = "";
@@ -74,8 +76,8 @@ export class MemberGuideStatus extends LitElement {
       if (requestId === this.requestId) this.busy = false;
     }
   }
-  // The service decides what this click does: the full-member guide goes out on this admin's
-  // approval, every other template lands in Pending Actions. Its sentence says which happened.
+  // This click is the approval: the service files the guide, approves it as this admin and sends
+  // it, replacing any copy still waiting in Pending Actions. Its sentence says what happened.
   private async send() {
     const session = loadStoredMemberSession();
     if (!session || !this.memberId) {
@@ -97,12 +99,12 @@ export class MemberGuideStatus extends LitElement {
       );
       if (!this.isConnected || this.memberId !== memberId) return;
       this.sendResult = result.ok
-        ? {
-            kind: "ok",
-            text:
-              result.value.detail ??
-              (result.value.status === "done" ? "Sent." : "Queued for approval."),
-          }
+        ? result.value.status === "done"
+          ? { kind: "ok", text: result.value.detail ?? "Sent." }
+          : {
+              kind: "error",
+              text: result.value.detail ?? "Not sent: it is waiting in Pending Actions.",
+            }
         : {
             kind: "error",
             text:
@@ -119,7 +121,11 @@ export class MemberGuideStatus extends LitElement {
   private renderSend() {
     if (this.requirePreview) return nothing;
     if (NOTHING_TO_SEND.has(this.status)) return nothing;
-    const label = REACHED.has(this.status) ? "Resend onboarding email" : "Send onboarding email";
+    const label = REACHED.has(this.status)
+      ? "Resend onboarding email"
+      : WAITING.has(this.status)
+        ? "Send onboarding email now"
+        : "Send onboarding email";
     if (!this.confirming)
       return html`<button
         class="btn btn--sm"
@@ -134,7 +140,9 @@ export class MemberGuideStatus extends LitElement {
     return html`<span role="group" aria-label="Confirm onboarding email">
       ${REACHED.has(this.status)
         ? "This mails the guide to them again. Their DCS account request is not filed a second time."
-        : "This mails the onboarding guide to them."}
+        : WAITING.has(this.status)
+          ? "This replaces the draft waiting in Pending Actions and mails the guide to them now."
+          : "This mails the onboarding guide to them."}
       <button
         class="btn btn--sm primary"
         type="button"

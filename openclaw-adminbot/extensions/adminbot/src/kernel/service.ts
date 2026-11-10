@@ -3302,7 +3302,14 @@ export class AdminBotService {
       );
     }
     if (!delivered) {
-      const result: AdminBotExecutionResult = { ...baseResult, status: "simulated" };
+      const reason = notDeliveredReason || "connector declined to deliver";
+      // The reason travels back with the answer: a caller told only "simulated" reports a click
+      // that sent nothing as if it had, which is how a refused guide looked sent on the website.
+      const result: AdminBotExecutionResult = {
+        ...baseResult,
+        status: "simulated",
+        not_delivered_reason: reason,
+      };
       this.recordAudit({
         type: "execution.simulated",
         action_id: actionId,
@@ -3310,7 +3317,7 @@ export class AdminBotService {
           action_type: proposal.type,
           risk_tier: proposal.risk_tier,
           idempotency_key: idempotencyKey,
-          not_delivered_reason: notDeliveredReason || "connector declined to deliver",
+          not_delivered_reason: reason,
         },
       });
       return { ok: true, status: 200, payload: result };
@@ -15071,6 +15078,12 @@ export class AdminBotService {
      * the mail that went to spam or was never read. Never set by the sweep or the sheet import.
      */
     resend?: boolean;
+    /**
+     * An admin sending the guide now, in their own session: retire a copy still waiting in Pending
+     * Actions instead of refusing, so the click files and sends a fresh one. Only for a caller that
+     * will approve what this returns -- set without one, the waiting copy would just be lost.
+     */
+    replaceWaiting?: boolean;
   }): AdminBotServiceResponse<{ proposal_id: string; template_id: string; email: string }> {
     const member = this.store.getLabMember(params.memberId);
     if (!member) {
@@ -15151,10 +15164,22 @@ export class AdminBotService {
     // A resend lifts only the "already reached them" refusal. A copy still waiting for an
     // approver is refused either way: approving that one is the resend, and filing a second
     // would put two of the same mail in the queue.
-    const waiting = earlier.some(
+    const waitingCopies = earlier.filter(
       (stored) => stored.status === "pending" || stored.status === "approved",
     );
     const executed = earlier.some((stored) => stored.status === "executed");
+    if (waitingCopies.length > 0 && params.replaceWaiting && (!executed || params.resend)) {
+      // Retired, not approved: a waiting copy may carry a subject, body or values somebody else
+      // composed (the agent files these through POST /proposals), and the admin's click approves
+      // only the guide composed below. Removing it is recorded like a Pending Actions removal.
+      for (const stored of waitingCopies) {
+        this.removePending(stored.id, {
+          actor: params.actor,
+          note: "superseded: an admin sent this guide directly",
+        });
+      }
+    }
+    const waiting = waitingCopies.length > 0 && !params.replaceWaiting;
     if (waiting || (executed && !params.resend)) {
       return serviceError(
         409,

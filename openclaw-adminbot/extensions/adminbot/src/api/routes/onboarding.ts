@@ -3,7 +3,10 @@ import { randomUUID } from "node:crypto";
 //
 // Cut from server.ts's handleAuthenticatedRoute. Each route states its audience with a guard
 // decorator from guards.ts; the order below is the order the old if-chain tried them in.
-import type { AdminBotMemberNudgeChannel } from "../../contracts/actions.js";
+import type {
+  AdminBotMemberNudgeChannel,
+  AdminBotStoredProposal,
+} from "../../contracts/actions.js";
 import { ADMINBOT_ALUMNI_SLACK_CONNECT_TEMPLATE_ID } from "../../contracts/paper-cycle.js";
 import type { AdminBotOnboardingSendRequest } from "../../workflows/onboarding/guide-sender.js";
 import { memberGuideStatus } from "../../workflows/onboarding/guide-status.js";
@@ -23,6 +26,7 @@ import {
 } from "../server.member-onboarding.js";
 import {
   addMemberSheetRow,
+  approveAndExecute,
   type MemberSheetAddRowRequest,
   type MemberSheetEditRequest,
   type MemberSheetOnboardRequest,
@@ -195,6 +199,24 @@ export const onboardingRoutes: readonly Route[] = [
       if ("error" in editResult) {
         sendJson(res, editResult.error.status, { error: { message: editResult.error.message } });
         return;
+      }
+      // The Membership tab is admin-only and its Save is one deliberate click, so the click is the
+      // approval: the write goes through the gate and runs now instead of waiting in Pending Actions.
+      const approver = approverIdentityFor(principal);
+      if (editResult.proposal && approver?.approver_role === "admin") {
+        const ran = await approveAndExecute(
+          service,
+          editResult.proposal,
+          approver,
+          "approved by the admin who saved the Membership tab edit",
+        );
+        editResult = {
+          ...editResult,
+          proposal: service.getProposal(editResult.proposal.id) ?? editResult.proposal,
+          execution: ran.ok
+            ? { status: "executed" }
+            : { status: "not_executed", reason: ran.reason },
+        };
       }
       sendJson(res, 200, editResult);
     }),
@@ -425,16 +447,40 @@ export const onboardingRoutes: readonly Route[] = [
       sendJson(res, 403, { error: { message: "A lab member session is required." } });
       return;
     }
-    sendServiceResult(
-      res,
-      await prepareInterviewInvitation(
-        service,
-        readRecord(await readJsonOrEmpty(req)),
-        principal.member,
-        ctx.onboardingSender,
-        () => ctx.store.listProposalsByType("onboarding.send_guide"),
-      ),
+    const body = readRecord(await readJsonOrEmpty(req));
+    const prepared = await prepareInterviewInvitation(
+      service,
+      body,
+      principal.member,
+      ctx.onboardingSender,
+      () => ctx.store.listProposalsByType("onboarding.send_guide"),
     );
+    // A member's invitation waits for an admin. An admin's own is sent now on their approval,
+    // through the same gate, and the answer says whether it actually went out.
+    const approver = approverIdentityFor(principal);
+    const filed =
+      prepared.ok &&
+      body.preview !== true &&
+      typeof prepared.payload === "object" &&
+      prepared.payload !== null &&
+      "payload_hash" in prepared.payload
+        ? (prepared.payload as AdminBotStoredProposal)
+        : undefined;
+    if (!filed || approver?.approver_role !== "admin") {
+      sendServiceResult(res, prepared);
+      return;
+    }
+    const proposal = filed;
+    const ran = await approveAndExecute(
+      service,
+      proposal,
+      approver,
+      "approved by the admin who sent the interview invitation",
+    );
+    sendJson(res, 200, {
+      ...(service.getProposal(proposal.id) ?? proposal),
+      execution: ran.ok ? { status: "executed" } : { status: "not_executed", reason: ran.reason },
+    });
   }),
   post(
     "/onboarding/guide",
