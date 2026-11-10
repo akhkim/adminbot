@@ -15,6 +15,11 @@ import type {
   AdminBotRegistrationKind,
   AdminBotRegistrationStatus,
 } from "../../contracts/actions.js";
+import {
+  classifyMailSendFailure,
+  MailSendFailedError,
+  sendMailWithRetry,
+} from "../../connectors/mail-send-failure.js";
 import { adminBotMemberRoles } from "../../contracts/actions.js";
 import { adminBotCalendarShareEmail } from "../../contracts/member-outreach-email.js";
 import {
@@ -243,6 +248,8 @@ export type AdminBotAuthServiceOptions = {
   // member their account is live. Same contract as inviteToLabCalendar: audited either way, never
   // fails or delays the approval response.
   sendAccountApprovedEmail?: (params: { email: string; name?: string }) => Promise<void>;
+  // Backoff seam for the approval-email retry; tests pass a no-op so they never actually wait.
+  mailRetrySleep?: (ms: number) => Promise<void>;
   // Best-effort side effect fired (not awaited) when a member asks to reset their password. Same
   // contract as sendAccountApprovedEmail: audited either way, and a failure must never change the
   // response (which is identical for known and unknown addresses by design).
@@ -354,6 +361,7 @@ export class AdminBotAuthService {
     email: string;
     name?: string;
   }) => Promise<void>;
+  private readonly mailRetrySleep?: (ms: number) => Promise<void>;
   private readonly sendPasswordResetEmail?: (params: {
     email: string;
     name?: string;
@@ -394,6 +402,7 @@ export class AdminBotAuthService {
     this.afterMemberCreated = options.afterMemberCreated;
     this.inviteToLabCalendar = options.inviteToLabCalendar;
     this.sendAccountApprovedEmail = options.sendAccountApprovedEmail;
+    this.mailRetrySleep = options.mailRetrySleep;
     this.sendPasswordResetEmail = options.sendPasswordResetEmail;
     this.geolocateIp = options.geolocateIp;
     this.afterLoginLocated = options.afterLoginLocated;
@@ -1237,6 +1246,7 @@ export class AdminBotAuthService {
         (error: unknown) =>
           this.audit("auth.password_reset_email_failed", memberId, {
             email,
+            failure_kind: classifyMailSendFailure(error),
             error: error instanceof Error ? error.message : String(error),
           }),
       )
@@ -1398,7 +1408,11 @@ export class AdminBotAuthService {
           this.audit("auth.approval_email_failed", decidedBy, {
             member_id: memberId,
             email,
-            attempts: APPROVAL_EMAIL_MAX_ATTEMPTS,
+            attempts: error instanceof MailSendFailedError ? error.attempts : 1,
+            // Why it stopped: a credentials/connector_missing kind is what automation health
+            // reads to tell admins the mailer needs a person, not another try.
+            failure_kind:
+              error instanceof MailSendFailedError ? error.kind : classifyMailSendFailure(error),
             error: error instanceof Error ? error.message : String(error),
           }),
       )
@@ -1412,16 +1426,15 @@ export class AdminBotAuthService {
     if (!this.sendAccountApprovedEmail) {
       return 0;
     }
-    let lastError: unknown;
-    for (let attempt = 1; attempt <= APPROVAL_EMAIL_MAX_ATTEMPTS; attempt += 1) {
-      try {
-        await this.sendAccountApprovedEmail(params);
-        return attempt;
-      } catch (error) {
-        lastError = error;
-      }
-    }
-    throw lastError;
+    const send = this.sendAccountApprovedEmail;
+    // Only failures where nothing can have gone out (rate limit, network never reached Google)
+    // are retried, with backoff. A timeout may already have delivered the mail, and Gmail has no
+    // idempotency key, so retrying it could welcome the member twice; expired credentials need a
+    // person, not another try.
+    return sendMailWithRetry(() => send(params), {
+      maxAttempts: APPROVAL_EMAIL_MAX_ATTEMPTS,
+      ...(this.mailRetrySleep ? { sleep: this.mailRetrySleep } : {}),
+    });
   }
 
   /**

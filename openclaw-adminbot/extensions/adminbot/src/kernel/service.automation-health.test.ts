@@ -396,3 +396,44 @@ describe("OpenReview login health", () => {
     );
   });
 });
+
+describe("Google credential failures", () => {
+  const event = (type: string, timestamp: string, details: Record<string, unknown>) =>
+    ({ id: `audit_${type}_${timestamp}`, type, actor: "adminbot", timestamp, details }) as never;
+
+  it("raises one issue on the first expired-token mail failure, and clears it on a later success", () => {
+    const failed = event("auth.approval_email_failed", "2026-03-02T09:00:00.000Z", {
+      error: 'gog gmail send failed: oauth2: "invalid_grant" "Token has been expired or revoked."',
+    });
+    const now = new Date("2026-03-02T10:00:00.000Z");
+    const issues = automationHealthIssues([failed], () => undefined, now);
+    expect(issues).toEqual([
+      expect.objectContaining({ kind: "google_credentials", key: "google-credentials:credentials" }),
+    ]);
+    expect(issues[0]?.detail).toContain("gog auth add");
+
+    const recovered = event("execution.executed", "2026-03-02T09:30:00.000Z", {
+      action_type: "email.send",
+    });
+    expect(automationHealthIssues([failed, recovered], () => undefined, now)).toEqual([]);
+  });
+
+  it("does not read a Slack 401 or an ordinary send rejection as the Google token", () => {
+    const now = new Date("2026-03-02T10:00:00.000Z");
+    const issues = automationHealthIssues(
+      [
+        event("execution.failed", "2026-03-02T09:00:00.000Z", {
+          action_type: "message.send",
+          error: "Slack API error 401 invalid_auth",
+        }),
+        event("execution.failed", "2026-03-02T09:01:00.000Z", {
+          action_type: "email.send",
+          error: "gog command failed (exit 1): Google API error (400 invalidArgument)",
+        }),
+      ],
+      () => undefined,
+      now,
+    );
+    expect(issues.filter((issue) => issue.kind === "google_credentials")).toEqual([]);
+  });
+});

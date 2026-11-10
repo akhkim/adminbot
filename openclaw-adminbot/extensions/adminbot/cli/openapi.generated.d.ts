@@ -5837,7 +5837,8 @@ export interface components {
         | "repeating_failure"
         | "channel_blocked"
         | "needs_manual_invite"
-        | "credentials";
+        | "credentials"
+        | "google_credentials";
       label: string;
       detail: string;
       count: number;
@@ -9123,6 +9124,7 @@ export interface components {
       last_nudged_at?: string;
       nudge_count: number;
       due: boolean;
+      exhausted?: boolean;
     } & {
       [key: string]: unknown;
     };
@@ -25623,6 +25625,7 @@ export interface operations {
             deliveries?: components["schemas"]["AdminBotMemberNudgeDelivery"][];
             papers_considered: number;
             unroutable: string[];
+            exhausted: string[];
           } & {
             [key: string]: unknown;
           };

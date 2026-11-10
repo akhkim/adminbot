@@ -7,6 +7,10 @@ import type {
   PaperMentorReviewRequester,
   PaperMentorReviewRequestStatus,
 } from "../connectors/papermentor-review.js";
+import {
+  classifyMailSendFailure,
+  needsOperatorForMailFailure,
+} from "../connectors/mail-send-failure.js";
 import type { PaperMentorUpload } from "../connectors/papermentor-uploads.js";
 import type { ReverseGeocoder } from "../connectors/reverse-geocode.js";
 import type { AdminBotExternalCollaboratorSubgroup } from "../contracts/actions.js";
@@ -1127,6 +1131,12 @@ export type AdminBotPaperflowStageNudge = {
   nudge_count: number;
   /** False when the cadence or a snooze says this one is not going out on this pass. */
   due: boolean;
+  /**
+   * True once this stage has been mailed PAPERFLOW_STAGE_NUDGE_CAP times without an answer. The
+   * sweep stops mailing and reports it instead: past that point another identical mail is noise,
+   * and the paper needs a person to ask in a different way.
+   */
+  exhausted?: boolean;
 };
 
 export type AdminBotNudgeBatch = {
@@ -3389,6 +3399,19 @@ export class AdminBotService {
         error: message,
       },
     });
+    // An expired Google token or a missing gog fails every later mail the same way, so admins hear
+    // about it now rather than at the next health pass. Only that issue kind: the rest of the pass
+    // (Slack Connect proposals, stale-job checks) stays on its own schedule.
+    if (/\bgog\b/u.test(message) && needsOperatorForMailFailure(classifyMailSendFailure(message))) {
+      const health = this.automationHealth();
+      if (health.ok) {
+        this.alertAdminsOfIssues(
+          health.payload.issues.filter((issue) => issue.kind === "google_credentials"),
+          "adminbot",
+          new Date(),
+        );
+      }
+    }
     return serviceError(status, message);
   }
 
@@ -3527,31 +3550,29 @@ export class AdminBotService {
    * so something new is heard about at once, and something unchanged is repeated weekly until
    * somebody fixes it.
    */
-  raiseAutomationHealthAlerts(
-    actor: string,
-    now = new Date(),
-  ): AdminBotServiceResponse<{
-    issues: number;
-    alerted: string[];
-    admins: number;
-    connect_invites_proposed: string[];
-  }> {
-    // Before the issues are read, so a person who just got a proposal is not also reported as a
-    // manual invite on the same pass.
-    const connectInvitesProposed = this.proposeSlackConnectInvites(now);
-    const health = this.automationHealth(now);
-    if (!health.ok) {
-      return health;
-    }
-    const admins = this.store
+  private automationAlertAdmins(): AdminBotLabMember[] {
+    return this.store
       .listLabMembers()
       .filter((member) => member.privilege_level === "admin" && !adminBotIsAlumniMember(member));
+  }
+
+  /**
+   * Files each issue as an "automation" notification to every admin, at most once a week per issue
+   * key (the automation_health ledger). Shared by the health pass and by the execution path, which
+   * raises a Google credential failure the moment it happens rather than at the next pass.
+   */
+  private alertAdminsOfIssues(
+    issues: readonly AutomationHealthIssue[],
+    actor: string,
+    now: Date,
+  ): string[] {
+    const admins = this.automationAlertAdmins();
     const ledger = this.nudgeLedgerIndex();
     const nowIso = now.toISOString();
     const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const alerted: string[] = [];
     // Nobody to tell is not the same as told: leave the ledger alone so the first admin hears it.
-    for (const issue of admins.length > 0 ? health.payload.issues : []) {
+    for (const issue of admins.length > 0 ? issues : []) {
       const said = ledger.get(`automation_health|${issue.key}`);
       if (said?.last_nudged_at && said.last_nudged_at > weekAgo) {
         continue;
@@ -3576,6 +3597,28 @@ export class AdminBotService {
       });
       alerted.push(issue.key);
     }
+    return alerted;
+  }
+
+  raiseAutomationHealthAlerts(
+    actor: string,
+    now = new Date(),
+  ): AdminBotServiceResponse<{
+    issues: number;
+    alerted: string[];
+    admins: number;
+    connect_invites_proposed: string[];
+  }> {
+    // Before the issues are read, so a person who just got a proposal is not also reported as a
+    // manual invite on the same pass.
+    const connectInvitesProposed = this.proposeSlackConnectInvites(now);
+    const health = this.automationHealth(now);
+    if (!health.ok) {
+      return health;
+    }
+    const admins = this.automationAlertAdmins();
+    const nowIso = now.toISOString();
+    const alerted = this.alertAdminsOfIssues(health.payload.issues, actor, now);
     // And the other way: an alert whose issue is gone (the job ran clean, the failures aged out of
     // the 24h window) comes off the dashboard. Matched on the title, which is the issue's label and
     // does not carry the counts that change from pass to pass.
@@ -9945,7 +9988,7 @@ export class AdminBotService {
     }
     into.created.push(...result.payload.created);
     into.skipped.push(...result.payload.skipped);
-    return result.payload.created.length > 0;
+    return nudgeReachedMember(result.payload, memberId);
   }
 
   /**
@@ -10421,8 +10464,10 @@ export class AdminBotService {
         ...(entry?.last_nudged_at ? { last_nudged_at: entry.last_nudged_at } : {}),
         nudge_count: entry?.nudge_count ?? 0,
         due:
+          (entry?.nudge_count ?? 0) < PAPERFLOW_STAGE_NUDGE_CAP &&
           isNudgeDue(entry, now, PAPERFLOW_STAGE_NUDGE_INTERVAL_MS) &&
           lastHeardFrom <= now.getTime() - PAPERFLOW_STAGE_NUDGE_INTERVAL_MS,
+        ...((entry?.nudge_count ?? 0) >= PAPERFLOW_STAGE_NUDGE_CAP ? { exhausted: true } : {}),
       });
     }
     return { items };
@@ -10444,7 +10489,12 @@ export class AdminBotService {
     actor: string,
   ): Promise<
     AdminBotServiceResponse<
-      AdminBotMemberNudgeResult & { papers_considered: number; unroutable: string[] }
+      AdminBotMemberNudgeResult & {
+        papers_considered: number;
+        unroutable: string[];
+        /** "<paper_id>:<stage>" for every stage that hit the follow-up cap and was not mailed. */
+        exhausted: string[];
+      }
     >
   > {
     const botEmail = this.options.paperflowBotEmail?.trim();
@@ -10459,11 +10509,16 @@ export class AdminBotService {
     const created: AdminBotStoredProposal[] = [];
     const skipped: AdminBotMemberNudgeSkip[] = [];
     const unroutable: string[] = [];
+    const exhausted: string[] = [];
     const stamped: Array<{ subjectId: string; memberId: string }> = [];
 
     for (const item of items) {
       if (!item.recipient_member_id) {
         unroutable.push(item.paper_id);
+        continue;
+      }
+      if (item.exhausted) {
+        exhausted.push(`${item.paper_id}:${item.stage}`);
         continue;
       }
       if (!item.due) {
@@ -10515,17 +10570,21 @@ export class AdminBotService {
       })),
       now.toISOString(),
     );
-    if (stamped.length > 0 || unroutable.length > 0) {
+    if (stamped.length > 0 || unroutable.length > 0 || exhausted.length > 0) {
       this.recordAudit({
         type: "paperflow_stages.nudged",
         actor,
-        details: { sent: stamped.length, unroutable: unroutable.length },
+        details: {
+          sent: stamped.length,
+          unroutable: unroutable.length,
+          exhausted: exhausted.length,
+        },
       });
     }
     return {
       ok: true,
       status: 200,
-      payload: { created, skipped, papers_considered: items.length, unroutable },
+      payload: { created, skipped, papers_considered: items.length, unroutable, exhausted },
     };
   }
 
@@ -12786,8 +12845,17 @@ export class AdminBotService {
         if (!result.ok) {
           return { delivered: false, reason: result.error.message };
         }
-        const skip = result.payload.skipped[0];
-        return skip ? { delivered: false, reason: skip.reason } : { delivered: true };
+        // Stamped only when the message may have reached them (see nudgeReachedMember): a
+        // kill-switched send used to count as delivered here because nothing was "skipped", which
+        // recorded a nudge nobody received and held back the next one for the whole cooldown.
+        if (nudgeReachedMember(result.payload, member.id)) {
+          return { delivered: true };
+        }
+        const reason =
+          result.payload.skipped[0]?.reason ??
+          result.payload.deliveries?.find((delivery) => delivery.member_id === member.id)?.outcome ??
+          "not delivered";
+        return { delivered: false, reason };
       },
       stamp: (memberId, nowIso) => {
         const subjectId = campaignSubjectId(campaign.key);
@@ -14423,10 +14491,15 @@ export class AdminBotService {
       if (!executed.ok) {
         skipped.push({ member_id: memberId, reason: executed.error.message });
         // A 502 is the connector raising mid-send (executeOnce's catch), so the DM may or may not
-        // have gone out. Everything else was refused before any send was attempted.
+        // have gone out -- unless gog's error says the request never got that far (expired token,
+        // missing binary, network down, rate-limited past its retries). Everything else was
+        // refused before any send was attempted.
         deliveries.push({
           member_id: memberId,
-          outcome: executed.status === 502 ? "unknown" : "failed",
+          outcome:
+            executed.status === 502 && !gogFailedBeforeSending(executed.error.message)
+              ? "unknown"
+              : "failed",
           action_id: actionId,
           reason: executed.error.message,
         });
@@ -17607,6 +17680,39 @@ const AVAILABILITY_NUDGE_GROUP = "\u0000availability";
 // cadence buys nothing and spends the one thing that makes these mails work, which is that
 // receiving one still means something.
 const PAPERFLOW_STAGE_NUDGE_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
+/**
+ * Weekly follow-ups on one paper's stage stop after this many unanswered mails (about a month).
+ * The ledger only counts mails that actually went out, so a failed send never uses one up.
+ */
+const PAPERFLOW_STAGE_NUDGE_CAP = 4;
+
+/**
+ * Whether a sendMemberNudge result means the member may have the message, which is what every
+ * sweep stamps its ledger on. `executed` plainly counts. `unknown` (the connector raised mid-send)
+ * counts too: it may already be in their inbox, and resending it on the next pass is how one
+ * reminder becomes two -- it waits for the normal follow-up cadence instead. `not_delivered` (a
+ * kill switch) and `failed` do not count, so the next pass tries again and a failed send never
+ * uses up a follow-up.
+ */
+function nudgeReachedMember(result: AdminBotMemberNudgeResult, memberId: string): boolean {
+  if (!result.deliveries) {
+    return result.created.length > 0;
+  }
+  return result.deliveries.some(
+    (delivery) =>
+      delivery.member_id === memberId &&
+      (delivery.outcome === "executed" || delivery.outcome === "unknown"),
+  );
+}
+
+/** A gog error that proves the request never reached Google, so nothing can have been sent. */
+function gogFailedBeforeSending(message: string): boolean {
+  if (!/\bgog\b/u.test(message)) {
+    return false;
+  }
+  const kind = classifyMailSendFailure(message);
+  return needsOperatorForMailFailure(kind) || kind === "unreachable" || kind === "rate_limited";
+}
 
 // Fixed order, so a person owed slots in two roles on the same paper reads them in the same order
 // every time.

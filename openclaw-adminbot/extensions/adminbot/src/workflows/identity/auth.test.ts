@@ -45,6 +45,7 @@ function setup(
     }) => Promise<void>;
     sendAccountApprovedEmail?: (params: { email: string; name?: string }) => Promise<void>;
     afterLoginLocated?: (memberId: string) => void;
+    mailRetrySleep?: (ms: number) => Promise<void>;
   } = {},
 ) {
   const store = new AdminBotMemoryStore();
@@ -69,6 +70,8 @@ function setup(
     ...(options.sendAccountApprovedEmail
       ? { sendAccountApprovedEmail: options.sendAccountApprovedEmail }
       : {}),
+    // Never wait out a real backoff in a test.
+    mailRetrySleep: options.mailRetrySleep ?? (async () => {}),
   });
   return { store, auth };
 }
@@ -248,24 +251,85 @@ describe("AdminBotAuthService claim/login flow", () => {
     expect(store.getLabMember("ada")?.email).toBe("ada@example.com");
   });
 
-  it("retries transient account-approval email failures", async () => {
+  it("retries transient account-approval email failures with backoff", async () => {
     const sendAccountApprovedEmail = vi
       .fn<() => Promise<void>>()
-      .mockRejectedValueOnce(new Error("temporary failure"))
+      .mockRejectedValueOnce(
+        new Error("gog gmail send failed: dial tcp: lookup gmail.googleapis.com: no such host"),
+      )
       .mockResolvedValue(undefined);
+    const sleeps: number[] = [];
+    const { store, auth } = setup({
+      sendAccountApprovedEmail,
+      mailRetrySleep: async (ms) => {
+        sleeps.push(ms);
+      },
+    });
+    store.saveLabMember(member("ada", "ada@example.com"));
+    await auth.claim({ member_id: "ada", email: "ada@example.com", password: "correcthorse" });
+
+    await auth.approveRegistration(await pendingIdForMember(auth, "ada"), "admin");
+
+    await vi.waitFor(() =>
+      expect(store.listAuditEvents()).toContainEqual(
+        expect.objectContaining({
+          type: "auth.approval_email_sent",
+          details: expect.objectContaining({ attempts: 2 }),
+        }),
+      ),
+    );
+    expect(sendAccountApprovedEmail).toHaveBeenCalledTimes(2);
+    expect(sleeps).toHaveLength(1);
+    expect(sleeps[0]).toBeGreaterThanOrEqual(500);
+  });
+
+  it("does not retry an expired-credential approval email and records why it failed", async () => {
+    const sendAccountApprovedEmail = vi
+      .fn<() => Promise<void>>()
+      .mockRejectedValue(
+        new Error('gog gmail send failed: oauth2: "invalid_grant" "Token has been expired or revoked."'),
+      );
     const { store, auth } = setup({ sendAccountApprovedEmail });
     store.saveLabMember(member("ada", "ada@example.com"));
     await auth.claim({ member_id: "ada", email: "ada@example.com", password: "correcthorse" });
 
     await auth.approveRegistration(await pendingIdForMember(auth, "ada"), "admin");
 
-    await vi.waitFor(() => expect(sendAccountApprovedEmail).toHaveBeenCalledTimes(2));
-    expect(store.listAuditEvents(20)).toContainEqual(
-      expect.objectContaining({
-        type: "auth.approval_email_sent",
-        details: expect.objectContaining({ attempts: 2 }),
-      }),
+    await vi.waitFor(() =>
+      expect(store.listAuditEvents()).toContainEqual(
+        expect.objectContaining({
+          type: "auth.approval_email_failed",
+          details: expect.objectContaining({ attempts: 1, failure_kind: "credentials" }),
+        }),
+      ),
     );
+    expect(sendAccountApprovedEmail).toHaveBeenCalledTimes(1);
+    expect(store.listAuditEvents().map((event) => event.type)).not.toContain(
+      "auth.approval_email_sent",
+    );
+  });
+
+  it("never resends an approval email whose first try timed out", async () => {
+    // A killed-by-timeout send may already be in the member's inbox; a second try would double it.
+    const timedOut = Object.assign(new Error("gog gmail send failed"), {
+      cause: Object.assign(new Error("Command failed"), { killed: true, signal: "SIGTERM" }),
+    });
+    const sendAccountApprovedEmail = vi.fn<() => Promise<void>>().mockRejectedValue(timedOut);
+    const { store, auth } = setup({ sendAccountApprovedEmail });
+    store.saveLabMember(member("ada", "ada@example.com"));
+    await auth.claim({ member_id: "ada", email: "ada@example.com", password: "correcthorse" });
+
+    await auth.approveRegistration(await pendingIdForMember(auth, "ada"), "admin");
+
+    await vi.waitFor(() =>
+      expect(store.listAuditEvents()).toContainEqual(
+        expect.objectContaining({
+          type: "auth.approval_email_failed",
+          details: expect.objectContaining({ attempts: 1, failure_kind: "ambiguous" }),
+        }),
+      ),
+    );
+    expect(sendAccountApprovedEmail).toHaveBeenCalledTimes(1);
   });
 
   it("claim queues a pending registration without a session or credential", async () => {
