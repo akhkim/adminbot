@@ -841,3 +841,69 @@ it("redacts feedback reasons and manuscript links for unrelated viewers", () => 
   expect(redactPaperSlots(rows, false)[0].value_text).toBeUndefined();
   expect(redactPaperSlots(rows, true)[0].value_text).toBe(rows[0].value_text);
 });
+
+describe("a submitted paper whose core steps were never ticked", () => {
+  // What the OpenReview sync leaves behind: the submission and its id, and nothing before them.
+  const synced = [provided("submission"), provided("submission_id")];
+
+  it("asks for the slides once the submission is in, even with 'PDF compiles' unticked", () => {
+    const open = actionablePaperSlots(paper(), synced, NOW).map((item) => item.slot);
+    expect(open).toContain("slides");
+  });
+
+  it("does not go back and ask for the steps the submission already proves", () => {
+    const open = actionablePaperSlots(paper(), synced, NOW).map((item) => item.slot);
+    expect(open).not.toContain("pdf_ready");
+    expect(open).not.toContain("fixes_merged");
+    expect(open).not.toContain("project_folder");
+  });
+
+  it("moves on to the poster once the slides are in", () => {
+    const open = actionablePaperSlots(paper(), [...synced, provided("slides")], NOW).map(
+      (item) => item.slot,
+    );
+    expect(open).toContain("poster");
+    expect(open).not.toContain("slides");
+  });
+
+  it("does not treat a waiver as proof of the steps before it", () => {
+    const waived: AdminBotPaperSlotRecord = {
+      paper_id: "p1",
+      slot: "submission",
+      status: "waived",
+      waived_reason: "not going to a venue",
+    };
+    const open = actionablePaperSlots(paper(), [waived], NOW).map((item) => item.slot);
+    expect(open).toContain("project_folder");
+    expect(open).not.toContain("slides");
+  });
+});
+
+describe("buildNudgeMessage with a non-paper group", () => {
+  it("uses the group's own heading and keeps everything in one message", () => {
+    const message = buildNudgeMessage({
+      groups: [
+        { title: "Causal abstraction", items: actionablePaperSlots(paper(), [], NOW) },
+        {
+          title: "availability",
+          heading: "*Your profile* still needs:",
+          items: [
+            {
+              domain: "profile_field",
+              subjectId: "availability",
+              owner: "first_author",
+              label: "Add your time availability",
+              priority: 9,
+              deadlineBearing: false,
+            },
+          ],
+        },
+      ],
+      now: NOW,
+    });
+    expect(message).toContain("*Causal abstraction* still needs:");
+    expect(message).toContain("*Your profile* still needs:");
+    expect(message).not.toContain("*availability*");
+    expect(message.match(/Fill these in/gu)).toHaveLength(1);
+  });
+});

@@ -358,6 +358,7 @@ import {
   stampFieldProvenance,
   type AdminBotWriteOrigin,
 } from "../workflows/members/adoption.js";
+import { hasCurrentOrUpcomingAvailability } from "../workflows/members/availability.js";
 import { validateBirthday } from "../workflows/members/birthday.js";
 import { collaboratorSubgroupAccess } from "../workflows/members/collaborator-subgroups.js";
 import {
@@ -551,6 +552,11 @@ import {
   venueKey,
   selectPublications,
 } from "../workflows/papers/publication-list.js";
+import {
+  emptyTalkMaterialsConfig,
+  talkMaterialReminders,
+  type AdminBotTalkMaterialsConfig,
+} from "../workflows/papers/talk-materials.js";
 import { PaperTableSnapshot, type PaperRowReader } from "./paper-table-snapshot.js";
 import {
   enforceActiveChannels,
@@ -1339,6 +1345,11 @@ export type AdminBotServiceOptions = {
    * reads it here; no reader, or a stale file, means no link nudges rather than wrong ones.
    */
   paperLinkProblems?: () => ReadonlyMap<string, readonly string[]>;
+  /**
+   * The lab's per-topic talk mega decks and QuickPointers docs, from ADMINBOT_TALK_MATERIALS_JSON.
+   * Absent, the post-submission reminders still go out, worded without a link.
+   */
+  talkMaterials?: AdminBotTalkMaterialsConfig;
   /**
    * Asks Google whether a Drive file a paper points at is really there.
    *
@@ -9916,7 +9927,9 @@ export class AdminBotService {
           // than reporting it afterwards in a list of failures.
           deliverable: Boolean(member?.slack_user_id),
           item_count: [...groups.values()].reduce((total, group) => total + group.items.length, 0),
-          paper_titles: [...groups.keys()],
+          paper_titles: [...groups.entries()]
+            .filter(([, group]) => !group.heading)
+            .map(([title]) => title),
           message: this.composeNudgeMessage(groups, now),
         };
       })
@@ -9929,13 +9942,11 @@ export class AdminBotService {
   }
 
   /** One person's batch as the message they would actually receive. */
-  private composeNudgeMessage(
-    groups: Map<string, { venue?: string; deadline?: string; items: NudgeItem[] }>,
-    now: Date,
-  ): string {
+  private composeNudgeMessage(groups: Map<string, NudgeGroup>, now: Date): string {
     return buildNudgeMessage({
       groups: [...groups.entries()].map(([title, group]) => ({
         title,
+        ...(group.heading ? { heading: group.heading } : {}),
         ...(group.venue ? { venue: group.venue } : {}),
         ...(group.deadline ? { deadline: group.deadline } : {}),
         items: group.items.toSorted((left, right) => left.priority - right.priority),
@@ -9956,19 +9967,13 @@ export class AdminBotService {
   }
 
   private sweepPaperNudges(now: Date): {
-    byRecipient: Map<
-      string,
-      Map<string, { venue?: string; deadline?: string; items: NudgeItem[] }>
-    >;
+    byRecipient: Map<string, Map<string, NudgeGroup>>;
     stamped: Array<{ item: NudgeItem; memberId: string }>;
     papersConsidered: number;
   } {
     const ledger = this.nudgeLedgerIndex();
     const papers = this.store.listPapers();
-    const byRecipient = new Map<
-      string,
-      Map<string, { venue?: string; deadline?: string; items: NudgeItem[] }>
-    >();
+    const byRecipient = new Map<string, Map<string, NudgeGroup>>();
     const stamped: Array<{ item: NudgeItem; memberId: string }> = [];
     const linkProblemsByPaper = this.options.paperLinkProblems?.() ?? new Map<string, string[]>();
 
@@ -9988,11 +9993,19 @@ export class AdminBotService {
         .map((entry) => entry.member_id),
     );
 
-    const enqueue = (memberId: string, paper: AdminBotPaperRecord, item: NudgeItem) => {
+    const enqueue = (
+      memberId: string,
+      paper: AdminBotPaperRecord,
+      item: NudgeItem,
+      options: { once?: boolean } = {},
+    ) => {
       const key = `${item.domain}|${item.subjectId}|${memberId}`;
+      const entry = ledger.get(key);
       if (
         recentlyMessaged.has(memberId) ||
-        !isNudgeDue(ledger.get(key), now, PAPER_SLOT_NUDGE_INTERVAL_MS)
+        !isNudgeDue(entry, now, PAPER_SLOT_NUDGE_INTERVAL_MS) ||
+        // Said once: a reminder with nothing to check off would otherwise repeat forever.
+        (options.once && Boolean(entry?.last_nudged_at))
       ) {
         return;
       }
@@ -10024,6 +10037,21 @@ export class AdminBotService {
       )) {
         for (const memberId of this.resolvePaperSlotOwner(paper, item.owner)) {
           enqueue(memberId, paper, item);
+        }
+      }
+
+      // Once the paper is out (or the slides are in): the topic mega deck and QuickPointers doc.
+      // Neither can be checked off, so each is said once and rides along with this paper's batch.
+      const firstAuthors = this.resolvePaperSlotOwner(paper, "first_author");
+      for (const memberId of firstAuthors) {
+        for (const item of talkMaterialReminders({
+          paper,
+          stored,
+          now,
+          config: this.options.talkMaterials ?? emptyTalkMaterialsConfig,
+          researchBranch: this.store.getLabMember(memberId)?.research_branch,
+        })) {
+          enqueue(memberId, paper, item, { once: true });
         }
       }
 
@@ -10104,6 +10132,54 @@ export class AdminBotService {
           priority: adminBotPaperSlotBranchPriority.venue,
           deadlineBearing: false,
         });
+      }
+    }
+
+    // Time availability is the person's, not the paper's, but it is the same kind of empty slot
+    // and the lab plans talks and deadlines around it. It only rides along with a message that is
+    // already going out -- it never starts one -- and skips anybody the profile reminder chased
+    // within its own interval, so nobody hears about the same gap from two directions in a week.
+    if (byRecipient.size > 0) {
+      const today = now.toISOString().slice(0, 10);
+      let profileRemindedAt: Map<string, number> | undefined;
+      for (const [memberId, groups] of byRecipient) {
+        const member = this.store.getLabMember(memberId);
+        if (
+          !member ||
+          !isAdminBotFullMember(member) ||
+          hasCurrentOrUpcomingAvailability(member, today)
+        ) {
+          continue;
+        }
+        profileRemindedAt ??= this.lastMandatoryFieldsReminderByMember();
+        if (
+          (profileRemindedAt.get(memberId) ?? 0) >
+          now.getTime() - MANDATORY_FIELDS_REMINDER_INTERVAL_MS
+        ) {
+          continue;
+        }
+        const item: NudgeItem = {
+          domain: "profile_field",
+          subjectId: "availability",
+          owner: "first_author",
+          label: "Add your time availability (hours per week, with dates) to your profile",
+          priority: adminBotPaperSlotBranchPriority.talk + 1,
+          deadlineBearing: false,
+        };
+        if (
+          !isNudgeDue(
+            ledger.get(`${item.domain}|${item.subjectId}|${memberId}`),
+            now,
+            PAPER_SLOT_NUDGE_INTERVAL_MS,
+          )
+        ) {
+          continue;
+        }
+        groups.set(AVAILABILITY_NUDGE_GROUP, {
+          heading: "*Your profile* still needs:",
+          items: [item],
+        });
+        stamped.push({ item, memberId });
       }
     }
 
@@ -17444,7 +17520,15 @@ const PAPER_NUDGE_DOMAINS: ReadonlySet<AdminBotNudgeDomain> = new Set([
   "social_consent",
   "conference_attendance",
   "paper_reimbursement",
+  // Only the availability line, which rides along with a paper batch; see sweepPaperNudges.
+  "profile_field",
 ]);
+
+/** One paper's lines in a nudge, or a non-paper group (`heading` set) such as availability. */
+type NudgeGroup = { venue?: string; deadline?: string; items: NudgeItem[]; heading?: string };
+
+/** Map key for the availability group. A paper title never starts with NUL, so it cannot collide. */
+const AVAILABILITY_NUDGE_GROUP = "\u0000availability";
 
 // A venue-cycle stage is asked about once a week, the same as a slot. The author
 // cannot make the answer arrive any sooner -- the venue decides when reviews land -- so a tighter

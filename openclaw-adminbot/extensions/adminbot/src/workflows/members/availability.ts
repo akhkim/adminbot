@@ -44,3 +44,20 @@ export function tripOn(
 ): AdminBotMemberTrip | undefined {
   return (member.trips ?? []).findLast((row) => covers(row, dayIso));
 }
+
+/**
+ * Whether the member has told the lab how much time they have, now or ahead.
+ *
+ * Only rows that have not ended count: a term plan from last year says nothing about this one, and
+ * a member whose every row is in the past is in the same position as one with no rows at all. A
+ * row with a start and no end is open-ended and counts.
+ */
+export function hasCurrentOrUpcomingAvailability(
+  member: Pick<AdminBotLabMember, "availability">,
+  dayIso: string,
+): boolean {
+  return (member.availability ?? []).some((row) => {
+    const end = row.end ?? "";
+    return end !== "" ? end >= dayIso : Boolean(row.start);
+  });
+}
