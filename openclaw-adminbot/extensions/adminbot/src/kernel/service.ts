@@ -7,6 +7,10 @@ import type {
   PaperMentorReviewRequester,
   PaperMentorReviewRequestStatus,
 } from "../connectors/papermentor-review.js";
+import {
+  classifyMailSendFailure,
+  needsOperatorForMailFailure,
+} from "../connectors/mail-send-failure.js";
 import type { PaperMentorUpload } from "../connectors/papermentor-uploads.js";
 import type { ReverseGeocoder } from "../connectors/reverse-geocode.js";
 import type { AdminBotExternalCollaboratorSubgroup } from "../contracts/actions.js";
@@ -358,6 +362,7 @@ import {
   stampFieldProvenance,
   type AdminBotWriteOrigin,
 } from "../workflows/members/adoption.js";
+import { hasCurrentOrUpcomingAvailability } from "../workflows/members/availability.js";
 import { validateBirthday } from "../workflows/members/birthday.js";
 import { collaboratorSubgroupAccess } from "../workflows/members/collaborator-subgroups.js";
 import {
@@ -446,6 +451,7 @@ import {
   authorNamesFromLinks,
   buildAuthorLinks,
 } from "../workflows/papers/author-links.js";
+import { withPaperCameraReadyDeadlines } from "../workflows/papers/camera-ready-deadlines.js";
 import {
   buildConferenceAttendance,
   canonicalConferenceTripKey,
@@ -455,6 +461,7 @@ import {
   paperConferenceKey,
   type ConferenceAttendanceView,
 } from "../workflows/papers/conference-attendance.js";
+import { buildLabProjects, type AdminBotLabProject } from "../workflows/papers/lab-projects.js";
 import {
   isProjectActive,
   summarizeProject,
@@ -470,6 +477,7 @@ import {
   normalizedTitle,
   openReviewStageProofs,
   planOpenReviewSync,
+  refreshedCameraReadyDue,
   type OpenReviewEvidence,
   type OpenReviewFieldChange,
 } from "../workflows/papers/openreview-paper-sync.js";
@@ -551,6 +559,11 @@ import {
   venueKey,
   selectPublications,
 } from "../workflows/papers/publication-list.js";
+import {
+  emptyTalkMaterialsConfig,
+  talkMaterialReminders,
+  type AdminBotTalkMaterialsConfig,
+} from "../workflows/papers/talk-materials.js";
 import { PaperTableSnapshot, type PaperRowReader } from "./paper-table-snapshot.js";
 import {
   enforceActiveChannels,
@@ -559,6 +572,7 @@ import {
 } from "./service.active-channels.js";
 import {
   automationHealthIssues,
+  openReviewLoginRejection,
   SLACK_CONNECT_INVITE_REASONS,
   slackInviteBlockFor,
   slackInviteBlocks,
@@ -577,6 +591,7 @@ import {
   isRestrictedCalendarEvent,
   syncCalendarMembership,
 } from "./service.calendar-membership.js";
+import { reconcileCameraReadyCalendar } from "./service.camera-ready.js";
 import { beginCollaboratorChatExecution } from "./service.collaborator-chats.js";
 import {
   recommendationDirectory,
@@ -1116,6 +1131,12 @@ export type AdminBotPaperflowStageNudge = {
   nudge_count: number;
   /** False when the cadence or a snooze says this one is not going out on this pass. */
   due: boolean;
+  /**
+   * True once this stage has been mailed PAPERFLOW_STAGE_NUDGE_CAP times without an answer. The
+   * sweep stops mailing and reports it instead: past that point another identical mail is noise,
+   * and the paper needs a person to ask in a different way.
+   */
+  exhausted?: boolean;
 };
 
 export type AdminBotNudgeBatch = {
@@ -1339,6 +1360,11 @@ export type AdminBotServiceOptions = {
    * reads it here; no reader, or a stale file, means no link nudges rather than wrong ones.
    */
   paperLinkProblems?: () => ReadonlyMap<string, readonly string[]>;
+  /**
+   * The lab's per-topic talk mega decks and QuickPointers docs, from ADMINBOT_TALK_MATERIALS_JSON.
+   * Absent, the post-submission reminders still go out, worded without a link.
+   */
+  talkMaterials?: AdminBotTalkMaterialsConfig;
   /**
    * Asks Google whether a Drive file a paper points at is really there.
    *
@@ -1987,6 +2013,9 @@ export class AdminBotService {
   // Invite payloads do not change once proposed, and a sweep asks about the same few hundred
   // failures once per invite it considers; remembered so that is a map read, not a query.
   private readonly failedInviteProposals = new Map<string, AdminBotStoredProposal | undefined>();
+  // Whether the newest recorded OpenReview login was refused; read from the audit trail on first
+  // use, then kept here so each sweep does not rescan it. See recordOpenReviewLogin.
+  private openReviewLoginRejected: boolean | undefined;
   private failedInviteProposal(id: string): AdminBotStoredProposal | undefined {
     if (!this.failedInviteProposals.has(id)) {
       this.failedInviteProposals.set(id, this.store.getProposal(id));
@@ -1994,8 +2023,11 @@ export class AdminBotService {
     return this.failedInviteProposals.get(id);
   }
 
-  /** What service.birthday.ts needs to propose or withdraw a member's birthday event. */
-  private get birthdayDeps() {
+  /**
+   * What service.birthday.ts and service.camera-ready.ts need to propose or withdraw a lab
+   * calendar event. Both only file proposals; an admin approves every calendar write.
+   */
+  private get calendarProposalDeps() {
     return {
       store: this.store,
       removePending: (id: string, request: { note: string }) => this.removePending(id, request),
@@ -2766,7 +2798,13 @@ export class AdminBotService {
         );
       }
     }
-    return mergePublishedDeadlines(dataset, this.store.listPublishedDeadlines());
+    // Venues only the lab's accepted papers know about (OpenReview's camera-ready form) are added
+    // after the published corrections, so a curated or approved date always wins over them.
+    return withPaperCameraReadyDeadlines(
+      mergePublishedDeadlines(dataset, this.store.listPublishedDeadlines()),
+      this.store.listPapers(),
+      new Date(),
+    );
   }
 
   /** Set once `deadlineDataset` has thrown, so the warning above is not repeated per member. */
@@ -3334,7 +3372,7 @@ export class AdminBotService {
     proposal.updated_at = now;
     this.store.updateProposal(proposal);
     this.store.saveExecutionResult(result);
-    reconcileExecutedBirthday(this.birthdayDeps, proposal, now);
+    reconcileExecutedBirthday(this.calendarProposalDeps, proposal, now);
     this.recordAudit({
       type: "execution.executed",
       action_id: actionId,
@@ -3361,6 +3399,19 @@ export class AdminBotService {
         error: message,
       },
     });
+    // An expired Google token or a missing gog fails every later mail the same way, so admins hear
+    // about it now rather than at the next health pass. Only that issue kind: the rest of the pass
+    // (Slack Connect proposals, stale-job checks) stays on its own schedule.
+    if (/\bgog\b/u.test(message) && needsOperatorForMailFailure(classifyMailSendFailure(message))) {
+      const health = this.automationHealth();
+      if (health.ok) {
+        this.alertAdminsOfIssues(
+          health.payload.issues.filter((issue) => issue.kind === "google_credentials"),
+          "adminbot",
+          new Date(),
+        );
+      }
+    }
     return serviceError(status, message);
   }
 
@@ -3499,31 +3550,29 @@ export class AdminBotService {
    * so something new is heard about at once, and something unchanged is repeated weekly until
    * somebody fixes it.
    */
-  raiseAutomationHealthAlerts(
-    actor: string,
-    now = new Date(),
-  ): AdminBotServiceResponse<{
-    issues: number;
-    alerted: string[];
-    admins: number;
-    connect_invites_proposed: string[];
-  }> {
-    // Before the issues are read, so a person who just got a proposal is not also reported as a
-    // manual invite on the same pass.
-    const connectInvitesProposed = this.proposeSlackConnectInvites(now);
-    const health = this.automationHealth(now);
-    if (!health.ok) {
-      return health;
-    }
-    const admins = this.store
+  private automationAlertAdmins(): AdminBotLabMember[] {
+    return this.store
       .listLabMembers()
       .filter((member) => member.privilege_level === "admin" && !adminBotIsAlumniMember(member));
+  }
+
+  /**
+   * Files each issue as an "automation" notification to every admin, at most once a week per issue
+   * key (the automation_health ledger). Shared by the health pass and by the execution path, which
+   * raises a Google credential failure the moment it happens rather than at the next pass.
+   */
+  private alertAdminsOfIssues(
+    issues: readonly AutomationHealthIssue[],
+    actor: string,
+    now: Date,
+  ): string[] {
+    const admins = this.automationAlertAdmins();
     const ledger = this.nudgeLedgerIndex();
     const nowIso = now.toISOString();
     const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const alerted: string[] = [];
     // Nobody to tell is not the same as told: leave the ledger alone so the first admin hears it.
-    for (const issue of admins.length > 0 ? health.payload.issues : []) {
+    for (const issue of admins.length > 0 ? issues : []) {
       const said = ledger.get(`automation_health|${issue.key}`);
       if (said?.last_nudged_at && said.last_nudged_at > weekAgo) {
         continue;
@@ -3548,6 +3597,28 @@ export class AdminBotService {
       });
       alerted.push(issue.key);
     }
+    return alerted;
+  }
+
+  raiseAutomationHealthAlerts(
+    actor: string,
+    now = new Date(),
+  ): AdminBotServiceResponse<{
+    issues: number;
+    alerted: string[];
+    admins: number;
+    connect_invites_proposed: string[];
+  }> {
+    // Before the issues are read, so a person who just got a proposal is not also reported as a
+    // manual invite on the same pass.
+    const connectInvitesProposed = this.proposeSlackConnectInvites(now);
+    const health = this.automationHealth(now);
+    if (!health.ok) {
+      return health;
+    }
+    const admins = this.automationAlertAdmins();
+    const nowIso = now.toISOString();
+    const alerted = this.alertAdminsOfIssues(health.payload.issues, actor, now);
     // And the other way: an alert whose issue is gone (the job ran clean, the failures aged out of
     // the 24h window) comes off the dashboard. Matched on the title, which is the issue's label and
     // does not carry the counts that change from pass to pass.
@@ -3584,6 +3655,31 @@ export class AdminBotService {
         connect_invites_proposed: connectInvitesProposed,
       },
     };
+  }
+
+  /**
+   * Records whether the OpenReview account could log in, for the automation health pass.
+   *
+   * Only changes are recorded -- the first refusal, and the first success after one -- so an
+   * hourly check against a broken login is one audit event, not one per hour. The health pass
+   * turns an outstanding refusal into an admin alert and clears it once a login works again.
+   * A refusal means OpenReview answered and said no; an unreachable OpenReview is not recorded.
+   */
+  recordOpenReviewLogin(
+    source: "citation_checks" | "integrity_checks",
+    result: { ok: true } | { ok: false; error: string },
+  ): void {
+    this.openReviewLoginRejected ??= Boolean(
+      openReviewLoginRejection(this.store.listAuditEvents()),
+    );
+    if (result.ok === this.openReviewLoginRejected) {
+      this.recordAudit({
+        type: result.ok ? "openreview.login_restored" : "openreview.login_rejected",
+        actor: "adminbot",
+        details: result.ok ? { source } : { source, error: result.error },
+      });
+      this.openReviewLoginRejected = !result.ok;
+    }
   }
 
   // Anonymous reimbursement use has no member to attribute it to, so the audit trail is the only
@@ -4226,7 +4322,7 @@ export class AdminBotService {
         ...(moved.timezone ? { timezone: moved.timezone } : {}),
       });
     }
-    reconcileBirthdayEvent(this.birthdayDeps, stored);
+    reconcileBirthdayEvent(this.calendarProposalDeps, stored);
     // And for the working-groups slide: a new member, or one whose themes or photo changed, is a
     // slide that no longer matches. Debounced and fire-and-forget -- a save must not wait on
     // Google, and a roster import of 150 rows should become one plan, not 150.
@@ -6325,9 +6421,9 @@ export class AdminBotService {
     // Remembered so the daily imports recognize the retired record's id, addresses and Slack
     // account as this person instead of re-creating the duplicate the next morning.
     const merged: AdminBotLabMember = { ...patched, ...absorbedIdentity(patched, duplicate) };
-    reconcileBirthdayEvent(this.birthdayDeps, duplicate, true);
+    reconcileBirthdayEvent(this.calendarProposalDeps, duplicate, true);
     this.store.saveLabMember(merged);
-    reconcileBirthdayEvent(this.birthdayDeps, merged);
+    reconcileBirthdayEvent(this.calendarProposalDeps, merged);
     const moved = this.store.reassignMemberReferences(params.duplicateId, params.survivorId);
     this.store.revokeSessionsForMember(params.duplicateId, now);
     this.store.retireLabMember(params.duplicateId, params.survivorId, now);
@@ -6597,7 +6693,7 @@ export class AdminBotService {
     // Sessions first and through the revoke path rather than the purge, so a signed-in browser
     // stops working by the route that records that it did -- same order as the merge.
     this.store.revokeSessionsForMember(member.id, now);
-    reconcileBirthdayEvent(this.birthdayDeps, member, true);
+    reconcileBirthdayEvent(this.calendarProposalDeps, member, true);
     const removed = this.store.purgeMemberReferences(member.id);
     this.store.deleteLabMember(member.id);
     this.recordAudit({
@@ -7098,6 +7194,23 @@ export class AdminBotService {
         ),
       )
       .toSorted((left, right) => (left.deadline ?? "9999").localeCompare(right.deadline ?? "9999"));
+    return { ok: true, status: 200, payload: { projects } };
+  }
+
+  /**
+   * Every project in the lab, for the admins' Lab Projects page. The route is admin-only; the rows
+   * carry no credentials, off-roster emails or prose (workflows/papers/lab-projects.ts).
+   */
+  listLabProjects(nowIso?: string): AdminBotServiceResponse<{ projects: AdminBotLabProject[] }> {
+    const projects = buildLabProjects({
+      papers: this.store.listPapers(),
+      roster: this.store.listLabMembers(),
+      slots: (paperId) => this.store.listPaperSlots(paperId),
+      drafts: (paperId) => this.store.listSocialDrafts(paperId),
+      weeklyUpdates: this.store.listPaperWeeklyUpdates(),
+      helpRequests: this.store.listHelpRequests(),
+      now: nowIso ? new Date(nowIso) : new Date(),
+    });
     return { ok: true, status: 200, payload: { projects } };
   }
 
@@ -8021,6 +8134,12 @@ export class AdminBotService {
       }
       if (plan.unchanged) {
         report.unchanged += 1;
+        // The fingerprint leaves the camera-ready date out, so a date that appears after the
+        // acceptance was recorded is saved here rather than waiting for the next decision.
+        const refreshed = options.dryRun ? undefined : refreshedCameraReadyDue(paper, plan);
+        if (refreshed) {
+          this.store.savePaper({ ...paper, openreview_sync: refreshed });
+        }
         continue;
       }
       if (plan.kept) {
@@ -8111,6 +8230,13 @@ export class AdminBotService {
     report.updates = updates.map(({ paper_id, line }) => ({ paper_id, line }));
     if (!options.dryRun) {
       this.tellPiOfOpenReviewUpdates(updates, updatedPapers, nowIso);
+      // Proposals only: each camera-ready reaches the lab calendar once an admin approves it.
+      reconcileCameraReadyCalendar(
+        this.calendarProposalDeps,
+        this.store.listPapers(),
+        this.deadlineReadModel(DEADLINE_VENUES),
+        new Date(nowIso),
+      );
     }
     // Counted per submission, not per report: one paper is usually several e-mails.
     const keyOf = (item: OpenReviewEvidence) => normalizedTitle(item.title) || item.forums[0] || "";
@@ -8704,29 +8830,34 @@ export class AdminBotService {
       .listPapers()
       .map((paper) => ({ paper, slots: this.paperRows().listPaperSlots(paper.id) }));
     const open = candidates.filter(({ paper }) => !isPaperClosed(paper));
+    const now = new Date();
     return {
       ok: true,
       status: 200,
       payload: {
-        // One list in reading order: camera-ready first, then safety impact, arXiv, under review
-        // and rejections, each by nearest hard deadline (workflows/papers/paper-queue.ts).
-        papers: rankPaperQueue([
-          ...paperImpactQueue(open),
-          // A previous venue rejection does not cancel an explicit request to review a revision.
-          ...paperFeedbackQueue(candidates),
-          ...piReviewQueue(open),
-          // What OpenReview says each submitted paper needs next, for every venue.
-          ...openReviewPaperQueue(
-            candidates.map((candidate) => ({
-              ...candidate,
-              evidence: this.paperRows().listPaperflowEvidence(candidate.paper.id),
-            })),
-            this.deadlineReadModel(DEADLINE_VENUES),
-            new Date(),
-          ),
-          // Papers headed to a venue whose submission deadline is near: her proofreading clock.
-          ...proofreadingPaperQueue(open, this.deadlineReadModel(DEADLINE_VENUES), new Date()),
-        ]),
+        // One list in reading order: anything past its hard deadline first, then camera-ready,
+        // safety impact, arXiv, under review and rejections, each by nearest hard deadline
+        // (workflows/papers/paper-queue.ts).
+        papers: rankPaperQueue(
+          [
+            ...paperImpactQueue(open),
+            // A previous venue rejection does not cancel an explicit request to review a revision.
+            ...paperFeedbackQueue(candidates, now),
+            ...piReviewQueue(open),
+            // What OpenReview says each submitted paper needs next, for every venue.
+            ...openReviewPaperQueue(
+              candidates.map((candidate) => ({
+                ...candidate,
+                evidence: this.paperRows().listPaperflowEvidence(candidate.paper.id),
+              })),
+              this.deadlineReadModel(DEADLINE_VENUES),
+              now,
+            ),
+            // Papers headed to a venue whose submission deadline is near: her proofreading clock.
+            ...proofreadingPaperQueue(open, this.deadlineReadModel(DEADLINE_VENUES), now),
+          ],
+          now,
+        ),
       },
     };
   }
@@ -9857,7 +9988,7 @@ export class AdminBotService {
     }
     into.created.push(...result.payload.created);
     into.skipped.push(...result.payload.skipped);
-    return result.payload.created.length > 0;
+    return nudgeReachedMember(result.payload, memberId);
   }
 
   /**
@@ -9911,7 +10042,9 @@ export class AdminBotService {
           // than reporting it afterwards in a list of failures.
           deliverable: Boolean(member?.slack_user_id),
           item_count: [...groups.values()].reduce((total, group) => total + group.items.length, 0),
-          paper_titles: [...groups.keys()],
+          paper_titles: [...groups.entries()]
+            .filter(([, group]) => !group.heading)
+            .map(([title]) => title),
           message: this.composeNudgeMessage(groups, now),
         };
       })
@@ -9924,13 +10057,11 @@ export class AdminBotService {
   }
 
   /** One person's batch as the message they would actually receive. */
-  private composeNudgeMessage(
-    groups: Map<string, { venue?: string; deadline?: string; items: NudgeItem[] }>,
-    now: Date,
-  ): string {
+  private composeNudgeMessage(groups: Map<string, NudgeGroup>, now: Date): string {
     return buildNudgeMessage({
       groups: [...groups.entries()].map(([title, group]) => ({
         title,
+        ...(group.heading ? { heading: group.heading } : {}),
         ...(group.venue ? { venue: group.venue } : {}),
         ...(group.deadline ? { deadline: group.deadline } : {}),
         items: group.items.toSorted((left, right) => left.priority - right.priority),
@@ -9951,19 +10082,13 @@ export class AdminBotService {
   }
 
   private sweepPaperNudges(now: Date): {
-    byRecipient: Map<
-      string,
-      Map<string, { venue?: string; deadline?: string; items: NudgeItem[] }>
-    >;
+    byRecipient: Map<string, Map<string, NudgeGroup>>;
     stamped: Array<{ item: NudgeItem; memberId: string }>;
     papersConsidered: number;
   } {
     const ledger = this.nudgeLedgerIndex();
     const papers = this.store.listPapers();
-    const byRecipient = new Map<
-      string,
-      Map<string, { venue?: string; deadline?: string; items: NudgeItem[] }>
-    >();
+    const byRecipient = new Map<string, Map<string, NudgeGroup>>();
     const stamped: Array<{ item: NudgeItem; memberId: string }> = [];
     const linkProblemsByPaper = this.options.paperLinkProblems?.() ?? new Map<string, string[]>();
 
@@ -9983,11 +10108,19 @@ export class AdminBotService {
         .map((entry) => entry.member_id),
     );
 
-    const enqueue = (memberId: string, paper: AdminBotPaperRecord, item: NudgeItem) => {
+    const enqueue = (
+      memberId: string,
+      paper: AdminBotPaperRecord,
+      item: NudgeItem,
+      options: { once?: boolean } = {},
+    ) => {
       const key = `${item.domain}|${item.subjectId}|${memberId}`;
+      const entry = ledger.get(key);
       if (
         recentlyMessaged.has(memberId) ||
-        !isNudgeDue(ledger.get(key), now, PAPER_SLOT_NUDGE_INTERVAL_MS)
+        !isNudgeDue(entry, now, PAPER_SLOT_NUDGE_INTERVAL_MS) ||
+        // Said once: a reminder with nothing to check off would otherwise repeat forever.
+        (options.once && Boolean(entry?.last_nudged_at))
       ) {
         return;
       }
@@ -10019,6 +10152,21 @@ export class AdminBotService {
       )) {
         for (const memberId of this.resolvePaperSlotOwner(paper, item.owner)) {
           enqueue(memberId, paper, item);
+        }
+      }
+
+      // Once the paper is out (or the slides are in): the topic mega deck and QuickPointers doc.
+      // Neither can be checked off, so each is said once and rides along with this paper's batch.
+      const firstAuthors = this.resolvePaperSlotOwner(paper, "first_author");
+      for (const memberId of firstAuthors) {
+        for (const item of talkMaterialReminders({
+          paper,
+          stored,
+          now,
+          config: this.options.talkMaterials ?? emptyTalkMaterialsConfig,
+          researchBranch: this.store.getLabMember(memberId)?.research_branch,
+        })) {
+          enqueue(memberId, paper, item, { once: true });
         }
       }
 
@@ -10099,6 +10247,54 @@ export class AdminBotService {
           priority: adminBotPaperSlotBranchPriority.venue,
           deadlineBearing: false,
         });
+      }
+    }
+
+    // Time availability is the person's, not the paper's, but it is the same kind of empty slot
+    // and the lab plans talks and deadlines around it. It only rides along with a message that is
+    // already going out -- it never starts one -- and skips anybody the profile reminder chased
+    // within its own interval, so nobody hears about the same gap from two directions in a week.
+    if (byRecipient.size > 0) {
+      const today = now.toISOString().slice(0, 10);
+      let profileRemindedAt: Map<string, number> | undefined;
+      for (const [memberId, groups] of byRecipient) {
+        const member = this.store.getLabMember(memberId);
+        if (
+          !member ||
+          !isAdminBotFullMember(member) ||
+          hasCurrentOrUpcomingAvailability(member, today)
+        ) {
+          continue;
+        }
+        profileRemindedAt ??= this.lastMandatoryFieldsReminderByMember();
+        if (
+          (profileRemindedAt.get(memberId) ?? 0) >
+          now.getTime() - MANDATORY_FIELDS_REMINDER_INTERVAL_MS
+        ) {
+          continue;
+        }
+        const item: NudgeItem = {
+          domain: "profile_field",
+          subjectId: "availability",
+          owner: "first_author",
+          label: "Add your time availability (hours per week, with dates) to your profile",
+          priority: adminBotPaperSlotBranchPriority.talk + 1,
+          deadlineBearing: false,
+        };
+        if (
+          !isNudgeDue(
+            ledger.get(`${item.domain}|${item.subjectId}|${memberId}`),
+            now,
+            PAPER_SLOT_NUDGE_INTERVAL_MS,
+          )
+        ) {
+          continue;
+        }
+        groups.set(AVAILABILITY_NUDGE_GROUP, {
+          heading: "*Your profile* still needs:",
+          items: [item],
+        });
+        stamped.push({ item, memberId });
       }
     }
 
@@ -10268,8 +10464,10 @@ export class AdminBotService {
         ...(entry?.last_nudged_at ? { last_nudged_at: entry.last_nudged_at } : {}),
         nudge_count: entry?.nudge_count ?? 0,
         due:
+          (entry?.nudge_count ?? 0) < PAPERFLOW_STAGE_NUDGE_CAP &&
           isNudgeDue(entry, now, PAPERFLOW_STAGE_NUDGE_INTERVAL_MS) &&
           lastHeardFrom <= now.getTime() - PAPERFLOW_STAGE_NUDGE_INTERVAL_MS,
+        ...((entry?.nudge_count ?? 0) >= PAPERFLOW_STAGE_NUDGE_CAP ? { exhausted: true } : {}),
       });
     }
     return { items };
@@ -10291,7 +10489,12 @@ export class AdminBotService {
     actor: string,
   ): Promise<
     AdminBotServiceResponse<
-      AdminBotMemberNudgeResult & { papers_considered: number; unroutable: string[] }
+      AdminBotMemberNudgeResult & {
+        papers_considered: number;
+        unroutable: string[];
+        /** "<paper_id>:<stage>" for every stage that hit the follow-up cap and was not mailed. */
+        exhausted: string[];
+      }
     >
   > {
     const botEmail = this.options.paperflowBotEmail?.trim();
@@ -10306,11 +10509,16 @@ export class AdminBotService {
     const created: AdminBotStoredProposal[] = [];
     const skipped: AdminBotMemberNudgeSkip[] = [];
     const unroutable: string[] = [];
+    const exhausted: string[] = [];
     const stamped: Array<{ subjectId: string; memberId: string }> = [];
 
     for (const item of items) {
       if (!item.recipient_member_id) {
         unroutable.push(item.paper_id);
+        continue;
+      }
+      if (item.exhausted) {
+        exhausted.push(`${item.paper_id}:${item.stage}`);
         continue;
       }
       if (!item.due) {
@@ -10362,17 +10570,21 @@ export class AdminBotService {
       })),
       now.toISOString(),
     );
-    if (stamped.length > 0 || unroutable.length > 0) {
+    if (stamped.length > 0 || unroutable.length > 0 || exhausted.length > 0) {
       this.recordAudit({
         type: "paperflow_stages.nudged",
         actor,
-        details: { sent: stamped.length, unroutable: unroutable.length },
+        details: {
+          sent: stamped.length,
+          unroutable: unroutable.length,
+          exhausted: exhausted.length,
+        },
       });
     }
     return {
       ok: true,
       status: 200,
-      payload: { created, skipped, papers_considered: items.length, unroutable },
+      payload: { created, skipped, papers_considered: items.length, unroutable, exhausted },
     };
   }
 
@@ -12633,8 +12845,17 @@ export class AdminBotService {
         if (!result.ok) {
           return { delivered: false, reason: result.error.message };
         }
-        const skip = result.payload.skipped[0];
-        return skip ? { delivered: false, reason: skip.reason } : { delivered: true };
+        // Stamped only when the message may have reached them (see nudgeReachedMember): a
+        // kill-switched send used to count as delivered here because nothing was "skipped", which
+        // recorded a nudge nobody received and held back the next one for the whole cooldown.
+        if (nudgeReachedMember(result.payload, member.id)) {
+          return { delivered: true };
+        }
+        const reason =
+          result.payload.skipped[0]?.reason ??
+          result.payload.deliveries?.find((delivery) => delivery.member_id === member.id)?.outcome ??
+          "not delivered";
+        return { delivered: false, reason };
       },
       stamp: (memberId, nowIso) => {
         const subjectId = campaignSubjectId(campaign.key);
@@ -14270,10 +14491,15 @@ export class AdminBotService {
       if (!executed.ok) {
         skipped.push({ member_id: memberId, reason: executed.error.message });
         // A 502 is the connector raising mid-send (executeOnce's catch), so the DM may or may not
-        // have gone out. Everything else was refused before any send was attempted.
+        // have gone out -- unless gog's error says the request never got that far (expired token,
+        // missing binary, network down, rate-limited past its retries). Everything else was
+        // refused before any send was attempted.
         deliveries.push({
           member_id: memberId,
-          outcome: executed.status === 502 ? "unknown" : "failed",
+          outcome:
+            executed.status === 502 && !gogFailedBeforeSending(executed.error.message)
+              ? "unknown"
+              : "failed",
           action_id: actionId,
           reason: executed.error.message,
         });
@@ -17439,13 +17665,54 @@ const PAPER_NUDGE_DOMAINS: ReadonlySet<AdminBotNudgeDomain> = new Set([
   "social_consent",
   "conference_attendance",
   "paper_reimbursement",
+  // Only the availability line, which rides along with a paper batch; see sweepPaperNudges.
+  "profile_field",
 ]);
+
+/** One paper's lines in a nudge, or a non-paper group (`heading` set) such as availability. */
+type NudgeGroup = { venue?: string; deadline?: string; items: NudgeItem[]; heading?: string };
+
+/** Map key for the availability group. A paper title never starts with NUL, so it cannot collide. */
+const AVAILABILITY_NUDGE_GROUP = "\u0000availability";
 
 // A venue-cycle stage is asked about once a week, the same as a slot. The author
 // cannot make the answer arrive any sooner -- the venue decides when reviews land -- so a tighter
 // cadence buys nothing and spends the one thing that makes these mails work, which is that
 // receiving one still means something.
 const PAPERFLOW_STAGE_NUDGE_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
+/**
+ * Weekly follow-ups on one paper's stage stop after this many unanswered mails (about a month).
+ * The ledger only counts mails that actually went out, so a failed send never uses one up.
+ */
+const PAPERFLOW_STAGE_NUDGE_CAP = 4;
+
+/**
+ * Whether a sendMemberNudge result means the member may have the message, which is what every
+ * sweep stamps its ledger on. `executed` plainly counts. `unknown` (the connector raised mid-send)
+ * counts too: it may already be in their inbox, and resending it on the next pass is how one
+ * reminder becomes two -- it waits for the normal follow-up cadence instead. `not_delivered` (a
+ * kill switch) and `failed` do not count, so the next pass tries again and a failed send never
+ * uses up a follow-up.
+ */
+function nudgeReachedMember(result: AdminBotMemberNudgeResult, memberId: string): boolean {
+  if (!result.deliveries) {
+    return result.created.length > 0;
+  }
+  return result.deliveries.some(
+    (delivery) =>
+      delivery.member_id === memberId &&
+      (delivery.outcome === "executed" || delivery.outcome === "unknown"),
+  );
+}
+
+/** A gog error that proves the request never reached Google, so nothing can have been sent. */
+function gogFailedBeforeSending(message: string): boolean {
+  if (!/\bgog\b/u.test(message)) {
+    return false;
+  }
+  const kind = classifyMailSendFailure(message);
+  return needsOperatorForMailFailure(kind) || kind === "unreachable" || kind === "rate_limited";
+}
 
 // Fixed order, so a person owed slots in two roles on the same paper reads them in the same order
 // every time.

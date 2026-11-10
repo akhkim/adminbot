@@ -1,7 +1,7 @@
 import { render } from "lit";
 import { afterEach, expect, it, vi } from "vitest";
 import { canAccessTab } from "../access.ts";
-import { renderArrReviewers } from "./arr-reviewers.ts";
+import { renderArrReviewerFilter, renderArrReviewers } from "./arr-reviewers.ts";
 
 afterEach(() => document.body.replaceChildren());
 
@@ -61,4 +61,17 @@ it("makes the tab available to members and admins but not anonymous visitors", (
   expect(canAccessTab("adminbotArrReviewers", "member")).toBe(true);
   expect(canAccessTab("adminbotArrReviewers", "admin")).toBe(true);
   expect(canAccessTab("adminbotArrReviewers", "anonymous")).toBe(false);
+});
+
+it("draws the Lab Members filter switch and reports each toggle", () => {
+  const host = document.createElement("div");
+  document.body.append(host);
+  const onToggle = vi.fn();
+  render(renderArrReviewerFilter({ active: true, onToggle }), host);
+  const input = host.querySelector<HTMLInputElement>("input[type='checkbox']")!;
+  expect(input.checked).toBe(true);
+  expect(host.textContent).toContain("ARR-eligible reviewers only");
+  input.checked = false;
+  input.dispatchEvent(new Event("change"));
+  expect(onToggle).toHaveBeenCalledWith(false);
 });

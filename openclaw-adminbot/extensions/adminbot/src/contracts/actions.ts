@@ -2317,6 +2317,13 @@ export type AdminBotPaperOpenReviewSync = {
   submission_id?: string;
   observed_at?: string;
   reference?: string;
+  /**
+   * The camera-ready due date the submission's own OpenReview forum shows (its earliest
+   * camera-ready author task), as an ISO instant. Kept so a venue the deadline dataset does not
+   * track still has a camera-ready date; see workflows/papers/camera-ready-deadlines.ts. Not part
+   * of `fingerprint`: a venue moving the date is not a new decision.
+   */
+  camera_ready_due?: string;
   applied_at: string;
 };
 
@@ -2901,6 +2908,8 @@ export type AdminBotAuditEvent = {
     | "openreview.milestone_sent"
     | "openreview.milestone_blocked"
     | "openreview.assignment_changed"
+    | "openreview.login_rejected"
+    | "openreview.login_restored"
     | "member_map.refreshed"
     | "member_directory.slack_synced"
     | "profile_photo.reviewed"

@@ -14,6 +14,7 @@ import {
   revokeCalendarAccess,
 } from "./calendar-membership.js";
 import { renderEmailBodyHtml, renderEmailBodyText } from "./email-html.js";
+import { classifyMailSendFailure, isRetryableMailSendFailure } from "./mail-send-failure.js";
 
 const execFile = promisify(execFileCallback);
 const GOG_TIMEOUT_MS = 60_000;
@@ -1186,19 +1187,51 @@ function createGogRunner(env: NodeJS.ProcessEnv | undefined): GogRun {
   };
 }
 
+type GogExec = (
+  executable: string,
+  args: string[],
+  options: { env: NodeJS.ProcessEnv; maxBuffer: number; timeout: number; windowsHide: boolean },
+) => Promise<{ stdout: string }>;
+
 function createGogCapture(env: NodeJS.ProcessEnv | undefined): GogCapture {
+  return createGogCaptureWith({ env });
+}
+
+/**
+ * The real gog capture, with the process and timing seams exposed so a test can drive the whole
+ * retry path (classification, backoff, error formatting) without a binary or a wait.
+ *
+ * Retries cover only failures where Google cannot have acted on the request: its burst rate limit,
+ * and the network never reaching it. A timeout or a 5xx is left alone because the mail may already
+ * be out, and Gmail has no idempotency key to make a second send safe. Expired credentials are
+ * left alone because no retry can fix them.
+ */
+export function createGogCaptureWith(options: {
+  env?: NodeJS.ProcessEnv;
+  exec?: GogExec;
+  sleep?: (ms: number) => Promise<void>;
+  retries?: number;
+}): GogCapture {
+  const exec = options.exec ?? (execFile as unknown as GogExec);
   return (args) =>
     pacedGog(async () => {
       try {
-        return await withGogRateLimitRetry(async () => {
-          const result = await execFile(GOG_EXECUTABLE, args, {
-            env: env ?? process.env,
-            maxBuffer: GOG_MAX_OUTPUT_BYTES,
-            timeout: GOG_TIMEOUT_MS,
-            windowsHide: true,
-          });
-          return result.stdout;
-        });
+        return await withGogRateLimitRetry(
+          async () => {
+            const result = await exec(GOG_EXECUTABLE, args, {
+              env: options.env ?? process.env,
+              maxBuffer: GOG_MAX_OUTPUT_BYTES,
+              timeout: GOG_TIMEOUT_MS,
+              windowsHide: true,
+            });
+            return result.stdout;
+          },
+          {
+            isTransient: isRetryableMailSendFailure,
+            ...(options.sleep ? { sleep: options.sleep } : {}),
+            ...(options.retries !== undefined ? { retries: options.retries } : {}),
+          },
+        );
       } catch (error) {
         throw new Error(formatGogError(error), { cause: error });
       }
@@ -1206,9 +1239,24 @@ function createGogCapture(env: NodeJS.ProcessEnv | undefined): GogCapture {
 }
 
 function formatGogError(error: unknown): string {
-  const failure = error as { code?: unknown; stderr?: unknown };
+  const failure = error as { code?: unknown; stderr?: unknown; killed?: unknown };
   if (failure?.code === "ENOENT") {
     return "gog executable was not found in the AdminBot service PATH";
+  }
+  const kind = classifyMailSendFailure(error);
+  if (kind === "credentials") {
+    const detail =
+      typeof failure?.stderr === "string"
+        ? failure.stderr
+            .replace(/[\u0000-\u001f\u007f]+/gu, " ")
+            .trim()
+            .slice(0, 400)
+        : "";
+    const prefix = "gog credentials were rejected; re-run `gog auth add` on the AdminBot host";
+    return detail ? `${prefix}: ${detail}` : prefix;
+  }
+  if (failure?.killed === true) {
+    return "gog command timed out; it may have completed, so it was not retried";
   }
   const detail =
     typeof failure?.stderr === "string"

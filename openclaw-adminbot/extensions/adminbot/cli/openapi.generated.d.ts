@@ -2107,6 +2107,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/lab/projects": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** GET /lab/projects */
+    get: operations["get-lab-projects"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/local-chat": {
     parameters: {
       query?: never;
@@ -5370,6 +5387,8 @@ export interface components {
         | "openreview.milestone_sent"
         | "openreview.milestone_blocked"
         | "openreview.assignment_changed"
+        | "openreview.login_rejected"
+        | "openreview.login_restored"
         | "member_map.refreshed"
         | "member_directory.slack_synced"
         | "profile_photo.reviewed"
@@ -5812,7 +5831,14 @@ export interface components {
     AutomationHealthIssue: {
       key: string;
       /** @enum {string} */
-      kind: "stale" | "failing" | "repeating_failure" | "channel_blocked" | "needs_manual_invite";
+      kind:
+        | "stale"
+        | "failing"
+        | "repeating_failure"
+        | "channel_blocked"
+        | "needs_manual_invite"
+        | "credentials"
+        | "google_credentials";
       label: string;
       detail: string;
       count: number;
@@ -6691,6 +6717,96 @@ export interface components {
     MemberRosterOptions: {
       [key: string]: unknown;
     };
+    AdminBotLabProject: {
+      paper_id: string;
+      title: string;
+      alias?: string;
+      started_on?: string;
+      venue?: string;
+      deadline?: string;
+      venue_decision?: string;
+      current_step: string;
+      venue_targets: components["schemas"]["AdminBotVenueTarget"][];
+      provided_count: number;
+      required_count: number;
+      lanes: {
+        [key: string]: unknown;
+      };
+      todos: components["schemas"]["AdminBotProjectTodo"][];
+      /** @enum {string} */
+      status: "rejected" | "active" | "dormant" | "completed";
+      topic?: string;
+      tags: string[];
+      members: ({
+        member_id: string;
+        name: string;
+      } & {
+        [key: string]: unknown;
+      })[];
+      authors: string[];
+      last_update_at: string;
+      last_weekly_update?: {
+        week_start: string;
+        member_id: string;
+        name?: string;
+        updated_at: string;
+      } & {
+        [key: string]: unknown;
+      };
+      links: {
+        primary:
+          | null
+          | ({
+              url: string;
+              /** @enum {string} */
+              kind: "submission" | "arxiv" | "pdf" | "overleaf_view" | "github" | "project_doc";
+            } & {
+              [key: string]: unknown;
+            });
+        github:
+          | null
+          | ({
+              url: string;
+            } & {
+              [key: string]: unknown;
+            });
+        slack_channel: null | string;
+        slides:
+          | null
+          | ({
+              url: string;
+            } & {
+              [key: string]: unknown;
+            });
+        poster:
+          | null
+          | ({
+              url: string;
+            } & {
+              [key: string]: unknown;
+            });
+      } & {
+        [key: string]: unknown;
+      };
+    } & {
+      [key: string]: unknown;
+    };
+    AdminBotVenueTarget: {
+      venue_id: string;
+      label: string;
+      confidence: number;
+    } & {
+      [key: string]: unknown;
+    };
+    AdminBotProjectTodo: {
+      id: string;
+      label: string;
+      /** @enum {string} */
+      lane: "talk" | "social" | "core" | "venue" | "archive";
+      ready: boolean;
+    } & {
+      [key: string]: unknown;
+    };
     CallSheetPush: {
       spreadsheet_id: string;
       tab: string;
@@ -6948,7 +7064,7 @@ export interface components {
       member_id: string;
       id: string;
       /** @enum {string} */
-      status: "withdrawn" | "declined" | "submitted" | "in_progress" | "completed";
+      status: "withdrawn" | "declined" | "completed" | "submitted" | "in_progress";
       /** @enum {string} */
       kind: "document_signature" | "recommendation_letters" | "book_meeting";
       updated_at: string;
@@ -6990,7 +7106,7 @@ export interface components {
       member_id: string;
       member_name: string;
       /** @enum {string} */
-      status: "withdrawn" | "declined" | "submitted" | "in_progress" | "completed";
+      status: "withdrawn" | "declined" | "completed" | "submitted" | "in_progress";
       submitted_at: string;
       updated_at: string;
       deadline_at?: string;
@@ -8064,22 +8180,6 @@ export interface components {
     } & {
       [key: string]: unknown;
     };
-    AdminBotVenueTarget: {
-      venue_id: string;
-      label: string;
-      confidence: number;
-    } & {
-      [key: string]: unknown;
-    };
-    AdminBotProjectTodo: {
-      id: string;
-      label: string;
-      /** @enum {string} */
-      lane: "talk" | "social" | "core" | "venue" | "archive";
-      ready: boolean;
-    } & {
-      [key: string]: unknown;
-    };
     AdminBotNotificationFeedItem: {
       id: string;
       /** @enum {string} */
@@ -8256,6 +8356,7 @@ export interface components {
       flagged: number;
       failed: number;
       reused: number;
+      login_error?: string;
     } & {
       [key: string]: unknown;
     };
@@ -8316,7 +8417,7 @@ export interface components {
       prediction?: string;
       words_scored?: number;
       /** @enum {string} */
-      scored_from?: "text" | "full_text" | "pdf";
+      scored_from?: "text" | "pdf" | "full_text";
       model_version?: string;
       error?: string;
       alerted_for?: ("ai_text" | "citations" | "citations_reported")[];
@@ -8342,6 +8443,7 @@ export interface components {
       reused: number;
       failed: number;
       alerts: number;
+      login_error?: string;
       report_error?: string;
       sheet_updated?: number;
       sheet_added?: string[];
@@ -8607,6 +8709,7 @@ export interface components {
       submission_id?: string;
       observed_at?: string;
       reference?: string;
+      camera_ready_due?: string;
       applied_at: string;
     } & {
       [key: string]: unknown;
@@ -8685,12 +8788,13 @@ export interface components {
       slot:
         | "submission"
         | "poster"
+        | "arxiv"
+        | "overleaf_view"
         | "feedback_arr"
         | "feedback_arxiv"
         | "feedback_camera_ready"
         | "impact_statement"
         | "project_folder"
-        | "overleaf_view"
         | "overleaf_share"
         | "papermentor_review"
         | "fixes_merged"
@@ -8700,7 +8804,6 @@ export interface components {
         | "authors_ack"
         | "arxiv_paper_password"
         | "pi_approval"
-        | "arxiv"
         | "x_draft"
         | "linkedin_draft"
         | "coauthor_feedback"
@@ -8721,7 +8824,7 @@ export interface components {
       provided_at?: string;
       validated_at?: string;
       /** @enum {string} */
-      verified_by?: "openreview" | "papermentor" | "arxiv" | "google_drive" | "adminbot_post";
+      verified_by?: "openreview" | "arxiv" | "papermentor" | "google_drive" | "adminbot_post";
       verified_at?: string;
       verified_title?: string;
       previous_submission_id?: string;
@@ -8768,7 +8871,7 @@ export interface components {
     };
     XThreadDraft: {
       /** @enum {string} */
-      stage: "poster" | "attendance" | "arxiv" | "acceptance";
+      stage: "poster" | "arxiv" | "attendance" | "acceptance";
       posts: components["schemas"]["AdminBotXThreadPost"][];
     } & {
       [key: string]: unknown;
@@ -9021,6 +9124,7 @@ export interface components {
       last_nudged_at?: string;
       nudge_count: number;
       due: boolean;
+      exhausted?: boolean;
     } & {
       [key: string]: unknown;
     };
@@ -9132,19 +9236,20 @@ export interface components {
     PaperSlotOverviewWireRow: {
       paper_id: string;
       closed: boolean;
+      dormant: boolean;
       provided_count: number;
       required_count: number;
-      dormant: boolean;
       cycle_closed: boolean;
       missing_slots: (
         | "submission"
         | "poster"
+        | "arxiv"
+        | "overleaf_view"
         | "feedback_arr"
         | "feedback_arxiv"
         | "feedback_camera_ready"
         | "impact_statement"
         | "project_folder"
-        | "overleaf_view"
         | "overleaf_share"
         | "papermentor_review"
         | "fixes_merged"
@@ -9154,7 +9259,6 @@ export interface components {
         | "authors_ack"
         | "arxiv_paper_password"
         | "pi_approval"
-        | "arxiv"
         | "x_draft"
         | "linkedin_draft"
         | "coauthor_feedback"
@@ -17840,6 +17944,41 @@ export interface operations {
       };
     };
   };
+  "get-lab-projects": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful service result */
+      "2XX": {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            projects: components["schemas"]["AdminBotLabProject"][];
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
   "get-local-chat": {
     parameters: {
       query?: never;
@@ -22314,6 +22453,7 @@ export interface operations {
                   flagged: number;
                   failed: number;
                   reused: number;
+                  login_error?: string;
                 } & {
                   [key: string]: unknown;
                 };
@@ -22324,6 +22464,7 @@ export interface operations {
                   flagged: number;
                   failed: number;
                   reused: number;
+                  login_error?: string;
                 } & {
                   [key: string]: unknown;
                 };
@@ -22484,6 +22625,7 @@ export interface operations {
                   reused: number;
                   failed: number;
                   alerts: number;
+                  login_error?: string;
                   report_error?: string;
                   sheet_updated?: number;
                   sheet_added?: string[];
@@ -22499,6 +22641,7 @@ export interface operations {
                   reused: number;
                   failed: number;
                   alerts: number;
+                  login_error?: string;
                   report_error?: string;
                   sheet_updated?: number;
                   sheet_added?: string[];
@@ -24717,12 +24860,13 @@ export interface operations {
               slot:
                 | "submission"
                 | "poster"
+                | "arxiv"
+                | "overleaf_view"
                 | "feedback_arr"
                 | "feedback_arxiv"
                 | "feedback_camera_ready"
                 | "impact_statement"
                 | "project_folder"
-                | "overleaf_view"
                 | "overleaf_share"
                 | "papermentor_review"
                 | "fixes_merged"
@@ -24732,7 +24876,6 @@ export interface operations {
                 | "authors_ack"
                 | "arxiv_paper_password"
                 | "pi_approval"
-                | "arxiv"
                 | "x_draft"
                 | "linkedin_draft"
                 | "coauthor_feedback"
@@ -24753,12 +24896,13 @@ export interface operations {
               slot:
                 | "submission"
                 | "poster"
+                | "arxiv"
+                | "overleaf_view"
                 | "feedback_arr"
                 | "feedback_arxiv"
                 | "feedback_camera_ready"
                 | "impact_statement"
                 | "project_folder"
-                | "overleaf_view"
                 | "overleaf_share"
                 | "papermentor_review"
                 | "fixes_merged"
@@ -24768,7 +24912,6 @@ export interface operations {
                 | "authors_ack"
                 | "arxiv_paper_password"
                 | "pi_approval"
-                | "arxiv"
                 | "x_draft"
                 | "linkedin_draft"
                 | "coauthor_feedback"
@@ -24789,12 +24932,13 @@ export interface operations {
               slot:
                 | "submission"
                 | "poster"
+                | "arxiv"
+                | "overleaf_view"
                 | "feedback_arr"
                 | "feedback_arxiv"
                 | "feedback_camera_ready"
                 | "impact_statement"
                 | "project_folder"
-                | "overleaf_view"
                 | "overleaf_share"
                 | "papermentor_review"
                 | "fixes_merged"
@@ -24804,7 +24948,6 @@ export interface operations {
                 | "authors_ack"
                 | "arxiv_paper_password"
                 | "pi_approval"
-                | "arxiv"
                 | "x_draft"
                 | "linkedin_draft"
                 | "coauthor_feedback"
@@ -24826,12 +24969,13 @@ export interface operations {
               slot:
                 | "submission"
                 | "poster"
+                | "arxiv"
+                | "overleaf_view"
                 | "feedback_arr"
                 | "feedback_arxiv"
                 | "feedback_camera_ready"
                 | "impact_statement"
                 | "project_folder"
-                | "overleaf_view"
                 | "overleaf_share"
                 | "papermentor_review"
                 | "fixes_merged"
@@ -24841,7 +24985,6 @@ export interface operations {
                 | "authors_ack"
                 | "arxiv_paper_password"
                 | "pi_approval"
-                | "arxiv"
                 | "x_draft"
                 | "linkedin_draft"
                 | "coauthor_feedback"
@@ -25482,6 +25625,7 @@ export interface operations {
             deliveries?: components["schemas"]["AdminBotMemberNudgeDelivery"][];
             papers_considered: number;
             unroutable: string[];
+            exhausted: string[];
           } & {
             [key: string]: unknown;
           };

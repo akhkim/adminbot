@@ -13222,6 +13222,53 @@
         }
       }
     },
+    "/lab/projects": {
+      "get": {
+        "operationId": "get-lab-projects",
+        "summary": "GET /lab/projects",
+        "tags": [
+          "lab"
+        ],
+        "x-source": "src/api/routes/papers.ts",
+        "responses": {
+          "2XX": {
+            "description": "Successful service result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "projects": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AdminBotLabProject"
+                      }
+                    }
+                  },
+                  "required": [
+                    "projects"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/local-chat": {
       "get": {
         "operationId": "get-local-chat",
@@ -20753,6 +20800,9 @@
                             },
                             "reused": {
                               "type": "number"
+                            },
+                            "login_error": {
+                              "type": "string"
                             }
                           },
                           "required": [
@@ -20784,6 +20834,9 @@
                             },
                             "reused": {
                               "type": "number"
+                            },
+                            "login_error": {
+                              "type": "string"
                             }
                           },
                           "required": [
@@ -21044,6 +21097,9 @@
                             "alerts": {
                               "type": "number"
                             },
+                            "login_error": {
+                              "type": "string"
+                            },
                             "report_error": {
                               "type": "string"
                             },
@@ -21093,6 +21149,9 @@
                             },
                             "alerts": {
                               "type": "number"
+                            },
+                            "login_error": {
+                              "type": "string"
                             },
                             "report_error": {
                               "type": "string"
@@ -24922,12 +24981,13 @@
                             "enum": [
                               "submission",
                               "poster",
+                              "arxiv",
+                              "overleaf_view",
                               "feedback_arr",
                               "feedback_arxiv",
                               "feedback_camera_ready",
                               "impact_statement",
                               "project_folder",
-                              "overleaf_view",
                               "overleaf_share",
                               "papermentor_review",
                               "fixes_merged",
@@ -24937,7 +24997,6 @@
                               "authors_ack",
                               "arxiv_paper_password",
                               "pi_approval",
-                              "arxiv",
                               "x_draft",
                               "linkedin_draft",
                               "coauthor_feedback",
@@ -24972,12 +25031,13 @@
                             "enum": [
                               "submission",
                               "poster",
+                              "arxiv",
+                              "overleaf_view",
                               "feedback_arr",
                               "feedback_arxiv",
                               "feedback_camera_ready",
                               "impact_statement",
                               "project_folder",
-                              "overleaf_view",
                               "overleaf_share",
                               "papermentor_review",
                               "fixes_merged",
@@ -24987,7 +25047,6 @@
                               "authors_ack",
                               "arxiv_paper_password",
                               "pi_approval",
-                              "arxiv",
                               "x_draft",
                               "linkedin_draft",
                               "coauthor_feedback",
@@ -25022,12 +25081,13 @@
                             "enum": [
                               "submission",
                               "poster",
+                              "arxiv",
+                              "overleaf_view",
                               "feedback_arr",
                               "feedback_arxiv",
                               "feedback_camera_ready",
                               "impact_statement",
                               "project_folder",
-                              "overleaf_view",
                               "overleaf_share",
                               "papermentor_review",
                               "fixes_merged",
@@ -25037,7 +25097,6 @@
                               "authors_ack",
                               "arxiv_paper_password",
                               "pi_approval",
-                              "arxiv",
                               "x_draft",
                               "linkedin_draft",
                               "coauthor_feedback",
@@ -25076,12 +25135,13 @@
                             "enum": [
                               "submission",
                               "poster",
+                              "arxiv",
+                              "overleaf_view",
                               "feedback_arr",
                               "feedback_arxiv",
                               "feedback_camera_ready",
                               "impact_statement",
                               "project_folder",
-                              "overleaf_view",
                               "overleaf_share",
                               "papermentor_review",
                               "fixes_merged",
@@ -25091,7 +25151,6 @@
                               "authors_ack",
                               "arxiv_paper_password",
                               "pi_approval",
-                              "arxiv",
                               "x_draft",
                               "linkedin_draft",
                               "coauthor_feedback",
@@ -26256,13 +26315,20 @@
                       "items": {
                         "type": "string"
                       }
+                    },
+                    "exhausted": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
                     }
                   },
                   "required": [
                     "created",
                     "skipped",
                     "papers_considered",
-                    "unroutable"
+                    "unroutable",
+                    "exhausted"
                   ],
                   "additionalProperties": true
                 }
@@ -32463,6 +32529,8 @@
               "openreview.milestone_sent",
               "openreview.milestone_blocked",
               "openreview.assignment_changed",
+              "openreview.login_rejected",
+              "openreview.login_restored",
               "member_map.refreshed",
               "member_directory.slack_synced",
               "profile_photo.reviewed",
@@ -33763,7 +33831,9 @@
               "failing",
               "repeating_failure",
               "channel_blocked",
-              "needs_manual_invite"
+              "needs_manual_invite",
+              "credentials",
+              "google_credentials"
             ]
           },
           "label": {
@@ -36626,6 +36696,305 @@
         "type": "object",
         "additionalProperties": true
       },
+      "AdminBotLabProject": {
+        "type": "object",
+        "properties": {
+          "paper_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "alias": {
+            "type": "string"
+          },
+          "started_on": {
+            "type": "string"
+          },
+          "venue": {
+            "type": "string"
+          },
+          "deadline": {
+            "type": "string"
+          },
+          "venue_decision": {
+            "type": "string"
+          },
+          "current_step": {
+            "type": "string"
+          },
+          "venue_targets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminBotVenueTarget"
+            }
+          },
+          "provided_count": {
+            "type": "number"
+          },
+          "required_count": {
+            "type": "number"
+          },
+          "lanes": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "todos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminBotProjectTodo"
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "rejected",
+              "active",
+              "dormant",
+              "completed"
+            ]
+          },
+          "topic": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "member_id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "member_id",
+                "name"
+              ],
+              "additionalProperties": true
+            }
+          },
+          "authors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "last_update_at": {
+            "type": "string"
+          },
+          "last_weekly_update": {
+            "type": "object",
+            "properties": {
+              "week_start": {
+                "type": "string"
+              },
+              "member_id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "updated_at": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "week_start",
+              "member_id",
+              "updated_at"
+            ],
+            "additionalProperties": true
+          },
+          "links": {
+            "type": "object",
+            "properties": {
+              "primary": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "url": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "submission",
+                          "arxiv",
+                          "pdf",
+                          "overleaf_view",
+                          "github",
+                          "project_doc"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "url",
+                      "kind"
+                    ],
+                    "additionalProperties": true
+                  }
+                ]
+              },
+              "github": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "url": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "url"
+                    ],
+                    "additionalProperties": true
+                  }
+                ]
+              },
+              "slack_channel": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              },
+              "slides": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "url": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "url"
+                    ],
+                    "additionalProperties": true
+                  }
+                ]
+              },
+              "poster": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "url": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "url"
+                    ],
+                    "additionalProperties": true
+                  }
+                ]
+              }
+            },
+            "required": [
+              "primary",
+              "github",
+              "slack_channel",
+              "slides",
+              "poster"
+            ],
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "paper_id",
+          "title",
+          "current_step",
+          "venue_targets",
+          "provided_count",
+          "required_count",
+          "lanes",
+          "todos",
+          "status",
+          "tags",
+          "members",
+          "authors",
+          "last_update_at",
+          "links"
+        ],
+        "additionalProperties": true
+      },
+      "AdminBotVenueTarget": {
+        "type": "object",
+        "properties": {
+          "venue_id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "confidence": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "venue_id",
+          "label",
+          "confidence"
+        ],
+        "additionalProperties": true
+      },
+      "AdminBotProjectTodo": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "lane": {
+            "type": "string",
+            "enum": [
+              "talk",
+              "social",
+              "core",
+              "venue",
+              "archive"
+            ]
+          },
+          "ready": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "lane",
+          "ready"
+        ],
+        "additionalProperties": true
+      },
       "CallSheetPush": {
         "type": "object",
         "properties": {
@@ -37448,9 +37817,9 @@
             "enum": [
               "withdrawn",
               "declined",
+              "completed",
               "submitted",
-              "in_progress",
-              "completed"
+              "in_progress"
             ]
           },
           "kind": {
@@ -37600,9 +37969,9 @@
             "enum": [
               "withdrawn",
               "declined",
+              "completed",
               "submitted",
-              "in_progress",
-              "completed"
+              "in_progress"
             ]
           },
           "submitted_at": {
@@ -40946,57 +41315,6 @@
         ],
         "additionalProperties": true
       },
-      "AdminBotVenueTarget": {
-        "type": "object",
-        "properties": {
-          "venue_id": {
-            "type": "string"
-          },
-          "label": {
-            "type": "string"
-          },
-          "confidence": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "venue_id",
-          "label",
-          "confidence"
-        ],
-        "additionalProperties": true
-      },
-      "AdminBotProjectTodo": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "label": {
-            "type": "string"
-          },
-          "lane": {
-            "type": "string",
-            "enum": [
-              "talk",
-              "social",
-              "core",
-              "venue",
-              "archive"
-            ]
-          },
-          "ready": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "id",
-          "label",
-          "lane",
-          "ready"
-        ],
-        "additionalProperties": true
-      },
       "AdminBotNotificationFeedItem": {
         "type": "object",
         "properties": {
@@ -41504,6 +41822,9 @@
           },
           "reused": {
             "type": "number"
+          },
+          "login_error": {
+            "type": "string"
           }
         },
         "required": [
@@ -41707,8 +42028,8 @@
             "type": "string",
             "enum": [
               "text",
-              "full_text",
-              "pdf"
+              "pdf",
+              "full_text"
             ]
           },
           "model_version": {
@@ -41798,6 +42119,9 @@
           },
           "alerts": {
             "type": "number"
+          },
+          "login_error": {
+            "type": "string"
           },
           "report_error": {
             "type": "string"
@@ -42619,6 +42943,9 @@
           "reference": {
             "type": "string"
           },
+          "camera_ready_due": {
+            "type": "string"
+          },
           "applied_at": {
             "type": "string"
           }
@@ -42844,12 +43171,13 @@
             "enum": [
               "submission",
               "poster",
+              "arxiv",
+              "overleaf_view",
               "feedback_arr",
               "feedback_arxiv",
               "feedback_camera_ready",
               "impact_statement",
               "project_folder",
-              "overleaf_view",
               "overleaf_share",
               "papermentor_review",
               "fixes_merged",
@@ -42859,7 +43187,6 @@
               "authors_ack",
               "arxiv_paper_password",
               "pi_approval",
-              "arxiv",
               "x_draft",
               "linkedin_draft",
               "coauthor_feedback",
@@ -42904,8 +43231,8 @@
             "type": "string",
             "enum": [
               "openreview",
-              "papermentor",
               "arxiv",
+              "papermentor",
               "google_drive",
               "adminbot_post"
             ]
@@ -43065,8 +43392,8 @@
             "type": "string",
             "enum": [
               "poster",
-              "attendance",
               "arxiv",
+              "attendance",
               "acceptance"
             ]
           },
@@ -43865,6 +44192,9 @@
           },
           "due": {
             "type": "boolean"
+          },
+          "exhausted": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -44207,14 +44537,14 @@
           "closed": {
             "type": "boolean"
           },
+          "dormant": {
+            "type": "boolean"
+          },
           "provided_count": {
             "type": "number"
           },
           "required_count": {
             "type": "number"
-          },
-          "dormant": {
-            "type": "boolean"
           },
           "cycle_closed": {
             "type": "boolean"
@@ -44226,12 +44556,13 @@
               "enum": [
                 "submission",
                 "poster",
+                "arxiv",
+                "overleaf_view",
                 "feedback_arr",
                 "feedback_arxiv",
                 "feedback_camera_ready",
                 "impact_statement",
                 "project_folder",
-                "overleaf_view",
                 "overleaf_share",
                 "papermentor_review",
                 "fixes_merged",
@@ -44241,7 +44572,6 @@
                 "authors_ack",
                 "arxiv_paper_password",
                 "pi_approval",
-                "arxiv",
                 "x_draft",
                 "linkedin_draft",
                 "coauthor_feedback",
@@ -44263,9 +44593,9 @@
         "required": [
           "paper_id",
           "closed",
+          "dormant",
           "provided_count",
           "required_count",
-          "dormant",
           "cycle_closed",
           "missing_slots",
           "escalating"

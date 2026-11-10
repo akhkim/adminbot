@@ -311,7 +311,13 @@ describe("the paper fields the slots hang off", () => {
     seed(service);
     unwrap(service.upsertLabMember({ id: "zj", name: "Admin", privilege_level: "admin" } as never));
     const waive = (extra: { piApprover?: boolean; viewAs?: boolean } = {}) =>
-      service.waivePaperSlot({ paperId: "p1", slot: "pi_approval", reason: "approved elsewhere", memberId: "zj", ...extra });
+      service.waivePaperSlot({
+        paperId: "p1",
+        slot: "pi_approval",
+        reason: "approved elsewhere",
+        memberId: "zj",
+        ...extra,
+      });
     expect(waive()).toMatchObject({ ok: false, status: 403 });
     expect(waive({ piApprover: true })).toMatchObject({ ok: true });
   });
@@ -455,7 +461,8 @@ describe("collectPaperNudgeBatches", () => {
       member_id: "ada",
       member_name: "Ada Lovelace",
       deliverable: true,
-      item_count: 1,
+      // The project folder, plus the availability line: the seeded member has none on file.
+      item_count: 2,
     });
     expect(batches[0]?.message).toContain("Project folder or brainstorm doc");
     // Nothing left the service: reading the preview must not consume the cadence.
@@ -498,7 +505,8 @@ describe("collectPaperNudgeBatches", () => {
     seed(service);
     const { batches } = unwrap(service.collectPaperNudgeBatches());
     expect(batches).toHaveLength(1);
-    expect(batches[0]).toMatchObject({ member_id: "ada", item_count: 2 });
+    // Project folder, the link, and the availability line the seeded member has not filled in.
+    expect(batches[0]).toMatchObject({ member_id: "ada", item_count: 3 });
     expect(batches[0]?.message).toContain("Fix the paper link the PI cannot open");
     expect(batches[0]?.message).toContain("Overleaf: asks the PI to request access");
   });
@@ -918,12 +926,14 @@ describe("the conference roll-call", () => {
 it("queues an author's feedback with reason and deadlines without publication approval", () => {
   const service = new AdminBotService();
   seed(service);
+  // Relative to the clock: a cutoff months in the past is now refused as a likely wrong year.
+  const inDays = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString();
   const input = {
     value_text: JSON.stringify({
       reason: "Check claims",
       url: "https://example.com/draft",
-      soft_deadline: "2000-01-01T00:00:00Z",
-      hard_deadline: "2000-01-02T00:00:00Z",
+      soft_deadline: inDays(1),
+      hard_deadline: inDays(2),
     }),
   };
   expect(
@@ -1253,5 +1263,150 @@ describe("impact statements", () => {
       );
     expect(row({ memberId: "ada", isAdmin: false })?.value_text).toContain("refusal probe");
     expect(row({ memberId: "stranger", isAdmin: false })?.value_text).toBeUndefined();
+  });
+});
+
+describe("one message per person for every empty slot", () => {
+  // Synthetic links only: the point is that whatever the deployment configures is what travels.
+  const talkMaterials = {
+    default_topic: "causality",
+    topics: {
+      causality: {
+        label: "causality",
+        mega_deck_url: "https://slides.example.test/causality-deck",
+        quickpointers_url: "https://docs.example.test/causality-pointers",
+      },
+    },
+  };
+
+  function submitted(service: AdminBotService): void {
+    // What the OpenReview sync leaves behind: the submission and its id, nothing before them.
+    for (const [slot, input] of [
+      ["submission", { url: "https://openreview.net/forum?id=SYNTHETIC01" }],
+      ["submission_id", { value_text: "SYNTHETIC01" }],
+    ] as const) {
+      unwrap(
+        service.setPaperSlot({ paperId: "p1", slot, input, memberId: "ada", privileged: true }),
+      );
+    }
+  }
+
+  function withClock<T>(iso: string, run: () => Promise<T>): Promise<T> {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(iso));
+    return run().finally(() => vi.useRealTimers());
+  }
+
+  it("puts the slides, the talk materials and the availability gap into one message", () =>
+    withClock("2026-10-01T09:00:00Z", async () => {
+      const service = new AdminBotService(undefined, {
+        talkMaterials,
+        executor: { execute: async (p) => ({ handled: p.type === "member_nudge.send" }) },
+      });
+      seed(service);
+      submitted(service);
+      const { batches } = unwrap(service.collectPaperNudgeBatches());
+      const ada = batches.filter((batch) => batch.member_id === "ada");
+      expect(ada).toHaveLength(1);
+      const message = ada[0]?.message ?? "";
+      expect(message).toContain("Talk slides");
+      expect(message).toContain("https://slides.example.test/causality-deck");
+      expect(message).toContain("never delete");
+      expect(message).toContain("https://docs.example.test/causality-pointers");
+      expect(message).toContain("time availability");
+      // Already proven by the submission, so not asked for again.
+      expect(message).not.toContain("Paper PDF compiles cleanly");
+      // The availability group is not a paper.
+      expect(ada[0]?.paper_titles).toEqual(["Causal abstraction"]);
+      expect(ada[0]?.item_count).toBeGreaterThanOrEqual(4);
+
+      const sent = unwrap(await service.sendPaperSlotNudges("cron"));
+      expect(sent.created.filter((p) => p.summary?.includes("Ada"))).toHaveLength(1);
+    }));
+
+  it("names the deck and QuickPointers once, while the slides keep being chased", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date("2026-10-01T09:00:00Z"));
+      const service = new AdminBotService(undefined, {
+        talkMaterials,
+        executor: { execute: async (p) => ({ handled: p.type === "member_nudge.send" }) },
+      });
+      seed(service);
+      submitted(service);
+      unwrap(await service.sendPaperSlotNudges("cron"));
+      vi.setSystemTime(new Date("2026-10-09T09:00:00Z"));
+      const { batches } = unwrap(service.collectPaperNudgeBatches());
+      const message = batches.find((batch) => batch.member_id === "ada")?.message ?? "";
+      expect(message).toContain("Talk slides");
+      expect(message).not.toContain("mega deck");
+      expect(message).not.toContain("QuickPointers");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not ask about availability a member has already filled in", () => {
+    const service = new AdminBotService();
+    seed(service);
+    unwrap(
+      service.upsertLabMember({
+        receives_nudges: true,
+        id: "ada",
+        name: "Ada Lovelace",
+        privilege_level: "member",
+        slack_user_id: "U-ADA",
+        availability: [{ start: "2026-01-01", end: "2099-12-31", hours_per_week: 20 }],
+      } as never),
+    );
+    const { batches } = unwrap(service.collectPaperNudgeBatches());
+    const ada = batches.find((batch) => batch.member_id === "ada");
+    expect(ada?.item_count).toBe(1);
+    expect(ada?.message).not.toContain("time availability");
+  });
+
+  it("treats availability that has already ended as empty", () => {
+    const service = new AdminBotService();
+    seed(service);
+    unwrap(
+      service.upsertLabMember({
+        receives_nudges: true,
+        id: "ada",
+        name: "Ada Lovelace",
+        privilege_level: "member",
+        slack_user_id: "U-ADA",
+        availability: [{ start: "2020-01-01", end: "2020-06-30", hours_per_week: 20 }],
+      } as never),
+    );
+    const { batches } = unwrap(service.collectPaperNudgeBatches());
+    expect(batches.find((batch) => batch.member_id === "ada")?.message).toContain(
+      "time availability",
+    );
+  });
+
+  it("never starts a message just for availability", () => {
+    const service = new AdminBotService();
+    seed(service);
+    // Bob owes nothing on the paper and has no availability on file: he is not messaged.
+    const { batches } = unwrap(service.collectPaperNudgeBatches());
+    expect(batches.map((batch) => batch.member_id)).toEqual(["ada"]);
+  });
+
+  it("does not ask a collaborator for a term plan", () => {
+    const service = new AdminBotService();
+    seed(service);
+    unwrap(
+      service.upsertLabMember({
+        receives_nudges: true,
+        id: "ada",
+        name: "Ada Lovelace",
+        privilege_level: "external_collaborator",
+        slack_user_id: "U-ADA",
+      } as never),
+    );
+    const { batches } = unwrap(service.collectPaperNudgeBatches());
+    expect(batches.find((batch) => batch.member_id === "ada")?.message).not.toContain(
+      "time availability",
+    );
   });
 });

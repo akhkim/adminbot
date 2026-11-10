@@ -5,9 +5,10 @@ import {
   type PdfReferenceChecker,
   type ReferenceFinding,
 } from "../../connectors/reference-check.js";
-import type {
-  OpenReviewSubmission,
-  OpenReviewSubmissionReader,
+import {
+  OpenReviewLoginError,
+  type OpenReviewSubmission,
+  type OpenReviewSubmissionReader,
 } from "../../contracts/openreview-citation-checks.js";
 import { AdminBotService } from "../../kernel/service.js";
 import { AdminBotMemoryStore } from "../../persistence/memory.js";
@@ -725,5 +726,123 @@ describe("OpenReview citation watch", () => {
     reader.listSubmissions.mockRejectedValueOnce(new Error("OpenReview rejected the login (403)"));
     await expect(watch.start()).rejects.toThrow("OpenReview rejected the login");
     expect(watch.status().running).toBe(false);
+  });
+});
+
+// A login problem is the account's, not any paper's. It used to be saved against each paper as
+// "the PDF could not be downloaded", spending one of three retries, so an outage that lasted three
+// sweeps retired every paper from checking for good -- with nothing telling anyone.
+describe("OpenReview citation watch when the login fails", () => {
+  const papers = ["paperAAAA", "paperBBBB", "paperCCCC"].map((id, index) =>
+    submission({ id, pdf_path: `/pdf/${id}.pdf`, modified_at: index + 1 }),
+  );
+  const loginIssue = (service: AdminBotService) => {
+    const health = service.automationHealth();
+    return health.ok
+      ? health.payload.issues.find((issue) => issue.key === "openreview-login")
+      : undefined;
+  };
+
+  it("stops the sweep without spending any paper's retries, and resumes once OpenReview answers", async () => {
+    let down = true;
+    const { store, reader, watch, sweep, service } = setup({
+      submissions: papers,
+      pdf: (id) => {
+        if (down) {
+          throw new OpenReviewLoginError("OpenReview login did not succeed after 3 tries", false);
+        }
+        return Buffer.from(`%PDF-${id}`);
+      },
+    });
+    for (let run = 0; run <= MAX_CITATION_CHECK_ATTEMPTS; run++) {
+      await sweep();
+      expect(watch.status().last_sweep).toMatchObject({
+        failed: 0,
+        login_error: "OpenReview login did not succeed after 3 tries",
+      });
+    }
+    // One try per sweep, then the sweep stopped instead of failing the other papers too.
+    expect(reader.readPdf).toHaveBeenCalledTimes(MAX_CITATION_CHECK_ATTEMPTS + 1);
+    expect(store.listOpenReviewCitationChecks()).toEqual([]);
+    // An outage is not reported as bad credentials.
+    expect(loginIssue(service)).toBeUndefined();
+
+    down = false;
+    expect(await sweep()).toMatchObject({ pending: 3 });
+    expect(store.listOpenReviewCitationChecks().map((check) => check.status)).toEqual([
+      "completed",
+      "completed",
+      "completed",
+    ]);
+  });
+
+  it("tells admins when OpenReview refuses the password, and clears that once it works", async () => {
+    const { reader, watch, sweep, service } = setup({ submissions: papers });
+    reader.listSubmissions.mockRejectedValueOnce(
+      new OpenReviewLoginError("OpenReview rejected the login (403)", true, 403),
+    );
+    await expect(watch.start()).rejects.toThrow("OpenReview rejected the login");
+    expect(loginIssue(service)).toMatchObject({
+      kind: "credentials",
+      label: "OpenReview is refusing the lab's login",
+    });
+    expect(loginIssue(service)?.detail).toContain("OPENREVIEW_USERNAME / OPENREVIEW_PASSWORD");
+
+    // Fixed: the next run lists, checks every paper, and the alert goes away on its own.
+    await sweep();
+    expect(loginIssue(service)).toBeUndefined();
+    expect(watch.status().last_sweep).toMatchObject({ checked: 3 });
+  });
+
+  it("flags a refusal that arrives mid-sweep, when the token is renewed", async () => {
+    const { store, sweep, service, watch } = setup({
+      submissions: papers,
+      pdf: () => {
+        throw new OpenReviewLoginError("OpenReview rejected the login (401)", true, 401);
+      },
+    });
+    await sweep();
+    expect(watch.status().last_sweep?.login_error).toContain("rejected the login");
+    expect(store.listOpenReviewCitationChecks()).toEqual([]);
+    expect(loginIssue(service)).toMatchObject({ kind: "credentials" });
+  });
+
+  it("records a refusal once, not once per run", async () => {
+    const { reader, watch, store } = setup({ submissions: papers });
+    const refused = new OpenReviewLoginError("OpenReview rejected the login (403)", true, 403);
+    reader.listSubmissions.mockRejectedValue(refused);
+    for (let run = 0; run < 3; run++) {
+      await expect(watch.start()).rejects.toBe(refused);
+    }
+    expect(
+      store.listAuditEvents().filter((event) => event.type.startsWith("openreview.login")),
+    ).toHaveLength(1);
+  });
+
+  it("keeps checking the other papers when one paper's PDF is refused", async () => {
+    const { store, sweep, service, watch } = setup({
+      submissions: papers,
+      pdf: (id) => {
+        if (id === "paperBBBB") {
+          // What the reader returns when a fresh login still cannot read this one PDF.
+          throw new Error("OpenReview returned 403 for the PDF");
+        }
+        return Buffer.from(`%PDF-${id}`);
+      },
+    });
+    await sweep();
+    expect(watch.status().last_sweep).toMatchObject({ checked: 2, failed: 1 });
+    expect(watch.status().last_sweep?.login_error).toBeUndefined();
+    expect(store.getOpenReviewCitationCheck("paperAAAA", "/pdf/paperAAAA.pdf")?.status).toBe(
+      "completed",
+    );
+    expect(store.getOpenReviewCitationCheck("paperBBBB", "/pdf/paperBBBB.pdf")).toMatchObject({
+      status: "failed",
+      attempts: 1,
+    });
+    expect(store.getOpenReviewCitationCheck("paperCCCC", "/pdf/paperCCCC.pdf")?.status).toBe(
+      "completed",
+    );
+    expect(loginIssue(service)).toBeUndefined();
   });
 });

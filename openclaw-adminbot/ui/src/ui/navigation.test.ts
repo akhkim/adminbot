@@ -33,6 +33,9 @@ const ALL_TABS: Tab[] = Array.from(
     ...(TAB_PAGES.flatMap((page) => page.tabs) as Tab[]),
     ...UNGROUPED_TABS,
     ...SETTINGS_TABS,
+    // Off the sidebar now (a filter inside Lab Members), but its old path still routes and
+    // redirects, so it keeps an icon, title and subtitle.
+    "adminbotArrReviewers",
   ]),
 );
 
@@ -70,6 +73,7 @@ describe("iconForTab", () => {
       adminbotReimbursements: "fileText",
       adminbotSettings: "settings",
       adminbotMembers: "folder",
+      adminbotLabProjects: "book",
       adminbotProfileOverview: "check",
       adminbotArrReviewers: "check",
       adminbotTalkLeaderboard: "mic",
@@ -134,6 +138,7 @@ describe("titleForTab", () => {
       adminbotOnboarding: "Onboarding",
       adminbotSettings: "Settings",
       adminbotMembers: "Lab Members",
+      adminbotLabProjects: "Lab Projects",
       adminbotProfileOverview: "Profile Completeness",
       adminbotArrReviewers: "ARR Eligible Reviewers",
       adminbotTalkLeaderboard: "Talk Leaderboard",
@@ -195,6 +200,8 @@ describe("subtitleForTab", () => {
       adminbotOnboarding: "Send a member or collaborator their onboarding guide.",
       adminbotSettings: "Lab defaults and escalation policy.",
       adminbotMembers: "Who is in the lab, what they work on, and their access.",
+      adminbotLabProjects:
+        "Every project in the lab: who is on it, where it stands, and its links.",
       adminbotProfileOverview: "Who has filled in their profile and planned their term.",
       adminbotArrReviewers: "Self-reported ARR reviewer qualification and capacity.",
       adminbotTalkLeaderboard: "This year's talks and orals, counted from members' CVs.",

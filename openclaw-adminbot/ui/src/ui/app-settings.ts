@@ -138,6 +138,8 @@ type SettingsHost = ProfileGateState & {
   // This visit arrived on the root and has not been navigated since, so the tab on screen is a
   // default nobody chose. Read once the session says who is looking -- see applyViewerHome.
   landedWithoutATab?: boolean;
+  // Lab Members' ARR-eligible reviewers filter; the old ARR tab's path turns it on.
+  adminBotMembersArrFilter?: boolean;
 };
 
 type LocalUserIdentityHost = {
@@ -585,7 +587,6 @@ async function refreshAccessibleTab(host: SettingsHost, opts?: TabRefreshOptions
         break;
       case "adminbot":
       case "adminbotMembers":
-      case "adminbotArrReviewers":
       case "adminbotPapers":
       case "adminbotAnnouncements":
       case "adminbotTimeAvailability":
@@ -757,7 +758,8 @@ export function syncTabWithLocation(host: SettingsHost, replace: boolean) {
   // has not resumed yet, so who is looking is not knowable here; this records that the question is
   // still open so applyViewerHome can answer it when the roster arrives.
   host.landedWithoutATab = fromRoot;
-  syncUrlWithTab(host, resolved, replace);
+  // The retired ARR tab redirected to Lab Members above; keep the URL on where it landed.
+  syncUrlWithTab(host, resolved === "adminbotArrReviewers" ? host.tab : resolved, replace);
 }
 
 export function onPopState(host: SettingsHost) {
@@ -808,11 +810,22 @@ function updateBrowserHistory(url: URL, replace: boolean) {
 
 function applyTabSelection(
   host: SettingsHost,
-  next: Tab,
+  requested: Tab,
   options: { refreshPolicy: "always" | "connected"; syncUrl?: boolean },
 ) {
-  const profileRedirect = isProfileBlocked(host) && next !== "profile";
-  if (profileRedirect) next = "profile";
+  // ARR Eligible Reviewers used to be its own tab. It is now a filter on Lab Members, and its old
+  // path (bookmarks, Slack links) lands there with the filter on. The URL is rewritten in place so
+  // Back does not bounce through the retired path. Both tabs are member-level, so this changes
+  // where the list is drawn, never who may read it.
+  const arrRedirect = requested === "adminbotArrReviewers";
+  const wanted: Tab = arrRedirect ? "adminbotMembers" : requested;
+  const profileRedirect = isProfileBlocked(host) && wanted !== "profile";
+  const next: Tab = profileRedirect ? "profile" : wanted;
+  if (arrRedirect && next === "adminbotMembers") {
+    host.adminBotMembersArrFilter = true;
+  } else if (next !== "adminbotMembers") {
+    host.adminBotMembersArrFilter = false;
+  }
   const prev = host.tab;
   host.tab = next;
   // Whatever brought us here -- a click, Back, a deep link -- the tab on screen is now a choice,
@@ -845,8 +858,8 @@ function applyTabSelection(
     void refreshActiveTab(host);
   }
 
-  if (options.syncUrl || profileRedirect) {
-    syncUrlWithTab(host, next, profileRedirect);
+  if (options.syncUrl || profileRedirect || arrRedirect) {
+    syncUrlWithTab(host, next, profileRedirect || arrRedirect);
   }
 }
 

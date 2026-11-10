@@ -3,7 +3,7 @@ import { showToast } from "../../toast.ts";
 //
 // A notification reaches a member three ways and this file is two of them. The Slack DM is sent
 // service-side; here, the same sentence is read back onto the dashboard (a card that stays until
-// it is dealt with) and popped in the top-right corner (a toast, so somebody already looking at
+// it is dealt with) and popped in the bottom-right corner (a toast, so somebody already looking at
 // another tab notices it arriving). The third copy is the audit row, which nobody reads on a
 // screen.
 //
@@ -55,6 +55,9 @@ export async function loadAdminBotNotifications(
   }
 }
 
+/** How long a notification popup stays before it leaves on its own (unread; the card remains). */
+export const NOTIFICATION_TOAST_DURATION_MS = 20_000;
+
 function popNotification(
   host: AdminBotHost,
   notification: MemberNotification,
@@ -70,9 +73,10 @@ function popNotification(
     title: notification.title,
     body: notification.body,
     tone: "warn",
-    // No timeout: this is a thing the member is being asked to do, and one that vanished while
-    // they were reading it would have been better not sent.
-    duration: 0,
+    // Times out, but slowly. The popup is the "something arrived" signal, not the record: the
+    // dashboard card keeps the notification until it is dealt with, and a timeout leaves it unread.
+    // Left up for good, a backlog of these sat over the page until each was closed by hand.
+    duration: NOTIFICATION_TOAST_DURATION_MS,
     ...(tab && onOpen
       ? {
           action: {
@@ -85,9 +89,12 @@ function popNotification(
         }
       : {}),
     // Closing the popup is an acknowledgement, so it marks the notification read. The dashboard
-    // card stays either way -- read is "you have seen this", not "you have done it".
-    onDismiss: () => {
-      void markAdminBotNotificationsRead(host, [notification.id]);
+    // card stays either way -- read is "you have seen this", not "you have done it". Timing out is
+    // not an acknowledgement: nobody may have been looking.
+    onDismiss: (reason) => {
+      if (reason !== "timeout") {
+        void markAdminBotNotificationsRead(host, [notification.id]);
+      }
     },
   });
 }

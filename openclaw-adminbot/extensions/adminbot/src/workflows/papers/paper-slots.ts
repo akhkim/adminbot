@@ -13,7 +13,11 @@ import {
   type AdminBotSocialConsentRecord,
   type AdminBotSocialDraftRecord,
 } from "../../contracts/paper-cycle.js";
-import { parsePaperFeedback } from "../../contracts/paper-feedback.js";
+import {
+  isStaleDeadline,
+  parsePaperFeedback,
+  STALE_DEADLINE_DAYS,
+} from "../../contracts/paper-feedback.js";
 import {
   hasPaperImpactText,
   isEmptyPaperImpactStatement,
@@ -196,6 +200,21 @@ export function applyPaperSlotWrite(params: {
           ok: false,
           error:
             "Feedback needs a reason, an HTTPS manuscript link and valid deadline times; feedback-by cannot follow submission cutoff.",
+        };
+      }
+      // A newly entered cutoff that is months behind is almost always the wrong year (2025 typed
+      // for 2026). Stored, it would sit on the PI queue as a long-overdue item, so ask for the year
+      // instead. Only a cutoff that changed is checked: closing or noting an old request keeps
+      // its original date and must still go through.
+      const stored = existing.value_text ? parsePaperFeedback(existing.value_text) : null;
+      if (
+        !feedback.reviewed &&
+        feedback.hard_deadline !== stored?.hard_deadline &&
+        isStaleDeadline(feedback.hard_deadline, params.now)
+      ) {
+        return {
+          ok: false,
+          error: `The submission cutoff is more than ${STALE_DEADLINE_DAYS} days in the past. Check the year.`,
         };
       }
       return { ok: true, record: provided({ value_text: JSON.stringify(feedback) }) };
@@ -438,8 +457,14 @@ export function actionablePaperSlots(
     return [];
   }
   const rows = new Map(paperSlotRows(paper.id, stored, drafts).map((row) => [row.slot, row]));
+  // A slot is behind us when something downstream of it is already provided: a paper that is on
+  // OpenReview compiled, whether or not anybody ticked "PDF compiles". The OpenReview sync writes
+  // `submission` without `pdf_ready`, and without this the talk branch (slides, then poster) was
+  // gated forever behind a core step nobody will go back and fill in. Passed slots count as
+  // reached for gating and are not chased themselves.
+  const passed = passedPaperSlots(rows);
   const settled = (slot: AdminBotPaperSlot) =>
-    isAdminBotPaperSlotSettled(rows.get(slot)?.status ?? "missing");
+    passed.has(slot) || isAdminBotPaperSlotSettled(rows.get(slot)?.status ?? "missing");
 
   // What the reviewer has said about this paper, which two of the slots below speak for. A review
   // that has gone stale re-opens its own slot -- and only while the paper is unsubmitted, because
@@ -459,7 +484,7 @@ export function actionablePaperSlots(
       continue;
     }
     const reopened = slot === "papermentor_review" && reviewStale;
-    if (isAdminBotPaperSlotSettled(record.status) && !reopened) {
+    if ((isAdminBotPaperSlotSettled(record.status) || passed.has(slot)) && !reopened) {
       continue;
     }
     // Both lists, not either: `chaseAfter` says when the lab starts asking, `upstream` says when
@@ -492,6 +517,33 @@ export function actionablePaperSlots(
     });
   }
   return out;
+}
+
+/**
+ * Every slot that is a transitive `upstream` ancestor of a provided slot.
+ *
+ * Only `provided` counts, not `waived`: a waiver says "not needed", not "done", and must not
+ * silently close the steps before it.
+ */
+export function passedPaperSlots(
+  rows: ReadonlyMap<AdminBotPaperSlot, { status: string }>,
+): Set<AdminBotPaperSlot> {
+  const passed = new Set<AdminBotPaperSlot>();
+  const stack: AdminBotPaperSlot[] = [];
+  for (const [slot, row] of rows) {
+    if (row.status === "provided") {
+      stack.push(...adminBotPaperSlotRegistry[slot].upstream);
+    }
+  }
+  while (stack.length > 0) {
+    const slot = stack.pop()!;
+    if (passed.has(slot)) {
+      continue;
+    }
+    passed.add(slot);
+    stack.push(...adminBotPaperSlotRegistry[slot].upstream);
+  }
+  return passed;
 }
 
 /**
@@ -620,12 +672,22 @@ type AdminBotConferenceAttendeeLike = { member_id?: string; attending: string };
  * see which of their three papers each line belongs to.
  */
 export function buildNudgeMessage(params: {
-  groups: Array<{ title: string; venue?: string; deadline?: string; items: NudgeItem[] }>;
+  groups: Array<{
+    title: string;
+    venue?: string;
+    deadline?: string;
+    items: NudgeItem[];
+    /**
+     * Replaces the "*title* still needs:" line for a group that is not a paper, e.g. the
+     * person's own time availability riding along in the same message.
+     */
+    heading?: string;
+  }>;
   now: Date;
 }): string {
   const lines: string[] = [];
   for (const group of params.groups) {
-    lines.push(`*${group.title}* still needs:`);
+    lines.push(group.heading ?? `*${group.title}* still needs:`);
     for (const item of group.items) {
       lines.push(item.detail ? `• ${item.label} — ${item.detail}` : `• ${item.label}`);
     }

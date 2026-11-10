@@ -17,11 +17,12 @@
 // camera-ready date is the deadline dataset's row for the venue's family and year, so a venue the
 // dataset has never heard of still gets a row -- just without a date.
 import type { AdminBotPaperRecord } from "../../contracts/actions.js";
+import { isStaleDeadline } from "../../contracts/paper-feedback.js";
+import type { AdminBotPaperSlotRecord } from "../../contracts/paper-slots.js";
 import type {
   AdminBotPaperflowEvidenceRecord,
   AdminBotPaperflowStage,
 } from "../../contracts/paperflow-stages.js";
-import type { AdminBotPaperSlotRecord } from "../../contracts/paper-slots.js";
 import { openPaperflowStage } from "./paperflow-stages.js";
 import type { PiReviewRow } from "./pi-review.js";
 
@@ -69,7 +70,7 @@ function textOf(value: unknown): string {
 }
 
 /** "NeurIPS 2026", "ICLR 2027 Conference" -> { family: "neurips", year: 2026 }. */
-function venueKey(label: string): { family: string; year: number } | undefined {
+export function venueKey(label: string): { family: string; year: number } | undefined {
   const year = Number(/\b(20\d{2})\b/u.exec(label)?.[1]);
   const family = /[a-z]+/iu.exec(label.replace(/\b20\d{2}\b/gu, ""))?.[0]?.toLowerCase();
   return family && Number.isInteger(year) ? { family, year } : undefined;
@@ -81,19 +82,93 @@ function venueKey(label: string): { family: string; year: number } | undefined {
  * stages a published deadline proposal adds are stored that way, and reading their wall clock as
  * AoE put the NeurIPS 2026 camera-ready (Nov 6 AoE, 2026-11-07T11:59Z) twelve hours late.
  */
-export function aoeToIso(date: string): string | undefined {
+export function aoeToIso(date: string, now?: Date): string | undefined {
   const trimmed = date.trim();
   if (/T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})$/u.test(trimmed)) {
     const instant = Date.parse(trimmed);
     return Number.isFinite(instant) ? new Date(instant).toISOString() : undefined;
   }
-  const match = /^(\d{4}-\d{2}-\d{2})(?:[ T](\d{2}:\d{2}(?::\d{2})?))?/u.exec(date);
+  const match = /^(\d{4}-\d{2}-\d{2})(?:[ T](\d{2}:\d{2}(?::\d{2})?))?/u.exec(trimmed);
   if (!match) {
+    return now ? yearlessAoeToIso(trimmed, now) : undefined;
+  }
+  return wallClockAoe(match[1], match[2]);
+}
+
+function wallClockAoe(day: string, clock: string | undefined): string | undefined {
+  const time = clock ? (clock.length === 5 ? `${clock}:00` : clock) : "23:59:59";
+  const instant = Date.parse(`${day}T${time}-12:00`);
+  return Number.isFinite(instant) ? new Date(instant).toISOString() : undefined;
+}
+
+const MONTHS = [
+  "jan",
+  "feb",
+  "mar",
+  "apr",
+  "may",
+  "jun",
+  "jul",
+  "aug",
+  "sep",
+  "oct",
+  "nov",
+  "dec",
+] as const;
+
+/**
+ * A month and day with no year ("11-06", "Nov 6", "6 November 23:59") as the next time that wall
+ * clock comes round in AoE: this year if it is still ahead, otherwise next year (or the next leap
+ * year, for February 29).
+ *
+ * Never a past year. `Date.parse("Nov 6")` is 2001 in V8, which turned a date somebody typed
+ * without a year into a deadline twenty-five years overdue. A deadline is something still to
+ * meet, so the only reading of a bare month/day that makes sense is the coming one.
+ */
+export function yearlessAoeToIso(date: string, now: Date): string | undefined {
+  const text = date.trim().toLowerCase().replace(/,/gu, " ");
+  const clock = /(?:^|\s)(\d{1,2}:\d{2}(?::\d{2})?)(?:\s*aoe)?$/u.exec(text)?.[1];
+  const day = clock ? text.slice(0, text.lastIndexOf(clock)).trim() : text.replace(/\s*aoe$/u, "");
+  let month: number | undefined;
+  let dayOfMonth: number | undefined;
+  const numeric = /^(\d{1,2})[-/](\d{1,2})$/u.exec(day);
+  const named =
+    /^([a-z]{3,})\.?\s+(\d{1,2})(?:st|nd|rd|th)?$/u.exec(day) ??
+    /^(\d{1,2})(?:st|nd|rd|th)?\s+([a-z]{3,})\.?$/u.exec(day);
+  if (numeric) {
+    month = Number(numeric[1]);
+    dayOfMonth = Number(numeric[2]);
+  } else if (named) {
+    const [word, digits] = /^\d/u.test(named[1]) ? [named[2], named[1]] : [named[1], named[2]];
+    const index = MONTHS.findIndex((name) => word.startsWith(name));
+    month = index >= 0 ? index + 1 : undefined;
+    dayOfMonth = Number(digits);
+  }
+  if (!month || !dayOfMonth || month > 12 || dayOfMonth > 31) {
     return undefined;
   }
-  const time = match[2] ? (match[2].length === 5 ? `${match[2]}:00` : match[2]) : "23:59:59";
-  const instant = Date.parse(`${match[1]}T${time}-12:00`);
-  return Number.isFinite(instant) ? new Date(instant).toISOString() : undefined;
+  const paddedClock = clock && /^\d:/u.test(clock) ? `0${clock}` : clock;
+  // Four years ahead at most, which is as far as February 29 can be.
+  for (let year = now.getUTCFullYear(); year <= now.getUTCFullYear() + 4; year += 1) {
+    const isoDay = `${year}-${String(month).padStart(2, "0")}-${String(dayOfMonth).padStart(2, "0")}`;
+    const iso = wallClockAoe(isoDay, paddedClock);
+    // Reject a rollover ("02-30" parsing as March 2): the date has to exist that year.
+    if (!iso || new Date(Date.parse(iso) - 12 * 3_600_000).getUTCDate() !== dayOfMonth) {
+      continue;
+    }
+    if (Date.parse(iso) >= now.getTime()) {
+      return iso;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Whether a venue's year is behind the current one. A conference is held in the year it is named
+ * for, so "NeurIPS 2023" read in 2026 is a past cycle whatever its stage on the card says.
+ */
+export function isPastVenueYear(year: number | undefined, now: Date): boolean {
+  return year !== undefined && year < now.getUTCFullYear();
 }
 
 /**
@@ -131,7 +206,7 @@ export function cameraReadyDeadline(
     }
     for (const entry of Array.isArray(record.schedule) ? record.schedule : []) {
       const row = (entry ?? {}) as Record<string, unknown>;
-      const iso = row.milestone === "camera_ready" ? aoeToIso(textOf(row.date)) : undefined;
+      const iso = row.milestone === "camera_ready" ? aoeToIso(textOf(row.date), now) : undefined;
       if (iso) {
         dates.push(iso);
       }
@@ -194,7 +269,7 @@ export function submissionDeadline(
       continue;
     }
     const at = textOf(record.deadline_at);
-    const deadline = at ? aoeToIso(at) : aoeToIso(textOf(record.deadline_aoe));
+    const deadline = at ? aoeToIso(at, now) : aoeToIso(textOf(record.deadline_aoe), now);
     if (!deadline || Date.parse(deadline) < now.getTime()) {
       continue;
     }
@@ -222,7 +297,12 @@ export function proofreadingPaperQueue(
   return candidates.flatMap(({ paper }) => {
     const target = textOf(paper.venue);
     const key = target ? venueKey(target) : undefined;
-    if (!key || paper.venue_decision === "accept" || paper.venue_decision === "reject") {
+    if (
+      !key ||
+      isPastVenueYear(key.year, now) ||
+      paper.venue_decision === "accept" ||
+      paper.venue_decision === "reject"
+    ) {
       return [];
     }
     const synced = paper.openreview_sync ? venueKey(paper.openreview_sync.venue) : undefined;
@@ -286,7 +366,7 @@ export function openReviewPaperQueue(
   dataset: readonly unknown[],
   now: Date,
 ): PiReviewRow[] {
-  return candidates.flatMap(({ paper, slots, evidence }) => {
+  return candidates.flatMap(({ paper, slots, evidence }): PiReviewRow[] => {
     const sync = paper.openreview_sync;
     if (!sync) {
       return [];
@@ -329,7 +409,19 @@ export function openReviewPaperQueue(
       if (stage?.stage !== "camera_ready") {
         return [];
       }
-      const deadline = cameraReadyDeadline(sync.venue, dataset, now);
+      // The venue's year, or the accepted year when OpenReview's label carries none ("NeurIPS
+      // poster"). A past cycle's acceptance whose camera-ready nobody ticked on the card is not an
+      // overdue item: the paper was published, and listing it buried the live camera-readies.
+      const year = venueKey(sync.venue)?.year ?? paper.accepted_year;
+      if (isPastVenueYear(year, now)) {
+        return [];
+      }
+      const venue =
+        venueKey(sync.venue) || year === undefined ? sync.venue : `${sync.venue} ${year}`;
+      const deadline = cameraReadyDeadline(venue, dataset, now);
+      if (isStaleDeadline(deadline, now)) {
+        return [];
+      }
       return [
         {
           ...base,
@@ -363,13 +455,23 @@ export function openReviewPaperQueue(
 const categoryRank = new Map(paperQueueCategories.map((category, index) => [category, index]));
 
 /**
- * The whole queue in reading order: category first, then the nearest hard deadline, then the
- * longest wait. A row with no deadline sorts after every dated row in its category.
+ * The whole queue in reading order: anything already past its hard deadline first, then category,
+ * then the nearest hard deadline, then the longest wait. A row with no deadline sorts after every
+ * dated row in its category.
+ *
+ * Overdue leads whatever its category. A camera-ready feedback request past its cutoff, or an
+ * under-review revision whose submission cutoff has gone, is the most urgent thing on her desk,
+ * and ranking it by category left it below every safety and arXiv row.
  */
-export function rankPaperQueue(rows: readonly PiReviewRow[]): PiReviewRow[] {
+export function rankPaperQueue(rows: readonly PiReviewRow[], now: Date): PiReviewRow[] {
   const deadlineOf = (row: PiReviewRow) => row.hard_deadline ?? row.feedback?.hard_deadline;
+  const overdue = (row: PiReviewRow) => {
+    const deadline = deadlineOf(row);
+    return deadline !== undefined && Date.parse(deadline) < now.getTime() ? 0 : 1;
+  };
   return rows.toSorted(
     (left, right) =>
+      overdue(left) - overdue(right) ||
       (categoryRank.get(left.category) ?? 99) - (categoryRank.get(right.category) ?? 99) ||
       (deadlineOf(left) ?? "9999").localeCompare(deadlineOf(right) ?? "9999") ||
       (left.waiting_since ?? "9999").localeCompare(right.waiting_since ?? "9999") ||

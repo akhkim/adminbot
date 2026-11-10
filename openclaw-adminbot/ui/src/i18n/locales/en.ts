@@ -494,6 +494,12 @@ export const en: TranslationMap = {
     // the size of a list you are looking at all of.
     showing: "Showing {shown} of {total}",
     newTab: "opens in a new tab",
+    // One search box per queue: the letters are found by person, school or program, the papers by
+    // title, author or venue.
+    search: {
+      clear: "Clear search",
+      noMatch: "Nothing here matches “{query}”.",
+    },
     piReview: {
       // Each of the three paper queues below names the job it is asking for, because "a list of
       // papers" was true of all three and told her nothing about which to open. This one is a
@@ -506,6 +512,13 @@ export const en: TranslationMap = {
       since: "ready {date}",
       pdf: "Read the PDF",
       incomplete: "paper password still missing",
+      searchLabel: "Search papers by title, person or venue",
+      searchPlaceholder: "Title, author or venue",
+      matches: "{count} paper(s) matching “{query}”",
+      feedbackDone: "Feedback done",
+      approve: "Approve publication",
+      saving: "Saving…",
+      actionHint: "Marks this one done on the paper itself, as the paper page would.",
     },
     escalated: {
       // Not a paper queue: what is missing here is information, and the only thing left to try is
@@ -536,6 +549,17 @@ export const en: TranslationMap = {
         in: "in {count} day(s)",
         ago: "{count} day(s) ago",
         none: "no deadline given",
+      },
+      searchLabel: "Search letters by person or school",
+      searchPlaceholder: "Student, school or program",
+      matches: "{count} open request(s) matching “{query}”",
+      submit: "Submitted",
+      submitFor: "Mark {name}’s letter submitted",
+      saving: "Saving…",
+      yearAssumed: "year assumed",
+      done: {
+        title: "Submitted from this page ({count})",
+        undo: "Undo",
       },
     },
     drafts: {
@@ -625,6 +649,7 @@ export const en: TranslationMap = {
     adminbotReimbursements: "Reimbursement Form Prep",
     adminbotSettings: "Settings",
     adminbotMembers: "Lab Members",
+    adminbotLabProjects: "Lab Projects",
     adminbotArrReviewers: "ARR Eligible Reviewers",
     adminbotTalkLeaderboard: "Talk Leaderboard",
     adminbotProfileOverview: "Profile Completeness",
@@ -685,6 +710,7 @@ export const en: TranslationMap = {
     adminbotReimbursements: "Upload receipts, answer questions, and generate expense forms.",
     adminbotSettings: "Lab defaults and escalation policy.",
     adminbotMembers: "Who is in the lab, what they work on, and their access.",
+    adminbotLabProjects: "Every project in the lab: who is on it, where it stands, and its links.",
     adminbotProfileOverview: "Who has filled in their profile and planned their term.",
     adminbotTabUsage: "Which parts of AdminBot the lab actually opens.",
     adminbotProfessor: "What is waiting on you, across every queue.",

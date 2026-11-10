@@ -20,11 +20,12 @@ import {
   type PdfReferenceChecker,
   type ReferenceFinding,
 } from "../../connectors/reference-check.js";
-import type {
-  OpenReviewCitationCheck,
-  OpenReviewCitationSweepSummary,
-  OpenReviewSubmission,
-  OpenReviewSubmissionReader,
+import {
+  OpenReviewLoginError,
+  type OpenReviewCitationCheck,
+  type OpenReviewCitationSweepSummary,
+  type OpenReviewSubmission,
+  type OpenReviewSubmissionReader,
 } from "../../contracts/openreview-citation-checks.js";
 import type { AdminBotService, AdminBotServiceStore } from "../../kernel/service.js";
 
@@ -134,9 +135,13 @@ export class OpenReviewCitationWatch {
     let submissions: OpenReviewSubmission[];
     try {
       submissions = await this.deps.reader.listSubmissions();
+    } catch (error) {
+      this.recordLogin(error);
+      throw error;
     } finally {
       this.starting = false;
     }
+    this.recordLogin();
     const pending = submissions.filter((submission) => this.needsCheck(submission)).length;
     const previous = this.last;
     const summary: OpenReviewCitationSweepSummary = {
@@ -165,6 +170,18 @@ export class OpenReviewCitationWatch {
 
   private now() {
     return (this.deps.now ?? (() => new Date()))();
+  }
+
+  /** Tells admins when OpenReview refuses the account, and clears that once a login works again. */
+  private recordLogin(error?: unknown) {
+    if (error === undefined) {
+      this.deps.service.recordOpenReviewLogin("citation_checks", { ok: true });
+    } else if (error instanceof OpenReviewLoginError && error.credentialsRejected) {
+      this.deps.service.recordOpenReviewLogin("citation_checks", {
+        ok: false,
+        error: error.message,
+      });
+    }
   }
 
   private needsCheck(submission: OpenReviewSubmission): boolean {
@@ -248,7 +265,19 @@ export class OpenReviewCitationWatch {
         await delay(this.deps.pauseBetweenMs);
       }
       attempted.add(versionKey(next));
-      await this.checkVersion(next, summary);
+      try {
+        await this.checkVersion(next, summary);
+      } catch (error) {
+        if (!(error instanceof OpenReviewLoginError)) {
+          throw error;
+        }
+        // Every paper left would fail the same way and each would spend one of its few retries,
+        // which is how a login outage used to retire every paper from checking for good. Stop
+        // here instead; nothing was recorded against this paper and the next run resumes.
+        summary.login_error = error.message;
+        this.recordLogin(error);
+        return;
+      }
       // A failed re-read keeps the last list rather than ending a backfill early.
       submissions = await this.deps.reader.listSubmissions().catch(() => submissions);
     }
@@ -272,7 +301,11 @@ export class OpenReviewCitationWatch {
     let bytes: Uint8Array;
     try {
       bytes = await this.deps.reader.readPdf(submission.id);
-    } catch {
+    } catch (error) {
+      // The account could not log in: not this paper's failure, so the sweep handles it.
+      if (error instanceof OpenReviewLoginError) {
+        throw error;
+      }
       summary.failed++;
       store.saveOpenReviewCitationCheck({
         ...base,

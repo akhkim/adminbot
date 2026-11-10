@@ -468,6 +468,7 @@ export type AppViewState = {
   adminBotRosterError: string | null;
   adminBotRosterRequestId: number;
   adminBotMemberList: AdminBotMemberListState;
+  adminBotMembersArrFilter: boolean;
   adminBotStandingMeetings: AdminBotStandingMeetingsState;
   adminBotMemberRequests: import("./adminbot/controllers/member-requests.ts").AdminBotMemberRequestsState;
   // Lab Sharing tab: the project the member is asking for help on, and the draft of their request. The
@@ -557,6 +558,8 @@ export type AppViewState = {
   adminBotTabUsageLoadedAt: number | null;
   /** Which My Desk row lists are open past their preview cap, by list id. */
   professorExpandedLists: Set<string>;
+  /** Each My Desk queue's search text, by section id. */
+  professorSearch: Record<string, string>;
   publishBroadcast?: (
     draft: {
       message: string;

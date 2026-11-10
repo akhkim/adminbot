@@ -13,11 +13,9 @@
 //
 // Derived, not stored. The queue is a function of the slots, so a paper leaves it the moment she
 // ticks the box or an admin waives it, and there is no second list to fall out of step.
-import type {
-  AdminBotPaperOpenReviewSync,
-  AdminBotPaperRecord,
-} from "../../contracts/actions.js";
+import type { AdminBotPaperOpenReviewSync, AdminBotPaperRecord } from "../../contracts/actions.js";
 import {
+  isStaleDeadline,
   parsePaperFeedback,
   paperFeedbackSlots,
   type PaperFeedback,
@@ -159,8 +157,17 @@ const feedbackCategory: Record<keyof typeof paperFeedbackSlots, PaperQueueCatego
   feedback_arr: "under_review",
 };
 
-/** Explicit feedback requests use the same durable paper slots and admin queue read permissions. */
-export function paperFeedbackQueue(candidates: readonly PiReviewCandidate[]): PiReviewRow[] {
+/**
+ * Explicit feedback requests use the same durable paper slots and admin queue read permissions.
+ *
+ * A request whose submission cutoff is more than STALE_DEADLINE_DAYS behind is left off: it is a
+ * past cycle's (an old NeurIPS camera-ready nobody closed), not something she can still act on,
+ * and listing it as overdue pushed the live ones down. The slot keeps it; only the queue drops it.
+ */
+export function paperFeedbackQueue(
+  candidates: readonly PiReviewCandidate[],
+  now: Date,
+): PiReviewRow[] {
   return candidates
     .flatMap(({ paper, slots }) =>
       slots.flatMap((row) => {
@@ -168,7 +175,7 @@ export function paperFeedbackQueue(candidates: readonly PiReviewCandidate[]): Pi
           return [];
         }
         const feedback = parsePaperFeedback(row.value_text);
-        if (!feedback || feedback.reviewed) {
+        if (!feedback || feedback.reviewed || isStaleDeadline(feedback.hard_deadline, now)) {
           return [];
         }
         return [

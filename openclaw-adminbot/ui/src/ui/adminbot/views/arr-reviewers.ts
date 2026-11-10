@@ -6,6 +6,28 @@ type Reviewer = Pick<
   "id" | "name" | "arr_reviewer_qualified" | "arr_review_capacity"
 >;
 
+/**
+ * Lab Members' "ARR-eligible reviewers only" switch.
+ *
+ * The reviewer list used to be its own sidebar tab; it is the same roster narrowed to the people
+ * who confirmed ARR reviewer qualification, so it is now a filter on Lab Members. On, the page draws
+ * `renderArrReviewers` below in place of the full people database.
+ */
+export function renderArrReviewerFilter(props: {
+  active: boolean;
+  onToggle: (on: boolean) => void;
+}) {
+  return html`<div class="chip-row" style="margin-bottom: 12px;">
+    <label class="chip" data-testid="arr-reviewer-filter">
+      <input
+        type="checkbox"
+        .checked=${props.active}
+        @change=${(event: Event) => props.onToggle((event.target as HTMLInputElement).checked)}
+      />ARR-eligible reviewers only
+    </label>
+  </div>`;
+}
+
 export function renderArrReviewers(props: {
   members: readonly Reviewer[];
   loading: boolean;

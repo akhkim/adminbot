@@ -16,6 +16,11 @@ import {
   type AdminBotLogisticsRequestKind,
   type AdminBotLogisticsRequestStatus,
 } from "../../contracts/actions.js";
+import {
+  letterRequestSearchFields,
+  matchesSearch,
+  searchTokens,
+} from "../../contracts/desk-search.js";
 import { requestDeadlineDetails } from "./requests.js";
 
 export const LOGISTICS_QUEUE_SORTS = ["recent", "submitted", "user", "deadline", "status"] as const;
@@ -59,7 +64,11 @@ export function isSettledLogisticsStatus(status: string): boolean {
   return SETTLED.has(status);
 }
 
-function matches<T extends LogisticsQueueRow>(request: T, query: LogisticsQueueQuery, q: string) {
+function matches<T extends LogisticsQueueRow>(
+  request: T,
+  query: LogisticsQueueQuery,
+  q: readonly string[],
+) {
   if (
     query.status === "open"
       ? SETTLED.has(request.status)
@@ -70,12 +79,8 @@ function matches<T extends LogisticsQueueRow>(request: T, query: LogisticsQueueQ
   if (query.kind && request.kind !== query.kind) {
     return false;
   }
-  return (
-    !q ||
-    [request.member_name, ...(request.schools ?? []).map((school) => school.school ?? "")].some(
-      (value) => value.toLocaleLowerCase().includes(q),
-    )
-  );
+  // The same matcher My Desk uses, so a name that finds a letter there finds it here.
+  return matchesSearch(letterRequestSearchFields(request), q);
 }
 
 /**
@@ -90,7 +95,7 @@ export function selectLogisticsQueue<T extends LogisticsQueueRow>(
   requests: readonly T[],
   query: LogisticsQueueQuery,
 ): T[] {
-  const q = (query.q ?? "").trim().toLocaleLowerCase();
+  const q = searchTokens(query.q);
   const direction = query.dir === "asc" ? 1 : -1;
   return requests
     .filter((request) => matches(request, query, q))

@@ -488,6 +488,10 @@ export const uk: TranslationMap = {
     showFewer: "Show fewer",
     showing: "Showing {shown} of {total}",
     newTab: "opens in a new tab",
+    search: {
+      clear: "Clear search",
+      noMatch: "Nothing here matches “{query}”.",
+    },
     piReview: {
       title: "Approve before it goes public",
       blurb:
@@ -497,6 +501,13 @@ export const uk: TranslationMap = {
       since: "ready {date}",
       pdf: "Read the PDF",
       incomplete: "paper password still missing",
+      searchLabel: "Search papers by title, person or venue",
+      searchPlaceholder: "Title, author or venue",
+      matches: "{count} paper(s) matching “{query}”",
+      feedbackDone: "Feedback done",
+      approve: "Approve publication",
+      saving: "Saving…",
+      actionHint: "Marks this one done on the paper itself, as the paper page would.",
     },
     escalated: {
       title: "Waiting on a word from you",
@@ -524,6 +535,17 @@ export const uk: TranslationMap = {
         in: "in {count} day(s)",
         ago: "{count} day(s) ago",
         none: "no deadline given",
+      },
+      searchLabel: "Search letters by person or school",
+      searchPlaceholder: "Student, school or program",
+      matches: "{count} open request(s) matching “{query}”",
+      submit: "Submitted",
+      submitFor: "Mark {name}’s letter submitted",
+      saving: "Saving…",
+      yearAssumed: "year assumed",
+      done: {
+        title: "Submitted from this page ({count})",
+        undo: "Undo",
       },
     },
     drafts: {

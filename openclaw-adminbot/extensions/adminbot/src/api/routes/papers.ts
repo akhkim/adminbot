@@ -62,6 +62,13 @@ export const papersRoutes: readonly Route[] = [
       { status: 403, message: "member session required" },
     ),
   ),
+  // Every member's projects, so admins only, and checked here rather than by hiding the tab.
+  get(
+    "/lab/projects",
+    privilegedOnly(({ res, ctx }) => {
+      sendServiceResult(res, ctx.service.listLabProjects());
+    }),
+  ),
   get(
     "/papers/relevant",
     memberOnly(

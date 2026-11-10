@@ -2,9 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import { PangramError } from "../../connectors/pangram.js";
 import { NO_TEXT_LAYER, ReferenceCheckError } from "../../connectors/reference-check.js";
 import type { AdminBotStoredProposal } from "../../contracts/actions.js";
-import type {
-  OpenReviewSubmission,
-  OpenReviewSubmissionReader,
+import {
+  OpenReviewLoginError,
+  type OpenReviewSubmission,
+  type OpenReviewSubmissionReader,
 } from "../../contracts/openreview-citation-checks.js";
 import type { AiTextScorer } from "../../contracts/paper-integrity-checks.js";
 import { AdminBotService } from "../../kernel/service.js";
@@ -867,5 +868,57 @@ describe("ICLR integrity watch", () => {
     expect(normalizeAuthorId(" ~Ada_Lovelace1 ")).toBe("~ada_lovelace1");
     expect(normalizeAuthorId("Ada@CS.Toronto.edu")).toBe("ada@cs.toronto.edu");
     expect(normalizeAuthorId("  ")).toBeUndefined();
+  });
+});
+
+describe("ICLR integrity watch when the OpenReview login fails", () => {
+  const papers = ["paperAAAA", "paperBBBB"].map((id, index) =>
+    submission({ id, pdf_path: `/pdf/${id}.pdf`, modified_at: index + 1 }),
+  );
+
+  it("does not spend a paper's retries on a login outage, and scores once it recovers", async () => {
+    let down = true;
+    const { store, reader, watch, sweep, score } = setup({
+      submissions: papers,
+      pdf: (id) => {
+        if (down) {
+          throw new OpenReviewLoginError("OpenReview login did not succeed after 3 tries", false);
+        }
+        return Buffer.from(`%PDF-${id}`);
+      },
+    });
+    for (let run = 0; run <= MAX_AI_CHECK_ATTEMPTS; run++) {
+      await sweep();
+      expect(watch.status().last_sweep).toMatchObject({ failed: 0, scored: 0 });
+      expect(watch.status().last_sweep?.login_error).toContain("did not succeed");
+    }
+    // One try per sweep: the second paper is not tried against a login known to be down.
+    expect(reader.readPdf).toHaveBeenCalledTimes(MAX_AI_CHECK_ATTEMPTS + 1);
+    expect(store.listPaperAiTextChecks()).toEqual([]);
+
+    down = false;
+    await sweep();
+    expect(score).toHaveBeenCalledTimes(2);
+  });
+
+  it("puts a refused password in front of the admins until the login works again", async () => {
+    const { reader, watch, sweep, service, store } = setup({ submissions: papers });
+    reader.listSubmissions.mockRejectedValueOnce(
+      new OpenReviewLoginError("OpenReview rejected the login (403)", true, 403),
+    );
+    await expect(watch.start()).rejects.toThrow("rejected the login");
+
+    const raised = service.raiseAutomationHealthAlerts("adminbot");
+    expect(raised.ok && raised.payload.alerted).toContain("openreview-login");
+    const alert = () =>
+      store
+        .listMemberNotifications("zhijing")
+        .find((entry) => entry.title === "OpenReview is refusing the lab's login");
+    expect(alert()).toMatchObject({ kind: "automation", tab: "adminbotSettings" });
+    expect(alert()?.resolved_at).toBeUndefined();
+
+    await sweep();
+    service.raiseAutomationHealthAlerts("adminbot");
+    expect(alert()?.resolved_at).toBeDefined();
   });
 });

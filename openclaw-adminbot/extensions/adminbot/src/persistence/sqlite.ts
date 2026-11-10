@@ -92,12 +92,13 @@ import {
   type AdminBotSlackConnectInvite,
 } from "../kernel/service.js";
 import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
-import { createCollaboratorChatRequestStore } from "./collaborator-chat-requests.js";
 import { withApiTokenAttribution } from "../workflows/identity/api-token-context.js";
 import {
   labMemberRowReader,
   toStoredLabMember,
 } from "../workflows/onboarding/onboarding-storage.js";
+import { parseTalkMaterialsConfig } from "../workflows/papers/talk-materials.js";
+import { createCollaboratorChatRequestStore } from "./collaborator-chat-requests.js";
 import {
   adminBotEmailReviewFromRow,
   adminBotResolvedEmailReviewFromRow,
@@ -280,10 +281,14 @@ export function sqliteServiceOptions({
     (databasePath === ":memory:"
       ? undefined
       : path.join(path.dirname(databasePath), "paper-link-problems.json"));
+  // Per-topic mega deck and QuickPointers links. Read once; a malformed value means "no links",
+  // and the reminders still go out worded without one.
+  const talkMaterialsRaw = process.env.ADMINBOT_TALK_MATERIALS_JSON?.trim();
   return {
     ...(linkProblemsPath
       ? { paperLinkProblems: () => readPaperLinkProblems(linkProblemsPath) }
       : {}),
+    ...(talkMaterialsRaw ? { talkMaterials: parseTalkMaterialsConfig(talkMaterialsRaw) } : {}),
     ...options,
     ...(botEmail ? { paperflowBotEmail: botEmail } : {}),
     ...(priorityMemberId ? { paperflowPriorityMemberId: priorityMemberId } : {}),

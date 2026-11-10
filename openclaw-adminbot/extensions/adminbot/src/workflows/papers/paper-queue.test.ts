@@ -1,10 +1,7 @@
 // The PI queue's OpenReview reading: which category each paper lands in, the camera-ready clock it
 // carries, and the order she reads them in.
 import { describe, expect, it } from "vitest";
-import type {
-  AdminBotPaperOpenReviewSync,
-  AdminBotPaperRecord,
-} from "../../contracts/actions.js";
+import type { AdminBotPaperOpenReviewSync, AdminBotPaperRecord } from "../../contracts/actions.js";
 import type { AdminBotPaperSlotRecord } from "../../contracts/paper-slots.js";
 import type { AdminBotPaperflowEvidenceRecord } from "../../contracts/paperflow-stages.js";
 import {
@@ -16,13 +13,15 @@ import {
   proofreadingPaperQueue,
   rankPaperQueue,
   submissionDeadline,
+  yearlessAoeToIso,
 } from "./paper-queue.js";
 import type { PiReviewRow } from "./pi-review.js";
 
 const now = new Date("2026-11-03T12:00:00.000Z");
 
 function paper(
-  sync: Partial<AdminBotPaperOpenReviewSync> & Pick<AdminBotPaperOpenReviewSync, "status" | "venue">,
+  sync: Partial<AdminBotPaperOpenReviewSync> &
+    Pick<AdminBotPaperOpenReviewSync, "status" | "venue">,
   overrides: Partial<AdminBotPaperRecord> = {},
 ): AdminBotPaperRecord {
   return {
@@ -125,10 +124,16 @@ describe("aoeToIso", () => {
         venue_group: "NeurIPS 2026",
         venue_family: "NeurIPS",
         entry_type: "rebuttal",
-        schedule: [{ milestone: "camera_ready", label: "Camera-ready", date: "2026-11-07T11:59:00.000Z" }],
+        schedule: [
+          { milestone: "camera_ready", label: "Camera-ready", date: "2026-11-07T11:59:00.000Z" },
+        ],
       },
     ];
-    for (const venue of ["NeurIPS 2026", "NeurIPS 2026 Position Paper Track", "NeurIPS 2026 Evaluations and Datasets Track"]) {
+    for (const venue of [
+      "NeurIPS 2026",
+      "NeurIPS 2026 Position Paper Track",
+      "NeurIPS 2026 Evaluations and Datasets Track",
+    ]) {
       expect(cameraReadyDeadline(venue, neurips, now)).toBe("2026-11-07T11:59:00.000Z");
     }
   });
@@ -190,10 +195,18 @@ describe("proofreadingPaperQueue", () => {
       },
     });
     expect(proofreadingPaperQueue([{ paper: submittedThere }], clear, now)).toEqual([]);
-    expect(proofreadingPaperQueue([{ paper: draft({ venue_decision: "accept" }) }], clear, now)).toEqual([]);
-    expect(proofreadingPaperQueue([{ paper: draft() }], clear, new Date("2026-08-01T00:00:00.000Z"))).toEqual([]);
-    expect(proofreadingPaperQueue([{ paper: draft() }], clear, new Date("2026-11-18T00:00:00.000Z"))).toEqual([]);
-    expect(proofreadingPaperQueue([{ paper: draft({ venue: "Unknown Venue 2027" }) }], clear, now)).toEqual([]);
+    expect(
+      proofreadingPaperQueue([{ paper: draft({ venue_decision: "accept" }) }], clear, now),
+    ).toEqual([]);
+    expect(
+      proofreadingPaperQueue([{ paper: draft() }], clear, new Date("2026-08-01T00:00:00.000Z")),
+    ).toEqual([]);
+    expect(
+      proofreadingPaperQueue([{ paper: draft() }], clear, new Date("2026-11-18T00:00:00.000Z")),
+    ).toEqual([]);
+    expect(
+      proofreadingPaperQueue([{ paper: draft({ venue: "Unknown Venue 2027" }) }], clear, now),
+    ).toEqual([]);
   });
 
   it("still lists a paper whose OpenReview record is from an earlier venue", () => {
@@ -331,24 +344,27 @@ describe("rankPaperQueue", () => {
   });
 
   it("reads camera-ready first, then by category, then by nearest hard deadline", () => {
-    const ranked = rankPaperQueue([
-      row("rejected", { category: "after_rejection" }),
-      row("arxiv", { category: "arxiv_release", waiting_since: "2026-01-01T00:00:00.000Z" }),
-      row("impact", { category: "safety_impact", priority: "high" }),
-      row("cr-late", { category: "camera_ready", hard_deadline: "2026-12-01T00:00:00.000Z" }),
-      row("cr-undated", { category: "camera_ready" }),
-      row("cr-feedback", {
-        category: "camera_ready",
-        feedback: {
-          reason: "r",
-          url: "https://x.test",
-          hard_deadline: "2026-11-10T00:00:00.000Z",
-          label: "Camera-ready feedback",
-          slot: "feedback_camera_ready",
-        },
-      }),
-      row("review", { category: "under_review" }),
-    ]);
+    const ranked = rankPaperQueue(
+      [
+        row("rejected", { category: "after_rejection" }),
+        row("arxiv", { category: "arxiv_release", waiting_since: "2026-01-01T00:00:00.000Z" }),
+        row("impact", { category: "safety_impact", priority: "high" }),
+        row("cr-late", { category: "camera_ready", hard_deadline: "2026-12-01T00:00:00.000Z" }),
+        row("cr-undated", { category: "camera_ready" }),
+        row("cr-feedback", {
+          category: "camera_ready",
+          feedback: {
+            reason: "r",
+            url: "https://x.test",
+            hard_deadline: "2026-11-10T00:00:00.000Z",
+            label: "Camera-ready feedback",
+            slot: "feedback_camera_ready",
+          },
+        }),
+        row("review", { category: "under_review" }),
+      ],
+      now,
+    );
     expect(ranked.map((entry) => entry.paper_id)).toEqual([
       "cr-feedback",
       "cr-late",
@@ -358,6 +374,161 @@ describe("rankPaperQueue", () => {
       "review",
       "rejected",
     ]);
+  });
+});
+
+describe("rankPaperQueue overdue", () => {
+  const row = (paper_id: string, overrides: Partial<PiReviewRow>): PiReviewRow => ({
+    category: "arxiv_release",
+    paper_id,
+    title: paper_id,
+    authors: [],
+    package_complete: true,
+    ...overrides,
+  });
+
+  // Overdue rows in a later category sat below every camera-ready, safety and arXiv row.
+  it("puts every row past its hard deadline at the top, whatever its category", () => {
+    const ranked = rankPaperQueue(
+      [
+        row("impact", { category: "safety_impact", priority: "high" }),
+        row("cr-upcoming", { category: "camera_ready", hard_deadline: "2026-11-20T00:00:00.000Z" }),
+        row("arr-overdue", {
+          category: "under_review",
+          feedback: {
+            reason: "r",
+            url: "https://x.test",
+            hard_deadline: "2026-10-20T00:00:00.000Z",
+            label: "ARR / Overleaf feedback",
+            slot: "feedback_arr",
+          },
+        }),
+        row("arxiv", { category: "arxiv_release" }),
+        row("cr-overdue", {
+          category: "camera_ready",
+          hard_deadline: "2026-10-30T00:00:00.000Z",
+          days_left: -5,
+        }),
+      ],
+      now,
+    );
+    expect(ranked.map((entry) => entry.paper_id)).toEqual([
+      "cr-overdue",
+      "arr-overdue",
+      "cr-upcoming",
+      "impact",
+      "arxiv",
+    ]);
+  });
+});
+
+describe("past cycles and year-less dates", () => {
+  const neurips = [
+    {
+      venue_group: "NeurIPS 2023",
+      venue_family: "NeurIPS",
+      schedule: [{ milestone: "camera_ready", date: "2023-10-27 23:59:59" }],
+    },
+    {
+      venue_group: "NeurIPS 2026",
+      venue_family: "NeurIPS",
+      schedule: [{ milestone: "camera_ready", date: "2026-11-06 23:59:59" }],
+    },
+  ];
+  const accepted = (venue: string, overrides: Partial<AdminBotPaperRecord> = {}) =>
+    openReviewPaperQueue(
+      [
+        {
+          paper: paper({ status: "accepted", venue }, { venue_decision: "accept", ...overrides }),
+          slots: submitted,
+          evidence: [],
+        },
+      ],
+      neurips,
+      now,
+    );
+
+  // A three-year-old NeurIPS acceptance whose camera-ready slot nobody ticked read as three years
+  // overdue at the top of her desk.
+  it("drops an acceptance from a past year's NeurIPS instead of calling it overdue", () => {
+    expect(accepted("NeurIPS 2023")).toEqual([]);
+    expect(accepted("NeurIPS", { accepted_year: 2023 })).toEqual([]);
+  });
+
+  it("keeps this year's NeurIPS camera-ready, overdue by days, with its clock", () => {
+    expect(accepted("NeurIPS 2026")).toEqual([
+      expect.objectContaining({
+        category: "camera_ready",
+        hard_deadline: "2026-11-07T11:59:59.000Z",
+        days_left: 3,
+      }),
+    ]);
+    expect(accepted("NeurIPS", { accepted_year: 2026 })[0]?.hard_deadline).toBe(
+      "2026-11-07T11:59:59.000Z",
+    );
+  });
+
+  it("drops a camera-ready that went by more than a season ago", () => {
+    const icml = [
+      {
+        venue_group: "ICML 2026",
+        venue_family: "ICML",
+        schedule: [{ milestone: "camera_ready", date: "2026-06-05 23:59:59" }],
+      },
+    ];
+    expect(
+      openReviewPaperQueue(
+        [
+          {
+            paper: paper({ status: "accepted", venue: "ICML 2026" }, { venue_decision: "accept" }),
+            slots: submitted,
+            evidence: [],
+          },
+        ],
+        icml,
+        now,
+      ),
+    ).toEqual([]);
+  });
+
+  it("puts no past-year venue under proofreading", () => {
+    const old = [
+      {
+        name: "NeurIPS 2025",
+        venue_group: "NeurIPS 2025",
+        venue_family: "NeurIPS",
+        milestone: "full_paper",
+        deadline_aoe: "11-20 23:59",
+      },
+    ];
+    const draft = { ...paper({ status: "under_review", venue: "x" }), venue: "NeurIPS 2025" };
+    const { openreview_sync: _, ...unsynced } = draft;
+    expect(proofreadingPaperQueue([{ paper: unsynced }], old, now)).toEqual([]);
+  });
+
+  // `Date.parse("Nov 6")` is 2001 in V8: a deadline typed without its year read as decades late.
+  it("reads a month and day with no year as the next time it comes round", () => {
+    expect(yearlessAoeToIso("Nov 20", now)).toBe("2026-11-21T11:59:59.000Z");
+    expect(yearlessAoeToIso("11-20 23:59", now)).toBe("2026-11-21T11:59:00.000Z");
+    expect(yearlessAoeToIso("20 November", now)).toBe("2026-11-21T11:59:59.000Z");
+    // Already gone this year: next year, never a past one.
+    expect(yearlessAoeToIso("Oct 1", now)).toBe("2027-10-02T11:59:59.000Z");
+    expect(yearlessAoeToIso("02-29", now)).toBe("2028-03-01T11:59:59.000Z");
+    expect(yearlessAoeToIso("Feb 30", now)).toBeUndefined();
+    expect(yearlessAoeToIso("soon", now)).toBeUndefined();
+    expect(aoeToIso("Nov 20")).toBeUndefined();
+    expect(aoeToIso("Nov 20", now)).toBe("2026-11-21T11:59:59.000Z");
+  });
+
+  it("gives a year-less camera-ready date in the dataset its coming occurrence", () => {
+    const yearless = [
+      {
+        venue_group: "EACL 2027",
+        venue_family: "EACL",
+        schedule: [{ milestone: "camera_ready", date: "Nov 26" }],
+      },
+    ];
+    expect(cameraReadyDeadline("EACL 2027", yearless, now)).toBe("2026-11-27T11:59:59.000Z");
   });
 });
 

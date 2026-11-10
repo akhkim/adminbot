@@ -14,9 +14,9 @@ import type {
   OpenReviewSubmission,
   OpenReviewSubmissionReader,
 } from "../contracts/openreview-citation-checks.js";
+import { createOpenReviewSession } from "./openreview-session.js";
 
 const BASE_URL = "https://api2.openreview.net";
-const LOGIN_TIMEOUT_MS = 20_000;
 const PAGE_TIMEOUT_MS = 60_000;
 const PDF_TIMEOUT_MS = 120_000;
 const PAGE_SIZE = 1000;
@@ -32,6 +32,8 @@ export type OpenReviewSubmissionReaderOptions = {
   env?: NodeJS.ProcessEnv;
   fetchImpl?: typeof globalThis.fetch;
   baseUrl?: string;
+  /** Pause before each login retry; tests pass zeros. */
+  loginRetryDelaysMs?: readonly number[];
 };
 
 /** Undefined when no credentials are configured, so the route can answer 503 with the names. */
@@ -44,66 +46,22 @@ export function createOpenReviewSubmissionReader(
   if (!username || !password) {
     return undefined;
   }
-  const fetchImpl = options.fetchImpl ?? globalThis.fetch;
   const baseUrl = options.baseUrl ?? BASE_URL;
-  let session: Promise<{ token: string; profileId: string }> | undefined;
-
-  const login = async () => {
-    const response = await fetchImpl(`${baseUrl}/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: username, password }),
-      redirect: "error",
-      signal: AbortSignal.timeout(LOGIN_TIMEOUT_MS),
-    });
-    if (!response.ok) {
-      await response.body?.cancel().catch(() => undefined);
-      throw new Error(
-        `OpenReview rejected the login (${response.status}) — check OPENREVIEW_USERNAME/PASSWORD`,
-      );
-    }
-    const body = (await response.json()) as {
-      token?: unknown;
-      user?: { profile?: { id?: unknown } };
-    };
-    const profileId = body.user?.profile?.id;
-    if (typeof body.token !== "string" || !body.token || typeof profileId !== "string") {
-      throw new Error("OpenReview login returned no token or profile");
-    }
-    return { token: body.token, profileId };
-  };
-
-  const current = () => {
-    session ??= login().catch((error: unknown) => {
-      session = undefined;
-      throw error;
-    });
-    return session;
-  };
-
-  // A backfill sweep runs for hours; an expired token is renewed once rather than failing it.
-  const authorized = async (url: string, timeoutMs: number): Promise<Response> => {
-    for (let attempt = 0; ; attempt++) {
-      const { token } = await current();
-      const response = await fetchImpl(url, {
-        headers: { Authorization: `Bearer ${token}` },
-        redirect: "error",
-        signal: AbortSignal.timeout(timeoutMs),
-      });
-      if ((response.status === 401 || response.status === 403) && attempt === 0) {
-        await response.body?.cancel().catch(() => undefined);
-        session = undefined;
-        continue;
-      }
-      return response;
-    }
-  };
+  // A backfill sweep runs for hours; the session renews an expired token instead of failing it.
+  const session = createOpenReviewSession({
+    username,
+    password,
+    baseUrl,
+    redirect: "error",
+    ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
+    ...(options.loginRetryDelaysMs ? { loginRetryDelaysMs: options.loginRetryDelaysMs } : {}),
+  });
 
   return {
-    profileId: async () => (await current()).profileId,
+    profileId: () => session.profileId(),
 
     async listSubmissions(options: { includeWithoutPdf?: boolean } = {}) {
-      const { profileId } = await current();
+      const profileId = await session.profileId();
       const submissions: OpenReviewSubmission[] = [];
       for (let offset = 0; offset < MAX_NOTES; offset += PAGE_SIZE) {
         const query = new URLSearchParams({
@@ -111,7 +69,7 @@ export function createOpenReviewSubmissionReader(
           limit: String(PAGE_SIZE),
           offset: String(offset),
         });
-        const response = await authorized(`${baseUrl}/notes?${query}`, PAGE_TIMEOUT_MS);
+        const response = await session.get(`${baseUrl}/notes?${query}`, PAGE_TIMEOUT_MS);
         if (!response.ok) {
           await response.body?.cancel().catch(() => undefined);
           throw new Error(`OpenReview returned ${response.status} listing submissions`);
@@ -138,7 +96,7 @@ export function createOpenReviewSubmissionReader(
         throw new Error("Expected an OpenReview submission ID");
       }
       // Always the fixed API2 endpoint, never a URL taken from a note's metadata.
-      const response = await authorized(
+      const response = await session.get(
         `${baseUrl}/pdf?id=${encodeURIComponent(submissionId)}`,
         PDF_TIMEOUT_MS,
       );
