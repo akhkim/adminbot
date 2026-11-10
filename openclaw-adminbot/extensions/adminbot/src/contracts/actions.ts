@@ -2781,6 +2781,10 @@ export type AdminBotAuditEvent = {
     // The project a paper's share link resolved to, written onto the paper so the review that
     // follows can find it. The row names the link it replaced, if any.
     | "papermentor.project_linked"
+    // A member uploaded a zip in the PaperMentor tab, and how its review ended. Counts only: the
+    // comments are on an unpublished draft and stay in the files the member downloads.
+    | "papermentor.upload_requested"
+    | "papermentor.upload_finished"
     // A paper moving itself along the trunk on the strength of its own evidence, and the slots
     // that released the step. The audit row is the proof: "why is this paper at submission" has an
     // answer that names four pieces of evidence rather than "somebody changed a dropdown".
@@ -3324,7 +3328,9 @@ export type AdminBotMemberNotificationKind =
   | "profile_photo"
   | "workshop"
   /** An automation health issue, for the admins: a job stopped or failing, or an invite paused. */
-  | "automation";
+  | "automation"
+  /** A review the member asked for in the PaperMentor tab is ready, or could not be done. */
+  | "papermentor";
 
 export type AdminBotMemberNotification = {
   id: string;

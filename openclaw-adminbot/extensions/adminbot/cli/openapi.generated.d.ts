@@ -3549,6 +3549,41 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/papermentor/reviews": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** GET /papermentor/reviews */
+    get: operations["get-papermentor-reviews"];
+    put?: never;
+    /** POST /papermentor/reviews */
+    post: operations["post-papermentor-reviews"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/papermentor/reviews/{reviews_id}/files/{files_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** GET /papermentor/reviews/{reviews_id}/files/{files_id} */
+    get: operations["get-papermentor-reviews-by-reviews-id-files-by-files-id"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/papers": {
     parameters: {
       query?: never;
@@ -5249,6 +5284,8 @@ export interface components {
         | "papermentor.run_recorded"
         | "papermentor.review_requested"
         | "papermentor.project_linked"
+        | "papermentor.upload_requested"
+        | "papermentor.upload_finished"
         | "paper_evidence.verified"
         | "paper.stage_advanced"
         | "paper.pi_review_requested"
@@ -8038,7 +8075,8 @@ export interface components {
         | "meeting_attendance"
         | "nudge"
         | "profile_photo"
-        | "automation";
+        | "automation"
+        | "papermentor";
       title: string;
       created_at: string;
       body: string;
@@ -8065,7 +8103,8 @@ export interface components {
         | "meeting_attendance"
         | "nudge"
         | "profile_photo"
-        | "automation";
+        | "automation"
+        | "papermentor";
       tab?: string;
       important?: boolean;
       optional?: boolean;
@@ -8439,6 +8478,21 @@ export interface components {
     } & {
       [key: string]: unknown;
     };
+    PaperMentorReferenceSummary: {
+      /** @enum {string} */
+      status: "failed" | "skipped" | "checked";
+      /** @enum {string} */
+      source?: "pdf" | "bib";
+      total?: number;
+      matched?: number;
+      needs_review?: number;
+      not_found?: number;
+      unavailable?: number;
+      skipped_entries?: number;
+      message?: string;
+    } & {
+      [key: string]: unknown;
+    };
     AdminBotPaperRecord: {
       id: string;
       title: string;
@@ -8652,7 +8706,7 @@ export interface components {
       provided_at?: string;
       validated_at?: string;
       /** @enum {string} */
-      verified_by?: "openreview" | "arxiv" | "google_drive" | "papermentor" | "adminbot_post";
+      verified_by?: "openreview" | "papermentor" | "arxiv" | "google_drive" | "adminbot_post";
       verified_at?: string;
       verified_title?: string;
       previous_submission_id?: string;
@@ -21363,7 +21417,8 @@ export interface operations {
             | "meeting_attendance"
             | "nudge"
             | "profile_photo"
-            | "automation";
+            | "automation"
+            | "papermentor";
           tab?: string;
           important?: boolean;
           optional?: boolean;
@@ -22943,6 +22998,280 @@ export interface operations {
             [key: string]: unknown;
           };
         };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "get-papermentor-reviews": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            enabled: boolean;
+            model_provider: null | string;
+            venues: string[];
+            max_zip_bytes: null | number;
+            checks_references: boolean;
+            reference_checkers: ("references-validation" | "gptzero")[];
+            reviews: ({
+              downloads: ({
+                /** @enum {string} */
+                kind: "references" | "commented_zip" | "reviewed_pdf" | "report" | "edits_diff";
+                filename: string;
+              } & {
+                [key: string]: unknown;
+              })[];
+              id: string;
+              label: string;
+              venue: string;
+              /** @enum {string} */
+              status: "rejected" | "failed" | "queued" | "running" | "reviewed";
+              /** @enum {string} */
+              phase?: "review" | "references";
+              check_references?: boolean;
+              references?: components["schemas"]["PaperMentorReferenceSummary"];
+              created_at: string;
+              started_at?: string;
+              finished_at?: string;
+              message?: string;
+              comments?: number;
+              by_severity?: {
+                [key: string]: number;
+              };
+              pdf?: boolean;
+              files: ("references" | "commented_zip" | "reviewed_pdf" | "report" | "edits_diff")[];
+            } & {
+              [key: string]: unknown;
+            })[];
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "post-papermentor-reviews": {
+    parameters: {
+      query?: {
+        check_references?: string;
+        consent?: string;
+        filename?: string;
+        references_consent?: string;
+        venue?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            review: {
+              downloads: ({
+                /** @enum {string} */
+                kind: "references" | "commented_zip" | "reviewed_pdf" | "report" | "edits_diff";
+                filename: string;
+              } & {
+                [key: string]: unknown;
+              })[];
+              id: string;
+              label: string;
+              venue: string;
+              /** @enum {string} */
+              status: "rejected" | "failed" | "queued" | "running" | "reviewed";
+              /** @enum {string} */
+              phase?: "review" | "references";
+              check_references?: boolean;
+              references?: components["schemas"]["PaperMentorReferenceSummary"];
+              created_at: string;
+              started_at?: string;
+              finished_at?: string;
+              message?: string;
+              comments?: number;
+              by_severity?: {
+                [key: string]: number;
+              };
+              pdf?: boolean;
+              files: ("references" | "commented_zip" | "reviewed_pdf" | "report" | "edits_diff")[];
+            } & {
+              [key: string]: unknown;
+            };
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Server response */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Server response */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Server response */
+      413: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Server response */
+      415: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Server response */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "get-papermentor-reviews-by-reviews-id-files-by-files-id": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        reviews_id: string;
+        files_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Server response */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Success; response shape is validated by the server */
+      "2XX": {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
       /** @description Authentication, authorization, validation, policy, or connector error */
       default: {
@@ -25032,8 +25361,8 @@ export interface operations {
                 | "recent"
                 | "busy"
                 | "not_found"
-                | "started"
                 | "running"
+                | "started"
                 | "would_request";
               project_id?: string;
               message?: string;

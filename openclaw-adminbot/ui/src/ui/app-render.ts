@@ -166,7 +166,7 @@ import {
   renderChat,
   renderConfig,
   renderQuickSettings,
-  renderReferenceCheckerPage,
+  renderPaperMentorPage,
 } from "./app-render.lazy-pages.ts";
 import { refreshActiveTab, warnQueryToken } from "./app-settings.ts";
 import type { AppViewState } from "./app-view-state.ts";
@@ -3627,8 +3627,8 @@ export function renderApp(state: AppViewState) {
               m.renderGrantReport({ papers: state.adminBotData.papers }),
             )
           : nothing}
-        ${state.tab === "adminbotReferenceChecker"
-          ? renderReferenceCheckerPage(
+        ${state.tab === "adminbotPaperMentor"
+          ? renderPaperMentorPage(
               resolveAdminBotBaseUrl(state.settings),
               loadStoredMemberSession()?.sessionToken ?? "",
               state.memberPrivilegeLevel === "admin",

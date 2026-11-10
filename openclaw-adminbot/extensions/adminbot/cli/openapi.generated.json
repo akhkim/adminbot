@@ -19211,7 +19211,8 @@
                       "meeting_attendance",
                       "nudge",
                       "profile_photo",
-                      "automation"
+                      "automation",
+                      "papermentor"
                     ]
                   },
                   "tab": {
@@ -21763,6 +21764,610 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/papermentor/reviews": {
+      "get": {
+        "operationId": "get-papermentor-reviews",
+        "summary": "GET /papermentor/reviews",
+        "tags": [
+          "papermentor"
+        ],
+        "x-source": "src/api/routes/papermentor.ts",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "model_provider": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "venues": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "max_zip_bytes": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "number"
+                        }
+                      ]
+                    },
+                    "checks_references": {
+                      "type": "boolean"
+                    },
+                    "reference_checkers": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "references-validation",
+                          "gptzero"
+                        ]
+                      }
+                    },
+                    "reviews": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "downloads": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "references",
+                                    "commented_zip",
+                                    "reviewed_pdf",
+                                    "report",
+                                    "edits_diff"
+                                  ]
+                                },
+                                "filename": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "filename"
+                              ],
+                              "additionalProperties": true
+                            }
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "venue": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "rejected",
+                              "failed",
+                              "queued",
+                              "running",
+                              "reviewed"
+                            ]
+                          },
+                          "phase": {
+                            "type": "string",
+                            "enum": [
+                              "review",
+                              "references"
+                            ]
+                          },
+                          "check_references": {
+                            "type": "boolean"
+                          },
+                          "references": {
+                            "$ref": "#/components/schemas/PaperMentorReferenceSummary"
+                          },
+                          "created_at": {
+                            "type": "string"
+                          },
+                          "started_at": {
+                            "type": "string"
+                          },
+                          "finished_at": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          },
+                          "comments": {
+                            "type": "number"
+                          },
+                          "by_severity": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "number"
+                            }
+                          },
+                          "pdf": {
+                            "type": "boolean"
+                          },
+                          "files": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "enum": [
+                                "references",
+                                "commented_zip",
+                                "reviewed_pdf",
+                                "report",
+                                "edits_diff"
+                              ]
+                            }
+                          }
+                        },
+                        "required": [
+                          "downloads",
+                          "id",
+                          "label",
+                          "venue",
+                          "status",
+                          "created_at",
+                          "files"
+                        ],
+                        "additionalProperties": true
+                      }
+                    }
+                  },
+                  "required": [
+                    "enabled",
+                    "model_provider",
+                    "venues",
+                    "max_zip_bytes",
+                    "checks_references",
+                    "reference_checkers",
+                    "reviews"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "post-papermentor-reviews",
+        "summary": "POST /papermentor/reviews",
+        "tags": [
+          "papermentor"
+        ],
+        "x-source": "src/api/routes/papermentor.ts",
+        "parameters": [
+          {
+            "name": "check_references",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "consent",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "filename",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "references_consent",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "venue",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "review": {
+                      "type": "object",
+                      "properties": {
+                        "downloads": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "references",
+                                  "commented_zip",
+                                  "reviewed_pdf",
+                                  "report",
+                                  "edits_diff"
+                                ]
+                              },
+                              "filename": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "filename"
+                            ],
+                            "additionalProperties": true
+                          }
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "venue": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "rejected",
+                            "failed",
+                            "queued",
+                            "running",
+                            "reviewed"
+                          ]
+                        },
+                        "phase": {
+                          "type": "string",
+                          "enum": [
+                            "review",
+                            "references"
+                          ]
+                        },
+                        "check_references": {
+                          "type": "boolean"
+                        },
+                        "references": {
+                          "$ref": "#/components/schemas/PaperMentorReferenceSummary"
+                        },
+                        "created_at": {
+                          "type": "string"
+                        },
+                        "started_at": {
+                          "type": "string"
+                        },
+                        "finished_at": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "comments": {
+                          "type": "number"
+                        },
+                        "by_severity": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "number"
+                          }
+                        },
+                        "pdf": {
+                          "type": "boolean"
+                        },
+                        "files": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "references",
+                              "commented_zip",
+                              "reviewed_pdf",
+                              "report",
+                              "edits_diff"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "downloads",
+                        "id",
+                        "label",
+                        "venue",
+                        "status",
+                        "created_at",
+                        "files"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "review"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/papermentor/reviews/{reviews_id}/files/{files_id}": {
+      "get": {
+        "operationId": "get-papermentor-reviews-by-reviews-id-files-by-files-id",
+        "summary": "GET /papermentor/reviews/{reviews_id}/files/{files_id}",
+        "tags": [
+          "papermentor"
+        ],
+        "x-source": "src/api/routes/papermentor.ts",
+        "parameters": [
+          {
+            "name": "reviews_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "files_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "404": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "Success; response shape is validated by the server"
           },
           "default": {
             "description": "Authentication, authorization, validation, policy, or connector error",
@@ -25354,8 +25959,8 @@
                               "recent",
                               "busy",
                               "not_found",
-                              "started",
                               "running",
+                              "started",
                               "would_request"
                             ]
                           },
@@ -31378,6 +31983,8 @@
               "papermentor.run_recorded",
               "papermentor.review_requested",
               "papermentor.project_linked",
+              "papermentor.upload_requested",
+              "papermentor.upload_finished",
               "paper_evidence.verified",
               "paper.stage_advanced",
               "paper.pi_review_requested",
@@ -39976,7 +40583,8 @@
               "meeting_attendance",
               "nudge",
               "profile_photo",
-              "automation"
+              "automation",
+              "papermentor"
             ]
           },
           "title": {
@@ -40047,7 +40655,8 @@
               "meeting_attendance",
               "nudge",
               "profile_photo",
-              "automation"
+              "automation",
+              "papermentor"
             ]
           },
           "tab": {
@@ -41250,6 +41859,51 @@
         ],
         "additionalProperties": true
       },
+      "PaperMentorReferenceSummary": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "failed",
+              "skipped",
+              "checked"
+            ]
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "pdf",
+              "bib"
+            ]
+          },
+          "total": {
+            "type": "number"
+          },
+          "matched": {
+            "type": "number"
+          },
+          "needs_review": {
+            "type": "number"
+          },
+          "not_found": {
+            "type": "number"
+          },
+          "unavailable": {
+            "type": "number"
+          },
+          "skipped_entries": {
+            "type": "number"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "additionalProperties": true
+      },
       "AdminBotPaperRecord": {
         "type": "object",
         "properties": {
@@ -41821,9 +42475,9 @@
             "type": "string",
             "enum": [
               "openreview",
+              "papermentor",
               "arxiv",
               "google_drive",
-              "papermentor",
               "adminbot_post"
             ]
           },

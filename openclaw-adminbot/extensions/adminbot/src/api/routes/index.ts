@@ -20,6 +20,7 @@ import { nudgesRoutes } from "./nudges.js";
 import { onboardingRoutes } from "./onboarding.js";
 import { openapiRoutes } from "./openapi.js";
 import { paperAdminRoutes } from "./paper-admin.js";
+import { paperMentorRoutes } from "./papermentor.js";
 import { papersRoutes } from "./papers.js";
 import { profileRoutes } from "./profile.js";
 import { reimbursementsRoutes } from "./reimbursements.js";
@@ -33,6 +34,7 @@ export const AUTHENTICATED_ROUTES: readonly Route[] = [
   ...profileRoutes,
   ...notificationDraftsRoutes,
   ...reviewsRoutes,
+  ...paperMentorRoutes,
   ...deadlinesRoutes,
   ...emailReviewRoutes,
   ...automationHealthRoutes,

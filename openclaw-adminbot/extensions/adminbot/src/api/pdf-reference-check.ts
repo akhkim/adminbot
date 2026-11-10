@@ -1,9 +1,12 @@
 import { createHash } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import type { PaperMentorReferenceCheck } from "../connectors/papermentor-uploads.js";
 import {
   createPdfReferenceChecker,
+  createReferenceListChecker,
   ReferenceCheckError,
   type PdfReferenceChecker,
+  type ReferenceListChecker,
   type ReferenceReport,
 } from "../connectors/reference-check.js";
 import { GptZeroScanError } from "../connectors/reference-scan.js";
@@ -40,13 +43,135 @@ function createCheckLimiter() {
   };
 }
 
+/**
+ * One reference check through the approval gate, with nothing persisted.
+ *
+ * Sending citations to scholarly databases (or a PDF to GPTZero) is an external effect, so it is a
+ * `reference.scan` proposal like any other -- but proposed, approved and executed in a throwaway
+ * store, so no manuscript, citation or result ever enters SQLite. The approval is the requester's
+ * own explicit consent (the Submit click, or the box ticked on a PaperMentor upload), bound to the
+ * hash of exactly the content being checked. The caller audits the fact of the check.
+ */
+export async function runApprovedReferenceScan<T>(params: {
+  actorId: string;
+  checker: "references-validation" | "gptzero";
+  /** sha256 of what is sent: the PDF's bytes, or the reference list read from a paper's .bib. */
+  contentSha256: string;
+  target: "uploaded-pdf" | "papermentor-upload";
+  run: () => Promise<T>;
+}): Promise<T> {
+  let result: { value: T } | undefined;
+  const service = new AdminBotService(new AdminBotMemoryStore(), {
+    executor: {
+      async execute(proposal) {
+        const payload = proposal.proposed_payload as { pdf_sha256?: string; checker?: string };
+        if (
+          proposal.type !== "reference.scan" ||
+          payload.pdf_sha256 !== params.contentSha256 ||
+          payload.checker !== params.checker
+        ) {
+          return { handled: false };
+        }
+        result = { value: await params.run() };
+        return { handled: true, delivered: true };
+      },
+    },
+  });
+  const proposed = service.createProposal({
+    type: "reference.scan",
+    summary:
+      params.checker === "gptzero"
+        ? "Check PDF references with GPTZero"
+        : "Check extracted references against scholarly databases",
+    target: { service: params.checker, target: params.target },
+    proposed_payload: { pdf_sha256: params.contentSha256, checker: params.checker },
+    undo_plan: "Data sent to the selected checker cannot be recalled.",
+  });
+  if (!proposed.ok) {
+    throw new Error("Could not propose scan");
+  }
+  const approved = service.approve(proposed.payload.id, {
+    approver_id: params.actorId,
+    approver_role: "admin",
+    payload_hash: proposed.payload.payload_hash,
+  });
+  if (!approved.ok) {
+    throw new Error("Could not approve scan");
+  }
+  const executed = await service.execute(proposed.payload.id, { dry_run: false });
+  if (!executed.ok || !result) {
+    throw new Error("Could not execute scan");
+  }
+  return result.value;
+}
+
 /** What the durable audit ledger keeps of one check: who sent what where, never the PDF. */
 export type PdfReferenceCheckAudit = {
   actor: string;
   checker: "references-validation" | "gptzero";
+  /** sha256 of what was sent: the PDF, or (from a PaperMentor review) the .bib reference list. */
   pdf_sha256: string;
   outcome: "completed" | "failed";
+  /** Set for the check a PaperMentor review ran, with what it read the references from. */
+  papermentor?: { input: "bib" | "pdf" };
 };
+
+/**
+ * The reference half of a PaperMentor review: the same lookups as the PDF checker, behind the same
+ * approval gate, audited the same way.
+ *
+ * Tighter than the interactive page in one respect and looser in another. A "not found" is claimed
+ * only once Crossref and a broad index have answered (`requireAllDatabases`), since nobody is
+ * watching to retry -- otherwise a rate-limited afternoon would mark half a bibliography missing.
+ * And it allows 200 references rather than 100, since the check runs in the background rather than
+ * holding a browser request open.
+ */
+export function createPaperMentorReferenceCheck(
+  options: {
+    pdfChecker?: PdfReferenceChecker;
+    listChecker?: ReferenceListChecker;
+    audit?: (event: PdfReferenceCheckAudit) => void;
+  } = {},
+): PaperMentorReferenceCheck {
+  const settings = { maxReferences: 200, requireAllDatabases: true };
+  const pdfChecker = options.pdfChecker ?? createPdfReferenceChecker(settings);
+  const listChecker = options.listChecker ?? createReferenceListChecker(settings);
+  return async ({ memberId, source, signal }) => {
+    const hash = createHash("sha256")
+      .update(source.kind === "pdf" ? source.pdf : source.references.join("\n"))
+      .digest("hex");
+    const audit = (outcome: PdfReferenceCheckAudit["outcome"]) => {
+      try {
+        options.audit?.({
+          actor: memberId,
+          checker: "references-validation",
+          pdf_sha256: hash,
+          outcome,
+          papermentor: { input: source.kind },
+        });
+      } catch {
+        // As for the page: the check happened; the ledger hiccup must not change its outcome.
+      }
+    };
+    try {
+      const report = await runApprovedReferenceScan({
+        actorId: memberId,
+        checker: "references-validation",
+        contentSha256: hash,
+        target: "papermentor-upload",
+        run: () =>
+          source.kind === "pdf"
+            ? pdfChecker(source.pdf, signal)
+            : listChecker(source.references, signal),
+      });
+      audit("completed");
+      return report;
+    } catch (error) {
+      audit("failed");
+      throw error;
+    }
+  };
+}
 
 /**
  * Request-scoped approval/execution: no PDF, proposal or result enters SQLite.
@@ -156,66 +281,29 @@ export function createPdfReferenceCheckHandler(
         return;
       }
       const hash = createHash("sha256").update(pdf).digest("hex");
-      let result: ReferenceReport | ReferenceScanResult | undefined;
-      const service = new AdminBotService(new AdminBotMemoryStore(), {
-        executor: {
-          async execute(proposal) {
-            const payload = proposal.proposed_payload as { pdf_sha256?: string; checker?: string };
-            if (
-              proposal.type !== "reference.scan" ||
-              payload.pdf_sha256 !== hash ||
-              payload.checker !== checker
-            ) {
-              return { handled: false };
+      const result = await runApprovedReferenceScan({
+        actorId: adminId,
+        checker,
+        contentSha256: hash,
+        target: "uploaded-pdf",
+        run: async (): Promise<ReferenceReport | ReferenceScanResult> => {
+          sent = { pdf_sha256: hash, completed: false };
+          try {
+            return checker === "gptzero"
+              ? await scanGptZero!(pdf)
+              : await scanPdf(
+                  pdf,
+                  controller.signal,
+                  stream ? (progress) => sendEvent({ type: "progress", ...progress }) : undefined,
+                );
+          } catch (error) {
+            if (error instanceof ReferenceCheckError || error instanceof GptZeroScanError) {
+              scanFailure = error;
             }
-            sent = { pdf_sha256: hash, completed: false };
-            try {
-              result =
-                checker === "gptzero"
-                  ? await scanGptZero!(pdf)
-                  : await scanPdf(
-                      pdf,
-                      controller.signal,
-                      stream
-                        ? (progress) => sendEvent({ type: "progress", ...progress })
-                        : undefined,
-                    );
-            } catch (error) {
-              if (error instanceof ReferenceCheckError || error instanceof GptZeroScanError) {
-                scanFailure = error;
-              }
-              throw error;
-            }
-            return { handled: true, delivered: true };
-          },
+            throw error;
+          }
         },
       });
-      const proposed = service.createProposal({
-        type: "reference.scan",
-        summary:
-          checker === "gptzero"
-            ? "Check PDF references with GPTZero"
-            : "Check extracted PDF references against scholarly databases",
-        target: { service: checker, target: "uploaded-pdf" },
-        proposed_payload: { pdf_sha256: hash, checker },
-        undo_plan: "Data sent to the selected checker cannot be recalled.",
-      });
-      if (!proposed.ok) {
-        throw new Error("Could not propose scan");
-      }
-      // The authenticated admin's Submit click approves these exact uploaded bytes.
-      const approved = service.approve(proposed.payload.id, {
-        approver_id: adminId,
-        approver_role: "admin",
-        payload_hash: proposed.payload.payload_hash,
-      });
-      if (!approved.ok) {
-        throw new Error("Could not approve scan");
-      }
-      const executed = await service.execute(proposed.payload.id, { dry_run: false });
-      if (!executed.ok || !result) {
-        throw new Error("Could not execute scan");
-      }
       if (sent) {
         sent.completed = true;
       }

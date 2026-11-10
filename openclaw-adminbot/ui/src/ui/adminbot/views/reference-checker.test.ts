@@ -7,10 +7,13 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function mount() {
+async function mount(checkers?: ReferenceChecker["checkers"]) {
   const el = new ReferenceChecker();
   el.baseUrl = "http://localhost:8765";
   el.sessionToken = "synthetic-admin";
+  if (checkers) {
+    el.checkers = checkers;
+  }
   document.body.append(el);
   await el.updateComplete;
   return el;
@@ -24,9 +27,10 @@ async function choose(el: ReferenceChecker, files: File[]) {
 }
 
 it("allows members and admins and rejects non-PDF selections and multiple drops", async () => {
-  expect(canAccessTab("adminbotReferenceChecker", "admin")).toBe(true);
-  expect(canAccessTab("adminbotReferenceChecker", "member")).toBe(true);
-  expect(canAccessTab("adminbotReferenceChecker", "anonymous")).toBe(false);
+  // The checker is part of the PaperMentor tab, and is reached through it.
+  expect(canAccessTab("adminbotPaperMentor", "admin")).toBe(true);
+  expect(canAccessTab("adminbotPaperMentor", "member")).toBe(true);
+  expect(canAccessTab("adminbotPaperMentor", "anonymous")).toBe(false);
   const el = await mount();
   await choose(el, [new File(["text"], "notes.txt", { type: "text/plain" })]);
   expect(el.shadowRoot!.querySelector("button")!.disabled).toBe(true);
@@ -109,7 +113,8 @@ it("disables duplicate submissions while running and distinguishes empty results
       }),
   );
   vi.stubGlobal("fetch", fetcher);
-  const el = await mount();
+  // Both checkers, so the selector is there to be locked while a check runs.
+  const el = await mount(["references-validation", "gptzero"]);
   await choose(el, [new File(["%PDF-synthetic"], "paper.pdf")]);
   el.shadowRoot!.querySelector("button")!.click();
   await el.updateComplete;
@@ -123,13 +128,20 @@ it("disables duplicate submissions while running and distinguishes empty results
   expect(el.shadowRoot!.textContent).not.toContain("No citations were flagged");
 });
 
+it("offers GPTZero only where the service has it configured", async () => {
+  const el = await mount();
+  expect(el.shadowRoot!.querySelector("select")).toBeNull();
+  expect(el.shadowRoot!.textContent).not.toContain("GPTZero");
+  expect(el.shadowRoot!.textContent).toContain("Crossref");
+});
+
 it("switches checkers without uploading, retains the PDF and renders GPTZero counts", async () => {
   const fetcher = vi.fn().mockResolvedValue({
     ok: true,
     json: async () => ({ citation_count: 4, uncertain_count: 1, findings: [] }),
   });
   vi.stubGlobal("fetch", fetcher);
-  const el = await mount();
+  const el = await mount(["references-validation", "gptzero"]);
   await choose(el, [new File(["%PDF-synthetic"], "paper.pdf")]);
   const selector = el.shadowRoot!.querySelector("select")!;
   expect(selector.value).toBe("references-validation");
@@ -168,7 +180,7 @@ it("renders streamed findings before completion, handles split chunks and links 
     vi.fn(async () => new Response(body, { headers: { "Content-Type": "application/x-ndjson" } })),
   );
   const el = await mount();
-  expect(el.shadowRoot!.querySelector("select")!.textContent).toContain("CheckIfExist");
+  expect(el.shadowRoot!.querySelector("select")).toBeNull();
   await choose(el, [new File(["%PDF-synthetic"], "paper.pdf")]);
   el.shadowRoot!.querySelector("button")!.click();
   const encode = (value: unknown) => new TextEncoder().encode(JSON.stringify(value) + "\n");
@@ -248,8 +260,8 @@ it("offers Scholar only for not-found citations and database links for existing 
 });
 
 it.each(["trial", "external_collaborator", null])("denies checker access for %s", (level) => {
-  expect(canAccessTab("adminbotReferenceChecker", "member", level)).toBe(false);
-  expect(canAccessTab("adminbotReferenceChecker", "admin", level)).toBe(false);
-  expect(visibleTabsForMember(["adminbotReferenceChecker"], "member", [], level)).toEqual([]);
-  expect(resolveAccessibleTab("adminbotReferenceChecker", "member", level)).toBe("dashboard");
+  expect(canAccessTab("adminbotPaperMentor", "member", level)).toBe(false);
+  expect(canAccessTab("adminbotPaperMentor", "admin", level)).toBe(false);
+  expect(visibleTabsForMember(["adminbotPaperMentor"], "member", [], level)).toEqual([]);
+  expect(resolveAccessibleTab("adminbotPaperMentor", "member", level)).toBe("dashboard");
 });

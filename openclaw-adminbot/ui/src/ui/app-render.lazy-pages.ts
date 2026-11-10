@@ -16,11 +16,12 @@ const lazyQuickSettings = createLazyView(
   () => import("./views/config-quick.ts"),
   notifyLazyViewHost,
 );
-// The reference checker's two elements define themselves on import; the page renders them once
-// both are defined.
-const lazyReferenceChecker = createLazyView(
+// PaperMentor's elements define themselves on import: the review page, the PDF reference checker
+// it embeds, and the admins' OpenReview citation checks. The page renders once all are defined.
+const lazyPaperMentor = createLazyView(
   () =>
     Promise.all([
+      import("./adminbot/views/papermentor.ts"),
       import("./adminbot/views/reference-checker.ts"),
       import("./adminbot/views/openreview-citation-checks.ts"),
     ]),
@@ -33,19 +34,19 @@ export const renderConfig = (props: ConfigProps) =>
   renderLazyView(lazyConfig, (m) => m.renderConfig(props));
 export const renderQuickSettings = (props: QuickSettingsProps) =>
   renderLazyView(lazyQuickSettings, (m) => m.renderQuickSettings(props));
-// OpenReview citation checks are an admin tool; members get the reference checker alone.
-export const renderReferenceCheckerPage = (
+// OpenReview citation checks are an admin tool; members get PaperMentor and its PDF check alone.
+export const renderPaperMentorPage = (
   baseUrl: string,
   sessionToken: string,
   showCitationChecks: boolean,
 ) =>
   renderLazyView(
-    lazyReferenceChecker,
+    lazyPaperMentor,
     () =>
-      html`<adminbot-reference-checker
+      html`<adminbot-papermentor
           .baseUrl=${baseUrl}
           .sessionToken=${sessionToken}
-        ></adminbot-reference-checker>
+        ></adminbot-papermentor>
         ${showCitationChecks
           ? html`<adminbot-openreview-citation-checks
               .baseUrl=${baseUrl}

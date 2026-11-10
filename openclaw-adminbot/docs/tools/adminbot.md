@@ -996,6 +996,69 @@ one -- and the impact-statement hold applies to them as it does to her. Nothing 
 shared. `GET /settings` reports the list as `pi_approver_member_ids`; `PUT /settings` ignores it,
 since an admin who could edit it could add themselves.
 
+## The PaperMentor tab
+
+General Tools → **PaperMentor** (`/papermentor`) runs PaperMentor on a draft a member uploads, on
+the AdminBot host, with [papermentor-pdf](https://github.com/akhkim/papermentor-pdf). It is
+separate from the paper-stage reviews below: it needs no lab Overleaf, touches no paper record or
+slot, and writes nothing back to Overleaf. It also holds what used to be the PDF Reference Checker
+tab; `/reference-checker` links land here.
+
+**The flow.** A full member (or admin) uploads an Overleaf source zip (Menu → Download → Source, up
+to 40 MB), picks a venue, and agrees to the draft's text going to the model provider. Reviews run
+one at a time and take a few minutes; the tab polls and a notification says when one is ready. A
+finished review offers:
+
+- **the post-review zip** -- the paper with each comment as a `%PAPERMENTOR:` line above the text it
+  is about, ready for Overleaf (New Project → Upload Project);
+- the annotated PDF (every comment highlighted), the report (`review.md`), and suggested edits as a
+  diff when there are any;
+- the **reference check**, read in place.
+
+**The reference check.** On by default, with its own consent to querying the scholarly databases.
+It reads the entries of the paper's `.bib` that the `.tex` files actually cite
+(`connectors/bib-references.ts`) instead of splitting a bibliography out of PDF text -- the step
+the PDF checker most often fails at -- and falls back to the built PDF when the zip has no `.bib`.
+The lookups are the PDF checker's (Crossref, Semantic Scholar, OpenAlex, DBLP, arXiv), with two
+differences: "not found" is only claimed once Crossref and a broad index answered, since nobody is
+there to retry, and up to 200 references are checked. It goes through the same request-scoped
+`reference.scan` approval as the PDF check and is audited as `reference_check.pdf_checked` with
+`papermentor: { input: "bib" | "pdf" }` and the hash of what was sent.
+
+**PDF only.** Below the reviews, the PDF reference check for a paper without its source. Unchanged,
+except that GPTZero is offered only when `GPTZERO_API_KEY` is set on the service.
+
+**Who sees what.** Members with `privilege_level` member or admin; trial members and external
+collaborators are refused on every `/papermentor` route. A review is visible to its uploader alone,
+admins included. Uploads are refused while an admin is viewing as someone else.
+
+**What is kept.** One folder per review under `ADMINBOT_PAPERMENTOR_WORK_DIR` (default
+`state/papermentor/uploads/`, mode 0700): the downloads, `references.json`, and the child's stderr
+in `run.log` for debugging. The extracted source is deleted when the review ends, and the folder
+after 14 days. The database gets audit rows with counts only
+(`papermentor.upload_requested`, `papermentor.upload_finished`), never a comment or citation.
+Limits: one review in flight per member, five a day, ten queued in total, 45 minutes per review plus
+30 for the references.
+
+**Safety of the build.** An uploaded zip is someone else's LaTeX. latexmk would read a `latexmkrc`
+(Perl) from it, so the service only ever compiles with Tectonic (no rc files, no shell escape), or
+not at all (`ADMINBOT_PAPERMENTOR_ENGINE=none`: comments in the zip and report, no PDF). The child
+gets an allow-listed environment: the model key and `PATH`, never the service token, Slack or gog
+credentials.
+
+**Setup on Aurora.**
+
+```bash
+bash deploy/aurora/install-papermentor-pdf.sh \
+  --source https://github.com/akhkim/papermentor-pdf --ref <commit>
+systemctl --user restart jinesis-adminbot
+```
+
+The script installs papermentor-pdf at exactly that commit, installs Tectonic (sha256-pinned), and
+adds `ADMINBOT_PAPERMENTOR_PDF_DIR` and `ADMINBOT_PAPERMENTOR_BIN_DIR` to the unit's env file. The
+review uses `LLM_GATEWAY_URL`/`LLM_GATEWAY_TOKEN` (the shared gateway's public route) when set,
+else `OPENROUTER_API_KEY`, else `OPENAI_API_KEY`; `ADMINBOT_PAPERMENTOR_MODEL` overrides the model.
+
 ## PaperMentor reviews
 
 Every paper is reviewed by PaperMentor -- the multi-agent reviewer built into the lab's own
@@ -1104,10 +1167,10 @@ nudge sweep rather than a sweep of its own -- one message per person per cadence
 papers and however many kinds of thing they owe. Three things the slot's own status cannot say are
 added to the line:
 
-| The paper                             | The line says                                                                               |
-| ------------------------------------- | ------------------------------------------------------------------------------------------- |
-| Draft is on `overleaf.com`            | it has to move to the lab's Overleaf before PaperMentor can read it at all, or review it automatically |
-| On the lab's Overleaf, never reviewed | where to run it -- the AI Tutor panel in the project -- or, with automated reviews on, where to load and apply the one PaperMentor ran |
+| The paper                             | The line says                                                                                                                                                   |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Draft is on `overleaf.com`            | it has to move to the lab's Overleaf before PaperMentor can read it at all, or review it automatically                                                          |
+| On the lab's Overleaf, never reviewed | where to run it -- the AI Tutor panel in the project -- or, with automated reviews on, where to load and apply the one PaperMentor ran                          |
 | Reviewed, fixes still open            | what the reviewer found: "PaperMentor left 14 comments 3 days ago (3 critical, 5 warnings)", and to load them from the panel if they are not in the project yet |
 
 The first is the one worth having. Every paper is reviewed before submission and PaperMentor only

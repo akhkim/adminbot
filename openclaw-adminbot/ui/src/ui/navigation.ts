@@ -53,7 +53,9 @@ export const TAB_GROUPS = [
       "adminbotOpportunities",
       "adminbotNotificationDrafts",
       "adminbotConferencePapers",
-      "adminbotReferenceChecker",
+      // PaperMentor includes what was the PDF Reference Checker: a review checks the paper's
+      // references, and a PDF-only check sits on the same page.
+      "adminbotPaperMentor",
       "adminbotArrReviewers",
     ],
   },
@@ -232,7 +234,7 @@ export type Tab =
   | "adminbotWorkshopNudges"
   | "adminbotAnnouncements"
   | "adminbotConferencePapers"
-  | "adminbotReferenceChecker"
+  | "adminbotPaperMentor"
   | "adminbotArrReviewers"
   | "adminbotTalkLeaderboard"
   | "adminbotCalendar"
@@ -325,7 +327,7 @@ const TAB_PATHS: Record<Tab, string> = {
   adminbotWorkshopNudges: "/workshop-nudges",
   adminbotAnnouncements: "/announcements",
   adminbotConferencePapers: "/conference-papers",
-  adminbotReferenceChecker: "/reference-checker",
+  adminbotPaperMentor: "/papermentor",
   adminbotArrReviewers: "/arr-eligible-reviewers",
   adminbotTalkLeaderboard: "/talk-leaderboard",
   adminbotCalendar: "/calendar",
@@ -390,6 +392,8 @@ const PATH_ALIASES: Record<string, Tab> = {
   "/adminbot/signatures": "adminbotSignatures",
   "/adminbot/time-availability": "adminbotTimeAvailability",
   "/adminbot/workshop-nudges": "adminbotWorkshopNudges",
+  // The PDF Reference Checker, folded into PaperMentor. Its PDF-only check is on that page.
+  "/reference-checker": "adminbotPaperMentor",
 };
 
 const PATH_TO_TAB = new Map<string, Tab>([
@@ -614,7 +618,7 @@ export function iconForTab(tab: Tab): IconName {
     case "adminbotAnnouncements":
       return "send";
     case "adminbotConferencePapers":
-    case "adminbotReferenceChecker":
+    case "adminbotPaperMentor":
       return "fileText";
     case "adminbotCalendar":
       return "clock";

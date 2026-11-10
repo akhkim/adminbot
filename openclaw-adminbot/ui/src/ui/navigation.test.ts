@@ -86,7 +86,7 @@ describe("iconForTab", () => {
       adminbotPapers: "barChart",
       adminbotWorkshopNudges: "send",
       adminbotConferencePapers: "fileText",
-      adminbotReferenceChecker: "fileText",
+      adminbotPaperMentor: "fileText",
       adminbotAnnouncements: "send",
       adminbotCalendar: "clock",
       adminbotDeadlines: "loader",
@@ -152,7 +152,7 @@ describe("titleForTab", () => {
       adminbotPapers: "Active Papers",
       adminbotWorkshopNudges: "Workshop Matches",
       adminbotConferencePapers: "Find Interesting Papers",
-      adminbotReferenceChecker: "PDF Reference Checker",
+      adminbotPaperMentor: "PaperMentor",
       adminbotAnnouncements: "Announcements",
       adminbotCalendar: "Calendar",
       adminbotDeadlines: "Deadlines",
@@ -215,7 +215,8 @@ describe("subtitleForTab", () => {
       adminbotReimbursements: "Upload receipts, answer questions, and generate expense forms.",
       adminbotPapers: "PaperPublish records and current steps.",
       adminbotWorkshopNudges: "Review paper–workshop matches and send workshop nudges.",
-      adminbotReferenceChecker: "Check PDF references against scholarly databases.",
+      adminbotPaperMentor:
+        "Review a paper's Overleaf zip and check its references, or check a PDF's references.",
       adminbotConferencePapers:
         "Search a conference's accepted papers, ranked against what you work on.",
       adminbotAnnouncements: "Nudge members or send a general announcement.",

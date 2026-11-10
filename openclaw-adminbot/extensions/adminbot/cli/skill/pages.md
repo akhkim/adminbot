@@ -416,15 +416,18 @@ Website: `/conference-papers` · Who: anyone
 | `post-venue-papers-search`                  | POST `/venue-papers/search`                 |
 | `put-conferences-by-conferences-id-trip`    | PUT `/conferences/{conferences_id}/trip`    |
 
-## Reference checker
+## PaperMentor (review a zip, check references)
 
-Website: `/reference-checker` · Who: member
+Website: `/papermentor` · Who: member
 
-| Operation ID               | Route                       |
-| -------------------------- | --------------------------- |
-| `get-reference-scans`      | GET `/reference-scans`      |
-| `post-reference-check-pdf` | POST `/reference-check/pdf` |
-| `post-reference-scans`     | POST `/reference-scans`     |
+| Operation ID                                              | Route                                                    |
+| --------------------------------------------------------- | -------------------------------------------------------- |
+| `get-papermentor-reviews-by-reviews-id-files-by-files-id` | GET `/papermentor/reviews/{reviews_id}/files/{files_id}` |
+| `get-papermentor-reviews`                                 | GET `/papermentor/reviews`                               |
+| `get-reference-scans`                                     | GET `/reference-scans`                                   |
+| `post-papermentor-reviews`                                | POST `/papermentor/reviews`                              |
+| `post-reference-check-pdf`                                | POST `/reference-check/pdf`                              |
+| `post-reference-scans`                                    | POST `/reference-scans`                                  |
 
 ## Calendar
 

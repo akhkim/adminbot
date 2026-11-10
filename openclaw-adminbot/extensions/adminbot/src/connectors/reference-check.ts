@@ -233,36 +233,68 @@ export function mainTextBeforeReferences(text: string): string {
     .trim();
 }
 
+/** Looks up references already split into single citation strings, one at a time, in order. */
+export type ReferenceListChecker = (
+  references: readonly string[],
+  signal: AbortSignal,
+  onProgress?: (progress: ReferenceProgress) => void,
+  options?: PdfReferenceCheckOptions,
+) => Promise<ReferenceReport>;
+
+export type ReferenceCheckerOptions = {
+  requestIntervalMs?: number;
+  fetch?: typeof globalThis.fetch;
+  /** The interactive page keeps 100; the unattended OpenReview sweep allows long bibliographies. */
+  maxReferences?: number;
+  /** Report "not found" only when Crossref and DBLP answered; otherwise "unavailable". */
+  requireAllDatabases?: boolean;
+  /** See LookupContext.maxCooldownWaitMs: wait out a required database's short back-off. */
+  maxCooldownWaitMs?: number;
+  /** The contact in the User-Agent; defaults to the bot mailbox (ADMINBOT_BOT_EMAIL). */
+  contactEmail?: string;
+  /**
+   * Check the entries that split cleanly and report an unsplittable chunk as unavailable, rather
+   * than rejecting the paper. For the unattended sweep, which weighs how much went unchecked.
+   */
+  allowOversized?: boolean;
+  openAlexApiKey?: string;
+  /** Shared back-off state; see LookupContext.cooldowns. */
+  cooldowns?: Map<string, number>;
+};
+
+/**
+ * A checker for a PDF: its bibliography is read out of the PDF's text and split into references,
+ * then each is looked up (createReferenceListChecker).
+ */
 export function createPdfReferenceChecker(
-  options: {
-    extract?: typeof extractPdfReferences;
-    requestIntervalMs?: number;
-    fetch?: typeof globalThis.fetch;
-    /** The interactive page keeps 100; the unattended OpenReview sweep allows long bibliographies. */
-    maxReferences?: number;
-    /** Report "not found" only when Crossref and DBLP answered; otherwise "unavailable". */
-    requireAllDatabases?: boolean;
-    /** See LookupContext.maxCooldownWaitMs: wait out a required database's short back-off. */
-    maxCooldownWaitMs?: number;
-    /** The contact in the User-Agent; defaults to the bot mailbox (ADMINBOT_BOT_EMAIL). */
-    contactEmail?: string;
-    /**
-     * Check the entries that split cleanly and report an unsplittable chunk as unavailable, rather
-     * than rejecting the paper. For the unattended sweep, which weighs how much went unchecked.
-     */
-    allowOversized?: boolean;
-    openAlexApiKey?: string;
-    /** Shared back-off state; see LookupContext.cooldowns. */
-    cooldowns?: Map<string, number>;
-  } = {},
+  options: ReferenceCheckerOptions & { extract?: typeof extractPdfReferences } = {},
 ): PdfReferenceChecker {
-  const userAgent = referenceUserAgent(options.contactEmail ?? resolveAdminBotDriveAccount());
+  const checkList = createReferenceListChecker(options);
   return async (pdf, signal, onProgress, checkOptions) => {
     const references = await (options.extract ?? extractPdfReferences)(pdf, {
       maxReferences: options.maxReferences,
       allowOversized: options.allowOversized,
     });
     signal.throwIfAborted();
+    return checkList(references, signal, onProgress, checkOptions);
+  };
+}
+
+/**
+ * A checker for references that are already single entries -- rendered from a paper's own .bib, so
+ * nothing had to be split out of PDF text. The same lookups and verdicts as a PDF's references.
+ */
+export function createReferenceListChecker(
+  options: ReferenceCheckerOptions = {},
+): ReferenceListChecker {
+  const userAgent = referenceUserAgent(options.contactEmail ?? resolveAdminBotDriveAccount());
+  return async (references, signal, onProgress, checkOptions) => {
+    const maxReferences = options.maxReferences ?? 100;
+    if (references.length > maxReferences) {
+      throw new ReferenceCheckError(
+        `This checker supports at most ${maxReferences} references per paper.`,
+      );
+    }
     const findings: ReferenceFinding[] = [];
     onProgress?.({ completed: 0, total: references.length });
     const lastRequest = new Map<string, number>();

@@ -1,24 +1,134 @@
+// The PDF-only reference check. It lives inside the PaperMentor tab now: a review there checks the
+// paper's references itself (from its .bib), and this is for a member who has only a PDF -- a
+// camera-ready they did not build, or a submission they are reviewing.
+//
+// The findings list is exported (renderReferenceFindings + referenceFindingStyles) so a PaperMentor
+// review shows its reference check exactly the way this page does.
 import { css, html, LitElement, nothing, type PropertyValues } from "lit";
 import { property, state } from "lit/decorators.js";
 import { memberAuthHeaders } from "../api/device-clock.ts";
 
+export type ReferenceFindingView = {
+  citation: string;
+  status: string;
+  explanation: string;
+  source?: string;
+  title?: string;
+  url?: string;
+};
+
 type ScanResult = {
   citation_count?: number;
   uncertain_count?: number;
-  findings: {
-    citation: string;
-    status: string;
-    explanation: string;
-    source?: string;
-    title?: string;
-    url?: string;
-  }[];
+  findings: ReferenceFindingView[];
 };
+
+export type ReferenceCheckerId = "references-validation" | "gptzero";
+
+const STATUS_LABELS: Record<string, string> = {
+  fake: "Potentially fabricated",
+  exist_with_issues: "Check metadata",
+  matched: "Matching record found",
+  review: "Check metadata",
+  not_found: "Not found",
+  unavailable: "Could not check",
+};
+
+/** One finding per reference, colored by how sure the lookup is. Needs referenceFindingStyles. */
+export function renderReferenceFindings(findings: readonly ReferenceFindingView[]) {
+  return findings.map(
+    (finding) => html`<article data-status=${finding.status}>
+      <strong>${STATUS_LABELS[finding.status] ?? "Needs review"}</strong>
+      <p>${finding.citation}</p>
+      <p>${finding.explanation}</p>
+      ${finding.source ? html`<p>Best match (${finding.source}): ${finding.title}</p>` : nothing}
+      ${finding.status !== "not_found" && finding.url && /^https?:\/\//i.test(finding.url)
+        ? html`<a
+            class="result-action database"
+            href=${finding.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            >View database record</a
+          >`
+        : nothing}
+      ${finding.status === "not_found"
+        ? html`<a
+            class="result-action scholar"
+            href=${"https://scholar.google.com/scholar?q=" + encodeURIComponent(finding.citation)}
+            target="_blank"
+            rel="noopener noreferrer"
+            >Search Google Scholar</a
+          >`
+        : nothing}
+    </article>`,
+  );
+}
+
+export const referenceFindingStyles = css`
+  article {
+    --finding-color: var(--muted, #888);
+    border: 1px solid color-mix(in srgb, var(--finding-color) 25%, transparent);
+    border-left: 3px solid color-mix(in srgb, var(--finding-color) 65%, transparent);
+    background: color-mix(in srgb, var(--finding-color) 7%, transparent);
+    border-radius: 12px;
+    padding: 18px 20px;
+    margin-top: 12px;
+    overflow-wrap: anywhere;
+  }
+  article[data-status="matched"] {
+    --finding-color: #29966b;
+  }
+  article[data-status="not_found"],
+  article[data-status="fake"] {
+    --finding-color: #d96068;
+  }
+  article[data-status="review"],
+  article[data-status="exist_with_issues"] {
+    --finding-color: #b78a32;
+  }
+  article p {
+    margin: 10px 0;
+  }
+  article strong {
+    display: inline-block;
+    padding: 4px 9px;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--finding-color) 12%, transparent);
+    font-size: 12px;
+    letter-spacing: 0.02em;
+  }
+  .result-action {
+    display: inline-block;
+    padding: 8px 12px;
+    margin: 8px 0 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: inherit;
+    border: 1px solid var(--border, #8885);
+    border-radius: 8px;
+    text-decoration: none;
+  }
+  .result-action:hover {
+    background: color-mix(in srgb, var(--finding-color) 14%, transparent);
+    border-color: var(--finding-color);
+  }
+  .result-action:focus-visible {
+    outline: 2px solid var(--accent, #5875e8);
+    outline-offset: 3px;
+  }
+`;
 
 export class ReferenceChecker extends LitElement {
   @property() baseUrl = "";
   @property() sessionToken = "";
-  @state() private checker = "references-validation";
+  /**
+   * The checkers this host can run, from the service. GPTZero is offered only when it is configured
+   * there; the page used to offer it regardless and then fail.
+   */
+  @property({ attribute: false }) checkers: readonly ReferenceCheckerId[] = [
+    "references-validation",
+  ];
+  @state() private checker: ReferenceCheckerId = "references-validation";
   @state() private file: File | null = null;
   @state() private busy = false;
   @state() private total = 0;
@@ -27,136 +137,91 @@ export class ReferenceChecker extends LitElement {
   private generation = 0;
   private controller?: AbortController;
 
-  static override styles = css`
-    :host {
-      display: block;
-      max-width: 760px;
-    }
-    section {
-      padding: 28px;
-      border: 1px solid var(--border, #8885);
-      border-radius: 14px;
-    }
-    h2 {
-      margin-top: 0;
-    }
-    p {
-      line-height: 1.5;
-    }
-    .hint {
-      color: var(--muted, #888);
-      font-size: 14px;
-    }
-    .drop {
-      overflow-wrap: anywhere;
-      display: block;
-      padding: 36px 20px;
-      border: 2px dashed var(--border, #8885);
-      border-radius: 10px;
-      text-align: center;
-      cursor: pointer;
-      margin: 24px 0 16px;
-    }
-    .drop:focus-within {
-      outline: 2px solid var(--accent, #5875e8);
-    }
-    input {
-      position: absolute;
-      width: 1px;
-      height: 1px;
-      opacity: 0;
-    }
-    select {
-      font: inherit;
-      padding: 10px;
-      margin-left: 12px;
-      max-width: 100%;
-      color: var(--text, inherit);
-      background: var(--bg, transparent);
-      border: 1px solid var(--border, #8885);
-      border-radius: 8px;
-    }
-    .browse {
-      display: inline-block;
-      margin-top: 16px;
-      text-decoration: underline;
-    }
-    a {
-      color: var(--accent, #5875e8);
-    }
-    button {
-      padding: 10px 20px;
-      border: 0;
-      border-radius: 8px;
-      cursor: pointer;
-      background: var(--accent, #5875e8);
-      color: var(--accent-foreground, white);
-      font: inherit;
-    }
-    button:disabled {
-      opacity: 0.5;
-      cursor: default;
-    }
-    [role="alert"] {
-      color: var(--danger, #dc5353);
-    }
-    article {
-      --finding-color: var(--muted, #888);
-      border: 1px solid color-mix(in srgb, var(--finding-color) 25%, transparent);
-      border-left: 3px solid color-mix(in srgb, var(--finding-color) 65%, transparent);
-      background: color-mix(in srgb, var(--finding-color) 7%, transparent);
-      border-radius: 12px;
-      padding: 18px 20px;
-      margin-top: 12px;
-      overflow-wrap: anywhere;
-    }
-    article[data-status="matched"] {
-      --finding-color: #29966b;
-    }
-    article[data-status="not_found"],
-    article[data-status="fake"] {
-      --finding-color: #d96068;
-    }
-    article[data-status="review"],
-    article[data-status="exist_with_issues"] {
-      --finding-color: #b78a32;
-    }
-    article p {
-      margin: 10px 0;
-    }
-    article strong {
-      display: inline-block;
-      padding: 4px 9px;
-      border-radius: 6px;
-      background: color-mix(in srgb, var(--finding-color) 12%, transparent);
-      font-size: 12px;
-      letter-spacing: 0.02em;
-    }
-    .result-action {
-      display: inline-block;
-      padding: 8px 12px;
-      margin: 8px 0 0;
-      font-size: 13px;
-      font-weight: 600;
-      color: inherit;
-      border: 1px solid var(--border, #8885);
-      border-radius: 8px;
-      text-decoration: none;
-    }
-    .result-action:hover {
-      background: color-mix(in srgb, var(--finding-color) 14%, transparent);
-      border-color: var(--finding-color);
-    }
-    .result-action:focus-visible {
-      outline: 2px solid var(--accent, #5875e8);
-      outline-offset: 3px;
-    }
-    .results {
-      margin-top: 24px;
-    }
-  `;
+  static override styles = [
+    referenceFindingStyles,
+    css`
+      :host {
+        display: block;
+        max-width: 760px;
+      }
+      section {
+        padding: 28px;
+        border: 1px solid var(--border, #8885);
+        border-radius: 14px;
+      }
+      h2 {
+        margin-top: 0;
+      }
+      p {
+        line-height: 1.5;
+      }
+      .hint {
+        color: var(--muted, #888);
+        font-size: 14px;
+      }
+      .drop {
+        overflow-wrap: anywhere;
+        display: block;
+        padding: 36px 20px;
+        border: 2px dashed var(--border, #8885);
+        border-radius: 10px;
+        text-align: center;
+        cursor: pointer;
+        margin: 24px 0 16px;
+      }
+      .drop:focus-within {
+        outline: 2px solid var(--accent, #5875e8);
+      }
+      input {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        opacity: 0;
+      }
+      select {
+        font: inherit;
+        padding: 10px;
+        margin-left: 12px;
+        max-width: 100%;
+        color: var(--text, inherit);
+        background: var(--bg, transparent);
+        border: 1px solid var(--border, #8885);
+        border-radius: 8px;
+      }
+      .browse {
+        display: inline-block;
+        margin-top: 16px;
+        text-decoration: underline;
+      }
+      a {
+        color: var(--accent, #5875e8);
+      }
+      button {
+        padding: 10px 20px;
+        border: 0;
+        border-radius: 8px;
+        cursor: pointer;
+        background: var(--accent, #5875e8);
+        color: var(--accent-foreground, white);
+        font: inherit;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      [role="alert"] {
+        color: var(--danger, #dc5353);
+      }
+      .results {
+        margin-top: 24px;
+      }
+    `,
+  ];
 
   protected override willUpdate(changed: PropertyValues) {
+    if (changed.has("checkers") && !this.checkers.includes(this.checker)) {
+      this.checker = "references-validation";
+    }
     if (changed.has("sessionToken") || changed.has("baseUrl")) {
       this.generation++;
       this.controller?.abort();
@@ -297,26 +362,27 @@ export class ReferenceChecker extends LitElement {
 
   override render() {
     return html`<section>
-      <!-- The shell header names the tab and says what it does; the form starts straight away. -->
-      <label
-        >Checker
-        <select
-          aria-label="Checker"
-          .value=${this.checker}
-          ?disabled=${this.busy}
-          @change=${(event: Event) => {
-            if (this.busy) {
-              return;
-            }
-            this.checker = (event.target as HTMLSelectElement).value;
-            this.result = null;
-            this.error = "";
-          }}
-        >
-          <option value="references-validation">CheckIfExist</option>
-          <option value="gptzero">GPTZero</option>
-        </select>
-      </label>
+      ${this.checkers.length > 1
+        ? html`<label
+            >Checker
+            <select
+              aria-label="Checker"
+              .value=${this.checker}
+              ?disabled=${this.busy}
+              @change=${(event: Event) => {
+                if (this.busy) {
+                  return;
+                }
+                this.checker = (event.target as HTMLSelectElement).value as ReferenceCheckerId;
+                this.result = null;
+                this.error = "";
+              }}
+            >
+              <option value="references-validation">CheckIfExist</option>
+              <option value="gptzero">GPTZero</option>
+            </select>
+          </label>`
+        : nothing}
       ${this.checker === "gptzero"
         ? html`<p class="hint">
             GPTZero is currently not working with our account (403 access denied). You can retry if
@@ -391,46 +457,7 @@ export class ReferenceChecker extends LitElement {
                     : "No references were extracted. This PDF could not be assessed."}
                 </p>`
               : nothing}
-            ${this.result.findings.map(
-              (finding) => html`<article data-status=${finding.status}>
-                <strong
-                  >${(
-                    {
-                      fake: "Potentially fabricated",
-                      exist_with_issues: "Check metadata",
-                      matched: "Matching record found",
-                      review: "Check metadata",
-                      not_found: "Not found",
-                      unavailable: "Could not check",
-                    } as Record<string, string>
-                  )[finding.status] ?? "Needs review"}</strong
-                >
-                <p>${finding.citation}</p>
-                <p>${finding.explanation}</p>
-                ${finding.source
-                  ? html`<p>Best match (${finding.source}): ${finding.title}</p>`
-                  : nothing}
-                ${finding.status !== "not_found" && finding.url && /^https?:\/\//i.test(finding.url)
-                  ? html`<a
-                      class="result-action database"
-                      href=${finding.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      >View database record</a
-                    >`
-                  : nothing}
-                ${finding.status === "not_found"
-                  ? html`<a
-                      class="result-action scholar"
-                      href=${"https://scholar.google.com/scholar?q=" +
-                      encodeURIComponent(finding.citation)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      >Search Google Scholar</a
-                    >`
-                  : nothing}
-              </article>`,
-            )}
+            ${renderReferenceFindings(this.result.findings)}
             <p class="hint">
               ${this.checker === "gptzero" ? "Powered by GPTZero." : "Powered by CheckIfExist."}
               Automated checks can be wrong. Review flagged citations; a missing match is not proof

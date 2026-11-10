@@ -1,5 +1,3 @@
-import { beginCollaboratorChatExecution } from "./service.collaborator-chats.js";
-import type { createCollaboratorChatRequestStore } from "../persistence/collaborator-chat-requests.js";
 import { createHash, randomUUID } from "node:crypto";
 import type {
   CalendarMembershipReader,
@@ -9,6 +7,7 @@ import type {
   PaperMentorReviewRequester,
   PaperMentorReviewRequestStatus,
 } from "../connectors/papermentor-review.js";
+import type { PaperMentorUpload } from "../connectors/papermentor-uploads.js";
 import type { ReverseGeocoder } from "../connectors/reverse-geocode.js";
 import type { AdminBotExternalCollaboratorSubgroup } from "../contracts/actions.js";
 import {
@@ -295,6 +294,7 @@ import type { RecLetterFreezeIncidentStore } from "../contracts/rec-letter-freez
 import type { ReferenceScanStore } from "../contracts/reference-scans.js";
 import type { AdminBotReimbursementFunder } from "../contracts/reimbursement-rules.js";
 import { paperTargetsVenue } from "../contracts/venue-targets.js";
+import type { createCollaboratorChatRequestStore } from "../persistence/collaborator-chat-requests.js";
 import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
 import type { CalendarEventsReader } from "../workflows/calendar/events.js";
 import { resolveLabCalendar } from "../workflows/calendar/lab-calendar.js";
@@ -478,6 +478,12 @@ import {
   paperIdsByOwner,
   rosterNameCounts,
 } from "../workflows/papers/paper-ownership.js";
+import {
+  buildCameraReadyNotice,
+  openReviewPaperQueue,
+  proofreadingPaperQueue,
+  rankPaperQueue,
+} from "../workflows/papers/paper-queue.js";
 import { duePaperNudges } from "../workflows/papers/paper-reminder-nudges.js";
 import {
   paperForResponse,
@@ -525,12 +531,6 @@ import {
 } from "../workflows/papers/papermentor-nudges.js";
 import { paperFeedbackQueue, paperImpactQueue } from "../workflows/papers/pi-review.js";
 import {
-  buildCameraReadyNotice,
-  openReviewPaperQueue,
-  proofreadingPaperQueue,
-  rankPaperQueue,
-} from "../workflows/papers/paper-queue.js";
-import {
   buildPiReviewNotice,
   isAwaitingPiReview,
   piReviewLedgerSubject,
@@ -572,6 +572,7 @@ import {
   isRestrictedCalendarEvent,
   syncCalendarMembership,
 } from "./service.calendar-membership.js";
+import { beginCollaboratorChatExecution } from "./service.collaborator-chats.js";
 import {
   recommendationDirectory,
   previewRecommendation,
@@ -3107,9 +3108,10 @@ export class AdminBotService {
     if (membershipError) {
       return this.executionFailure(proposal, membershipError.status, membershipError.message);
     }
-    const chatClaim = proposal.type === "slack.collaborator_chat"
-      ? beginCollaboratorChatExecution(this.store, proposal, Boolean(this.options.executor))
-      : undefined;
+    const chatClaim =
+      proposal.type === "slack.collaborator_chat"
+        ? beginCollaboratorChatExecution(this.store, proposal, Boolean(this.options.executor))
+        : undefined;
     if (chatClaim && !chatClaim.ok) {
       return serviceError(chatClaim.status, chatClaim.message);
     }
@@ -3258,9 +3260,12 @@ export class AdminBotService {
         notDeliveredReason = outcome.reason ?? "";
         artifacts = outcome.artifacts ?? {};
         if (collaboratorEffects) {
-          collaboratorEffects.finishEffect(collaboratorReceiptKey,
-            artifacts.outcome ? { ...artifacts, action_id: actionId }
-              : { outcome: "unknown", action_id: actionId });
+          collaboratorEffects.finishEffect(
+            collaboratorReceiptKey,
+            artifacts.outcome
+              ? { ...artifacts, action_id: actionId }
+              : { outcome: "unknown", action_id: actionId },
+          );
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : "connector execution failed";
@@ -3280,7 +3285,11 @@ export class AdminBotService {
     // saved, so flipping the switch and executing again really delivers rather than replaying a
     // cached answer.
     if (!delivered && collaboratorEffects) {
-      return this.executionFailure(proposal, 409, "Slack outcome is uncertain; inspect the retained conversation receipt before any further action.");
+      return this.executionFailure(
+        proposal,
+        409,
+        "Slack outcome is uncertain; inspect the retained conversation receipt before any further action.",
+      );
     }
     if (!delivered) {
       const result: AdminBotExecutionResult = { ...baseResult, status: "simulated" };
@@ -6272,7 +6281,10 @@ export class AdminBotService {
       return serviceError(400, "a member cannot be merged into themselves");
     }
     if (this.store.retiredMemberTarget(params.survivorId)) {
-      return serviceError(409, "the merge survivor uses a retired member id; reconcile that duplicate first");
+      return serviceError(
+        409,
+        "the merge survivor uses a retired member id; reconcile that duplicate first",
+      );
     }
     const survivor = this.store.getLabMember(params.survivorId);
     if (!survivor) {
@@ -6333,7 +6345,10 @@ export class AdminBotService {
     actorId: string;
   }): AdminBotServiceResponse<{ member: AdminBotLabMember; changed: Record<string, number> }> {
     if (this.store.retiredMemberTarget(params.memberId)) {
-      return serviceError(409, "this member id was retired by a merge; reconcile the duplicate instead of renaming it");
+      return serviceError(
+        409,
+        "this member id was retired by a merge; reconcile the duplicate instead of renaming it",
+      );
     }
     const newId = params.newId.trim();
     if (!MEMBER_ID_PATTERN.test(newId)) {
@@ -7620,6 +7635,79 @@ export class AdminBotService {
       return serviceError(404, "paper not found");
     }
     return { ok: true, status: 200, payload: { runs: this.store.listPaperMentorRuns(paperId) } };
+  }
+
+  /** The ledger's line for a zip a member uploaded in the PaperMentor tab. */
+  auditPaperMentorUpload(
+    memberId: string,
+    upload: Pick<PaperMentorUpload, "id" | "venue" | "check_references">,
+  ): void {
+    this.recordAudit({
+      type: "papermentor.upload_requested",
+      actor: memberId,
+      details: {
+        review_id: upload.id,
+        venue: upload.venue,
+        check_references: upload.check_references ?? false,
+      },
+    });
+  }
+
+  /**
+   * Take in an uploaded review, however it ended: one audit line with its counts, and a
+   * notification that sends the uploader back to the tab for the files. Nothing is recorded on any
+   * paper -- an upload names none, and the paper's own review step has its own evidence.
+   */
+  finishPaperMentorUpload(memberId: string, upload: PaperMentorUpload): void {
+    const nowIso = upload.finished_at ?? new Date().toISOString();
+    const reviewed = upload.status === "reviewed";
+    this.recordAudit({
+      type: "papermentor.upload_finished",
+      actor: memberId,
+      details: {
+        review_id: upload.id,
+        status: upload.status,
+        ...(reviewed
+          ? {
+              comments: upload.comments ?? 0,
+              critical: upload.by_severity?.critical ?? 0,
+              pdf: upload.pdf ?? false,
+              ...(upload.references
+                ? {
+                    references: upload.references.status,
+                    references_not_found: upload.references.not_found ?? 0,
+                  }
+                : {}),
+            }
+          : {}),
+      },
+    });
+    if (!this.store.getLabMember(memberId)) {
+      return;
+    }
+    const comments = upload.comments ?? 0;
+    const references = upload.references;
+    const referenceLine =
+      references?.status === "checked"
+        ? ` ${references.total ?? 0} references checked: ${references.not_found ?? 0} not found, ${references.needs_review ?? 0} to look at.`
+        : references
+          ? " The references could not be checked."
+          : "";
+    this.store.saveMemberNotification({
+      id: `notif_${randomUUID()}`,
+      member_id: memberId,
+      kind: "papermentor",
+      title: reviewed
+        ? `PaperMentor reviewed “${upload.label}”`
+        : `PaperMentor could not review “${upload.label}”`,
+      body: reviewed
+        ? `${comments} comment${comments === 1 ? "" : "s"}.${referenceLine} Download the post-review zip${
+            upload.pdf ? " and the annotated PDF" : ""
+          } from the PaperMentor tab.`
+        : (upload.message ?? "The review did not finish."),
+      tab: "adminbotPaperMentor",
+      created_at: nowIso,
+    });
   }
 
   /**
