@@ -26315,13 +26315,20 @@
                       "items": {
                         "type": "string"
                       }
+                    },
+                    "exhausted": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
                     }
                   },
                   "required": [
                     "created",
                     "skipped",
                     "papers_considered",
-                    "unroutable"
+                    "unroutable",
+                    "exhausted"
                   ],
                   "additionalProperties": true
                 }
@@ -33825,7 +33832,8 @@
               "repeating_failure",
               "channel_blocked",
               "needs_manual_invite",
-              "credentials"
+              "credentials",
+              "google_credentials"
             ]
           },
           "label": {
@@ -44183,6 +44191,9 @@
             "type": "number"
           },
           "due": {
+            "type": "boolean"
+          },
+          "exhausted": {
             "type": "boolean"
           }
         },
