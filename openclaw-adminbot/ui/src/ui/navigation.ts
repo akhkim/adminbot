@@ -222,6 +222,7 @@ export type Tab =
   | "adminbotReimbursements"
   | "adminbotSettings"
   | "adminbotMembers"
+  | "adminbotLabProjects"
   | "adminbotOpportunities"
   | "adminbotProfileOverview"
   | "adminbotTabUsage"
@@ -314,6 +315,7 @@ const TAB_PATHS: Record<Tab, string> = {
   adminbotReimbursements: "/reimbursements",
   adminbotSettings: "/settings",
   adminbotMembers: "/members",
+  adminbotLabProjects: "/lab-projects",
   adminbotOpportunities: "/opportunities",
   adminbotProfileOverview: "/profile-overview",
   adminbotTabUsage: "/tab-usage",

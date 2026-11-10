@@ -3575,6 +3575,16 @@ export function renderApp(state: AppViewState) {
               ),
             )
           : nothing}
+        ${state.tab === "adminbotLabProjects" && adminBotMode === "admin"
+          ? renderLazyView(lazyLabProjects, (m) =>
+              m.renderLabProjects(
+                resolveAdminBotBaseUrl(state.settings),
+                loadStoredMemberSession()?.sessionToken ?? "",
+                // The same project page My Projects opens; Back returns here.
+                (paperId) => navigateToProject(state, paperId),
+              ),
+            )
+          : nothing}
         ${state.tab === "adminbotOpportunities"
           ? renderLazyView(lazyOpportunities, (m) =>
               m.renderOpportunities({
