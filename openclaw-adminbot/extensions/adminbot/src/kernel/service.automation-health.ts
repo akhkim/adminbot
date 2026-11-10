@@ -26,7 +26,13 @@ const REPEAT_THRESHOLD = 3;
 export type AutomationHealthIssue = {
   /** Stable while the problem is the same problem; the alert ledger dedupes on it. */
   key: string;
-  kind: "stale" | "failing" | "repeating_failure" | "channel_blocked" | "needs_manual_invite";
+  kind:
+    | "stale"
+    | "failing"
+    | "repeating_failure"
+    | "channel_blocked"
+    | "needs_manual_invite"
+    | "credentials";
   label: string;
   detail: string;
   count: number;
@@ -43,6 +49,26 @@ export type SlackInviteBlock = {
 };
 
 type ProposalLookup = (id: string) => AdminBotStoredProposal | undefined;
+
+/**
+ * The newest OpenReview login outcome the checks recorded, when it is a refusal: the account's
+ * email/password stopped working and nothing that reads OpenReview can run until someone fixes
+ * them. Undefined once a later login worked, or if none was ever refused.
+ */
+export function openReviewLoginRejection(
+  events: readonly AdminBotAuditEvent[],
+): AdminBotAuditEvent | undefined {
+  let latest: AdminBotAuditEvent | undefined;
+  for (const event of events) {
+    if (
+      (event.type === "openreview.login_rejected" || event.type === "openreview.login_restored") &&
+      (!latest || latest.timestamp <= event.timestamp)
+    ) {
+      latest = event;
+    }
+  }
+  return latest?.type === "openreview.login_rejected" ? latest : undefined;
+}
 
 /**
  * The refusals that mean "this person is in another Slack workspace or org". They have no seat the
@@ -313,6 +339,22 @@ export function automationHealthIssues(
         last_seen: latest.at,
       });
     }
+  }
+
+  // OpenReview: a refused login is its own issue rather than one more failing job, because the
+  // fix is a credential, not a retry, and every check that reads OpenReview waits on it. The cron
+  // that hit it may still be reported as failing too; this says why.
+  const rejection = openReviewLoginRejection(events);
+  if (rejection) {
+    const details = rejection.details ?? {};
+    issues.push({
+      key: "openreview-login",
+      kind: "credentials",
+      label: "OpenReview is refusing the lab's login",
+      detail: `${typeof details.error === "string" ? details.error : "OpenReview refused the login"}. The citation and integrity checks of the lab's submissions are paused until OPENREVIEW_USERNAME / OPENREVIEW_PASSWORD in the service environment are fixed; they resume on the next run after that, and this alert clears itself.`,
+      count: 1,
+      last_seen: rejection.timestamp,
+    });
   }
 
   // Actions: the same execution failing over and over. Classified invite failures are reported

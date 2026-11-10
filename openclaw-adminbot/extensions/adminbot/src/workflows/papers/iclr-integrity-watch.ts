@@ -24,10 +24,11 @@ import {
   adminBotIsFullMemberType,
   type AdminBotLabMember,
 } from "../../contracts/actions.js";
-import type {
-  OpenReviewCitationCheck,
-  OpenReviewSubmission,
-  OpenReviewSubmissionReader,
+import {
+  OpenReviewLoginError,
+  type OpenReviewCitationCheck,
+  type OpenReviewSubmission,
+  type OpenReviewSubmissionReader,
 } from "../../contracts/openreview-citation-checks.js";
 import type {
   AiTextScorer,
@@ -171,9 +172,13 @@ export class IclrIntegrityWatch {
       submissions = (await this.deps.reader.listSubmissions()).filter((submission) =>
         ICLR_UNDER_REVIEW.test(submission.venue_id),
       );
+    } catch (error) {
+      this.recordLogin(error);
+      throw error;
     } finally {
       this.starting = false;
     }
+    this.recordLogin();
     const pending = submissions.filter((submission) => this.needsScore(submission)).length;
     const previous = this.last;
     const summary: PaperIntegritySweepSummary = {
@@ -208,6 +213,18 @@ export class IclrIntegrityWatch {
 
   private now() {
     return (this.deps.now ?? (() => new Date()))();
+  }
+
+  /** Tells admins when OpenReview refuses the account, and clears that once a login works again. */
+  private recordLogin(error?: unknown) {
+    if (error === undefined) {
+      this.deps.service.recordOpenReviewLogin("integrity_checks", { ok: true });
+    } else if (error instanceof OpenReviewLoginError && error.credentialsRejected) {
+      this.deps.service.recordOpenReviewLogin("integrity_checks", {
+        ok: false,
+        error: error.message,
+      });
+    }
   }
 
   /**
@@ -403,8 +420,18 @@ export class IclrIntegrityWatch {
       if (this.ended()) {
         return;
       }
-      if (this.needsScore(submission)) {
-        await this.scoreVersion(submission, summary);
+      if (!summary.login_error && this.needsScore(submission)) {
+        try {
+          await this.scoreVersion(submission, summary);
+        } catch (error) {
+          if (!(error instanceof OpenReviewLoginError)) {
+            throw error;
+          }
+          // Every paper left would fail the same way and spend one of its few retries. Scoring
+          // stops; alerts below still go out, since they read stored results, not OpenReview.
+          summary.login_error = error.message;
+          this.recordLogin(error);
+        }
       }
       // Every sweep, not only after a fresh score: the citation watch finishes on its own
       // schedule, and its result for an already-scored version still has to reach the authors.
@@ -438,7 +465,11 @@ export class IclrIntegrityWatch {
     let bytes: Uint8Array;
     try {
       bytes = await this.deps.reader.readPdf(submission.id);
-    } catch {
+    } catch (error) {
+      // The account could not log in: not this paper's failure, so the sweep handles it.
+      if (error instanceof OpenReviewLoginError) {
+        throw error;
+      }
       summary.failed++;
       store.savePaperAiTextCheck({
         ...base,

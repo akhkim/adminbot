@@ -82,6 +82,8 @@ export type PaperIntegritySweepSummary = {
   reused: number;
   failed: number;
   alerts: number;
+  /** Set when the sweep stopped because the OpenReview account could not log in. */
+  login_error?: string;
   /** Set when the sweep's digest DM could not be sent; see IclrIntegrityWatchDeps.reportTo. */
   report_error?: string;
   /** Score cells written to the lab's paper sheet this sweep; see IclrIntegrityWatchDeps.sheet. */

@@ -20800,6 +20800,9 @@
                             },
                             "reused": {
                               "type": "number"
+                            },
+                            "login_error": {
+                              "type": "string"
                             }
                           },
                           "required": [
@@ -20831,6 +20834,9 @@
                             },
                             "reused": {
                               "type": "number"
+                            },
+                            "login_error": {
+                              "type": "string"
                             }
                           },
                           "required": [
@@ -21091,6 +21097,9 @@
                             "alerts": {
                               "type": "number"
                             },
+                            "login_error": {
+                              "type": "string"
+                            },
                             "report_error": {
                               "type": "string"
                             },
@@ -21140,6 +21149,9 @@
                             },
                             "alerts": {
                               "type": "number"
+                            },
+                            "login_error": {
+                              "type": "string"
                             },
                             "report_error": {
                               "type": "string"
@@ -32510,6 +32522,8 @@
               "openreview.milestone_sent",
               "openreview.milestone_blocked",
               "openreview.assignment_changed",
+              "openreview.login_rejected",
+              "openreview.login_restored",
               "member_map.refreshed",
               "member_directory.slack_synced",
               "profile_photo.reviewed",
@@ -33810,7 +33824,8 @@
               "failing",
               "repeating_failure",
               "channel_blocked",
-              "needs_manual_invite"
+              "needs_manual_invite",
+              "credentials"
             ]
           },
           "label": {
@@ -41799,6 +41814,9 @@
           },
           "reused": {
             "type": "number"
+          },
+          "login_error": {
+            "type": "string"
           }
         },
         "required": [
@@ -42093,6 +42111,9 @@
           },
           "alerts": {
             "type": "number"
+          },
+          "login_error": {
+            "type": "string"
           },
           "report_error": {
             "type": "string"

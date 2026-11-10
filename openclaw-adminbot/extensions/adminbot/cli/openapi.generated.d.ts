@@ -5387,6 +5387,8 @@ export interface components {
         | "openreview.milestone_sent"
         | "openreview.milestone_blocked"
         | "openreview.assignment_changed"
+        | "openreview.login_rejected"
+        | "openreview.login_restored"
         | "member_map.refreshed"
         | "member_directory.slack_synced"
         | "profile_photo.reviewed"
@@ -5829,7 +5831,13 @@ export interface components {
     AutomationHealthIssue: {
       key: string;
       /** @enum {string} */
-      kind: "stale" | "failing" | "repeating_failure" | "channel_blocked" | "needs_manual_invite";
+      kind:
+        | "stale"
+        | "failing"
+        | "repeating_failure"
+        | "channel_blocked"
+        | "needs_manual_invite"
+        | "credentials";
       label: string;
       detail: string;
       count: number;
@@ -8347,6 +8355,7 @@ export interface components {
       flagged: number;
       failed: number;
       reused: number;
+      login_error?: string;
     } & {
       [key: string]: unknown;
     };
@@ -8433,6 +8442,7 @@ export interface components {
       reused: number;
       failed: number;
       alerts: number;
+      login_error?: string;
       report_error?: string;
       sheet_updated?: number;
       sheet_added?: string[];
@@ -22441,6 +22451,7 @@ export interface operations {
                   flagged: number;
                   failed: number;
                   reused: number;
+                  login_error?: string;
                 } & {
                   [key: string]: unknown;
                 };
@@ -22451,6 +22462,7 @@ export interface operations {
                   flagged: number;
                   failed: number;
                   reused: number;
+                  login_error?: string;
                 } & {
                   [key: string]: unknown;
                 };
@@ -22611,6 +22623,7 @@ export interface operations {
                   reused: number;
                   failed: number;
                   alerts: number;
+                  login_error?: string;
                   report_error?: string;
                   sheet_updated?: number;
                   sheet_added?: string[];
@@ -22626,6 +22639,7 @@ export interface operations {
                   reused: number;
                   failed: number;
                   alerts: number;
+                  login_error?: string;
                   report_error?: string;
                   sheet_updated?: number;
                   sheet_added?: string[];

@@ -85,4 +85,30 @@ export type OpenReviewCitationSweepSummary = {
   flagged: number;
   failed: number;
   reused: number;
+  /**
+   * Set when the sweep stopped because the OpenReview account could not log in. Papers it did not
+   * reach are left as they were, without spending a retry, and are checked on the next run.
+   */
+  login_error?: string;
 };
+
+/**
+ * The OpenReview login failed. Lives here rather than in the connector so the workflows can tell
+ * it apart from a per-paper failure without importing a connector.
+ *
+ * `credentialsRejected` is true only when OpenReview answered the login and refused the
+ * email/password. It is false when OpenReview could not be reached, so an outage is never
+ * reported to admins as bad credentials.
+ */
+export class OpenReviewLoginError extends Error {
+  override readonly name = "OpenReviewLoginError";
+  readonly credentialsRejected: boolean;
+  readonly status?: number;
+  constructor(message: string, credentialsRejected: boolean, status?: number) {
+    super(message);
+    this.credentialsRejected = credentialsRejected;
+    if (status !== undefined) {
+      this.status = status;
+    }
+  }
+}
