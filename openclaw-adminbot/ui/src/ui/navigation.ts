@@ -31,12 +31,7 @@ export const TAB_GROUPS = [
   // the three now. Events moved to General Tools, beside Deadlines -- both are dated lists.
   {
     label: "labSharing",
-    tabs: [
-      "adminbotMembers",
-      // Lab Projects goes here, directly after Lab Members.
-      "adminbotMeetings",
-      "labSharing",
-    ],
+    tabs: ["adminbotMembers", "adminbotLabProjects", "adminbotMeetings", "labSharing"],
   },
   // The three logistics templates, each with its own heading. They used to be one "Logistics
   // Requests" tab whose first screen was a picker between them, which meant every request started
@@ -228,6 +223,7 @@ export type Tab =
   | "adminbotReimbursements"
   | "adminbotSettings"
   | "adminbotMembers"
+  | "adminbotLabProjects"
   | "adminbotNotificationDrafts"
   | "adminbotOpportunities"
   | "adminbotProfileOverview"
@@ -321,6 +317,7 @@ const TAB_PATHS: Record<Tab, string> = {
   adminbotReimbursements: "/reimbursements",
   adminbotSettings: "/settings",
   adminbotMembers: "/members",
+  adminbotLabProjects: "/lab-projects",
   adminbotNotificationDrafts: "/notification-drafts",
   adminbotOpportunities: "/opportunities",
   adminbotProfileOverview: "/profile-overview",
@@ -566,6 +563,7 @@ export function iconForTab(tab: Tab): IconName {
     case "gettingStarted":
       return "check";
     case "myWork":
+    case "adminbotLabProjects":
       return "book";
     case "labSharing":
       return "link";

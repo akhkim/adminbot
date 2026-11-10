@@ -110,6 +110,9 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   // Active Papers is the lab-wide pipeline across every author, not the viewer's own work -- that
   // is My Work, which stays member-visible and is scoped to them.
   adminbotPapers: "admin",
+  // Every member's projects at once. Admin-only, and GET /lab/projects refuses anyone else on its
+  // own, so hiding the tab is only the courtesy, not the check.
+  adminbotLabProjects: "admin",
   adminbotWorkshopNudges: "admin",
   adminbot: "admin",
   adminbotRegistrations: "admin",

@@ -63,7 +63,12 @@ describe("TAB_GROUPS", () => {
     // The people around the viewer in one group. Lab Members leads it and Collaborate, the least
     // active of the three now, sits last. Events moved beside Deadlines in General Tools.
     // The talk leaderboard is the second tab of the Lab Members page, not its own sidebar entry.
-    expect(byLabel("labSharing")).toEqual(["adminbotMembers", "adminbotMeetings", "labSharing"]);
+    expect(byLabel("labSharing")).toEqual([
+      "adminbotMembers",
+      "adminbotLabProjects",
+      "adminbotMeetings",
+      "labSharing",
+    ]);
     expect(TAB_PAGES.find((page) => page.page === "people")?.tabs).toEqual([
       "adminbotMembers",
       "adminbotTalkLeaderboard",
