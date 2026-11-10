@@ -21,6 +21,7 @@ import type {
 } from "../../contracts/actions.js";
 import { adminBotLogisticsRequestKinds } from "../../contracts/actions.js";
 import { toAbsoluteRfc3339 } from "../calendar/time.js";
+import { parseMonthDay, resolveYearlessDate } from "./letter-deadline-date.js";
 
 /**
  * Per-file and per-request byte caps on the decoded attachment.
@@ -222,7 +223,55 @@ export function meetingInstant(meeting: AdminBotLogisticsMeeting): string | unde
   return toAbsoluteRfc3339(preferred, (meeting.timezone ?? "").trim() || "UTC");
 }
 
-export type LogisticsDeadline = { at: string; date: string; time: string; timezone: string };
+export type LogisticsDeadline = {
+  at: string;
+  date: string;
+  time: string;
+  timezone: string;
+  /** Set when the member typed a month and day only and the year was filled in on read. */
+  year_inferred?: true;
+};
+
+export type DeadlineReadOptions = {
+  /** The instant "upcoming" is judged against when a letter deadline has no year. */
+  now?: Date;
+  /**
+   * Resolve year-less legacy letter deadlines ("Dec 15") to their next occurrence. On by default
+   * for display and ordering; callers that act on the instant (sending mail) can opt out.
+   */
+  inferYear?: boolean;
+};
+
+/** One school's letter deadline, resolving a year-less legacy date when allowed. */
+export function letterDeadline(
+  school: Pick<
+    AdminBotLogisticsSchool,
+    "letter_deadline" | "letter_deadline_time" | "deadline_timezone"
+  >,
+  options: DeadlineReadOptions = {},
+): LogisticsDeadline | undefined {
+  const time = school.letter_deadline_time?.trim() || "23:59";
+  const timezone = school.deadline_timezone?.trim() || "AoE";
+  const typed = (school.letter_deadline ?? "").trim();
+  const at = deadlineInstant(typed, school.letter_deadline_time, school.deadline_timezone);
+  if (at) {
+    return { at, date: typed, time, timezone };
+  }
+  if (options.inferYear === false) {
+    return undefined;
+  }
+  const parsed = parseMonthDay(typed);
+  if (!parsed) {
+    return undefined;
+  }
+  const instantOf = (date: string) =>
+    deadlineInstant(date, school.letter_deadline_time, school.deadline_timezone);
+  const date = resolveYearlessDate(parsed, instantOf, options.now ?? new Date());
+  const inferredAt = date ? instantOf(date) : undefined;
+  return date && inferredAt
+    ? { at: inferredAt, date, time, timezone, year_inferred: true }
+    : undefined;
+}
 
 /**
  * Keep the wall-clock fields alongside the instant used for ordering. A letter's application
@@ -231,22 +280,14 @@ export type LogisticsDeadline = { at: string; date: string; time: string; timezo
  */
 export function requestDeadlineDetails(
   input: AdminBotLogisticsRequestInput,
+  options: DeadlineReadOptions = {},
 ): LogisticsDeadline | undefined {
   const deadlines: LogisticsDeadline[] = [];
   if (input.kind === "recommendation_letters") {
     for (const school of input.schools ?? []) {
-      const at = deadlineInstant(
-        school.letter_deadline,
-        school.letter_deadline_time,
-        school.deadline_timezone,
-      );
-      if (at) {
-        deadlines.push({
-          at,
-          date: school.letter_deadline!.trim(),
-          time: school.letter_deadline_time?.trim() || "23:59",
-          timezone: school.deadline_timezone?.trim() || "AoE",
-        });
+      const deadline = letterDeadline(school, options);
+      if (deadline) {
+        deadlines.push(deadline);
       }
     }
   }
@@ -270,8 +311,11 @@ export function requestDeadlineDetails(
   );
 }
 
-export function requestDeadline(input: AdminBotLogisticsRequestInput): string | undefined {
-  return requestDeadlineDetails(input)?.at;
+export function requestDeadline(
+  input: AdminBotLogisticsRequestInput,
+  options: DeadlineReadOptions = {},
+): string | undefined {
+  return requestDeadlineDetails(input, options)?.at;
 }
 
 /** Read old letter requests with the current rule, without rewriting the member's stored data. */
@@ -406,7 +450,7 @@ export function prepareLogisticsRequest(
   if (invalid) {
     return { ok: false, error: invalid };
   }
-  const deadline = requestDeadline(normalized);
+  const deadline = requestDeadline(normalized, { inferYear: false });
   return {
     ok: true,
     request: {

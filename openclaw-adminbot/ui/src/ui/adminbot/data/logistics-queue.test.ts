@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { LogisticsRequest } from "../api/logistics.ts";
 import {
   DEFAULT_LOGISTICS_QUEUE_OPTIONS,
@@ -128,5 +128,23 @@ describe("the request queue's deadlines and controls", () => {
         false,
       ),
     ).toEqual({ status: "completed", kind: "book_meeting", q: "MIT", sort: "user", dir: "desc" });
+  });
+});
+
+describe("a letter deadline typed without a year", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("shows the next occurrence and says the year was assumed", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-10T12:00:00Z"));
+    expect(logisticsDeadlineText(letter("Ada", "AoE", "Dec 15", "23:59"))).toBe(
+      "Dec 15, 2026, 23:59 AoE (UTC−12) (year assumed)",
+    );
+    // Past this year's date by more than the grace month: next year's.
+    expect(logisticsDeadlineText(letter("Bo", "AoE", "Sept 30", "23:59"))).toBe(
+      "Sep 30, 2027, 23:59 AoE (UTC−12) (year assumed)",
+    );
   });
 });

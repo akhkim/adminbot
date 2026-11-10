@@ -4,6 +4,7 @@ import {
   selectLogisticsQueue as selectSharedQueue,
   type LogisticsQueueQuery,
 } from "../../../../../extensions/adminbot/logistics-api.js";
+import { t } from "../../../i18n/index.ts";
 import type {
   LogisticsRequest,
   LogisticsRequestKind,
@@ -43,7 +44,9 @@ export function logisticsDeadlineText(request: LogisticsRequest): string {
     normalizeCalendarTimezone(deadline.timezone) === "Etc/GMT+12"
       ? "AoE (UTC−12)"
       : deadline.timezone;
-  return `${date}, ${deadline.time} ${zone}`;
+  // A legacy deadline typed without a year shows the year it was resolved to, and says so.
+  const assumed = deadline.year_inferred ? ` (${t("professor.letters.yearAssumed")})` : "";
+  return `${date}, ${deadline.time} ${zone}${assumed}`;
 }
 
 /**

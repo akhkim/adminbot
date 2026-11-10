@@ -18,6 +18,7 @@ import {
   openAdminBotLogisticsRequest,
   sendAdminBotSignedDocuments,
   setAdminBotLogisticsRequestStatus,
+  setDeskLetterSubmitted,
   submitAdminBotLogisticsRequest,
   submitAdminBotSignatureForm,
   withdrawAdminBotLogisticsRequest,
@@ -454,5 +455,76 @@ describe("logistics controller", () => {
     });
     await downloadAdminBotLogisticsDocument(host, "logreq_1", "form.pdf");
     expect(host.adminBotLogisticsRequestsError).toContain("no longer stored");
+  });
+});
+
+// My Desk's one-click "Submitted" on a rec-letter row, and its undo.
+describe("marking a letter submitted from My Desk", () => {
+  const LETTER: LogisticsRequest = {
+    id: "logreq_letter",
+    kind: "recommendation_letters",
+    member_id: "ada",
+    member_name: "Ada",
+    status: "in_progress",
+    submitted_at: "2026-08-02T09:30:00.000Z",
+    updated_at: "2026-08-02T09:30:00.000Z",
+  };
+
+  beforeEach(async () => {
+    await resetAdminBotOfflineMemory();
+    vi.stubGlobal("localStorage", createStorageMock());
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("closes the letter as completed and remembers what to undo it to", async () => {
+    saveStoredMemberSession({ sessionToken: "tok", expiresAt: "later" });
+    const host = createHost();
+    host.adminBotDeskLetters = { requests: [LETTER], loading: false, loadedAt: null };
+    const bodies: unknown[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      expect(String(input)).toContain("/logistics/requests/logreq_letter/status");
+      const body = JSON.parse(String(init?.body));
+      bodies.push(body);
+      return json({ ...LETTER, status: body.status });
+    });
+
+    await setDeskLetterSubmitted(host, LETTER, true);
+    expect(bodies[0]).toMatchObject({ status: "completed" });
+    expect(host.adminBotDeskLetters.requests[0]?.status).toBe("completed");
+    expect(host.adminBotDeskLetters.undo).toEqual({ logreq_letter: "in_progress" });
+    expect(host.adminBotDeskLetters.busyId).toBeNull();
+
+    await setDeskLetterSubmitted(host, host.adminBotDeskLetters.requests[0]!, false);
+    // Undo restores the status it had, not a guess at one.
+    expect(bodies[1]).toMatchObject({ status: "in_progress" });
+    expect(host.adminBotDeskLetters.requests[0]?.status).toBe("in_progress");
+    expect(host.adminBotDeskLetters.undo).toEqual({});
+  });
+
+  it("says why when the service refuses, and leaves the letter open", async () => {
+    saveStoredMemberSession({ sessionToken: "tok", expiresAt: "later" });
+    const host = createHost();
+    host.adminBotDeskLetters = { requests: [LETTER], loading: false, loadedAt: null };
+    routedFetch({
+      "/logistics/requests/logreq_letter/status": () => json({ error: "admin only" }, 403),
+    });
+    await setDeskLetterSubmitted(host, LETTER, true);
+    expect(host.adminBotDeskLetters.requests[0]?.status).toBe("in_progress");
+    expect(host.adminBotDeskLetters.error).toBeTruthy();
+    expect(host.adminBotDeskLetters.undo ?? {}).toEqual({});
+    expect(host.adminBotDeskLetters.busyId).toBeNull();
+  });
+
+  it("asks for sign-in without calling the service", async () => {
+    clearStoredMemberSession();
+    const host = createHost();
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    await setDeskLetterSubmitted(host, LETTER, true);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(host.adminBotDeskLetters.error).toContain("Sign in");
   });
 });

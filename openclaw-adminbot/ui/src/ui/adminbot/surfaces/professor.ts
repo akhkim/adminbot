@@ -6,6 +6,8 @@
 import { nothing } from "lit";
 import type { AppViewState } from "../../app-view-state.ts";
 import { createLazyView, notifyLazyViewHost, renderLazyView } from "../../lazy-view.ts";
+import { setDeskLetterSubmitted } from "../controllers/logistics.ts";
+import { saveAdminBotPaperSlot } from "../controllers/paper-slots.ts";
 import { profileOverviewQuery } from "../controllers/profile-overview-paging.ts";
 import { loadAdminBotProfileOverview } from "../controllers/profile-overview.ts";
 import { openPaperForViewer } from "../projects/open-paper.ts";
@@ -51,6 +53,33 @@ export function renderProfessorSurface(state: AppViewState, scope: AdminBotSurfa
         state.professorExpandedLists = next;
         requestHostUpdate?.();
       },
+      search: state.professorSearch,
+      onSearchChange: (id, value) => {
+        state.professorSearch = { ...state.professorSearch, [id]: value };
+        requestHostUpdate?.();
+      },
+      // Both one-click answers go through the controllers the Requests page and the paper page
+      // use, so the service's own checks (admin-only status, head-PI-only review) apply unchanged.
+      onLetterSubmitted: (request, submitted) => {
+        const write = setDeskLetterSubmitted(state, request, submitted);
+        requestHostUpdate?.();
+        void write.finally(() => requestHostUpdate?.());
+      },
+      letterBusyId: state.adminBotDeskLetters.busyId ?? null,
+      letterError: state.adminBotDeskLetters.error ?? null,
+      letterUndo: state.adminBotDeskLetters.undo,
+      onPaperAction: (row, action) => {
+        const write = saveAdminBotPaperSlot(
+          state,
+          row.paperId,
+          action.slot,
+          action.kind === "feedback" ? { value_text: action.valueText } : { done: true },
+        );
+        requestHostUpdate?.();
+        void write.finally(() => requestHostUpdate?.());
+      },
+      paperBusyId: state.adminBotPaperSlotsBusyId ?? null,
+      paperError: state.adminBotPaperSlotsError ?? null,
       broadcast: state.adminBotBroadcast ?? null,
       broadcastDraft: state.adminBotBroadcastDraft,
       broadcastExpiry: state.adminBotBroadcastExpiry,

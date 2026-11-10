@@ -7,9 +7,18 @@
 //
 // So it aggregates and links; it does not re-implement. Every section is a count and the few rows
 // worth seeing, where each row is itself the way through to the page that does the work and the rest
-// of the queue is one press away. What no section carries is a control that changes something: one
-// that grew its own editing would be a second place to do the same job, drifting from the first.
-// Linking harder is not that -- it is the same aggregation, reachable.
+// of the queue is one press away. No section grows its own editing: that would be a second place to
+// do the same job, drifting from the first. Linking harder is not that -- it is the same
+// aggregation, reachable.
+//
+// Two one-click answers are the exception, because they are the answers the PI gives most and the
+// paper page made her open a whole workspace to give them: "Submitted" on a rec letter, and
+// "Feedback done" / "Approve publication" on a paper. Neither is a second implementation. Each
+// calls the same controller and the same endpoint as the page it would otherwise open, and the
+// service -- not this page -- decides who may make that write.
+//
+// Each queue also has a search box, matched by the same function the Requests page's paged search
+// uses on the service (contracts/desk-search.ts), so "jane" finds the same letters on both.
 //
 // The broadcast box at the top is the one exception, and it is not a second place: the composer was
 // *moved* here out of Lab Sharing rather than copied, so there is still exactly one surface that
@@ -19,7 +28,14 @@
 // controls of dead weight for everybody else.
 import { html, nothing } from "lit";
 import { live } from "lit/directives/live.js";
+import { requestDeadlineDetails } from "../../../../../extensions/adminbot/logistics-api.js";
 import { adminBotLogisticsSettledStatuses } from "../../../../../extensions/adminbot/src/contracts/actions.js";
+import {
+  letterRequestSearchFields,
+  matchesSearch,
+  paperReviewSearchFields,
+  searchTokens,
+} from "../../../../../extensions/adminbot/src/contracts/desk-search.js";
 import {
   incompleteProfiles,
   thinTimelines,
@@ -95,6 +111,24 @@ export type ProfessorViewProps = {
   onBroadcastPublish: (
     draft: { message: string; availability: string; expiresOn: string; timezone?: string } | null,
   ) => void;
+  /** Each queue's search text, keyed by section id ("letters", "pi-review"). */
+  search?: Readonly<Record<string, string>>;
+  onSearchChange?: (id: string, value: string) => void;
+  /**
+   * Mark a letter submitted (true) or take that back (false). Absent, the rows carry no button.
+   * The write is the admin-only status change the Requests page makes; the service enforces it.
+   */
+  onLetterSubmitted?: (request: LogisticsRequest, submitted: boolean) => void;
+  /** The letter whose status is being written, so only its button is held. */
+  letterBusyId?: string | null;
+  letterError?: string | null;
+  /** Letters marked submitted from this page, with the status each had before, by request id. */
+  letterUndo?: Readonly<Record<string, string>>;
+  /** Give a paper row's one-click answer. Absent, the rows carry no button. */
+  onPaperAction?: (row: PiReviewRow, action: PiReviewQuickAction) => void;
+  /** The paper whose slot is being written. */
+  paperBusyId?: string | null;
+  paperError?: string | null;
 };
 
 /** How many rows a section shows before it stops being a summary. */
@@ -121,12 +155,30 @@ const SETTLED = new Set<string>(adminBotLogisticsSettledStatuses);
  * `deadline_at` is derived on write from whichever school row is soonest, so this sorts by the same
  * instant the Requests queue does -- two orderings of one queue is how a letter gets missed.
  */
-export function recLetterQueue(requests: readonly LogisticsRequest[]): LogisticsRequest[] {
+export function recLetterQueue(
+  requests: readonly LogisticsRequest[],
+  now: Date = new Date(),
+): LogisticsRequest[] {
   return requests
     .filter((request) => request.kind === "recommendation_letters" && !SETTLED.has(request.status))
-    .toSorted((left, right) =>
-      (left.deadline_at ?? "9999").localeCompare(right.deadline_at ?? "9999"),
-    );
+    .map((request) => {
+      // Undated or unparseable sorts last, never first: "no deadline" is not the earliest one.
+      const ms = Date.parse(letterDeadlineAt(request, now) ?? "");
+      return { request, ms: Number.isFinite(ms) ? ms : Number.POSITIVE_INFINITY };
+    })
+    .toSorted((left, right) => (left.ms === right.ms ? 0 : left.ms < right.ms ? -1 : 1))
+    .map(({ request }) => request);
+}
+
+/**
+ * The instant a letter is due, resolved the way the service resolves it.
+ *
+ * Read from the schools rather than trusted from `deadline_at`, so a legacy deadline typed without
+ * a year ("Dec 15") is the next Dec 15 here as well -- `Date.parse` alone files it in 2001. A stamp
+ * the schools no longer explain is kept as the fallback rather than dropped.
+ */
+function letterDeadlineAt(request: LogisticsRequest, now: Date): string | undefined {
+  return requestDeadlineDetails(request, { now })?.at ?? request.deadline_at;
 }
 
 /**
@@ -157,6 +209,10 @@ export type RecLetterDue = {
    * member who has not filled in a school's dates has still asked for the letter.
    */
   daysAway?: number;
+  /** The resolved date (yyyy-mm-dd) the countdown is to, in the deadline's own timezone. */
+  date?: string;
+  /** The member typed only a month and day; the year was filled in as the next occurrence. */
+  yearInferred?: boolean;
 };
 
 /**
@@ -171,8 +227,10 @@ export function recLetterDeadlineQueue(
   now: Date = new Date(),
 ): RecLetterDue[] {
   const nowMs = now.getTime();
-  return recLetterQueue(requests).map((request) => {
-    const deadlineMs = request.deadline_at ? Date.parse(request.deadline_at) : Number.NaN;
+  return recLetterQueue(requests, now).map((request): RecLetterDue => {
+    const details = requestDeadlineDetails(request, { now });
+    const at = details?.at ?? request.deadline_at;
+    const deadlineMs = at ? Date.parse(at) : Number.NaN;
     if (!Number.isFinite(deadlineMs)) {
       // An unparseable stamp is treated as no stamp rather than as the epoch, which would file a
       // typo at the top of the overdue list and bury the letters that really are late.
@@ -187,8 +245,87 @@ export function recLetterDeadlineQueue(
           : daysAway <= REC_LETTER_MONTH_DAYS
             ? "month"
             : "later";
-    return { request, bucket, daysAway };
+    const due: RecLetterDue = { request, bucket, daysAway };
+    if (details) {
+      due.date = details.date;
+    }
+    if (details?.year_inferred) {
+      due.yearInferred = true;
+    }
+    return due;
   });
+}
+
+/**
+ * The letters one search asks for: "jane" is every open request Jane filed, at whatever school.
+ *
+ * Filters the bucketed queue rather than the raw requests so a match keeps its place and its
+ * countdown -- the answer to "Jane's letters" is still soonest first.
+ */
+export function filterRecLetters(due: readonly RecLetterDue[], query: string): RecLetterDue[] {
+  const tokens = searchTokens(query);
+  return tokens.length
+    ? due.filter((entry) => matchesSearch(letterRequestSearchFields(entry.request), tokens))
+    : [...due];
+}
+
+/** The papers one search asks for, by title, author, venue or the kind of feedback asked. */
+export function filterPiReview(papers: readonly PiReviewRow[], query: string): PiReviewRow[] {
+  const tokens = searchTokens(query);
+  return tokens.length
+    ? papers.filter((row) => matchesSearch(paperReviewSearchFields(row), tokens))
+    : [...papers];
+}
+
+/**
+ * Letters the PI marked submitted from this page and can still take back.
+ *
+ * The desk reads open letters only, so a completed one is here only because it was just answered;
+ * keeping it in a collapsed list, rather than letting it vanish, is what makes a mis-click
+ * recoverable without a trip to the Requests page.
+ */
+export function recLettersSubmittedHere(
+  requests: readonly LogisticsRequest[],
+  undo: Readonly<Record<string, string>> | undefined,
+): LogisticsRequest[] {
+  return requests.filter(
+    (request) =>
+      request.kind === "recommendation_letters" &&
+      request.status === "completed" &&
+      Boolean(undo && request.id in undo),
+  );
+}
+
+/**
+ * The one answer a paper row can give in place, or null when the row needs the paper opened.
+ *
+ * A feedback request not yet reviewed can be marked done -- with no written note, which the paper
+ * page still takes. A plain arXiv-release row (nothing else asked of her) can be approved. A
+ * safety-impact, proofreading or OpenReview row is a read, not a yes, so it keeps only its link.
+ * The payload is built exactly as the paper page builds it, so the service sees the same write.
+ */
+export type PiReviewQuickAction =
+  | { kind: "feedback"; slot: string; valueText: string }
+  | { kind: "approve"; slot: "pi_approval" };
+
+export function piReviewQuickAction(row: PiReviewRow): PiReviewQuickAction | null {
+  if (row.feedback) {
+    if (row.feedback.reviewed) {
+      return null;
+    }
+    const { label: _label, slot, ...request } = row.feedback;
+    return {
+      kind: "feedback",
+      slot,
+      valueText: JSON.stringify({ ...request, reviewed: true, review_note: "" }),
+    };
+  }
+  if (row.impact || row.proofreading || row.openreview) {
+    return null;
+  }
+  return !row.category || row.category === "arxiv_release"
+    ? { kind: "approve", slot: "pi_approval" }
+    : null;
 }
 
 export type RecLetterGroup = {
@@ -457,7 +594,8 @@ function rows(params: {
   onToggleExpand: (id: string) => void;
 }) {
   if (!params.items.length) {
-    return html`<p class="professor__empty">${params.empty}</p>`;
+    // An empty message of "" is a list a search emptied; the search's own line already said so.
+    return params.empty ? html`<p class="professor__empty">${params.empty}</p>` : nothing;
   }
   const open = params.expanded.has(params.id);
   const shown = params.items.slice(0, open ? EXPANDED_ROWS : PREVIEW_ROWS);
@@ -480,6 +618,97 @@ function rows(params: {
 }
 
 /**
+ * A queue's search box. Typing filters the rows already on the page; nothing is fetched.
+ *
+ * `type="search"` gives the browser's own clear affordance and Escape-to-clear; the visible label
+ * is the placeholder plus an accessible name, because a labelled field above every queue would
+ * cost a line per section on a page that is read top to bottom.
+ */
+function searchBox(params: {
+  id: string;
+  label: string;
+  placeholder: string;
+  value: string;
+  onSearchChange?: (id: string, value: string) => void;
+}) {
+  if (!params.onSearchChange) {
+    return nothing;
+  }
+  const onSearchChange = params.onSearchChange;
+  return html`<div class="professor__search">
+    <input
+      class="professor__search-input"
+      type="search"
+      data-testid=${`professor-search-${params.id}`}
+      aria-label=${params.label}
+      placeholder=${params.placeholder}
+      .value=${live(params.value)}
+      @input=${(event: Event) =>
+        onSearchChange(params.id, (event.target as HTMLInputElement).value)}
+    />
+  </div>`;
+}
+
+/** "3 open requests matching “jane”", or that nothing does. Said only while a search is typed. */
+function searchSummary(params: { query: string; count: number; matches: string }) {
+  if (!params.query.trim()) {
+    return nothing;
+  }
+  return html`<p
+    class="professor__search-summary"
+    role="status"
+    data-testid="professor-search-summary"
+  >
+    ${params.count ? params.matches : t("professor.search.noMatch", { query: params.query.trim() })}
+  </p>`;
+}
+
+/**
+ * A row's one-click answer, sat beside the row rather than in it -- the row is already a button
+ * that opens the thing, and a button inside a button is reachable by neither.
+ */
+function rowAction(params: {
+  testId: string;
+  label: string;
+  busyLabel: string;
+  title?: string;
+  ariaLabel?: string;
+  busy: boolean;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return html`<button
+    class="btn btn--sm professor__row-action"
+    type="button"
+    data-testid=${params.testId}
+    title=${params.title ?? nothing}
+    aria-label=${params.ariaLabel ?? nothing}
+    ?disabled=${params.disabled}
+    @click=${params.onClick}
+  >
+    ${params.busy ? params.busyLabel : params.label}
+  </button>`;
+}
+
+/**
+ * Where a letter is going, by name when the names are short enough to read on one line.
+ *
+ * A search for one student lists all of her requests, and three rows each saying "2 school(s)"
+ * cannot be told apart; the school names can. Past three the count says the rest.
+ */
+function letterSchoolsText(request: LogisticsRequest): string {
+  const names = (request.schools ?? [])
+    .map((school) => school.school?.trim() ?? "")
+    .filter(Boolean);
+  if (!names.length) {
+    return t("professor.letters.schools", { count: String(request.schools?.length ?? 0) });
+  }
+  return names.length > 3
+    ? `${names.slice(0, 3).join(", ")} +${names.length - 3}`
+    : names.join(", ");
+}
+
+/**
  * The letter queue drawn as its deadline buckets.
  *
  * Every row still names the member and how many schools are on the request -- that has not changed,
@@ -489,14 +718,28 @@ function rows(params: {
  */
 function letterBody(
   due: readonly RecLetterDue[],
-  props: Pick<ProfessorViewProps, "onOpen" | "expanded" | "onToggleExpand">,
+  props: Pick<
+    ProfessorViewProps,
+    | "onOpen"
+    | "expanded"
+    | "onToggleExpand"
+    | "onLetterSubmitted"
+    | "letterBusyId"
+    | "letterUndo"
+    | "requests"
+  >,
+  searching = false,
 ) {
   if (!due.length) {
-    return html`<p class="professor__empty">${t("professor.letters.empty")}</p>`;
+    return searching
+      ? nothing
+      : html`<p class="professor__empty">${t("professor.letters.empty")}</p>`;
   }
   // One switch for the whole section rather than one per bucket: the cap is taken across the queue
   // before grouping, so "the rest of it" is a fact about the queue and not about "Next 30 days".
-  const open = props.expanded.has("letters");
+  // A search is a request to see every match, so it opens the list as far as it ever opens.
+  const open = searching || props.expanded.has("letters");
+  const busyId = props.letterBusyId ?? null;
   const groups = recLetterGroups(due, open ? EXPANDED_ROWS : PREVIEW_ROWS);
   const shown = groups.reduce((sum, group) => sum + group.rows.length, 0);
   return html`<div
@@ -523,12 +766,34 @@ function letterBody(
                     body: html`<strong>${entry.request.member_name}</strong>
                       <span class="muted"
                         >${entry.request.schools?.length
-                          ? t("professor.letters.schools", {
-                              count: String(entry.request.schools.length),
-                            })
+                          ? letterSchoolsText(entry.request)
                           : t("professor.letters.noSchools")}</span
                       >
-                      <span class="professor__when">${recLetterDueLabel(entry)}</span>`,
+                      <span class="professor__when" data-testid="professor-letter-when"
+                        >${recLetterDueLabel(entry)}${entry.date
+                          ? html` ·
+                            ${entry.date}${entry.yearInferred
+                              ? html` <span
+                                  class="muted"
+                                  data-testid="professor-letter-year-assumed"
+                                  >(${t("professor.letters.yearAssumed")})</span
+                                >`
+                              : nothing}`
+                          : nothing}</span
+                      >`,
+                    aside: props.onLetterSubmitted
+                      ? rowAction({
+                          testId: "professor-letter-submitted",
+                          label: t("professor.letters.submit"),
+                          busyLabel: t("professor.letters.saving"),
+                          ariaLabel: t("professor.letters.submitFor", {
+                            name: entry.request.member_name,
+                          }),
+                          busy: busyId === entry.request.id,
+                          disabled: busyId !== null,
+                          onClick: () => props.onLetterSubmitted?.(entry.request, true),
+                        })
+                      : undefined,
                   }),
                 )}
               </ul>`
@@ -536,7 +801,7 @@ function letterBody(
         </div>`,
       )}
     </div>
-    ${due.length > PREVIEW_ROWS
+    ${due.length > PREVIEW_ROWS && !searching
       ? moreToggle({
           id: "letters",
           controls: "professor-list-letters",
@@ -547,6 +812,43 @@ function letterBody(
           onToggleExpand: props.onToggleExpand,
         })
       : nothing}`;
+}
+
+/**
+ * Letters marked submitted from this page, folded away under one line.
+ *
+ * Out of the open queue -- that is the point of answering them -- but not gone: the undo puts each
+ * back to the status it had, which is the only safe thing for a one-click write to offer.
+ */
+function letterDoneList(
+  done: readonly LogisticsRequest[],
+  props: Pick<ProfessorViewProps, "onLetterSubmitted" | "letterBusyId">,
+) {
+  if (!done.length || !props.onLetterSubmitted) {
+    return nothing;
+  }
+  const busyId = props.letterBusyId ?? null;
+  return html`<details class="professor__done" data-testid="professor-letters-done">
+    <summary>${t("professor.letters.done.title", { count: String(done.length) })}</summary>
+    <ul class="professor__list">
+      ${done.map(
+        (request) => html`<li>
+          <span class="professor__row-body professor__done-row">
+            <strong>${request.member_name}</strong>
+            <span class="muted">${letterSchoolsText(request)}</span>
+          </span>
+          ${rowAction({
+            testId: "professor-letter-undo",
+            label: t("professor.letters.done.undo"),
+            busyLabel: t("professor.letters.saving"),
+            busy: busyId === request.id,
+            disabled: busyId !== null,
+            onClick: () => props.onLetterSubmitted?.(request, false),
+          })}
+        </li>`,
+      )}
+    </ul>
+  </details>`;
 }
 
 function adoptionBody(
@@ -758,12 +1060,44 @@ export function renderHardDeadline(row: Pick<PiReviewRow, "hardDeadline" | "days
   return html`<strong data-testid="pi-review-hard-deadline">Due ${date}${left}</strong>`;
 }
 
+/** The paper row's one-click answer, when it has one and the page was given a way to send it. */
+function paperActionButton(
+  row: PiReviewRow,
+  props: Pick<ProfessorViewProps, "onPaperAction">,
+  busyId: string | null,
+) {
+  const action = props.onPaperAction ? piReviewQuickAction(row) : null;
+  if (!action) {
+    return nothing;
+  }
+  return rowAction({
+    testId:
+      action.kind === "feedback" ? "professor-paper-feedback-done" : "professor-paper-approve",
+    label:
+      action.kind === "feedback"
+        ? t("professor.piReview.feedbackDone")
+        : t("professor.piReview.approve"),
+    busyLabel: t("professor.piReview.saving"),
+    title: t("professor.piReview.actionHint"),
+    busy: busyId === row.paperId,
+    disabled: busyId !== null,
+    onClick: () => props.onPaperAction?.(row, action),
+  });
+}
+
 function defaultExpiryDate(now = new Date()): string {
   return new Date(now.getTime() + 7 * 86_400_000).toISOString().slice(0, 10);
 }
 
 export function renderProfessorView(props: ProfessorViewProps) {
   const letters = recLetterDeadlineQueue(props.requests);
+  const letterQuery = props.search?.letters ?? "";
+  const shownLetters = filterRecLetters(letters, letterQuery);
+  const lettersDone = recLettersSubmittedHere(props.requests, props.letterUndo);
+  const paperQuery = props.search?.["pi-review"] ?? "";
+  const shownPapers = filterPiReview(props.piReview, paperQuery);
+  const searchingPapers = searchTokens(paperQuery).length > 0;
+  const paperBusyId = props.paperBusyId ?? null;
   const drafts = overleafReadingQueue(props.papers);
   // Somebody short on two counts is still one person to remind, so the headline number is people,
   // not rows.
@@ -794,9 +1128,34 @@ export function renderProfessorView(props: ProfessorViewProps) {
                 <button class="btn btn--sm" type="button" @click=${props.onRetryPiReview}>
                   Retry PI review queue
                 </button>`
-            : rows({
+            : html`${searchBox({
                 id: "pi-review",
-                items: props.piReview.map((row) =>
+                label: t("professor.piReview.searchLabel"),
+                placeholder: t("professor.piReview.searchPlaceholder"),
+                value: paperQuery,
+                onSearchChange:
+                  props.piReview.length || paperQuery ? props.onSearchChange : undefined,
+              })}
+              ${searchSummary({
+                query: paperQuery,
+                count: shownPapers.length,
+                matches: t("professor.piReview.matches", {
+                  count: String(shownPapers.length),
+                  query: paperQuery.trim(),
+                }),
+              })}
+              ${props.paperError
+                ? html`<p class="professor__error" role="alert" data-testid="professor-paper-error">
+                    ${props.paperError}
+                  </p>`
+                : nothing}
+              ${rows({
+                id: "pi-review",
+                // A search asks for every match, so it opens the list as far as a list opens.
+                expanded: searchingPapers
+                  ? new Set([...props.expanded, "pi-review"])
+                  : props.expanded,
+                items: shownPapers.map((row) =>
                   rowButton({
                     action: t("professor.piReview.open"),
                     onOpen: () =>
@@ -814,46 +1173,54 @@ export function renderProfessorView(props: ProfessorViewProps) {
                       ${row.openreview
                         ? html`<span>${row.openreview.note}</span>`
                         : row.proofreading
-                        ? html`<span data-testid="pi-review-proofreading"
-                            >${row.proofreading.note}</span
-                          >`
-                        : row.impact
-                        ? html`<strong
-                              ><span class="pill" data-testid="pi-review-high-priority"
-                                >High priority</span
-                              >
-                              Safety impact statement</strong
-                            >
-                            <span>${row.impact.statement?.risk ?? ""}</span>
-                            <span class="muted"
-                              >${row.impact.source === "override"
-                                ? "Marked AI-safety related by hand"
-                                : `Looks AI-safety related: ${row.impact.reasons.join(", ")}`}</span
+                          ? html`<span data-testid="pi-review-proofreading"
+                              >${row.proofreading.note}</span
                             >`
-                        : row.feedback
-                          ? html`<strong>${row.feedback.label}</strong
-                              ><span>${row.feedback.reason}</span>
-                              <span
-                                >Feedback by (soft):
-                                ${row.feedback.soft_deadline
-                                  ? new Date(row.feedback.soft_deadline).toLocaleString(undefined, {
-                                      timeZoneName: "short",
-                                    })
-                                  : "Not specified"}</span
-                              >
-                              <span
-                                >Submission cutoff (hard):
-                                ${row.feedback.hard_deadline
-                                  ? new Date(row.feedback.hard_deadline).toLocaleString(undefined, {
-                                      timeZoneName: "short",
-                                    })
-                                  : "Not specified"}</span
-                              >
-                              ${row.feedback.hard_deadline &&
-                              Date.parse(row.feedback.hard_deadline) < Date.now()
-                                ? html`<strong>Past submission cutoff — soft submission</strong>`
-                                : nothing} `
-                          : html`<span>Publication approval</span>`}
+                          : row.impact
+                            ? html`<strong
+                                  ><span class="pill" data-testid="pi-review-high-priority"
+                                    >High priority</span
+                                  >
+                                  Safety impact statement</strong
+                                >
+                                <span>${row.impact.statement?.risk ?? ""}</span>
+                                <span class="muted"
+                                  >${row.impact.source === "override"
+                                    ? "Marked AI-safety related by hand"
+                                    : `Looks AI-safety related: ${row.impact.reasons.join(", ")}`}</span
+                                >`
+                            : row.feedback
+                              ? html`<strong>${row.feedback.label}</strong
+                                  ><span>${row.feedback.reason}</span>
+                                  <span
+                                    >Feedback by (soft):
+                                    ${row.feedback.soft_deadline
+                                      ? new Date(row.feedback.soft_deadline).toLocaleString(
+                                          undefined,
+                                          {
+                                            timeZoneName: "short",
+                                          },
+                                        )
+                                      : "Not specified"}</span
+                                  >
+                                  <span
+                                    >Submission cutoff (hard):
+                                    ${row.feedback.hard_deadline
+                                      ? new Date(row.feedback.hard_deadline).toLocaleString(
+                                          undefined,
+                                          {
+                                            timeZoneName: "short",
+                                          },
+                                        )
+                                      : "Not specified"}</span
+                                  >
+                                  ${row.feedback.hard_deadline &&
+                                  Date.parse(row.feedback.hard_deadline) < Date.now()
+                                    ? html`<strong
+                                        >Past submission cutoff — soft submission</strong
+                                      >`
+                                    : nothing} `
+                              : html`<span>Publication approval</span>`}
                       ${row.packageComplete
                         ? nothing
                         : html`<span class="muted">${t("professor.piReview.incomplete")}</span>`}
@@ -866,7 +1233,7 @@ export function renderProfessorView(props: ProfessorViewProps) {
                         : nothing}`,
                     // Reading the PDF and giving the yes are two different errands, so the PDF keeps its
                     // own target rather than being swallowed by the row.
-                    aside: row.drivePdfUrl
+                    aside: html`${row.drivePdfUrl
                       ? html`<a
                           class="professor__row-aside"
                           href=${row.drivePdfUrl}
@@ -878,13 +1245,13 @@ export function renderProfessorView(props: ProfessorViewProps) {
                               ? "Open manuscript"
                               : t("professor.piReview.pdf")}</a
                         >`
-                      : undefined,
+                      : nothing}
+                    ${paperActionButton(row, props, paperBusyId)}`,
                   }),
                 ),
-                empty: t("professor.piReview.empty"),
-                expanded: props.expanded,
+                empty: searchingPapers ? "" : t("professor.piReview.empty"),
                 onToggleExpand: props.onToggleExpand,
-              }),
+              })}`,
       }),
     },
     {
@@ -929,7 +1296,7 @@ export function renderProfessorView(props: ProfessorViewProps) {
     },
     {
       // A queue still loading is not an empty one, so it holds its place rather than sinking.
-      settled: !props.requestsLoading && letters.length === 0,
+      settled: !props.requestsLoading && letters.length === 0 && lettersDone.length === 0,
       body: section({
         id: "letters",
         title: t("professor.letters.title"),
@@ -939,7 +1306,28 @@ export function renderProfessorView(props: ProfessorViewProps) {
         onOpen: props.onOpen,
         body: props.requestsLoading
           ? html`<p class="professor__empty">${t("professor.loading")}</p>`
-          : letterBody(letters, props),
+          : html`${searchBox({
+              id: "letters",
+              label: t("professor.letters.searchLabel"),
+              placeholder: t("professor.letters.searchPlaceholder"),
+              value: letterQuery,
+              onSearchChange: letters.length || letterQuery ? props.onSearchChange : undefined,
+            })}
+            ${searchSummary({
+              query: letterQuery,
+              count: shownLetters.length,
+              matches: t("professor.letters.matches", {
+                count: String(shownLetters.length),
+                query: letterQuery.trim(),
+              }),
+            })}
+            ${props.letterError
+              ? html`<p class="professor__error" role="alert" data-testid="professor-letter-error">
+                  ${props.letterError}
+                </p>`
+              : nothing}
+            ${letterBody(shownLetters, props, searchTokens(letterQuery).length > 0)}
+            ${letterDoneList(lettersDone, props)}`,
       }),
     },
     {

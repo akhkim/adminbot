@@ -444,6 +444,9 @@ export class OpenClawApp extends LitElement {
   // Which My Desk lists she has opened. Not persisted: it is where she is on the page, not a
   // setting, and a queue she opened on Monday is a different queue by Thursday.
   @state() professorExpandedLists = new Set<string>();
+  // What she has typed into each My Desk queue's search box, by section id. Not persisted, for the
+  // same reason: it is the question she is asking now.
+  @state() professorSearch: Record<string, string> = {};
   @state() adminBotNotificationsError: string | null = null;
   @state() adminBotMeetingsLoading = false;
   adminBotMeetingsRequestVersion = 0;
