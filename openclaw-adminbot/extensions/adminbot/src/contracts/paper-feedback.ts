@@ -17,6 +17,21 @@ export function isPaperFeedbackSlot(slot: string): slot is keyof typeof paperFee
   return Object.hasOwn(paperFeedbackSlots, slot);
 }
 
+const DAY_MS = 86_400_000;
+
+/**
+ * How long past its hard deadline an item stays on the PI queue as overdue. Past this it belongs
+ * to an earlier cycle: the camera-ready went in (or did not) months ago and the conference has
+ * usually been held. Showing it as overdue buried the items she can still act on.
+ */
+export const STALE_DEADLINE_DAYS = 90;
+
+/** Whether a deadline is so far behind that it is history rather than an overdue item. */
+export function isStaleDeadline(deadline: string | undefined, now: Date): boolean {
+  const instant = deadline ? Date.parse(deadline) : Number.NaN;
+  return Number.isFinite(instant) && now.getTime() - instant > STALE_DEADLINE_DAYS * DAY_MS;
+}
+
 export type PaperFeedback = {
   reason: string;
   url: string;

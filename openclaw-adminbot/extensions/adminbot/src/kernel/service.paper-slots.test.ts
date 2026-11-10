@@ -311,7 +311,13 @@ describe("the paper fields the slots hang off", () => {
     seed(service);
     unwrap(service.upsertLabMember({ id: "zj", name: "Admin", privilege_level: "admin" } as never));
     const waive = (extra: { piApprover?: boolean; viewAs?: boolean } = {}) =>
-      service.waivePaperSlot({ paperId: "p1", slot: "pi_approval", reason: "approved elsewhere", memberId: "zj", ...extra });
+      service.waivePaperSlot({
+        paperId: "p1",
+        slot: "pi_approval",
+        reason: "approved elsewhere",
+        memberId: "zj",
+        ...extra,
+      });
     expect(waive()).toMatchObject({ ok: false, status: 403 });
     expect(waive({ piApprover: true })).toMatchObject({ ok: true });
   });
@@ -918,12 +924,14 @@ describe("the conference roll-call", () => {
 it("queues an author's feedback with reason and deadlines without publication approval", () => {
   const service = new AdminBotService();
   seed(service);
+  // Relative to the clock: a cutoff months in the past is now refused as a likely wrong year.
+  const inDays = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString();
   const input = {
     value_text: JSON.stringify({
       reason: "Check claims",
       url: "https://example.com/draft",
-      soft_deadline: "2000-01-01T00:00:00Z",
-      hard_deadline: "2000-01-02T00:00:00Z",
+      soft_deadline: inDays(1),
+      hard_deadline: inDays(2),
     }),
   };
   expect(
