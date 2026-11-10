@@ -12,6 +12,13 @@ type DraftResult = {
 export class NotificationDrafts extends LitElement {
   @property() baseUrl = "";
   @property() sessionToken = "";
+  /**
+   * The conference to start from when the tool opens on one paper's card (My Projects and Papers):
+   * that paper's venue, editable like any other field. Never overwrites what the admin typed.
+   */
+  @property() presetConference = "";
+  /** Drawn inside a paper card rather than as a page of its own: no page margins or width cap. */
+  @property({ type: Boolean, reflect: true }) embedded = false;
   @state() private file: File | null = null;
   @state() private uploadInvalid = false;
   @state() private date = "";
@@ -31,6 +38,13 @@ export class NotificationDrafts extends LitElement {
       max-width: 960px;
       margin: 24px auto;
       color: var(--text);
+    }
+    :host([embedded]) {
+      max-width: none;
+      margin: 12px 0 0;
+    }
+    :host([embedded]) section {
+      padding: 18px;
     }
     section {
       border: 1px solid var(--border, #8885);
@@ -162,6 +176,9 @@ export class NotificationDrafts extends LitElement {
   `;
 
   protected override willUpdate(changed: PropertyValues) {
+    if (changed.has("presetConference") && this.presetConference && !this.conference) {
+      this.conference = this.presetConference;
+    }
     if (changed.has("sessionToken") || changed.has("baseUrl")) {
       this.generation++;
       this.controller?.abort();
@@ -433,11 +450,4 @@ export class NotificationDrafts extends LitElement {
 }
 if (!customElements.get("adminbot-notification-drafts")) {
   customElements.define("adminbot-notification-drafts", NotificationDrafts);
-}
-
-export function renderNotificationDrafts(baseUrl: string, sessionToken: string) {
-  return html`<adminbot-notification-drafts
-    .baseUrl=${baseUrl}
-    .sessionToken=${sessionToken}
-  ></adminbot-notification-drafts>`;
 }

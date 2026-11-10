@@ -1,6 +1,26 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { canAccessTab } from "../access.ts";
+import { isKnownTab, tabFromPath } from "../../navigation.ts";
 import { NotificationDrafts } from "./notification-drafts.ts";
+
+it("is no longer a tab: it lives on each paper's X post step in My Projects & Papers", () => {
+  expect(isKnownTab("adminbotNotificationDrafts")).toBe(false);
+  // Its old address, bookmarked or in Slack, lands on the page it moved to.
+  expect(tabFromPath("/notification-drafts")).toBe("myWork");
+});
+
+it("starts from the paper's conference but never overwrites what the admin typed", async () => {
+  const el = new NotificationDrafts();
+  el.presetConference = "NeurIPS 2026";
+  document.body.append(el);
+  await el.updateComplete;
+  const conference = el.shadowRoot!.querySelector<HTMLInputElement>('[aria-label="Conference"]')!;
+  expect(conference.value).toBe("NeurIPS 2026");
+  conference.value = "ICML";
+  conference.dispatchEvent(new Event("input"));
+  el.presetConference = "EMNLP 2026";
+  await el.updateComplete;
+  expect(conference.value).toBe("ICML");
+});
 afterEach(() => {
   document.body.replaceChildren();
   vi.unstubAllGlobals();
@@ -84,9 +104,7 @@ it("uses Drive when the upload is cleared", async () => {
   expect(body.notifications).toBeUndefined();
   expect(body.notifications_csv).toBeUndefined();
 });
-it("is admin-only and generates drafts and downloadable images only on submit", async () => {
-  expect(canAccessTab("adminbotNotificationDrafts", "member")).toBe(false);
-  expect(canAccessTab("adminbotNotificationDrafts", "admin")).toBe(true);
+it("generates drafts and downloadable images only on submit", async () => {
   const fetcher = vi.fn(async (_url: string, _options: RequestInit) => ({
     ok: true,
     json: async () => ({

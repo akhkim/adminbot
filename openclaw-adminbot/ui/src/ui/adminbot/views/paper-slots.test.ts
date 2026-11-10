@@ -693,6 +693,39 @@ describe("social draft gates", () => {
     gate?.click();
     expect(opened).toEqual(["linkedin"]);
   });
+
+  it("offers OpenReview To Tweet beside the X post's own button, and only when asked to", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const draw = (withTool: boolean, opened: string[]) =>
+      render(
+        renderPaperSlots({
+          paperId: "p1",
+          slots: [],
+          loading: false,
+          showAllSlots: true,
+          onSaveSlot: () => {},
+          onOpenDraft: (platform) => opened.push(platform),
+          ...(withTool ? { onOpenOpenReviewTweet: () => opened.push("openreview") } : {}),
+        }),
+        container,
+      );
+    const opened: string[] = [];
+
+    // A member's card: the host passes no handler, so there is no button to press.
+    draw(false, opened);
+    expect(container.querySelector('[data-testid="paper-slot-p1-openreview-tweet"]')).toBeNull();
+
+    draw(true, opened);
+    const tool = container.querySelector<HTMLButtonElement>(
+      '[data-testid="paper-slot-p1-openreview-tweet"]',
+    );
+    expect(tool?.textContent?.trim()).toBe("Draft from OpenReview");
+    // Beside the X post's "Write the draft", not the LinkedIn one.
+    expect(tool?.previousElementSibling?.getAttribute("data-testid")).toMatch(/^paper-slot-p1-x/);
+    tool?.click();
+    expect(opened).toEqual(["openreview"]);
+  });
 });
 
 describe("field guidance", () => {

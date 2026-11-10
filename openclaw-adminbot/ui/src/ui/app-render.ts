@@ -614,10 +614,6 @@ const lazyDeadlines = createLazyView(
   () => import("./adminbot/views/deadlines.ts"),
   notifyLazyViewHost,
 );
-const lazyNotificationDrafts = createLazyView(
-  () => import("./adminbot/views/notification-drafts.ts"),
-  notifyLazyViewHost,
-);
 const lazyTalkLeaderboard = createLazyView(
   () => import("./adminbot/views/talk-leaderboard.ts"),
   notifyLazyViewHost,
@@ -3586,14 +3582,6 @@ export function renderApp(state: AppViewState) {
                 loadStoredMemberSession()?.sessionToken ?? "",
                 // The same project page My Projects opens; Back returns here.
                 (paperId) => navigateToProject(state, paperId),
-              ),
-            )
-          : nothing}
-        ${state.tab === "adminbotNotificationDrafts" && adminBotMode === "admin"
-          ? renderLazyView(lazyNotificationDrafts, (m) =>
-              m.renderNotificationDrafts(
-                resolveAdminBotBaseUrl(state.settings),
-                loadStoredMemberSession()?.sessionToken ?? "",
               ),
             )
           : nothing}

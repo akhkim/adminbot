@@ -91,7 +91,6 @@ describe("TAB_GROUPS", () => {
       "adminbotOpportunities",
       // Admin-only (access.ts): the OpenReview notification-to-post drafts live beside the other
       // lab-facing tools, and the access table hides them from everyone else.
-      "adminbotNotificationDrafts",
       "adminbotConferencePapers",
       // Member-only: checking a draft's references is a signed-in tool, so a visitor's sidebar
       // shows the group without it. The PDF Reference Checker is part of PaperMentor.

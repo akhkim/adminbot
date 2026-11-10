@@ -98,6 +98,11 @@ export type PaperSlotsProps = {
   /** Opens the drafting tool for a social gate. Absent leaves the gate as a read-only checkbox. */
   onOpenDraft?: (platform: "linkedin" | "x") => void;
   /**
+   * Opens OpenReview To Tweet beside the X post gate's own drafting button. Admin-only: the host
+   * passes it only to an admin, and the service refuses anyone else's session anyway.
+   */
+  onOpenOpenReviewTweet?: () => void;
+  /**
    * Draws one branch and what belongs to it -- the feedback requests with the writing, the
    * OpenReview record and the venue ladder with the venue -- for a project page's lane tab. Absent
    * draws the whole checklist with the people above it, as every other caller wants.
@@ -229,6 +234,17 @@ function renderInput(
         >
           ${done ? "Approved draft on file — open" : "Write the draft"}
         </button>
+        ${platform === "x" && props.onOpenOpenReviewTweet
+          ? html`<button
+              type="button"
+              class="paper-slot__draft-open"
+              data-testid=${`paper-slot-${props.paperId}-openreview-tweet`}
+              title="Generate tweet drafts and images from OpenReview acceptance notifications"
+              @click=${() => props.onOpenOpenReviewTweet?.()}
+            >
+              Draft from OpenReview
+            </button>`
+          : nothing}
       `;
     }
 
