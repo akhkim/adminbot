@@ -70,7 +70,7 @@ function textOf(value: unknown): string {
 }
 
 /** "NeurIPS 2026", "ICLR 2027 Conference" -> { family: "neurips", year: 2026 }. */
-function venueKey(label: string): { family: string; year: number } | undefined {
+export function venueKey(label: string): { family: string; year: number } | undefined {
   const year = Number(/\b(20\d{2})\b/u.exec(label)?.[1]);
   const family = /[a-z]+/iu.exec(label.replace(/\b20\d{2}\b/gu, ""))?.[0]?.toLowerCase();
   return family && Number.isInteger(year) ? { family, year } : undefined;

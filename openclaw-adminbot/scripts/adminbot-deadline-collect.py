@@ -169,6 +169,11 @@ PENDING = [
     ("EMNLP 2027 (system demonstrations)", "https://2027.emnlp.org/"),
     ("NAACL 2027 (system demonstrations)", "https://2027.naacl.org/"),
     ("AACL next round (main + demo)", "https://aaclnet.org/"),
+    # Sub-deadlines a tracked round has not put in the dataset yet. Until they land, the
+    # camera-ready of a lab paper accepted there comes from its OpenReview forum instead
+    # (extensions/adminbot/src/workflows/papers/camera-ready-deadlines.ts).
+    ("NeurIPS 2026 (main camera-ready)", "https://neurips.cc/Conferences/2026/Dates"),
+    ("ICLR 2027 (main camera-ready)", "https://iclr.cc/Conferences/2027/Dates"),
     ("NeurIPS 2027 (main)", "https://neurips.cc/Conferences/2027"),
     ("ICML 2027 (main)", "https://icml.cc/Conferences/2027"),
     ("COLM 2027 (main)", "https://colm.cc/"),
