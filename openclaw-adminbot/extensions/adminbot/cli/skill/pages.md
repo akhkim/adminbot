@@ -343,6 +343,14 @@ Website: `/talk-leaderboard` · Who: member
 | ------------------------- | -------------------------- |
 | `get-cv-talk-leaderboard` | GET `/cv/talk-leaderboard` |
 
+## Lab projects
+
+Website: `/lab-projects` · Who: admin
+
+| Operation ID       | Route               |
+| ------------------ | ------------------- |
+| `get-lab-projects` | GET `/lab/projects` |
+
 ## Active papers, OpenReview, announcements, grant report, professor desk
 
 Website: `/papers, /announcements, /grant-report, /professor, /arr-eligible-reviewers` · Who: admin

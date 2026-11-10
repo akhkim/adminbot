@@ -73,6 +73,7 @@ const PAGES = [
     /^\/(my\/projects|papers\/slot-overview|papers\/slot-reminder|papers\/\{[^}]+\}\/(slots|weekly-updates|progress))/u,
   ],
   ["Talk leaderboard", "/talk-leaderboard", "member", /^\/cv\/talk-leaderboard/u],
+  ["Lab projects", "/lab-projects", "admin", /^\/lab\/projects/u],
   [
     "Active papers, OpenReview, announcements, grant report, professor desk",
     "/papers, /announcements, /grant-report, /professor, /arr-eligible-reviewers",
