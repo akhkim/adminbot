@@ -45,7 +45,6 @@ describe("General Tools", () => {
     expect(canAccessTab("events", "member", "trial")).toBe(false);
     expect(canAccessTab("events", "member", "external_collaborator")).toBe(false);
     expect(canAccessTab("events", "anonymous")).toBe(false);
-    expect(canAccessTab("adminbotNotificationDrafts", "anonymous")).toBe(false);
   });
 });
 

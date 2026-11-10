@@ -1,6 +1,10 @@
 # OpenReview announcement drafts
 
-Admins can open **General Tools → OpenReview To Tweet**, upload a notifications JSON
+Admins open it from a paper in **My Projects & Papers**: on the paper's social lane, **Draft from
+OpenReview** sits beside the X post's **Write the draft** and opens the tool on that card, with the
+conference started from the paper's venue. (It used to be its own General Tools tab; the old
+`/notification-drafts` address now opens My Projects & Papers.) It is drawn only for admins, and
+the route refuses any other session. Upload a notifications JSON
 array or CSV export, choose a conference and an exclusive UTC cutoff date, and generate tweet drafts and PNGs.
 CSV requires `id`, `date_utc`, `venue_domain`, `subject`, and `message` columns;
 dates use `YYYY-MM-DD HH:MM:SS` in UTC. Quoted commas and multiline messages are supported.

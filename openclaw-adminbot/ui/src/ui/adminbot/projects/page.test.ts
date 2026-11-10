@@ -797,6 +797,25 @@ describe("drafting announcements on the Social tab", () => {
     });
   });
 
+  it("puts OpenReview To Tweet on the social lane for an admin, and nowhere for a member", async () => {
+    const member = drawPage({ tab: "social", slots: { p1: emptyCycle() }, viewerIsAdmin: false });
+    expect(member.container.querySelector('[data-testid="paper-openreview-tweet-p1"]')).toBeNull();
+    expect(
+      member.container.querySelector('[data-testid="paper-slot-p1-openreview-tweet"]'),
+    ).toBeNull();
+
+    const admin = drawPage({ tab: "social", slots: { p1: emptyCycle() }, viewerIsAdmin: true });
+    const panel = admin.container.querySelector<HTMLDetailsElement>(
+      '[data-testid="paper-openreview-tweet-p1"]',
+    );
+    expect(panel?.querySelector("adminbot-notification-drafts")).toBeTruthy();
+    expect(panel?.open).toBe(false);
+    admin.container
+      .querySelector<HTMLButtonElement>('[data-testid="paper-slot-p1-openreview-tweet"]')
+      ?.click();
+    expect(panel?.open).toBe(true);
+  });
+
   it("generates a LinkedIn draft and saves it as the LinkedIn draft", async () => {
     api.draftLinkedInPost.mockResolvedValue({ ok: true, value: { text: "Synthetic post" } });
     const { container, drafts } = drawPage({ tab: "social", slots: { p1: emptyCycle() } });

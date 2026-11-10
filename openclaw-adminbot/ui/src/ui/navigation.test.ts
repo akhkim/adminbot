@@ -60,7 +60,6 @@ describe("iconForTab", () => {
       myWork: "book",
       labSharing: "link",
       events: "users",
-      adminbotNotificationDrafts: "send",
       adminbotOpportunities: "zap",
       chat: "messageSquare",
       overview: "barChart",
@@ -126,7 +125,6 @@ describe("titleForTab", () => {
       myWork: "My Projects & Papers",
       labSharing: "Collaborate",
       events: "Events",
-      adminbotNotificationDrafts: "OpenReview To Tweet",
       adminbotOpportunities: "Opportunities",
       chat: "Chat",
       overview: "Overview",
@@ -188,7 +186,6 @@ describe("subtitleForTab", () => {
       // expectation had not followed, leaving the suite red for a reason unrelated to it.
       labSharing: "Ask for help on your projects, offer yours, and see who is around.",
       events: "Upcoming events, who from the lab is going, and who is nearby.",
-      adminbotNotificationDrafts: "Create tweet drafts and images from notification exports.",
       adminbotOpportunities: "PhD programs, internships, grants, awards, and Rising Stars.",
       chat: "Gateway chat for quick interventions.",
       overview: "Status, entry points, health.",

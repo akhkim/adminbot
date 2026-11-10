@@ -51,7 +51,6 @@ export const TAB_GROUPS = [
       "adminbotReimbursements",
       "adminbotDeadlines",
       "adminbotOpportunities",
-      "adminbotNotificationDrafts",
       "adminbotConferencePapers",
       // PaperMentor includes what was the PDF Reference Checker: a review checks the paper's
       // references, and a PDF-only check sits on the same page.
@@ -220,7 +219,6 @@ export type Tab =
   | "adminbotReimbursements"
   | "adminbotSettings"
   | "adminbotMembers"
-  | "adminbotNotificationDrafts"
   | "adminbotOpportunities"
   | "adminbotProfileOverview"
   | "adminbotTabUsage"
@@ -313,7 +311,6 @@ const TAB_PATHS: Record<Tab, string> = {
   adminbotReimbursements: "/reimbursements",
   adminbotSettings: "/settings",
   adminbotMembers: "/members",
-  adminbotNotificationDrafts: "/notification-drafts",
   adminbotOpportunities: "/opportunities",
   adminbotProfileOverview: "/profile-overview",
   adminbotTabUsage: "/tab-usage",
@@ -394,6 +391,8 @@ const PATH_ALIASES: Record<string, Tab> = {
   "/adminbot/workshop-nudges": "adminbotWorkshopNudges",
   // The PDF Reference Checker, folded into PaperMentor. Its PDF-only check is on that page.
   "/reference-checker": "adminbotPaperMentor",
+  // OpenReview To Tweet, moved onto each paper's X post step in My Projects & Papers.
+  "/notification-drafts": "myWork",
 };
 
 const PATH_TO_TAB = new Map<string, Tab>([
@@ -624,8 +623,6 @@ export function iconForTab(tab: Tab): IconName {
       return "clock";
     case "adminbotDeadlines":
       return "loader";
-    case "adminbotNotificationDrafts":
-      return "send";
     case "adminbotOpportunities":
       return "zap";
     case "channels":
