@@ -558,6 +558,8 @@ export type AppViewState = {
   adminBotTabUsageLoadedAt: number | null;
   /** Which My Desk row lists are open past their preview cap, by list id. */
   professorExpandedLists: Set<string>;
+  /** Each My Desk queue's search text, by section id. */
+  professorSearch: Record<string, string>;
   publishBroadcast?: (
     draft: {
       message: string;

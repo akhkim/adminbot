@@ -56,6 +56,41 @@ describe("selectLogisticsQueue", () => {
   });
 });
 
+describe("selectLogisticsQueue search", () => {
+  const rows = [
+    row("jane-mit", {
+      kind: "recommendation_letters",
+      member_name: "Jane Example",
+      schools: [{ school: "Example Institute", program: "PhD Robotics" }],
+    }),
+    row("jane-state", {
+      kind: "recommendation_letters",
+      member_name: "Jane Example",
+      schools: [{ school: "Example State" }],
+    }),
+    row("jose", {
+      kind: "recommendation_letters",
+      member_name: "José Sample",
+      schools: [{ school: "Example Institute" }],
+    }),
+  ];
+  const search = (q: string) =>
+    selectLogisticsQueue(rows, { ...DEFAULT_LOGISTICS_QUEUE_QUERY, q })
+      .map((r) => r.id)
+      .toSorted();
+
+  it("finds a person's requests by name, accent-insensitively", () => {
+    expect(search("jane")).toEqual(["jane-mit", "jane-state"]);
+    expect(search("jose")).toEqual(["jose"]);
+  });
+
+  it("matches every word across the name, school and program", () => {
+    expect(search("jane institute")).toEqual(["jane-mit"]);
+    expect(search("robotics")).toEqual(["jane-mit"]);
+    expect(search("jane harbor")).toEqual([]);
+  });
+});
+
 describe("logistics queue query string", () => {
   it("round-trips what the browser sends", () => {
     const query = {

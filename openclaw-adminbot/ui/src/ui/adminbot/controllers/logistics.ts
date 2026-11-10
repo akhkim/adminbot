@@ -77,6 +77,17 @@ export type DeskLettersState = {
   requests: LogisticsRequest[];
   loading: boolean;
   loadedAt: number | null;
+  /** The letter whose status My Desk is writing, so only its button is held. */
+  busyId?: string | null;
+  /** What the last desk write said when it failed, shown in the letters section itself. */
+  error?: string | null;
+  /**
+   * The status each letter had before the PI marked it submitted from the desk, by request id.
+   *
+   * Kept so the one-click "Submitted" can be taken back to exactly where it was (to submit, or in
+   * progress) rather than to a guessed status.
+   */
+  undo?: Readonly<Record<string, LogisticsRequestStatus>>;
 };
 
 export const EMPTY_DESK_LETTERS: DeskLettersState = {
@@ -487,6 +498,63 @@ export async function setAdminBotLogisticsRequestStatus(
     replaceRequest(host, result.value);
   } finally {
     host.adminBotLogisticsOpenLoading = false;
+  }
+}
+
+/**
+ * My Desk's one-click letter answer: "Submitted", or taking that back.
+ *
+ * The same admin-only status write the Requests page makes -- the service refuses it for anyone
+ * else, so the button being on the desk grants nothing. It keeps its own busy and error state on
+ * the desk letters rather than borrowing the Requests page's, because the desk is a different
+ * screen and an error there would otherwise appear on a page the PI is not looking at.
+ *
+ * Marking a letter submitted moves it to "completed", which is what the Requests page labels
+ * "Submitted" for a letter. The reply is merged back like any other status change, so the letter
+ * leaves the open queue on every screen at once.
+ */
+export async function setDeskLetterSubmitted(
+  host: AdminBotLogisticsHost,
+  request: LogisticsRequest,
+  submitted: boolean,
+): Promise<void> {
+  const wire = session(host);
+  if (!wire) {
+    host.adminBotDeskLetters = {
+      ...host.adminBotDeskLetters,
+      error: t("logistics.requests.error.signIn"),
+    };
+    return;
+  }
+  const undo = { ...host.adminBotDeskLetters.undo };
+  const status: LogisticsRequestStatus = submitted
+    ? "completed"
+    : (undo[request.id] ?? "submitted");
+  host.adminBotDeskLetters = { ...host.adminBotDeskLetters, busyId: request.id, error: null };
+  try {
+    const result = await setLogisticsRequestStatus(
+      request.id,
+      status,
+      "",
+      wire.token,
+      wire.baseUrl,
+    );
+    if (!result.ok) {
+      host.adminBotDeskLetters = {
+        ...host.adminBotDeskLetters,
+        error: failureText(result, wire.baseUrl),
+      };
+      return;
+    }
+    if (submitted) {
+      undo[request.id] = request.status;
+    } else {
+      delete undo[request.id];
+    }
+    host.adminBotDeskLetters = { ...host.adminBotDeskLetters, undo };
+    replaceRequest(host, result.value);
+  } finally {
+    host.adminBotDeskLetters = { ...host.adminBotDeskLetters, busyId: null };
   }
 }
 

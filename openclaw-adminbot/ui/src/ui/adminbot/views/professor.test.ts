@@ -8,11 +8,15 @@ import { type EscalatedNudgeRow, fetchEscalatedNudges } from "../api/nudges.ts";
 import type { PiReviewRow } from "../api/paper-admin.ts";
 import type { AdminBotPaperRecord } from "../controllers/admin.ts";
 import {
+  filterPiReview,
+  filterRecLetters,
   incompleteProfiles,
   overleafReadingQueue,
+  piReviewQuickAction,
   recLetterDeadlineQueue,
   recLetterGroups,
   recLetterQueue,
+  recLettersSubmittedHere,
   renderProfessorView,
   thinTimelines,
   unattendedProjects,
@@ -1051,4 +1055,286 @@ it("shows feedback reason and both deadlines separately from publication approva
   expect(queue.textContent).toContain("Submission cutoff (hard)");
   expect(queue.textContent).toContain("Past submission cutoff");
   expect(queue.textContent).toContain("Publication approval");
+});
+
+describe("year-less letter deadlines on the desk", () => {
+  const now = new Date("2026-02-01T12:00:00Z");
+
+  it("reads a month and day as the next occurrence, and says the year was assumed", () => {
+    const [due] = recLetterDeadlineQueue(
+      [
+        request({
+          id: "r1",
+          schools: [{ school: "Example U", letter_deadline: "Feb 10" }],
+        } as never),
+      ],
+      now,
+    );
+    expect(due?.date).toBe("2026-02-10");
+    expect(due?.yearInferred).toBe(true);
+    expect(due?.bucket).not.toBe("undated");
+    expect(due?.daysAway).toBeGreaterThan(0);
+  });
+
+  it("rolls a date already well past to next year instead of calling it overdue for a year", () => {
+    const [due] = recLetterDeadlineQueue(
+      [
+        request({
+          id: "r1",
+          schools: [{ school: "Example U", letter_deadline: "11/15" }],
+        } as never),
+      ],
+      now,
+    );
+    expect(due?.date).toBe("2026-11-15");
+    expect(due?.bucket).toBe("later");
+  });
+
+  it("keeps a just-missed date on this year, overdue", () => {
+    const [due] = recLetterDeadlineQueue(
+      [
+        request({
+          id: "r1",
+          schools: [{ school: "Example U", letter_deadline: "Jan 25" }],
+        } as never),
+      ],
+      now,
+    );
+    expect(due?.date).toBe("2026-01-25");
+    expect(due?.bucket).toBe("overdue");
+  });
+
+  it("sorts an inferred date among typed ones, not at the bottom with the undated", () => {
+    const queue = recLetterQueue(
+      [
+        request({ id: "undated" }),
+        request({
+          id: "march",
+          schools: [{ school: "A", letter_deadline: "2026-03-01" }],
+        } as never),
+        request({ id: "feb", schools: [{ school: "B", letter_deadline: "Feb 10" }] } as never),
+      ],
+      now,
+    );
+    expect(queue.map((row) => row.id)).toEqual(["feb", "march", "undated"]);
+  });
+
+  it("marks the row so nobody reads the year as typed", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    try {
+      const { container } = draw({
+        requests: [
+          request({
+            id: "r1",
+            schools: [{ school: "Example U", letter_deadline: "Feb 10" }],
+          } as never),
+        ],
+      });
+      const when = container.querySelector('[data-testid="professor-letter-when"]');
+      expect(when?.textContent).toContain("2026-02-10");
+      expect(
+        container.querySelector('[data-testid="professor-letter-year-assumed"]')?.textContent,
+      ).toContain("year assumed");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("searching the desk", () => {
+  const letters = [
+    request({ id: "jane-mit", member_name: "Jane Doe", schools: [{ school: "MIT" }] } as never),
+    request({ id: "jane-cmu", member_name: "Jane Doe", schools: [{ school: "CMU" }] } as never),
+    request({ id: "mei", member_name: "Mei Chen", schools: [{ school: "MIT" }] } as never),
+  ];
+
+  it("narrows letters to one student's open requests", () => {
+    const due = recLetterDeadlineQueue(letters);
+    expect(filterRecLetters(due, "jane").map((row) => row.request.id)).toEqual([
+      "jane-mit",
+      "jane-cmu",
+    ]);
+    expect(filterRecLetters(due, "jane mit").map((row) => row.request.id)).toEqual(["jane-mit"]);
+    expect(filterRecLetters(due, "  ")).toHaveLength(3);
+  });
+
+  it("narrows papers by title, author or venue", () => {
+    const rows = [
+      piReviewRow({ paperId: "a", title: "Causal Garden Planning", authors: ["Ada Lovelace"] }),
+      piReviewRow({
+        paperId: "b",
+        title: "Sparse Kettles",
+        authors: ["Grace Hopper"],
+        proofreading: { venue: "NeurIPS" },
+      } as never),
+    ];
+    expect(filterPiReview(rows, "garden").map((row) => row.paperId)).toEqual(["a"]);
+    expect(filterPiReview(rows, "hopper").map((row) => row.paperId)).toEqual(["b"]);
+    expect(filterPiReview(rows, "neurips").map((row) => row.paperId)).toEqual(["b"]);
+  });
+
+  it("draws only the matching letters and says how many matched", () => {
+    const changes: Array<[string, string]> = [];
+    const { container } = draw({
+      requests: letters,
+      search: { letters: "jane" },
+      onSearchChange: (id, value) => changes.push([id, value]),
+    });
+    const section = container.querySelector('[data-testid="professor-letters"]')!;
+    expect(section.textContent).toContain("Jane Doe");
+    expect(section.textContent).not.toContain("Mei Chen");
+    expect(
+      section.querySelector('[data-testid="professor-search-summary"]')?.textContent,
+    ).toContain("2 open request(s)");
+
+    const input = section.querySelector<HTMLInputElement>(
+      '[data-testid="professor-search-letters"]',
+    )!;
+    input.value = "mei";
+    input.dispatchEvent(new Event("input"));
+    expect(changes).toEqual([["letters", "mei"]]);
+  });
+
+  it("draws only the matching papers", () => {
+    const { container } = draw({
+      piReview: [
+        piReviewRow({ paperId: "a", title: "Causal Garden Planning" }),
+        piReviewRow({ paperId: "b", title: "Sparse Kettles" }),
+      ],
+      search: { "pi-review": "kettle" },
+      onSearchChange: () => {},
+    });
+    const section = container.querySelector('[data-testid="professor-pi-review"]')!;
+    expect(section.textContent).toContain("Sparse Kettles");
+    expect(section.textContent).not.toContain("Causal Garden Planning");
+  });
+});
+
+describe("marking a letter submitted from the desk", () => {
+  it("hides submitted letters from the open list", () => {
+    const { container } = draw({
+      requests: [
+        request({ id: "open", member_name: "Jane Doe" }),
+        request({ id: "done", member_name: "Mei Chen", status: "completed" }),
+      ],
+    });
+    const section = container.querySelector('[data-testid="professor-letters"]')!;
+    expect(section.textContent).toContain("Jane Doe");
+    expect(section.textContent).not.toContain("Mei Chen");
+  });
+
+  it("puts a Submitted button on each row that reports the request", () => {
+    const calls: Array<[string, boolean]> = [];
+    const { container } = draw({
+      requests: [request({ id: "r1", member_name: "Jane Doe" })],
+      onLetterSubmitted: (row, submitted) => calls.push([row.id, submitted]),
+    });
+    const button = container.querySelector<HTMLButtonElement>(
+      '[data-testid="professor-letter-submitted"]',
+    )!;
+    expect(button.textContent).toContain("Submitted");
+    button.click();
+    expect(calls).toEqual([["r1", true]]);
+  });
+
+  it("disables the button while that request is saving", () => {
+    const { container } = draw({
+      requests: [request({ id: "r1" })],
+      onLetterSubmitted: () => {},
+      letterBusyId: "r1",
+    });
+    expect(
+      container.querySelector<HTMLButtonElement>('[data-testid="professor-letter-submitted"]')
+        ?.disabled,
+    ).toBe(true);
+  });
+
+  it("collects letters submitted here in a done section that can undo", () => {
+    const calls: Array<[string, boolean]> = [];
+    const requests = [
+      request({ id: "r1", member_name: "Jane Doe", status: "completed" }),
+      request({ id: "r2", member_name: "Mei Chen", status: "completed" }),
+    ];
+    expect(recLettersSubmittedHere(requests, { r1: "submitted" }).map((row) => row.id)).toEqual([
+      "r1",
+    ]);
+    const { container } = draw({
+      requests,
+      letterUndo: { r1: "submitted" },
+      onLetterSubmitted: (row, submitted) => calls.push([row.id, submitted]),
+    });
+    const done = container.querySelector('[data-testid="professor-letters-done"]')!;
+    expect(done.textContent).toContain("Jane Doe");
+    expect(done.textContent).not.toContain("Mei Chen");
+    done.querySelector<HTMLButtonElement>('[data-testid="professor-letter-undo"]')!.click();
+    expect(calls).toEqual([["r1", false]]);
+  });
+
+  it("shows a failed save instead of swallowing it", () => {
+    const { container } = draw({
+      requests: [request({ id: "r1" })],
+      onLetterSubmitted: () => {},
+      letterError: "Forbidden",
+    });
+    expect(
+      container.querySelector('[data-testid="professor-letter-error"]')?.textContent,
+    ).toContain("Forbidden");
+  });
+});
+
+describe("acting on a paper from its row", () => {
+  const feedback = {
+    label: "Feedback 1",
+    slot: "feedback_1",
+    reason: "Check the related work",
+    url: "https://example.test/draft",
+  };
+
+  it("marks unreviewed feedback reviewed, keeping the request itself intact", () => {
+    const action = piReviewQuickAction(piReviewRow({ feedback } as never));
+    expect(action?.kind).toBe("feedback");
+    expect(action?.slot).toBe("feedback_1");
+    expect(JSON.parse((action as { valueText: string }).valueText)).toEqual({
+      reason: "Check the related work",
+      url: "https://example.test/draft",
+      reviewed: true,
+      review_note: "",
+    });
+  });
+
+  it("offers nothing for feedback already reviewed", () => {
+    expect(
+      piReviewQuickAction(piReviewRow({ feedback: { ...feedback, reviewed: true } } as never)),
+    ).toBeNull();
+  });
+
+  it("approves a plain arXiv release, and leaves the rest to the paper page", () => {
+    expect(piReviewQuickAction(piReviewRow())).toEqual({ kind: "approve", slot: "pi_approval" });
+    expect(piReviewQuickAction(piReviewRow({ category: "arxiv_release" }))).toEqual({
+      kind: "approve",
+      slot: "pi_approval",
+    });
+    expect(piReviewQuickAction(piReviewRow({ category: "camera_ready" }))).toBeNull();
+  });
+
+  it("puts the action on the row and reports it", () => {
+    const calls: Array<[string, string]> = [];
+    const { container } = draw({
+      piReview: [
+        piReviewRow({ paperId: "p1" }),
+        piReviewRow({ paperId: "p2", title: "Sparse Kettles", feedback } as never),
+      ],
+      expanded: new Set(["pi-review"]),
+      onPaperAction: (row, action) => calls.push([row.paperId, action.slot]),
+    });
+    container.querySelector<HTMLButtonElement>('[data-testid="professor-paper-approve"]')!.click();
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="professor-paper-feedback-done"]')!
+      .click();
+    expect(calls).toEqual([
+      ["p1", "pi_approval"],
+      ["p2", "feedback_1"],
+    ]);
+  });
 });

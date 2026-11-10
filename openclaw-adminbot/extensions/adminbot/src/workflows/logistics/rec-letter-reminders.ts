@@ -53,7 +53,8 @@ export function recLetterRemindersDue(
   return requests
     .filter((request) => request.kind === "recommendation_letters" && !SETTLED.has(request.status))
     .flatMap((request) => {
-      const deadline = requestDeadlineDetails(request);
+      // Mail goes out on a typed date only; a year inferred for display is not enough to nag on.
+      const deadline = requestDeadlineDetails(request, { inferYear: false });
       const deadlineAt = deadline?.at;
       const deadlineMs = deadlineAt ? Date.parse(deadlineAt) : Number.NaN;
       // A request with no deadline on file is a real state, not a zero: the member has asked for

@@ -229,6 +229,7 @@ export type MemberAuthHost = {
   adminBotBroadcastNotice?: { kind: "success" | "error"; text: string } | null;
   adminBotNotice?: { kind: "success" | "error"; text: string } | null;
   professorExpandedLists?: Set<string>;
+  professorSearch?: Record<string, string>;
   memberSheet?: import("../api/onboarding.ts").MemberSheetView | null;
   memberSheetLoadedAt?: number | null;
   memberSheetBusy?: boolean;
@@ -667,6 +668,7 @@ function clearMemberScopedData(host: MemberAuthHost): void {
   host.adminBotBroadcastNotice = null;
   host.adminBotNotice = null;
   host.professorExpandedLists = new Set();
+  host.professorSearch = {};
   host.memberSheet = null;
   host.memberSheetLoadedAt = null;
   host.memberSheetBusy = false;

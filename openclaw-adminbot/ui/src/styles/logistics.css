@@ -1552,10 +1552,69 @@
   white-space: nowrap;
 }
 
+/* A row's one-click answer ("Submitted", "Feedback done"). Beside the row, never in it, and kept
+   small so a column of them reads as a margin of ticks rather than a wall of buttons. */
+.professor__row-action {
+  flex: none;
+  align-self: center;
+  white-space: nowrap;
+}
+
+/* The queue's search box. Full width on a phone, a comfortable field on a desk. */
+.professor__search {
+  margin-top: var(--space-3);
+}
+
+.professor__search-input {
+  width: min(100%, 22rem);
+  font: inherit;
+  font-size: var(--control-ui-text-sm);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: inherit;
+}
+
+.professor__search-summary {
+  margin: var(--space-2) 0 0;
+  color: var(--muted-strong);
+  font-size: var(--control-ui-text-sm);
+}
+
+.professor__error {
+  margin: var(--space-2) 0 0;
+  color: var(--danger, var(--warn));
+  font-size: var(--control-ui-text-sm);
+}
+
+/* Letters answered from the desk: folded, quiet, and still undoable. */
+.professor__done {
+  margin-top: var(--space-3);
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted-strong);
+}
+
+.professor__done > summary {
+  cursor: pointer;
+}
+
+.professor__done-row {
+  padding: var(--space-1) 0;
+}
+
 .professor__when {
   margin-left: auto;
   color: var(--muted-strong);
   font-size: var(--control-ui-text-xs);
+}
+
+/* On a phone the date wraps under the name and school; pushed right it floats mid-row. */
+@media (max-width: 640px) {
+  .professor__row-body > .professor__when {
+    flex-basis: 100%;
+    margin-left: 0;
+  }
 }
 
 .professor__empty {
