@@ -33,6 +33,9 @@ const ALL_TABS: Tab[] = Array.from(
     ...(TAB_PAGES.flatMap((page) => page.tabs) as Tab[]),
     ...UNGROUPED_TABS,
     ...SETTINGS_TABS,
+    // Off the sidebar now (a filter inside Lab Members), but its old path still routes and
+    // redirects, so it keeps an icon, title and subtitle.
+    "adminbotArrReviewers",
   ]),
 );
 

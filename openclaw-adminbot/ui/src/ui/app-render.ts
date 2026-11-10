@@ -132,7 +132,7 @@ import { renderPaperReviewSurface, renderProjectsSurface } from "./adminbot/surf
 import type { AdminBotSurfaceScope } from "./adminbot/surfaces/scope.ts";
 import { renderTimeAvailabilitySurface } from "./adminbot/surfaces/time-availability.ts";
 import type { AdminBotPanel } from "./adminbot/views/admin.ts";
-import { renderArrReviewers } from "./adminbot/views/arr-reviewers.ts";
+import { renderArrReviewerFilter, renderArrReviewers } from "./adminbot/views/arr-reviewers.ts";
 import {
   renderChangePasswordPopover,
   renderChangePasswordTrigger,
@@ -2439,7 +2439,11 @@ export function renderApp(state: AppViewState) {
   // session, which needs no socket (requiring one blanked plain members' landing page). That stored
   // session, not just `memberId`: every read below needs it, and a gate without it re-asks forever.
   const hasMemberSession = Boolean(state.memberId && loadStoredMemberSession());
-  const needsRosterForTab = needsLabRoster(state.tab, adminBotMode, adminBotPanel);
+  // Lab Members with the ARR filter on draws the reviewer list, which reads the full roster rather
+  // than the paged people database.
+  const membersArrFilter = state.tab === "adminbotMembers" && state.adminBotMembersArrFilter;
+  const needsRosterForTab =
+    needsLabRoster(state.tab, adminBotMode, adminBotPanel) || membersArrFilter;
   const needsPapersForTab =
     !profileBlocked &&
     (needsLabPapers(state.tab) || adminBotPanel === "papers" || (isChat && isAdminBotChat));
@@ -2450,9 +2454,7 @@ export function renderApp(state: AppViewState) {
   // Meeting Recordings joins this for the same reason: its admin attendance editor lists every
   // member, including the ones no import found, so it needs the roster while rendering its own view.
   const wantsRosterOnly =
-    state.tab === "adminbotTimeAvailability" ||
-    state.tab === "adminbotMeetings" ||
-    state.tab === "adminbotArrReviewers";
+    state.tab === "adminbotTimeAvailability" || state.tab === "adminbotMeetings";
   const wantsGatewayAdminBotLoad =
     ((isChat && isAdminBotChat) || adminBotPanel || wantsRosterOnly) && state.connected;
   const needsFirstPaperRead =
@@ -3290,6 +3292,15 @@ export function renderApp(state: AppViewState) {
                 : nothing}
             </div>`
           : renderPageTabs(state, accessRole)}
+        ${state.tab === "adminbotMembers" && !profileBlocked
+          ? renderArrReviewerFilter({
+              active: state.adminBotMembersArrFilter,
+              onToggle: (on) => {
+                state.adminBotMembersArrFilter = on;
+                requestHostUpdate?.();
+              },
+            })
+          : nothing}
         ${rosterPendingForTab
           ? html`<div
               class="adminbot-empty"
@@ -3347,7 +3358,7 @@ export function renderApp(state: AppViewState) {
               },
             })
           : nothing}
-        ${state.tab === "adminbotArrReviewers" && !rosterPendingForTab
+        ${membersArrFilter && !rosterPendingForTab
           ? renderArrReviewers({
               members: state.adminBotData.members,
               loading: hasMemberSession ? state.adminBotRosterLoading : state.adminBotLoading,
@@ -3459,7 +3470,7 @@ export function renderApp(state: AppViewState) {
               }),
             )
           : nothing}
-        ${renderAdminPanelsSurface(state, adminBotSurfaces)}
+        ${membersArrFilter ? nothing : renderAdminPanelsSurface(state, adminBotSurfaces)}
         ${state.tab === "adminbotRegistrations" && adminBotMode === "admin"
           ? renderLazyView(lazyAdminBotRegistrations, (m) =>
               m.renderAdminBotRegistrations({

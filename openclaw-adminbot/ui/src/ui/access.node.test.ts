@@ -122,9 +122,9 @@ describe("visibleTabsForRole", () => {
   });
 
   it("adds the roster and the shared tools for a member", () => {
-    // Sidebar order: the dashboard, then My Info, then Lab Sharing with the recordings and the
-    // roster under it, then the three requests, then the shared tools. `chat` is absent: it is
-    // retired, and no group lists it.
+    // Sidebar order: the dashboard, then My Info, then the people group led by the roster, then
+    // the three requests, then the shared tools. `chat` is absent: it is retired, and no group
+    // lists it.
     expect(visibleTabsForRole(ALL_TABS, "member")).toEqual([
       "dashboard",
       // The viewer's own checklist, marked done against their own record.
@@ -132,20 +132,20 @@ describe("visibleTabsForRole", () => {
       "profile",
       // Your own schedule, next to your own record.
       "adminbotTimeAvailability",
-      // Conference RSVPs, who is nearby and opt-in location sharing.
-      "events",
       "myWork",
-      "labSharing",
-      // Recordings of the lab's own meetings sit with Lab Sharing, above the roster.
-      "adminbotMeetings",
+      // Lab Members leads the people group; the talk leaderboard is a tab inside its page, not a
+      // sidebar entry. Recordings follow, and Collaborate, the least active, sits last.
       "adminbotMembers",
-      // Ranks the roster on invited talks from their CVs; names and counts only.
-      "adminbotTalkLeaderboard",
+      "adminbotMeetings",
+      "labSharing",
       "adminbotSignatures",
       "adminbotRecLetters",
       "adminbotMeetingRequests",
       "adminbotReimbursements",
       "adminbotDeadlines",
+      // Conference RSVPs, who is nearby and opt-in location sharing. Beside Deadlines: both are
+      // dated lists.
+      "events",
       // Lab-internal curation, so signed-in only -- but every member sees the same rows, and
       // nothing on it is filtered by who is looking.
       "adminbotOpportunities",
@@ -155,9 +155,7 @@ describe("visibleTabsForRole", () => {
       // A review of a zip the member uploads, handed back as files, and the PDF reference check
       // that used to be a tab of its own; full members only.
       "adminbotPaperMentor",
-      // The ARR eligible-reviewer list is member-level: it reads the lab's own roster, like Lab
-      // Members, and changes nothing.
-      "adminbotArrReviewers",
+      // ARR Eligible Reviewers is a filter inside Lab Members now, not a sidebar entry.
     ]);
   });
 

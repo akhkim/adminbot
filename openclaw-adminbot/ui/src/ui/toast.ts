@@ -1,4 +1,4 @@
-// The top-right popup, as one function anything in the UI can call.
+// The corner popup, as one function anything in the UI can call.
 //
 // `showToast({ title, body })` and something appears in the corner. That is the whole surface, and
 // it is a function rather than a component on purpose: the things that need to pop something up --
@@ -30,6 +30,11 @@
 //     push the toasts under it off screen or bury its own close button;
 //   - two or more toasts get a "Dismiss all" bar, pinned above the stack, because clearing fifteen
 //     of them one X at a time is not a thing anybody will do.
+//
+// And the corner is the bottom one. The stack used to sit top-right, which is where the page
+// header and its search boxes are: a stack of unread notifications covered the search field until
+// the member closed every one (and the close button only showed on hover). Bottom-right covers no
+// control the header or a page's filter bar owns, and the close button is always drawn.
 import { html, nothing, render } from "lit";
 import { icons } from "./icons.ts";
 
@@ -46,9 +51,14 @@ export type ToastOptions = {
   action?: { label: string; onClick: () => void };
   /** Showing the same key again replaces the toast rather than stacking a second copy. */
   key?: string;
-  /** Called when it goes away, however it went away. */
-  onDismiss?: () => void;
+  /**
+   * Called when it goes away, however it went away. `reason` says how: "timeout" when its duration
+   * ran out with nobody touching it, which is not the member acknowledging anything.
+   */
+  onDismiss?: (reason: ToastDismissReason) => void;
 };
+
+export type ToastDismissReason = "closed" | "timeout" | "replaced";
 
 /** How long an ordinary toast lives. Long enough to read two sentences, short enough not to nag. */
 export const TOAST_DEFAULT_DURATION_MS = 8_000;
@@ -141,7 +151,7 @@ function paint(): void {
                     class="toast__close"
                     data-testid="toast-close"
                     aria-label="Dismiss notification"
-                    @click=${() => dismissToast(toast.id)}
+                    @click=${() => dismissToast(toast.id, "closed")}
                   >
                     ${icons.x}
                   </button>
@@ -154,7 +164,7 @@ function paint(): void {
   );
 }
 
-function dismissToast(id: string): void {
+function dismissToast(id: string, reason: ToastDismissReason = "closed"): void {
   const index = toasts.findIndex((toast) => toast.id === id);
   if (index < 0) {
     return;
@@ -164,11 +174,11 @@ function dismissToast(id: string): void {
     clearTimeout(removed.timer);
   }
   paint();
-  removed?.onDismiss?.();
+  removed?.onDismiss?.(reason);
 }
 
 /**
- * Pop something up in the top-right corner. Returns a function that dismisses it early.
+ * Pop something up in the bottom-right corner. Returns a function that dismisses it early.
  *
  * Safe to call before the app has painted and safe to call from a non-browser context: with no
  * `document` it does nothing and hands back a no-op, so a controller does not have to guard.
@@ -182,7 +192,7 @@ export function showToast(options: ToastOptions): () => void {
     if (existing) {
       // Replaced in place rather than removed and re-added: keeping its slot in the stack is what
       // stops a repeating poll shuffling the corner every time it runs.
-      dismissToast(existing.id);
+      dismissToast(existing.id, "replaced");
     }
   }
   const id = `toast-${(counter += 1)}`;
@@ -191,7 +201,7 @@ export function showToast(options: ToastOptions): () => void {
     options.duration ?? (options.action ? 0 : TOAST_DEFAULT_DURATION_MS);
   const toast: Toast = { ...options, id };
   if (duration > 0) {
-    toast.timer = setTimeout(() => dismissToast(id), duration);
+    toast.timer = setTimeout(() => dismissToast(id, "timeout"), duration);
   }
   toasts.push(toast);
   paint();

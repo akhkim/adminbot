@@ -16,11 +16,14 @@ it("loads and refreshes reviewers for a gateway-only admin and displays loading/
   clearStoredMemberSession();
   const app = new OpenClawApp();
   app.connected = true;
-  app.tab = "adminbotArrReviewers";
+  // The reviewer list is Lab Members with the ARR filter on, not a tab of its own.
+  app.tab = "adminbotMembers";
+  app.adminBotMembersArrFilter = true;
   const load = vi.spyOn(admin, "loadAdminBot").mockImplementation(async (host) => {
     host.adminBotLoading = true;
   });
   const roster = vi.spyOn(admin, "loadAdminBotRoster");
+  vi.spyOn(admin, "loadAdminBotMemberList").mockResolvedValue(undefined);
   const container = document.createElement("div");
   const draw = () => render(renderApp(app as unknown as AppViewState), container);
 
@@ -60,4 +63,39 @@ it("loads and refreshes reviewers for a gateway-only admin and displays loading/
   draw();
   expect(container.textContent).toContain("Test Reviewer");
   expect(container.textContent).not.toContain("Synthetic gateway failure");
+});
+
+it("swaps the people database for the reviewer list when the filter is toggled", () => {
+  clearStoredMemberSession();
+  const app = new OpenClawApp();
+  app.connected = true;
+  app.tab = "adminbotMembers";
+  vi.spyOn(admin, "loadAdminBot").mockResolvedValue(undefined);
+  vi.spyOn(admin, "loadAdminBotMemberList").mockResolvedValue(undefined);
+  app.adminBotData = {
+    ...app.adminBotData,
+    loadedAt: Date.now(),
+    members: [
+      { id: "reviewer", name: "Test Reviewer", arr_reviewer_qualified: true },
+      { id: "other", name: "Not A Reviewer", arr_reviewer_qualified: false },
+    ],
+  };
+  const container = document.createElement("div");
+  const draw = () => render(renderApp(app as unknown as AppViewState), container);
+
+  draw();
+  const toggle = container.querySelector<HTMLInputElement>(
+    "[data-testid='arr-reviewer-filter'] input",
+  );
+  expect(toggle).toBeTruthy();
+  expect(toggle!.checked).toBe(false);
+  expect(container.textContent).not.toContain("1 eligible reviewer");
+
+  toggle!.checked = true;
+  toggle!.dispatchEvent(new Event("change"));
+  expect(app.adminBotMembersArrFilter).toBe(true);
+  draw();
+  expect(container.textContent).toContain("1 eligible reviewer");
+  expect(container.textContent).toContain("Test Reviewer");
+  expect(container.textContent).not.toContain("Not A Reviewer");
 });

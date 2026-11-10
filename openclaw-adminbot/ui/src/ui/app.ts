@@ -731,6 +731,8 @@ export class OpenClawApp extends LitElement {
   @state() adminBotRosterError: string | null = null;
   adminBotRosterRequestId = 0;
   @state() adminBotMemberList: AdminBotMemberListState = createEmptyAdminBotMemberList();
+  // Lab Members' "ARR-eligible reviewers only" filter. Cleared when the viewer leaves the tab.
+  @state() adminBotMembersArrFilter = false;
   @state() adminBotStandingMeetings: AdminBotStandingMeetingsState =
     createEmptyAdminBotStandingMeetings();
   @state() adminBotMemberRequests: AdminBotMemberRequestsState =

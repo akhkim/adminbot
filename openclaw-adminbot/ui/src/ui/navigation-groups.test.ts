@@ -60,15 +60,10 @@ describe("TAB_GROUPS", () => {
       "adminbotTimeAvailability",
       "myWork",
     ]);
-    // The people around the viewer in one group: who can help, where they will be, when the lab
-    // meets and who the lab is. Events used to sit under My Info, two groups away from Collaborate.
+    // The people around the viewer in one group. Lab Members leads it and Collaborate, the least
+    // active of the three now, sits last. Events moved beside Deadlines in General Tools.
     // The talk leaderboard is the second tab of the Lab Members page, not its own sidebar entry.
-    expect(byLabel("labSharing")).toEqual([
-      "labSharing",
-      "events",
-      "adminbotMeetings",
-      "adminbotMembers",
-    ]);
+    expect(byLabel("labSharing")).toEqual(["adminbotMembers", "adminbotMeetings", "labSharing"]);
     expect(TAB_PAGES.find((page) => page.page === "people")?.tabs).toEqual([
       "adminbotMembers",
       "adminbotTalkLeaderboard",
@@ -83,6 +78,8 @@ describe("TAB_GROUPS", () => {
     expect(byLabel("generalTools")).toEqual([
       "adminbotReimbursements",
       "adminbotDeadlines",
+      // Beside Deadlines: both are dated lists.
+      "events",
       // Opportunities sits with the member-facing tools, not under Admin: the brainstorming deck
       // asks that members hear about Rising Star and fellowship deadlines, not that admins audit
       // a list of them.
@@ -91,12 +88,16 @@ describe("TAB_GROUPS", () => {
       // lab-facing tools, and the access table hides them from everyone else.
       "adminbotNotificationDrafts",
       "adminbotConferencePapers",
-      // Member-only: checking a draft's references and the ARR reviewer eligibility list are
-      // signed-in tools, so a visitor's sidebar shows the group without them.
-      // The PDF Reference Checker is part of PaperMentor, not a tab of its own.
+      // Member-only: checking a draft's references is a signed-in tool, so a visitor's sidebar
+      // shows the group without it. The PDF Reference Checker is part of PaperMentor.
       "adminbotPaperMentor",
-      "adminbotArrReviewers",
     ]);
+    // ARR Eligible Reviewers is a filter inside Lab Members now, not a sidebar entry; its old path
+    // still resolves so app-settings can redirect it there.
+    expect(TAB_GROUPS.flatMap((group) => group.tabs as readonly string[])).not.toContain(
+      "adminbotArrReviewers",
+    );
+    expect(tabFromPath("/arr-eligible-reviewers")).toBe("adminbotArrReviewers");
     // Chat is no longer a group of its own: asking AdminBot something is the second half of the
     // guidebook surface, which the sidebar footer renders.
     expect(TAB_GROUPS.flatMap((group) => group.tabs as readonly string[])).not.toContain("chat");

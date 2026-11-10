@@ -29,7 +29,9 @@ type Tab =
   | "infrastructure"
   | "aiAgents"
   | "debug"
-  | "logs";
+  | "logs"
+  | "adminbotMembers"
+  | "adminbotArrReviewers";
 
 type SettingsHost = {
   settings: {
@@ -222,6 +224,23 @@ describe("setTabFromRoute", () => {
     host.memberPrivilegeLevel = "admin";
     setTabFromRoute(host, "overview");
     expect(host.tab).toBe("overview");
+  });
+
+  it("lands the retired ARR reviewers path on Lab Members with the filter on", () => {
+    const host = Object.assign(createHost("overview"), {
+      connected: false,
+      adminBotMembersArrFilter: false,
+    });
+    setTestWindowUrl("http://localhost/arr-eligible-reviewers");
+    setTabFromRoute(host, "adminbotArrReviewers");
+    expect(host.tab).toBe("adminbotMembers");
+    expect(host.adminBotMembersArrFilter).toBe(true);
+    // Rewritten in place, so Back does not bounce through the retired path.
+    expect(window.location.pathname).toBe("/members");
+
+    // Leaving Lab Members clears the filter, so the next visit shows everyone.
+    setTabFromRoute(host, "overview");
+    expect(host.adminBotMembersArrFilter).toBe(false);
   });
 
   it("starts and stops log polling based on the tab", () => {
