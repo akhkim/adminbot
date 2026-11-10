@@ -274,6 +274,14 @@ export type AdminBotPaperSlotDefinition = {
  */
 const OVERLEAF_HOSTS = [OVERLEAF_COM_HOST, ADMINBOT_LAB_OVERLEAF_HOST] as const;
 
+/**
+ * The lab's Quick Pointers doc. Each research theme's section links that theme's overall slide deck,
+ * which every talk on the theme is added to; the slides reminder points here. A public lab page,
+ * not a credential.
+ */
+export const ADMINBOT_QUICK_POINTERS_DOC_URL =
+  "https://docs.google.com/document/d/19Y7NU6jgwxEK9J20P82_wJAE3CAKS2EbdbQwGE3_N8k/edit";
+
 export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperSlotDefinition> = {
   feedback_arr: {
     kind: "feedback",
@@ -630,12 +638,14 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     gates: "poster_making",
     branch: "talk",
     label: "Talk slides",
-    upstream: ["pdf_ready"],
+    // Asked for once PaperMentor has reviewed the draft, not once the PDF compiles: the review is
+    // when the story is settled enough to present, and the weekly slot reminder starts there.
+    upstream: ["papermentor_review"],
     required: true,
     deadlineBearing: false,
     urlHosts: ["docs.google.com"],
     urlPath: ["/presentation/"],
-    hint: "The talk slides for this venue, as a Google Slides deck.",
+    hint: "The talk slides for this venue, as a Google Slides deck. Also add them to your theme's overall slides, linked from each section of the lab's Quick Pointers doc.",
     example: "https://docs.google.com/presentation/d/1Sl1De…",
   },
   poster: {

@@ -923,6 +923,15 @@ and a leftover project-link row do not. `upsertOwnPaper` refuses the move with a
 greys out "Accepted" with the reason. Only the move into "accept" is checked, so a paper accepted
 before the rule can still have its other fields saved, and admin writes are not gated.
 
+**Talk slides.** The talk branch starts at the PaperMentor review, not at the compiled PDF:
+`slides` is upstream of nothing but `papermentor_review`. Once the review is marked done (by
+PaperMentor's own run or by the author) and no slides link is registered, the daily evidence
+reminder (`adminbot-paper-slot-nudges`) asks the first author for it. The ledger repeats it once a
+week per paper and per person, until the link is in. The line asks for two things: make the slides
+and link them on the card, and add them to the theme's overall deck. Each theme's section of the
+lab's Quick Pointers doc (`ADMINBOT_QUICK_POINTERS_DOC_URL` in `contracts/paper-slots.ts`) links
+that deck.
+
 Three properties, and each of them is about not lying:
 
 - **Contiguous.** The walk stops at the first step whose evidence is incomplete, so a poster
