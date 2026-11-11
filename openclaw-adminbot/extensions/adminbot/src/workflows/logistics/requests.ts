@@ -20,6 +20,7 @@ import type {
   AdminBotLogisticsSchool,
 } from "../../contracts/actions.js";
 import { adminBotLogisticsRequestKinds } from "../../contracts/actions.js";
+import { isStaleDeadline, STALE_DEADLINE_DAYS } from "../../contracts/paper-feedback.js";
 import { toAbsoluteRfc3339 } from "../calendar/time.js";
 import { parseMonthDay, resolveYearlessDate } from "./letter-deadline-date.js";
 
@@ -449,6 +450,25 @@ export function prepareLogisticsRequest(
   const invalid = validateLogisticsRequest(normalized);
   if (invalid) {
     return { ok: false, error: invalid };
+  }
+  // A letter deadline months behind on a new request is almost always the wrong year (2025 picked
+  // for 2026). Stored, it would sit on the PI's desk as long overdue, so ask for the year instead.
+  // Same cutoff the paper sheet uses for feedback deadlines.
+  const now = new Date(nowIso);
+  for (const school of normalized.kind === "recommendation_letters"
+    ? (normalized.schools ?? [])
+    : []) {
+    const instant = deadlineInstant(
+      school.letter_deadline,
+      school.letter_deadline_time,
+      school.deadline_timezone,
+    );
+    if (isStaleDeadline(instant, now)) {
+      return {
+        ok: false,
+        error: `The letter deadline for ${school.school} is more than ${STALE_DEADLINE_DAYS} days in the past. Check the year.`,
+      };
+    }
   }
   const deadline = requestDeadline(normalized, { inferYear: false });
   return {
