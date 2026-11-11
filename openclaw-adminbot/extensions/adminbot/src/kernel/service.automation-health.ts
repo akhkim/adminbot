@@ -30,47 +30,72 @@ const REPEAT_THRESHOLD = 3;
 /** How far back a gog credential failure still counts, absent a later success that clears it. */
 const CREDENTIAL_WINDOW_MS = 7 * 24 * HOUR_MS;
 
+type GogCapability = "mail" | "calendar" | "sheets";
+
 /**
- * Actions the gog executor carries out. A success of any of them after a credential failure means
- * the token works again. member_nudge.send is left out: it goes over Slack as often as by email,
- * and a Slack success says nothing about the Google token.
+ * Which part of Google a gog-backed action uses. A success clears only failures of the same
+ * capability: one token can lack the Gmail scope while Calendar works, or mail can run under a
+ * different account, so a calendar success says nothing about whether lab email goes out.
+ * member_nudge.send is not a success signal: it goes over Slack as often as by email, and a Slack
+ * success says nothing about the Google token. Its gog failures are the email channel's.
  */
-function isGogActionType(type: string): boolean {
-  return (
+function gogCapability(type: string): GogCapability | undefined {
+  if (
     type === "email.send" ||
     type === "email.draft" ||
     type === "logistics.rec_letter_reminder" ||
     type === "logistics.send_signed_document" ||
-    type === "reimbursement.submit" ||
-    type === "paper_integrity.sheet_scores" ||
-    type.startsWith("calendar.") ||
-    type.startsWith("sheet.")
-  );
+    type === "reimbursement.submit"
+  ) {
+    return "mail";
+  }
+  if (type.startsWith("calendar.")) {
+    return "calendar";
+  }
+  if (type === "paper_integrity.sheet_scores" || type.startsWith("sheet.")) {
+    return "sheets";
+  }
+  return undefined;
 }
+
+type GoogleCredentialFailure = {
+  at: string;
+  error: string;
+  kind: MailSendFailureKind;
+  count: number;
+};
 
 /**
  * The newest gog failure that a person has to fix (expired or revoked token, missing binary), if
- * nothing gog-backed has succeeded since. One failure is enough: unlike a flaky send, an expired
- * token fails every mail until someone re-runs `gog auth add`, and waiting for three of them is
- * three members who silently did not hear from the lab.
+ * nothing using the same capability has succeeded since -- or, for a missing gog binary, nothing
+ * gog-backed at all, since any run proves the binary is there. One failure is enough: unlike a
+ * flaky send, an expired token fails every mail until someone re-runs `gog auth add`, and waiting
+ * for three of them is three members who silently did not hear from the lab.
  */
 function googleCredentialFailure(
   // Oldest first, so a success can clear the failures before it.
   events: readonly AdminBotAuditEvent[],
   nowMs: number,
-): { at: string; error: string; kind: MailSendFailureKind; count: number } | undefined {
-  let latest: { at: string; error: string; kind: MailSendFailureKind; count: number } | undefined;
+): GoogleCredentialFailure | undefined {
+  const open = new Map<GogCapability, GoogleCredentialFailure>();
   for (const event of events) {
     const details = (event.details ?? {}) as Record<string, unknown>;
     const error = typeof details.error === "string" ? details.error : "";
-    if (
-      (event.type === "execution.executed" &&
-        typeof details.action_type === "string" &&
-        isGogActionType(details.action_type)) ||
-      event.type === "auth.approval_email_sent" ||
-      event.type === "auth.password_reset_email_sent"
-    ) {
-      latest = undefined;
+    const actionType = typeof details.action_type === "string" ? details.action_type : "";
+    const succeeded =
+      event.type === "execution.executed"
+        ? gogCapability(actionType)
+        : event.type === "auth.approval_email_sent" ||
+            event.type === "auth.password_reset_email_sent"
+          ? "mail"
+          : undefined;
+    if (succeeded) {
+      open.delete(succeeded);
+      for (const [capability, failure] of open) {
+        if (failure.kind === "connector_missing") {
+          open.delete(capability);
+        }
+      }
       continue;
     }
     const mailFailure =
@@ -85,10 +110,20 @@ function googleCredentialFailure(
     }
     const kind = classifyMailSendFailure(error);
     if (needsOperatorForMailFailure(kind)) {
-      latest = { at: event.timestamp, error, kind, count: (latest?.count ?? 0) + 1 };
+      const capability = mailFailure ? "mail" : (gogCapability(actionType) ?? "mail");
+      const previous = open.get(capability);
+      open.set(capability, { at: event.timestamp, error, kind, count: (previous?.count ?? 0) + 1 });
     }
   }
-  return latest;
+  let latest: GoogleCredentialFailure | undefined;
+  let count = 0;
+  for (const failure of open.values()) {
+    count += failure.count;
+    if (!latest || latest.at <= failure.at) {
+      latest = failure;
+    }
+  }
+  return latest ? { ...latest, count } : undefined;
 }
 
 export type AutomationHealthIssue = {
@@ -120,23 +155,48 @@ export type SlackInviteBlock = {
 type ProposalLookup = (id: string) => AdminBotStoredProposal | undefined;
 
 /**
- * The newest OpenReview login outcome the checks recorded, when it is a refusal: the account's
- * email/password stopped working and nothing that reads OpenReview can run until someone fixes
- * them. Undefined once a later login worked, or if none was ever refused.
+ * The OpenReview logins whose newest recorded outcome is a refusal, by the check that recorded it
+ * (citation or integrity). Kept per check because each reads OpenReview through its own session:
+ * one whose token is still cached keeps working after the password stops, and its success says
+ * nothing about the login the other check was just refused.
+ */
+export function openReviewRejectedLogins(
+  events: readonly AdminBotAuditEvent[],
+): Map<string, AdminBotAuditEvent> {
+  const latest = new Map<string, AdminBotAuditEvent>();
+  for (const event of events) {
+    if (event.type !== "openreview.login_rejected" && event.type !== "openreview.login_restored") {
+      continue;
+    }
+    const source = typeof event.details?.source === "string" ? event.details.source : "";
+    const previous = latest.get(source);
+    if (!previous || previous.timestamp <= event.timestamp) {
+      latest.set(source, event);
+    }
+  }
+  for (const [source, event] of latest) {
+    if (event.type !== "openreview.login_rejected") {
+      latest.delete(source);
+    }
+  }
+  return latest;
+}
+
+/**
+ * The newest OpenReview login refusal still outstanding: the account's email/password stopped
+ * working and nothing that reads OpenReview can run until someone fixes them. Undefined once every
+ * check that was refused has logged in again since, or if none was ever refused.
  */
 export function openReviewLoginRejection(
   events: readonly AdminBotAuditEvent[],
 ): AdminBotAuditEvent | undefined {
-  let latest: AdminBotAuditEvent | undefined;
-  for (const event of events) {
-    if (
-      (event.type === "openreview.login_rejected" || event.type === "openreview.login_restored") &&
-      (!latest || latest.timestamp <= event.timestamp)
-    ) {
-      latest = event;
+  let newest: AdminBotAuditEvent | undefined;
+  for (const event of openReviewRejectedLogins(events).values()) {
+    if (!newest || newest.timestamp <= event.timestamp) {
+      newest = event;
     }
   }
-  return latest?.type === "openreview.login_rejected" ? latest : undefined;
+  return newest;
 }
 
 /**
@@ -223,8 +283,7 @@ export function slackInviteBlockFor(
 ): SlackInviteBlock | undefined {
   const wanted = channelKey(channel);
   return blocks.find(
-    (block) =>
-      block.channel === wanted && (block.scope === "channel" || block.user_id === userId),
+    (block) => block.channel === wanted && (block.scope === "channel" || block.user_id === userId),
   );
 }
 
@@ -514,7 +573,10 @@ export function automationHealthIssues(
       label: `${users.length} ${users.length === 1 ? "person needs" : "people need"} a manual invite to #${channel}`,
       detail: `The bot cannot add them (${[...new Set(people.map((entry) => entry.reason))].join(", ")}): guests and members of another workspace or org have to be invited by a workspace admin. Slack ids: ${users.join(", ")}.`,
       count: users.length,
-      last_seen: people.map((entry) => entry.since).toSorted().at(-1),
+      last_seen: people
+        .map((entry) => entry.since)
+        .toSorted()
+        .at(-1),
     });
   }
   return issues;

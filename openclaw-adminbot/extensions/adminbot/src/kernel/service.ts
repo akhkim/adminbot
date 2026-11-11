@@ -3,14 +3,14 @@ import type {
   CalendarMembershipReader,
   CalendarAccessReader,
 } from "../connectors/calendar-membership.js";
-import type {
-  PaperMentorReviewRequester,
-  PaperMentorReviewRequestStatus,
-} from "../connectors/papermentor-review.js";
 import {
   classifyMailSendFailure,
   needsOperatorForMailFailure,
 } from "../connectors/mail-send-failure.js";
+import type {
+  PaperMentorReviewRequester,
+  PaperMentorReviewRequestStatus,
+} from "../connectors/papermentor-review.js";
 import type { PaperMentorUpload } from "../connectors/papermentor-uploads.js";
 import type { ReverseGeocoder } from "../connectors/reverse-geocode.js";
 import type { AdminBotExternalCollaboratorSubgroup } from "../contracts/actions.js";
@@ -572,7 +572,7 @@ import {
 } from "./service.active-channels.js";
 import {
   automationHealthIssues,
-  openReviewLoginRejection,
+  openReviewRejectedLogins,
   SLACK_CONNECT_INVITE_REASONS,
   slackInviteBlockFor,
   slackInviteBlocks,
@@ -2013,9 +2013,9 @@ export class AdminBotService {
   // Invite payloads do not change once proposed, and a sweep asks about the same few hundred
   // failures once per invite it considers; remembered so that is a map read, not a query.
   private readonly failedInviteProposals = new Map<string, AdminBotStoredProposal | undefined>();
-  // Whether the newest recorded OpenReview login was refused; read from the audit trail on first
-  // use, then kept here so each sweep does not rescan it. See recordOpenReviewLogin.
-  private openReviewLoginRejected: boolean | undefined;
+  // The checks whose newest recorded OpenReview login was refused; read from the audit trail on
+  // first use, then kept here so each sweep does not rescan it. See recordOpenReviewLogin.
+  private openReviewLoginRejected: Set<string> | undefined;
   private failedInviteProposal(id: string): AdminBotStoredProposal | undefined {
     if (!this.failedInviteProposals.has(id)) {
       this.failedInviteProposals.set(id, this.store.getProposal(id));
@@ -3660,8 +3660,9 @@ export class AdminBotService {
   /**
    * Records whether the OpenReview account could log in, for the automation health pass.
    *
-   * Only changes are recorded -- the first refusal, and the first success after one -- so an
-   * hourly check against a broken login is one audit event, not one per hour. The health pass
+   * Only changes are recorded, per check -- its first refusal, and its first success after one --
+   * so an hourly check against a broken login is one audit event, not one per hour. Per check
+   * because each has its own session: a cached token's success is not a login that worked. The health pass
    * turns an outstanding refusal into an admin alert and clears it once a login works again.
    * A refusal means OpenReview answered and said no; an unreachable OpenReview is not recorded.
    */
@@ -3669,16 +3670,20 @@ export class AdminBotService {
     source: "citation_checks" | "integrity_checks",
     result: { ok: true } | { ok: false; error: string },
   ): void {
-    this.openReviewLoginRejected ??= Boolean(
-      openReviewLoginRejection(this.store.listAuditEvents()),
-    );
-    if (result.ok === this.openReviewLoginRejected) {
+    const rejected = (this.openReviewLoginRejected ??= new Set(
+      openReviewRejectedLogins(this.store.listAuditEvents()).keys(),
+    ));
+    if (result.ok === rejected.has(source)) {
       this.recordAudit({
         type: result.ok ? "openreview.login_restored" : "openreview.login_rejected",
         actor: "adminbot",
         details: result.ok ? { source } : { source, error: result.error },
       });
-      this.openReviewLoginRejected = !result.ok;
+      if (result.ok) {
+        rejected.delete(source);
+      } else {
+        rejected.add(source);
+      }
     }
   }
 
@@ -10485,9 +10490,7 @@ export class AdminBotService {
    * the text from the registry -- so it runs from cron on the same footing as
    * `sendMandatoryFieldsReminders`.
    */
-  async sendPaperflowStageNudges(
-    actor: string,
-  ): Promise<
+  async sendPaperflowStageNudges(actor: string): Promise<
     AdminBotServiceResponse<
       AdminBotMemberNudgeResult & {
         papers_considered: number;
@@ -10554,6 +10557,9 @@ export class AdminBotService {
           message: mail.body,
         },
         actor,
+        // The body counts the follow-ups already sent, so this is one card per paper, stage and
+        // follow-up: a send that keeps failing does not stack a new copy on every pass.
+        { dedupePortalNotification: true },
       );
       if (this.absorbNudgeSend(result, member.id, { created, skipped })) {
         stamped.push({ subjectId: `${item.paper_id}:${item.stage}`, memberId: member.id });
@@ -12853,7 +12859,8 @@ export class AdminBotService {
         }
         const reason =
           result.payload.skipped[0]?.reason ??
-          result.payload.deliveries?.find((delivery) => delivery.member_id === member.id)?.outcome ??
+          result.payload.deliveries?.find((delivery) => delivery.member_id === member.id)
+            ?.outcome ??
           "not delivered";
         return { delivered: false, reason };
       },
@@ -14339,6 +14346,13 @@ export class AdminBotService {
     options: {
       /** `false` when the message already carries its own link (a nudge campaign's deep link). */
       appendPortalLink?: boolean;
+      /**
+       * Skip the portal notification when the member already has an open one with the same kind,
+       * title and body. For sweeps that retry a failed send on every pass: the ledger only counts
+       * mail that went out, so with broken mail credentials each pass would otherwise file another
+       * identical card.
+       */
+      dedupePortalNotification?: boolean;
     } = {},
   ): Promise<AdminBotServiceResponse<AdminBotMemberNudgeResult>> {
     const message = request.message.trim();
@@ -14416,17 +14430,33 @@ export class AdminBotService {
       // whole batch -- and a member with no linked Slack account is skipped below and would
       // otherwise never be told at all. The notification is the copy the lab can still point at,
       // and it is what the portal and the dashboard warning both read.
-      this.store.saveMemberNotification({
-        id: `notif_${randomUUID()}`,
-        member_id: member.id,
-        kind: request.kind ?? "nudge",
-        title: request.title?.trim() || request.subject?.trim() || "AdminBot needs something",
-        body: message,
-        ...(request.tab ? { tab: request.tab } : {}),
-        ...(request.important ? { important: true } : {}),
-        created_at: nowIso,
-      });
-      portalNotified.push(member.id);
+      const notificationKind = request.kind ?? "nudge";
+      const notificationTitle =
+        request.title?.trim() || request.subject?.trim() || "AdminBot needs something";
+      const alreadyFiled =
+        options.dedupePortalNotification === true &&
+        this.store
+          .listMemberNotifications(member.id)
+          .some(
+            (existing) =>
+              !existing.resolved_at &&
+              existing.kind === notificationKind &&
+              existing.title === notificationTitle &&
+              existing.body === message,
+          );
+      if (!alreadyFiled) {
+        this.store.saveMemberNotification({
+          id: `notif_${randomUUID()}`,
+          member_id: member.id,
+          kind: notificationKind,
+          title: notificationTitle,
+          body: message,
+          ...(request.tab ? { tab: request.tab } : {}),
+          ...(request.important ? { important: true } : {}),
+          created_at: nowIso,
+        });
+        portalNotified.push(member.id);
+      }
       // The correspondence address when the member nominated one, their login address otherwise.
       // `email` is the departmental identity the account is keyed by; it is not necessarily a
       // mailbox anybody reads, and four members on the roster have no departmental address at all

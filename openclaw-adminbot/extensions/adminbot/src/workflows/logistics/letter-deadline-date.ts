@@ -3,8 +3,10 @@
 // New requests must carry an ISO date, but older rows hold whatever the member typed into a free
 // text box: "Dec 15", "12/15", "15 December". Read literally those have no instant, so they fell
 // to the bottom of the desk as undated; read with `Date.parse` they land in 2001. Neither is what
-// the member meant. The member meant the next Dec 15, so that is the date the desk shows, sorts on
-// and counts days to, with a marker so nobody mistakes the inferred year for one that was typed.
+// the member meant. The member meant the next Dec 15 after they submitted the request, so that is
+// the date the desk shows, sorts on and counts days to, with a marker so nobody mistakes the
+// inferred year for one that was typed. Counting from the submission rather than from today keeps
+// a request still open a cycle later overdue instead of rolling it forward a year.
 //
 // This module is pure and browser-safe: the service's list read and the PI's desk resolve the same
 // text to the same date.

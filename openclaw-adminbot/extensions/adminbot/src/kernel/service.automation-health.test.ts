@@ -6,7 +6,9 @@ import { AdminBotMemoryStore, AdminBotService } from "./service.js";
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
 
-function unwrap<T>(result: { ok: true; payload: T } | { ok: false; error: { message: string } }): T {
+function unwrap<T>(
+  result: { ok: true; payload: T } | { ok: false; error: { message: string } },
+): T {
   if (!result.ok) {
     throw new Error(result.error.message);
   }
@@ -196,16 +198,18 @@ describe("automation health", () => {
       await service.execute(proposal.id, { dry_run: false });
     }
     const issues = unwrap(service.automationHealth()).issues;
-    expect(issues).toEqual([
-      expect.objectContaining({ kind: "repeating_failure", count: 3 }),
-    ]);
+    expect(issues).toEqual([expect.objectContaining({ kind: "repeating_failure", count: 3 })]);
   });
 
   it("keeps an alert for later when there is no admin to tell", () => {
     const store = new AdminBotMemoryStore();
     const service = new AdminBotService(store, {});
     unwrap(
-      service.recordAutomationHeartbeat("cron", { job: "adminbot-daily", cron: "0 8 * * *", ok: false }),
+      service.recordAutomationHeartbeat("cron", {
+        job: "adminbot-daily",
+        cron: "0 8 * * *",
+        ok: false,
+      }),
     );
     expect(unwrap(service.raiseAutomationHealthAlerts("cron"))).toMatchObject({
       issues: 1,
@@ -220,7 +224,6 @@ describe("automation health", () => {
     ]);
   });
 });
-
 
 describe("settling notifications", () => {
   it("takes a recovered automation alert off the dashboard on the next health pass", () => {
@@ -316,11 +319,15 @@ describe("Slack Connect for people in another workspace", () => {
     expect(unwrap(service.automationHealth()).issues).toEqual([
       expect.objectContaining({ key: "slack-manual-invite:random-active:U-GUEST" }),
     ]);
-    expect(unwrap(service.raiseAutomationHealthAlerts("cron")).connect_invites_proposed).toEqual([]);
+    expect(unwrap(service.raiseAutomationHealthAlerts("cron")).connect_invites_proposed).toEqual(
+      [],
+    );
 
     // Rejected: not filed again, and the person goes back on the manual list.
     store.saveProposal({ ...proposal!, status: "rejected" });
-    expect(unwrap(service.raiseAutomationHealthAlerts("cron")).connect_invites_proposed).toEqual([]);
+    expect(unwrap(service.raiseAutomationHealthAlerts("cron")).connect_invites_proposed).toEqual(
+      [],
+    );
     expect(unwrap(service.automationHealth()).issues).toEqual([
       expect.objectContaining({ key: "slack-manual-invite:random-active:U-EXT,U-GUEST" }),
     ]);
@@ -370,9 +377,10 @@ describe("OpenReview login health", () => {
     ).toHaveLength(1);
   });
 
-  it("is recorded by the service only when the outcome changes", () => {
+  it("is recorded by the service only when a check's outcome changes", () => {
     const { store, service } = lab(async () => ({ handled: true }));
     service.recordOpenReviewLogin("citation_checks", { ok: true });
+    service.recordOpenReviewLogin("citation_checks", { ok: false, error: "refused" });
     service.recordOpenReviewLogin("citation_checks", { ok: false, error: "refused" });
     service.recordOpenReviewLogin("integrity_checks", { ok: false, error: "refused" });
     service.recordOpenReviewLogin("integrity_checks", { ok: true });
@@ -381,8 +389,28 @@ describe("OpenReview login health", () => {
       store
         .listAuditEvents()
         .filter((event) => event.type.startsWith("openreview.login"))
-        .map((event) => event.type),
-    ).toEqual(["openreview.login_rejected", "openreview.login_restored"]);
+        .map((event) => `${event.type} ${String(event.details?.source)}`),
+    ).toEqual([
+      "openreview.login_rejected citation_checks",
+      "openreview.login_rejected integrity_checks",
+      "openreview.login_restored integrity_checks",
+      "openreview.login_restored citation_checks",
+    ]);
+  });
+
+  // Each check has its own OpenReview session: one still holding a cached token keeps working
+  // after the password stops, which says nothing about the login the other was refused.
+  it("is not cleared by a different check that never had to log in", () => {
+    const { service } = lab(async () => ({ handled: true }));
+    service.recordOpenReviewLogin("citation_checks", { ok: false, error: "refused" });
+    service.recordOpenReviewLogin("integrity_checks", { ok: true });
+    expect(unwrap(service.automationHealth()).issues.map((issue) => issue.key)).toContain(
+      "openreview-login",
+    );
+    service.recordOpenReviewLogin("citation_checks", { ok: true });
+    expect(unwrap(service.automationHealth()).issues.map((issue) => issue.key)).not.toContain(
+      "openreview-login",
+    );
   });
 
   it("picks up a refusal recorded before a restart", () => {
@@ -408,7 +436,10 @@ describe("Google credential failures", () => {
     const now = new Date("2026-03-02T10:00:00.000Z");
     const issues = automationHealthIssues([failed], () => undefined, now);
     expect(issues).toEqual([
-      expect.objectContaining({ kind: "google_credentials", key: "google-credentials:credentials" }),
+      expect.objectContaining({
+        kind: "google_credentials",
+        key: "google-credentials:credentials",
+      }),
     ]);
     expect(issues[0]?.detail).toContain("gog auth add");
 
@@ -416,6 +447,40 @@ describe("Google credential failures", () => {
       action_type: "email.send",
     });
     expect(automationHealthIssues([failed, recovered], () => undefined, now)).toEqual([]);
+  });
+
+  // One token can lack the Gmail scope while Calendar works, so a calendar success must not
+  // clear the mail alert -- only a later mail send can.
+  it("clears a mail credential failure only on a mail success", () => {
+    const now = new Date("2026-03-02T10:00:00.000Z");
+    const failed = event("execution.failed", "2026-03-02T09:00:00.000Z", {
+      action_type: "email.send",
+      error: "gog gmail send failed: insufficient authentication scopes",
+    });
+    const calendar = event("execution.executed", "2026-03-02T09:30:00.000Z", {
+      action_type: "calendar.create_event",
+    });
+    const mail = event("execution.executed", "2026-03-02T09:45:00.000Z", {
+      action_type: "email.send",
+    });
+    const googleIssues = (events: never[]) =>
+      automationHealthIssues(events, () => undefined, now).filter(
+        (issue) => issue.kind === "google_credentials",
+      );
+    expect(googleIssues([failed, calendar])).toEqual([
+      expect.objectContaining({ key: "google-credentials:credentials" }),
+    ]);
+    expect(googleIssues([failed, calendar, mail])).toEqual([]);
+
+    // A missing gog binary is cleared by any gog run: the binary is evidently there.
+    const missing = event("execution.failed", "2026-03-02T09:00:00.000Z", {
+      action_type: "email.send",
+      error: "gog: executable was not found in $PATH",
+    });
+    expect(googleIssues([missing])).toEqual([
+      expect.objectContaining({ key: "google-credentials:connector_missing" }),
+    ]);
+    expect(googleIssues([missing, calendar])).toEqual([]);
   });
 
   it("does not read a Slack 401 or an ordinary send rejection as the Google token", () => {

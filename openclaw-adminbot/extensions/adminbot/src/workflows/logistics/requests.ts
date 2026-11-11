@@ -240,6 +240,13 @@ export type DeadlineReadOptions = {
    * for display and ordering; callers that act on the instant (sending mail) can opt out.
    */
   inferYear?: boolean;
+  /**
+   * When the request was submitted. A year-less date is the occurrence on or after this (less the
+   * grace window) rather than after `now`, so a letter still open a year later reads as overdue
+   * instead of rolling forward to the next one. `requestDeadlineDetails` fills it from the
+   * request's own `submitted_at`.
+   */
+  submittedAt?: string;
 };
 
 /** One school's letter deadline, resolving a year-less legacy date when allowed. */
@@ -266,7 +273,10 @@ export function letterDeadline(
   }
   const instantOf = (date: string) =>
     deadlineInstant(date, school.letter_deadline_time, school.deadline_timezone);
-  const date = resolveYearlessDate(parsed, instantOf, options.now ?? new Date());
+  const submitted = options.submittedAt ? new Date(options.submittedAt) : undefined;
+  const reference =
+    submitted && Number.isFinite(submitted.getTime()) ? submitted : (options.now ?? new Date());
+  const date = resolveYearlessDate(parsed, instantOf, reference);
   const inferredAt = date ? instantOf(date) : undefined;
   return date && inferredAt
     ? { at: inferredAt, date, time, timezone, year_inferred: true }
@@ -284,8 +294,13 @@ export function requestDeadlineDetails(
 ): LogisticsDeadline | undefined {
   const deadlines: LogisticsDeadline[] = [];
   if (input.kind === "recommendation_letters") {
+    const submittedAt = (input as { submitted_at?: unknown }).submitted_at;
+    const letterOptions =
+      options.submittedAt === undefined && typeof submittedAt === "string"
+        ? { ...options, submittedAt }
+        : options;
     for (const school of input.schools ?? []) {
-      const deadline = letterDeadline(school, options);
+      const deadline = letterDeadline(school, letterOptions);
       if (deadline) {
         deadlines.push(deadline);
       }
