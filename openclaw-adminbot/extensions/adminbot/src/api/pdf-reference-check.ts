@@ -5,6 +5,7 @@ import {
   createPdfReferenceChecker,
   createReferenceListChecker,
   ReferenceCheckError,
+  referenceCitation,
   type PdfReferenceChecker,
   type ReferenceListChecker,
   type ReferenceReport,
@@ -109,11 +110,17 @@ export async function runApprovedReferenceScan<T>(params: {
 export type PdfReferenceCheckAudit = {
   actor: string;
   checker: "references-validation" | "gptzero";
-  /** sha256 of what was sent: the PDF, or (from a PaperMentor review) the .bib reference list. */
+  /**
+   * sha256 of what was sent: the PDF, or (from a PaperMentor review) the citations of the source
+   * bibliography's entries, one per line.
+   */
   pdf_sha256: string;
   outcome: "completed" | "failed";
-  /** Set for the check a PaperMentor review ran, with what it read the references from. */
-  papermentor?: { input: "bib" | "pdf" };
+  /**
+   * Set for the check a PaperMentor review ran. Always "bib" (the paper's source bibliography) now;
+   * older ledger rows may say "pdf", from before the PDF fallback was dropped.
+   */
+  papermentor?: { input: "bib" };
 };
 
 /**
@@ -128,17 +135,16 @@ export type PdfReferenceCheckAudit = {
  */
 export function createPaperMentorReferenceCheck(
   options: {
-    pdfChecker?: PdfReferenceChecker;
     listChecker?: ReferenceListChecker;
     audit?: (event: PdfReferenceCheckAudit) => void;
   } = {},
 ): PaperMentorReferenceCheck {
-  const settings = { maxReferences: 200, requireAllDatabases: true };
-  const pdfChecker = options.pdfChecker ?? createPdfReferenceChecker(settings);
-  const listChecker = options.listChecker ?? createReferenceListChecker(settings);
-  return async ({ memberId, source, signal }) => {
+  const listChecker =
+    options.listChecker ??
+    createReferenceListChecker({ maxReferences: 200, requireAllDatabases: true });
+  return async ({ memberId, references, signal }) => {
     const hash = createHash("sha256")
-      .update(source.kind === "pdf" ? source.pdf : source.references.join("\n"))
+      .update(references.map(referenceCitation).join("\n"))
       .digest("hex");
     const audit = (outcome: PdfReferenceCheckAudit["outcome"]) => {
       try {
@@ -147,7 +153,7 @@ export function createPaperMentorReferenceCheck(
           checker: "references-validation",
           pdf_sha256: hash,
           outcome,
-          papermentor: { input: source.kind },
+          papermentor: { input: "bib" },
         });
       } catch {
         // As for the page: the check happened; the ledger hiccup must not change its outcome.
@@ -159,10 +165,7 @@ export function createPaperMentorReferenceCheck(
         checker: "references-validation",
         contentSha256: hash,
         target: "papermentor-upload",
-        run: () =>
-          source.kind === "pdf"
-            ? pdfChecker(source.pdf, signal)
-            : listChecker(source.references, signal),
+        run: () => listChecker(references, signal),
       });
       audit("completed");
       return report;

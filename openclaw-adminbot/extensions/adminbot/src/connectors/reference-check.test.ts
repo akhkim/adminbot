@@ -8,6 +8,7 @@ import {
 import {
   type ReferenceFinding,
   createPdfReferenceChecker,
+  createReferenceListChecker,
   extractPdfFullText,
   extractPdfMainText,
   extractPdfReferences,
@@ -253,6 +254,27 @@ describe("References-Validation integration", () => {
       expect(partial.status).toBe("unavailable");
       expect(partial.explanation).toContain("not fully checked");
     }
+  });
+
+  it("looks a .bib entry up by its own title instead of re-parsing its citation", async () => {
+    const title = "GPT-4.5: Results. A Synthetic Retrospective";
+    const fetcher = vi.fn(async (input: string | URL | Request) => emptyDatabase(input));
+    const check = createReferenceListChecker({ fetch: fetcher, requestIntervalMs: 0 });
+    const entry = {
+      citation: `Ada Lovelace. 2025. ${title}. Journal of Tests.`,
+      title,
+      authors: "Ada Lovelace",
+      year: "2025",
+      venue: "Journal of Tests",
+    };
+    const { findings } = await check([entry], signal());
+    expect(findings).toEqual([
+      expect.objectContaining({ citation: entry.citation, status: "not_found" }),
+    ]);
+    const queried = fetcher.mock.calls.map(([url]) =>
+      decodeURIComponent(String(url instanceof Request ? url.url : url)).replace(/\+/g, " "),
+    );
+    expect(queried.some((url) => url.includes(title))).toBe(true);
   });
 
   it("uses a settled finding it is handed instead of looking the citation up", async () => {

@@ -249,7 +249,7 @@ it("shows a review's reference check in place, and hands the PDF check the servi
   });
   const el = await mount();
   await vi.waitFor(() =>
-    expect(el.shadowRoot!.textContent).toContain("2 references checked (from the paper's .bib)"),
+    expect(el.shadowRoot!.textContent).toContain("2 references checked (from the paper's source)"),
   );
   const root = el.shadowRoot!;
   expect(root.textContent).toContain("1 not found");

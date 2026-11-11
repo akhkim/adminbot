@@ -26,10 +26,12 @@
 //
 // The reference check is the PDF Reference Checker folded into the review: with the member's
 // consent, every reference the paper cites is looked up in the scholarly databases. It reads the
-// cited entries of the paper's own .bib (bib-references.ts) -- far more reliable than splitting a
-// bibliography out of PDF text -- and falls back to the built PDF for a paper with no .bib. The
-// lookup itself, and its approval gate, are injected (`checkReferences`): this file never decides
-// whether something may leave the host, only what would be sent.
+// cited entries straight out of the zip -- the .bib's own fields, or a hand-written \bibitem list
+// (bib-references.ts) -- and never the built PDF: splitting a bibliography out of PDF text is the
+// step the PDF checker most often fails at, and the source has every entry separated already. A zip
+// with neither is reported as not checked. The lookup itself, and its approval gate, are injected
+// (`checkReferences`): this file never decides whether something may leave the host, only what
+// would be sent.
 //
 // One review at a time. A review is a few minutes of model calls plus a LaTeX build, and running
 // two at once buys nothing but contention on the CPU the service also needs.
@@ -39,7 +41,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { citedBibReferences } from "./bib-references.js";
-import { ReferenceCheckError, type ReferenceFinding } from "./reference-check.js";
+import {
+  ReferenceCheckError,
+  type ReferenceEntry,
+  type ReferenceFinding,
+} from "./reference-check.js";
 
 /** Where papermentor-pdf is installed on this host. Unset, the PaperMentor tab says it is off. */
 export const ADMINBOT_PAPERMENTOR_PDF_DIR_ENV = "ADMINBOT_PAPERMENTOR_PDF_DIR";
@@ -86,14 +92,17 @@ const FILE_NAMES: Record<
 /** The reference check's outcome on the record: counts only, the findings are in the file. */
 export type PaperMentorReferenceSummary = {
   status: "checked" | "failed" | "skipped";
-  /** Where the references were read from: the paper's .bib, or the built PDF. */
+  /**
+   * Where the references were read from: always the paper's source now. "pdf" survives only on a
+   * review made before the PDF fallback was dropped (kept for `retentionDays`).
+   */
   source?: "bib" | "pdf";
   total?: number;
   matched?: number;
   needs_review?: number;
   not_found?: number;
   unavailable?: number;
-  /** Cited keys with no usable .bib entry, so not looked up. */
+  /** Cited keys with no usable bibliography entry, so not looked up. */
   skipped_entries?: number;
   message?: string;
 };
@@ -101,7 +110,8 @@ export type PaperMentorReferenceSummary = {
 /** Looks the references up, behind the approval gate. Built by the service (api/server.ts). */
 export type PaperMentorReferenceCheck = (input: {
   memberId: string;
-  source: { kind: "bib"; references: string[] } | { kind: "pdf"; pdf: Buffer };
+  /** The paper's own entries, from its .bib or \bibitem list (bib-references.ts). */
+  references: ReferenceEntry[];
   signal: AbortSignal;
 }) => Promise<{ findings: ReferenceFinding[] }>;
 
@@ -292,27 +302,20 @@ export function createPaperMentorUploadReviewer(options: {
     upload: PaperMentorUpload,
     work: string,
     outDir: string,
-    pdfBuilt: boolean,
   ): Promise<PaperMentorReferenceSummary> => {
     const check = options.checkReferences!;
     let bib: ReturnType<typeof citedBibReferences>;
     try {
       bib = citedBibReferences(path.join(work, "paper"));
     } catch {
-      // An unreadable .bib is no worse than none: the PDF is the fallback.
+      // An unreadable source bibliography is reported like a missing one, never guessed at.
       bib = undefined;
     }
-    const pdfPath = path.join(outDir, FILE_NAMES.reviewed_pdf.name);
-    const source = bib
-      ? ({ kind: "bib", references: bib.references } as const)
-      : pdfBuilt && fs.existsSync(pdfPath)
-        ? ({ kind: "pdf", pdf: fs.readFileSync(pdfPath) } as const)
-        : undefined;
-    if (!source) {
+    if (!bib) {
       return {
         status: "skipped",
         message:
-          "The references were not checked: the zip has no .bib file and the PDF could not be built.",
+          "The references were not checked: the zip has no .bib file or \\bibitem list with the entries the paper cites.",
       };
     }
     const controller = new AbortController();
@@ -320,31 +323,31 @@ export function createPaperMentorUploadReviewer(options: {
     try {
       const report = await check({
         memberId: upload.requested_by,
-        source,
+        references: bib.references,
         signal: controller.signal,
       });
       const target = path.join(outDir, FILE_NAMES.references.name);
       fs.writeFileSync(
         target,
-        JSON.stringify({ source: source.kind, findings: report.findings }, null, 2),
+        JSON.stringify({ source: "bib", findings: report.findings }, null, 2),
         { mode: 0o600 },
       );
       const count = (status: ReferenceFinding["status"]) =>
         report.findings.filter((finding) => finding.status === status).length;
       return {
         status: "checked",
-        source: source.kind,
+        source: "bib",
         total: report.findings.length,
         matched: count("matched"),
         needs_review: count("review"),
         not_found: count("not_found"),
         unavailable: count("unavailable"),
-        ...(bib?.skipped ? { skipped_entries: bib.skipped } : {}),
+        ...(bib.skipped ? { skipped_entries: bib.skipped } : {}),
       };
     } catch (error) {
       return {
         status: "failed",
-        source: source.kind,
+        source: "bib",
         // The checker's own errors are fixed sentences about the paper's shape; anything else may
         // carry a database's answer, which is not ours to relay.
         message: controller.signal.aborted
@@ -443,7 +446,7 @@ export function createPaperMentorUploadReviewer(options: {
     let references: PaperMentorReferenceSummary | undefined;
     if (input.check_references && options.checkReferences) {
       setPhase("references");
-      references = await checkReferences(upload, work, outDir, pdf);
+      references = await checkReferences(upload, work, outDir);
       if (references.status === "checked") {
         files.push("references");
       }

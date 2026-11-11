@@ -43,10 +43,19 @@ function tmp() {
   return dir;
 }
 
-/** papermentor-pdf's CLI, faked: the review writes its outputs beside the extracted upload. */
+/**
+ * papermentor-pdf's CLI, faked: it extracts the upload's source (a synthetic paper citing one .bib
+ * entry, which the reference check reads) and writes its outputs beside it.
+ */
 const spawn: PaperMentorSpawn = async (_command, args) => {
-  const outDir = path.join(path.dirname(args[2]!), "paper", "papermentor");
+  const paperDir = path.join(path.dirname(args[2]!), "paper");
+  const outDir = path.join(paperDir, "papermentor");
   fs.mkdirSync(outDir, { recursive: true });
+  fs.writeFileSync(path.join(paperDir, "main.tex"), String.raw`\cite{a2020}\bibliography{refs}`);
+  fs.writeFileSync(
+    path.join(paperDir, "refs.bib"),
+    "@article{a2020, title={Synthetic Results}, author={Lovelace, Ada}, year={2020}}",
+  );
   const pdf = path.join(outDir, "main.reviewed.pdf");
   const report = path.join(outDir, "review.md");
   const commented = path.join(outDir, "paper.commented.zip");
@@ -350,12 +359,16 @@ describe("the reference check in the PaperMentor tab", () => {
 describe("createPaperMentorReferenceCheck", () => {
   it("runs the lookup through the approval gate and audits the hash of what it sent", async () => {
     const audits: PdfReferenceCheckAudit[] = [];
-    const lists: string[][] = [];
+    const lists: unknown[][] = [];
+    let fail = false;
     const listChecker: ReferenceListChecker = async (references) => {
       lists.push([...references]);
+      if (fail) {
+        throw new Error("synthetic: the databases are down");
+      }
       return {
-        findings: references.map((citation) => ({
-          citation,
+        findings: references.map((entry) => ({
+          citation: typeof entry === "string" ? entry : entry.citation,
           status: "matched" as const,
           explanation: "A matching record was found.",
         })),
@@ -363,36 +376,41 @@ describe("createPaperMentorReferenceCheck", () => {
     };
     const check = createPaperMentorReferenceCheck({
       listChecker,
-      pdfChecker: async () => {
-        throw new Error("synthetic: no PDF in this test");
-      },
       audit: (event) => audits.push(event),
     });
-    const references = ["Ada Lovelace. 2020. Synthetic Results."];
+    const references = [
+      {
+        citation: "Ada Lovelace. 2020. Synthetic Results.",
+        title: "Synthetic Results",
+        authors: "Ada Lovelace",
+        year: "2020",
+      },
+      "Alan Turing. 2023. Synthetic Preprints.",
+    ];
     const report = await check({
       memberId: "ada",
-      source: { kind: "bib", references },
+      references,
       signal: new AbortController().signal,
     });
-    expect(report.findings).toHaveLength(1);
+    expect(report.findings).toHaveLength(2);
+    // The structured entry reaches the lookup as it is, not flattened to a string.
     expect(lists).toEqual([references]);
     expect(audits).toEqual([
       {
         actor: "ada",
         checker: "references-validation",
-        pdf_sha256: createHash("sha256").update(references.join("\n")).digest("hex"),
+        pdf_sha256: createHash("sha256")
+          .update("Ada Lovelace. 2020. Synthetic Results.\nAlan Turing. 2023. Synthetic Preprints.")
+          .digest("hex"),
         outcome: "completed",
         papermentor: { input: "bib" },
       },
     ]);
 
+    fail = true;
     await expect(
-      check({
-        memberId: "ada",
-        source: { kind: "pdf", pdf: Buffer.from("%PDF-1.7") },
-        signal: new AbortController().signal,
-      }),
+      check({ memberId: "ada", references, signal: new AbortController().signal }),
     ).rejects.toThrow();
-    expect(audits.at(-1)).toMatchObject({ outcome: "failed", papermentor: { input: "pdf" } });
+    expect(audits.at(-1)).toMatchObject({ outcome: "failed", papermentor: { input: "bib" } });
   });
 });

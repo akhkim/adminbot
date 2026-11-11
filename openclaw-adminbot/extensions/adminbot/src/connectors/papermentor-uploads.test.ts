@@ -9,7 +9,7 @@ import {
   type PaperMentorReferenceCheck,
   type PaperMentorSpawn,
 } from "./papermentor-uploads.js";
-import { ReferenceCheckError } from "./reference-check.js";
+import { ReferenceCheckError, referenceCitation } from "./reference-check.js";
 
 const ZIP = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.from("synthetic")]);
 
@@ -451,7 +451,7 @@ describe("the reference check in a review", () => {
     const { seen, check } = lookup(async (input) => ({
       findings: [
         {
-          citation: input.source.kind === "bib" ? input.source.references[0]! : "",
+          citation: referenceCitation(input.references[0]!),
           status: "not_found",
           explanation: "No matching reference found in the available databases.",
         },
@@ -465,7 +465,15 @@ describe("the reference check in a review", () => {
     expect(seen).toEqual([
       expect.objectContaining({
         memberId: "ada",
-        source: { kind: "bib", references: ["Ada Lovelace. 2020. Synthetic Results."] },
+        // The .bib entry's own fields, not a citation string for the lookup to re-parse.
+        references: [
+          {
+            citation: "Ada Lovelace. 2020. Synthetic Results.",
+            title: "Synthetic Results",
+            authors: "Ada Lovelace",
+            year: "2020",
+          },
+        ],
       }),
     ]);
     const [upload] = pm.uploadsFor("ada");
@@ -492,26 +500,39 @@ describe("the reference check in a review", () => {
     });
   });
 
-  it("reads the built PDF when the zip has no .bib, and skips when there is no PDF either", async () => {
-    const { spawn } = withSource({ "main.tex": "\\documentclass{article}" });
+  it("never reads the built PDF: a zip with no .bib or \\bibitem list is not checked", async () => {
+    // The PDF is built (the fake CLI writes one), yet nothing is looked up.
+    const { spawn } = withSource({ "main.tex": "\\documentclass{article}\\cite{a2020}" });
     const { seen, check } = lookup(async () => ({ findings: [] }));
     const { reviewer: pm } = reviewer(spawn, { checkReferences: check });
     pm.submit({ requested_by: "ada", label: "p", zip: ZIP, check_references: true });
     await pm.idle();
-    expect(seen[0]!.source.kind).toBe("pdf");
-    expect(String((seen[0]!.source as { pdf: Buffer }).pdf)).toBe("%PDF-synthetic-reviewed");
-
-    const none = reviewer(withSource({ "main.tex": "x" }).spawn, {
-      checkReferences: check,
-      env: { OPENROUTER_API_KEY: "k", ADMINBOT_PAPERMENTOR_ENGINE: "none" },
-    }).reviewer;
-    none.submit({ requested_by: "ada", label: "p", zip: ZIP, check_references: true });
-    await none.idle();
-    expect(seen).toHaveLength(1);
-    expect(none.uploadsFor("ada")[0]).toMatchObject({
+    expect(seen).toEqual([]);
+    const [upload] = pm.uploadsFor("ada");
+    expect(upload).toMatchObject({
       status: "reviewed",
-      references: { status: "skipped" },
+      pdf: true,
+      files: ["commented_zip", "reviewed_pdf", "report"],
+      references: { status: "skipped", message: expect.stringContaining("\\bibitem") },
     });
+  });
+
+  it("reads a hand-written \\bibitem list when the zip has no .bib", async () => {
+    const { spawn } = withSource({
+      "main.tex": String.raw`\documentclass{article}\begin{document}\cite{a2020}
+\begin{thebibliography}{1}
+\bibitem{a2020} Ada Lovelace. 2020. Synthetic Results.
+\end{thebibliography}
+\end{document}`,
+    });
+    const { seen, check } = lookup(async () => ({ findings: [] }));
+    const { reviewer: pm } = reviewer(spawn, { checkReferences: check });
+    pm.submit({ requested_by: "ada", label: "p", zip: ZIP, check_references: true });
+    await pm.idle();
+    expect(seen.map((input) => input.references)).toEqual([
+      ["Ada Lovelace. 2020. Synthetic Results."],
+    ]);
+    expect(pm.uploadsFor("ada")[0]?.references).toMatchObject({ status: "checked", source: "bib" });
   });
 
   it("keeps the review when the check fails, in the checker's words or fixed ones", async () => {
