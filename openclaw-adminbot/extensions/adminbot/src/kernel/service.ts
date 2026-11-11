@@ -10557,6 +10557,9 @@ export class AdminBotService {
           message: mail.body,
         },
         actor,
+        // The body counts the follow-ups already sent, so this is one card per paper, stage and
+        // follow-up: a send that keeps failing does not stack a new copy on every pass.
+        { dedupePortalNotification: true },
       );
       if (this.absorbNudgeSend(result, member.id, { created, skipped })) {
         stamped.push({ subjectId: `${item.paper_id}:${item.stage}`, memberId: member.id });
@@ -14343,6 +14346,13 @@ export class AdminBotService {
     options: {
       /** `false` when the message already carries its own link (a nudge campaign's deep link). */
       appendPortalLink?: boolean;
+      /**
+       * Skip the portal notification when the member already has an open one with the same kind,
+       * title and body. For sweeps that retry a failed send on every pass: the ledger only counts
+       * mail that went out, so with broken mail credentials each pass would otherwise file another
+       * identical card.
+       */
+      dedupePortalNotification?: boolean;
     } = {},
   ): Promise<AdminBotServiceResponse<AdminBotMemberNudgeResult>> {
     const message = request.message.trim();
@@ -14420,17 +14430,33 @@ export class AdminBotService {
       // whole batch -- and a member with no linked Slack account is skipped below and would
       // otherwise never be told at all. The notification is the copy the lab can still point at,
       // and it is what the portal and the dashboard warning both read.
-      this.store.saveMemberNotification({
-        id: `notif_${randomUUID()}`,
-        member_id: member.id,
-        kind: request.kind ?? "nudge",
-        title: request.title?.trim() || request.subject?.trim() || "AdminBot needs something",
-        body: message,
-        ...(request.tab ? { tab: request.tab } : {}),
-        ...(request.important ? { important: true } : {}),
-        created_at: nowIso,
-      });
-      portalNotified.push(member.id);
+      const notificationKind = request.kind ?? "nudge";
+      const notificationTitle =
+        request.title?.trim() || request.subject?.trim() || "AdminBot needs something";
+      const alreadyFiled =
+        options.dedupePortalNotification === true &&
+        this.store
+          .listMemberNotifications(member.id)
+          .some(
+            (existing) =>
+              !existing.resolved_at &&
+              existing.kind === notificationKind &&
+              existing.title === notificationTitle &&
+              existing.body === message,
+          );
+      if (!alreadyFiled) {
+        this.store.saveMemberNotification({
+          id: `notif_${randomUUID()}`,
+          member_id: member.id,
+          kind: notificationKind,
+          title: notificationTitle,
+          body: message,
+          ...(request.tab ? { tab: request.tab } : {}),
+          ...(request.important ? { important: true } : {}),
+          created_at: nowIso,
+        });
+        portalNotified.push(member.id);
+      }
       // The correspondence address when the member nominated one, their login address otherwise.
       // `email` is the departmental identity the account is keyed by; it is not necessarily a
       // mailbox anybody reads, and four members on the roster have no departmental address at all

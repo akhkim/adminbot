@@ -317,7 +317,10 @@ describe("follow-up nudges", () => {
     const failed = unwrap(await service.sendPaperflowStageNudges("cron"));
     expect(failed.created).toEqual([]);
     expect(failed.skipped).toEqual([
-      expect.objectContaining({ member_id: "rahul", reason: expect.stringContaining("gog auth add") }),
+      expect.objectContaining({
+        member_id: "rahul",
+        reason: expect.stringContaining("gog auth add"),
+      }),
     ]);
     expect(service.listNudgeLedgerForTest("paperflow_stage")).toEqual([]);
 
@@ -327,6 +330,42 @@ describe("follow-up nudges", () => {
     expect(service.listNudgeLedgerForTest("paperflow_stage")[0]).toMatchObject({
       nudge_count: 1,
     });
+  });
+
+  // The ledger is not stamped on a failed send, so every pass retries -- and every retry used to
+  // file another identical portal card while the mail credentials stayed broken.
+  it("files one portal notification per follow-up while the send keeps failing", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const start = Date.parse("2026-03-02T09:00:00.000Z");
+    vi.setSystemTime(start);
+    let broken = true;
+    const { service } = stageLab(async () => {
+      if (broken) {
+        throw new Error(
+          "gog credentials were rejected; re-run `gog auth add` on the AdminBot host: invalid_grant",
+        );
+      }
+      return { handled: true };
+    });
+    const cards = () =>
+      unwrap(service.listMemberNotifications("rahul")).notifications.filter(
+        (notification) => !notification.resolved_at,
+      );
+
+    for (let day = 0; day < 3; day += 1) {
+      vi.setSystemTime(start + day * DAY_MS);
+      unwrap(await service.sendPaperflowStageNudges("cron"));
+    }
+    expect(cards()).toHaveLength(1);
+
+    // Mail works again: the first send goes out against the card already filed, and the next
+    // week's follow-up -- different text, one more ask counted -- gets a card of its own.
+    broken = false;
+    unwrap(await service.sendPaperflowStageNudges("cron"));
+    expect(cards()).toHaveLength(1);
+    vi.setSystemTime(start + 10 * DAY_MS);
+    unwrap(await service.sendPaperflowStageNudges("cron"));
+    expect(cards()).toHaveLength(2);
   });
 
   it("does not count a kill-switched send as a nudge", async () => {
