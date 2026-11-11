@@ -120,23 +120,48 @@ export type SlackInviteBlock = {
 type ProposalLookup = (id: string) => AdminBotStoredProposal | undefined;
 
 /**
- * The newest OpenReview login outcome the checks recorded, when it is a refusal: the account's
- * email/password stopped working and nothing that reads OpenReview can run until someone fixes
- * them. Undefined once a later login worked, or if none was ever refused.
+ * The OpenReview logins whose newest recorded outcome is a refusal, by the check that recorded it
+ * (citation or integrity). Kept per check because each reads OpenReview through its own session:
+ * one whose token is still cached keeps working after the password stops, and its success says
+ * nothing about the login the other check was just refused.
+ */
+export function openReviewRejectedLogins(
+  events: readonly AdminBotAuditEvent[],
+): Map<string, AdminBotAuditEvent> {
+  const latest = new Map<string, AdminBotAuditEvent>();
+  for (const event of events) {
+    if (event.type !== "openreview.login_rejected" && event.type !== "openreview.login_restored") {
+      continue;
+    }
+    const source = typeof event.details?.source === "string" ? event.details.source : "";
+    const previous = latest.get(source);
+    if (!previous || previous.timestamp <= event.timestamp) {
+      latest.set(source, event);
+    }
+  }
+  for (const [source, event] of latest) {
+    if (event.type !== "openreview.login_rejected") {
+      latest.delete(source);
+    }
+  }
+  return latest;
+}
+
+/**
+ * The newest OpenReview login refusal still outstanding: the account's email/password stopped
+ * working and nothing that reads OpenReview can run until someone fixes them. Undefined once every
+ * check that was refused has logged in again since, or if none was ever refused.
  */
 export function openReviewLoginRejection(
   events: readonly AdminBotAuditEvent[],
 ): AdminBotAuditEvent | undefined {
-  let latest: AdminBotAuditEvent | undefined;
-  for (const event of events) {
-    if (
-      (event.type === "openreview.login_rejected" || event.type === "openreview.login_restored") &&
-      (!latest || latest.timestamp <= event.timestamp)
-    ) {
-      latest = event;
+  let newest: AdminBotAuditEvent | undefined;
+  for (const event of openReviewRejectedLogins(events).values()) {
+    if (!newest || newest.timestamp <= event.timestamp) {
+      newest = event;
     }
   }
-  return latest?.type === "openreview.login_rejected" ? latest : undefined;
+  return newest;
 }
 
 /**
@@ -223,8 +248,7 @@ export function slackInviteBlockFor(
 ): SlackInviteBlock | undefined {
   const wanted = channelKey(channel);
   return blocks.find(
-    (block) =>
-      block.channel === wanted && (block.scope === "channel" || block.user_id === userId),
+    (block) => block.channel === wanted && (block.scope === "channel" || block.user_id === userId),
   );
 }
 
@@ -514,7 +538,10 @@ export function automationHealthIssues(
       label: `${users.length} ${users.length === 1 ? "person needs" : "people need"} a manual invite to #${channel}`,
       detail: `The bot cannot add them (${[...new Set(people.map((entry) => entry.reason))].join(", ")}): guests and members of another workspace or org have to be invited by a workspace admin. Slack ids: ${users.join(", ")}.`,
       count: users.length,
-      last_seen: people.map((entry) => entry.since).toSorted().at(-1),
+      last_seen: people
+        .map((entry) => entry.since)
+        .toSorted()
+        .at(-1),
     });
   }
   return issues;

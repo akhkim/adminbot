@@ -3,14 +3,14 @@ import type {
   CalendarMembershipReader,
   CalendarAccessReader,
 } from "../connectors/calendar-membership.js";
-import type {
-  PaperMentorReviewRequester,
-  PaperMentorReviewRequestStatus,
-} from "../connectors/papermentor-review.js";
 import {
   classifyMailSendFailure,
   needsOperatorForMailFailure,
 } from "../connectors/mail-send-failure.js";
+import type {
+  PaperMentorReviewRequester,
+  PaperMentorReviewRequestStatus,
+} from "../connectors/papermentor-review.js";
 import type { PaperMentorUpload } from "../connectors/papermentor-uploads.js";
 import type { ReverseGeocoder } from "../connectors/reverse-geocode.js";
 import type { AdminBotExternalCollaboratorSubgroup } from "../contracts/actions.js";
@@ -572,7 +572,7 @@ import {
 } from "./service.active-channels.js";
 import {
   automationHealthIssues,
-  openReviewLoginRejection,
+  openReviewRejectedLogins,
   SLACK_CONNECT_INVITE_REASONS,
   slackInviteBlockFor,
   slackInviteBlocks,
@@ -2013,9 +2013,9 @@ export class AdminBotService {
   // Invite payloads do not change once proposed, and a sweep asks about the same few hundred
   // failures once per invite it considers; remembered so that is a map read, not a query.
   private readonly failedInviteProposals = new Map<string, AdminBotStoredProposal | undefined>();
-  // Whether the newest recorded OpenReview login was refused; read from the audit trail on first
-  // use, then kept here so each sweep does not rescan it. See recordOpenReviewLogin.
-  private openReviewLoginRejected: boolean | undefined;
+  // The checks whose newest recorded OpenReview login was refused; read from the audit trail on
+  // first use, then kept here so each sweep does not rescan it. See recordOpenReviewLogin.
+  private openReviewLoginRejected: Set<string> | undefined;
   private failedInviteProposal(id: string): AdminBotStoredProposal | undefined {
     if (!this.failedInviteProposals.has(id)) {
       this.failedInviteProposals.set(id, this.store.getProposal(id));
@@ -3660,8 +3660,9 @@ export class AdminBotService {
   /**
    * Records whether the OpenReview account could log in, for the automation health pass.
    *
-   * Only changes are recorded -- the first refusal, and the first success after one -- so an
-   * hourly check against a broken login is one audit event, not one per hour. The health pass
+   * Only changes are recorded, per check -- its first refusal, and its first success after one --
+   * so an hourly check against a broken login is one audit event, not one per hour. Per check
+   * because each has its own session: a cached token's success is not a login that worked. The health pass
    * turns an outstanding refusal into an admin alert and clears it once a login works again.
    * A refusal means OpenReview answered and said no; an unreachable OpenReview is not recorded.
    */
@@ -3669,16 +3670,20 @@ export class AdminBotService {
     source: "citation_checks" | "integrity_checks",
     result: { ok: true } | { ok: false; error: string },
   ): void {
-    this.openReviewLoginRejected ??= Boolean(
-      openReviewLoginRejection(this.store.listAuditEvents()),
-    );
-    if (result.ok === this.openReviewLoginRejected) {
+    const rejected = (this.openReviewLoginRejected ??= new Set(
+      openReviewRejectedLogins(this.store.listAuditEvents()).keys(),
+    ));
+    if (result.ok === rejected.has(source)) {
       this.recordAudit({
         type: result.ok ? "openreview.login_restored" : "openreview.login_rejected",
         actor: "adminbot",
         details: result.ok ? { source } : { source, error: result.error },
       });
-      this.openReviewLoginRejected = !result.ok;
+      if (result.ok) {
+        rejected.delete(source);
+      } else {
+        rejected.add(source);
+      }
     }
   }
 
@@ -10485,9 +10490,7 @@ export class AdminBotService {
    * the text from the registry -- so it runs from cron on the same footing as
    * `sendMandatoryFieldsReminders`.
    */
-  async sendPaperflowStageNudges(
-    actor: string,
-  ): Promise<
+  async sendPaperflowStageNudges(actor: string): Promise<
     AdminBotServiceResponse<
       AdminBotMemberNudgeResult & {
         papers_considered: number;
@@ -12853,7 +12856,8 @@ export class AdminBotService {
         }
         const reason =
           result.payload.skipped[0]?.reason ??
-          result.payload.deliveries?.find((delivery) => delivery.member_id === member.id)?.outcome ??
+          result.payload.deliveries?.find((delivery) => delivery.member_id === member.id)
+            ?.outcome ??
           "not delivered";
         return { delivered: false, reason };
       },
