@@ -1,8 +1,10 @@
 # OpenReview announcement drafts
 
-Admins open it from a paper in **My Projects & Papers**: on the paper's social lane, **Draft from
-OpenReview** sits beside the X post's **Write the draft** and opens the tool on that card, with the
-conference started from the paper's venue. (It used to be its own General Tools tab; the old
+Admins open it from a paper in **My Projects & Papers**. It lives in the paper's **Social drafts**,
+as **Draft from OpenReview**, between the X drafts generated from the PDF and the LinkedIn post, so
+the project's Social tab and the flat all-fields view both offer it. On the Social tab, the X post
+gate's **Draft from OpenReview** button (beside **Write the draft**) opens it there. The conference
+starts from the paper's venue. (It used to be its own General Tools tab; the old
 `/notification-drafts` address now opens My Projects & Papers.) It is drawn only for admins, and
 the route refuses any other session. Upload a notifications JSON
 array or CSV export, choose a conference and an exclusive UTC cutoff date, and generate tweet drafts and PNGs.

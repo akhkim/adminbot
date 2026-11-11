@@ -11,7 +11,6 @@
 // checklist itself, drawn by the same renderer the flat view uses, one branch per tab, with the
 // venue decision on Venue and the drafts and conference rows on Social.
 import { html, nothing, type TemplateResult } from "lit";
-import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 import type { AdminBotPaperRecord } from "../controllers/admin.ts";
 import { isPaperCompleted } from "../paper-completion.ts";
 import { openPreRegistrationDialog } from "../pre-registration.ts";
@@ -22,7 +21,7 @@ import {
   renderPaperBlockers,
   renderReportBlockerButton,
 } from "./blocker-report.ts";
-import { renderCycle, renderWeeklyUpdates } from "./cycle.ts";
+import { openOpenReviewTweet, renderCycle, renderWeeklyUpdates } from "./cycle.ts";
 import { renderDecisionBanners } from "./decisions.ts";
 import { renderProjectDetails } from "./details.ts";
 import {
@@ -316,46 +315,6 @@ function renderProjectTab(
 
 // ---------------------------------------------------------------- lane tabs
 
-/**
- * OpenReview To Tweet, on the paper it is for. It used to be a tab of its own under General Tools;
- * it sits beside the X post gate now, opened by "Draft from OpenReview", with the conference
- * started from this paper's venue. Admin-only, as the service's route is: the panel is not drawn
- * for anyone else. The tool's module is fetched on first open, so the page pays nothing until then.
- */
-function renderOpenReviewTweet(state: PageState, paper: AdminBotPaperRecord) {
-  const session = loadStoredMemberSession();
-  if (!session) {
-    return nothing;
-  }
-  return html`<details
-    class="project__panel paper-cycle__group"
-    id=${`paper-openreview-tweet-${paper.id}`}
-    data-testid=${`paper-openreview-tweet-${paper.id}`}
-    @toggle=${(event: Event) => {
-      if ((event.currentTarget as HTMLDetailsElement).open) {
-        void import("../views/notification-drafts.ts");
-      }
-    }}
-  >
-    <summary><h3>OpenReview To Tweet</h3></summary>
-    <adminbot-notification-drafts
-      embedded
-      .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
-      .sessionToken=${session.sessionToken}
-      .presetConference=${paper.venue?.trim() ?? ""}
-    ></adminbot-notification-drafts>
-  </details>`;
-}
-
-function openOpenReviewTweet(paperId: string) {
-  const el = document.getElementById(`paper-openreview-tweet-${paperId}`);
-  if (el instanceof HTMLDetailsElement) {
-    el.open = true;
-    void import("../views/notification-drafts.ts");
-    el.scrollIntoView?.({ behavior: "smooth", block: "start" });
-  }
-}
-
 function renderLaneTab(
   state: PageState,
   props: PaperWorkspaceProps,
@@ -370,8 +329,7 @@ function renderLaneTab(
           ${renderAcceptance(paper, props)}
         </section>`
       : lane.branch === "social"
-        ? html`${renderCycle(state, paper, props)}
-          ${props.viewerIsAdmin ? renderOpenReviewTweet(state, paper) : nothing}`
+        ? renderCycle(state, paper, props)
         : nothing;
   return html`<p class="project__legend">${lane.legend}.</p>
     ${cycle

@@ -1,5 +1,5 @@
 // The lists that hang off a paper card: drafts and their sign-offs, who is going, who is square.
-import { render } from "lit";
+import { html, render } from "lit";
 import { describe, expect, it, vi } from "vitest";
 import type {
   PaperAttendee,
@@ -155,6 +155,28 @@ describe("social drafts", () => {
   it("says so when there is nobody on the roster to ask", () => {
     const { container } = draw({ drafts: [draft({ status: "circulated" })], consents: [] });
     expect(container.textContent).toContain("No coauthors on the roster to ask");
+  });
+});
+
+describe("the OpenReview option beside the PDF drafts", () => {
+  it("draws the host's OpenReview tool inside Social drafts, after X and before LinkedIn", () => {
+    const { container } = draw({
+      onGenerateXDraft: () => undefined,
+      openReviewTool: html`<div data-testid="openreview-slot"></div>`,
+    });
+    const group = container.querySelector('[id="paper-social-drafts-p1"]')!;
+    const order = [
+      ...group.querySelectorAll(
+        '[data-testid="paper-draft-p1-x"], [data-testid="openreview-slot"], [data-testid="paper-draft-p1-linkedin"]',
+      ),
+    ].map((el) => el.getAttribute("data-testid"));
+    expect(order).toEqual(["paper-draft-p1-x", "openreview-slot", "paper-draft-p1-linkedin"]);
+  });
+
+  it("draws nothing extra when the host offers no OpenReview tool", () => {
+    const { container } = draw();
+    expect(container.querySelector('[data-testid="openreview-slot"]')).toBeNull();
+    expect(container.querySelector("adminbot-notification-drafts")).toBeNull();
   });
 });
 
