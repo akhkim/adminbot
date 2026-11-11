@@ -530,6 +530,23 @@ describe("past cycles and year-less dates", () => {
     ];
     expect(cameraReadyDeadline("EACL 2027", yearless, now)).toBe("2026-11-27T11:59:59.000Z");
   });
+
+  it("keeps a year-less date inside the venue's year, so a missed one reads as overdue", () => {
+    const record = (venue: string, date: string) => ({
+      venue_group: venue,
+      venue_family: venue.split(" ")[0],
+      schedule: [{ milestone: "camera_ready", date }],
+    });
+    // Read in November 2026: NeurIPS 2026's Oct 30 is behind us, not a date in 2027.
+    expect(cameraReadyDeadline("NeurIPS 2026", [record("NeurIPS 2026", "Oct 30")], now)).toBe(
+      "2026-10-31T11:59:59.000Z",
+    );
+    expect(yearlessAoeToIso("Oct 1", now, 2026)).toBe("2026-10-02T11:59:59.000Z");
+    // A later venue year still takes the coming occurrence.
+    expect(yearlessAoeToIso("Oct 1", now, 2027)).toBe("2027-10-02T11:59:59.000Z");
+    expect(yearlessAoeToIso("Nov 20", now, 2027)).toBe("2026-11-21T11:59:59.000Z");
+    expect(yearlessAoeToIso("02-29", now, 2027)).toBeUndefined();
+  });
 });
 
 describe("buildCameraReadyNotice", () => {

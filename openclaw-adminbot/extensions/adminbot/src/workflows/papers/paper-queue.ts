@@ -82,7 +82,7 @@ export function venueKey(label: string): { family: string; year: number } | unde
  * stages a published deadline proposal adds are stored that way, and reading their wall clock as
  * AoE put the NeurIPS 2026 camera-ready (Nov 6 AoE, 2026-11-07T11:59Z) twelve hours late.
  */
-export function aoeToIso(date: string, now?: Date): string | undefined {
+export function aoeToIso(date: string, now?: Date, venueYear?: number): string | undefined {
   const trimmed = date.trim();
   if (/T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})$/u.test(trimmed)) {
     const instant = Date.parse(trimmed);
@@ -90,7 +90,7 @@ export function aoeToIso(date: string, now?: Date): string | undefined {
   }
   const match = /^(\d{4}-\d{2}-\d{2})(?:[ T](\d{2}:\d{2}(?::\d{2})?))?/u.exec(trimmed);
   if (!match) {
-    return now ? yearlessAoeToIso(trimmed, now) : undefined;
+    return now ? yearlessAoeToIso(trimmed, now, venueYear) : undefined;
   }
   return wallClockAoe(match[1], match[2]);
 }
@@ -121,11 +121,12 @@ const MONTHS = [
  * clock comes round in AoE: this year if it is still ahead, otherwise next year (or the next leap
  * year, for February 29).
  *
- * Never a past year. `Date.parse("Nov 6")` is 2001 in V8, which turned a date somebody typed
- * without a year into a deadline twenty-five years overdue. A deadline is something still to
- * meet, so the only reading of a bare month/day that makes sense is the coming one.
+ * Never a past year on its own. `Date.parse("Nov 6")` is 2001 in V8, which turned a date somebody
+ * typed without a year into a deadline twenty-five years overdue. With the venue's year known, the
+ * coming occurrence is taken only up to that year; past it, the venue's own occurrence is returned
+ * even though it is gone, so a missed deadline reads as overdue instead of as next year's.
  */
-export function yearlessAoeToIso(date: string, now: Date): string | undefined {
+export function yearlessAoeToIso(date: string, now: Date, venueYear?: number): string | undefined {
   const text = date.trim().toLowerCase().replace(/,/gu, " ");
   const clock = /(?:^|\s)(\d{1,2}:\d{2}(?::\d{2})?)(?:\s*aoe)?$/u.exec(text)?.[1];
   const day = clock ? text.slice(0, text.lastIndexOf(clock)).trim() : text.replace(/\s*aoe$/u, "");
@@ -148,19 +149,26 @@ export function yearlessAoeToIso(date: string, now: Date): string | undefined {
     return undefined;
   }
   const paddedClock = clock && /^\d:/u.test(clock) ? `0${clock}` : clock;
-  // Four years ahead at most, which is as far as February 29 can be.
-  for (let year = now.getUTCFullYear(); year <= now.getUTCFullYear() + 4; year += 1) {
+  const inYear = (year: number): string | undefined => {
     const isoDay = `${year}-${String(month).padStart(2, "0")}-${String(dayOfMonth).padStart(2, "0")}`;
     const iso = wallClockAoe(isoDay, paddedClock);
     // Reject a rollover ("02-30" parsing as March 2): the date has to exist that year.
-    if (!iso || new Date(Date.parse(iso) - 12 * 3_600_000).getUTCDate() !== dayOfMonth) {
-      continue;
-    }
-    if (Date.parse(iso) >= now.getTime()) {
+    return iso && new Date(Date.parse(iso) - 12 * 3_600_000).getUTCDate() === dayOfMonth
+      ? iso
+      : undefined;
+  };
+  // A venue's deadlines fall no later than the year it is named for, so its year caps the
+  // search: NeurIPS 2026's "Oct 30" read in November 2026 is twelve days overdue, not a date in
+  // 2027. Four years ahead at most otherwise, which is as far as February 29 can be.
+  const last = Math.min(now.getUTCFullYear() + 4, venueYear ?? Number.POSITIVE_INFINITY);
+  for (let year = now.getUTCFullYear(); year <= last; year += 1) {
+    const iso = inYear(year);
+    if (iso && Date.parse(iso) >= now.getTime()) {
       return iso;
     }
   }
-  return undefined;
+  // Every occurrence up to the venue year is past: the venue year's own, read as overdue.
+  return venueYear === undefined ? undefined : inYear(venueYear);
 }
 
 /**
@@ -206,7 +214,8 @@ export function cameraReadyDeadline(
     }
     for (const entry of Array.isArray(record.schedule) ? record.schedule : []) {
       const row = (entry ?? {}) as Record<string, unknown>;
-      const iso = row.milestone === "camera_ready" ? aoeToIso(textOf(row.date), now) : undefined;
+      const iso =
+        row.milestone === "camera_ready" ? aoeToIso(textOf(row.date), now, key.year) : undefined;
       if (iso) {
         dates.push(iso);
       }
@@ -269,7 +278,7 @@ export function submissionDeadline(
       continue;
     }
     const at = textOf(record.deadline_at);
-    const deadline = at ? aoeToIso(at, now) : aoeToIso(textOf(record.deadline_aoe), now);
+    const deadline = aoeToIso(at || textOf(record.deadline_aoe), now, key.year);
     if (!deadline || Date.parse(deadline) < now.getTime()) {
       continue;
     }
