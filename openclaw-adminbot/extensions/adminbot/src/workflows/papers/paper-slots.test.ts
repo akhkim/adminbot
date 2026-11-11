@@ -872,11 +872,12 @@ describe("talk slides after the PaperMentor review", () => {
     expect(open).not.toContain("slides");
   });
 
-  it("tells them to add the deck to their theme's overall slides, linking Quick Pointers", () => {
+  it("tells them to add the deck to their topic's mega deck, linking Quick Pointers", () => {
     const item = actionablePaperSlots(paper(), reviewed, NOW).find(
       (entry) => entry.slot === "slides",
     );
-    expect(item?.detail).toContain("theme's overall slides");
+    expect(item?.detail).toContain("topic's mega deck");
+    expect(item?.detail).toContain("never delete");
     expect(item?.detail).toContain(ADMINBOT_QUICK_POINTERS_DOC_URL);
     const message = buildNudgeMessage({ groups: [{ title: "A paper", items: [item!] }], now: NOW });
     expect(message).toContain(`<${ADMINBOT_QUICK_POINTERS_DOC_URL}|Quick Pointers>`);

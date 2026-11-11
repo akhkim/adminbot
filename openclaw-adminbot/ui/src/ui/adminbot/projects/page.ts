@@ -384,6 +384,7 @@ function renderLaneTab(
           loading: props.slotsBusyId === paper.id,
           onSaveSlot: (slot, input) => props.onSaveSlot(paper.id, slot, input),
           branch: lane.branch,
+          ...(cycle.talkMaterials ? { talkMaterials: cycle.talkMaterials } : {}),
           // "Write the draft" on a social gate opens the drafts below it on the same tab.
           ...(lane.branch === "social"
             ? {

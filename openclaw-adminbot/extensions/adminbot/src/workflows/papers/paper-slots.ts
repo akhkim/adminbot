@@ -447,9 +447,10 @@ export type NudgeItem = {
  * Cadence and snoozing are not here. They belong to the person being messaged, so the service
  * filters this list against the ledger rather than this function reading a clock.
  */
-// The slides reminder carries the second half of the ask: a talk is also added to its theme's
-// overall deck, which the Quick Pointers doc links from each theme's section.
-const SLIDES_DETAIL = `make the talk slides and link them here, then add them to your theme's overall slides (linked from each theme's section of <${ADMINBOT_QUICK_POINTERS_DOC_URL}|Quick Pointers>)`;
+// The slides reminder carries the second half of the ask: a talk is also added to its topic's
+// mega deck, which the Quick Pointers doc links from each theme's section. The service swaps this
+// for the recipient's own deck when ADMINBOT_TALK_MATERIALS_JSON names one (see talk-materials.ts).
+const SLIDES_DETAIL = `make the talk slides and link them here, then add them to your topic's mega deck (linked from each theme's section of <${ADMINBOT_QUICK_POINTERS_DOC_URL}|Quick Pointers>) -- add your own slides; never delete, overwrite or rearrange anyone else's`;
 
 export function actionablePaperSlots(
   paper: AdminBotPaperRecord,

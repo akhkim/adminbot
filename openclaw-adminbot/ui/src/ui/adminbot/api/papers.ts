@@ -349,7 +349,39 @@ export type PaperCycle = {
   conferenceKey?: string;
   /** The reader's own trip to that conference, when they have recorded one. */
   myTrip?: ConferenceTrip;
+  /** Where the slides go once made. Absent from a service that predates it. */
+  talkMaterials?: PaperTalkMaterials;
 };
+
+/** The first author's topic mega deck and the lab's Quick Pointers doc, as the service resolved them. */
+export type PaperTalkMaterials = {
+  topicLabel?: string;
+  /** Absent when no topic matched: the card links the list of decks instead. */
+  megaDeckUrl?: string;
+  quickpointersUrl: string;
+  decksIndexUrl: string;
+};
+
+type TalkMaterialsWire = {
+  topic_label?: string;
+  mega_deck_url?: string;
+  quickpointers_url?: string;
+  decks_index_url?: string;
+};
+
+function talkMaterialsFromWire(
+  wire: TalkMaterialsWire | undefined,
+): PaperTalkMaterials | undefined {
+  if (!wire?.quickpointers_url || !wire.decks_index_url) {
+    return undefined;
+  }
+  return {
+    ...(wire.topic_label ? { topicLabel: wire.topic_label } : {}),
+    ...(wire.mega_deck_url ? { megaDeckUrl: wire.mega_deck_url } : {}),
+    quickpointersUrl: wire.quickpointers_url,
+    decksIndexUrl: wire.decks_index_url,
+  };
+}
 
 /** One paper's slots and venue ladder, blanks included -- the card renders the whole cycle. */
 export async function fetchPaperSlots(
@@ -381,7 +413,9 @@ export async function fetchPaperSlots(
     missing_acceptance_details?: string[];
     conference_key?: string;
     my_trip?: ConferenceTrip;
+    talk_materials?: TalkMaterialsWire;
   } | null;
+  const talkMaterials = talkMaterialsFromWire(body?.talk_materials);
   return {
     ok: true,
     value: {
@@ -396,6 +430,7 @@ export async function fetchPaperSlots(
       missingAcceptanceDetails: body?.missing_acceptance_details ?? [],
       ...(body?.conference_key ? { conferenceKey: body.conference_key } : {}),
       ...(body?.my_trip ? { myTrip: body.my_trip } : {}),
+      ...(talkMaterials ? { talkMaterials } : {}),
     },
   };
 }

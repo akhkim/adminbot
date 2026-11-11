@@ -1324,7 +1324,7 @@ describe("one message per person for every empty slot", () => {
       expect(sent.created.filter((p) => p.summary?.includes("Ada"))).toHaveLength(1);
     }));
 
-  it("names the deck and QuickPointers once, while the slides keep being chased", async () => {
+  it("says Quick Pointers once, while the slides chase keeps naming the deck", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     try {
       vi.setSystemTime(new Date("2026-10-01T09:00:00Z"));
@@ -1339,11 +1339,29 @@ describe("one message per person for every empty slot", () => {
       const { batches } = unwrap(service.collectPaperNudgeBatches());
       const message = batches.find((batch) => batch.member_id === "ada")?.message ?? "";
       expect(message).toContain("Talk slides");
-      expect(message).not.toContain("mega deck");
-      expect(message).not.toContain("QuickPointers");
+      // The weekly slides chase still names the deck; the once-only Quick Pointers line does not
+      // come back.
+      expect(message).toContain("causality mega deck");
+      expect(message).not.toContain("Add this paper to the lab's");
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("gives the paper card the first author's deck and the Quick Pointers doc", () => {
+    const service = new AdminBotService(undefined, { talkMaterials });
+    seed(service);
+    expect(unwrap(service.listPaperSlots("p1")).talk_materials).toMatchObject({
+      topic_label: "causality",
+      mega_deck_url: "https://slides.example.test/causality-deck",
+      quickpointers_url: "https://docs.example.test/causality-pointers",
+    });
+    // No config: no deck to name, so the card links the lab's Quick Pointers doc for both.
+    const bare = new AdminBotService();
+    seed(bare);
+    const view = unwrap(bare.listPaperSlots("p1")).talk_materials;
+    expect(view.mega_deck_url).toBeUndefined();
+    expect(view.decks_index_url).toBe(view.quickpointers_url);
   });
 
   it("does not ask about availability a member has already filled in", () => {

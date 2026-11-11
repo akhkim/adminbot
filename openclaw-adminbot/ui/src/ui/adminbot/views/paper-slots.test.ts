@@ -28,6 +28,7 @@ async function draw(
     details?: PaperDetailsProps;
     showAll?: boolean;
     branch?: PaperSlotsProps["branch"];
+    talkMaterials?: PaperSlotsProps["talkMaterials"];
   } = {},
 ) {
   const saved: Saved[] = [];
@@ -44,6 +45,7 @@ async function draw(
       ...(extra.stages ? { stages: extra.stages } : {}),
       ...(extra.details ? { details: extra.details } : {}),
       ...(extra.branch ? { branch: extra.branch } : {}),
+      ...(extra.talkMaterials ? { talkMaterials: extra.talkMaterials } : {}),
       onSaveSlot: (slot, input) => saved.push({ slot, input }),
     }),
     container,
@@ -903,4 +905,46 @@ it("starts checklist branches collapsed without hiding their headings", async ()
   expect(branches.every((branch) => branch.querySelector("summary")?.textContent?.trim())).toBe(
     true,
   );
+});
+
+describe("the slides field's mega deck note", () => {
+  const note = (container: HTMLElement) =>
+    container.querySelector<HTMLElement>('[data-testid="paper-slot-talk-materials-p1"]');
+
+  it("links the topic's mega deck and Quick Pointers, add-only", async () => {
+    const { container } = await draw([row({ slot: "slides" })], false, {
+      talkMaterials: {
+        topicLabel: "causality",
+        megaDeckUrl: "https://slides.example.test/causality-deck",
+        quickpointersUrl: "https://docs.example.test/pointers",
+        decksIndexUrl: "https://docs.example.test/pointers",
+      },
+    });
+    const links = [...(note(container)?.querySelectorAll("a") ?? [])].map((a) => [
+      a.textContent?.trim(),
+      a.getAttribute("href"),
+    ]);
+    expect(links).toEqual([
+      ["causality mega deck", "https://slides.example.test/causality-deck"],
+      ["Quick Pointers", "https://docs.example.test/pointers"],
+    ]);
+    expect(note(container)?.textContent).toContain("never delete");
+  });
+
+  it("links the list of decks when no topic matched", async () => {
+    const { container } = await draw([row({ slot: "slides" })], false, {
+      talkMaterials: {
+        quickpointersUrl: "https://docs.example.test/pointers",
+        decksIndexUrl: "https://drive.example.test/decks",
+      },
+    });
+    const deckList = note(container)?.querySelector("a");
+    expect(deckList?.textContent?.trim()).toBe("list of decks");
+    expect(deckList?.getAttribute("href")).toBe("https://drive.example.test/decks");
+  });
+
+  it("draws nothing when the service sent no links", async () => {
+    const { container } = await draw([row({ slot: "slides" })]);
+    expect(note(container)).toBeNull();
+  });
 });

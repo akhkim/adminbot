@@ -645,7 +645,7 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     deadlineBearing: false,
     urlHosts: ["docs.google.com"],
     urlPath: ["/presentation/"],
-    hint: "The talk slides for this venue, as a Google Slides deck. Also add them to your theme's overall slides, linked from each section of the lab's Quick Pointers doc.",
+    hint: "The talk slides for this venue, as a Google Slides deck. Then add them to your topic's mega deck, linked from each section of the lab's Quick Pointers doc: add only, never delete anyone else's slides.",
     example: "https://docs.google.com/presentation/d/1Sl1De…",
   },
   poster: {
