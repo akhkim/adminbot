@@ -413,6 +413,16 @@
       "timeoutSeconds": 900
     },
     {
+      "name": "adminbot-professor-digest",
+      "description": "Daily digest to the head professor of what is overdue, due soon, or long waiting on her (sends at most once a day; off until ADMINBOT_PROFESSOR_DIGEST_ENABLED=1)",
+      "cron": "8 * * * *",
+      "argv": [
+        "bash",
+        "scripts/adminbot-professor-digest-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
       "name": "adminbot-thesis-milestones",
       "description": "Guidebook nudge before a thesis deadline, grading reminder five days after",
       "cron": "50 9 * * 1-5",

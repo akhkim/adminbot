@@ -5,6 +5,7 @@ import type {
 } from "../connectors/calendar-membership.js";
 import {
   classifyMailSendFailure,
+  gogFailedBeforeSending,
   needsOperatorForMailFailure,
 } from "../connectors/mail-send-failure.js";
 import type {
@@ -430,6 +431,7 @@ import {
   runNudgeCampaign,
 } from "../workflows/nudges/campaign.js";
 import { ADMINBOT_NUDGE_CAMPAIGNS } from "../workflows/nudges/campaigns.js";
+import type { ProfessorDigestConfig } from "../workflows/nudges/professor-digest.js";
 import { profilePhotoCampaign } from "../workflows/nudges/profile-photo-nudge.js";
 import { templateForMemberType } from "../workflows/onboarding/member-type-template.js";
 import {
@@ -608,6 +610,10 @@ import {
   piApprovalImpactDenial,
   piReviewSlotDenial,
 } from "./service.pi-review.js";
+import {
+  sweepProfessorDigest,
+  type ProfessorDigestSweepResult,
+} from "./service.professor-digest.js";
 import { RecLetterEligibilityService } from "./service.rec-letter-eligibility.js";
 import { runSlackRosterSync, type SlackRosterSyncOptions } from "./service.slack-roster-sync.js";
 import {
@@ -1470,6 +1476,10 @@ const DEFAULT_ACTION_POLICIES = {
   // that waited in Pending actions would arrive after the letter was late, which is the one
   // failure this exists to prevent. resolvePolicy only honors auto_allowed below T2.
   "logistics.rec_letter_reminder": autoPolicy("T1"),
+  // Auto (T1) for the letter reminder's reasons: the recipient is the head professor on file and
+  // the body is composed from the portal's own queues. A digest about overdue items that first
+  // waited in Pending actions -- one of the queues it reports -- would defeat itself.
+  "professor.escalation_digest": autoPolicy("T1"),
   // Deliberately auto-approved, unlike every other outbound-message type (slack.send_message,
   // email.send, paper_publish.nudge_author are all T3/approval-required): creating this proposal
   // already requires a real admin session via POST /nudges/send (never reachable
@@ -15881,6 +15891,41 @@ export class AdminBotService {
   }
 
   /**
+   * The head professor's daily escalation digest; see service.professor-digest.ts.
+   *
+   * Another exception to the never-chase-the-PI rule below, on the same terms: her own queues,
+   * addressed to her desk by its own action type. `config` comes from the host environment at the
+   * route, so the service holds no env reads of its own.
+   */
+  async sweepProfessorDigest(
+    actor: string,
+    config: ProfessorDigestConfig,
+    options: { nowIso?: string; dryRun?: boolean } = {},
+  ): Promise<AdminBotServiceResponse<ProfessorDigestSweepResult>> {
+    return await sweepProfessorDigest(
+      {
+        store: this.store,
+        headProfessorMemberId: () => this.headProfessorMemberId(),
+        piReviewQueue: () => {
+          const queue = this.listPiReviewQueue();
+          return queue.ok ? queue.payload.papers : [];
+        },
+        escalatedMembers: () => {
+          const escalated = this.listEscalatedNudges();
+          return escalated.ok ? escalated.payload.members : [];
+        },
+        createProposal: (proposal) => this.createProposal(proposal),
+        execute: (actionId, request) => this.execute(actionId, request),
+        recordAudit: (event) => this.recordAudit(event),
+        portalUrl: resolveAdminBotControlUiUrl(),
+      },
+      actor,
+      config,
+      options,
+    );
+  }
+
+  /**
    * Mail the head professor the letters that come due in the next three days.
    *
    * The one thing AdminBot sends the head professor, and the exception is deliberate. Every nudge
@@ -17733,15 +17778,6 @@ function nudgeReachedMember(result: AdminBotMemberNudgeResult, memberId: string)
       delivery.member_id === memberId &&
       (delivery.outcome === "executed" || delivery.outcome === "unknown"),
   );
-}
-
-/** A gog error that proves the request never reached Google, so nothing can have been sent. */
-function gogFailedBeforeSending(message: string): boolean {
-  if (!/\bgog\b/u.test(message)) {
-    return false;
-  }
-  const kind = classifyMailSendFailure(message);
-  return needsOperatorForMailFailure(kind) || kind === "unreachable" || kind === "rate_limited";
 }
 
 // Fixed order, so a person owed slots in two roles on the same paper reads them in the same order

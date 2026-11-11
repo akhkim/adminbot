@@ -3037,6 +3037,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/nudges/professor-digest/run": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** POST /nudges/professor-digest/run */
+    post: operations["post-nudges-professor-digest-run"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/nudges/send": {
     parameters: {
       query?: never;
@@ -5167,6 +5184,7 @@ export interface components {
         | "join_form.classify"
         | "logistics.send_signed_document"
         | "logistics.rec_letter_reminder"
+        | "professor.escalation_digest"
         | "email_review.resolve"
         | "member_nudge.send"
         | "member_nudge.escalate"
@@ -5299,6 +5317,7 @@ export interface components {
         | "rec_letter_channel.swept"
         | "reference_check.pdf_checked"
         | "rec_letter_reminders.swept"
+        | "professor_digest.swept"
         | "papermentor.run_recorded"
         | "papermentor.review_requested"
         | "papermentor.project_linked"
@@ -8203,6 +8222,27 @@ export interface components {
     } & {
       [key: string]: unknown;
     };
+    ProfessorDigestSweepResult: {
+      /** @enum {string} */
+      outcome:
+        | "sent"
+        | "preview"
+        | "disabled"
+        | "before_send_hour"
+        | "already_sent_today"
+        | "nothing_due";
+      local_date: string;
+      timezone: string;
+      recipient?: string;
+      counts?: {
+        [key: string]: unknown;
+      };
+      subject?: string;
+      body?: string;
+      proposal_id?: string;
+    } & {
+      [key: string]: unknown;
+    };
     AdminBotMemberNudgeRequest: {
       /** @enum {string} */
       channel: "email" | "slack";
@@ -9337,6 +9377,7 @@ export interface components {
         | "join_form.classify"
         | "logistics.send_signed_document"
         | "logistics.rec_letter_reminder"
+        | "professor.escalation_digest"
         | "email_review.resolve"
         | "member_nudge.send"
         | "member_nudge.escalate"
@@ -9417,6 +9458,7 @@ export interface components {
         | "join_form.classify"
         | "logistics.send_signed_document"
         | "logistics.rec_letter_reminder"
+        | "professor.escalation_digest"
         | "email_review.resolve"
         | "member_nudge.send"
         | "member_nudge.escalate"
@@ -21480,6 +21522,7 @@ export interface operations {
                 | "workshop_nudge"
                 | "pi_review"
                 | "rec_letter_reminder"
+                | "professor_digest"
                 | "email_review"
                 | "automation_health";
               label: string;
@@ -21592,6 +21635,39 @@ export interface operations {
           } & {
             [key: string]: unknown;
           };
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "post-nudges-professor-digest-run": {
+    parameters: {
+      query?: {
+        dry_run?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful service result */
+      "2XX": {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProfessorDigestSweepResult"];
         };
       };
       /** @description Authentication, authorization, validation, policy, or connector error */
@@ -22109,6 +22185,7 @@ export interface operations {
               | "join_form.classify"
               | "logistics.send_signed_document"
               | "logistics.rec_letter_reminder"
+              | "professor.escalation_digest"
               | "email_review.resolve"
               | "member_nudge.send"
               | "member_nudge.escalate"
@@ -26736,6 +26813,7 @@ export interface operations {
               | "workshop_nudge"
               | "pi_review"
               | "rec_letter_reminder"
+              | "professor_digest"
               | "email_review"
               | "automation_health";
             dry_run: boolean;
@@ -27010,6 +27088,7 @@ export interface operations {
             | "join_form.classify"
             | "logistics.send_signed_document"
             | "logistics.rec_letter_reminder"
+            | "professor.escalation_digest"
             | "email_review.resolve"
             | "member_nudge.send"
             | "member_nudge.escalate"

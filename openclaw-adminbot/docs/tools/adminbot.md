@@ -1243,7 +1243,7 @@ letter deadline in its entered timezone, including for older requests; missing l
 deadline. Sort by submission, user, deadline, or status; filter by name/school, request type, or status.
 Open the member's name for request details and documents.
 
-The one mail AdminBot sends the head professor. Every nudge pipeline refuses that address on
+One of the two mails AdminBot sends the head professor (the other is the escalation digest below). Every nudge pipeline refuses that address on
 purpose -- the lab does not chase its PI, and the escalation path runs _towards_ her -- so this is a
 typed action of its own, `logistics.rec_letter_reminder`, rather than a member nudge with the guard
 relaxed. The direction is what makes it different: it is her own queue, about work only she can do,
@@ -1274,6 +1274,43 @@ has named no head professor, or whose professor has no address, **refuses the pa
 when something was due rather than guessing at an inbox -- and stays quiet on a morning when nothing
 was. A send that fails is not stamped, so it is retried the next morning while the letter is still
 worth writing.
+
+## Professor escalation digest
+
+The head professor reads email before the portal, so whatever is waiting on her also goes to her
+inbox: **one digest a day**, repeated until each item is resolved. A typed action of its own,
+`professor.escalation_digest`, auto-approved (T1) for the rec-letter reminder's reasons -- the
+recipient is the head professor on file and the body is composed from the portal's own queues.
+
+It reads the queues that already exist rather than keeping a list: the PI review queue on My Desk
+(except _under review_, where the venue owes the next move), open recommendation-letter, signature
+and meeting requests, members escalated for not answering, and approvals older than the waiting
+threshold (one line for the whole queue). Resolving or dismissing an item where it lives is what
+takes it out of the next digest. Each item links to the portal page that resolves it.
+
+Grouped by urgency, each group soonest (or longest waiting) first:
+
+- **Past deadline**
+- **Due within 48 hours** (`ADMINBOT_PROFESSOR_DIGEST_URGENT_HOURS`, default 48)
+- **Due within 7 days** (`ADMINBOT_PROFESSOR_DIGEST_SOON_DAYS`, default 7)
+- **Waiting more than a week, no deadline** (`ADMINBOT_PROFESSOR_DIGEST_WAITING_DAYS`, default 7)
+
+A deadline further out is not mentioned yet. A deadline that passed more than
+`ADMINBOT_PROFESSOR_DIGEST_STALE_DAYS` ago (default 30, capped by the shared 90-day stale horizon)
+is treated as obsolete and dropped: a camera-ready for a conference that already happened is
+history, not an emergency. The subject escalates with the most urgent group present, to
+`STILL OVERDUE` once an overdue item has been in an earlier digest, and each repeated line carries
+`[reminder #N]`.
+
+`adminbot-professor-digest` runs hourly; the service sends at most once per local day, from
+`ADMINBOT_PROFESSOR_DIGEST_HOUR` (default 8) in `ADMINBOT_PROFESSOR_DIGEST_TIMEZONE` (default: the
+professor's roster timezone, else America/Toronto). Nothing due means nothing sent. The day gate and
+per-item counts live in the nudge ledger under `professor_digest`. A send that fails before reaching
+Google is retried on the next hourly run; one that may have gone out counts as sent for the day so
+she never gets the same digest twice. **Off until `ADMINBOT_PROFESSOR_DIGEST_ENABLED=1`.**
+`POST /nudges/professor-digest/run?dry_run=1` returns the mail it would send, without sending or
+stamping, even while it is off. The recipient is resolved and fails closed exactly like the
+rec-letter reminder.
 
 ## Recommendation letter eligibility
 
@@ -1654,6 +1691,7 @@ a job that was never registered is silent: nobody is nudged and nothing errors.
 | `adminbot-papermentor-reviews`      | `2 8-20/2 * * *`     | Ask PaperMentor to review the papers at their review step, on the lab's Overleaf            |
 | `adminbot-papermentor-runs`         | `35 * * * *`         | Collect PaperMentor's cached reviews and record them against their papers                   |
 | `adminbot-rec-letter-reminders`     | `25 10 * * *`        | Mail the head professor the letters due within three days                                   |
+| `adminbot-professor-digest`         | `8 * * * *`          | Daily digest to the head professor of what is overdue, due soon, or long waiting on her     |
 | `adminbot-meeting-attendance`       | `30 9 * * 1`         | Chase members who have stopped coming to the group meeting                                  |
 | `adminbot-weekly-updates`           | `0 10 * * 1`         | Ask authors for the week's paper updates                                                    |
 | `adminbot-prereg-nudges`            | `0 14 * * 4`         | Pre-meeting pre-registration sweep                                                          |

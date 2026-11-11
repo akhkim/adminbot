@@ -93,6 +93,11 @@ export const adminBotActionTypes = [
   // recipient is the head professor on file and the body is composed from the request log, so
   // nothing about who it reaches or what it says comes from a caller.
   "logistics.rec_letter_reminder",
+  // The daily escalation digest to the head professor: everything waiting on her, grouped by how
+  // urgent it is, repeated until each item is resolved. Its own type for the same reason as the
+  // letter reminder above -- it is addressed to that desk about its own queue -- and separate from
+  // it because it repeats, where the letter reminder is said once per deadline.
+  "professor.escalation_digest",
   /**
    * One message the hourly inbox pass could not decide, put to the reviewer as an approval.
    *
@@ -2780,6 +2785,9 @@ export type AdminBotAuditEvent = {
     // sent, naming the address it went to: this is the one mail AdminBot sends that desk, so "did
     // she hear about this letter, and when" has an answer that does not depend on her mailbox.
     | "rec_letter_reminders.swept"
+    // One daily escalation digest that was sent, failed, or may have been sent. Quiet runs (off,
+    // before the send hour, already sent, nothing due) are not recorded: they happen hourly.
+    | "professor_digest.swept"
     // One PaperMentor review, as the collector reported it. Recorded on every pass rather than
     // only the first, so "when did we last hear from PaperMentor about this paper" has an answer
     // even on the days it re-sent the review it sent yesterday. Counts only -- see the table.
