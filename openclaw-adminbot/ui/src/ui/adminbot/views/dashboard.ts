@@ -33,6 +33,7 @@ import {
 import { nextStepFor } from "../next-step.ts";
 import { ownPapers, paperProgress, stepLabel } from "../projects/model.ts";
 import { renderDeadlineDateLabel } from "./deadline-date.ts";
+import { historyToggle } from "./history-toggle.ts";
 import { renderMemberMap } from "./member-map.ts";
 import "./map-coverage.ts";
 import "./nudge-campaign.ts";
@@ -143,6 +144,10 @@ function mandatoryFieldsItem(state: AppViewState): AttentionItem | null {
  * Collapsing here rather than in the service on purpose: the notification rows are the record of
  * what the lab said and when, and they are read by the nudge escalation. This is a decision about
  * one page.
+ *
+ * Unread only. Once a notification is read -- opened from its card, acknowledged from the banner,
+ * or its popup closed -- it has been delivered, and it leaves the stack for the "Earlier" fold
+ * (see readNotifications). `read_at` is stored by the service, so it stays gone after a reload.
  */
 type VisibleNotification = MemberNotification & { collapsed_ids: string[] };
 
@@ -159,7 +164,7 @@ function visibleNotifications(state: AppViewState, role: AccessRole): VisibleNot
   const covered = mandatoryFieldsItem(state) ? new Set(["profile"]) : new Set<string>();
   const byKind = new Map<string, MemberNotification[]>();
   for (const notification of state.adminBotNotifications ?? []) {
-    if (covered.has(notification.kind)) {
+    if (notification.read_at || covered.has(notification.kind)) {
       continue;
     }
     byKind.set(notification.kind, [...(byKind.get(notification.kind) ?? []), notification]);
@@ -177,6 +182,46 @@ function visibleNotifications(state: AppViewState, role: AccessRole): VisibleNot
       return { ...(kept as MemberNotification), collapsed_ids: rest.map((entry) => entry.id) };
     })
     .sort((left, right) => right.created_at.localeCompare(left.created_at));
+}
+
+/** How many read notifications the "Earlier" fold keeps. It is a way back, not an archive. */
+export const READ_NOTIFICATION_HISTORY_LIMIT = 20;
+
+/** Notifications already read, newest first: out of the stack, still one press away. */
+function readNotifications(state: AppViewState, role: AccessRole): MemberNotification[] {
+  if (role === "anonymous") {
+    return [];
+  }
+  return (state.adminBotNotifications ?? [])
+    .filter((notification) => notification.read_at)
+    .toSorted((left, right) => right.created_at.localeCompare(left.created_at))
+    .slice(0, READ_NOTIFICATION_HISTORY_LIMIT);
+}
+
+function renderNotificationHistory(state: AppViewState, role: AccessRole) {
+  const read = readNotifications(state, role);
+  return historyToggle({
+    testId: "dashboard-notification-history",
+    label: t("dashboard.notifications.history", { count: String(read.length) }),
+    items: read.map(
+      (notification) => html`<span
+        class="dashboard__history-row"
+        data-testid="dashboard-notification-history-row"
+      >
+        <strong>${notification.title}</strong>
+        <span class="muted">${notification.created_at.slice(0, 10)}</span>
+        ${isKnownTab(notification.tab)
+          ? html`<button
+              type="button"
+              class="btn btn--sm"
+              @click=${() => state.setTab(notification.tab as Tab)}
+            >
+              ${t("dashboard.notifications.open")}
+            </button>`
+          : nothing}
+      </span>`,
+    ),
+  });
 }
 
 function notificationItems(state: AppViewState, role: AccessRole): AttentionItem[] {
@@ -378,6 +423,7 @@ function renderAttention(state: AppViewState, role: AccessRole) {
                 </details>`
               : nothing}`
         : html`<p class="dashboard__empty">${t("dashboard.attention.empty")}</p>`}
+      ${renderNotificationHistory(state, role)}
     </section>
   `;
 }
@@ -582,7 +628,7 @@ function renderNextDeadlines(state: AppViewState) {
 /**
  * The warning across the top of the page: what has been asked of this member and not answered.
  *
- * The cards below already list every notification. This is not a second copy of them -- it is the
+ * The cards below already list every unread notification. This is not a second copy of them -- it is the
  * one thing the cards cannot do, which is be impossible to scroll past. A nudge that reached Slack
  * and the notification list and was still missed is a nudge that needed to be in the way, and this
  * is the last place the lab gets to say so before it asks the head professor to.

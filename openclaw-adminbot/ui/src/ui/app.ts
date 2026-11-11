@@ -799,6 +799,7 @@ export class OpenClawApp extends LitElement {
   @state() adminBotProfileOverviewPage = EMPTY_PROFILE_OVERVIEW_PAGE;
   @state() adminBotEscalatedNudges: EscalatedNudgeRow[] = [];
   @state() adminBotPiReview: PiReviewRow[] = [];
+  @state() adminBotPiReviewHistory: PiReviewRow[] = [];
   @state() adminBotPiReviewError: string | null = null;
   @state() adminBotProfileOverviewFieldCount = 0;
   // The lab-wide adoption roll-up that heads the same page. Null until the first read answers, so

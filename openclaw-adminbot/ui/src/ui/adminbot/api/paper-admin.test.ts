@@ -1,5 +1,9 @@
-import { describe, expect, it } from "vitest";
-import { readConferenceRosters } from "./paper-admin.ts";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  fetchPiReviewQueue,
+  fetchPiReviewQueueAndHistory,
+  readConferenceRosters,
+} from "./paper-admin.ts";
 
 const base = {
   key: "emnlp:2026",
@@ -55,5 +59,59 @@ describe("readConferenceRosters", () => {
   it("reads a missing or malformed body as no rosters", () => {
     expect(readConferenceRosters(null)).toEqual([]);
     expect(readConferenceRosters({ conferences: "nope" })).toEqual([]);
+  });
+});
+
+describe("fetchPiReviewQueueAndHistory", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+  const respond = (body: unknown) =>
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify(body), { status: 200 })),
+    );
+  const row = { paper_id: "p1", title: "Open one", authors: [], package_complete: true };
+
+  it("reads the history beside the queue, with why each row left", async () => {
+    respond({
+      papers: [row],
+      history: [
+        {
+          ...row,
+          paper_id: "emnlp",
+          title: "Held at EMNLP",
+          category: "camera_ready",
+          hard_deadline: "2026-08-31T11:59:59.000Z",
+          days_left: -73,
+          history_reason: "conference_held",
+        },
+        // A row with no reason is not history, and a malformed one does not fail the queue.
+        { ...row, paper_id: "x", title: "No reason" },
+        { title: "No id" },
+      ],
+    });
+    const result = await fetchPiReviewQueueAndHistory("token", "http://service.test");
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.value.papers.map((paper) => paper.paperId)).toEqual(["p1"]);
+    expect(result.value.history).toEqual([
+      expect.objectContaining({
+        paperId: "emnlp",
+        historyReason: "conference_held",
+        daysLeft: -73,
+      }),
+    ]);
+  });
+
+  it("has an empty history from a service that predates it", async () => {
+    respond({ papers: [row] });
+    const result = await fetchPiReviewQueueAndHistory("token", "http://service.test");
+    expect(result.ok && result.value.history).toEqual([]);
+    respond({ papers: [row] });
+    const queue = await fetchPiReviewQueue("token", "http://service.test");
+    expect(queue.ok && queue.value.map((paper) => paper.paperId)).toEqual(["p1"]);
   });
 });

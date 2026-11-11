@@ -2,9 +2,13 @@ import { describe, expect, it } from "vitest";
 import type { AdminBotLogisticsRequest } from "../../contracts/actions.js";
 import {
   MAX_ATTACHMENT_BYTES,
+  allLettersSubmitted,
   base64ByteLength,
   byUrgency,
   deadlineInstant,
+  hasImplausibleDeadlineYear,
+  isLetterStatusSubmitted,
+  isPlausibleDeadlineYear,
   meetingInstant,
   normalizeLogisticsRequestInput,
   prepareLogisticsRequest,
@@ -442,5 +446,91 @@ describe("letter deadline rules", () => {
       }).deadline_at,
     ).toBeUndefined();
     expect(legacy.deadline_at).toBe("2026-01-01T23:59:00Z");
+  });
+});
+
+describe("a letter deadline in a year no deadline can be in", () => {
+  it("is no deadline: 0002-01-15 is a typo, not a date 45,590 days ago", () => {
+    expect(deadlineInstant("0002-01-15")).toBeUndefined();
+    expect(deadlineInstant("0002-01-15", "17:00", "America/Toronto")).toBeUndefined();
+    expect(deadlineInstant("2202-01-15")).toBeUndefined();
+    expect(deadlineInstant("2027-01-15")).toBeDefined();
+  });
+
+  it("tells a wrong year apart from no date at all", () => {
+    expect(isPlausibleDeadlineYear("2026-12-01")).toBe(true);
+    expect(isPlausibleDeadlineYear("0002-01-15T23:59:59-12:00")).toBe(false);
+    expect(hasImplausibleDeadlineYear("0002-01-15")).toBe(true);
+    expect(hasImplausibleDeadlineYear("1999-12-31")).toBe(true);
+    expect(hasImplausibleDeadlineYear("Dec 15")).toBe(false);
+    expect(hasImplausibleDeadlineYear(undefined)).toBe(false);
+    expect(hasImplausibleDeadlineYear("2026-12-01")).toBe(false);
+  });
+
+  it("is refused on write with the one thing to fix", () => {
+    expect(
+      validateLogisticsRequest({
+        kind: "recommendation_letters",
+        schools: [{ school: "Example U", letter_deadline: "0002-01-15" }],
+      }),
+    ).toBe("The letter deadline for Example U is in the year 0002. Check the year.");
+  });
+
+  it("drops a stored year-0002 deadline on read instead of serving it", () => {
+    const stored = {
+      ...identity,
+      kind: "recommendation_letters",
+      status: "submitted",
+      submitted_at: NOW,
+      updated_at: NOW,
+      deadline_at: "0002-01-15T23:59:59-12:00",
+      schools: [{ school: "Example U", letter_deadline: "0002-01-15" }],
+    } as AdminBotLogisticsRequest;
+    expect(withCurrentLogisticsDeadline(stored).deadline_at).toBeUndefined();
+    expect(requestDeadlineDetails(stored)).toBeUndefined();
+  });
+
+  it("does not let the typo hide a sibling school's real deadline", () => {
+    expect(
+      requestDeadline({
+        kind: "recommendation_letters",
+        schools: [
+          { school: "Typo U", letter_deadline: "0002-01-15" },
+          { school: "Real U", letter_deadline: "2026-12-01" },
+        ],
+      }),
+    ).toBe(deadlineInstant("2026-12-01"));
+  });
+});
+
+describe("letters already submitted", () => {
+  it("reads the school's free-text status", () => {
+    for (const status of ["Submitted", "sent", "uploaded 11/02", "Done", "completed"]) {
+      expect(isLetterStatusSubmitted(status), status).toBe(true);
+    }
+    for (const status of [
+      undefined,
+      "",
+      "not submitted",
+      "not sent yet",
+      "pending upload",
+      "to be submitted",
+      "requested",
+      "draft",
+    ]) {
+      expect(isLetterStatusSubmitted(status), String(status)).toBe(false);
+    }
+  });
+
+  it("calls a request resolved only when every school's letter is in", () => {
+    const letters = (...statuses: Array<string | undefined>) => ({
+      kind: "recommendation_letters" as const,
+      schools: statuses.map((letter_status, index) => ({ school: `S${index}`, letter_status })),
+    });
+    expect(allLettersSubmitted(letters("submitted", "sent"))).toBe(true);
+    expect(allLettersSubmitted(letters("submitted", "pending"))).toBe(false);
+    expect(allLettersSubmitted(letters("submitted", undefined))).toBe(false);
+    expect(allLettersSubmitted(letters())).toBe(false);
+    expect(allLettersSubmitted({ kind: "book_meeting", schools: [] } as never)).toBe(false);
   });
 });

@@ -198,10 +198,36 @@ export function isLogisticsRequestKind(value: unknown): value is AdminBotLogisti
   );
 }
 
-/** A letter's wall-clock deadline. Blank time means end of day; blank zone means AoE. */
+/**
+ * The years a letter deadline can be in. A date input given "2/1/15" or a year field half typed
+ * stores "0002-01-15", which is a valid calendar day: read as one it put a letter 45,590 days
+ * overdue at the top of the PI's desk. Nothing the lab asks for is due before 2000 or after 2099,
+ * so a year outside these is a typo to ask about, not a deadline.
+ */
+export const MIN_DEADLINE_YEAR = 2000;
+export const MAX_DEADLINE_YEAR = 2099;
+
+/** Whether a yyyy-mm-dd (or a longer ISO stamp) starts with a year a deadline can be in. */
+export function isPlausibleDeadlineYear(date: string | undefined): boolean {
+  const year = Number(/^(\d{4})-/u.exec((date ?? "").trim())?.[1]);
+  return Number.isInteger(year) && year >= MIN_DEADLINE_YEAR && year <= MAX_DEADLINE_YEAR;
+}
+
+/**
+ * A date that is shaped like yyyy-mm-dd but whose year no deadline can be in ("0002-01-15"). Kept
+ * apart from "not a date" so the reply can say the one thing that is wrong: check the year.
+ */
+export function hasImplausibleDeadlineYear(date: string | undefined): boolean {
+  return /^\d{4}-/u.test((date ?? "").trim()) && !isPlausibleDeadlineYear(date);
+}
+
+/**
+ * A letter's wall-clock deadline. Blank time means end of day; blank zone means AoE. A date in a
+ * year no deadline can be in (see MIN_DEADLINE_YEAR) is no deadline.
+ */
 export function deadlineInstant(date?: string, time?: string, zone?: string): string | undefined {
   const day = (date ?? "").trim();
-  if (!ISO_DATE.test(day)) {
+  if (!ISO_DATE.test(day) || !isPlausibleDeadlineYear(day)) {
     return undefined;
   }
   const calendarDay = new Date(`${day}T00:00:00Z`);
@@ -334,6 +360,38 @@ export function requestDeadline(
   return requestDeadlineDetails(input, options)?.at;
 }
 
+/**
+ * Whether a school's free-text letter status says the letter has gone in: "submitted", "sent",
+ * "uploaded", "done", "complete(d)". Not when it says otherwise in the same words ("not sent",
+ * "pending upload", "to be submitted"): those are the open ones the queue is for.
+ */
+export function isLetterStatusSubmitted(status: string | undefined): boolean {
+  const text = (status ?? "").trim().toLowerCase();
+  if (
+    !text ||
+    /\b(?:not|no|un|pending|to be|awaiting|waiting|yet|todo|draft|requested)\b/u.test(text)
+  ) {
+    return false;
+  }
+  return /\b(?:submitted|sent|uploaded|done|complete|completed|finished|delivered)\b/u.test(text);
+}
+
+/**
+ * Whether every school on a letters request reports its letter submitted. Such a request is
+ * resolved even if nobody has closed it: the letters are in, and there is nothing left to write.
+ * A request with no schools is not: there is nothing to say the letters went anywhere.
+ */
+export function allLettersSubmitted(
+  request: Pick<AdminBotLogisticsRequestInput, "kind"> & {
+    schools?: readonly Pick<AdminBotLogisticsSchool, "letter_status">[];
+  },
+): boolean {
+  const schools = request.kind === "recommendation_letters" ? (request.schools ?? []) : [];
+  return (
+    schools.length > 0 && schools.every((school) => isLetterStatusSubmitted(school.letter_status))
+  );
+}
+
 /** Read old letter requests with the current rule, without rewriting the member's stored data. */
 export function withCurrentLogisticsDeadline(
   request: AdminBotLogisticsRequest,
@@ -420,6 +478,9 @@ export function validateLogisticsRequest(input: AdminBotLogisticsRequestInput): 
     for (const school of input.schools ?? []) {
       if (!school.letter_deadline?.trim()) {
         return `a letter deadline is required for ${school.school}`;
+      }
+      if (hasImplausibleDeadlineYear(school.letter_deadline)) {
+        return `The letter deadline for ${school.school} is in the year ${school.letter_deadline.trim().slice(0, 4)}. Check the year.`;
       }
       if (
         !deadlineInstant(

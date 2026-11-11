@@ -163,6 +163,20 @@ export const piReviewCategoryLabels = {
 
 export type PiReviewCategory = keyof typeof piReviewCategoryLabels;
 
+/**
+ * Why a row left the queue for its history (extensions/adminbot/src/workflows/papers/paper-queue.ts):
+ * the venue's conference was held, its cycle is a past year's, its deadline is long gone, or the
+ * feedback has been given.
+ */
+export const piReviewHistoryReasons = [
+  "conference_held",
+  "past_cycle",
+  "stale_deadline",
+  "reviewed",
+] as const;
+
+export type PiReviewHistoryReason = (typeof piReviewHistoryReasons)[number];
+
 /** One paper waiting on the head professor. */
 export type PiReviewRow = {
   /** Absent only from a service that predates categories. */
@@ -185,6 +199,8 @@ export type PiReviewRow = {
   };
   /** Rows the PI asked to see first. */
   priority?: "high";
+  /** Only on a history row: why it left the queue. */
+  historyReason?: PiReviewHistoryReason;
   paperId: string;
   title: string;
   authors: string[];
@@ -248,16 +264,82 @@ function readOpenReview(value: unknown): Pick<PiReviewRow, "openreview"> {
   };
 }
 
+function isQueueRow(row: Record<string, unknown> | null | undefined): boolean {
+  return (
+    !!row &&
+    typeof row.paper_id === "string" &&
+    !!row.paper_id.trim() &&
+    typeof row.title === "string" &&
+    !!row.title.trim()
+  );
+}
+
+function readPiReviewRow(row: Record<string, unknown>): PiReviewRow[] {
+  const paperId = typeof row.paper_id === "string" ? row.paper_id : "";
+  const title = typeof row.title === "string" ? row.title : "";
+  if (!paperId || !title) {
+    return [];
+  }
+  const authors = Array.isArray(row.authors)
+    ? row.authors.filter((name): name is string => typeof name === "string")
+    : [];
+  return [
+    {
+      paperId,
+      title,
+      authors,
+      ...(typeof row.category === "string" && row.category in piReviewCategoryLabels
+        ? { category: row.category as PiReviewCategory }
+        : {}),
+      ...(typeof row.hard_deadline === "string" && Number.isFinite(Date.parse(row.hard_deadline))
+        ? { hardDeadline: row.hard_deadline }
+        : {}),
+      ...(typeof row.days_left === "number" && Number.isFinite(row.days_left)
+        ? { daysLeft: row.days_left }
+        : {}),
+      ...readOpenReview(row.openreview),
+      ...readProofreading(row.proofreading),
+      ...(typeof row.venue === "string" ? { venue: row.venue } : {}),
+      ...(typeof row.waiting_since === "string" ? { waitingSince: row.waiting_since } : {}),
+      ...(typeof row.drive_pdf_url === "string" ? { drivePdfUrl: row.drive_pdf_url } : {}),
+      ...(row.feedback &&
+      typeof row.feedback === "object" &&
+      parsePaperFeedback(JSON.stringify(row.feedback)) &&
+      typeof (row.feedback as Record<string, unknown>).label === "string" &&
+      typeof (row.feedback as Record<string, unknown>).slot === "string"
+        ? { feedback: row.feedback as PiReviewRow["feedback"] }
+        : {}),
+      ...readImpact(row.impact),
+      ...(row.priority === "high" ? { priority: "high" as const } : {}),
+      ...((piReviewHistoryReasons as readonly unknown[]).includes(row.history_reason)
+        ? { historyReason: row.history_reason as PiReviewHistoryReason }
+        : {}),
+      packageComplete: row.package_complete === true,
+    },
+  ];
+}
+
+/** The queue and what has left it (GET /papers/pi-review). */
+export type PiReviewQueue = {
+  papers: PiReviewRow[];
+  /**
+   * Rows that are resolved or out of date, newest first: kept for the desk's history toggle.
+   * Empty from a service that predates it, and never mixed into `papers`.
+   */
+  history: PiReviewRow[];
+};
+
 /**
- * The papers at the PI gate (GET /papers/pi-review).
+ * The papers at the PI gate (GET /papers/pi-review), with the queue's history.
  *
  * A missing endpoint or invalid response leaves approval status unknown; only a successful
- * queue response can establish that nobody is waiting.
+ * queue response can establish that nobody is waiting. A malformed history row is skipped
+ * rather than failing the queue: history is for looking things up, not for deciding.
  */
-export async function fetchPiReviewQueue(
+export async function fetchPiReviewQueueAndHistory(
   sessionToken: string,
   baseUrl: string,
-): Promise<AuthResult<PiReviewRow[]>> {
+): Promise<AuthResult<PiReviewQueue>> {
   const result = await authedJson(baseUrl, "/papers/pi-review", "GET", sessionToken);
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };
@@ -272,67 +354,33 @@ export async function fetchPiReviewQueue(
   if (!result.response.ok) {
     return { ok: false, ...calendarFailure(result.response, result.body) };
   }
-  const body = result.body as { papers?: Array<Record<string, unknown>> } | null;
-  if (
-    !body ||
-    !Array.isArray(body.papers) ||
-    body.papers.some(
-      (row) =>
-        !row ||
-        typeof row.paper_id !== "string" ||
-        !row.paper_id.trim() ||
-        typeof row.title !== "string" ||
-        !row.title.trim(),
-    )
-  ) {
+  const body = result.body as {
+    papers?: Array<Record<string, unknown>>;
+    history?: unknown;
+  } | null;
+  if (!body || !Array.isArray(body.papers) || body.papers.some((row) => !isQueueRow(row))) {
     return {
       ok: false,
       kind: "invalid-response",
       message: "The backend returned an invalid PI review queue.",
     };
   }
-  const rows = (body.papers ?? []).flatMap((row) => {
-    const paperId = typeof row.paper_id === "string" ? row.paper_id : "";
-    const title = typeof row.title === "string" ? row.title : "";
-    if (!paperId || !title) {
-      return [];
-    }
-    const authors = Array.isArray(row.authors)
-      ? row.authors.filter((name): name is string => typeof name === "string")
-      : [];
-    return [
-      {
-        paperId,
-        title,
-        authors,
-        ...(typeof row.category === "string" && row.category in piReviewCategoryLabels
-          ? { category: row.category as PiReviewCategory }
-          : {}),
-        ...(typeof row.hard_deadline === "string" && Number.isFinite(Date.parse(row.hard_deadline))
-          ? { hardDeadline: row.hard_deadline }
-          : {}),
-        ...(typeof row.days_left === "number" && Number.isFinite(row.days_left)
-          ? { daysLeft: row.days_left }
-          : {}),
-        ...readOpenReview(row.openreview),
-        ...readProofreading(row.proofreading),
-        ...(typeof row.venue === "string" ? { venue: row.venue } : {}),
-        ...(typeof row.waiting_since === "string" ? { waitingSince: row.waiting_since } : {}),
-        ...(typeof row.drive_pdf_url === "string" ? { drivePdfUrl: row.drive_pdf_url } : {}),
-        ...(row.feedback &&
-        typeof row.feedback === "object" &&
-        parsePaperFeedback(JSON.stringify(row.feedback)) &&
-        typeof (row.feedback as Record<string, unknown>).label === "string" &&
-        typeof (row.feedback as Record<string, unknown>).slot === "string"
-          ? { feedback: row.feedback as PiReviewRow["feedback"] }
-          : {}),
-        ...readImpact(row.impact),
-        ...(row.priority === "high" ? { priority: "high" as const } : {}),
-        packageComplete: row.package_complete === true,
-      },
-    ];
-  });
-  return { ok: true, value: rows };
+  const history = Array.isArray(body.history)
+    ? (body.history as Array<Record<string, unknown> | null>)
+        .filter((row): row is Record<string, unknown> => isQueueRow(row))
+        .flatMap(readPiReviewRow)
+        .filter((row) => row.historyReason !== undefined)
+    : [];
+  return { ok: true, value: { papers: body.papers.flatMap(readPiReviewRow), history } };
+}
+
+/** The papers at the PI gate alone (GET /papers/pi-review). See fetchPiReviewQueueAndHistory. */
+export async function fetchPiReviewQueue(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<PiReviewRow[]>> {
+  const result = await fetchPiReviewQueueAndHistory(sessionToken, baseUrl);
+  return result.ok ? { ok: true, value: result.value.papers } : result;
 }
 
 // --- Paper evidence slots ---

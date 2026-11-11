@@ -28,7 +28,12 @@
 // controls of dead weight for everybody else.
 import { html, nothing } from "lit";
 import { live } from "lit/directives/live.js";
-import { requestDeadlineDetails } from "../../../../../extensions/adminbot/logistics-api.js";
+import {
+  allLettersSubmitted,
+  hasImplausibleDeadlineYear,
+  isPlausibleDeadlineYear,
+  requestDeadlineDetails,
+} from "../../../../../extensions/adminbot/logistics-api.js";
 import { adminBotLogisticsSettledStatuses } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import {
   letterRequestSearchFields,
@@ -52,6 +57,7 @@ import { escalatedNudgeTotal, type EscalatedNudgeRow } from "../api/nudges.ts";
 import { piReviewCategoryLabels, type PiReviewRow } from "../api/paper-admin.ts";
 import type { AdminBotPaperRecord } from "../controllers/admin.ts";
 import { renderDateControl } from "../date-control.ts";
+import { historyToggle } from "./history-toggle.ts";
 
 export type ProfessorViewProps = {
   requests: LogisticsRequest[];
@@ -81,6 +87,12 @@ export type ProfessorViewProps = {
    * is the asking, and ticking the box is still hers to do on the paper.
    */
   piReview: PiReviewRow[];
+  /**
+   * What has left that queue: feedback she has given, camera-readies whose conference has been
+   * held or whose cycle is past. Not hers to act on, so it is folded away under "History" rather
+   * than listed -- but not deleted either, so "what happened to the EMNLP one" has an answer.
+   */
+  piReviewHistory?: readonly PiReviewRow[];
   onOpenPaper?: (paperId: string) => void;
   piReviewLoading?: boolean;
   piReviewError?: string | null;
@@ -160,7 +172,12 @@ export function recLetterQueue(
   now: Date = new Date(),
 ): LogisticsRequest[] {
   return requests
-    .filter((request) => request.kind === "recommendation_letters" && !SETTLED.has(request.status))
+    .filter(
+      (request) =>
+        request.kind === "recommendation_letters" &&
+        !SETTLED.has(request.status) &&
+        !allLettersSubmitted(request),
+    )
     .map((request) => {
       // Undated or unparseable sorts last, never first: "no deadline" is not the earliest one.
       const ms = Date.parse(letterDeadlineAt(request, now) ?? "");
@@ -178,7 +195,39 @@ export function recLetterQueue(
  * the schools no longer explain is kept as the fallback rather than dropped.
  */
 function letterDeadlineAt(request: LogisticsRequest, now: Date): string | undefined {
-  return requestDeadlineDetails(request, { now })?.at ?? request.deadline_at;
+  return requestDeadlineDetails(request, { now })?.at ?? plausibleStoredDeadline(request);
+}
+
+/**
+ * The stored `deadline_at`, unless its year is one no deadline can be in. A request written before
+ * the service refused "0002-01-15" still carries that instant; read as a date it put the letter
+ * 45,590 days overdue. It is no deadline, and the row asks for the year instead.
+ */
+function plausibleStoredDeadline(request: LogisticsRequest): string | undefined {
+  return isPlausibleDeadlineYear(request.deadline_at) ? request.deadline_at : undefined;
+}
+
+/** Whether any date on the request is in a year no deadline can be in: a typo to ask about. */
+function letterDeadlineYearLooksWrong(request: LogisticsRequest): boolean {
+  return (
+    hasImplausibleDeadlineYear(request.deadline_at) ||
+    (request.schools ?? []).some((school) => hasImplausibleDeadlineYear(school.letter_deadline))
+  );
+}
+
+/**
+ * Open letter requests whose every school already reports the letter submitted.
+ *
+ * Nothing is left to write, so they leave the queue even before somebody closes the request; they
+ * stay one press away in the letters' history so a status typed in error is still findable.
+ */
+export function recLettersAlreadyIn(requests: readonly LogisticsRequest[]): LogisticsRequest[] {
+  return requests.filter(
+    (request) =>
+      request.kind === "recommendation_letters" &&
+      !SETTLED.has(request.status) &&
+      allLettersSubmitted(request),
+  );
 }
 
 /**
@@ -213,6 +262,8 @@ export type RecLetterDue = {
   date?: string;
   /** The member typed only a month and day; the year was filled in as the next occurrence. */
   yearInferred?: boolean;
+  /** The only date given is in a year no deadline can be in ("0002"): undated, and ask. */
+  checkYear?: boolean;
 };
 
 /**
@@ -229,12 +280,15 @@ export function recLetterDeadlineQueue(
   const nowMs = now.getTime();
   return recLetterQueue(requests, now).map((request): RecLetterDue => {
     const details = requestDeadlineDetails(request, { now });
-    const at = details?.at ?? request.deadline_at;
+    const at = details?.at ?? plausibleStoredDeadline(request);
     const deadlineMs = at ? Date.parse(at) : Number.NaN;
     if (!Number.isFinite(deadlineMs)) {
       // An unparseable stamp is treated as no stamp rather than as the epoch, which would file a
-      // typo at the top of the overdue list and bury the letters that really are late.
-      return { request, bucket: "undated" };
+      // typo at the top of the overdue list and bury the letters that really are late. A year no
+      // deadline can be in is the same kind of typo, and the row says which part to fix.
+      return letterDeadlineYearLooksWrong(request)
+        ? { request, bucket: "undated", checkYear: true }
+        : { request, bucket: "undated" };
     }
     const daysAway = Math.ceil((deadlineMs - nowMs) / DAY_MS);
     const bucket: RecLetterBucket =
@@ -359,6 +413,9 @@ export function recLetterGroups(
 
 /** "in 3 days" / "2 days ago" / "today", or nothing at all when there is no deadline to describe. */
 export function recLetterDueLabel(due: RecLetterDue): string {
+  if (due.checkYear) {
+    return t("professor.letters.due.checkYear");
+  }
   if (due.daysAway === undefined) {
     return t("professor.letters.due.none");
   }
@@ -815,6 +872,39 @@ function letterBody(
 }
 
 /**
+ * Open requests whose letters are all in, behind the letters' history fold. Read-only: they are
+ * resolved by the schools' statuses, which the Requests page owns.
+ */
+function lettersAlreadyInList(
+  requests: readonly LogisticsRequest[],
+  props: Pick<ProfessorViewProps, "onOpen">,
+) {
+  return historyToggle({
+    testId: "professor-letters-history",
+    className: "professor__done",
+    listClassName: "professor__list",
+    label: t("professor.letters.history.title", { count: String(requests.length) }),
+    items: requests.map(
+      (request) => html`<span
+        class="professor__row-body professor__done-row"
+        data-testid="professor-letter-history-row"
+      >
+        <strong>${request.member_name}</strong>
+        <span class="muted">${letterSchoolsText(request)}</span>
+        <span>${t("professor.letters.history.allSubmitted")}</span>
+        <button
+          type="button"
+          class="btn btn--sm"
+          @click=${() => props.onOpen("adminbotRecLetters")}
+        >
+          ${t("professor.letters.open")}
+        </button>
+      </span>`,
+    ),
+  });
+}
+
+/**
  * Letters marked submitted from this page, folded away under one line.
  *
  * Out of the open queue -- that is the point of answering them -- but not gone: the undo puts each
@@ -1060,6 +1150,57 @@ export function renderHardDeadline(row: Pick<PiReviewRow, "hardDeadline" | "days
   return html`<strong data-testid="pi-review-hard-deadline">Due ${date}${left}</strong>`;
 }
 
+/**
+ * The PI queue's history, folded: one read-only line per row that left the queue, with why it
+ * left. A search narrows it with the same match the open queue uses, so "emnlp" finds the held
+ * camera-ready in history as well as anything still open.
+ */
+function piReviewHistoryList(
+  history: readonly PiReviewRow[],
+  query: string,
+  props: Pick<ProfessorViewProps, "onOpenPaper" | "onOpen">,
+) {
+  const shown = filterPiReview(history, query);
+  return historyToggle({
+    testId: "professor-pi-review-history",
+    className: "professor__done",
+    listClassName: "professor__list",
+    label: t("professor.piReview.history.title", { count: String(shown.length) }),
+    items: shown.map(
+      (row) => html`<span
+        class="professor__row-body professor__done-row"
+        data-testid="pi-review-history-row"
+      >
+        ${row.category
+          ? html`<span class="pill">${piReviewCategoryLabels[row.category]}</span>`
+          : nothing}
+        <strong>${row.title}</strong>
+        ${row.venue ? html`<span class="muted">${row.venue}</span>` : nothing}
+        ${row.historyReason
+          ? html`<span data-testid="pi-review-history-reason"
+              >${t(`professor.piReview.history.reason.${row.historyReason}`)}</span
+            >`
+          : nothing}
+        ${row.hardDeadline || row.feedback?.hard_deadline
+          ? html`<span class="professor__when"
+              >${t("professor.piReview.history.due", {
+                date: (row.hardDeadline ?? row.feedback?.hard_deadline ?? "").slice(0, 10),
+              })}</span
+            >`
+          : nothing}
+        <button
+          type="button"
+          class="btn btn--sm"
+          @click=${() =>
+            props.onOpenPaper ? props.onOpenPaper(row.paperId) : props.onOpen("adminbotPapers")}
+        >
+          ${t("professor.piReview.history.open")}
+        </button>
+      </span>`,
+    ),
+  });
+}
+
 /** The paper row's one-click answer, when it has one and the page was given a way to send it. */
 function paperActionButton(
   row: PiReviewRow,
@@ -1094,6 +1235,7 @@ export function renderProfessorView(props: ProfessorViewProps) {
   const letterQuery = props.search?.letters ?? "";
   const shownLetters = filterRecLetters(letters, letterQuery);
   const lettersDone = recLettersSubmittedHere(props.requests, props.letterUndo);
+  const lettersIn = recLettersAlreadyIn(props.requests);
   const paperQuery = props.search?.["pi-review"] ?? "";
   const shownPapers = filterPiReview(props.piReview, paperQuery);
   const searchingPapers = searchTokens(paperQuery).length > 0;
@@ -1251,7 +1393,8 @@ export function renderProfessorView(props: ProfessorViewProps) {
                 ),
                 empty: searchingPapers ? "" : t("professor.piReview.empty"),
                 onToggleExpand: props.onToggleExpand,
-              })}`,
+              })}
+              ${piReviewHistoryList(props.piReviewHistory ?? [], paperQuery, props)}`,
       }),
     },
     {
@@ -1296,7 +1439,11 @@ export function renderProfessorView(props: ProfessorViewProps) {
     },
     {
       // A queue still loading is not an empty one, so it holds its place rather than sinking.
-      settled: !props.requestsLoading && letters.length === 0 && lettersDone.length === 0,
+      settled:
+        !props.requestsLoading &&
+        letters.length === 0 &&
+        lettersDone.length === 0 &&
+        lettersIn.length === 0,
       body: section({
         id: "letters",
         title: t("professor.letters.title"),
@@ -1327,7 +1474,7 @@ export function renderProfessorView(props: ProfessorViewProps) {
                 </p>`
               : nothing}
             ${letterBody(shownLetters, props, searchTokens(letterQuery).length > 0)}
-            ${letterDoneList(lettersDone, props)}`,
+            ${letterDoneList(lettersDone, props)} ${lettersAlreadyInList(lettersIn, props)}`,
       }),
     },
     {

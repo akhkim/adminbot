@@ -32,7 +32,12 @@ import {
   type AdminBotPaperSlotRecord,
 } from "../../contracts/paper-slots.js";
 import type { AdminBotPaperflowStage } from "../../contracts/paperflow-stages.js";
-import type { PaperQueueCategory } from "./paper-queue.js";
+import {
+  isConferenceHeld,
+  paperVenueLabel,
+  type PaperQueueCategory,
+  type PaperQueueHistoryReason,
+} from "./paper-queue.js";
 
 /** One paper waiting on the PI, with the evidence that says it is ready to be looked at. */
 export type PiReviewRow = {
@@ -53,6 +58,11 @@ export type PiReviewRow = {
   proofreading?: { venue: string; note: string };
   /** A safety-related impact statement waiting on the PI's read. */
   impact?: Pick<PaperImpactStatus, "statement" | "verdict" | "source" | "reasons" | "override">;
+  /**
+   * Set only on a history row: why it left her queue (paper-queue.ts). The open queue never
+   * carries one.
+   */
+  history_reason?: PaperQueueHistoryReason;
   /** Rows the PI asked to see first. Absent is ordinary priority. */
   priority?: "high";
   paper_id: string;
@@ -162,25 +172,73 @@ const feedbackCategory: Record<keyof typeof paperFeedbackSlots, PaperQueueCatego
  *
  * A request whose submission cutoff is more than STALE_DEADLINE_DAYS behind is left off: it is a
  * past cycle's (an old NeurIPS camera-ready nobody closed), not something she can still act on,
- * and listing it as overdue pushed the live ones down. The slot keeps it; only the queue drops it.
+ * and listing it as overdue pushed the live ones down. So is a camera-ready request for a venue
+ * whose conference has been held, and one she has already reviewed. The slot keeps all of them;
+ * only the queue drops them, and paperFeedbackHistory lists them.
  */
 export function paperFeedbackQueue(
   candidates: readonly PiReviewCandidate[],
   now: Date,
+  dataset: readonly unknown[] = [],
+): PiReviewRow[] {
+  return feedbackRows(candidates, now, dataset).filter((row) => !row.history_reason);
+}
+
+/** The feedback requests paperFeedbackQueue leaves off, each with the reason it did. */
+export function paperFeedbackHistory(
+  candidates: readonly PiReviewCandidate[],
+  now: Date,
+  dataset: readonly unknown[] = [],
+): PiReviewRow[] {
+  return feedbackRows(candidates, now, dataset).filter((row) => row.history_reason);
+}
+
+/** How many history rows the queue carries. Past this the paper's own page is the record. */
+export const PI_REVIEW_HISTORY_LIMIT = 50;
+
+/**
+ * History rows in reading order: the most recent deadline first (falling back to when the row
+ * started waiting), capped at PI_REVIEW_HISTORY_LIMIT. History is looked up, not worked through,
+ * so the last thing to go out of date is the one most likely to be wanted.
+ */
+export function piReviewHistory(rows: readonly PiReviewRow[]): PiReviewRow[] {
+  const when = (row: PiReviewRow) =>
+    row.hard_deadline ?? row.feedback?.hard_deadline ?? row.waiting_since ?? "";
+  return rows
+    .toSorted(
+      (left, right) =>
+        when(right).localeCompare(when(left)) || left.paper_id.localeCompare(right.paper_id),
+    )
+    .slice(0, PI_REVIEW_HISTORY_LIMIT);
+}
+
+/** The venue a paper's camera-ready is for, with its year when the label leaves it out. */
+function feedbackRows(
+  candidates: readonly PiReviewCandidate[],
+  now: Date,
+  dataset: readonly unknown[],
 ): PiReviewRow[] {
   return candidates
     .flatMap(({ paper, slots }) =>
-      slots.flatMap((row) => {
+      slots.flatMap((row): PiReviewRow[] => {
         if (!(row.slot in paperFeedbackSlots) || row.status !== "provided" || !row.value_text) {
           return [];
         }
         const feedback = parsePaperFeedback(row.value_text);
-        if (!feedback || feedback.reviewed || isStaleDeadline(feedback.hard_deadline, now)) {
+        if (!feedback) {
           return [];
         }
+        const category = feedbackCategory[row.slot as keyof typeof paperFeedbackSlots];
+        const historyReason: PaperQueueHistoryReason | undefined = feedback.reviewed
+          ? "reviewed"
+          : category === "camera_ready" && isConferenceHeld(paperVenueLabel(paper), dataset, now)
+            ? "conference_held"
+            : isStaleDeadline(feedback.hard_deadline, now)
+              ? "stale_deadline"
+              : undefined;
         return [
           {
-            category: feedbackCategory[row.slot as keyof typeof paperFeedbackSlots],
+            category,
             paper_id: paper.id,
             title: paper.title,
             authors: paper.authors,
@@ -192,6 +250,7 @@ export function paperFeedbackQueue(
               label: paperFeedbackSlots[row.slot as keyof typeof paperFeedbackSlots],
               slot: row.slot,
             },
+            ...(historyReason ? { history_reason: historyReason } : {}),
           },
         ];
       }),

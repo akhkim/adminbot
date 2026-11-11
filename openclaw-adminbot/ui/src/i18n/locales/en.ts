@@ -519,6 +519,18 @@ export const en: TranslationMap = {
       approve: "Approve publication",
       saving: "Saving…",
       actionHint: "Marks this one done on the paper itself, as the paper page would.",
+      // Rows that left the queue: kept, folded, so nothing done or out of date is lost.
+      history: {
+        title: "History ({count})",
+        open: "Open paper",
+        due: "was due {date}",
+        reason: {
+          conference_held: "Conference already held",
+          past_cycle: "Past cycle",
+          stale_deadline: "Deadline long past",
+          reviewed: "Feedback given",
+        },
+      },
     },
     escalated: {
       // Not a paper queue: what is missing here is information, and the only thing left to try is
@@ -549,6 +561,7 @@ export const en: TranslationMap = {
         in: "in {count} day(s)",
         ago: "{count} day(s) ago",
         none: "no deadline given",
+        checkYear: "deadline year looks wrong; check the year",
       },
       searchLabel: "Search letters by person or school",
       searchPlaceholder: "Student, school or program",
@@ -560,6 +573,10 @@ export const en: TranslationMap = {
       done: {
         title: "Submitted from this page ({count})",
         undo: "Undo",
+      },
+      history: {
+        title: "History ({count})",
+        allSubmitted: "All letters submitted",
       },
     },
     drafts: {
@@ -1368,6 +1385,7 @@ export const en: TranslationMap = {
     },
     notifications: {
       open: "Open",
+      history: "Earlier notifications ({count})",
     },
     attention: {
       title: "Needs you",

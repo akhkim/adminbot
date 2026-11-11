@@ -6733,6 +6733,7 @@ export interface components {
         [key: string]: unknown;
       };
       todos: components["schemas"]["AdminBotProjectTodo"][];
+      obsolete_todos?: components["schemas"]["AdminBotProjectTodo"][];
       /** @enum {string} */
       status: "rejected" | "active" | "dormant" | "completed";
       topic?: string;
@@ -8177,6 +8178,7 @@ export interface components {
         [key: string]: unknown;
       };
       todos: components["schemas"]["AdminBotProjectTodo"][];
+      obsolete_todos?: components["schemas"]["AdminBotProjectTodo"][];
     } & {
       [key: string]: unknown;
     };
@@ -9203,6 +9205,8 @@ export interface components {
       } & {
         [key: string]: unknown;
       };
+      /** @enum {string} */
+      history_reason?: "reviewed" | "conference_held" | "past_cycle" | "stale_deadline";
       /** @constant */
       priority?: "high";
       paper_id: string;
@@ -25825,6 +25829,7 @@ export interface operations {
         content: {
           "application/json": {
             papers: components["schemas"]["PiReviewRow"][];
+            history: components["schemas"]["PiReviewRow"][];
           } & {
             [key: string]: unknown;
           };

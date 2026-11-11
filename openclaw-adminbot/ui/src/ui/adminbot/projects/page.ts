@@ -15,6 +15,7 @@ import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session
 import type { AdminBotPaperRecord } from "../controllers/admin.ts";
 import { isPaperCompleted } from "../paper-completion.ts";
 import { openPreRegistrationDialog } from "../pre-registration.ts";
+import { historyToggle } from "../views/history-toggle.ts";
 import { renderPaperDetails, renderPaperSlots } from "../views/paper-slots.ts";
 import { renderPaperTimeline } from "../views/paper-timeline.ts";
 import {
@@ -178,6 +179,23 @@ function renderTabLink(
 // ---------------------------------------------------------------- Project tab
 
 function renderOpenWork(
+  state: PageState,
+  props: PaperWorkspaceProps,
+  paper: AdminBotPaperRecord,
+  summary: ProjectSummary | undefined,
+) {
+  // Talk items for a conference already held: obsolete, so out of the list, one press away.
+  const obsolete = historyToggle({
+    testId: "project-obsolete-todos",
+    label: `Conference over (${summary?.obsolete_todos?.length ?? 0})`,
+    items: (summary?.obsolete_todos ?? []).map(
+      (todo) => html`<span data-testid="project-obsolete-todo">${todo.label}</span>`,
+    ),
+  });
+  return html`${renderOpenTodos(state, props, paper, summary)}${obsolete}`;
+}
+
+function renderOpenTodos(
   state: PageState,
   props: PaperWorkspaceProps,
   paper: AdminBotPaperRecord,

@@ -8,6 +8,7 @@ import {
   type AdminBotPaperSlotRecord,
 } from "../../contracts/paper-slots.js";
 import { readPaperVenueTargets, type AdminBotVenueTarget } from "../../contracts/venue-targets.js";
+import { isSlotObsoleteAfterConference } from "./paper-queue.js";
 import { isPaperClosed, isPaperDormant, paperSlotRows } from "./paper-slots.js";
 
 /** One open item on a project. `ready` means nothing upstream is still missing. */
@@ -40,6 +41,12 @@ export type AdminBotMyProjectSummary = {
   required_count: number;
   lanes: Record<AdminBotPaperSlotBranch, AdminBotProjectLaneCount>;
   todos: AdminBotProjectTodo[];
+  /**
+   * Open talk items (slides, poster, printed poster, talk video) for a conference that is over.
+   * Obsolete rather than missing, so they are out of `todos` and the lane counts; kept here so
+   * a card can still list them behind a history toggle. Absent when there are none.
+   */
+  obsolete_todos?: AdminBotProjectTodo[];
 };
 
 /**
@@ -56,23 +63,29 @@ export function summarizeProject(
   paper: AdminBotPaperRecord,
   stored: AdminBotPaperSlotRecord[],
   drafts: AdminBotSocialDraftRecord[],
+  options: { conferenceOver?: boolean } = {},
 ): AdminBotMyProjectSummary {
   const rows = paperSlotRows(paper.id, stored, drafts);
   const settled = new Set(
     rows.filter((row) => isAdminBotPaperSlotSettled(row.status)).map((row) => row.slot),
   );
   const required = rows.filter((row) => adminBotPaperSlotRegistry[row.slot].required);
-  const todos: AdminBotProjectTodo[] = required
-    .filter((row) => !settled.has(row.slot))
-    .map((row) => {
-      const definition = adminBotPaperSlotRegistry[row.slot];
-      return {
-        id: row.slot,
-        label: definition.label,
-        lane: definition.branch,
-        ready: definition.upstream.every((slot) => settled.has(slot)),
-      };
-    });
+  const unsettled = required.filter((row) => !settled.has(row.slot));
+  const obsolete = unsettled.filter((row) =>
+    isSlotObsoleteAfterConference(row.slot, options.conferenceOver === true),
+  );
+  const toTodo = (row: (typeof required)[number]): AdminBotProjectTodo => {
+    const definition = adminBotPaperSlotRegistry[row.slot];
+    return {
+      id: row.slot,
+      label: definition.label,
+      lane: definition.branch,
+      ready: definition.upstream.every((slot) => settled.has(slot)),
+    };
+  };
+  const todos: AdminBotProjectTodo[] = unsettled
+    .filter((row) => !obsolete.includes(row))
+    .map(toTodo);
   // The venue answers on its own clock, but until it does the venue lane is not finished.
   if (settled.has("submission") && (paper.venue_decision ?? "pending") === "pending") {
     todos.push({ id: "venue_decision", label: "Venue decision", lane: "venue", ready: false });
@@ -98,5 +111,6 @@ export function summarizeProject(
     required_count: required.length,
     lanes,
     todos,
+    ...(obsolete.length ? { obsolete_todos: obsolete.map(toTodo) } : {}),
   };
 }

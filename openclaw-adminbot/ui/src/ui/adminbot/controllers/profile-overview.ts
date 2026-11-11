@@ -18,7 +18,7 @@ import {
   type MemberProfileOverviewRow,
 } from "../api/members.ts";
 import { fetchEscalatedNudges, type EscalatedNudgeRow } from "../api/nudges.ts";
-import { fetchPiReviewQueue, type PiReviewRow } from "../api/paper-admin.ts";
+import { fetchPiReviewQueueAndHistory, type PiReviewRow } from "../api/paper-admin.ts";
 import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 import {
   appendPage,
@@ -66,6 +66,8 @@ export type AdminBotProfileOverviewHost = {
   /** Nudges raised to the head professor and still unanswered. Empty until the first read. */
   adminBotEscalatedNudges: EscalatedNudgeRow[];
   adminBotPiReview: PiReviewRow[];
+  /** What has left the queue as resolved or out of date, for the desk's history toggle. */
+  adminBotPiReviewHistory?: PiReviewRow[];
   adminBotPiReviewError: string | null;
 };
 
@@ -157,11 +159,12 @@ export async function loadAdminBotProfileOverview(
     }
     host.adminBotEscalatedNudges = escalated.ok ? escalated.value : [];
     // An unavailable queue is unknown, not evidence that nobody is waiting.
-    const piReview = await fetchPiReviewQueue(wire.token, wire.baseUrl);
+    const piReview = await fetchPiReviewQueueAndHistory(wire.token, wire.baseUrl);
     if (!current()) {
       return;
     }
-    host.adminBotPiReview = piReview.ok ? piReview.value : [];
+    host.adminBotPiReview = piReview.ok ? piReview.value.papers : [];
+    host.adminBotPiReviewHistory = piReview.ok ? piReview.value.history : [];
     host.adminBotPiReviewError = piReview.ok ? null : failureText(piReview, wire.baseUrl);
   } finally {
     if (current()) {

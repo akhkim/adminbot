@@ -678,6 +678,8 @@ export type AppViewState = {
   /** Nudges raised to the head professor and still unanswered. Read with the overview beside it. */
   adminBotEscalatedNudges: import("./adminbot/api/nudges.ts").EscalatedNudgeRow[];
   adminBotPiReview: import("./adminbot/api/paper-admin.ts").PiReviewRow[];
+  /** Rows that left the PI queue as resolved or out of date, newest first. */
+  adminBotPiReviewHistory?: import("./adminbot/api/paper-admin.ts").PiReviewRow[];
   adminBotPiReviewError: string | null;
   adminBotProfileOverviewFieldCount: number;
   adminBotProfileAdoption?: import("./adminbot/api/members.ts").MemberAdoptionSummary | null;

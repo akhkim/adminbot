@@ -26643,10 +26643,17 @@
                       "items": {
                         "$ref": "#/components/schemas/PiReviewRow"
                       }
+                    },
+                    "history": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PiReviewRow"
+                      }
                     }
                   },
                   "required": [
-                    "papers"
+                    "papers",
+                    "history"
                   ],
                   "additionalProperties": true
                 }
@@ -36745,6 +36752,12 @@
               "$ref": "#/components/schemas/AdminBotProjectTodo"
             }
           },
+          "obsolete_todos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminBotProjectTodo"
+            }
+          },
           "status": {
             "type": "string",
             "enum": [
@@ -41301,6 +41314,12 @@
             "items": {
               "$ref": "#/components/schemas/AdminBotProjectTodo"
             }
+          },
+          "obsolete_todos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminBotProjectTodo"
+            }
           }
         },
         "required": [
@@ -44441,6 +44460,15 @@
               "reasons"
             ],
             "additionalProperties": true
+          },
+          "history_reason": {
+            "type": "string",
+            "enum": [
+              "reviewed",
+              "conference_held",
+              "past_cycle",
+              "stale_deadline"
+            ]
           },
           "priority": {
             "type": "string",

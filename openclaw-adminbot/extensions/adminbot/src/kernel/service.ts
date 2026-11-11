@@ -493,6 +493,8 @@ import {
 } from "../workflows/papers/paper-ownership.js";
 import {
   buildCameraReadyNotice,
+  isPaperConferenceOver,
+  openReviewPaperHistory,
   openReviewPaperQueue,
   proofreadingPaperQueue,
   rankPaperQueue,
@@ -542,7 +544,12 @@ import {
   reviewProvesFixesMerged,
   type PaperMentorContext,
 } from "../workflows/papers/papermentor-nudges.js";
-import { paperFeedbackQueue, paperImpactQueue } from "../workflows/papers/pi-review.js";
+import {
+  paperFeedbackHistory,
+  paperFeedbackQueue,
+  paperImpactQueue,
+  piReviewHistory,
+} from "../workflows/papers/pi-review.js";
 import {
   buildPiReviewNotice,
   isAwaitingPiReview,
@@ -7188,6 +7195,7 @@ export class AdminBotService {
       return serviceError(404, "member not found");
     }
     const now = nowIso ? new Date(nowIso) : new Date();
+    const dataset = this.deadlineReadModel(DEADLINE_VENUES);
     const projects = this.store
       .listPapers()
       .filter((paper) => this.memberOwnsPaper(member, paper) && isProjectActive(paper, now))
@@ -7196,6 +7204,8 @@ export class AdminBotService {
           paper,
           this.store.listPaperSlots(paper.id),
           this.store.listSocialDrafts(paper.id),
+          // A held conference's talk items are obsolete, not missing (paper-queue.ts).
+          { conferenceOver: isPaperConferenceOver(paper, dataset, now) },
         ),
       )
       .toSorted((left, right) => (left.deadline ?? "9999").localeCompare(right.deadline ?? "9999"));
@@ -8826,15 +8836,23 @@ export class AdminBotService {
   }
 
   /** The papers waiting on the head professor's yes, oldest wait first. */
-  listPiReviewQueue(): AdminBotServiceResponse<{ papers: PiReviewRow[] }> {
+  listPiReviewQueue(): AdminBotServiceResponse<{ papers: PiReviewRow[]; history: PiReviewRow[] }> {
     return this.withPaperTables(() => this.sweepPiReviewQueue());
   }
 
-  private sweepPiReviewQueue(): AdminBotServiceResponse<{ papers: PiReviewRow[] }> {
+  private sweepPiReviewQueue(): AdminBotServiceResponse<{
+    papers: PiReviewRow[];
+    history: PiReviewRow[];
+  }> {
     const candidates = this.store
       .listPapers()
       .map((paper) => ({ paper, slots: this.paperRows().listPaperSlots(paper.id) }));
     const open = candidates.filter(({ paper }) => !isPaperClosed(paper));
+    const withEvidence = candidates.map((candidate) => ({
+      ...candidate,
+      evidence: this.paperRows().listPaperflowEvidence(candidate.paper.id),
+    }));
+    const dataset = this.deadlineReadModel(DEADLINE_VENUES);
     const now = new Date();
     return {
       ok: true,
@@ -8847,22 +8865,21 @@ export class AdminBotService {
           [
             ...paperImpactQueue(open),
             // A previous venue rejection does not cancel an explicit request to review a revision.
-            ...paperFeedbackQueue(candidates, now),
+            ...paperFeedbackQueue(candidates, now, dataset),
             ...piReviewQueue(open),
             // What OpenReview says each submitted paper needs next, for every venue.
-            ...openReviewPaperQueue(
-              candidates.map((candidate) => ({
-                ...candidate,
-                evidence: this.paperRows().listPaperflowEvidence(candidate.paper.id),
-              })),
-              this.deadlineReadModel(DEADLINE_VENUES),
-              now,
-            ),
+            ...openReviewPaperQueue(withEvidence, dataset, now),
             // Papers headed to a venue whose submission deadline is near: her proofreading clock.
-            ...proofreadingPaperQueue(open, this.deadlineReadModel(DEADLINE_VENUES), now),
+            ...proofreadingPaperQueue(open, dataset, now),
           ],
           now,
         ),
+        // What left the queue as resolved or out of date (a held conference's camera-ready, a
+        // reviewed feedback request), newest deadline first. Kept for the desk's history toggle.
+        history: piReviewHistory([
+          ...paperFeedbackHistory(candidates, now, dataset),
+          ...openReviewPaperHistory(withEvidence, dataset, now),
+        ]),
       },
     };
   }
