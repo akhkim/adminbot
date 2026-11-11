@@ -2174,6 +2174,17 @@ export const en: TranslationMap = {
       deleteConfirm: "Delete this request and its files for good? This cannot be undone.",
       edit: "Correct this request",
       resolution: "The lab says: {note}",
+      letterConfirm: {
+        action: "Letter was submitted",
+        actionConfirm:
+          "Mark this letter as submitted? Do this once the school has confirmed it received the letter.",
+        undo: "Undo",
+        overdue:
+          "The deadline has passed and this still shows as not submitted. If the school confirmed it received the letter, mark it here.",
+        byMemberAfterReminder: "Submitted, confirmed by {name} on {date} after the deadline check",
+        byMember: "Submitted, confirmed by {name} on {date}",
+        byAdmin: "Submitted, marked by {name} on {date}",
+      },
       answerTitle: "Answer this request",
       answerSub: "What you pick here is what the member sees on their own copy.",
       note: "Note for the member",

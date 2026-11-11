@@ -24,6 +24,12 @@ import { logisticsDeadlineText } from "../data/logistics-queue.ts";
 import { attachmentDataUrl, formatFileSize } from "../data/logistics-requests.ts";
 import { renderLoadMore, type LoadMoreProps } from "../load-more.ts";
 import { SCHOOL_FIELDS, TEMPLATE_FOLDER_URL, type SchoolField } from "./logistics-fields.ts";
+import {
+  canConfirmLetter,
+  canUndoLetterConfirmation,
+  isLetterOverdue,
+  renderLetterConfirmation,
+} from "./logistics-letter-confirm.ts";
 import { logisticsStatusLabel } from "./logistics-status.ts";
 import {
   renderRecLetterDetailPanel,
@@ -45,6 +51,11 @@ export type AdminBotLogisticsRequestsProps = {
   /** Whose requests these are, so a member's own list can drop the column that only says "you". */
   viewerMemberId: string | null;
   onWithdraw: (requestId: string) => void;
+  /**
+   * The requester saying their letter went in (`undo` false) or taking that back. Optional so a
+   * caller that never shows a member's own letters need not wire it.
+   */
+  onConfirmLetter?: (requestId: string, undo: boolean) => void;
   /** Loads the request back into its form so the member can correct what they sent. */
   onEdit: (requestId: string) => void;
   onSetStatus: (requestId: string, status: LogisticsRequestStatus, note: string) => void;
@@ -125,8 +136,81 @@ function renderRequestRow(props: AdminBotLogisticsRequestsProps, request: Logist
             `}
       </td>
       <td class="logistics-requests__cell">${renderDeadlineCell(request)}</td>
-      <td class="logistics-requests__cell">${renderStatusPill(request.kind, request.status)}</td>
+      <td class="logistics-requests__cell">
+        ${renderStatusPill(request.kind, request.status)} ${renderLetterConfirmation(request)}
+        ${props.onConfirmLetter &&
+        canConfirmLetter(request, props.viewerMemberId) &&
+        isLetterOverdue(request)
+          ? html`
+              <!-- Only past the deadline in the list: that is when the lab actually needs the
+                   answer, and a button on every open row would read as a nudge to close early. -->
+              <button
+                class="btn btn--sm primary"
+                type="button"
+                data-testid="letter-confirm-row"
+                @click=${(event: Event) => {
+                  event.stopPropagation();
+                  confirmLetter(props, request.id);
+                }}
+              >
+                ${t("logistics.requests.letterConfirm.action")}
+              </button>
+            `
+          : nothing}
+      </td>
     </tr>
+  `;
+}
+
+function confirmLetter(props: AdminBotLogisticsRequestsProps, requestId: string): void {
+  if (globalThis.confirm?.(t("logistics.requests.letterConfirm.actionConfirm"))) {
+    props.onConfirmLetter?.(requestId, false);
+  }
+}
+
+function renderLetterConfirmControls(
+  props: AdminBotLogisticsRequestsProps,
+  request: LogisticsRequest,
+) {
+  if (!props.onConfirmLetter) {
+    return nothing;
+  }
+  if (canUndoLetterConfirmation(request, props.viewerMemberId)) {
+    return html`
+      <div class="logistics-detail__actions">
+        <button
+          class="btn btn--sm"
+          type="button"
+          data-testid="letter-confirm-undo"
+          ?disabled=${props.openLoading}
+          @click=${() => props.onConfirmLetter?.(request.id, true)}
+        >
+          ${t("logistics.requests.letterConfirm.undo")}
+        </button>
+      </div>
+    `;
+  }
+  if (!canConfirmLetter(request, props.viewerMemberId)) {
+    return nothing;
+  }
+  const overdue = isLetterOverdue(request);
+  return html`
+    ${overdue
+      ? html`<p class="callout info" data-testid="letter-overdue">
+          ${t("logistics.requests.letterConfirm.overdue")}
+        </p>`
+      : nothing}
+    <div class="logistics-detail__actions">
+      <button
+        class="btn btn--sm ${overdue ? "primary" : ""}"
+        type="button"
+        data-testid="letter-confirm"
+        ?disabled=${props.openLoading}
+        @click=${() => confirmLetter(props, request.id)}
+      >
+        ${t("logistics.requests.letterConfirm.action")}
+      </button>
+    </div>
   `;
 }
 
@@ -514,6 +598,7 @@ function renderRequestDetail(props: AdminBotLogisticsRequestsProps, request: Log
         <h3 class="card-title">${request.member_name}</h3>
         ${renderStatusPill(request.kind, request.status)}
       </div>
+      ${renderLetterConfirmation(request)}
       <p class="card-sub">
         ${t("logistics.requests.detailSub", {
           type: t(KIND_LABEL_KEY[request.kind]),
@@ -539,7 +624,7 @@ function renderRequestDetail(props: AdminBotLogisticsRequestsProps, request: Log
       ${props.viewerIsAdmin && request.kind === "recommendation_letters" && props.eligibilityPanel
         ? renderRecLetterDetailPanel(props.eligibilityPanel)
         : nothing}
-      ${renderDetailBody(request)}
+      ${renderLetterConfirmControls(props, request)} ${renderDetailBody(request)}
       ${canWithdraw || canEdit
         ? html`
             <div class="logistics-detail__actions">

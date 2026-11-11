@@ -14228,6 +14228,50 @@
         }
       }
     },
+    "/logistics/rec-letter-overdue/run": {
+      "post": {
+        "operationId": "post-logistics-rec-letter-overdue-run",
+        "summary": "POST /logistics/rec-letter-overdue/run",
+        "tags": [
+          "logistics"
+        ],
+        "x-source": "src/api/routes/logistics.ts",
+        "parameters": [
+          {
+            "name": "dry_run",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Successful service result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecLetterOverdueSweepResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/logistics/rec-letter-reminders/run": {
       "post": {
         "operationId": "post-logistics-rec-letter-reminders-run",
@@ -14776,6 +14820,98 @@
             }
           }
         },
+        "responses": {
+          "2XX": {
+            "description": "Successful service result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminBotLogisticsRequest"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/logistics/requests/{requests_id}/confirm-submitted": {
+      "post": {
+        "operationId": "post-logistics-requests-by-requests-id-confirm-submitted",
+        "summary": "POST /logistics/requests/{requests_id}/confirm-submitted",
+        "tags": [
+          "logistics"
+        ],
+        "x-source": "src/api/server.logistics.ts",
+        "parameters": [
+          {
+            "name": "requests_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Successful service result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminBotLogisticsRequest"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/logistics/requests/{requests_id}/confirm-submitted/undo": {
+      "post": {
+        "operationId": "post-logistics-requests-by-requests-id-confirm-submitted-undo",
+        "summary": "POST /logistics/requests/{requests_id}/confirm-submitted/undo",
+        "tags": [
+          "logistics"
+        ],
+        "x-source": "src/api/server.logistics.ts",
+        "parameters": [
+          {
+            "name": "requests_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
         "responses": {
           "2XX": {
             "description": "Successful service result",
@@ -19148,6 +19284,7 @@
                               "pi_review_ack",
                               "rec_letter_reminder",
                               "professor_digest",
+                              "rec_letter_overdue",
                               "email_review",
                               "automation_health"
                             ]
@@ -19497,7 +19634,8 @@
                       "nudge",
                       "profile_photo",
                       "automation",
-                      "papermentor"
+                      "papermentor",
+                      "rec_letter"
                     ]
                   },
                   "tab": {
@@ -20252,6 +20390,7 @@
                         "logistics.send_signed_document",
                         "logistics.rec_letter_reminder",
                         "professor.escalation_digest",
+                        "logistics.rec_letter_overdue_check",
                         "email_review.resolve",
                         "member_nudge.send",
                         "member_nudge.escalate",
@@ -28318,6 +28457,7 @@
                         "pi_review_ack",
                         "rec_letter_reminder",
                         "professor_digest",
+                        "rec_letter_overdue",
                         "email_review",
                         "automation_health"
                       ]
@@ -28742,6 +28882,7 @@
                       "logistics.send_signed_document",
                       "logistics.rec_letter_reminder",
                       "professor.escalation_digest",
+                      "logistics.rec_letter_overdue_check",
                       "email_review.resolve",
                       "member_nudge.send",
                       "member_nudge.escalate",
@@ -32351,6 +32492,7 @@
               "logistics.send_signed_document",
               "logistics.rec_letter_reminder",
               "professor.escalation_digest",
+              "logistics.rec_letter_overdue_check",
               "email_review.resolve",
               "member_nudge.send",
               "member_nudge.escalate",
@@ -32596,6 +32738,7 @@
               "reference_check.pdf_checked",
               "rec_letter_reminders.swept",
               "professor_digest.swept",
+              "rec_letter_overdue.swept",
               "papermentor.run_recorded",
               "papermentor.review_requested",
               "papermentor.project_linked",
@@ -32673,6 +32816,8 @@
               "logistics_request.submitted",
               "logistics_request.status_changed",
               "logistics_request.withdrawn",
+              "logistics_request.letter_confirmed",
+              "logistics_request.letter_confirmation_undone",
               "logistics_request.deleted",
               "logistics_request.signed_document_sent",
               "logistics_request.files_cleared",
@@ -37964,6 +38109,228 @@
         ],
         "additionalProperties": true
       },
+      "RecLetterOverdueSweepResult": {
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "disabled",
+              "nothing_due",
+              "preview",
+              "swept"
+            ]
+          },
+          "sent": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "member_id": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                },
+                "proposal_id": {
+                  "type": "string"
+                },
+                "requests": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "request_id": {
+                        "type": "string"
+                      },
+                      "deadline_at": {
+                        "type": "string"
+                      },
+                      "days_overdue": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "request_id",
+                      "deadline_at",
+                      "days_overdue"
+                    ],
+                    "additionalProperties": true
+                  }
+                }
+              },
+              "required": [
+                "member_id",
+                "to",
+                "proposal_id",
+                "requests"
+              ],
+              "additionalProperties": true
+            }
+          },
+          "previews": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "member_id": {
+                  "type": "string"
+                },
+                "member_name": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                },
+                "subject": {
+                  "type": "string"
+                },
+                "body": {
+                  "type": "string"
+                },
+                "requests": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "request_id": {
+                        "type": "string"
+                      },
+                      "deadline_at": {
+                        "type": "string"
+                      },
+                      "days_overdue": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "request_id",
+                      "deadline_at",
+                      "days_overdue"
+                    ],
+                    "additionalProperties": true
+                  }
+                }
+              },
+              "required": [
+                "member_id",
+                "member_name",
+                "to",
+                "subject",
+                "body",
+                "requests"
+              ],
+              "additionalProperties": true
+            }
+          },
+          "skipped": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "member_id": {
+                  "type": "string"
+                },
+                "member_name": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string",
+                  "enum": [
+                    "not_on_roster",
+                    "no_email"
+                  ]
+                },
+                "requests": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "request_id": {
+                        "type": "string"
+                      },
+                      "deadline_at": {
+                        "type": "string"
+                      },
+                      "days_overdue": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "request_id",
+                      "deadline_at",
+                      "days_overdue"
+                    ],
+                    "additionalProperties": true
+                  }
+                }
+              },
+              "required": [
+                "member_id",
+                "member_name",
+                "reason",
+                "requests"
+              ],
+              "additionalProperties": true
+            }
+          },
+          "failed": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "member_id": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                },
+                "error": {
+                  "type": "string"
+                },
+                "requests": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "request_id": {
+                        "type": "string"
+                      },
+                      "deadline_at": {
+                        "type": "string"
+                      },
+                      "days_overdue": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "request_id",
+                      "deadline_at",
+                      "days_overdue"
+                    ],
+                    "additionalProperties": true
+                  }
+                }
+              },
+              "required": [
+                "member_id",
+                "to",
+                "error",
+                "requests"
+              ],
+              "additionalProperties": true
+            }
+          }
+        },
+        "required": [
+          "outcome",
+          "sent",
+          "previews",
+          "skipped",
+          "failed"
+        ],
+        "additionalProperties": true
+      },
       "AdminBotLogisticsListRow": {
         "type": "object",
         "properties": {
@@ -37994,13 +38361,13 @@
           "updated_at": {
             "type": "string"
           },
+          "deadline_at": {
+            "type": "string"
+          },
           "member_name": {
             "type": "string"
           },
           "submitted_at": {
-            "type": "string"
-          },
-          "deadline_at": {
             "type": "string"
           },
           "signed_sent_at": {
@@ -38167,6 +38534,23 @@
           },
           "decided_at": {
             "type": "string"
+          },
+          "confirmed_by": {
+            "type": "string"
+          },
+          "confirmed_by_name": {
+            "type": "string"
+          },
+          "confirmed_at": {
+            "type": "string"
+          },
+          "confirmed_via": {
+            "type": "string",
+            "enum": [
+              "member",
+              "admin",
+              "member_after_reminder"
+            ]
           }
         },
         "required": [
@@ -41498,7 +41882,8 @@
               "nudge",
               "profile_photo",
               "automation",
-              "papermentor"
+              "papermentor",
+              "rec_letter"
             ]
           },
           "title": {
@@ -41542,11 +41927,11 @@
             "type": "string",
             "enum": [
               "sent",
-              "preview",
               "disabled",
+              "nothing_due",
+              "preview",
               "before_send_hour",
-              "already_sent_today",
-              "nothing_due"
+              "already_sent_today"
             ]
           },
           "local_date": {
@@ -41614,7 +41999,8 @@
               "nudge",
               "profile_photo",
               "automation",
-              "papermentor"
+              "papermentor",
+              "rec_letter"
             ]
           },
           "tab": {
@@ -44948,6 +45334,7 @@
               "logistics.send_signed_document",
               "logistics.rec_letter_reminder",
               "professor.escalation_digest",
+              "logistics.rec_letter_overdue_check",
               "email_review.resolve",
               "member_nudge.send",
               "member_nudge.escalate",
@@ -45085,6 +45472,7 @@
               "logistics.send_signed_document",
               "logistics.rec_letter_reminder",
               "professor.escalation_digest",
+              "logistics.rec_letter_overdue_check",
               "email_review.resolve",
               "member_nudge.send",
               "member_nudge.escalate",

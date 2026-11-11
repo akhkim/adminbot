@@ -491,6 +491,7 @@ function buildGogArgs(proposal: AdminBotStoredProposal): string[] | undefined {
     // due and where to read the requests.
     case "logistics.rec_letter_reminder":
     case "professor.escalation_digest":
+    case "logistics.rec_letter_overdue_check":
       return buildEmailArgs(proposal, false);
     case "member_nudge.send": {
       // Shared with message-executor.ts (Slack-channel payloads); only the email-shaped half of

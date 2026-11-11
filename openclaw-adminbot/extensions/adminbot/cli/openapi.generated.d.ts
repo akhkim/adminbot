@@ -2298,6 +2298,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/logistics/rec-letter-overdue/run": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** POST /logistics/rec-letter-overdue/run */
+    post: operations["post-logistics-rec-letter-overdue-run"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/logistics/rec-letter-reminders/run": {
     parameters: {
       query?: never;
@@ -2347,6 +2364,40 @@ export interface paths {
     post?: never;
     /** DELETE /logistics/requests/{requests_id} */
     delete: operations["delete-logistics-requests-by-requests-id"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/logistics/requests/{requests_id}/confirm-submitted": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** POST /logistics/requests/{requests_id}/confirm-submitted */
+    post: operations["post-logistics-requests-by-requests-id-confirm-submitted"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/logistics/requests/{requests_id}/confirm-submitted/undo": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** POST /logistics/requests/{requests_id}/confirm-submitted/undo */
+    post: operations["post-logistics-requests-by-requests-id-confirm-submitted-undo"];
+    delete?: never;
     options?: never;
     head?: never;
     patch?: never;
@@ -5202,6 +5253,7 @@ export interface components {
         | "logistics.send_signed_document"
         | "logistics.rec_letter_reminder"
         | "professor.escalation_digest"
+        | "logistics.rec_letter_overdue_check"
         | "email_review.resolve"
         | "member_nudge.send"
         | "member_nudge.escalate"
@@ -5335,6 +5387,7 @@ export interface components {
         | "reference_check.pdf_checked"
         | "rec_letter_reminders.swept"
         | "professor_digest.swept"
+        | "rec_letter_overdue.swept"
         | "papermentor.run_recorded"
         | "papermentor.review_requested"
         | "papermentor.project_linked"
@@ -5412,6 +5465,8 @@ export interface components {
         | "logistics_request.submitted"
         | "logistics_request.status_changed"
         | "logistics_request.withdrawn"
+        | "logistics_request.letter_confirmed"
+        | "logistics_request.letter_confirmation_undone"
         | "logistics_request.deleted"
         | "logistics_request.signed_document_sent"
         | "logistics_request.files_cleared"
@@ -7097,6 +7152,71 @@ export interface components {
     } & {
       [key: string]: unknown;
     };
+    RecLetterOverdueSweepResult: {
+      /** @enum {string} */
+      outcome: "disabled" | "nothing_due" | "preview" | "swept";
+      sent: ({
+        member_id: string;
+        to: string;
+        proposal_id: string;
+        requests: ({
+          request_id: string;
+          deadline_at: string;
+          days_overdue: number;
+        } & {
+          [key: string]: unknown;
+        })[];
+      } & {
+        [key: string]: unknown;
+      })[];
+      previews: ({
+        member_id: string;
+        member_name: string;
+        to: string;
+        subject: string;
+        body: string;
+        requests: ({
+          request_id: string;
+          deadline_at: string;
+          days_overdue: number;
+        } & {
+          [key: string]: unknown;
+        })[];
+      } & {
+        [key: string]: unknown;
+      })[];
+      skipped: ({
+        member_id: string;
+        member_name: string;
+        /** @enum {string} */
+        reason: "not_on_roster" | "no_email";
+        requests: ({
+          request_id: string;
+          deadline_at: string;
+          days_overdue: number;
+        } & {
+          [key: string]: unknown;
+        })[];
+      } & {
+        [key: string]: unknown;
+      })[];
+      failed: ({
+        member_id: string;
+        to: string;
+        error: string;
+        requests: ({
+          request_id: string;
+          deadline_at: string;
+          days_overdue: number;
+        } & {
+          [key: string]: unknown;
+        })[];
+      } & {
+        [key: string]: unknown;
+      })[];
+    } & {
+      [key: string]: unknown;
+    };
     AdminBotLogisticsListRow: {
       member_id: string;
       id: string;
@@ -7105,9 +7225,9 @@ export interface components {
       /** @enum {string} */
       kind: "document_signature" | "recommendation_letters" | "book_meeting";
       updated_at: string;
+      deadline_at?: string;
       member_name: string;
       submitted_at: string;
-      deadline_at?: string;
       signed_sent_at?: string;
       signed_sent_to?: string;
       schools?: ({
@@ -7154,6 +7274,11 @@ export interface components {
       resolution_note?: string;
       decided_by?: string;
       decided_at?: string;
+      confirmed_by?: string;
+      confirmed_by_name?: string;
+      confirmed_at?: string;
+      /** @enum {string} */
+      confirmed_via?: "member" | "admin" | "member_after_reminder";
     } & {
       [key: string]: unknown;
     };
@@ -8229,7 +8354,8 @@ export interface components {
         | "nudge"
         | "profile_photo"
         | "automation"
-        | "papermentor";
+        | "papermentor"
+        | "rec_letter";
       title: string;
       created_at: string;
       body: string;
@@ -8245,11 +8371,11 @@ export interface components {
       /** @enum {string} */
       outcome:
         | "sent"
-        | "preview"
         | "disabled"
+        | "nothing_due"
+        | "preview"
         | "before_send_hour"
-        | "already_sent_today"
-        | "nothing_due";
+        | "already_sent_today";
       local_date: string;
       timezone: string;
       recipient?: string;
@@ -8278,7 +8404,8 @@ export interface components {
         | "nudge"
         | "profile_photo"
         | "automation"
-        | "papermentor";
+        | "papermentor"
+        | "rec_letter";
       tab?: string;
       important?: boolean;
       optional?: boolean;
@@ -9400,6 +9527,7 @@ export interface components {
         | "logistics.send_signed_document"
         | "logistics.rec_letter_reminder"
         | "professor.escalation_digest"
+        | "logistics.rec_letter_overdue_check"
         | "email_review.resolve"
         | "member_nudge.send"
         | "member_nudge.escalate"
@@ -9481,6 +9609,7 @@ export interface components {
         | "logistics.send_signed_document"
         | "logistics.rec_letter_reminder"
         | "professor.escalation_digest"
+        | "logistics.rec_letter_overdue_check"
         | "email_review.resolve"
         | "member_nudge.send"
         | "member_nudge.escalate"
@@ -18678,6 +18807,39 @@ export interface operations {
       };
     };
   };
+  "post-logistics-rec-letter-overdue-run": {
+    parameters: {
+      query?: {
+        dry_run?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful service result */
+      "2XX": {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RecLetterOverdueSweepResult"];
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
   "post-logistics-rec-letter-reminders-run": {
     parameters: {
       query?: never;
@@ -18981,6 +19143,72 @@ export interface operations {
           } & {
             [key: string]: unknown;
           };
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "post-logistics-requests-by-requests-id-confirm-submitted": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        requests_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful service result */
+      "2XX": {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AdminBotLogisticsRequest"];
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "post-logistics-requests-by-requests-id-confirm-submitted-undo": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        requests_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful service result */
+      "2XX": {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AdminBotLogisticsRequest"];
         };
       };
       /** @description Authentication, authorization, validation, policy, or connector error */
@@ -21546,6 +21774,7 @@ export interface operations {
                 | "pi_review_ack"
                 | "rec_letter_reminder"
                 | "professor_digest"
+                | "rec_letter_overdue"
                 | "email_review"
                 | "automation_health";
               label: string;
@@ -21731,7 +21960,8 @@ export interface operations {
             | "nudge"
             | "profile_photo"
             | "automation"
-            | "papermentor";
+            | "papermentor"
+            | "rec_letter";
           tab?: string;
           important?: boolean;
           optional?: boolean;
@@ -22209,6 +22439,7 @@ export interface operations {
               | "logistics.send_signed_document"
               | "logistics.rec_letter_reminder"
               | "professor.escalation_digest"
+              | "logistics.rec_letter_overdue_check"
               | "email_review.resolve"
               | "member_nudge.send"
               | "member_nudge.escalate"
@@ -26901,6 +27132,7 @@ export interface operations {
               | "pi_review_ack"
               | "rec_letter_reminder"
               | "professor_digest"
+              | "rec_letter_overdue"
               | "email_review"
               | "automation_health";
             dry_run: boolean;
@@ -27176,6 +27408,7 @@ export interface operations {
             | "logistics.send_signed_document"
             | "logistics.rec_letter_reminder"
             | "professor.escalation_digest"
+            | "logistics.rec_letter_overdue_check"
             | "email_review.resolve"
             | "member_nudge.send"
             | "member_nudge.escalate"

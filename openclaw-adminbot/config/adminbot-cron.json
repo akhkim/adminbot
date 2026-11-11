@@ -413,6 +413,16 @@
       "timeoutSeconds": 900
     },
     {
+      "name": "adminbot-rec-letter-overdue-confirm",
+      "description": "Ask each student whose letter deadline passed, still unsubmitted, whether it went in (once per request and deadline; off until ADMINBOT_REC_LETTER_OVERDUE_CONFIRM_ENABLED=1)",
+      "cron": "35 10 * * *",
+      "argv": [
+        "bash",
+        "scripts/adminbot-rec-letter-overdue-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
       "name": "adminbot-professor-digest",
       "description": "Daily digest to the head professor of what is overdue, due soon, or long waiting on her (sends at most once a day; off until ADMINBOT_PROFESSOR_DIGEST_ENABLED=1)",
       "cron": "8 * * * *",

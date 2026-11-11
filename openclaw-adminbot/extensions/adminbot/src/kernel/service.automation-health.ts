@@ -45,6 +45,7 @@ function gogCapability(type: string): GogCapability | undefined {
     type === "email.draft" ||
     type === "logistics.rec_letter_reminder" ||
     type === "professor.escalation_digest" ||
+    type === "logistics.rec_letter_overdue_check" ||
     type === "logistics.send_signed_document" ||
     type === "reimbursement.submit"
   ) {

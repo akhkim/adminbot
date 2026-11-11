@@ -780,6 +780,13 @@
 
 /* What the lab said back. Set apart from the request's own fields because it is the answer, not
    part of the ask. */
+/* Who said a letter went in. Under the status it qualifies, small, never a second pill. */
+.logistics-confirmation {
+  display: block;
+  margin-top: var(--space-1);
+  font-size: var(--control-ui-text-sm);
+}
+
 .logistics-detail__resolution {
   margin-top: var(--space-3);
   border-left: 2px solid var(--ok-muted);

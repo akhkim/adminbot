@@ -1275,6 +1275,36 @@ when something was due rather than guessing at an inbox -- and stays quiet on a 
 was. A send that fails is not stamped, so it is retried the next morning while the letter is still
 worth writing.
 
+## After-deadline letter check
+
+A professor often submits a letter through the school's own portal and never comes back to mark it
+here, so a letter request past its deadline and still open usually means "done, but nobody said so".
+The school tells the student, so the student is the one asked.
+
+`adminbot-rec-letter-overdue-confirm` runs daily. It takes recommendation-letter requests that are
+not completed, declined or withdrawn, whose **typed** letter deadline (no inferred year) has passed,
+at most 60 days ago, and mails each student once -- one message however many of their letters are
+overdue -- asking whether the letter went in and linking `/rec-letters?view=requests`. The action is
+`logistics.rec_letter_overdue_check` (T1): the recipient is the student's roster address
+(correspondence address, else login), never one a caller supplies. A student with no address, or no
+roster row, is skipped and reported in the run; nothing is guessed. The student also gets a portal
+notification, retracted once the request is settled.
+
+Said once per request per deadline, tracked in the nudge ledger under `rec_letter_overdue`, so a
+corrected deadline re-arms it. A send that fails is not stamped and is retried on the next run.
+**Off until `ADMINBOT_REC_LETTER_OVERDUE_CONFIRM_ENABLED=1`.**
+`POST /logistics/rec-letter-overdue/run?dry_run=1` returns every mail it would send, without sending
+or stamping, even while it is off.
+
+On their own requests list the student has **Letter was submitted** on any open letter request
+(prominent once the deadline has passed), which completes it, and **Undo** on one they completed
+themselves, which reopens it to `submitted`. Both are audited
+(`logistics_request.letter_confirmed`, `logistics_request.letter_confirmation_undone`). The request
+records `confirmed_by`, `confirmed_by_name`, `confirmed_at` and `confirmed_via` --
+`member_after_reminder` when the overdue mail had asked about it, `member` otherwise, `admin` when
+an admin moved the status to completed -- and the request detail and admin queue show
+"Submitted, confirmed by ... on ...". Moving a request out of completed clears them.
+
 ## Professor escalation digest
 
 The head professor reads email before the portal, so whatever is waiting on her also goes to her
@@ -1666,37 +1696,38 @@ feature. Three of the fourteen wrappers had one and the rest were registered by 
 "what does AdminBot run, and when" could only be answered by reading the cron store on Aurora -- and
 a job that was never registered is silent: nobody is nudged and nothing errors.
 
-| Job                                 | Schedule             | What it does                                                                                |
-| ----------------------------------- | -------------------- | ------------------------------------------------------------------------------------------- |
-| `adminbot-email`                    | `5 * * * *`          | Hourly inbound email triage pass                                                            |
-| `adminbot-openreview`               | `15 0,6,12,18 * * *` | Reviewing-cycle pass, four times a day                                                      |
-| `adminbot-citation-checks`          | `25,55 * * * *`      | Check the citations of each new OpenReview submission version                               |
-| `adminbot-iclr-integrity`           | `12 * * * *`         | Pangram AI-text score of new ICLR versions; Slack alert on AI text/citations                |
-| `adminbot-meeting-artifacts`        | `20 * * * *`         | Meeting artifact drop-folder pass                                                           |
-| `adminbot-member-directory`         | `40 5 * * *`         | Daily Slack timezone/directory sync                                                         |
-| `adminbot-slack-directory`          | `45 5 * * *`         | Daily Slack channel directory refresh                                                       |
-| `adminbot-deadline-refresh-venues`  | `50 5 * * *`         | Refresh conference/workshop deadlines from official CFPs                                    |
-| `adminbot-deadline-refresh-matches` | `20 6 * * *`         | Re-map papers onto the refreshed deadlines                                                  |
-| `adminbot-vector-roster`            | `30 6 * * *`         | Daily Vector sponsor spreadsheet refresh                                                    |
-| `adminbot-graduations`              | `15 8 * * 1`         | Confirm finishing months, chase alumni transitions, and arrange the ceremony                |
-| `adminbot-slides-working-groups`    | `20 7 * * 1`         | Propose the working-groups slide update ([details](../operations/slides-working-groups.md)) |
-| `adminbot-city-channels`            | `10 7 * * 1,4`       | Add members to their city Slack channel once a city reaches four                            |
-| `adminbot-email-templates`          | `30 8 * * 1`         | Check the email-template doc against the shipped copy                                       |
-| `adminbot-paperflow-nudges`         | `0 9 * * 1`          | PaperFlow venue-stage nudges, once a week                                                   |
-| `adminbot-paper-slot-nudges`        | `10 9 * * 1-5`       | Chase the evidence each paper still owes                                                    |
-| `adminbot-mandatory-fields`         | `20 9 * * 1-5`       | Chase profiles and term timelines that are still blank                                      |
-| `adminbot-onboarding-chase`         | `40 9 * * 1-5`       | Chase setup checklists still open after ten days, then every two months                     |
-| `adminbot-thesis-milestones`        | `50 9 * * 1-5`       | Guidebook nudge before a thesis deadline, grading reminder five days after                  |
-| `adminbot-paper-stages`             | `45 * * * *`         | Verify the evidence, advance each paper on it, and queue the PI's gate                      |
-| `adminbot-papermentor-reviews`      | `2 8-20/2 * * *`     | Ask PaperMentor to review the papers at their review step, on the lab's Overleaf            |
-| `adminbot-papermentor-runs`         | `35 * * * *`         | Collect PaperMentor's cached reviews and record them against their papers                   |
-| `adminbot-rec-letter-reminders`     | `25 10 * * *`        | Mail the head professor the letters due within three days                                   |
-| `adminbot-professor-digest`         | `8 * * * *`          | Daily digest to the head professor of what is overdue, due soon, or long waiting on her     |
-| `adminbot-meeting-attendance`       | `30 9 * * 1`         | Chase members who have stopped coming to the group meeting                                  |
-| `adminbot-weekly-updates`           | `0 10 * * 1`         | Ask authors for the week's paper updates                                                    |
-| `adminbot-prereg-nudges`            | `0 14 * * 4`         | Pre-meeting pre-registration sweep                                                          |
-| `adminbot-onboarding-confirm`       | `10 */2 * * *`       | Onboarding-step confirmation loop                                                           |
-| `adminbot-nudge-escalation`         | `0 11 * * 1-5`       | Ask the head professor to chase what nobody answered in five days                           |
+| Job                                   | Schedule             | What it does                                                                                |
+| ------------------------------------- | -------------------- | ------------------------------------------------------------------------------------------- |
+| `adminbot-email`                      | `5 * * * *`          | Hourly inbound email triage pass                                                            |
+| `adminbot-openreview`                 | `15 0,6,12,18 * * *` | Reviewing-cycle pass, four times a day                                                      |
+| `adminbot-citation-checks`            | `25,55 * * * *`      | Check the citations of each new OpenReview submission version                               |
+| `adminbot-iclr-integrity`             | `12 * * * *`         | Pangram AI-text score of new ICLR versions; Slack alert on AI text/citations                |
+| `adminbot-meeting-artifacts`          | `20 * * * *`         | Meeting artifact drop-folder pass                                                           |
+| `adminbot-member-directory`           | `40 5 * * *`         | Daily Slack timezone/directory sync                                                         |
+| `adminbot-slack-directory`            | `45 5 * * *`         | Daily Slack channel directory refresh                                                       |
+| `adminbot-deadline-refresh-venues`    | `50 5 * * *`         | Refresh conference/workshop deadlines from official CFPs                                    |
+| `adminbot-deadline-refresh-matches`   | `20 6 * * *`         | Re-map papers onto the refreshed deadlines                                                  |
+| `adminbot-vector-roster`              | `30 6 * * *`         | Daily Vector sponsor spreadsheet refresh                                                    |
+| `adminbot-graduations`                | `15 8 * * 1`         | Confirm finishing months, chase alumni transitions, and arrange the ceremony                |
+| `adminbot-slides-working-groups`      | `20 7 * * 1`         | Propose the working-groups slide update ([details](../operations/slides-working-groups.md)) |
+| `adminbot-city-channels`              | `10 7 * * 1,4`       | Add members to their city Slack channel once a city reaches four                            |
+| `adminbot-email-templates`            | `30 8 * * 1`         | Check the email-template doc against the shipped copy                                       |
+| `adminbot-paperflow-nudges`           | `0 9 * * 1`          | PaperFlow venue-stage nudges, once a week                                                   |
+| `adminbot-paper-slot-nudges`          | `10 9 * * 1-5`       | Chase the evidence each paper still owes                                                    |
+| `adminbot-mandatory-fields`           | `20 9 * * 1-5`       | Chase profiles and term timelines that are still blank                                      |
+| `adminbot-onboarding-chase`           | `40 9 * * 1-5`       | Chase setup checklists still open after ten days, then every two months                     |
+| `adminbot-thesis-milestones`          | `50 9 * * 1-5`       | Guidebook nudge before a thesis deadline, grading reminder five days after                  |
+| `adminbot-paper-stages`               | `45 * * * *`         | Verify the evidence, advance each paper on it, and queue the PI's gate                      |
+| `adminbot-papermentor-reviews`        | `2 8-20/2 * * *`     | Ask PaperMentor to review the papers at their review step, on the lab's Overleaf            |
+| `adminbot-papermentor-runs`           | `35 * * * *`         | Collect PaperMentor's cached reviews and record them against their papers                   |
+| `adminbot-rec-letter-reminders`       | `25 10 * * *`        | Mail the head professor the letters due within three days                                   |
+| `adminbot-rec-letter-overdue-confirm` | `35 10 * * *`        | Ask students whether a past-due, still-open letter went in (off until enabled)              |
+| `adminbot-professor-digest`           | `8 * * * *`          | Daily digest to the head professor of what is overdue, due soon, or long waiting on her     |
+| `adminbot-meeting-attendance`         | `30 9 * * 1`         | Chase members who have stopped coming to the group meeting                                  |
+| `adminbot-weekly-updates`             | `0 10 * * 1`         | Ask authors for the week's paper updates                                                    |
+| `adminbot-prereg-nudges`              | `0 14 * * 4`         | Pre-meeting pre-registration sweep                                                          |
+| `adminbot-onboarding-confirm`         | `10 */2 * * *`       | Onboarding-step confirmation loop                                                           |
+| `adminbot-nudge-escalation`           | `0 11 * * 1-5`       | Ask the head professor to chase what nobody answered in five days                           |
 
 Times are the gateway's. The nudge passes are staggered through the morning and
 `adminbot-nudge-escalation` runs after them on purpose: it reads what those passes filed, so running

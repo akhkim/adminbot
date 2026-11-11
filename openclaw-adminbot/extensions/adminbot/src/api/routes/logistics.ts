@@ -1,3 +1,4 @@
+import { resolveRecLetterOverdueConfig } from "../../kernel/service.rec-letter-overdue.js";
 import type { AdminBotMemberPrincipal } from "../../workflows/identity/auth.js";
 // Requests to the PI: signatures, rec letters, meeting requests, and the call sheet.
 //
@@ -217,6 +218,23 @@ export const logisticsRoutes: readonly Route[] = [
     privilegedOnly(async ({ res, principal, ctx }) => {
       const { service } = ctx;
       sendServiceResult(res, await service.sweepRecLetterReminders(principalActor(principal)));
+    }),
+  ),
+  // The after-deadline "did your letter go in?" mail to students
+  // (scripts/adminbot-rec-letter-overdue-cron.sh, daily). Off unless
+  // ADMINBOT_REC_LETTER_OVERDUE_CONFIRM_ENABLED=1, read per call; `?dry_run=1` returns every mail
+  // it would send without sending or stamping, and works while it is still off.
+  post(
+    "/logistics/rec-letter-overdue/run",
+    privilegedOnly(async ({ res, url, principal, ctx }) => {
+      sendServiceResult(
+        res,
+        await ctx.service.sweepRecLetterOverdueConfirmations(
+          principalActor(principal),
+          resolveRecLetterOverdueConfig(process.env),
+          { dryRun: url.searchParams.get("dry_run") === "1" },
+        ),
+      );
     }),
   ),
 ];

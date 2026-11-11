@@ -98,6 +98,11 @@ export const adminBotActionTypes = [
   // letter reminder above -- it is addressed to that desk about its own queue -- and separate from
   // it because it repeats, where the letter reminder is said once per deadline.
   "professor.escalation_digest",
+  // The after-deadline question to a student: their letter's deadline passed and the portal still
+  // shows it open, so did it go in? Its own type because it is the one sweep mail addressed to the
+  // requester rather than the professor's desk, and the recipient is that member's own address on
+  // the roster, never one a caller supplied.
+  "logistics.rec_letter_overdue_check",
   /**
    * One message the hourly inbox pass could not decide, put to the reviewer as an approval.
    *
@@ -2788,6 +2793,9 @@ export type AdminBotAuditEvent = {
     // One daily escalation digest that was sent, failed, or may have been sent. Quiet runs (off,
     // before the send hour, already sent, nothing due) are not recorded: they happen hourly.
     | "professor_digest.swept"
+    // One after-deadline pass that mailed at least one student, failed, or skipped somebody for
+    // having no address on file. Quiet runs (off, nothing due) are not recorded.
+    | "rec_letter_overdue.swept"
     // One PaperMentor review, as the collector reported it. Recorded on every pass rather than
     // only the first, so "when did we last hear from PaperMentor about this paper" has an answer
     // even on the days it re-sent the review it sent yesterday. Counts only -- see the table.
@@ -2903,6 +2911,11 @@ export type AdminBotAuditEvent = {
     | "logistics_request.submitted"
     | "logistics_request.status_changed"
     | "logistics_request.withdrawn"
+    // The student saying their letter went in, and taking it back. Separate from status_changed
+    // because the actor is the requester rather than an admin, and "who said it was done" is the
+    // question these rows exist to answer.
+    | "logistics_request.letter_confirmed"
+    | "logistics_request.letter_confirmation_undone"
     | "logistics_request.deleted"
     // The signed document going back to the member who asked for it, and the copies being dropped
     // once it has.
@@ -3349,7 +3362,9 @@ export type AdminBotMemberNotificationKind =
   /** An automation health issue, for the admins: a job stopped or failing, or an invite paused. */
   | "automation"
   /** A review the member asked for in the PaperMentor tab is ready, or could not be done. */
-  | "papermentor";
+  | "papermentor"
+  /** A recommendation letter past its deadline that the portal still shows as not submitted. */
+  | "rec_letter";
 
 export type AdminBotMemberNotification = {
   id: string;
@@ -3588,4 +3603,22 @@ export type AdminBotLogisticsRequest = AdminBotLogisticsRequestInput & {
   /** Which admin last moved the status, for the member reading "declined" and wondering who by. */
   decided_by?: string;
   decided_at?: string;
+  /**
+   * Who said a recommendation letter went in, when, and how. Set when the request is completed by
+   * the student (after the overdue question or on their own) or by an admin; cleared when it is
+   * reopened. Kept apart from `decided_by` because the professor reading "Submitted" wants to know
+   * whether that is her own mark or the student's word.
+   */
+  confirmed_by?: string;
+  confirmed_by_name?: string;
+  confirmed_at?: string;
+  confirmed_via?: AdminBotLetterConfirmationVia;
 };
+
+/**
+ * How a letter came to be marked submitted. `member_after_reminder` is the student answering the
+ * overdue question; `member` is the student marking it without having been asked; `admin` is the
+ * professor or an admin moving the status.
+ */
+export const adminBotLetterConfirmationVias = ["member_after_reminder", "member", "admin"] as const;
+export type AdminBotLetterConfirmationVia = (typeof adminBotLetterConfirmationVias)[number];

@@ -628,6 +628,16 @@ import {
   type ProfessorDigestSweepResult,
 } from "./service.professor-digest.js";
 import { RecLetterEligibilityService } from "./service.rec-letter-eligibility.js";
+import {
+  applyAdminLetterConfirmation,
+  confirmLetterSubmitted,
+  type LetterConfirmDeps,
+  type RecLetterOverdueConfig,
+  type RecLetterOverdueSweepResult,
+  resolveRecLetterOverdueNotification,
+  sweepRecLetterOverdueConfirmations,
+  undoLetterConfirmation,
+} from "./service.rec-letter-overdue.js";
 import { runSlackRosterSync, type SlackRosterSyncOptions } from "./service.slack-roster-sync.js";
 import {
   affectsWorkingGroupsSlide,
@@ -1493,6 +1503,10 @@ const DEFAULT_ACTION_POLICIES = {
   // the body is composed from the portal's own queues. A digest about overdue items that first
   // waited in Pending actions -- one of the queues it reports -- would defeat itself.
   "professor.escalation_digest": autoPolicy("T1"),
+  // Auto (T1): the recipient is the requester's own address on the roster and the body is composed
+  // from their own request, so no caller picks who it reaches or what it says. Gated by
+  // ADMINBOT_REC_LETTER_OVERDUE_CONFIRM_ENABLED rather than by an approval queue.
+  "logistics.rec_letter_overdue_check": autoPolicy("T1"),
   // Deliberately auto-approved, unlike every other outbound-message type (slack.send_message,
   // email.send, paper_publish.nudge_author are all T3/approval-required): creating this proposal
   // already requires a real admin session via POST /nudges/send (never reachable
@@ -12380,14 +12394,21 @@ export class AdminBotService {
       return serviceError(400, "only the requester can withdraw a request");
     }
     const now = new Date().toISOString();
-    const stored = clearSettledRequestFiles({
-      ...existing,
-      status,
-      updated_at: now,
-      decided_by: actor,
-      decided_at: now,
-      ...(note?.trim() ? { resolution_note: note.trim() } : {}),
-    });
+    // A letter the lab marks done records who said so, the same fields a student's own answer
+    // fills, so the professor's view reads one way whichever side closed it.
+    const stored = applyAdminLetterConfirmation(
+      existing,
+      clearSettledRequestFiles({
+        ...existing,
+        status,
+        updated_at: now,
+        decided_by: actor,
+        decided_at: now,
+        ...(note?.trim() ? { resolution_note: note.trim() } : {}),
+      }),
+      { id: actor, name: this.store.getLabMember(actor)?.name },
+      now,
+    );
     this.store.saveLogisticsRequest(stored);
     this.recordAudit({
       type: "logistics_request.status_changed",
@@ -12395,6 +12416,9 @@ export class AdminBotService {
       details: { request_id: requestId, from: existing.status, to: status },
     });
     this.auditClearedFiles(existing, stored, actor);
+    if (stored.status !== "submitted" && stored.status !== "in_progress") {
+      resolveRecLetterOverdueNotification(this.store, stored.member_id, requestId, now);
+    }
     return { ok: true, status: 200, payload: withoutAttachmentBytes(stored) };
   }
 
@@ -12429,7 +12453,32 @@ export class AdminBotService {
       details: { request_id: requestId, kind: existing.kind },
     });
     this.auditClearedFiles(existing, stored, memberId);
+    resolveRecLetterOverdueNotification(this.store, memberId, requestId, stored.updated_at);
     return { ok: true, status: 200, payload: stored };
+  }
+
+  /** The requester saying their recommendation letter went in; see service.rec-letter-overdue.ts. */
+  confirmLetterSubmitted(
+    requestId: string,
+    memberId: string,
+  ): AdminBotServiceResponse<AdminBotLogisticsRequest> {
+    return confirmLetterSubmitted(this.letterConfirmDeps(), requestId, memberId);
+  }
+
+  /** The requester taking that back, which reopens the request to `submitted`. */
+  undoLetterConfirmation(
+    requestId: string,
+    memberId: string,
+  ): AdminBotServiceResponse<AdminBotLogisticsRequest> {
+    return undoLetterConfirmation(this.letterConfirmDeps(), requestId, memberId);
+  }
+
+  private letterConfirmDeps(): LetterConfirmDeps {
+    return {
+      store: this.store,
+      recordAudit: (event) => this.recordAudit(event),
+      auditClearedFiles: (before, after, actor) => this.auditClearedFiles(before, after, actor),
+    };
   }
 
   /**
@@ -15981,6 +16030,30 @@ export class AdminBotService {
       status: 200,
       payload: { channel, invited, removal_proposals: removalProposals, skipped },
     };
+  }
+
+  /**
+   * The after-deadline "did your letter go in?" mail to each student; see
+   * service.rec-letter-overdue.ts. Another letter sweep, but the one addressed to the requester,
+   * so `config` (from the host environment at the route) keeps it off until it is turned on.
+   */
+  async sweepRecLetterOverdueConfirmations(
+    actor: string,
+    config: RecLetterOverdueConfig,
+    options: { nowIso?: string; dryRun?: boolean } = {},
+  ): Promise<AdminBotServiceResponse<RecLetterOverdueSweepResult>> {
+    return await sweepRecLetterOverdueConfirmations(
+      {
+        store: this.store,
+        createProposal: (proposal) => this.createProposal(proposal),
+        execute: (actionId, request) => this.execute(actionId, request),
+        recordAudit: (event) => this.recordAudit(event),
+        portalUrl: resolveAdminBotControlUiUrl(),
+      },
+      actor,
+      config,
+      options,
+    );
   }
 
   /**

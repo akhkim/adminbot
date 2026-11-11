@@ -187,6 +187,9 @@ export const adminBotNudgeDomains = [
   // per item counts how many digests it has been in, which is what escalates its wording. Counting
   // rather than say-once because the digest repeats until the thing is resolved.
   "professor_digest",
+  // The after-deadline "did your letter go in?" mail to the student, said once per request per
+  // deadline like `rec_letter_reminder`, with its own domain so the two never silence each other.
+  "rec_letter_overdue",
   // One message the inbox pass could not decide, put to the reviewer once as an approval. Say-once
   // like the two above, and for the sharper reason: the hourly pass sees the same held message
   // every hour it runs, so without the ledger a single undecided email would mint a fresh approval

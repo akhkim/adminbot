@@ -379,6 +379,28 @@ describe("logistics request routes", () => {
     await expect(mine.json()).resolves.toMatchObject({ status: "withdrawn" });
   });
 
+  it("lets the requester say their letter went in and take it back, and nobody else", async () => {
+    const lab = await startLab();
+    const submitted = await submit(lab, "ada", LETTERS);
+    const url = `${lab.baseUrl}/logistics/requests/${submitted.request.id}/confirm-submitted`;
+    expect((await fetch(url, { method: "POST", headers: asMember(lab, "grace") })).status).toBe(
+      404,
+    );
+    const mine = await fetch(url, { method: "POST", headers: asMember(lab, "ada") });
+    expect(mine.status).toBe(200);
+    await expect(mine.json()).resolves.toMatchObject({
+      status: "completed",
+      confirmed_by: "ada",
+      confirmed_via: "member",
+    });
+
+    const undo = await fetch(`${url}/undo`, { method: "POST", headers: asMember(lab, "ada") });
+    expect(undo.status).toBe(200);
+    const reopened = (await undo.json()) as Record<string, unknown>;
+    expect(reopened.status).toBe("submitted");
+    expect(reopened.confirmed_by).toBeUndefined();
+  });
+
   it("lets an admin delete a request, and refuses the requester", async () => {
     const lab = await startLab();
     const submitted = await submit(lab, "ada", LETTERS);
@@ -704,6 +726,31 @@ describe("POST /logistics/rec-letter-reminders/run", () => {
     // professor: the recipient is only resolved on a morning with something to say.
     expect(byCron.status).toBe(200);
     expect((await byCron.json()) as { reminded: unknown[] }).toEqual({ reminded: [] });
+  });
+});
+
+describe("POST /logistics/rec-letter-overdue/run", () => {
+  // The wire half of the after-deadline sweep; what it sends is tested in
+  // service.rec-letter-overdue.test.ts. Here: a member session cannot make AdminBot mail students,
+  // the cron token can, and it is off unless the host turns it on.
+  it("refuses a member session, and is off for the service token by default", async () => {
+    const lab = await startLab();
+    const url = `${lab.baseUrl}/logistics/rec-letter-overdue/run`;
+    expect((await fetch(url, { method: "POST", headers: asMember(lab, "ada") })).status).toBe(403);
+
+    const byCron = await fetch(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${SERVICE_TOKEN}` },
+    });
+    expect(byCron.status).toBe(200);
+    await expect(byCron.json()).resolves.toMatchObject({ outcome: "disabled" });
+
+    const preview = await fetch(`${url}?dry_run=1`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${SERVICE_TOKEN}` },
+    });
+    expect(preview.status).toBe(200);
+    await expect(preview.json()).resolves.toMatchObject({ outcome: "nothing_due" });
   });
 });
 

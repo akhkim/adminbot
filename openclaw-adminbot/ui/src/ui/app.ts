@@ -337,6 +337,12 @@ function resolveOnboardingMode(): boolean {
   return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
 }
 
+// `?view=requests` opens the logistics tabs on the member's own requests: the after-deadline
+// letter mail links there so "Letter was submitted" is one press away.
+function resolveLogisticsMode(): LogisticsMode {
+  return new URLSearchParams(window.location.search).get("view") === "requests" ? "view" : "make";
+}
+
 export class OpenClawApp extends LitElement {
   readonly i18nController = new I18nController(this);
   clientInstanceId = generateUUID();
@@ -760,7 +766,7 @@ export class OpenClawApp extends LitElement {
   @state() adminBotLogisticsSaveError: string | null = null;
   // Admins land on the same page members do; reading everyone's requests is a deliberate step.
   @state() adminBotLogisticsQueueOptions: LogisticsQueueOptions = DEFAULT_LOGISTICS_QUEUE_OPTIONS;
-  @state() adminBotLogisticsMode: LogisticsMode = "make";
+  @state() adminBotLogisticsMode: LogisticsMode = resolveLogisticsMode();
   @state() adminBotLogisticsRequests: LogisticsRequest[] = [];
   @state() adminBotLogisticsRequestsLoading = false;
   @state() adminBotLogisticsRequestsError: string | null = null;

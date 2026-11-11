@@ -106,7 +106,17 @@ export type LogisticsRequest = LogisticsRequestInput & {
   resolution_note?: string;
   decided_by?: string;
   decided_at?: string;
+  /**
+   * Who said a recommendation letter went in, when, and how: the student after the overdue mail,
+   * the student unprompted, or an admin. Absent on a request that is not completed.
+   */
+  confirmed_by?: string;
+  confirmed_by_name?: string;
+  confirmed_at?: string;
+  confirmed_via?: LetterConfirmationVia;
 };
+
+export type LetterConfirmationVia = "member_after_reminder" | "member" | "admin";
 
 /** One page of the list read: the rows, how many the whole filtered list holds, and where it goes on. */
 export type LogisticsRequestsPage = {
@@ -291,6 +301,32 @@ export async function withdrawLogisticsRequest(
   const result = await authedJson(
     baseUrl,
     `/logistics/requests/${encodeURIComponent(requestId)}/withdraw`,
+    "POST",
+    sessionToken,
+    {},
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  return { ok: true, value: result.body as LogisticsRequest };
+}
+
+/**
+ * The requester saying their recommendation letter went in (`undo` false), or taking it back.
+ * Their own letter requests only; the service answers 404 for anyone else's.
+ */
+export async function confirmLetterSubmitted(
+  requestId: string,
+  undo: boolean,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<LogisticsRequest>> {
+  const result = await authedJson(
+    baseUrl,
+    `/logistics/requests/${encodeURIComponent(requestId)}/confirm-submitted${undo ? "/undo" : ""}`,
     "POST",
     sessionToken,
     {},

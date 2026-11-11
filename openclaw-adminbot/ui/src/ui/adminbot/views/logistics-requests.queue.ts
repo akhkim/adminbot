@@ -21,6 +21,7 @@ import {
 } from "../data/logistics-queue.ts";
 import { isSettledRequest } from "../data/logistics-requests.ts";
 import { renderLoadMore, type LoadMoreProps } from "../load-more.ts";
+import { renderLetterConfirmation } from "./logistics-letter-confirm.ts";
 import { logisticsStatusLabel } from "./logistics-status.ts";
 import { renderRecLetterBadge } from "./rec-letter-eligibility.ts";
 
@@ -160,7 +161,9 @@ function renderRow(props: AdminBotLogisticsQueueProps, request: LogisticsRequest
           ? deadline
           : html`<span class="muted">${t("logistics.requests.noDeadline")}</span>`}
       </td>
-      <td class="logistics-queue__cell">${renderStatusCell(props, request)}</td>
+      <td class="logistics-queue__cell">
+        ${renderStatusCell(props, request)} ${renderLetterConfirmation(request)}
+      </td>
       <td class="logistics-queue__cell logistics-queue__cell--sign">
         ${renderSignCell(props, request)}
       </td>
