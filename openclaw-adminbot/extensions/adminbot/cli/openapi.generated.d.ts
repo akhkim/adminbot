@@ -4150,6 +4150,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/papers/pi-review/ack": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** POST /papers/pi-review/ack */
+    post: operations["post-papers-pi-review-ack"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/papers/pre-registration/pending": {
     parameters: {
       query?: never;
@@ -9247,6 +9264,7 @@ export interface components {
       };
       /** @enum {string} */
       history_reason?: "reviewed" | "conference_held" | "past_cycle" | "stale_deadline";
+      ack_key?: string;
       /** @constant */
       priority?: "high";
       paper_id: string;
@@ -21525,6 +21543,7 @@ export interface operations {
                 | "onboarding_followup"
                 | "workshop_nudge"
                 | "pi_review"
+                | "pi_review_ack"
                 | "rec_letter_reminder"
                 | "professor_digest"
                 | "email_review"
@@ -25925,6 +25944,68 @@ export interface operations {
       };
     };
   };
+  "post-papers-pi-review-ack": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          key?: string;
+          reviewed?: boolean;
+        } & {
+          [key: string]: unknown;
+        };
+      };
+    };
+    responses: {
+      /** @description Server response */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Successful service result */
+      "2XX": {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            key: string;
+            reviewed: boolean;
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
   "get-papers-pre-registration-pending": {
     parameters: {
       query?: {
@@ -26817,6 +26898,7 @@ export interface operations {
               | "onboarding_followup"
               | "workshop_nudge"
               | "pi_review"
+              | "pi_review_ack"
               | "rec_letter_reminder"
               | "professor_digest"
               | "email_review"

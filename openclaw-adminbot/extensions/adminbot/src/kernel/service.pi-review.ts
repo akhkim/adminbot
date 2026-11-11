@@ -1,5 +1,6 @@
 // Head-professor gate on PI review slots, cut from service.ts so it stays under its file-size
 // ratchet. Pure: the service supplies the head professor and whether the writer is a PI approver, and returns the 403.
+import type { AdminBotNudgeLedgerRecord } from "../contracts/paper-cycle.js";
 import { parsePaperFeedback } from "../contracts/paper-feedback.js";
 import {
   mergePaperImpactWrite,
@@ -8,6 +9,8 @@ import {
   parsePaperImpactStatement,
   type PaperSafetyInput,
 } from "../contracts/paper-impact.js";
+import { PI_REVIEW_ACK_DOMAIN } from "../workflows/papers/pi-review-ack.js";
+import type { PiReviewRow } from "../workflows/papers/pi-review.js";
 
 /**
  * Why this write needs a PI reviewer and the writer is not one, or null when it may go ahead.
@@ -84,4 +87,57 @@ export function piApprovalImpactDenial(params: {
   return paperImpactApprovalBlock(
     paperImpactStatus(params.paper, parsePaperImpactStatement(params.impactValueText)),
   );
+}
+
+type AckLedger = {
+  listNudgeLedger(domain?: string): AdminBotNudgeLedgerRecord[];
+  saveNudgeLedgerEntry(record: AdminBotNudgeLedgerRecord): void;
+};
+
+/** The My Desk rows marked reviewed and not since undone, by their state-bearing key. */
+export function piReviewAckedKeys(ledger: Pick<AckLedger, "listNudgeLedger">): Set<string> {
+  return new Set(
+    ledger
+      .listNudgeLedger(PI_REVIEW_ACK_DOMAIN)
+      .filter((entry) => entry.nudge_count > 0)
+      .map((entry) => entry.subject_id),
+  );
+}
+
+/**
+ * Marks one My Desk row reviewed, or undoes that. Only a key the desk is showing right now, open
+ * or already reviewed, can be written: anything else is a stale tab or a made-up key, and storing
+ * it would hide nothing and grow the ledger.
+ */
+export function writePiReviewAck(
+  ledger: AckLedger,
+  params: {
+    key: string;
+    reviewed: boolean;
+    actor: string;
+    rows: readonly PiReviewRow[];
+    now: string;
+  },
+):
+  | { ok: true; status: 200; payload: { key: string; reviewed: boolean } }
+  | { ok: false; status: 400 | 404; error: { message: string } } {
+  const key = params.key.trim();
+  if (!key) {
+    return { ok: false, status: 400, error: { message: "key is required" } };
+  }
+  if (!params.rows.some((row) => row.ack_key === key)) {
+    return {
+      ok: false,
+      status: 404,
+      error: { message: "That item is no longer on the desk. Reload My Desk and try again." },
+    };
+  }
+  ledger.saveNudgeLedgerEntry({
+    domain: PI_REVIEW_ACK_DOMAIN,
+    subject_id: key,
+    member_id: params.actor,
+    last_nudged_at: params.now,
+    nudge_count: params.reviewed ? 1 : 0,
+  });
+  return { ok: true, status: 200, payload: { key, reviewed: params.reviewed } };
 }

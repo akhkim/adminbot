@@ -399,6 +399,7 @@ Website: `/papers, /announcements, /grant-report, /professor, /arr-eligible-revi
 | `post-papers-paperflow-stages-run`                                        | POST `/papers/paperflow-stages/run`                                       |
 | `post-papers-papermentor-reviews-run`                                     | POST `/papers/papermentor/reviews/run` (dry-run)                          |
 | `post-papers-papermentor-runs`                                            | POST `/papers/papermentor/runs`                                           |
+| `post-papers-pi-review-ack`                                               | POST `/papers/pi-review/ack`                                              |
 | `post-papers-pre-registration-run`                                        | POST `/papers/pre-registration/run`                                       |
 | `post-papers-project-channels-run`                                        | POST `/papers/project-channels/run`                                       |
 | `post-papers-slots-backfill`                                              | POST `/papers/slots/backfill` (dry-run)                                   |

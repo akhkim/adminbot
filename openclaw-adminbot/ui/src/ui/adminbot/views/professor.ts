@@ -355,14 +355,25 @@ export function recLettersSubmittedHere(
  *
  * A feedback request not yet reviewed can be marked done -- with no written note, which the paper
  * page still takes. A plain arXiv-release row (nothing else asked of her) can be approved. A
- * safety-impact, proofreading or OpenReview row is a read, not a yes, so it keeps only its link.
+ * proofreading, OpenReview or deadline row is a read, not a yes: when the service handed it an
+ * `ackKey` it can be marked reviewed, which puts it in History until something about it changes.
+ * A safety-impact row has neither: its answer is given on the paper.
  * The payload is built exactly as the paper page builds it, so the service sees the same write.
  */
 export type PiReviewQuickAction =
   | { kind: "feedback"; slot: string; valueText: string }
-  | { kind: "approve"; slot: "pi_approval" };
+  | { kind: "approve"; slot: "pi_approval" }
+  | { kind: "ack"; key: string; reviewed: boolean };
 
 export function piReviewQuickAction(row: PiReviewRow): PiReviewQuickAction | null {
+  const answer = piReviewAnswer(row);
+  if (answer) {
+    return answer;
+  }
+  return row.ackKey ? { kind: "ack", key: row.ackKey, reviewed: true } : null;
+}
+
+function piReviewAnswer(row: PiReviewRow): PiReviewQuickAction | null {
   if (row.feedback) {
     if (row.feedback.reviewed) {
       return null;
@@ -1150,6 +1161,27 @@ export function renderHardDeadline(row: Pick<PiReviewRow, "hardDeadline" | "days
   return html`<strong data-testid="pi-review-hard-deadline">Due ${date}${left}</strong>`;
 }
 
+/** Undo on a row she marked reviewed from the desk; other history rows have nothing to undo. */
+function historyUndo(
+  row: PiReviewRow,
+  onPaperAction: ProfessorViewProps["onPaperAction"],
+  busyId: string | null,
+) {
+  const key = row.ackKey;
+  if (row.historyReason !== "reviewed" || !key || !onPaperAction) {
+    return nothing;
+  }
+  return html`<button
+    type="button"
+    class="btn btn--sm"
+    data-testid="pi-review-history-undo"
+    ?disabled=${busyId !== null}
+    @click=${() => onPaperAction(row, { kind: "ack", key, reviewed: false })}
+  >
+    ${busyId === key ? t("professor.piReview.saving") : t("professor.piReview.undoReviewed")}
+  </button>`;
+}
+
 /**
  * The PI queue's history, folded: one read-only line per row that left the queue, with why it
  * left. A search narrows it with the same match the open queue uses, so "emnlp" finds the held
@@ -1158,9 +1190,10 @@ export function renderHardDeadline(row: Pick<PiReviewRow, "hardDeadline" | "days
 function piReviewHistoryList(
   history: readonly PiReviewRow[],
   query: string,
-  props: Pick<ProfessorViewProps, "onOpenPaper" | "onOpen">,
+  props: Pick<ProfessorViewProps, "onOpenPaper" | "onOpen" | "onPaperAction" | "paperBusyId">,
 ) {
   const shown = filterPiReview(history, query);
+  const busyId = props.paperBusyId ?? null;
   return historyToggle({
     testId: "professor-pi-review-history",
     className: "professor__done",
@@ -1188,6 +1221,7 @@ function piReviewHistoryList(
               })}</span
             >`
           : nothing}
+        ${historyUndo(row, props.onPaperAction, busyId)}
         <button
           type="button"
           class="btn btn--sm"
@@ -1211,16 +1245,21 @@ function paperActionButton(
   if (!action) {
     return nothing;
   }
+  const ack = action.kind === "ack";
   return rowAction({
-    testId:
-      action.kind === "feedback" ? "professor-paper-feedback-done" : "professor-paper-approve",
-    label:
-      action.kind === "feedback"
+    testId: ack
+      ? "professor-paper-reviewed"
+      : action.kind === "feedback"
+        ? "professor-paper-feedback-done"
+        : "professor-paper-approve",
+    label: ack
+      ? t("professor.piReview.reviewed")
+      : action.kind === "feedback"
         ? t("professor.piReview.feedbackDone")
         : t("professor.piReview.approve"),
     busyLabel: t("professor.piReview.saving"),
-    title: t("professor.piReview.actionHint"),
-    busy: busyId === row.paperId,
+    title: ack ? t("professor.piReview.reviewedHint") : t("professor.piReview.actionHint"),
+    busy: busyId === (ack ? action.key : row.paperId),
     disabled: busyId !== null,
     onClick: () => props.onPaperAction?.(row, action),
   });

@@ -201,6 +201,11 @@ export type PiReviewRow = {
   priority?: "high";
   /** Only on a history row: why it left the queue. */
   historyReason?: PiReviewHistoryReason;
+  /**
+   * Present on a row that is information rather than a decision: the key "Mark reviewed" sends,
+   * and on a reviewed history row the key its Undo sends.
+   */
+  ackKey?: string;
   paperId: string;
   title: string;
   authors: string[];
@@ -314,9 +319,33 @@ function readPiReviewRow(row: Record<string, unknown>): PiReviewRow[] {
       ...((piReviewHistoryReasons as readonly unknown[]).includes(row.history_reason)
         ? { historyReason: row.history_reason as PiReviewHistoryReason }
         : {}),
+      ...(typeof row.ack_key === "string" && row.ack_key ? { ackKey: row.ack_key } : {}),
       packageComplete: row.package_complete === true,
     },
   ];
+}
+
+/**
+ * Puts a My Desk row away as reviewed, or brings it back (POST /papers/pi-review/ack). The key
+ * is the one the queue handed out, so a row that changed since the read is refused, not guessed.
+ */
+export async function setPiReviewAck(
+  sessionToken: string,
+  baseUrl: string,
+  key: string,
+  reviewed: boolean,
+): Promise<AuthResult<void>> {
+  const result = await authedJson(baseUrl, "/papers/pi-review/ack", "POST", sessionToken, {
+    key,
+    reviewed,
+  });
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  return { ok: true, value: undefined };
 }
 
 /** The queue and what has left it (GET /papers/pi-review). */
