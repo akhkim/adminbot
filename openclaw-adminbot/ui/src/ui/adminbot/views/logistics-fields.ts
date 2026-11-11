@@ -122,3 +122,15 @@ export const SCHOOL_FIELDS: SchoolField[] = [
     placeholderKey: "logistics.schools.notesPlaceholder",
   },
 ];
+
+// Which fields a school card shows up front, in the order they appear there. The rest of
+// SCHOOL_FIELDS fold under "More details". The letter deadline and its clock are what the writer is
+// held to, so they sit beside the school and program. The application side and the statuses are
+// the member's own bookkeeping, so they fold away.
+export const SCHOOL_PRIMARY_FIELDS: readonly SchoolFieldKey[] = [
+  "school",
+  "program",
+  "letterDeadline",
+  "letterDeadlineTime",
+  "deadlineTimezone",
+];
