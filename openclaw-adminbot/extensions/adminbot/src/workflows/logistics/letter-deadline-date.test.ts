@@ -66,6 +66,17 @@ describe("resolveYearlessDate", () => {
 });
 
 describe("requestDeadlineDetails with year-less legacy dates", () => {
+  // Inferring from today would roll an open request from last cycle forward a year, so the
+  // letter it is still owed would never read as overdue.
+  it("infers the year from when the request was submitted, not from today", () => {
+    const lastCycle = { ...letter("Dec 15"), submitted_at: "2025-11-02T09:00:00.000Z" };
+    expect(requestDeadlineDetails(lastCycle, { now: NOW })?.date).toBe("2025-12-15");
+    const january = { ...letter("Jan 5"), submitted_at: "2025-11-02T09:00:00.000Z" };
+    expect(requestDeadlineDetails(january, { now: NOW })?.date).toBe("2026-01-05");
+    // No submission stamp (a draft): judged against now, as before.
+    expect(requestDeadlineDetails(letter("Dec 15"), { now: NOW })?.date).toBe("2026-12-15");
+  });
+
   it("resolves a year-less letter deadline and marks the year as inferred", () => {
     expect(requestDeadlineDetails(letter("Dec 15"), { now: NOW })).toEqual({
       at: deadlineInstant("2026-12-15"),

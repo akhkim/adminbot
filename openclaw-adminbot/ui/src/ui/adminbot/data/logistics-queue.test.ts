@@ -142,9 +142,9 @@ describe("a letter deadline typed without a year", () => {
     expect(logisticsDeadlineText(letter("Ada", "AoE", "Dec 15", "23:59"))).toBe(
       "Dec 15, 2026, 23:59 AoE (UTC−12) (year assumed)",
     );
-    // Past this year's date by more than the grace month: next year's.
+    // Submitted on Sep 28 2026, so "Sept 30" is that Sep 30 -- overdue now, not next year's.
     expect(logisticsDeadlineText(letter("Bo", "AoE", "Sept 30", "23:59"))).toBe(
-      "Sep 30, 2027, 23:59 AoE (UTC−12) (year assumed)",
+      "Sep 30, 2026, 23:59 AoE (UTC−12) (year assumed)",
     );
   });
 });
