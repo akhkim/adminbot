@@ -846,11 +846,16 @@ export function validateAdminBotPaperSlotUrl(
   if (!value) {
     return { ok: false, reason: "a link is required" };
   }
+  const shape = ADMINBOT_PAPER_SLOT_URL_SHAPES[slot];
+  const expected = shape ? `; it should be ${shape}` : "";
   let url: URL;
   try {
     url = new URL(value);
   } catch {
-    return { ok: false, reason: "that is not a URL" };
+    return {
+      ok: false,
+      reason: `that is not a web address — paste the whole link, starting with https://${expected}`,
+    };
   }
   if (url.protocol !== "https:") {
     return { ok: false, reason: "the link must start with https://" };
@@ -866,19 +871,78 @@ export function validateAdminBotPaperSlotUrl(
     // the copy-pasted one teaches people to edit URLs by hand until it is accepted.
     const host = url.hostname.toLowerCase();
     if (!hosts.some((allowed) => host === allowed || host.endsWith(`.${allowed}`))) {
-      return { ok: false, reason: `the link must be on ${hosts.join(" or ")}` };
+      return {
+        ok: false,
+        reason: `the link is on ${host}, but it must be on ${hosts.join(" or ")}${expected}`,
+      };
     }
   }
   const paths = definition.urlPath;
   if (paths?.length && !paths.some((path) => url.pathname.includes(path))) {
-    return { ok: false, reason: `the link must be a ${paths.join(" or ")} URL` };
+    return { ok: false, reason: wrongPathReason(slot, url, paths, shape) };
   }
   // Checked after the host, so a mistyped share link is told it is on the wrong Overleaf before it
   // is told its path is wrong -- the host is the fixable half.
   if (definition.urlPathPattern && !definition.urlPathPattern.test(url.pathname)) {
-    return { ok: false, reason: `that is not a ${definition.label.toLowerCase()}` };
+    return { ok: false, reason: wrongPathReason(slot, url, [], shape) };
   }
   return { ok: true };
+}
+
+/**
+ * What a valid value looks like, in words, for the link slots whose rule is not obvious from the
+ * label. Read by the refusal and so by the card and the nudge: "the link must be a /abs/ URL" told
+ * the author which rule they broke, and this tells them what to paste instead.
+ *
+ * In words rather than as a specimen URL, because the refusal travels into Slack, which turns any
+ * URL into a link -- and a clickable example is a link to a document that does not exist.
+ */
+const ADMINBOT_PAPER_SLOT_URL_SHAPES: Partial<Record<AdminBotPaperSlot, string>> = {
+  project_folder: "a Google Doc (…/document/…) or a Drive folder (…/drive/folders/…), not one file",
+  overleaf_view: "Overleaf's read-only share link (…/read/…), from Share in the Overleaf project",
+  overleaf_share:
+    "Overleaf's edit share link — in the project, Share → turn on link sharing → copy the “Anyone with this link can edit” link",
+  overleaf_edit: "the Overleaf project's address (…/project/…)",
+  drive_pdf_arxiv: "the PDF's Google Drive link (Share → Copy link)",
+  arxiv: "the arXiv abstract page (arxiv.org/abs/…), not the /pdf/ file",
+  x_post: "the address of the published post itself (x.com/<account>/status/…)",
+  linkedin_post:
+    "the address of the published post itself (linkedin.com/posts/… or linkedin.com/feed/update/…)",
+  slides: "a Google Slides deck (docs.google.com/presentation/…)",
+};
+
+/**
+ * The refusal for a link on the right host with the wrong path, naming the mistake when it is a
+ * recognisable one. Pasting the other Overleaf link, or the arXiv PDF instead of its listing, are
+ * the two the lab actually sees, and "that is not an overleaf share edit link" left the author to
+ * work out that the link they pasted was the read-only one.
+ */
+function wrongPathReason(
+  slot: AdminBotPaperSlot,
+  url: URL,
+  paths: readonly string[],
+  shape: string | undefined,
+): string {
+  const path = url.pathname;
+  const want = shape ? ` Paste ${shape}.` : "";
+  if (slot === "overleaf_share" && path.startsWith("/read/")) {
+    return `that is Overleaf's read-only link, which nobody can edit with.${want}`;
+  }
+  if (slot === "overleaf_share" && path.startsWith("/project/")) {
+    return `that is the project's own address, which only people already invited can open.${want}`;
+  }
+  if (slot === "overleaf_view" && /^\/[A-Za-z0-9]{12,64}\/?$/u.test(path)) {
+    return `that is Overleaf's edit link, not the read-only one.${want}`;
+  }
+  if (slot === "arxiv" && path.startsWith("/pdf/")) {
+    return `that is the arXiv PDF, not its listing.${want}`;
+  }
+  if (shape) {
+    return `that link is not ${shape}`;
+  }
+  return paths.length
+    ? `the link must be a ${paths.join(" or ")} URL`
+    : `that is not a ${adminBotPaperSlotRegistry[slot].label.toLowerCase()}`;
 }
 
 /**

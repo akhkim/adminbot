@@ -37,6 +37,7 @@ import {
   validateAdminBotPaperSecret,
   validateAdminBotPaperSlotUrl,
   type AdminBotPaperSlot,
+  type AdminBotPaperSlotBranch,
   type AdminBotPaperSlotDefinition,
   type AdminBotPaperSlotInput,
   type AdminBotPaperSlotOwner,
@@ -451,6 +452,60 @@ export type NudgeItem = {
 // overall deck, which the Quick Pointers doc links from each theme's section.
 const SLIDES_DETAIL = `make the talk slides and link them here, then add them to your theme's overall slides (linked from each theme's section of <${ADMINBOT_QUICK_POINTERS_DOC_URL}|Quick Pointers>)`;
 
+/**
+ * What doing it looks like, for a slot that is simply empty.
+ *
+ * The label names the artifact; this says where it comes from or what shape it takes, so a
+ * nudge can be acted on without opening the card to read the field's hint. Shorter than the
+ * registry's `hint` on purpose: this is one line in a Slack list, and the hint is the card's
+ * paragraph. A slot missing here gets the label alone, which is right for the self-explanatory ones.
+ */
+const NUDGE_HOW: Partial<Record<AdminBotPaperSlot, string>> = {
+  project_folder: "paste the Google Drive folder or doc where this paper lives",
+  overleaf_share:
+    "in Overleaf, Share → turn on link sharing → copy the “Anyone with this link can edit” link",
+  pdf_ready: "tick it once Overleaf compiles with no errors and this is the PDF you would submit",
+  submission: "paste your paper's page on the venue's system (the OpenReview forum, CMT or HotCRP)",
+  submission_id: "the ID the venue assigned you, shown on the submission page",
+  drive_pdf_arxiv: "upload the exact PDF you will post publicly to Drive and paste its link",
+  authors_ack: "tick it once the author list and acknowledgements are final",
+  arxiv_paper_password: "the six-character code arXiv gives you so coauthors can claim the paper",
+  pi_approval: "the explicit yes to post the paper publicly",
+  arxiv: "paste the arXiv abstract page (arxiv.org/abs/…), not the PDF",
+  x_draft: "write it with the drafting tool on the paper's Social tab",
+  linkedin_draft: "write it with the drafting tool on the paper's Social tab",
+  coauthor_feedback: "tick it once the draft posts have gone round the coauthors",
+  social_final: "tick it once the coauthors' comments are folded in",
+  x_post: "paste the link to the first post once it is live",
+  linkedin_post: "paste the link to the post once it is live",
+  poster: "paste a link to the poster file, or ask an admin to waive it if there is no poster",
+  talk_video: "paste a link to the recording, or ask an admin to waive it if there is none",
+};
+
+/**
+ * Why the stored value does not count, worded so the author can fix it from the message.
+ *
+ * A link row is re-checked against today's rules rather than trusting the reason stored with it:
+ * the reason was written when the value was, and the wording it carries is whatever the validator
+ * said that day -- often a bare rule ("must be a /abs/ URL") from before the refusals said what to
+ * paste instead. A link that passes the check now was refused by a verifier (a Drive file
+ * AdminBot cannot open, an arXiv id with no paper), and that stored reason is the one to show.
+ *
+ * Never echoes the value. Most of it would be harmless, but an Overleaf edit link grants write
+ * access to whoever holds it, and the label's promise is that a nudge carries no credential.
+ */
+function invalidSlotDetail(record: AdminBotPaperSlotRecord): string | undefined {
+  const definition = adminBotPaperSlotRegistry[record.slot];
+  const recheck =
+    definition.kind === "link" && record.url
+      ? validateAdminBotPaperSlotUrl(record.slot, record.url)
+      : undefined;
+  const reason = recheck && !recheck.ok ? recheck.reason : record.invalid_reason;
+  if (!reason) {
+    return undefined;
+  }
+  return `${definition.kind === "link" ? "the link saved here" : "what is saved here"} does not work: ${reason}`;
+}
 export function actionablePaperSlots(
   paper: AdminBotPaperRecord,
   stored: AdminBotPaperSlotRecord[],
@@ -499,18 +554,19 @@ export function actionablePaperSlots(
     if (![...definition.upstream, ...(definition.chaseAfter ?? [])].every(settled)) {
       continue;
     }
-    // Three sources for the line under the label, in the order they matter: a value the service
-    // refused, what the reviewer said, and nothing.
+    // Four sources for the line under the label, in the order they matter: a value the service
+    // refused, what the reviewer said, the slides' second half, and what a valid answer looks like.
+    const invalid = record.status === "invalid" ? invalidSlotDetail(record) : undefined;
     const detail =
-      record.status === "invalid" && record.invalid_reason
-        ? `the value on file was rejected: ${record.invalid_reason}`
-        : slot === "papermentor_review"
-          ? paperMentorReviewDetail(reviewState)
-          : slot === "fixes_merged"
-            ? paperMentorFixesDetail(papermentor.latest, now)
-            : slot === "slides"
-              ? SLIDES_DETAIL
-              : undefined;
+      invalid ??
+      (slot === "papermentor_review"
+        ? paperMentorReviewDetail(reviewState)
+        : slot === "fixes_merged"
+          ? paperMentorFixesDetail(papermentor.latest, now)
+          : slot === "slides"
+            ? SLIDES_DETAIL
+            : undefined) ??
+      NUDGE_HOW[slot];
     out.push({
       domain: "paper_slot",
       subjectId: adminBotPaperSlotSubjectId(paper.id, slot),
@@ -671,12 +727,140 @@ export function isCycleClosed(params: {
 
 type AdminBotConferenceAttendeeLike = { member_id?: string; attending: string };
 
+/** One thing already in on a paper, as the nudge's "Already in" line shows it. */
+export type NudgeDoneItem = {
+  /** Short, so a paper with fifteen things done still fits on a line. */
+  label: string;
+  /** Only for a link the reader can safely be handed back; see `paperSlotsAlreadyIn`. */
+  url?: string;
+};
+
+/** The "Already in" names. The registry labels are written for the card's rows and run long. */
+const DONE_LABEL: Partial<Record<AdminBotPaperSlot, string>> = {
+  project_folder: "project folder",
+  overleaf_view: "Overleaf read-only link",
+  overleaf_share: "Overleaf edit link",
+  papermentor_review: "PaperMentor review",
+  fixes_merged: "review fixes",
+  pdf_ready: "clean PDF",
+  submission: "submission page",
+  submission_id: "submission ID",
+  drive_pdf_arxiv: "Drive PDF",
+  authors_ack: "author list",
+  arxiv_paper_password: "arXiv password",
+  pi_approval: "PI approval",
+  arxiv: "arXiv",
+  x_draft: "X draft",
+  linkedin_draft: "LinkedIn draft",
+  coauthor_feedback: "coauthor feedback",
+  social_final: "final social copy",
+  x_post: "X post",
+  linkedin_post: "LinkedIn post",
+  slides: "slides",
+  poster: "poster",
+  talk_video: "talk video",
+};
+
+/**
+ * Advisory slots worth naming as done anyway. The read-only Overleaf link is the one people
+ * actually paste in channels, so leaving it off would make "Already in" look like it was missed.
+ */
+const DONE_ADVISORY: ReadonlySet<AdminBotPaperSlot> = new Set(["overleaf_view"]);
+
+/**
+ * Links that are named as done but never repeated. The Overleaf edit link grants write access to
+ * whoever holds it (see its hint in the registry), and a nudge is forwarded, pasted and read
+ * over shoulders far more freely than the paper record it came from.
+ */
+const DONE_NEVER_LINKED: ReadonlySet<AdminBotPaperSlot> = new Set([
+  "overleaf_share",
+  "overleaf_edit",
+]);
+
+/**
+ * What one paper already has, for the line that tells a person their work was seen.
+ *
+ * Read off the same rows as `paperSlotProgress` and with the same test, so the message and the
+ * card cannot disagree about what is done. `provided` only: a waiver is an admin saying it is not
+ * needed, which is not something the author did. No value is ever read -- only the URL of a link
+ * slot, and only for slots that are neither confidential nor in `DONE_NEVER_LINKED` -- so the
+ * password, feedback and impact text cannot reach the line however the filter above changes.
+ */
+export function paperSlotsAlreadyIn(
+  paperId: string,
+  stored: AdminBotPaperSlotRecord[],
+  drafts: AdminBotSocialDraftRecord[] = [],
+): NudgeDoneItem[] {
+  const out: NudgeDoneItem[] = [];
+  for (const row of paperSlotRows(paperId, stored, drafts)) {
+    const definition = adminBotPaperSlotRegistry[row.slot];
+    if (row.status !== "provided" || (!definition.required && !DONE_ADVISORY.has(row.slot))) {
+      continue;
+    }
+    const label = DONE_LABEL[row.slot] ?? definition.label;
+    const url =
+      definition.kind === "link" &&
+      !isConfidentialPaperSlot(row.slot) &&
+      !DONE_NEVER_LINKED.has(row.slot)
+        ? slackSafeUrl(row.url)
+        : undefined;
+    out.push(url ? { label, url } : { label });
+  }
+  return out;
+}
+
+/**
+ * A URL that can sit inside Slack's `<url|text>` without breaking it, or nothing.
+ *
+ * `|` and `>` end the link early and `<` opens a new one; whitespace is not a URL. A stored link
+ * was validated as https when it was saved, so this only ever drops something odd -- and a name
+ * without its link is a better line than a link that swallows the rest of the message.
+ */
+function slackSafeUrl(raw: string | undefined): string | undefined {
+  const value = raw?.trim();
+  if (!value || !value.startsWith("https://") || /[\s<>|]/u.test(value)) {
+    return undefined;
+  }
+  return value;
+}
+
+/** The project page's tab for each branch: ui/src/ui/adminbot/projects/model.ts `PROJECT_LANES`. */
+const PROJECT_LANE_SEGMENT: Record<AdminBotPaperSlotBranch, string> = {
+  core: "writing",
+  venue: "venue",
+  archive: "archival",
+  talk: "talk",
+  social: "social",
+};
+
+/**
+ * Where on the Control UI this paper's open items are: `/my-work/<paper>`, plus the lane when
+ * every item is a slot in one lane, so the link lands on the fields being asked about. Items in
+ * several lanes get the project page, which shows all of them; guessing one lane would hide the rest.
+ */
+export function paperNudgeUrl(params: {
+  controlUiUrl: string;
+  paperId: string;
+  items: readonly NudgeItem[];
+}): string {
+  const base = `${params.controlUiUrl.replace(/\/+$/u, "")}/my-work/${encodeURIComponent(params.paperId)}`;
+  // An item with no slot behind it (attendance, a reimbursement, a broken link) has no lane of
+  // its own, so it counts as "somewhere else" and the link stays on the whole project.
+  const lanes = new Set(params.items.map((item) => item.definition?.branch));
+  const [only] = lanes;
+  return lanes.size === 1 && only ? `${base}/${PROJECT_LANE_SEGMENT[only]}` : base;
+}
+
 /**
  * The message, composed from the items themselves.
  *
  * One person, one message, however many papers and however many kinds of thing they owe -- which
  * is the whole reason the cadence moved into a shared ledger. Grouped by paper so the reader can
  * see which of their three papers each line belongs to.
+ *
+ * Each paper says what is already in before what is still needed. A message that only lists gaps
+ * reads the same to somebody who did nothing and to somebody who did nine things out of ten, and
+ * the second person is the one it discourages.
  */
 export function buildNudgeMessage(params: {
   groups: Array<{
@@ -685,16 +869,39 @@ export function buildNudgeMessage(params: {
     deadline?: string;
     items: NudgeItem[];
     /**
-     * Replaces the "*title* still needs:" line for a group that is not a paper, e.g. the
-     * person's own time availability riding along in the same message.
+     * Replaces the "*title*" line for a group that is not a paper, e.g. the person's own time
+     * availability riding along in the same message.
      */
     heading?: string;
+    /** What this paper already has, from `paperSlotsAlreadyIn`. */
+    done?: NudgeDoneItem[];
+    /** This paper on the Control UI, from `paperNudgeUrl`. */
+    url?: string;
   }>;
   now: Date;
 }): string {
   const lines: string[] = [];
+  let linked = false;
   for (const group of params.groups) {
-    lines.push(group.heading ?? `*${group.title}* still needs:`);
+    if (group.heading) {
+      lines.push(group.heading);
+    } else {
+      const url = slackSafeUrl(group.url);
+      linked ||= Boolean(url);
+      if (!url && !group.done?.length) {
+        // Nothing to add, so the old one-line heading: no reason to spend two lines on it.
+        lines.push(`*${group.title}* still needs:`);
+      } else {
+        lines.push(url ? `*${group.title}* — <${url}|open it in AdminBot>` : `*${group.title}*`);
+        if (group.done?.length) {
+          const done = group.done.map((item) =>
+            item.url ? `<${item.url}|${item.label}>` : item.label,
+          );
+          lines.push(`Already in: ${done.join(", ")}`);
+        }
+        lines.push("Still needs:");
+      }
+    }
     for (const item of group.items) {
       lines.push(item.detail ? `• ${item.label} — ${item.detail}` : `• ${item.label}`);
     }
@@ -712,7 +919,11 @@ export function buildNudgeMessage(params: {
     }
     lines.push("");
   }
-  lines.push("Fill these in on My Projects & Papers in AdminBot.");
+  lines.push(
+    linked
+      ? "Each link opens that paper in AdminBot, where these are filled in. If something here is already done or does not apply, reply and say so."
+      : "Fill these in on My Projects & Papers in AdminBot.",
+  );
   return lines.join("\n");
 }
 

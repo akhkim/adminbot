@@ -28,7 +28,9 @@ import {
   isPaperClosed,
   isPaperDormant,
   missingAcceptanceDetails,
+  paperNudgeUrl,
   paperSlotProgress,
+  paperSlotsAlreadyIn,
   paperSlotRows,
   redactPaperSlots,
   resolveConsentAudience,
@@ -811,6 +813,132 @@ describe("the refusal reason travels with the nudge", () => {
     // The author should not have to open the card to find out what was wrong with what they
     // already typed.
     expect(message).toContain("that is not a URL");
+  });
+});
+
+describe("the nudge says what is wrong in words, not just that it is", () => {
+  it("re-checks a stored link so an old terse reason is replaced by the current one", () => {
+    const readOnly: AdminBotPaperSlotRecord = {
+      paper_id: "p1",
+      slot: "overleaf_share",
+      status: "invalid",
+      url: "https://www.overleaf.com/read/abcdefghijkl",
+      invalid_reason: "not an Overleaf share link",
+    };
+    const items = actionablePaperSlots(paper(), [...upTo("project_folder"), readOnly], NOW);
+    const detail = items.find((item) => item.slot === "overleaf_share")?.detail ?? "";
+    expect(detail).toContain("read-only link");
+    expect(detail).toContain("Share");
+    // The value is never repeated: an edit link is a credential, and so might the bad paste be.
+    expect(detail).not.toContain("abcdefghijkl");
+  });
+
+  it("says what a valid value looks like for a link on the wrong site", () => {
+    const result = validateAdminBotPaperSlotUrl("arxiv", "https://example.com/abs/2401.00001");
+    expect(result.ok).toBe(false);
+    expect(result.ok ? "" : result.reason).toMatch(/must be on .*arxiv\.org/u);
+  });
+
+  it("gives an empty slot a line on how to fill it", () => {
+    const items = actionablePaperSlots(paper(), [], NOW);
+    expect(items.find((item) => item.slot === "project_folder")?.detail).toBeTruthy();
+  });
+});
+
+describe("paperSlotsAlreadyIn", () => {
+  const folder: AdminBotPaperSlotRecord = {
+    paper_id: "p1",
+    slot: "project_folder",
+    status: "provided",
+    url: "https://drive.google.com/drive/folders/abc",
+  };
+  const share: AdminBotPaperSlotRecord = {
+    paper_id: "p1",
+    slot: "overleaf_share",
+    status: "provided",
+    url: "https://www.overleaf.com/1234567890abcdefghij",
+  };
+  const password: AdminBotPaperSlotRecord = {
+    paper_id: "p1",
+    slot: "arxiv_paper_password",
+    status: "provided",
+    value_text: "a1b2c3",
+  };
+
+  it("links what is safe to link and only names the rest", () => {
+    const done = paperSlotsAlreadyIn("p1", [folder, share, password]);
+    expect(done).toContainEqual({ label: "project folder", url: folder.url });
+    // The edit link grants write access; it is named, never repeated.
+    expect(done).toContainEqual({ label: "Overleaf edit link" });
+    expect(done).toContainEqual({ label: "arXiv password" });
+    expect(JSON.stringify(done)).not.toContain("1234567890abcdefghij");
+    expect(JSON.stringify(done)).not.toContain("a1b2c3");
+  });
+
+  it("leaves out waived and empty slots", () => {
+    const waived: AdminBotPaperSlotRecord = { paper_id: "p1", slot: "poster", status: "waived" };
+    expect(paperSlotsAlreadyIn("p1", [waived])).toEqual([]);
+  });
+
+  it("drops a link that would break Slack's markup but keeps the name", () => {
+    const odd = { ...folder, url: "https://drive.google.com/a|b" };
+    expect(paperSlotsAlreadyIn("p1", [odd])).toEqual([{ label: "project folder" }]);
+  });
+});
+
+describe("paperNudgeUrl", () => {
+  const base = "https://portal.test/";
+  it("lands on the lane when every item is in one", () => {
+    const items = actionablePaperSlots(paper({ id: "p 1" }), [], NOW).filter(
+      (item) => item.definition?.branch === "core",
+    );
+    expect(paperNudgeUrl({ controlUiUrl: base, paperId: "p 1", items })).toBe(
+      "https://portal.test/my-work/p%201/writing",
+    );
+  });
+
+  it("stays on the project when the items span lanes or have no slot", () => {
+    const items = [
+      ...actionablePaperSlots(paper(), [], NOW).slice(0, 1),
+      {
+        domain: "conference_attendance" as const,
+        subjectId: "p1:a",
+        owner: "first_author" as const,
+        label: "Confirm attendance",
+        priority: 1,
+        deadlineBearing: false,
+      },
+    ];
+    expect(paperNudgeUrl({ controlUiUrl: base, paperId: "p1", items })).toBe(
+      "https://portal.test/my-work/p1",
+    );
+  });
+});
+
+describe("buildNudgeMessage with what is already in", () => {
+  it("puts the done line and the paper link under the title, and drops the generic close", () => {
+    const message = buildNudgeMessage({
+      groups: [
+        {
+          title: "Causal abstraction",
+          url: "https://portal.test/my-work/p1",
+          done: [
+            { label: "project folder", url: "https://drive.google.com/x" },
+            { label: "Overleaf edit link" },
+          ],
+          items: actionablePaperSlots(paper(), upTo("overleaf_share"), NOW),
+        },
+      ],
+      now: NOW,
+    });
+    expect(message).toContain(
+      "*Causal abstraction* — <https://portal.test/my-work/p1|open it in AdminBot>",
+    );
+    expect(message).toContain(
+      "Already in: <https://drive.google.com/x|project folder>, Overleaf edit link",
+    );
+    expect(message).toContain("Still needs:");
+    expect(message).not.toContain("Fill these in on My Projects");
   });
 });
 

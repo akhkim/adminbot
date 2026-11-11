@@ -514,6 +514,9 @@ import {
   blankPaperSlot,
   boundSnooze,
   buildNudgeMessage,
+  paperNudgeUrl,
+  paperSlotsAlreadyIn,
+  type NudgeDoneItem,
   draftConsentState,
   isAdminBotPaperSlot,
   isConferenceBranchOpen,
@@ -1760,14 +1763,42 @@ export function buildDormantAccountMessage(): string {
   ].join("\n");
 }
 
+/**
+ * Where on the Control UI each member-facing notification tab lives, mirroring `TAB_PATHS` in
+ * ui/src/ui/navigation.ts for the tabs a reminder can point at. A tab missing here (onboarding,
+ * which has no page of its own) just goes without a link rather than guessing one.
+ */
+const NUDGE_TAB_PATHS: Record<string, string> = {
+  myWork: "/my-work",
+  profile: "/profile",
+  adminbotTimeAvailability: "/time-availability",
+  adminbotPaperMentor: "/papermentor",
+  adminbotCalendar: "/calendar",
+  adminbotMeetings: "/meetings",
+};
+
+/** The Control UI page a notification's tab names, or nothing for a tab without one. */
+export function nudgeTabUrl(controlUiUrl: string, tab: string | undefined): string | undefined {
+  const path = tab ? NUDGE_TAB_PATHS[tab] : undefined;
+  return path ? `${controlUiUrl.replace(/\/+$/u, "")}${path}` : undefined;
+}
+
 export function buildNudgeEscalationMessage(params: {
   memberName: string;
   professorName: string;
-  outstanding: readonly string[];
+  /** Each overdue reminder, with the page it is fixed on when there is one. */
+  outstanding: readonly (string | { title: string; url?: string })[];
   days: number;
 }): string {
   const first = params.memberName.trim().split(/\s+/u)[0] || params.memberName;
-  const list = params.outstanding.map((title) => `• ${title}`).join("\n");
+  const list = params.outstanding
+    .map((entry) => {
+      const { title, url } = typeof entry === "string" ? { title: entry, url: undefined } : entry;
+      // The link goes on its own words rather than over the title, so a title that happens to
+      // contain Slack markup cannot break it.
+      return url ? `• ${title} — <${url}|open it>` : `• ${title}`;
+    })
+    .join("\n");
   return [
     // Says where it has gone rather than pretending the professor is reading this thread. They are
     // not in the DM any more -- it is on their page -- and a message claiming an audience that is
@@ -10090,12 +10121,17 @@ export class AdminBotService {
 
   /** One person's batch as the message they would actually receive. */
   private composeNudgeMessage(groups: Map<string, NudgeGroup>, now: Date): string {
+    const controlUiUrl = resolveAdminBotControlUiUrl();
     return buildNudgeMessage({
       groups: [...groups.entries()].map(([title, group]) => ({
         title,
         ...(group.heading ? { heading: group.heading } : {}),
         ...(group.venue ? { venue: group.venue } : {}),
         ...(group.deadline ? { deadline: group.deadline } : {}),
+        ...(group.done?.length ? { done: group.done } : {}),
+        ...(group.paperId
+          ? { url: paperNudgeUrl({ controlUiUrl, paperId: group.paperId, items: group.items }) }
+          : {}),
         items: group.items.toSorted((left, right) => left.priority - right.priority),
       })),
       now,
@@ -10140,6 +10176,11 @@ export class AdminBotService {
         .map((entry) => entry.member_id),
     );
 
+    // Read once per paper, on the first item that actually goes out, so a paper nobody is due on
+    // costs nothing extra.
+    const doneByPaper = new Map<string, NudgeDoneItem[]>();
+    let paperDone: () => NudgeDoneItem[] = () => [];
+
     const enqueue = (
       memberId: string,
       paper: AdminBotPaperRecord,
@@ -10160,6 +10201,8 @@ export class AdminBotService {
       const group = forMember.get(paper.title) ?? {
         ...(paper.venue ? { venue: paper.venue } : {}),
         ...(paper.deadline ? { deadline: paper.deadline } : {}),
+        paperId: paper.id,
+        done: paperDone(),
         items: [],
       };
       group.items.push(item);
@@ -10174,6 +10217,14 @@ export class AdminBotService {
       }
       const stored = this.paperRows().listPaperSlots(paper.id);
       const drafts = this.paperRows().listSocialDrafts(paper.id);
+      paperDone = () => {
+        let done = doneByPaper.get(paper.id);
+        if (!done) {
+          done = paperSlotsAlreadyIn(paper.id, stored, drafts);
+          doneByPaper.set(paper.id, done);
+        }
+        return done;
+      };
 
       for (const item of actionablePaperSlots(
         paper,
@@ -10310,6 +10361,7 @@ export class AdminBotService {
           subjectId: "availability",
           owner: "first_author",
           label: "Add your time availability (hours per week, with dates) to your profile",
+          detail: `the lab plans talks and deadlines around it; add it on <${resolveAdminBotControlUiUrl()}/time-availability|Time availability>`,
           priority: adminBotPaperSlotBranchPriority.talk + 1,
           deadlineBearing: false,
         };
@@ -10382,6 +10434,9 @@ export class AdminBotService {
           important: true,
         },
         actor,
+        // Each paper in the message carries its own link to the page its gaps are filled in on,
+        // so the bare portal address under them would be a fourth link to a less useful place.
+        { appendPortalLink: false },
       );
       if (this.absorbNudgeSend(result, memberId, { created, skipped })) {
         delivered.add(memberId);
@@ -16998,6 +17053,7 @@ export class AdminBotService {
     const cutoff = now.getTime() - adminBotNudgeEscalateAfterDays * 24 * 60 * 60 * 1000;
     const escalated: Array<{ member_id: string; notification_id: string; title: string }> = [];
     const skipped: AdminBotMemberNudgeSkip[] = [];
+    const controlUiUrl = resolveAdminBotControlUiUrl();
 
     for (const member of this.store.listLabMembers()) {
       // The head professor does not chase themselves, and alumni are no longer the lab's to chase.
@@ -17032,7 +17088,10 @@ export class AdminBotService {
       const message = buildNudgeEscalationMessage({
         memberName: member.name,
         professorName: headProfessor.name,
-        outstanding: due.map((notification) => notification.title),
+        outstanding: due.map((notification) => {
+          const url = nudgeTabUrl(controlUiUrl, notification.tab);
+          return url ? { title: notification.title, url } : notification.title;
+        }),
         days: adminBotNudgeEscalateAfterDays,
       });
       // The member, and only the member. This used to open a three-way DM with the head professor
@@ -17762,7 +17821,16 @@ const PAPER_NUDGE_DOMAINS: ReadonlySet<AdminBotNudgeDomain> = new Set([
 ]);
 
 /** One paper's lines in a nudge, or a non-paper group (`heading` set) such as availability. */
-type NudgeGroup = { venue?: string; deadline?: string; items: NudgeItem[]; heading?: string };
+type NudgeGroup = {
+  venue?: string;
+  deadline?: string;
+  items: NudgeItem[];
+  heading?: string;
+  /** The paper the group is about, for its link on the Control UI. Absent on a heading group. */
+  paperId?: string;
+  /** What the paper already has, so the message says what was seen as well as what is missing. */
+  done?: NudgeDoneItem[];
+};
 
 /** Map key for the availability group. A paper title never starts with NUL, so it cannot collide. */
 const AVAILABILITY_NUDGE_GROUP = "\u0000availability";
@@ -18011,8 +18079,12 @@ function buildProfilePhotoGuidelineMessage(): string {
 // Built from the checklist definition rather than hardcoded per step, so the nudge text and the
 // dashboard warning card can never describe the task differently.
 function buildOnboardingNudgeMessage(step: AdminBotMemberOnboardingStep | undefined): string {
+  // The same words, now a link. This text is shared by everybody pending on the step (the
+  // reaction poller re-sends it verbatim), so it cannot say what one person has already done --
+  // but it can at least say where the checklist is.
+  const dashboard = `<${resolveAdminBotControlUiUrl()}/dashboard|AdminBot dashboard>`;
   if (!step) {
-    return "You have an outstanding lab onboarding step — see your AdminBot dashboard.";
+    return `You have an outstanding lab onboarding step — see your ${dashboard}.`;
   }
   const lines = [
     `Hey! 👋 If you haven't gotten to *${step.label}* yet, please take a minute to do it — it's part of your lab onboarding.`,
@@ -18035,7 +18107,7 @@ function buildOnboardingNudgeMessage(step: AdminBotMemberOnboardingStep | undefi
     "Already done? React to this message with ✅ and I'll record it. If not, do it now and react when you're done — thanks! 🙌",
   );
   lines.push(
-    "(Reactions are picked up automatically every few hours, so the confirmation isn't instant — don't worry, it will be recorded. You can also mark it complete on your AdminBot dashboard.)",
+    `(Reactions are picked up automatically every few hours, so the confirmation isn't instant — don't worry, it will be recorded. You can also mark it complete on your ${dashboard}.)`,
   );
   return lines.join("\n");
 }
