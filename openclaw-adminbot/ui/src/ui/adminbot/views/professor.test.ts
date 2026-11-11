@@ -670,16 +670,22 @@ describe("renderProfessorView", () => {
   });
 
   it("sinks a settled section below one that still has work in it", () => {
-    const { container } = draw({ profiles: [profile({ id: "a", missing_fields: ["office"] })] });
+    const { container } = draw({
+      papers: [
+        paper({ id: "d", artifacts: { overleaf_edit_url: "https://overleaf.com/project/1" } }),
+      ],
+      profiles: [profile({ id: "a", missing_fields: ["office"] })],
+    });
     const order = queueOrder(container);
     expect(order).toEqual([
-      "professor-adoption",
+      "professor-drafts",
       // The settled ones keep their relative order below it, the PI gate among them.
       "professor-pi-review",
       "professor-letters",
-      "professor-drafts",
-      // Pinned last, below even the settled ones. See the escalated-nudges block.
+      // Pinned at the foot, below even the settled ones: escalations, then adoption -- which is
+      // pinned even when it has people in it.
       "professor-escalated",
+      "professor-adoption",
     ]);
   });
 
@@ -751,12 +757,12 @@ describe("renderProfessorView", () => {
       expect(section?.textContent).toContain("Show 38 more");
     });
 
-    it("sits at the bottom even when somebody is waiting on her", () => {
+    it("sits at the foot, above adoption, even when somebody is waiting on her", () => {
       const { container } = draw({ escalated: [row()] });
       const order = queueOrder(container);
-      expect(order.at(-1)).toBe("professor-escalated");
-      // And it is genuinely last, not merely below the one section that has work in it: a pinned
-      // section outranks the settled sort rather than joining it.
+      // Pinned at the foot with adoption, which goes under it: a pinned section outranks the
+      // settled sort rather than joining it.
+      expect(order.slice(-2)).toEqual(["professor-escalated", "professor-adoption"]);
       expect(order).toHaveLength(5);
     });
 
@@ -768,9 +774,8 @@ describe("renderProfessorView", () => {
       const section = container.querySelector('[data-testid="professor-escalated"]');
       expect(section?.textContent).toContain("Nobody has ignored a nudge long enough");
       const order = queueOrder(container);
-      // Below the adoption columns, which do have somebody in them.
-      expect(order[0]).toBe("professor-adoption");
-      expect(order.at(-1)).toBe("professor-escalated");
+      // Still in its pinned place above adoption, which does have somebody in it.
+      expect(order.slice(-2)).toEqual(["professor-escalated", "professor-adoption"]);
     });
 
     it("sends her where she can write to them", () => {
@@ -1589,5 +1594,90 @@ describe("stale letters on the desk", () => {
       requests: [request({ id: "open", deadline_at: "2026-12-01T23:59:59-12:00" })],
     });
     expect(container.querySelector('[data-testid="professor-letters-history"]')).toBeNull();
+  });
+});
+
+describe("the desk's layout", () => {
+  it("leads with a strip that names only the queues with something in them", () => {
+    const { container } = draw({
+      piReview: [piReviewRow()],
+      profiles: [profile({ id: "a", missing_fields: ["office"] })],
+    });
+    const strip = container.querySelector('[data-testid="professor-summary"]');
+    const jumps = [...(strip?.querySelectorAll("button") ?? [])].map((node) =>
+      node.getAttribute("data-testid"),
+    );
+    // In page order, and the empty queues are left out rather than listed as zero.
+    expect(jumps).toEqual(["professor-jump-pi-review", "professor-jump-adoption"]);
+  });
+
+  it("says plainly when nothing is waiting", () => {
+    const { container } = draw();
+    const strip = container.querySelector('[data-testid="professor-summary"]');
+    expect(strip?.querySelector("button")).toBeNull();
+    expect(strip?.textContent).toContain("Nothing is waiting on you.");
+  });
+
+  it("jumps to the section a strip entry names", () => {
+    const { container } = draw({ piReview: [piReviewRow()] });
+    const target = container.querySelector<HTMLElement>('[data-section="pi-review"]');
+    const scrolled = vi.fn();
+    if (target) {
+      target.scrollIntoView = scrolled;
+    }
+    container.querySelector<HTMLButtonElement>('[data-testid="professor-jump-pi-review"]')?.click();
+    expect(scrolled).toHaveBeenCalledOnce();
+  });
+
+  it("folds the broadcast to one line showing what is live", () => {
+    const { container } = draw({
+      broadcast: {
+        id: "b",
+        availability: "away",
+        message: "In Zürich this week.",
+        updated_at: "2026-09-10T18:00:00.000Z",
+        expires_at: "2026-09-26T03:59:59.000Z",
+        updated_by: "zhijing",
+      },
+    });
+    const bar = container.querySelector<HTMLDetailsElement>('[data-testid="professor-broadcast"]');
+    expect(bar?.open).toBe(false);
+    expect(bar?.querySelector("summary")?.textContent).toContain("In Zürich this week.");
+    expect(bar?.querySelector("summary")?.textContent).toContain("2026-09-26");
+  });
+
+  it("opens the broadcast while an edit is unposted or a post has just reported back", () => {
+    const editing = draw({ broadcastDraft: "Back Monday." });
+    expect(
+      editing.container.querySelector<HTMLDetailsElement>('[data-testid="professor-broadcast"]')
+        ?.open,
+    ).toBe(true);
+    const reported = draw({ broadcastNotice: { kind: "success", text: "Posted." } });
+    expect(
+      reported.container.querySelector<HTMLDetailsElement>('[data-testid="professor-broadcast"]')
+        ?.open,
+    ).toBe(true);
+  });
+
+  it("opens a letter row's own request, not the top of the queue", () => {
+    const openedRequests: string[] = [];
+    const { container, opened } = draw({
+      requests: [request({ id: "req-7", deadline_at: "2026-12-01T23:59:59-12:00" })],
+      onOpenLetterRequest: (id) => openedRequests.push(id),
+    });
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="professor-letters"] .professor__row')
+      ?.click();
+    expect(openedRequests).toEqual(["req-7"]);
+    expect(opened).toEqual([]);
+  });
+
+  it("keeps the adoption columns folded until asked for", () => {
+    const { container } = draw({ profiles: [profile({ id: "a", missing_fields: ["office"] })] });
+    const fold = container.querySelector<HTMLDetailsElement>(
+      '[data-testid="professor-fold-adoption"]',
+    );
+    expect(fold?.open).toBe(false);
+    expect(fold?.querySelector('[data-testid="professor-adoption-profile"]')).not.toBeNull();
   });
 });

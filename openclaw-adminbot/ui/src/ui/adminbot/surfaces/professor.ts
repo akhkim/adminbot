@@ -6,7 +6,7 @@
 import { nothing } from "lit";
 import type { AppViewState } from "../../app-view-state.ts";
 import { createLazyView, notifyLazyViewHost, renderLazyView } from "../../lazy-view.ts";
-import { setDeskLetterSubmitted } from "../controllers/logistics.ts";
+import { openAdminBotLogisticsRequest, setDeskLetterSubmitted } from "../controllers/logistics.ts";
 import { saveAdminBotPaperSlot, setAdminBotPiReviewAck } from "../controllers/paper-slots.ts";
 import { profileOverviewQuery } from "../controllers/profile-overview-paging.ts";
 import { loadAdminBotProfileOverview } from "../controllers/profile-overview.ts";
@@ -41,6 +41,13 @@ export function renderProfessorSurface(state: AppViewState, scope: AdminBotSurfa
         );
       },
       onOpen: (tab) => state.setTab(tab),
+      // A letter row lands on that student's request, read in full, rather than the queue's top.
+      onOpenLetterRequest: (requestId) => {
+        state.adminBotLogisticsMode = "view";
+        state.adminBotLogisticsStatusNote = "";
+        void openAdminBotLogisticsRequest(state, requestId).finally(() => requestHostUpdate?.());
+        state.setTab("adminbotRecLetters");
+      },
       // The head professor reviews in place; anybody else goes to the project page.
       onOpenPaper: (paperId) => openPaperForViewer(state, paperId, requestHostUpdate),
       expanded: state.professorExpandedLists,
