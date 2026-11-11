@@ -574,8 +574,11 @@ import {
 } from "../workflows/papers/publication-list.js";
 import {
   emptyTalkMaterialsConfig,
+  resolveTalkMaterials,
   talkMaterialReminders,
+  withTalkSlidesDetail,
   type AdminBotTalkMaterialsConfig,
+  type AdminBotTalkMaterialsView,
 } from "../workflows/papers/talk-materials.js";
 import { PaperTableSnapshot, type PaperRowReader } from "./paper-table-snapshot.js";
 import {
@@ -7474,6 +7477,8 @@ export class AdminBotService {
     /** Absent until the paper is accepted with all four acceptance details in. */
     conference_key?: string;
     my_trip?: AdminBotConferenceTripRecord;
+    /** The mega deck and Quick Pointers links the slides field points at, for the first author. */
+    talk_materials: AdminBotTalkMaterialsView;
   }> {
     const paper = this.store.getPaper(paperId);
     if (!paper) {
@@ -7528,8 +7533,18 @@ export class AdminBotService {
         // for all three, so the second card opens already filled in.
         ...(tripKey ? { conference_key: tripKey } : {}),
         ...(myTrip ? { my_trip: myTrip } : {}),
+        talk_materials: this.talkMaterialsFor(this.resolvePaperSlotOwner(paper, "first_author")[0]),
       },
     };
+  }
+
+  /** The deck and Quick Pointers links for one author's research, with every fallback applied. */
+  private talkMaterialsFor(memberId: string | undefined): AdminBotTalkMaterialsView {
+    const member = memberId ? this.store.getLabMember(memberId) : undefined;
+    return resolveTalkMaterials(this.options.talkMaterials ?? emptyTalkMaterialsConfig, [
+      member?.research_branch,
+      ...(member?.research_topics ?? []),
+    ]);
   }
 
   /**
@@ -10269,20 +10284,29 @@ export class AdminBotService {
         this.paperMentorContext(paper, stored),
       )) {
         for (const memberId of this.resolvePaperSlotOwner(paper, item.owner)) {
-          enqueue(memberId, paper, item);
+          // The slides chase names the recipient's own topic deck rather than a generic one.
+          enqueue(
+            memberId,
+            paper,
+            item.slot === "slides"
+              ? withTalkSlidesDetail(item, this.talkMaterialsFor(memberId))
+              : item,
+          );
         }
       }
 
-      // Once the paper is out (or the slides are in): the topic mega deck and QuickPointers doc.
+      // Once the paper is out (or the slides are in): the topic mega deck and Quick Pointers doc.
       // Neither can be checked off, so each is said once and rides along with this paper's batch.
       const firstAuthors = this.resolvePaperSlotOwner(paper, "first_author");
       for (const memberId of firstAuthors) {
+        const member = this.store.getLabMember(memberId);
         for (const item of talkMaterialReminders({
           paper,
           stored,
           now,
           config: this.options.talkMaterials ?? emptyTalkMaterialsConfig,
-          researchBranch: this.store.getLabMember(memberId)?.research_branch,
+          researchBranch: member?.research_branch,
+          researchTopics: member?.research_topics,
         })) {
           enqueue(memberId, paper, item, { once: true });
         }

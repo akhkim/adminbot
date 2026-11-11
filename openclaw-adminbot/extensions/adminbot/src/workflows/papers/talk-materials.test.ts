@@ -1,12 +1,20 @@
 // The post-submission talk reminders, tested without a store. All links are synthetic.
 import { describe, expect, it } from "vitest";
 import type { AdminBotPaperRecord } from "../../contracts/actions.js";
-import type { AdminBotPaperSlot, AdminBotPaperSlotRecord } from "../../contracts/paper-slots.js";
+import {
+  ADMINBOT_QUICK_POINTERS_DOC_URL,
+  type AdminBotPaperSlot,
+  type AdminBotPaperSlotRecord,
+} from "../../contracts/paper-slots.js";
+import type { NudgeItem } from "./paper-slots.js";
 import {
   TALK_MATERIALS_WINDOW_DAYS,
   parseTalkMaterialsConfig,
+  resolveTalkMaterials,
   resolveTalkTopic,
   talkMaterialReminders,
+  talkSlidesDetail,
+  withTalkSlidesDetail,
 } from "./talk-materials.js";
 
 const NOW = new Date("2026-08-20T12:00:00.000Z");
@@ -77,6 +85,18 @@ describe("parseTalkMaterialsConfig", () => {
   it("lower-cases topic keys", () => {
     expect(Object.keys(CONFIG.topics).toSorted()).toEqual(["causality", "democracy"]);
   });
+
+  it("keeps aliases, the lab-wide Quick Pointers doc and the deck list", () => {
+    const config = parseTalkMaterialsConfig({
+      quickpointers_url: "https://docs.example.test/pointers",
+      decks_index_url: "http://docs.example.test/not-https",
+      topics: { causality: { aliases: ["Causal", " ", 7] } },
+    });
+    expect(config).toEqual({
+      quickpointers_url: "https://docs.example.test/pointers",
+      topics: { causality: { aliases: ["causal"] } },
+    });
+  });
 });
 
 describe("resolveTalkTopic", () => {
@@ -87,6 +107,68 @@ describe("resolveTalkTopic", () => {
     expect(resolveTalkTopic(CONFIG, undefined)?.key).toBe("causality");
     expect(resolveTalkTopic({ topics: {} }, "democracy")).toBeUndefined();
   });
+
+  it("matches aliases, and tries the research topics after the branch", () => {
+    const config = parseTalkMaterialsConfig({
+      topics: { causality: { aliases: ["causal"] }, democracy: {} },
+    });
+    expect(resolveTalkTopic(config, "Causal AI")?.key).toBe("causality");
+    expect(resolveTalkTopic(config, ["NLP", "AI for democracy"])?.key).toBe("democracy");
+    expect(resolveTalkTopic(config, ["NLP", undefined])).toBeUndefined();
+  });
+});
+
+describe("resolveTalkMaterials", () => {
+  it("names the topic's deck and falls back to the lab's Quick Pointers doc", () => {
+    const view = resolveTalkMaterials(
+      parseTalkMaterialsConfig({
+        topics: { causality: { mega_deck_url: "https://slides.example.test/c" } },
+      }),
+      "causality",
+    );
+    expect(view).toEqual({
+      topic_key: "causality",
+      topic_label: "causality",
+      mega_deck_url: "https://slides.example.test/c",
+      quickpointers_url: ADMINBOT_QUICK_POINTERS_DOC_URL,
+      decks_index_url: ADMINBOT_QUICK_POINTERS_DOC_URL,
+    });
+  });
+
+  it("points at the list of decks when no topic matches", () => {
+    const config = parseTalkMaterialsConfig({
+      quickpointers_url: "https://docs.example.test/pointers",
+      decks_index_url: "https://drive.example.test/decks",
+      topics: { causality: { mega_deck_url: "https://slides.example.test/c" } },
+    });
+    const view = resolveTalkMaterials(config, "robotics");
+    expect(view.mega_deck_url).toBeUndefined();
+    expect(view.decks_index_url).toBe("https://drive.example.test/decks");
+    expect(talkSlidesDetail(view)).toContain("<https://drive.example.test/decks|list of decks>");
+    expect(talkSlidesDetail(view)).toMatch(/never delete/u);
+  });
+});
+
+describe("withTalkSlidesDetail", () => {
+  const slides: NudgeItem = {
+    domain: "paper_slot",
+    subjectId: "p1:slides",
+    owner: "first_author",
+    label: "Talk slides",
+    detail: "generic",
+    priority: 1,
+    deadlineBearing: false,
+    slot: "slides",
+  };
+
+  it("names the author's own deck on the slides chase and leaves other items alone", () => {
+    const view = resolveTalkMaterials(CONFIG, "democracy");
+    expect(withTalkSlidesDetail(slides, view).detail).toContain(
+      "<https://slides.example.test/democracy-deck|democracy mega deck>",
+    );
+    const poster = { ...slides, slot: "poster" as const, subjectId: "p1:poster" };
+    expect(withTalkSlidesDetail(poster, view)).toBe(poster);
+  });
 });
 
 describe("talkMaterialReminders", () => {
@@ -96,10 +178,24 @@ describe("talkMaterialReminders", () => {
     );
   });
 
-  it("asks for the mega deck and QuickPointers once the first submission is in", () => {
-    const items = talkMaterialReminders({
+  it("asks for Quick Pointers once the first submission is in, and the deck once slides are", () => {
+    const submitted = talkMaterialReminders({
       paper: paper(),
       stored: [row("submission", "provided")],
+      now: NOW,
+      config: CONFIG,
+      researchBranch: "democracy",
+    });
+    // The slides chase names the deck until the slides are linked; one ask, not two.
+    expect(submitted.map((item) => item.subjectId)).toEqual(["p1:talk_quickpointers"]);
+    expect(submitted[0]?.label).toContain(
+      "<https://docs.example.test/democracy-pointers|Quick Pointers>",
+    );
+    expect(submitted[0]?.label).toContain("under democracy");
+
+    const items = talkMaterialReminders({
+      paper: paper(),
+      stored: [row("submission", "provided"), row("slides", "provided")],
       now: NOW,
       config: CONFIG,
       researchBranch: "democracy",
@@ -109,9 +205,10 @@ describe("talkMaterialReminders", () => {
       "p1:talk_quickpointers",
     ]);
     expect(items.every((item) => item.owner === "first_author")).toBe(true);
-    expect(items[0]?.label).toContain("https://slides.example.test/democracy-deck");
+    expect(items[0]?.label).toContain(
+      "<https://slides.example.test/democracy-deck|democracy mega deck>",
+    );
     expect(items[0]?.detail).toMatch(/never delete/u);
-    expect(items[1]?.label).toContain("https://docs.example.test/democracy-pointers");
   });
 
   it("also fires when the slides slot is filled", () => {
@@ -124,16 +221,16 @@ describe("talkMaterialReminders", () => {
     expect(items).toHaveLength(2);
   });
 
-  it("is worded without a link when none is configured, and never invents one", () => {
+  it("links the lab's Quick Pointers doc and the deck list when nothing is configured", () => {
     const items = talkMaterialReminders({
       paper: paper(),
-      stored: [row("submission", "provided")],
+      stored: [row("submission", "provided"), row("slides", "provided")],
       now: NOW,
       config: { topics: {} },
     });
-    expect(items.map((item) => item.label).join("\n")).not.toMatch(/https?:/u);
     expect(items[0]?.label).toContain("mega deck");
-    expect(items[1]?.label).toContain("QuickPointers");
+    expect(items[0]?.label).toContain(`<${ADMINBOT_QUICK_POINTERS_DOC_URL}|list of decks>`);
+    expect(items[1]?.label).toContain(`<${ADMINBOT_QUICK_POINTERS_DOC_URL}|Quick Pointers>`);
   });
 
   it("does not fire for an old submission, or for one the backfill waived", () => {

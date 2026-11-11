@@ -41,7 +41,7 @@ import {
 } from "../../../../../extensions/adminbot/src/contracts/paper-slots.js";
 import { icons } from "../../icons.ts";
 import "./internal-peer-review.ts";
-import type { PaperflowStageRow, PaperSlotRow } from "../api/papers.ts";
+import type { PaperflowStageRow, PaperSlotRow, PaperTalkMaterials } from "../api/papers.ts";
 import { loadStoredMemberSession } from "../auth/session.ts";
 import type { MemberOption } from "./member-select.ts";
 import { renderPaperCoauthors, type PaperAuthorLink } from "./paper-coauthors.ts";
@@ -108,6 +108,12 @@ export type PaperSlotsProps = {
    * draws the whole checklist with the people above it, as every other caller wants.
    */
   branch?: AdminBotPaperSlotBranch;
+  /**
+   * The first author's topic mega deck and the lab's Quick Pointers doc, resolved by the service.
+   * Drawn under the slides field so the "add to the deck" half of the ask has a link to click.
+   * Absent (an older service) leaves the field as the registry's generic hint describes it.
+   */
+  talkMaterials?: PaperTalkMaterials;
 };
 
 /** Plain-English states for the one enum slot. */
@@ -416,6 +422,38 @@ function renderChildSlot(props: PaperSlotsProps, slot: AdminBotPaperSlot) {
   `;
 }
 
+/**
+ * The other half of the slides ask: copy them into the topic's mega deck and list the paper in
+ * Quick Pointers. Add-only is spelled out because the PI builds every talk from these decks.
+ */
+function renderTalkMaterials(props: PaperSlotsProps, slot: AdminBotPaperSlot) {
+  const materials = props.talkMaterials;
+  if (slot !== "slides" || !materials) {
+    return nothing;
+  }
+  const deck = materials.megaDeckUrl
+    ? html`the
+        <a href=${materials.megaDeckUrl} target="_blank" rel="noopener noreferrer"
+          >${materials.topicLabel ? `${materials.topicLabel} ` : ""}mega deck</a
+        >`
+    : html`your topic's mega deck (<a
+          href=${materials.decksIndexUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          >list of decks</a
+        >)`;
+  return html`<p
+    class="paper-slot__note"
+    data-testid=${`paper-slot-talk-materials-${props.paperId}`}
+  >
+    Then add your slides to ${deck} -- add only, never delete or overwrite anyone else's -- and add
+    this paper to
+    <a href=${materials.quickpointersUrl} target="_blank" rel="noopener noreferrer"
+      >Quick Pointers</a
+    >${materials.topicLabel ? ` under ${materials.topicLabel}` : ""}.
+  </p>`;
+}
+
 function renderSlot(props: PaperSlotsProps, slot: AdminBotPaperSlot) {
   const definition = adminBotPaperSlotRegistry[slot];
   const row = rowFor(props.slots, slot);
@@ -465,7 +503,7 @@ function renderSlot(props: PaperSlotsProps, slot: AdminBotPaperSlot) {
       ${definition.groupLabel && definition.groupLabel !== definition.label
         ? html`<span class="paper-slot__sublabel">${definition.label}</span>`
         : nothing}
-      ${renderInput(props, slot, definition, row)}
+      ${renderInput(props, slot, definition, row)} ${renderTalkMaterials(props, slot)}
       <!-- "unblocks submission", the accepted host and path, and "Waiting on X" all used to sit
            here in small grey type under every field. Multiplied across the card it read as a
            dependency graph rather than a form, and it repeated what the card says by other means:

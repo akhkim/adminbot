@@ -24310,6 +24310,9 @@
                     },
                     "my_trip": {
                       "$ref": "#/components/schemas/AdminBotConferenceTripRecord"
+                    },
+                    "talk_materials": {
+                      "$ref": "#/components/schemas/AdminBotTalkMaterialsView"
                     }
                   },
                   "required": [
@@ -24322,7 +24325,8 @@
                     "paperflow_stages",
                     "weekly_updates",
                     "cycle_closed",
-                    "missing_acceptance_details"
+                    "missing_acceptance_details",
+                    "talk_materials"
                   ],
                   "additionalProperties": true
                 }
@@ -44171,6 +44175,31 @@
           "body",
           "created_at",
           "updated_at"
+        ],
+        "additionalProperties": true
+      },
+      "AdminBotTalkMaterialsView": {
+        "type": "object",
+        "properties": {
+          "topic_key": {
+            "type": "string"
+          },
+          "topic_label": {
+            "type": "string"
+          },
+          "mega_deck_url": {
+            "type": "string"
+          },
+          "quickpointers_url": {
+            "type": "string"
+          },
+          "decks_index_url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "quickpointers_url",
+          "decks_index_url"
         ],
         "additionalProperties": true
       },

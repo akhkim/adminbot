@@ -928,9 +928,33 @@ before the rule can still have its other fields saved, and admin writes are not 
 PaperMentor's own run or by the author) and no slides link is registered, the daily evidence
 reminder (`adminbot-paper-slot-nudges`) asks the first author for it. The ledger repeats it once a
 week per paper and per person, until the link is in. The line asks for two things: make the slides
-and link them on the card, and add them to the theme's overall deck. Each theme's section of the
-lab's Quick Pointers doc (`ADMINBOT_QUICK_POINTERS_DOC_URL` in `contracts/paper-slots.ts`) links
-that deck.
+and link them on the card, and add them to the topic's mega deck -- add only, never delete or
+overwrite anyone else's slides, because the PI builds each talk by copying a subset of that deck.
+Each theme's section of the lab's Quick Pointers doc (`ADMINBOT_QUICK_POINTERS_DOC_URL` in
+`contracts/paper-slots.ts`) links that deck.
+
+**Mega decks and Quick Pointers.** `ADMINBOT_TALK_MATERIALS_JSON` names each topic's mega deck so
+the ask links the right one instead of the doc that lists them all. Nothing here adds a message or
+a cadence: the deck rides on the slides line above and on the paper's existing batch.
+
+- The weekly slides line names the recipient's own deck, e.g. "add them to the causality mega
+  deck". The topic is matched against the first author's research branch, then their research
+  topics, by key, label or alias (case-insensitive, and a branch that mentions one counts), then
+  `default_topic`. With no match the line links `decks_index_url`, or Quick Pointers when that is
+  unset.
+- Once the first submission is in, the paper's batch carries a one-off "add this paper to the lab's
+  Quick Pointers doc under <topic>" line. Once the slides are linked, a one-off "add your talk
+  slides to the <topic> mega deck" line follows. Both are said once per paper (`once: true` in
+  the ledger) and only within 120 days of the event (`TALK_MATERIALS_WINDOW_DAYS`).
+- The paper card's slides field (`GET /papers/:id/slots`, `talk_materials`) shows the same deck and
+  Quick Pointers links, resolved for the first author.
+
+```bash
+ADMINBOT_TALK_MATERIALS_JSON='{"quickpointers_url":"https://docs.google.com/document/d/YOUR_QUICK_POINTERS_ID/edit","decks_index_url":"https://drive.google.com/drive/folders/YOUR_DECKS_FOLDER_ID","topics":{"causality":{"label":"causality","aliases":["causal"],"mega_deck_url":"https://docs.google.com/presentation/d/YOUR_CAUSALITY_DECK_ID/edit"},"democracy":{"label":"democracy","mega_deck_url":"https://docs.google.com/presentation/d/YOUR_DEMOCRACY_DECK_ID/edit"}}}'
+```
+
+`quickpointers_url` is lab-wide; a topic may carry its own. Only https links are kept. Unset or
+malformed, every link falls back to `ADMINBOT_QUICK_POINTERS_DOC_URL`.
 
 Three properties, and each of them is about not lying:
 

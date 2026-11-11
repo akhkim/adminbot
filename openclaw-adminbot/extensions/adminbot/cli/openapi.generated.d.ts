@@ -9114,6 +9114,15 @@ export interface components {
     } & {
       [key: string]: unknown;
     };
+    AdminBotTalkMaterialsView: {
+      topic_key?: string;
+      topic_label?: string;
+      mega_deck_url?: string;
+      quickpointers_url: string;
+      decks_index_url: string;
+    } & {
+      [key: string]: unknown;
+    };
     AdminBotPaperSlotInput: {
       url?: string;
       value_text?: string;
@@ -24682,6 +24691,7 @@ export interface operations {
             missing_acceptance_details: string[];
             conference_key?: string;
             my_trip?: components["schemas"]["AdminBotConferenceTripRecord"];
+            talk_materials: components["schemas"]["AdminBotTalkMaterialsView"];
           } & {
             [key: string]: unknown;
           };
