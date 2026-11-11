@@ -449,6 +449,40 @@ describe("Google credential failures", () => {
     expect(automationHealthIssues([failed, recovered], () => undefined, now)).toEqual([]);
   });
 
+  // One token can lack the Gmail scope while Calendar works, so a calendar success must not
+  // clear the mail alert -- only a later mail send can.
+  it("clears a mail credential failure only on a mail success", () => {
+    const now = new Date("2026-03-02T10:00:00.000Z");
+    const failed = event("execution.failed", "2026-03-02T09:00:00.000Z", {
+      action_type: "email.send",
+      error: "gog gmail send failed: insufficient authentication scopes",
+    });
+    const calendar = event("execution.executed", "2026-03-02T09:30:00.000Z", {
+      action_type: "calendar.create_event",
+    });
+    const mail = event("execution.executed", "2026-03-02T09:45:00.000Z", {
+      action_type: "email.send",
+    });
+    const googleIssues = (events: never[]) =>
+      automationHealthIssues(events, () => undefined, now).filter(
+        (issue) => issue.kind === "google_credentials",
+      );
+    expect(googleIssues([failed, calendar])).toEqual([
+      expect.objectContaining({ key: "google-credentials:credentials" }),
+    ]);
+    expect(googleIssues([failed, calendar, mail])).toEqual([]);
+
+    // A missing gog binary is cleared by any gog run: the binary is evidently there.
+    const missing = event("execution.failed", "2026-03-02T09:00:00.000Z", {
+      action_type: "email.send",
+      error: "gog: executable was not found in $PATH",
+    });
+    expect(googleIssues([missing])).toEqual([
+      expect.objectContaining({ key: "google-credentials:connector_missing" }),
+    ]);
+    expect(googleIssues([missing, calendar])).toEqual([]);
+  });
+
   it("does not read a Slack 401 or an ordinary send rejection as the Google token", () => {
     const now = new Date("2026-03-02T10:00:00.000Z");
     const issues = automationHealthIssues(
