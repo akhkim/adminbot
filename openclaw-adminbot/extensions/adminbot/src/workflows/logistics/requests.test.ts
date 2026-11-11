@@ -259,6 +259,32 @@ describe("prepareLogisticsRequest", () => {
     });
   });
 
+  it("asks for the year when a letter deadline is months in the past", () => {
+    const letters = (letter_deadline: string) =>
+      prepareLogisticsRequest(
+        {
+          kind: "recommendation_letters",
+          schools: [
+            {
+              school: "MIT",
+              letter_deadline,
+              letter_deadline_time: "17:00",
+              deadline_timezone: "America/New_York",
+            },
+          ],
+        },
+        identity,
+        NOW,
+      );
+    // NOW is 2026-08-19: last year's date is the classic wrong-year slip.
+    expect(letters("2025-12-01")).toEqual({
+      ok: false,
+      error: expect.stringMatching(/MIT is more than 90 days in the past\. Check the year\./u),
+    });
+    // A deadline that passed last week is late, not a typo, and still goes through.
+    expect(letters("2026-08-12").ok).toBe(true);
+  });
+
   it("reports why a request was refused rather than storing half of it", () => {
     const prepared = prepareLogisticsRequest({ kind: "book_meeting" }, identity, NOW);
     expect(prepared).toEqual({
