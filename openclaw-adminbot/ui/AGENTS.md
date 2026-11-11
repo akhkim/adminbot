@@ -2,6 +2,11 @@
 
 This directory owns Control UI-specific guidance that should not live in the repo root.
 
+## Design
+
+- Read `ui/DESIGN.md` before adding or restyling UI. The short version: no grey boxed cards;
+  group with whitespace and hairline dividers; one accent colour; transparent inputs.
+
 ## i18n Rules
 
 - Foreign-language locale bundles in `ui/src/i18n/locales/*.ts` are generated output.

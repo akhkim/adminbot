@@ -77,7 +77,7 @@ lane, which specific tests fail, and why. This is the summary.
   guarded at line 188 -- and `paper-grid.ts:26`'s unused `columnIndexOf` reads as a half-removed
   feature rather than a typing slip.
 - UI suite: 1 failure, `i18n/test/translate.test.ts > keeps shipped locales structurally aligned
-  with English`. Every shipped locale bundle sits at 2,233 keys against English's 2,313 — a uniform
+with English`. Every shipped locale bundle sits at 2,233 keys against English's 2,313 — a uniform
   80-key gap across all 18. Closing it means running the `ui:i18n:sync` translation pipeline over
   80 keys x 18 locales, so it is a product call, not a test fix. The missing keys fall back to
   English until it is run. Recent growth: +8 on 2026-09-14 (5 recommendation-letter status wording,
@@ -89,7 +89,7 @@ lane, which specific tests fail, and why. This is the summary.
   `tabs.adminbotTabUsage` and `subtitles.adminbotTabUsage`), +1 on 2026-10-02 for the PI-only
   sign-up queue (`adminbotRegistrations.piOnly`).
   (Measured 2026-09-14. The figures here read "1,567 against 2,009, a uniform 442-key gap" and
-  "2 failures" until then, and all of them had drifted: the locales *have* been regenerated since
+  "2 failures" until then, and all of them had drifted: the locales _have_ been regenerated since
   that was written, which is why the gap is 80 rather than 442. Count them rather than trusting
   this line -- flatten each bundle's keys and diff against `en.ts`.)
   `ui/src/ui/components/feedback-widget.test.ts` still flakes in roughly 1 run in 6; see
@@ -151,4 +151,5 @@ whole repo, so a broken tree ships wholesale.
   does.
 - Split files around ~700 lines when it improves clarity. Generated files say so in a header and
   name their generator.
+- UI follows `ui/DESIGN.md` (no grey boxed cards, whitespace and hairlines, one accent).
 - American spelling. "AdminBot" in prose, `adminbot` in code and paths.

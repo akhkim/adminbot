@@ -1117,11 +1117,21 @@
   color: var(--muted);
 }
 
-.ptl__lane--core { --lane: #6d66c2; }
-.ptl__lane--venue { --lane: #4e86ba; }
-.ptl__lane--archive { --lane: #93826a; }
-.ptl__lane--social { --lane: #5f8c6c; }
-.ptl__lane--talk { --lane: #b56f67; }
+.ptl__lane--core {
+  --lane: #6d66c2;
+}
+.ptl__lane--venue {
+  --lane: #4e86ba;
+}
+.ptl__lane--archive {
+  --lane: #93826a;
+}
+.ptl__lane--social {
+  --lane: #5f8c6c;
+}
+.ptl__lane--talk {
+  --lane: #b56f67;
+}
 
 .ptl__lane {
   display: flex;
