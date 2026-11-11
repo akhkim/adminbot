@@ -63,12 +63,15 @@ describe("the request queue's deadlines and controls", () => {
     const options = {
       ...DEFAULT_LOGISTICS_QUEUE_OPTIONS,
       search: "example UNIVERSITY",
-      kind: "recommendation_letters" as const,
       status: "completed" as const,
     };
-    expect(selectLogisticsQueue([aoe, done, missing], options, false).map((r) => r.id)).toEqual([
-      "Bo",
-    ]);
+    expect(
+      selectLogisticsQueue([aoe, done, missing], options, false, "recommendation_letters").map(
+        (r) => r.id,
+      ),
+    ).toEqual(["Bo"]);
+    // The tab's kind is the type filter: a letters tab never lists another kind's row.
+    expect(selectLogisticsQueue([aoe, done], options, false, "book_meeting")).toEqual([]);
     expect(selectLogisticsQueue([aoe, done], { ...options, search: " nobody " }, true)).toEqual([]);
     expect(
       selectLogisticsQueue(
@@ -120,12 +123,12 @@ describe("the request queue's deadlines and controls", () => {
       logisticsQueueQueryFor(
         {
           search: "  MIT ",
-          kind: "book_meeting",
           status: "completed",
           sortBy: "user",
           sortDirection: "desc",
         },
         false,
+        "book_meeting",
       ),
     ).toEqual({ status: "completed", kind: "book_meeting", q: "MIT", sort: "user", dir: "desc" });
   });

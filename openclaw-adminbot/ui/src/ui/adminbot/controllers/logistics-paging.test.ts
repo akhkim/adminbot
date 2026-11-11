@@ -4,10 +4,15 @@ import { createStorageMock } from "../../../test-helpers/storage.ts";
 import type { UiSettings } from "../../storage.ts";
 import type { LogisticsRequest } from "../api/logistics.ts";
 import { saveStoredMemberSession } from "../auth/session.ts";
+import { DEFAULT_LOGISTICS_QUEUE_OPTIONS } from "../data/logistics-queue.ts";
 import { EMPTY_PAGED_LIST } from "../load-more.ts";
 import { resetAdminBotOfflineMemory } from "../offline/outbox.ts";
+import {
+  loadAdminBotDeskLetters,
+  readAdminBotLogisticsLists,
+  type LogisticsReadHost,
+} from "./logistics-paging.ts";
 import type { AdminBotLogisticsHost } from "./logistics.ts";
-import { loadAdminBotDeskLetters } from "./logistics-paging.ts";
 
 function letter(id: string): LogisticsRequest {
   return {
@@ -110,5 +115,44 @@ describe("My Desk letters", () => {
     expect(host.adminBotDeskLetters.loading).toBe(false);
     // Not re-asked on every render while the service is down.
     expect(host.adminBotDeskLetters.loadedAt).not.toBeNull();
+  });
+});
+
+describe("the admin queue on each Requests tab", () => {
+  beforeEach(async () => {
+    await resetAdminBotOfflineMemory();
+    vi.stubGlobal("localStorage", createStorageMock());
+    saveStoredMemberSession({ sessionToken: "tok", expiresAt: "later" });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("asks for the tab's own kind, and asks again on moving to another tab", async () => {
+    const asked: (string | null)[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      asked.push(new URL(String(input)).searchParams.get("kind"));
+      return json({ requests: [] });
+    });
+    const host: LogisticsReadHost = {
+      ...createHost(),
+      tab: "adminbotRecLetters",
+      adminBotLogisticsMode: "view",
+      adminBotLogisticsQueueOptions: DEFAULT_LOGISTICS_QUEUE_OPTIONS,
+      adminBotLogisticsShowSettled: false,
+      adminBotLogisticsRequestsLoadedAt: null,
+    };
+    const read = async () => {
+      readAdminBotLogisticsLists(host, { isAdmin: true, hasMemberSession: true }, undefined);
+      await vi.waitFor(() => expect(host.adminBotLogisticsRequestsLoading).toBe(false));
+    };
+    await read();
+    await read();
+    expect(asked).toEqual(["recommendation_letters"]);
+    host.tab = "adminbotMeetingRequests";
+    await read();
+    expect(asked).toEqual(["recommendation_letters", "book_meeting"]);
   });
 });

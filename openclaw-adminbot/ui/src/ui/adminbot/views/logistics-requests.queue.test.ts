@@ -1,7 +1,11 @@
 // The admin queue: what each row shows, and the two things an admin does from it.
 import { render } from "lit";
 import { describe, expect, it } from "vitest";
-import type { LogisticsRequest, LogisticsRequestStatus } from "../api/logistics.ts";
+import type {
+  LogisticsRequest,
+  LogisticsRequestKind,
+  LogisticsRequestStatus,
+} from "../api/logistics.ts";
 import {
   DEFAULT_LOGISTICS_QUEUE_OPTIONS,
   type LogisticsQueueOptions,
@@ -10,6 +14,8 @@ import type { LoadMoreProps } from "../load-more.ts";
 import { renderAdminBotLogisticsQueue } from "./logistics-requests.queue.ts";
 
 type DrawOptions = {
+  /** The tab's kind; defaults to the first row's, so a one-kind test lists its own rows. */
+  kind?: LogisticsRequestKind;
   options?: Partial<LogisticsQueueOptions>;
   requests?: LogisticsRequest[];
   loading?: boolean;
@@ -31,6 +37,7 @@ function draw(options: DrawOptions = {}) {
   document.body.append(container);
   render(
     renderAdminBotLogisticsQueue({
+      kind: options.kind ?? options.requests?.[0]?.kind ?? "document_signature",
       options: { ...DEFAULT_LOGISTICS_QUEUE_OPTIONS, ...options.options },
       onOptionsChange: (patch) => optionChanges.push(patch),
       requests: options.requests ?? [],
@@ -293,13 +300,21 @@ it("offers accessible sorting and filter controls while keeping the three remove
   const filters = drawn.container.querySelectorAll<HTMLSelectElement>(
     ".logistics-queue__filters select",
   );
-  filters[0].value = "recommendation_letters";
+  // Status is the only picker: the tab already says which kind of request this is.
+  expect(filters).toHaveLength(1);
+  filters[0].value = "completed";
   filters[0].dispatchEvent(new Event("change", { bubbles: true }));
-  expect(drawn.optionChanges.pop()).toEqual({ kind: "recommendation_letters" });
-  filters[1].value = "completed";
-  filters[1].dispatchEvent(new Event("change", { bubbles: true }));
   expect(drawn.optionChanges.pop()).toEqual({ status: "completed" });
   expect(drawn.settledToggles).toEqual([]);
+});
+
+it("lists only the tab's own kind, so a meeting request never shows on the letters page", () => {
+  const meeting = request({ id: "meet", kind: "book_meeting", status: "submitted" });
+  const letter = request({ id: "letter", kind: "recommendation_letters", status: "submitted" });
+  const drawn = draw({ kind: "recommendation_letters", requests: [meeting, letter] });
+  const rows = drawn.container.querySelectorAll(".logistics-queue__row");
+  expect(rows).toHaveLength(1);
+  expect(rows[0]?.textContent).toContain("To submit");
 });
 
 it("distinguishes no filter matches from an empty queue", () => {

@@ -8,7 +8,11 @@
 // writes are returning the signed file and answering, and both belong to the lab.
 import { html, nothing } from "lit";
 import { t } from "../../../i18n/index.ts";
-import type { LogisticsRequest, LogisticsRequestStatus } from "../api/logistics.ts";
+import type {
+  LogisticsRequest,
+  LogisticsRequestKind,
+  LogisticsRequestStatus,
+} from "../api/logistics.ts";
 import type { RecLetterEligibilitySummary } from "../api/rec-letter-eligibility.ts";
 import {
   logisticsDeadlineText,
@@ -21,6 +25,8 @@ import { logisticsStatusLabel } from "./logistics-status.ts";
 import { renderRecLetterBadge } from "./rec-letter-eligibility.ts";
 
 export type AdminBotLogisticsQueueProps = {
+  /** The one kind of request this tab lists; rows of other kinds belong to the other tabs. */
+  kind: LogisticsRequestKind;
   requests: LogisticsRequest[];
   options: LogisticsQueueOptions;
   onOptionsChange: (patch: Partial<LogisticsQueueOptions>) => void;
@@ -183,24 +189,6 @@ function renderFilters(props: AdminBotLogisticsQueueProps) {
       />
     </label>
     <label class="adminbot-form adminbot-form__field">
-      <span>${t("logistics.requests.type")}</span>
-      <select
-        aria-label=${t("logistics.requests.type")}
-        .value=${props.options.kind}
-        @change=${(event: Event) =>
-          props.onOptionsChange({
-            kind: (event.currentTarget as HTMLSelectElement).value as LogisticsQueueOptions["kind"],
-          })}
-      >
-        <option value="all">${t("logistics.queue.allTypes")}</option>
-        <option value="document_signature">${t("logistics.templates.documentSignature")}</option>
-        <option value="recommendation_letters">
-          ${t("logistics.templates.recommendationLetters")}
-        </option>
-        <option value="book_meeting">${t("logistics.templates.bookMeeting")}</option>
-      </select>
-    </label>
-    <label class="adminbot-form adminbot-form__field">
       <span>${t("logistics.requests.statusColumn")}</span>
       <select
         aria-label=${t("logistics.requests.statusColumn")}
@@ -223,11 +211,8 @@ function renderFilters(props: AdminBotLogisticsQueueProps) {
 }
 
 export function renderAdminBotLogisticsQueue(props: AdminBotLogisticsQueueProps) {
-  const rows = selectLogisticsQueue(props.requests, props.options, props.showSettled);
-  const filtered =
-    Boolean(props.options.search.trim()) ||
-    props.options.kind !== "all" ||
-    props.options.status !== "all";
+  const rows = selectLogisticsQueue(props.requests, props.options, props.showSettled, props.kind);
+  const filtered = Boolean(props.options.search.trim()) || props.options.status !== "all";
   return html`
     <div
       class="card adminbot-card adminbot-card--wide logistics-queue"

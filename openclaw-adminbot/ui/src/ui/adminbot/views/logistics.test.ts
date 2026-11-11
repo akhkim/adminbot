@@ -179,6 +179,7 @@ function draw(options: DrawOptions = {}): Drawn {
       mode: options.mode ?? "make",
       onModeChange: (next) => modeChanges.push(next),
       queue: {
+        kind: options.requests?.[0]?.kind ?? "document_signature",
         options: { ...DEFAULT_LOGISTICS_QUEUE_OPTIONS },
         onOptionsChange: () => {},
         requests: options.requests ?? [],
