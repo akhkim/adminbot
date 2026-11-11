@@ -53,10 +53,11 @@
 
 .rec-eligibility {
   margin: var(--space-3) 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: var(--space-3) var(--space-4);
-  background: var(--bg-muted);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  padding: var(--space-3) 0;
+  background: transparent;
 }
 
 .rec-eligibility p {

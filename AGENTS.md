@@ -11,7 +11,9 @@ deployment scripts, and a sanitized setup template.
 - Before changing anything under `openclaw-adminbot/`, read
   `openclaw-adminbot/AGENTS.md` in full and then the nearest more-specific `AGENTS.md` files.
 - In particular, `openclaw-adminbot/extensions/AGENTS.md` governs the AdminBot plugin and
-  `openclaw-adminbot/ui/AGENTS.md` governs Control UI changes.
+  `openclaw-adminbot/ui/AGENTS.md` governs Control UI changes, and
+  `openclaw-adminbot/ui/DESIGN.md` is the visual design guide (no grey boxed cards) for every
+  UI change.
 - The nested OpenClaw guides contain detailed upstream architecture, style, testing, docs, and
   review rules. Do not duplicate or bypass them here.
 - If instructions conflict, preserve the security and privacy invariants in this file and follow

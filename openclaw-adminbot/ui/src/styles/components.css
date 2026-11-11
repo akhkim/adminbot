@@ -772,9 +772,10 @@
   justify-content: space-between;
   gap: var(--space-4);
   padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--card);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
 }
 
 .adminbot-toolbar__copy {
@@ -843,9 +844,10 @@
 .adminbot-metric {
   min-width: 0;
   padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--card);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
 }
 
 .adminbot-metric__label {
@@ -3225,17 +3227,19 @@ details[open] > .projects-nav__toggle::after {
    Cards - Refined with depth
    =========================================== */
 
+/* A card is a section of the page, not a box. No fill and no frame: sections are told apart by
+   whitespace and a hairline between them, which reads lighter and keeps the page from turning into
+   a stack of grey rectangles (docs/design.md, "No grey boxes"). */
 .card {
-  border: 1px solid var(--border);
-  background: var(--card);
-  border-radius: var(--radius-lg);
-  padding: var(--space-4);
+  border: 0;
+  background: transparent;
+  border-radius: 0;
+  padding: var(--space-5) 0;
   animation: rise var(--duration-slow) var(--ease-out) backwards;
-  transition: border-color var(--duration-normal) var(--ease-out);
 }
 
-.card:hover {
-  border-color: var(--border-strong);
+.card + .card {
+  border-top: 1px solid var(--border);
 }
 
 .card-title {
@@ -3269,10 +3273,11 @@ details[open] > .projects-nav__toggle::after {
    =========================================== */
 
 .stat {
-  background: var(--card);
-  border-radius: var(--radius-md);
+  background: transparent;
+  border-radius: 0;
   padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--border);
+  border: 0;
+  border-bottom: 1px solid var(--border);
   transition: border-color var(--duration-normal) var(--ease-out);
 }
 
@@ -3350,10 +3355,11 @@ details[open] > .projects-nav__toggle::after {
 }
 
 .account-card {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
   padding: 12px;
-  background: var(--bg-elevated);
+  background: transparent;
   transition: border-color var(--duration-fast) ease;
 }
 
@@ -3966,7 +3972,7 @@ details[open] > .projects-nav__toggle::after {
 .field textarea,
 .field select {
   border: 1px solid var(--input);
-  background: var(--bg-accent);
+  background: transparent;
   color: var(--text);
   border-radius: var(--radius-md);
   height: var(--control-h-md);
@@ -4202,10 +4208,11 @@ details[open] > .projects-nav__toggle::after {
 }
 
 .cron-form-section {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
   padding: 14px;
-  background: var(--bg-elevated);
+  background: transparent;
   display: grid;
   gap: 12px;
 }
@@ -5471,13 +5478,15 @@ details[open] > .projects-nav__toggle::after {
   grid-template-columns: minmax(0, 1fr) minmax(200px, 260px);
   gap: 16px;
   align-items: start;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
   padding: var(--space-3);
-  background: var(--card);
+  background: transparent;
   transition:
     border-color var(--duration-fast) var(--ease-out),
     background var(--duration-fast) var(--ease-out);
+  padding-inline: 0;
 }
 
 .list-item-clickable {
@@ -9310,9 +9319,10 @@ td.data-table-key-col {
   display: grid;
   gap: 6px;
   padding: 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--card);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
   cursor: pointer;
   text-align: left;
   transition:
@@ -11935,9 +11945,10 @@ select.input:focus {
   display: grid;
   gap: var(--space-3);
   padding: var(--space-4);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--bg-elevated);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
 }
 
 .adminbot-cv__panel-head {
@@ -12014,9 +12025,11 @@ select.input:focus {
   flex-direction: column;
   gap: var(--space-2);
   padding: var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--bg-muted);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  padding-inline: 0;
 }
 
 .adminbot-member-request__note {

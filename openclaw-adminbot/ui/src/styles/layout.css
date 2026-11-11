@@ -1616,9 +1616,10 @@
 
 .getting-started__progress {
   padding: var(--space-5) var(--space-6);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-xl);
-  background: var(--bg-elevated);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
 }
 
 .getting-started__progress-row {
@@ -1890,10 +1891,12 @@
   justify-content: space-between;
   gap: var(--space-6);
   padding: var(--space-5) var(--space-6);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-xl);
-  background: var(--bg-elevated);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
   transition: border-color var(--duration-fast) var(--ease-out);
+  padding-inline: 0;
 }
 
 .dashboard-card:hover {
@@ -2013,9 +2016,11 @@
   gap: var(--space-2);
   height: 100%;
   padding: var(--space-5) var(--space-6);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-xl);
-  background: var(--bg-elevated);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  padding-inline: 0;
 }
 
 /* The card spans every column of the dashboard grid. That grid is
@@ -3437,9 +3442,10 @@
   flex-wrap: wrap;
   gap: var(--space-5);
   padding: var(--space-6);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-xl);
-  background: var(--bg-elevated);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
 }
 
 .profile__avatar {
@@ -4092,9 +4098,10 @@
 
 .profile__section {
   padding: var(--space-6);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-xl);
-  background: var(--bg-elevated);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
 }
 
 /* Top of the card's type hierarchy: section title, then group title, then field label, then the
@@ -5117,10 +5124,12 @@
   align-items: flex-start;
   gap: var(--space-3);
   padding: var(--space-4) var(--space-5);
-  border: 1px solid var(--border-strong);
+  border: 0;
+  border-bottom: 1px solid var(--border);
   border-left: 2px solid var(--warn);
-  border-radius: var(--radius-lg);
-  background: var(--bg-elevated);
+  border-radius: 0;
+  background: transparent;
+  padding-inline: 0;
 }
 
 .my-work-blocker__icon {
@@ -5775,9 +5784,10 @@ adminbot-deadlines-view {
 .deadline-proposal {
   margin-bottom: var(--space-5);
   padding: var(--space-5);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-xl);
-  background: var(--card);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
 }
 
 .deadline-proposal--drawer {
@@ -5927,9 +5937,11 @@ adminbot-deadlines-view {
 
 .deadline-proposal-row {
   padding: var(--space-4);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-md);
-  background: var(--bg-elevated);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  padding-inline: 0;
 }
 
 .deadline-proposal-row p {
@@ -6498,9 +6510,11 @@ adminbot-deadline-timezone {
   min-width: 0;
   padding: var(--space-4);
   overflow: hidden;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-xl);
-  background: var(--card);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  padding-inline: 0;
 }
 
 .deadline-card__topline {

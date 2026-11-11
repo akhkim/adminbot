@@ -744,9 +744,10 @@ details.usage-filter-select summary::-webkit-details-marker,
   align-content: start;
   min-height: 148px;
   padding: 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--card);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
   transition: border-color var(--duration-fast) var(--ease-out);
 }
 

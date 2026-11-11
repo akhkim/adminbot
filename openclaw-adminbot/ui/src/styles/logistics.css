@@ -897,7 +897,7 @@
   z-index: 1;
   border-bottom: 1px solid var(--border-strong);
   padding: var(--space-2) var(--space-3);
-  background: var(--card);
+  background: transparent;
   color: var(--muted-strong);
   font-weight: 600;
   text-align: left;
@@ -1426,14 +1426,16 @@
 .professor {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: 0;
 }
 
+/* Sections, not boxes: a hairline above each one after the first and room around it. */
 .professor__section {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--card);
-  padding: var(--space-4);
+  padding: var(--space-5) 0;
+}
+
+.professor__section + .professor__section {
+  border-top: 1px solid var(--border);
 }
 
 .professor__head {
@@ -1633,7 +1635,8 @@
 /* The broadcast composer. Carries the accent edge the dashboard banner does, so the box she types
    into and the strip the lab reads are visibly the same object seen from both ends. */
 .professor__broadcast {
-  border-inline-start: 3px solid var(--accent, currentColor);
+  border-inline-start: 2px solid var(--accent, currentColor);
+  padding-inline-start: var(--space-4);
 }
 
 .professor__broadcast-box {
@@ -1646,7 +1649,7 @@
   padding: var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  background: var(--bg);
+  background: transparent;
   color: inherit;
 }
 
@@ -2023,10 +2026,7 @@ adminbot-offline-access {
 }
 
 adminbot-offline-access details {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  /* The summary is a 44px fold row, so the box needs little padding of its own above and below. */
-  padding: var(--space-1) var(--space-4);
+  border-bottom: 1px solid var(--border);
 }
 
 adminbot-offline-access summary {
@@ -2144,10 +2144,12 @@ adminbot-offline-access .btn {
   position: relative;
   padding: var(--space-4);
   padding-right: calc(var(--space-4) + 2rem);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--bg-elevated);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
   transition: border-color var(--duration-fast) var(--ease-out);
+  padding-inline: 0;
 }
 
 .logistics-letters__item:focus-within {
@@ -2316,10 +2318,8 @@ adminbot-offline-access .btn {
   align-items: flex-start;
   gap: var(--space-3);
   margin-top: var(--space-6);
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--bg-muted);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--border);
   cursor: pointer;
   font-size: var(--control-ui-text-sm);
   line-height: 1.5;

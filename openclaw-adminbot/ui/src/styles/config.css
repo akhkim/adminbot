@@ -490,9 +490,10 @@
 }
 
 .settings-appearance__section {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--bg-elevated);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
   padding: 18px;
   display: grid;
   gap: 14px;
