@@ -19146,6 +19146,7 @@
                               "workshop_nudge",
                               "pi_review",
                               "rec_letter_reminder",
+                              "professor_digest",
                               "email_review",
                               "automation_health"
                             ]
@@ -19384,6 +19385,50 @@
                     "members"
                   ],
                   "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/nudges/professor-digest/run": {
+      "post": {
+        "operationId": "post-nudges-professor-digest-run",
+        "summary": "POST /nudges/professor-digest/run",
+        "tags": [
+          "nudges"
+        ],
+        "x-source": "src/api/routes/nudges.ts",
+        "parameters": [
+          {
+            "name": "dry_run",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Successful service result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfessorDigestSweepResult"
                 }
               }
             }
@@ -20205,6 +20250,7 @@
                         "join_form.classify",
                         "logistics.send_signed_document",
                         "logistics.rec_letter_reminder",
+                        "professor.escalation_digest",
                         "email_review.resolve",
                         "member_nudge.send",
                         "member_nudge.escalate",
@@ -28166,6 +28212,7 @@
                         "workshop_nudge",
                         "pi_review",
                         "rec_letter_reminder",
+                        "professor_digest",
                         "email_review",
                         "automation_health"
                       ]
@@ -28589,6 +28636,7 @@
                       "join_form.classify",
                       "logistics.send_signed_document",
                       "logistics.rec_letter_reminder",
+                      "professor.escalation_digest",
                       "email_review.resolve",
                       "member_nudge.send",
                       "member_nudge.escalate",
@@ -32197,6 +32245,7 @@
               "join_form.classify",
               "logistics.send_signed_document",
               "logistics.rec_letter_reminder",
+              "professor.escalation_digest",
               "email_review.resolve",
               "member_nudge.send",
               "member_nudge.escalate",
@@ -32441,6 +32490,7 @@
               "rec_letter_channel.swept",
               "reference_check.pdf_checked",
               "rec_letter_reminders.swept",
+              "professor_digest.swept",
               "papermentor.run_recorded",
               "papermentor.review_requested",
               "papermentor.project_linked",
@@ -41368,6 +41418,50 @@
         ],
         "additionalProperties": true
       },
+      "ProfessorDigestSweepResult": {
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "sent",
+              "preview",
+              "disabled",
+              "before_send_hour",
+              "already_sent_today",
+              "nothing_due"
+            ]
+          },
+          "local_date": {
+            "type": "string"
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "recipient": {
+            "type": "string"
+          },
+          "counts": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "subject": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "proposal_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "outcome",
+          "local_date",
+          "timezone"
+        ],
+        "additionalProperties": true
+      },
       "AdminBotMemberNudgeRequest": {
         "type": "object",
         "properties": {
@@ -44724,6 +44818,7 @@
               "join_form.classify",
               "logistics.send_signed_document",
               "logistics.rec_letter_reminder",
+              "professor.escalation_digest",
               "email_review.resolve",
               "member_nudge.send",
               "member_nudge.escalate",
@@ -44860,6 +44955,7 @@
               "join_form.classify",
               "logistics.send_signed_document",
               "logistics.rec_letter_reminder",
+              "professor.escalation_digest",
               "email_review.resolve",
               "member_nudge.send",
               "member_nudge.escalate",

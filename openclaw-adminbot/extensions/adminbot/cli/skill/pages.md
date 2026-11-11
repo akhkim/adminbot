@@ -163,6 +163,7 @@ Website: `/members` · Who: member (edits: admin)
 | `post-members-thesis-milestones-run`         | POST `/members/thesis-milestones/run`                   |
 | `post-members-topic-channels-run`            | POST `/members/topic-channels/run`                      |
 | `post-nudges-escalate-run`                   | POST `/nudges/escalate/run`                             |
+| `post-nudges-professor-digest-run`           | POST `/nudges/professor-digest/run` (dry-run)           |
 | `post-nudges-send`                           | POST `/nudges/send`                                     |
 | `post-nudges-slack-stop`                     | POST `/nudges/slack-stop`                               |
 | `post-nudges-snooze`                         | POST `/nudges/snooze`                                   |

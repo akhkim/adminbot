@@ -179,6 +179,10 @@ export const adminBotNudgeDomains = [
   // announcement about a date, not a request repeated until somebody answers, and the `subject_id`
   // carries the deadline so a school date that moves re-arms it against the new one.
   "rec_letter_reminder",
+  // The head professor's daily escalation digest. One `sent` row is the once-a-day gate; one row
+  // per item counts how many digests it has been in, which is what escalates its wording. Counting
+  // rather than say-once because the digest repeats until the thing is resolved.
+  "professor_digest",
   // One message the inbox pass could not decide, put to the reviewer once as an approval. Say-once
   // like the two above, and for the sharper reason: the hourly pass sees the same held message
   // every hour it runs, so without the ledger a single undecided email would mint a fresh approval

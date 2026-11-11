@@ -490,6 +490,7 @@ function buildGogArgs(proposal: AdminBotStoredProposal): string[] | undefined {
     // Plain mail, no attachment: the letters themselves are not in it, only the fact that they are
     // due and where to read the requests.
     case "logistics.rec_letter_reminder":
+    case "professor.escalation_digest":
       return buildEmailArgs(proposal, false);
     case "member_nudge.send": {
       // Shared with message-executor.ts (Slack-channel payloads); only the email-shaped half of

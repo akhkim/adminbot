@@ -113,6 +113,20 @@ export function needsOperatorForMailFailure(kind: MailSendFailureKind): boolean 
   return kind === "credentials" || kind === "connector_missing";
 }
 
+/**
+ * A gog error that proves the request never reached Google, so nothing can have been sent.
+ *
+ * Anything else on a failed send is ambiguous -- the mail may have gone out -- and callers that
+ * would repeat a message on retry treat it as sent rather than risk mailing the same thing twice.
+ */
+export function gogFailedBeforeSending(message: string): boolean {
+  if (!/\bgog\b/u.test(message)) {
+    return false;
+  }
+  const kind = classifyMailSendFailure(message);
+  return needsOperatorForMailFailure(kind) || kind === "unreachable" || kind === "rate_limited";
+}
+
 export type MailRetryOptions = {
   /** Total tries, including the first. */
   maxAttempts: number;

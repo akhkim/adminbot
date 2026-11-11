@@ -3,6 +3,7 @@
 // Cut from server.ts's handleAuthenticatedRoute. Each route states its audience with a guard
 // decorator from guards.ts; the order below is the order the old if-chain tried them in.
 import type { AdminBotMemberNudgeRequest } from "../../contracts/actions.js";
+import { resolveProfessorDigestConfig } from "../../workflows/nudges/professor-digest.js";
 import { readJson, readRecord, sendServiceResult } from "../server.http.js";
 import { pageOf, readPageQuery } from "../server.paging.js";
 import { mapPayload } from "../server.paper-lists.wire.js";
@@ -100,6 +101,23 @@ export const nudgesRoutes: readonly Route[] = [
     privilegedOnly(async ({ res, principal, ctx }) => {
       const { service } = ctx;
       sendServiceResult(res, await service.escalateStaleNudges(principalActor(principal)));
+    }),
+  ),
+  // The head professor's daily escalation digest (scripts/adminbot-professor-digest-cron.sh, run
+  // hourly). Configuration is host env read per call, so a changed threshold applies on the next
+  // run without a restart. `?dry_run=1` returns the mail it would send without sending or
+  // stamping, and works while the digest is still switched off.
+  post(
+    "/nudges/professor-digest/run",
+    privilegedOnly(async ({ res, url, principal, ctx }) => {
+      sendServiceResult(
+        res,
+        await ctx.service.sweepProfessorDigest(
+          principalActor(principal),
+          resolveProfessorDigestConfig(process.env),
+          { dryRun: url.searchParams.get("dry_run") === "1" },
+        ),
+      );
     }),
   ),
 ];
