@@ -725,14 +725,63 @@ describe("notifications on the dashboard", () => {
     expect(read).toEqual([["notif-1", "notif-2"]]);
   });
 
-  it("keeps showing one that has already been read", () => {
-    // Read is "you have seen this", not "you have done it": the reminder stays until they turn up.
+  it("moves one that has been read out of the stack, into the closed Earlier fold", () => {
+    // Read is delivered: the card goes, and stays gone, because read_at is the service's.
     const container = renderPage(
       createState({
         adminBotNotifications: [{ ...NOTIFICATION, read_at: "2026-08-25T09:05:00.000Z" }],
       } as never),
     );
-    expect(attentionIds(container)).toContain(`notification-${NOTIFICATION.id}`);
+    expect(attentionIds(container)).not.toContain(`notification-${NOTIFICATION.id}`);
+    const fold = container.querySelector<HTMLDetailsElement>(
+      '[data-testid="dashboard-notification-history"]',
+    );
+    expect(fold?.open).toBe(false);
+    expect(fold?.querySelector("summary")?.textContent).toContain("Earlier notifications (1)");
+    expect(fold?.textContent).toContain(NOTIFICATION.title);
+  });
+
+  it("opens a read notification's tab from the fold without marking anything", () => {
+    const tabs: string[] = [];
+    const read: unknown[] = [];
+    const container = renderPage(
+      createState({
+        adminBotNotifications: [{ ...NOTIFICATION, read_at: "2026-08-25T09:05:00.000Z" }],
+        setTab: (tab: string) => tabs.push(tab),
+        markNotificationsRead: async (ids: string[]) => {
+          read.push(ids);
+        },
+      } as never),
+    );
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="dashboard-notification-history-row"] button')
+      ?.click();
+    expect(tabs).toEqual([NOTIFICATION.tab]);
+    expect(read).toEqual([]);
+  });
+
+  it("does not let a read copy stand for an unread nudge of the same kind", () => {
+    const container = renderPage(
+      createState({
+        adminBotNotifications: [
+          {
+            ...NOTIFICATION,
+            id: "newer-read",
+            created_at: "2026-09-01T09:00:00.000Z",
+            read_at: "2026-09-01T10:00:00.000Z",
+          },
+          { ...NOTIFICATION, id: "older-unread", created_at: "2026-08-01T09:00:00.000Z" },
+        ],
+      } as never),
+    );
+    expect(attentionIds(container)).toContain("notification-older-unread");
+    expect(attentionIds(container)).not.toContain("notification-newer-read");
+    expect(container.querySelector('[data-testid="dashboard-nudge-warning"]')).not.toBeNull();
+  });
+
+  it("draws no Earlier fold when nothing has been read", () => {
+    const container = renderPage(createState({ adminBotNotifications: [NOTIFICATION] } as never));
+    expect(container.querySelector('[data-testid="dashboard-notification-history"]')).toBeNull();
   });
 
   it("marks it read and opens the tab it names", () => {

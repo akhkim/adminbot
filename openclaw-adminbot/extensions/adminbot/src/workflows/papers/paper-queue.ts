@@ -18,11 +18,17 @@
 // dataset has never heard of still gets a row -- just without a date.
 import type { AdminBotPaperRecord } from "../../contracts/actions.js";
 import { isStaleDeadline } from "../../contracts/paper-feedback.js";
-import type { AdminBotPaperSlotRecord } from "../../contracts/paper-slots.js";
+import {
+  isAdminBotPaperAtPiGate,
+  isAdminBotPaperSlotSettled,
+  type AdminBotPaperSlot,
+  type AdminBotPaperSlotRecord,
+} from "../../contracts/paper-slots.js";
 import type {
   AdminBotPaperflowEvidenceRecord,
   AdminBotPaperflowStage,
 } from "../../contracts/paperflow-stages.js";
+import { isPaperClosed } from "./paper-slots.js";
 import { openPaperflowStage } from "./paperflow-stages.js";
 import type { PiReviewRow } from "./pi-review.js";
 
@@ -178,6 +184,146 @@ export function yearlessAoeToIso(date: string, now: Date, venueYear?: number): s
 export function isPastVenueYear(year: number | undefined, now: Date): boolean {
   return year !== undefined && year < now.getUTCFullYear();
 }
+
+/**
+ * Why a row is history rather than something on her desk. A row with a reason is never dropped:
+ * it moves to the queue's history list, which the desk keeps behind a toggle.
+ *
+ *   conference_held  the venue's conference has been held, so its camera-ready is over either way
+ *   past_cycle       the venue's year is behind the current one
+ *   stale_deadline   the hard deadline is more than STALE_DEADLINE_DAYS behind
+ *   reviewed         a feedback request she has already answered
+ */
+export type PaperQueueHistoryReason =
+  | "conference_held"
+  | "past_cycle"
+  | "stale_deadline"
+  | "reviewed";
+
+/**
+ * When the venue's main conference ends, as an ISO instant: the end of its last day in AoE, the
+ * latest of the dataset's `conference` periods for the venue's family and year.
+ *
+ * Main-conference records only, workshop labels included: workshops are held alongside the main
+ * conference and the dataset publishes no period of their own.
+ */
+export function conferenceEnd(venue: string, dataset: readonly unknown[]): string | undefined {
+  const key = venueKey(venue);
+  if (!key) {
+    return undefined;
+  }
+  const ends: string[] = [];
+  for (const raw of dataset) {
+    const record = (raw ?? {}) as DatasetRecord;
+    if (record.venue_type === "workshop" || record.entry_type === "workshop") {
+      continue;
+    }
+    const recordKey = datasetRecordKey(record);
+    if (recordKey?.family !== key.family || recordKey.year !== key.year) {
+      continue;
+    }
+    for (const entry of Array.isArray(record.schedule) ? record.schedule : []) {
+      const row = (entry ?? {}) as Record<string, unknown>;
+      const day = /^\d{4}-\d{2}-\d{2}/u.exec(textOf(row.ends) || textOf(row.date))?.[0];
+      const iso = row.milestone === "conference" && day ? wallClockAoe(day, undefined) : undefined;
+      if (iso) {
+        ends.push(iso);
+      }
+    }
+  }
+  return ends.toSorted().at(-1);
+}
+
+/**
+ * Whether the venue's conference is over. Its camera-ready is then history whatever the card
+ * says: the proceedings went out with the paper in them or without it, and an "N days overdue"
+ * row for it is noise above the camera-readies she can still act on.
+ */
+export function isConferenceHeld(
+  venue: string | undefined,
+  dataset: readonly unknown[],
+  now: Date,
+): boolean {
+  const end = venue ? conferenceEnd(venue, dataset) : undefined;
+  return end !== undefined && Date.parse(end) < now.getTime();
+}
+
+/**
+ * The venue a paper's conference questions are about: what OpenReview says, else the accepted
+ * venue, else the target, with the accepted year added when the label carries none.
+ */
+export function paperVenueLabel(paper: AdminBotPaperRecord): string | undefined {
+  const label = paper.openreview_sync?.venue ?? paper.accepted_venue ?? paper.venue;
+  if (!label) {
+    return undefined;
+  }
+  return venueKey(label) || paper.accepted_year === undefined
+    ? label
+    : `${label} ${paper.accepted_year}`;
+}
+
+/**
+ * Whether the conference an accepted paper was presented at is over: held per the dataset, or a
+ * past year's cycle. Its camera-ready and its talk deliverables are then done or moot, not late.
+ */
+export function isPaperConferenceOver(
+  paper: AdminBotPaperRecord,
+  dataset: readonly unknown[],
+  now: Date,
+): boolean {
+  const accepted =
+    paper.venue_decision === "accept" || paper.openreview_sync?.status === "accepted";
+  if (!accepted) {
+    return false;
+  }
+  const venue = paperVenueLabel(paper);
+  const year = (venue ? venueKey(venue)?.year : undefined) ?? paper.accepted_year;
+  return isPastVenueYear(year, now) || isConferenceHeld(venue, dataset, now);
+}
+
+/**
+ * Slots that only make sense before the conference: the talk, the poster and the printed copy.
+ * Once it has been held they are obsolete rather than missing. The arXiv and social-post slots
+ * are not here on purpose: a paper is posted and announced after its conference as often as before.
+ */
+export const conferenceBoundSlots: ReadonlySet<AdminBotPaperSlot> = new Set<AdminBotPaperSlot>([
+  "slides",
+  "poster",
+  "poster_physical",
+  "talk_video",
+]);
+
+/** Whether a slot has stopped being wanted because the paper's conference is over. */
+export function isSlotObsoleteAfterConference(
+  slot: AdminBotPaperSlot,
+  conferenceOver: boolean,
+): boolean {
+  return conferenceOver && conferenceBoundSlots.has(slot);
+}
+
+/** The arXiv steps in the order they happen. The PI's yes sits between the password and the post. */
+const ARXIV_STEPS = ["arxiv_paper_password", "pi_approval", "arxiv"] as const;
+
+/** The first arXiv step not yet provided or waived, or undefined once the abstract page is in. */
+export function nextArxivStep(
+  paper: AdminBotPaperRecord,
+  slots: readonly AdminBotPaperSlotRecord[],
+): (typeof ARXIV_STEPS)[number] | undefined {
+  if (paper.artifacts?.arxiv_url?.trim()) {
+    return undefined;
+  }
+  return ARXIV_STEPS.find(
+    (name) =>
+      !isAdminBotPaperSlotSettled(slots.find((row) => row.slot === name)?.status ?? "missing"),
+  );
+}
+
+const arxivStepNotes: Record<(typeof ARXIV_STEPS)[number], string> = {
+  arxiv_paper_password:
+    "the first author adds the arXiv paper password, then it comes to you to approve",
+  pi_approval: "your approval to post on arXiv",
+  arxiv: "the first author posts it and adds the arXiv abstract page",
+};
 
 /**
  * The camera-ready deadline the dataset publishes for this venue, as an ISO instant.
@@ -368,9 +514,31 @@ const reviewStageNotes: Partial<Record<AdminBotPaperflowStage, string>> = {
  * Only papers the sync has touched: this is the OpenReview reading, and a paper nobody has
  * submitted anywhere has nothing for the venue to decide. Accepted papers leave once the
  * camera-ready is confirmed; under-review papers leave on a decision; rejections leave when the
- * paper is resubmitted or after AFTER_REJECTION_DAYS.
+ * paper is resubmitted or after AFTER_REJECTION_DAYS. A camera-ready that has gone out of date
+ * (see openReviewPaperHistory) is left off here and listed there instead.
  */
 export function openReviewPaperQueue(
+  candidates: readonly PaperQueueCandidate[],
+  dataset: readonly unknown[],
+  now: Date,
+): PiReviewRow[] {
+  return openReviewRows(candidates, dataset, now).filter((row) => !row.history_reason);
+}
+
+/**
+ * The camera-ready rows that have gone out of date, each with the reason it did: the venue's
+ * conference was held, its cycle is a past year's, or its deadline is long gone. They leave the
+ * queue but not the record, so the desk can show them under history.
+ */
+export function openReviewPaperHistory(
+  candidates: readonly PaperQueueCandidate[],
+  dataset: readonly unknown[],
+  now: Date,
+): PiReviewRow[] {
+  return openReviewRows(candidates, dataset, now).filter((row) => row.history_reason);
+}
+
+function openReviewRows(
   candidates: readonly PaperQueueCandidate[],
   dataset: readonly unknown[],
   now: Date,
@@ -421,32 +589,58 @@ export function openReviewPaperQueue(
       // The venue's year, or the accepted year when OpenReview's label carries none ("NeurIPS
       // poster"). A past cycle's acceptance whose camera-ready nobody ticked on the card is not an
       // overdue item: the paper was published, and listing it buried the live camera-readies.
+      // The same goes for a camera-ready whose conference has been held: EMNLP's was due in
+      // August and the conference met in October, so in November it is over, not overdue.
       const year = venueKey(sync.venue)?.year ?? paper.accepted_year;
-      if (isPastVenueYear(year, now)) {
-        return [];
-      }
       const venue =
         venueKey(sync.venue) || year === undefined ? sync.venue : `${sync.venue} ${year}`;
       const deadline = cameraReadyDeadline(venue, dataset, now);
-      if (isStaleDeadline(deadline, now)) {
-        return [];
-      }
-      return [
-        {
-          ...base,
-          category: "camera_ready" as const,
-          ...(deadline ? { hard_deadline: deadline, days_left: daysLeft(deadline, now) } : {}),
-          openreview: {
-            status: sync.status,
-            stage: stage.stage,
-            note: deadline
-              ? `Accepted at ${sync.venue}. Camera-ready is due; make the post-acceptance changes.`
-              : `Accepted at ${sync.venue}. No camera-ready date is published for this venue yet; check its site.`,
-          },
+      const historyReason: PaperQueueHistoryReason | undefined = isPastVenueYear(year, now)
+        ? "past_cycle"
+        : isConferenceHeld(venue, dataset, now)
+          ? "conference_held"
+          : isStaleDeadline(deadline, now)
+            ? "stale_deadline"
+            : undefined;
+      const cameraReady: PiReviewRow = {
+        ...base,
+        category: "camera_ready" as const,
+        ...(deadline ? { hard_deadline: deadline, days_left: daysLeft(deadline, now) } : {}),
+        ...(historyReason ? { history_reason: historyReason } : {}),
+        openreview: {
+          status: sync.status,
+          stage: stage.stage,
+          note: deadline
+            ? `Accepted at ${sync.venue}. Camera-ready is due; make the post-acceptance changes.`
+            : `Accepted at ${sync.venue}. No camera-ready date is published for this venue yet; check its site.`,
         },
-      ];
+      };
+      // A held conference means the camera-ready is done, not late. When that row was the only
+      // thing putting the paper in front of her, the next open step takes its place: arXiv. Not
+      // when the paper is already at her gate (piReviewQueue lists that one), and with no hard
+      // deadline, so nothing of the camera-ready's "N days overdue" carries over. A past cycle
+      // with no published conference period (NeurIPS 2023) is not resurfaced: that is old work,
+      // not a step she is waiting to take.
+      const arxivStep =
+        historyReason === "conference_held" ? nextArxivStep(paper, slots) : undefined;
+      const arxivRow: PiReviewRow[] =
+        arxivStep && !isPaperClosed(paper) && !isAdminBotPaperAtPiGate(slots)
+          ? [
+              {
+                ...base,
+                category: "arxiv_release" as const,
+                package_complete: isAdminBotPaperSlotSettled(
+                  slots.find((row) => row.slot === "arxiv_paper_password")?.status ?? "missing",
+                ),
+                openreview: {
+                  status: sync.status,
+                  note: `Camera-ready done; ${venue} has been held. Next is arXiv: ${arxivStepNotes[arxivStep]}.`,
+                },
+              },
+            ]
+          : [];
+      return [cameraReady, ...arxivRow];
     }
-
     const note = stage ? reviewStageNotes[stage.stage] : undefined;
     if (sync.status !== "under_review" || !stage || !note) {
       return [];

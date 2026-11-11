@@ -3,7 +3,7 @@ import { showToast } from "../../toast.ts";
 //
 // A notification reaches a member three ways and this file is two of them. The Slack DM is sent
 // service-side; here, the same sentence is read back onto the dashboard (a card that stays until
-// it is dealt with) and popped in the bottom-right corner (a toast, so somebody already looking at
+// it is read, then moves to the "Earlier notifications" fold) and popped in the bottom-right corner (a toast, so somebody already looking at
 // another tab notices it arriving). The third copy is the audit row, which nobody reads on a
 // screen.
 //
@@ -22,6 +22,25 @@ import type { AdminBotHost } from "./admin.ts";
 
 /** Notification ids already popped in this session. Cleared on sign-out via `resetNotificationPopups`. */
 const popped = new Set<string>();
+
+/**
+ * Ids this session marked read, with when. A poll that left before the mark landed answers with the
+ * row still unread; applied on top of every load so that answer cannot put a dismissed card back.
+ * The service keeps `read_at` itself, so after a reload the read comes from there.
+ */
+const acknowledged = new Map<string, string>();
+
+/** The service's rows, with anything this session already acknowledged kept read. */
+export function withAcknowledged(
+  notifications: readonly MemberNotification[],
+): MemberNotification[] {
+  return notifications.map((notification) => {
+    const readAt = acknowledged.get(notification.id);
+    return notification.read_at || !readAt
+      ? notification
+      : Object.assign({}, notification, { read_at: readAt });
+  });
+}
 
 /**
  * Read the member's notifications, and pop the ones they have not seen.
@@ -49,8 +68,9 @@ export async function loadAdminBotNotifications(
     return;
   }
   host.adminBotNotificationsError = null;
-  host.adminBotNotifications = result.value;
-  for (const notification of result.value) {
+  const notifications = withAcknowledged(result.value);
+  host.adminBotNotifications = notifications;
+  for (const notification of notifications) {
     popNotification(host, notification, options.onOpen);
   }
 }
@@ -74,7 +94,7 @@ function popNotification(
     body: notification.body,
     tone: "warn",
     // Times out, but slowly. The popup is the "something arrived" signal, not the record: the
-    // dashboard card keeps the notification until it is dealt with, and a timeout leaves it unread.
+    // dashboard card keeps the notification until it is read, and a timeout leaves it unread.
     // Left up for good, a backlog of these sat over the page until each was closed by hand.
     duration: NOTIFICATION_TOAST_DURATION_MS,
     ...(tab && onOpen
@@ -88,9 +108,9 @@ function popNotification(
           },
         }
       : {}),
-    // Closing the popup is an acknowledgement, so it marks the notification read. The dashboard
-    // card stays either way -- read is "you have seen this", not "you have done it". Timing out is
-    // not an acknowledgement: nobody may have been looking.
+    // Closing the popup is an acknowledgement, so it marks the notification read, and its card
+    // moves to the dashboard's "Earlier" fold. Timing out is not an acknowledgement: nobody may
+    // have been looking.
     onDismiss: (reason) => {
       if (reason !== "timeout") {
         void markAdminBotNotificationsRead(host, [notification.id]);
@@ -120,12 +140,17 @@ export async function markAdminBotNotificationsRead(
   // and a re-read would race the poll that is already running.
   const readAt = new Date().toISOString();
   const wanted = notificationIds?.length ? new Set(notificationIds) : undefined;
+  for (const id of notificationIds ?? []) {
+    acknowledged.set(id, readAt);
+  }
   const patched: MemberNotification[] = [];
   for (const notification of host.adminBotNotifications ?? []) {
     if (notification.read_at || (wanted && !wanted.has(notification.id))) {
       patched.push(notification);
       continue;
     }
+    // "Mark all" names no ids, so what it covered is remembered from the rows it read.
+    acknowledged.set(notification.id, readAt);
     patched.push(Object.assign({}, notification, { read_at: readAt }));
   }
   // A new array, not a mutated one: lit only re-renders a @state() array when the reference changes.
@@ -135,6 +160,7 @@ export async function markAdminBotNotificationsRead(
 /** Forget which popups have fired. Called on sign-out: the next member starts with a clean corner. */
 export function resetNotificationPopups(): void {
   popped.clear();
+  acknowledged.clear();
 }
 
 /**

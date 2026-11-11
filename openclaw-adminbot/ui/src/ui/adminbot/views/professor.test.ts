@@ -15,7 +15,9 @@ import {
   piReviewQuickAction,
   recLetterDeadlineQueue,
   recLetterGroups,
+  recLetterDueLabel,
   recLetterQueue,
+  recLettersAlreadyIn,
   recLettersSubmittedHere,
   renderProfessorView,
   thinTimelines,
@@ -986,6 +988,87 @@ describe("the papers waiting on her yes", () => {
   });
 });
 
+// "Old information, stale, goes bye bye": a camera-ready whose conference has been held leaves
+// the queue for a folded History, not for nowhere.
+describe("the paper queue's history", () => {
+  const held = (fields: Partial<PiReviewRow> = {}): PiReviewRow =>
+    piReviewRow({
+      paperId: "emnlp",
+      title: "Held at EMNLP",
+      venue: "EMNLP 2026",
+      category: "camera_ready",
+      hardDeadline: "2026-08-31T11:59:59.000Z",
+      daysLeft: -73,
+      historyReason: "conference_held",
+      ...fields,
+    });
+
+  it("keeps history rows out of the open queue and its count", () => {
+    const { container } = draw({
+      piReview: [piReviewRow({ paperId: "live", title: "Still open" })],
+      piReviewHistory: [held()],
+    });
+    const section = container.querySelector('[data-testid="professor-pi-review"]')!;
+    expect(section.querySelector(".professor__count")?.textContent?.trim()).toBe("1");
+    const open = section.querySelector("#professor-list-pi-review")!;
+    expect(open.textContent).toContain("Still open");
+    expect(open.textContent).not.toContain("Held at EMNLP");
+    // No "73 days overdue" anywhere: history says it was due, not that it is late.
+    expect(section.textContent).not.toContain("overdue");
+  });
+
+  it("folds them under a closed History toggle with the reason each left", () => {
+    const { container } = draw({
+      piReview: [],
+      piReviewHistory: [
+        held(),
+        held({ paperId: "fb", title: "Feedback given", historyReason: "reviewed" }),
+      ],
+    });
+    const fold = container.querySelector<HTMLDetailsElement>(
+      '[data-testid="professor-pi-review-history"]',
+    )!;
+    expect(fold.open).toBe(false);
+    expect(fold.querySelector("summary")?.textContent).toContain("History (2)");
+    expect(
+      [...fold.querySelectorAll('[data-testid="pi-review-history-reason"]')].map((node) =>
+        node.textContent?.trim(),
+      ),
+    ).toEqual(["Conference already held", "Feedback given"]);
+    expect(fold.textContent).toContain("was due 2026-08-31");
+  });
+
+  it("opens a history row's paper", () => {
+    const selected: string[] = [];
+    const { container } = draw({
+      piReviewHistory: [held()],
+      onOpenPaper: (id) => selected.push(id),
+    });
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="professor-pi-review-history"] button')!
+      .click();
+    expect(selected).toEqual(["emnlp"]);
+  });
+
+  it("draws no History toggle when nothing has left the queue", () => {
+    const { container } = draw({ piReview: [piReviewRow()], piReviewHistory: [] });
+    expect(container.querySelector('[data-testid="professor-pi-review-history"]')).toBeNull();
+  });
+
+  it("narrows history with the queue's search", () => {
+    const { container } = draw({
+      piReviewHistory: [
+        held(),
+        held({ paperId: "aacl", title: "AACL one", venue: "AACL-IJCNLP 2026" }),
+      ],
+      search: { "pi-review": "aacl" },
+    });
+    const fold = container.querySelector('[data-testid="professor-pi-review-history"]')!;
+    expect(fold.textContent).toContain("AACL one");
+    expect(fold.textContent).not.toContain("Held at EMNLP");
+  });
+});
+
 it("shows an unavailable PI queue with a working retry instead of an empty success", () => {
   let retried = false;
   const { container } = draw({
@@ -1336,5 +1419,105 @@ describe("acting on a paper from its row", () => {
       ["p1", "pi_approval"],
       ["p2", "feedback_1"],
     ]);
+  });
+});
+
+describe("stale letters on the desk", () => {
+  const now = new Date("2026-11-11T12:00:00Z");
+
+  it("treats a year-0002 deadline as no deadline and asks for the year", () => {
+    const [due] = recLetterDeadlineQueue(
+      [
+        request({
+          id: "typo",
+          // Stored before the service refused the year: both the stamp and the school carry it.
+          deadline_at: "0002-01-15T23:59:59-12:00",
+          schools: [{ school: "Example U", letter_deadline: "0002-01-15" }],
+        } as never),
+      ],
+      now,
+    );
+    expect(due?.bucket).toBe("undated");
+    expect(due?.daysAway).toBeUndefined();
+    expect(due?.date).toBeUndefined();
+    expect(due?.checkYear).toBe(true);
+    expect(recLetterDueLabel(due!)).toMatch(/check the year/u);
+  });
+
+  it("does not render 45590 days ago for it", () => {
+    const { container } = draw({
+      requests: [
+        request({
+          id: "typo",
+          deadline_at: "0002-01-15T23:59:59-12:00",
+          schools: [{ school: "Example U", letter_deadline: "0002-01-15" }],
+        } as never),
+      ],
+    });
+    const when = container.querySelector('[data-testid="professor-letter-when"]')?.textContent;
+    expect(when).toMatch(/check the year/u);
+    expect(when).not.toMatch(/ago|0002/u);
+    expect(container.querySelector('[data-testid="professor-letters-overdue"]')).toBeNull();
+    expect(container.querySelector('[data-testid="professor-letters-undated"]')).not.toBeNull();
+  });
+
+  it("sorts the typo after letters with real dates", () => {
+    const queue = recLetterQueue(
+      [
+        request({ id: "typo", deadline_at: "0002-01-15T23:59:59-12:00" }),
+        request({ id: "real", deadline_at: "2026-12-01T23:59:59-12:00" }),
+      ],
+      now,
+    );
+    expect(queue.map((entry) => entry.id)).toEqual(["real", "typo"]);
+  });
+
+  it("drops a request whose letters are all submitted out of the queue, into history", () => {
+    const requests = [
+      request({
+        id: "done",
+        member_name: "Ada",
+        deadline_at: "2026-10-01T23:59:59-12:00",
+        schools: [
+          { school: "A", letter_status: "Submitted" },
+          { school: "B", letter_status: "sent" },
+        ],
+      } as never),
+      request({
+        id: "half",
+        member_name: "Bo",
+        deadline_at: "2026-10-01T23:59:59-12:00",
+        schools: [
+          { school: "A", letter_status: "Submitted" },
+          { school: "B", letter_status: "not sent" },
+        ],
+      } as never),
+      request({ id: "closed", status: "completed", schools: [{ school: "A" }] } as never),
+    ];
+    expect(recLetterQueue(requests, now).map((entry) => entry.id)).toEqual(["half"]);
+    expect(recLettersAlreadyIn(requests).map((entry) => entry.id)).toEqual(["done"]);
+
+    const { container, opened } = draw({ requests });
+    const open = container.querySelector("#professor-list-letters")?.textContent ?? "";
+    expect(open).toContain("Bo");
+    expect(open).not.toContain("Ada");
+    const fold = container.querySelector<HTMLDetailsElement>(
+      '[data-testid="professor-letters-history"]',
+    );
+    expect(fold).not.toBeNull();
+    expect(fold?.open).toBe(false);
+    expect(fold?.querySelector("summary")?.textContent).toContain("History (1)");
+    const rows = fold?.querySelectorAll('[data-testid="professor-letter-history-row"]') ?? [];
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.textContent).toContain("Ada");
+    rows[0]?.querySelector("button")?.click();
+    expect(opened).toEqual(["adminbotRecLetters"]);
+  });
+
+  it("draws no letters history when nothing is resolved", () => {
+    const { container } = draw({
+      requests: [request({ id: "open", deadline_at: "2026-12-01T23:59:59-12:00" })],
+    });
+    expect(container.querySelector('[data-testid="professor-letters-history"]')).toBeNull();
   });
 });

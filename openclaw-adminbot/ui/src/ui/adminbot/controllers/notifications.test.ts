@@ -25,8 +25,12 @@ vi.mock("../api/workspace.ts", () => ({
   markNotificationsRead,
 }));
 
-const { NOTIFICATION_TOAST_DURATION_MS, loadAdminBotNotifications, resetNotificationPopups } =
-  await import("./notifications.ts");
+const {
+  NOTIFICATION_TOAST_DURATION_MS,
+  loadAdminBotNotifications,
+  markAdminBotNotificationsRead,
+  resetNotificationPopups,
+} = await import("./notifications.ts");
 
 afterEach(() => {
   resetNotificationPopups();
@@ -56,4 +60,32 @@ it("leaves a timed-out notification unread, but marks it read when the member cl
   expect(markNotificationsRead).toHaveBeenCalledWith("synthetic-session", "http://127.0.0.1:8765", [
     "n-1",
   ]);
+});
+
+it("keeps a dismissed notification read when a poll that started earlier answers unread", async () => {
+  type Host = Parameters<typeof loadAdminBotNotifications>[0];
+  const host = { settings: {} } as unknown as Host & {
+    adminBotNotifications?: Array<{ id: string; read_at?: string }>;
+  };
+  await loadAdminBotNotifications(host);
+  await markAdminBotNotificationsRead(host, ["n-1"]);
+  expect(host.adminBotNotifications?.[0]?.read_at).toBeTruthy();
+
+  // The mocked service still answers with the row unread: the poll that raced the mark.
+  await loadAdminBotNotifications(host);
+  expect(host.adminBotNotifications?.[0]?.read_at).toBeTruthy();
+  // And it is not popped again either.
+  expect(showToast).toHaveBeenCalledOnce();
+});
+
+it("forgets what was acknowledged on sign-out", async () => {
+  type Host = Parameters<typeof loadAdminBotNotifications>[0];
+  const host = { settings: {} } as unknown as Host & {
+    adminBotNotifications?: Array<{ id: string; read_at?: string }>;
+  };
+  await loadAdminBotNotifications(host);
+  await markAdminBotNotificationsRead(host, ["n-1"]);
+  resetNotificationPopups();
+  await loadAdminBotNotifications(host);
+  expect(host.adminBotNotifications?.[0]?.read_at).toBeUndefined();
 });

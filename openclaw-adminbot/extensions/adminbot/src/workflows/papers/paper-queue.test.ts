@@ -4,18 +4,31 @@ import { describe, expect, it } from "vitest";
 import type { AdminBotPaperOpenReviewSync, AdminBotPaperRecord } from "../../contracts/actions.js";
 import type { AdminBotPaperSlotRecord } from "../../contracts/paper-slots.js";
 import type { AdminBotPaperflowEvidenceRecord } from "../../contracts/paperflow-stages.js";
+import { summarizeProject } from "./my-projects.js";
 import {
   aoeToIso,
   buildCameraReadyNotice,
   cameraReadyDeadline,
+  conferenceEnd,
   daysLeft,
+  isConferenceHeld,
+  isPaperConferenceOver,
+  isSlotObsoleteAfterConference,
+  nextArxivStep,
+  openReviewPaperHistory,
   openReviewPaperQueue,
   proofreadingPaperQueue,
   rankPaperQueue,
   submissionDeadline,
   yearlessAoeToIso,
 } from "./paper-queue.js";
-import type { PiReviewRow } from "./pi-review.js";
+import {
+  paperFeedbackHistory,
+  paperFeedbackQueue,
+  piReviewHistory,
+  PI_REVIEW_HISTORY_LIMIT,
+  type PiReviewRow,
+} from "./pi-review.js";
 
 const now = new Date("2026-11-03T12:00:00.000Z");
 
@@ -563,5 +576,269 @@ describe("buildCameraReadyNotice", () => {
     });
     expect(notice.title).toBe("Accepted at EACL 2027: camera-ready");
     expect(notice.body).toContain("Camera-ready is due 2026-11-27 (23 days left).");
+  });
+});
+
+// "Old information, stale, goes bye bye": a camera-ready whose conference has been held is over,
+// not overdue. On 2026-11-11 EMNLP 2026 (camera-ready Aug 30, held Oct 24-29) read as 73 days
+// overdue and AACL-IJCNLP 2026 (Sep 30, held Nov 6-10) as 42, at the top of her desk.
+describe("camera-readies for a conference that has been held", () => {
+  const today = new Date("2026-11-11T12:00:00.000Z");
+  const held = [
+    {
+      name: "EMNLP 2026 (main, ARR commitment)",
+      venue_group: "EMNLP 2026",
+      venue_family: "EMNLP",
+      entry_type: "arr_commitment",
+      venue_type: "conference",
+      schedule: [
+        { milestone: "camera_ready", date: "2026-08-30 23:59:59", kind: "deadline" },
+        { milestone: "conference", starts: "2026-10-24", ends: "2026-10-29", kind: "period" },
+      ],
+    },
+    {
+      name: "AACL-IJCNLP 2026 (main, ARR commitment)",
+      venue_group: "AACL-IJCNLP 2026",
+      venue_family: "AACL",
+      entry_type: "arr_commitment",
+      venue_type: "conference",
+      schedule: [
+        { milestone: "camera_ready", date: "2026-09-30 23:59:59", kind: "deadline" },
+        { milestone: "conference", starts: "2026-11-06", ends: "2026-11-10", kind: "period" },
+      ],
+    },
+    {
+      name: "EACL 2027",
+      venue_group: "EACL 2027",
+      venue_family: "EACL",
+      schedule: [
+        { milestone: "camera_ready", date: "2026-11-01 23:59:59", kind: "deadline" },
+        { milestone: "conference", starts: "2027-03-20", ends: "2027-03-24", kind: "period" },
+      ],
+    },
+  ];
+  const candidate = (id: string, venue: string) => ({
+    paper: paper({ status: "accepted", venue }, { id, venue_decision: "accept" }),
+    slots: submitted.map((slot) => ({ ...slot, paper_id: id })),
+    evidence: [],
+  });
+  const candidates = [
+    candidate("emnlp", "EMNLP 2026"),
+    candidate("aacl", "AACL-IJCNLP 2026"),
+    candidate("eacl", "EACL 2027"),
+  ];
+
+  it("reads the end of the conference's last day, Anywhere on Earth", () => {
+    expect(conferenceEnd("EMNLP 2026", held)).toBe("2026-10-30T11:59:59.000Z");
+    expect(conferenceEnd("AACL-IJCNLP 2026 Main", held)).toBe("2026-11-11T11:59:59.000Z");
+    expect(conferenceEnd("NeurIPS 2026", held)).toBeUndefined();
+  });
+
+  it("is held only once the last day is over everywhere", () => {
+    expect(isConferenceHeld("AACL-IJCNLP 2026", held, new Date("2026-11-11T11:00:00Z"))).toBe(
+      false,
+    );
+    expect(isConferenceHeld("AACL-IJCNLP 2026", held, today)).toBe(true);
+    // A workshop is held alongside its main conference.
+    expect(isConferenceHeld("EMNLP 2026 Workshop on Safety", held, today)).toBe(true);
+    // No published period is not evidence it was held.
+    expect(isConferenceHeld("NeurIPS 2026", held, today)).toBe(false);
+    expect(isConferenceHeld(undefined, held, today)).toBe(false);
+  });
+
+  it("leaves EMNLP and AACL off the queue but keeps an overdue camera-ready still actionable", () => {
+    const queue = openReviewPaperQueue(candidates, held, today);
+    // EMNLP and AACL stay only as their next arXiv step, never as a camera-ready.
+    expect(
+      queue.filter((row) => row.category === "camera_ready").map((row) => row.paper_id),
+    ).toEqual(["eacl"]);
+    // Overdue but its conference is months away: she can still act, so it stays, overdue.
+    expect(queue.find((row) => row.paper_id === "eacl")?.days_left).toBeLessThan(0);
+  });
+
+  it("lists them under history with the reason, the deadline and how overdue they were", () => {
+    const history = openReviewPaperHistory(candidates, held, today);
+    expect(history).toEqual([
+      expect.objectContaining({
+        paper_id: "emnlp",
+        category: "camera_ready",
+        history_reason: "conference_held",
+        hard_deadline: "2026-08-31T11:59:59.000Z",
+        days_left: -73,
+      }),
+      expect.objectContaining({
+        paper_id: "aacl",
+        history_reason: "conference_held",
+        hard_deadline: "2026-10-01T11:59:59.000Z",
+        days_left: -42,
+      }),
+    ]);
+    expect(openReviewPaperQueue(candidates, held, today).some((row) => row.history_reason)).toBe(
+      false,
+    );
+  });
+
+  // The lab owner's EMNLP 2026 rule, all three parts on one EMNLP-like paper: the camera-ready is
+  // done (history only), the arXiv/social chain carries on without the camera-ready's overdue
+  // clock, and the talk, poster and video for a conference that is over stop being asked for.
+  describe("an EMNLP 2026 paper after the conference", () => {
+    const provided = (id: string, ...names: string[]): AdminBotPaperSlotRecord[] =>
+      names.map((slot) => ({ paper_id: id, slot, status: "provided" as const }));
+    const emnlp = (
+      slots: AdminBotPaperSlotRecord[],
+      overrides: Partial<AdminBotPaperRecord> = {},
+    ) => ({
+      paper: paper(
+        { status: "accepted", venue: "EMNLP 2026" },
+        {
+          id: "emnlp",
+          venue_decision: "accept",
+          ...overrides,
+        },
+      ),
+      slots: [...submitted.map((slot) => ({ ...slot, paper_id: "emnlp" })), ...slots],
+      evidence: [],
+    });
+
+    it("1: is over, so the camera-ready is in history and nowhere in the open queue", () => {
+      const row = emnlp([]);
+      expect(isPaperConferenceOver(row.paper, held, today)).toBe(true);
+      // Before the conference ends it is not over yet.
+      expect(isPaperConferenceOver(row.paper, held, new Date("2026-10-20T00:00:00Z"))).toBe(false);
+      const queue = openReviewPaperQueue([row], held, today);
+      expect(queue.some((entry) => entry.category === "camera_ready")).toBe(false);
+      expect(openReviewPaperHistory([row], held, today)).toEqual([
+        expect.objectContaining({
+          paper_id: "emnlp",
+          category: "camera_ready",
+          history_reason: "conference_held",
+        }),
+      ]);
+    });
+
+    it("2: surfaces the next arXiv step with no deadline and no overdue count", () => {
+      const queue = openReviewPaperQueue([emnlp([])], held, today);
+      expect(queue).toEqual([
+        expect.objectContaining({
+          paper_id: "emnlp",
+          category: "arxiv_release",
+          package_complete: false,
+        }),
+      ]);
+      expect(queue[0]).not.toHaveProperty("hard_deadline");
+      expect(queue[0]).not.toHaveProperty("days_left");
+      expect(queue[0]).not.toHaveProperty("history_reason");
+      expect(queue[0]?.openreview?.note).toContain("arXiv paper password");
+    });
+
+    it("2: walks the chain: password, then her approval, then the abstract page", () => {
+      expect(nextArxivStep(emnlp([]).paper, [])).toBe("arxiv_paper_password");
+      expect(nextArxivStep(emnlp([]).paper, provided("emnlp", "arxiv_paper_password"))).toBe(
+        "pi_approval",
+      );
+      expect(
+        nextArxivStep(emnlp([]).paper, provided("emnlp", "arxiv_paper_password", "pi_approval")),
+      ).toBe("arxiv");
+      const posted = emnlp([], { artifacts: { arxiv_url: "https://arxiv.org/abs/2611.00001" } });
+      expect(nextArxivStep(posted.paper, [])).toBeUndefined();
+      expect(openReviewPaperQueue([posted], held, today)).toEqual([]);
+    });
+
+    it("2: leaves a paper already at her gate to the PI review queue, once", () => {
+      const atGate = emnlp(
+        provided("emnlp", "drive_pdf_arxiv", "authors_ack", "arxiv_paper_password"),
+      );
+      expect(openReviewPaperQueue([atGate], held, today)).toEqual([]);
+    });
+
+    it("2: says nothing about a past cycle that was never tracked", () => {
+      expect(openReviewPaperQueue([candidate("old", "EMNLP 2023")], held, today)).toEqual([]);
+    });
+
+    it("3: moves slides, poster and talk video to obsolete but keeps arXiv and social", () => {
+      expect(isSlotObsoleteAfterConference("poster", true)).toBe(true);
+      expect(isSlotObsoleteAfterConference("poster", false)).toBe(false);
+      expect(isSlotObsoleteAfterConference("arxiv", true)).toBe(false);
+      expect(isSlotObsoleteAfterConference("x_post", true)).toBe(false);
+      const { paper: record, slots } = emnlp([]);
+      const before = summarizeProject(record, slots, []);
+      const after = summarizeProject(record, slots, [], { conferenceOver: true });
+      const ids = (todos: { id: string }[] | undefined) => (todos ?? []).map((todo) => todo.id);
+      const talk = ids(before.todos).filter((id) =>
+        isSlotObsoleteAfterConference(id as never, true),
+      );
+      expect(talk.length).toBeGreaterThan(0);
+      expect(ids(after.obsolete_todos).toSorted()).toEqual(talk.toSorted());
+      expect(ids(after.todos)).toEqual(ids(before.todos).filter((id) => !talk.includes(id)));
+      expect(ids(after.todos)).toEqual(expect.arrayContaining(["arxiv_paper_password", "arxiv"]));
+      expect(
+        ids(after.todos).some((id) => before.todos.find((t) => t.id === id && t.lane === "social")),
+      ).toBe(before.todos.some((t) => t.lane === "social"));
+      expect(before.obsolete_todos ?? []).toEqual([]);
+    });
+  });
+
+  it("moves a past cycle's acceptance to history instead of dropping it", () => {
+    const old = [candidate("old", "NeurIPS 2023")];
+    expect(openReviewPaperQueue(old, held, today)).toEqual([]);
+    expect(openReviewPaperHistory(old, held, today)).toEqual([
+      expect.objectContaining({ paper_id: "old", history_reason: "past_cycle" }),
+    ]);
+  });
+
+  it("moves a held conference's camera-ready feedback request, and a reviewed one, to history", () => {
+    const request = (extra: Record<string, unknown> = {}) =>
+      JSON.stringify({
+        reason: "Read the camera-ready",
+        url: "https://overleaf.com/project/synthetic",
+        hard_deadline: "2026-08-31T11:59:59Z",
+        ...extra,
+      });
+    const feedback = (
+      id: string,
+      venue: string,
+      value: string,
+      slot = "feedback_camera_ready",
+    ) => ({
+      paper: { id, title: id, authors: [], venue } as never,
+      slots: [{ paper_id: id, slot, status: "provided" as const, value_text: value }],
+    });
+    const rows = [
+      feedback("emnlp", "EMNLP 2026", request()),
+      feedback(
+        "done",
+        "EACL 2027",
+        request({ hard_deadline: "2026-12-01T11:59:59Z", reviewed: true }),
+      ),
+      feedback("live", "EACL 2027", request()),
+      // The ARR stage is not the camera-ready: a held conference says nothing about it.
+      feedback("arr", "EMNLP 2026", request(), "feedback_arr"),
+    ];
+    expect(
+      paperFeedbackQueue(rows, today, held)
+        .map((row) => row.paper_id)
+        .toSorted(),
+    ).toEqual(["arr", "live"]);
+    expect(
+      paperFeedbackHistory(rows, today, held).map((row) => [row.paper_id, row.history_reason]),
+    ).toEqual([
+      ["emnlp", "conference_held"],
+      ["done", "reviewed"],
+    ]);
+  });
+
+  it("orders history newest deadline first and caps it", () => {
+    const rows: PiReviewRow[] = Array.from({ length: PI_REVIEW_HISTORY_LIMIT + 5 }, (_, index) => ({
+      category: "camera_ready",
+      paper_id: `p${index}`,
+      title: "t",
+      authors: [],
+      package_complete: true,
+      history_reason: "conference_held",
+      hard_deadline: new Date(Date.UTC(2026, 0, 1 + index)).toISOString(),
+    }));
+    const history = piReviewHistory(rows);
+    expect(history).toHaveLength(PI_REVIEW_HISTORY_LIMIT);
+    expect(history[0]?.paper_id).toBe(`p${PI_REVIEW_HISTORY_LIMIT + 4}`);
   });
 });

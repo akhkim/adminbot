@@ -14,7 +14,7 @@ import type { UiSettings } from "../../storage.ts";
 import {
   fetchPaperNudgeBatches,
   fetchPaperSlotOverview,
-  fetchPiReviewQueue,
+  fetchPiReviewQueueAndHistory,
   type PiReviewRow,
   runPaperSlotReminder,
   type PaperNudgeBatch,
@@ -36,6 +36,7 @@ import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session
 export type AdminBotPaperSlotsHost = {
   settings: UiSettings;
   adminBotPiReview?: PiReviewRow[];
+  adminBotPiReviewHistory?: PiReviewRow[];
   adminBotPiReviewError?: string | null;
   /** The roster, for deciding who may be nudged. See `nudgeableBatches`. */
   adminBotData?: {
@@ -382,10 +383,12 @@ export async function saveAdminBotPaperSlot(
     // reaches them through a re-read.
     host.adminBotPaperSlotsLoadedAt = null;
     if (feedbackRequest && host.adminBotPiReview !== undefined) {
-      const queue = await fetchPiReviewQueue(wire.token, wire.baseUrl);
+      const queue = await fetchPiReviewQueueAndHistory(wire.token, wire.baseUrl);
       if (sameSession(wire.token)) {
         if (queue.ok) {
-          host.adminBotPiReview = queue.value;
+          // A reviewed request leaves the queue for its history in the same read.
+          host.adminBotPiReview = queue.value.papers;
+          host.adminBotPiReviewHistory = queue.value.history;
         }
         host.adminBotPiReviewError = queue.ok ? null : failureText(queue, wire.baseUrl);
       }

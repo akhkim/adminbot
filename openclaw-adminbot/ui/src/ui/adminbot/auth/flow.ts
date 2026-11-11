@@ -251,6 +251,7 @@ export type MemberAuthHost = {
   adminBotProfileAdoption?: import("../api/members.ts").MemberAdoptionSummary | null;
   adminBotEscalatedNudges?: import("../api/nudges.ts").EscalatedNudgeRow[];
   adminBotPiReview?: import("../api/paper-admin.ts").PiReviewRow[];
+  adminBotPiReviewHistory?: import("../api/paper-admin.ts").PiReviewRow[];
   adminBotPiReviewError?: string | null;
   adminBotLocationDrift?: import("../api/profile.ts").LocationDrift | null;
   adminBotLocationDrifts?: import("../api/profile.ts").LocationDrift[];
@@ -690,6 +691,7 @@ function clearMemberScopedData(host: MemberAuthHost): void {
   host.adminBotProfileAdoption = null;
   host.adminBotEscalatedNudges = [];
   host.adminBotPiReview = [];
+  host.adminBotPiReviewHistory = [];
   host.adminBotPiReviewError = null;
   host.adminBotLocationDrift = undefined;
   host.adminBotLocationDrifts = undefined;

@@ -8,7 +8,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AdminBotPaperRecord } from "../controllers/admin.ts";
 import { paperSteps } from "../data/paper-steps.ts";
 import { renderProjectPage } from "./page.ts";
-import { drawPage, emptyCycle, makeState, overviewRow, paper } from "./projects.test-helpers.ts";
+import {
+  drawPage,
+  emptyCycle,
+  makeState,
+  overviewRow,
+  paper,
+  summaryFor,
+} from "./projects.test-helpers.ts";
 import { resetProjectsSessionState } from "./view.ts";
 
 const api = vi.hoisted(() => ({
@@ -81,6 +88,38 @@ describe("the page itself", () => {
       papers: [paper({ artifacts: { completed_at: "2026-07-14T18:03:11.000Z" } })],
     });
     expect(container.querySelector('[data-testid="my-work-done-badge-p1"]')).not.toBeNull();
+  });
+
+  it("folds a held conference's talk items away under Conference over, closed", () => {
+    const record = paper();
+    const { container } = drawPage({
+      papers: [record],
+      projects: [
+        {
+          ...summaryFor(record),
+          obsolete_todos: [
+            { id: "poster", label: "Poster", lane: "talk", ready: true },
+            { id: "talk_video", label: "Talk video", lane: "talk", ready: true },
+          ],
+        },
+      ],
+    });
+    const fold = container.querySelector<HTMLDetailsElement>(
+      '[data-testid="project-obsolete-todos"]',
+    );
+    expect(fold?.open).toBe(false);
+    expect(fold?.querySelector("summary")?.textContent).toBe("Conference over (2)");
+    expect(container.querySelector(".project__todos")?.textContent).not.toContain("Poster");
+    expect(
+      [...container.querySelectorAll('[data-testid="project-obsolete-todo"]')].map(
+        (item) => item.textContent,
+      ),
+    ).toEqual(["Poster", "Talk video"]);
+  });
+
+  it("draws no fold when nothing is obsolete", () => {
+    const { container } = drawPage();
+    expect(container.querySelector('[data-testid="project-obsolete-todos"]')).toBeNull();
   });
 
   it("states what is open on a paper the active list does not carry", () => {

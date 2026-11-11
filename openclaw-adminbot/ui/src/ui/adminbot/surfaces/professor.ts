@@ -32,6 +32,7 @@ export function renderProfessorSurface(state: AppViewState, scope: AdminBotSurfa
       adoptionCounts: desk ? state.adminBotProfileOverviewPage.desk : null,
       escalated: state.adminBotEscalatedNudges ?? [],
       piReview: state.adminBotPiReview ?? [],
+      piReviewHistory: state.adminBotPiReviewHistory ?? [],
       piReviewLoading: state.adminBotProfileOverviewLoading,
       piReviewError: state.adminBotPiReviewError,
       onRetryPiReview: () => {
