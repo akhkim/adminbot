@@ -19,6 +19,7 @@ import type {
   AdminBotSensitiveInfoRecord,
   AdminBotSettingsInput,
 } from "../../contracts/actions.js";
+import { resolveAdminBotControlUiUrl } from "../../contracts/control-ui.js";
 import { paperStepProgress } from "../../contracts/paper-progress.js";
 import { resolveCalendarSource } from "../../workflows/calendar/source.js";
 import { selectUnreviewedApplicants } from "../../workflows/members/applicant-sheet.js";
@@ -953,7 +954,9 @@ function paperNudgeMessage(paper: AdminBotPaperRecord, recipientLabel: string): 
   return (
     `Hi ${recipientLabel}, please nudge ${paper.authors.join(", ")} about ` +
     `\"${paper.title}\". Current step: ${currentLabel}.` +
-    ` Timeline progress: ${progress.progressPercent}%.${nextLabel}`
+    ` Timeline progress: ${progress.progressPercent}%.${nextLabel}` +
+    // The page the authors fill things in on, so whoever passes this on can pass the link too.
+    ` Paper in AdminBot: ${resolveAdminBotControlUiUrl()}/my-work/${encodeURIComponent(paper.id)}`
   );
 }
 function slackMessageProposal(params: SlackMessageParams): AdminBotActionProposal {

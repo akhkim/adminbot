@@ -214,7 +214,7 @@ describe("the plan", () => {
         rowIndex: 0,
         column: "arxiv_url",
         value: "not-a-link",
-        reason: "that is not a URL",
+        reason: expect.stringContaining("that is not a web address"),
       },
     ]);
   });

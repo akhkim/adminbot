@@ -527,6 +527,37 @@ describe("sendPaperSlotNudges", () => {
     expect(entry?.last_nudged_at).toBeTruthy();
   });
 
+  it("says what is already in, links the paper, and never repeats the edit link", async () => {
+    const service = serviceWithDelivery();
+    seed(service);
+    unwrap(
+      service.setPaperSlot({
+        paperId: "p1",
+        slot: "project_folder",
+        input: { url: "https://docs.google.com/document/d/x" },
+        memberId: "ada",
+        privileged: false,
+      }),
+    );
+    giveOverleaf(service, "overleaf_share", SHARE_URL);
+    const { batches } = unwrap(service.collectPaperNudgeBatches());
+    const message = batches.find((batch) => batch.member_id === "ada")?.message ?? "";
+    expect(message).toMatch(
+      /\*Causal abstraction\* — <https:\/\/[^|]+\/my-work\/p1[^|]*\|open it in AdminBot>/u,
+    );
+    expect(message).toContain("Already in: <https://docs.google.com/document/d/x|project folder>");
+    expect(message).toContain("Overleaf edit link");
+    expect(message).not.toContain(SHARE_URL);
+    expect(message).toContain("/time-availability|Time availability>");
+
+    const sent = unwrap(await service.sendPaperSlotNudges("zhijing"));
+    const outbound = JSON.stringify(sent.created[0]?.proposed_payload ?? {});
+    expect(outbound).toContain("open it in AdminBot");
+    expect(outbound).not.toContain(SHARE_URL);
+    // The paper links replace the bare portal address the funnel appends to other nudges.
+    expect(outbound).not.toMatch(/\\n\\nhttps:\/\/[^\s"]+"/u);
+  });
+
   it("keeps its own cadence, so running twice does not nag", async () => {
     const service = serviceWithDelivery();
     seed(service);
