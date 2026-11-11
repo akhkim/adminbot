@@ -5,15 +5,18 @@ import {
   type LogisticsQueueQuery,
 } from "../../../../../extensions/adminbot/logistics-api.js";
 import { t } from "../../../i18n/index.ts";
+import type { LogisticsTab } from "../../navigation.ts";
 import type {
   LogisticsRequest,
   LogisticsRequestKind,
   LogisticsRequestStatus,
 } from "../api/logistics.ts";
 
+// No request-type control: each of the three "Requests to Zhijing" tabs is one kind of request, so
+// the tab answers "which kind" and the queue only ever lists that kind. A type picker defaulting to
+// "all" put meeting requests on the letters page under the letters' own "Submitted" wording.
 export type LogisticsQueueOptions = {
   search: string;
-  kind: LogisticsRequestKind | "all";
   status: LogisticsRequestStatus | "all";
   sortBy: "submitted" | "user" | "deadline" | "status";
   sortDirection: "asc" | "desc";
@@ -22,7 +25,6 @@ export type LogisticsQueueOptions = {
 // Frozen: every session starts from this one object, so it must never be written in place.
 export const DEFAULT_LOGISTICS_QUEUE_OPTIONS: Readonly<LogisticsQueueOptions> = Object.freeze({
   search: "",
-  kind: "all",
   status: "all",
   sortBy: "deadline",
   sortDirection: "asc",
@@ -59,10 +61,11 @@ export function logisticsDeadlineText(request: LogisticsRequest): string {
 export function logisticsQueueQueryFor(
   options: LogisticsQueueOptions,
   showSettled: boolean,
+  kind?: LogisticsRequestKind,
 ): LogisticsQueueQuery {
   return {
     status: options.status !== "all" ? options.status : showSettled ? "all" : "open",
-    ...(options.kind !== "all" ? { kind: options.kind } : {}),
+    ...(kind ? { kind } : {}),
     ...(options.search.trim() ? { q: options.search.trim() } : {}),
     sort: options.sortBy,
     dir: options.sortDirection,
@@ -77,6 +80,14 @@ export function selectLogisticsQueue(
   requests: readonly LogisticsRequest[],
   options: LogisticsQueueOptions,
   showSettled: boolean,
+  kind?: LogisticsRequestKind,
 ): LogisticsRequest[] {
-  return selectSharedQueue(requests, logisticsQueueQueryFor(options, showSettled));
+  return selectSharedQueue(requests, logisticsQueueQueryFor(options, showSettled, kind));
 }
+
+/** The kind of request each Requests tab holds. */
+export const LOGISTICS_TAB_KIND = {
+  adminbotSignatures: "document_signature",
+  adminbotRecLetters: "recommendation_letters",
+  adminbotMeetingRequests: "book_meeting",
+} as const satisfies Record<LogisticsTab, LogisticsRequestKind>;

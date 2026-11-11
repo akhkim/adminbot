@@ -214,6 +214,7 @@ export function renderLogisticsSurface(state: AppViewState, scope: AdminBotSurfa
             : undefined,
       },
       queue: {
+        kind: LOGISTICS_KIND[logisticsTemplate],
         options: state.adminBotLogisticsQueueOptions,
         onOptionsChange: (patch) => {
           state.adminBotLogisticsQueueOptions = {

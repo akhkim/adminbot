@@ -12,7 +12,11 @@ import { isLogisticsTab } from "../../navigation.ts";
 import type { Tab } from "../../navigation.ts";
 import { fetchLogisticsRequests, type LogisticsRequest } from "../api/logistics.ts";
 import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
-import { logisticsQueueQueryFor, type LogisticsQueueOptions } from "../data/logistics-queue.ts";
+import {
+  LOGISTICS_TAB_KIND,
+  logisticsQueueQueryFor,
+  type LogisticsQueueOptions,
+} from "../data/logistics-queue.ts";
 import { appendPage } from "../load-more.ts";
 import type { LogisticsMode } from "../views/logistics.ts";
 import { loadAdminBotLogisticsRequests, type AdminBotLogisticsHost } from "./logistics.ts";
@@ -32,9 +36,24 @@ export function logisticsListQuery(host: LogisticsReadHost, isAdmin: boolean): U
         logisticsQueueQueryFor(
           host.adminBotLogisticsQueueOptions,
           host.adminBotLogisticsShowSettled,
+          isLogisticsTab(host.tab) ? LOGISTICS_TAB_KIND[host.tab] : undefined,
         ),
       )
     : new URLSearchParams();
+}
+
+/**
+ * Whether the admin's rows on hand were read for another Requests tab. The three tabs share one
+ * list, so moving from Letters to Meetings must ask again rather than show the letters' page.
+ */
+function readForAnotherTab(host: LogisticsReadHost, isAdmin: boolean): boolean {
+  if (!isAdmin || !isLogisticsTab(host.tab) || host.adminBotLogisticsRequestsLoadedAt === null) {
+    return false;
+  }
+  return (
+    new URLSearchParams(host.adminBotLogisticsPage.query).get("kind") !==
+    LOGISTICS_TAB_KIND[host.tab]
+  );
 }
 
 /**
@@ -58,7 +77,7 @@ export function readAdminBotLogisticsLists(
     host.adminBotLogisticsMode === "view" &&
     !host.adminBotLogisticsRequestsLoading &&
     !host.adminBotLogisticsRequestsError &&
-    host.adminBotLogisticsRequestsLoadedAt === null
+    (host.adminBotLogisticsRequestsLoadedAt === null || readForAnotherTab(host, params.isAdmin))
   ) {
     host.adminBotLogisticsRequestsLoadedAt = Date.now();
     void loadAdminBotLogisticsRequests(host, logisticsListQuery(host, params.isAdmin)).finally(() =>
