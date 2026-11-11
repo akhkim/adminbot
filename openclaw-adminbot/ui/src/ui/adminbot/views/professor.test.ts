@@ -1409,7 +1409,8 @@ describe("acting on a paper from its row", () => {
         piReviewRow({ paperId: "p2", title: "Sparse Kettles", feedback } as never),
       ],
       expanded: new Set(["pi-review"]),
-      onPaperAction: (row, action) => calls.push([row.paperId, action.slot]),
+      onPaperAction: (row, action) =>
+        calls.push([row.paperId, "slot" in action ? action.slot : action.key]),
     });
     container.querySelector<HTMLButtonElement>('[data-testid="professor-paper-approve"]')!.click();
     container
@@ -1418,6 +1419,75 @@ describe("acting on a paper from its row", () => {
     expect(calls).toEqual([
       ["p1", "pi_approval"],
       ["p2", "feedback_1"],
+    ]);
+  });
+});
+
+describe("marking an information row reviewed", () => {
+  const openreview = { status: "accepted", stage: "camera_ready", note: "Camera-ready due" };
+
+  it("offers Mark reviewed on a row the service gave a key, and only there", () => {
+    expect(piReviewQuickAction(piReviewRow({ category: "camera_ready", ackKey: "k1" }))).toEqual({
+      kind: "ack",
+      key: "k1",
+      reviewed: true,
+    });
+    expect(piReviewQuickAction(piReviewRow({ category: "camera_ready" }))).toBeNull();
+    // A decision of her own still wins over the acknowledgement.
+    expect(piReviewQuickAction(piReviewRow({ ackKey: "k2" }))).toEqual({
+      kind: "approve",
+      slot: "pi_approval",
+    });
+  });
+
+  it("sends the key from the row and undoes from History", () => {
+    const calls: unknown[] = [];
+    const { container } = draw({
+      piReview: [
+        piReviewRow({ paperId: "p1", category: "camera_ready", openreview, ackKey: "k1" }),
+      ],
+      piReviewHistory: [
+        piReviewRow({
+          paperId: "p2",
+          title: "Sparse Kettles",
+          category: "proofreading",
+          historyReason: "reviewed",
+          ackKey: "k2",
+        }),
+        // Feedback reviewed on the paper page: nothing for the desk to undo.
+        piReviewRow({ paperId: "p3", title: "Old Feedback", historyReason: "reviewed" }),
+      ],
+      expanded: new Set(["pi-review"]),
+      onPaperAction: (_row, action) => calls.push(action),
+    });
+    container.querySelector<HTMLButtonElement>('[data-testid="professor-paper-reviewed"]')!.click();
+    const undo = container.querySelectorAll<HTMLButtonElement>(
+      '[data-testid="pi-review-history-undo"]',
+    );
+    expect(undo).toHaveLength(1);
+    undo[0]!.click();
+    expect(calls).toEqual([
+      { kind: "ack", key: "k1", reviewed: true },
+      { kind: "ack", key: "k2", reviewed: false },
+    ]);
+  });
+
+  it("holds only the row being written", () => {
+    const { container } = draw({
+      piReview: [
+        piReviewRow({ paperId: "p1", category: "camera_ready", openreview, ackKey: "k1" }),
+        piReviewRow({ paperId: "p1", category: "proofreading", ackKey: "k2" }),
+      ],
+      expanded: new Set(["pi-review"]),
+      onPaperAction: () => {},
+      paperBusyId: "k1",
+    });
+    const buttons = [
+      ...container.querySelectorAll<HTMLButtonElement>('[data-testid="professor-paper-reviewed"]'),
+    ];
+    expect(buttons.map((button) => button.textContent?.trim())).toEqual([
+      "Saving…",
+      "Mark reviewed",
     ]);
   });
 });

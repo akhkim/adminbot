@@ -519,6 +519,9 @@ export const en: TranslationMap = {
       approve: "Approve publication",
       saving: "Saving…",
       actionHint: "Marks this one done on the paper itself, as the paper page would.",
+      reviewed: "Mark reviewed",
+      reviewedHint: "Seen it: moves this to History. It comes back if anything about it changes.",
+      undoReviewed: "Undo",
       // Rows that left the queue: kept, folded, so nothing done or out of date is lost.
       history: {
         title: "History ({count})",

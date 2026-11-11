@@ -15,6 +15,7 @@ import {
   fetchPaperNudgeBatches,
   fetchPaperSlotOverview,
   fetchPiReviewQueueAndHistory,
+  setPiReviewAck,
   type PiReviewRow,
   runPaperSlotReminder,
   type PaperNudgeBatch,
@@ -336,6 +337,48 @@ export async function saveAdminBotPaperWeeklyUpdate(
     if (sameSession(wire.token)) {
       host.adminBotPaperSlotsBusyId = null;
     }
+  }
+}
+
+/**
+ * "Mark reviewed" on a My Desk row (or its Undo), then the queue re-read: which rows are open is
+ * the service's call, so the desk shows what it says rather than moving rows itself. The busy id
+ * is the row's key, since one paper can have several rows.
+ */
+export async function setAdminBotPiReviewAck(
+  host: AdminBotPaperSlotsHost,
+  key: string,
+  reviewed: boolean,
+): Promise<void> {
+  const wire = session(host);
+  if (!wire) {
+    host.adminBotPaperSlotsError = t("paperSlots.error.signIn");
+    return;
+  }
+  if (host.adminBotPaperSlotsBusyId) {
+    return;
+  }
+  host.adminBotPaperSlotsBusyId = key;
+  try {
+    host.adminBotPaperSlotsError = null;
+    const result = await setPiReviewAck(wire.token, wire.baseUrl, key, reviewed);
+    if (!sameSession(wire.token)) {
+      return;
+    }
+    if (!result.ok) {
+      host.adminBotPaperSlotsError = failureText(result, wire.baseUrl);
+      return;
+    }
+    const queue = await fetchPiReviewQueueAndHistory(wire.token, wire.baseUrl);
+    if (sameSession(wire.token)) {
+      if (queue.ok) {
+        host.adminBotPiReview = queue.value.papers;
+        host.adminBotPiReviewHistory = queue.value.history;
+      }
+      host.adminBotPiReviewError = queue.ok ? null : failureText(queue, wire.baseUrl);
+    }
+  } finally {
+    host.adminBotPaperSlotsBusyId = null;
   }
 }
 

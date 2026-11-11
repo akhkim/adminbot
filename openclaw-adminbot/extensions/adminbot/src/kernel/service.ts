@@ -549,6 +549,7 @@ import {
   reviewProvesFixesMerged,
   type PaperMentorContext,
 } from "../workflows/papers/papermentor-nudges.js";
+import { applyPiReviewAcks } from "../workflows/papers/pi-review-ack.js";
 import {
   paperFeedbackHistory,
   paperFeedbackQueue,
@@ -618,7 +619,9 @@ import { type IntroRunResult, MeetupService } from "./service.meetups.js";
 import {
   paperImpactSlotWrite,
   piApprovalImpactDenial,
+  piReviewAckedKeys,
   piReviewSlotDenial,
+  writePiReviewAck,
 } from "./service.pi-review.js";
 import {
   sweepProfessorDigest,
@@ -8895,34 +8898,52 @@ export class AdminBotService {
     }));
     const dataset = this.deadlineReadModel(DEADLINE_VENUES);
     const now = new Date();
+    // One list in reading order: anything past its hard deadline first, then camera-ready,
+    // safety impact, arXiv, under review and rejections, each by nearest hard deadline
+    // (workflows/papers/paper-queue.ts). Rows she marked reviewed leave it for the history.
+    const { open: papers, reviewed } = applyPiReviewAcks(
+      rankPaperQueue(
+        [
+          ...paperImpactQueue(open),
+          // A previous venue rejection does not cancel an explicit request to review a revision.
+          ...paperFeedbackQueue(candidates, now, dataset),
+          ...piReviewQueue(open),
+          // What OpenReview says each submitted paper needs next, for every venue.
+          ...openReviewPaperQueue(withEvidence, dataset, now),
+          // Papers headed to a venue whose submission deadline is near: her proofreading clock.
+          ...proofreadingPaperQueue(open, dataset, now),
+        ],
+        now,
+      ),
+      piReviewAckedKeys(this.store),
+    );
     return {
       ok: true,
       status: 200,
       payload: {
-        // One list in reading order: anything past its hard deadline first, then camera-ready,
-        // safety impact, arXiv, under review and rejections, each by nearest hard deadline
-        // (workflows/papers/paper-queue.ts).
-        papers: rankPaperQueue(
-          [
-            ...paperImpactQueue(open),
-            // A previous venue rejection does not cancel an explicit request to review a revision.
-            ...paperFeedbackQueue(candidates, now, dataset),
-            ...piReviewQueue(open),
-            // What OpenReview says each submitted paper needs next, for every venue.
-            ...openReviewPaperQueue(withEvidence, dataset, now),
-            // Papers headed to a venue whose submission deadline is near: her proofreading clock.
-            ...proofreadingPaperQueue(open, dataset, now),
-          ],
-          now,
-        ),
-        // What left the queue as resolved or out of date (a held conference's camera-ready, a
-        // reviewed feedback request), newest deadline first. Kept for the desk's history toggle.
+        papers,
+        // What left the queue as reviewed, resolved or out of date (a held conference's
+        // camera-ready, a reviewed feedback request), newest deadline first. Kept for the desk's
+        // history toggle, where a reviewed row can be put back.
         history: piReviewHistory([
+          ...reviewed,
           ...paperFeedbackHistory(candidates, now, dataset),
           ...openReviewPaperHistory(withEvidence, dataset, now),
         ]),
       },
     };
+  }
+
+  /** Marks one My Desk row reviewed, or puts it back (kernel/service.pi-review.ts). */
+  setPiReviewAck(
+    actor: string,
+    input: { key: string; reviewed: boolean },
+  ): AdminBotServiceResponse<{ key: string; reviewed: boolean }> {
+    return this.withPaperTables(() => {
+      const desk = this.sweepPiReviewQueue();
+      const rows = desk.ok ? [...desk.payload.papers, ...desk.payload.history] : [];
+      return writePiReviewAck(this.store, { ...input, actor, rows, now: new Date().toISOString() });
+    });
   }
 
   /**

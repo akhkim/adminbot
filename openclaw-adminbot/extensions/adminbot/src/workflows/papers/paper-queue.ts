@@ -192,7 +192,7 @@ export function isPastVenueYear(year: number | undefined, now: Date): boolean {
  *   conference_held  the venue's conference has been held, so its camera-ready is over either way
  *   past_cycle       the venue's year is behind the current one
  *   stale_deadline   the hard deadline is more than STALE_DEADLINE_DAYS behind
- *   reviewed         a feedback request she has already answered
+ *   reviewed         a feedback request she has already answered, or a row she marked reviewed
  */
 export type PaperQueueHistoryReason =
   | "conference_held"

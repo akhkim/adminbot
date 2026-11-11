@@ -19145,6 +19145,7 @@
                               "onboarding_followup",
                               "workshop_nudge",
                               "pi_review",
+                              "pi_review_ack",
                               "rec_letter_reminder",
                               "professor_digest",
                               "email_review",
@@ -26722,6 +26723,102 @@
         }
       }
     },
+    "/papers/pi-review/ack": {
+      "post": {
+        "operationId": "post-papers-pi-review-ack",
+        "summary": "POST /papers/pi-review/ack",
+        "tags": [
+          "papers"
+        ],
+        "x-source": "src/api/routes/paper-admin.ts",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "reviewed": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": true,
+                "x-schema-coverage": "inferred from property access or downstream casts; semantic validation remains server-side"
+              }
+            }
+          }
+        },
+        "responses": {
+          "400": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "Successful service result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string"
+                    },
+                    "reviewed": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "key",
+                    "reviewed"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/papers/pre-registration/pending": {
       "get": {
         "operationId": "get-papers-pre-registration-pending",
@@ -28218,6 +28315,7 @@
                         "onboarding_followup",
                         "workshop_nudge",
                         "pi_review",
+                        "pi_review_ack",
                         "rec_letter_reminder",
                         "professor_digest",
                         "email_review",
@@ -44563,6 +44661,9 @@
               "past_cycle",
               "stale_deadline"
             ]
+          },
+          "ack_key": {
+            "type": "string"
           },
           "priority": {
             "type": "string",

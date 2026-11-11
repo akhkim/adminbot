@@ -196,7 +196,10 @@ export const paperAdminRoutes: readonly Route[] = [
       sendServiceResult(
         res,
         result.ok
-          ? { ...result, payload: { ...result.payload, sources: sources.read, warnings: sources.warnings } }
+          ? {
+              ...result,
+              payload: { ...result.payload, sources: sources.read, warnings: sources.warnings },
+            }
           : result,
       );
     }),
@@ -213,6 +216,24 @@ export const paperAdminRoutes: readonly Route[] = [
     privilegedOnly(({ res, ctx }) => {
       const { service } = ctx;
       sendServiceResult(res, service.listPiReviewQueue());
+    }),
+  ),
+  // "Reviewed" on a My Desk row that is information rather than a decision, or its undo.
+  post(
+    "/papers/pi-review/ack",
+    privilegedOnly(async ({ req, res, principal, ctx }) => {
+      const body = readRecord(await readJsonOrEmpty(req));
+      if (typeof body.key !== "string" || typeof body.reviewed !== "boolean") {
+        sendJson(res, 400, { error: { message: "send key (string) and reviewed (boolean)" } });
+        return;
+      }
+      sendServiceResult(
+        res,
+        ctx.service.setPiReviewAck(principalActor(principal), {
+          key: body.key,
+          reviewed: body.reviewed,
+        }),
+      );
     }),
   ),
   post(

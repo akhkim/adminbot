@@ -174,6 +174,10 @@ export const adminBotNudgeDomains = [
   // re-submitted, a second arXiv version -- announces itself again rather than staying silent
   // because it was announced a year ago.
   "pi_review",
+  // The head professor marking an informational queue row reviewed (workflows/papers/
+  // pi-review-ack.ts). Say-once: a row with `nudge_count` above zero is acknowledged; undo sets it
+  // back to zero. The `subject_id` carries the row's state, so a changed row asks again.
+  "pi_review_ack",
   // The three-day warning before a recommendation letter is due, said once per request per
   // deadline. A say-once domain rather than a counting one, like `workshop_nudge`: this is an
   // announcement about a date, not a request repeated until somebody answers, and the `subject_id`

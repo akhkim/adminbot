@@ -63,6 +63,11 @@ export type PiReviewRow = {
    * carries one.
    */
   history_reason?: PaperQueueHistoryReason;
+  /**
+   * Set on a row she may mark reviewed without deciding anything (pi-review-ack.ts): the key the
+   * acknowledgement is stored under, which changes when the row's state does.
+   */
+  ack_key?: string;
   /** Rows the PI asked to see first. Absent is ordinary priority. */
   priority?: "high";
   paper_id: string;
