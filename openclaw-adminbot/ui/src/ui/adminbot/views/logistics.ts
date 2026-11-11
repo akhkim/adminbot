@@ -35,6 +35,7 @@ import {
   LETTER_STATUS_SUGGESTIONS,
   MEETING_SHEET_URL,
   SCHOOL_FIELDS,
+  SCHOOL_PRIMARY_FIELDS,
   SIGNATURE_FORM_URL,
   TEMPLATE_FOLDER_URL,
   TIMEZONE_LIST_ID,
@@ -573,15 +574,14 @@ function renderStatusOptions(id: string, suggestions: readonly string[]) {
   `;
 }
 
-function renderSchoolHead(field: SchoolField) {
-  return html`
-    <th scope="col" class="logistics-schools__head logistics-schools__head--${field.key}">
-      <span class="logistics-schools__head-name">${t(field.labelKey)}</span>
-      ${field.hintKey
-        ? html`<small class="logistics-schools__head-hint">${t(field.hintKey)}</small>`
-        : nothing}
-    </th>
-  `;
+// A field's visible name inside a card. The column-name classes are kept so the names read the same
+// way they did as table headings, and so what a card asks for can be listed by one selector.
+function renderFieldName(name: string, hint?: string) {
+  return html`<span class="logistics-letters__label"
+    ><span class="logistics-schools__head-name">${name}</span>${hint
+      ? html`<small class="logistics-schools__head-hint">${hint}</small>`
+      : nothing}</span
+  >`;
 }
 
 function renderSchoolCell(
@@ -590,8 +590,8 @@ function renderSchoolCell(
   index: number,
   field: SchoolField,
 ) {
-  // The row is found again by id rather than by index: a removal elsewhere in the table can
-  // renumber the rows between this handler being made and being called.
+  // The row is found again by id rather than by index: a removal elsewhere in the list can
+  // renumber the cards between this handler being made and being called.
   const update = (value: string) =>
     props.onSchoolsChange(
       props.schools.map((candidate) =>
@@ -604,8 +604,8 @@ function renderSchoolCell(
       update(control.value);
     }
   };
-  // Every control is inside a cell, and a <th> in a data row would only name it for the row it is
-  // in, not for the column. The label a screen reader needs is both -- column and row number.
+  // The visible name says only the field ("Time"), which is enough beside its neighbours but not
+  // for a screen reader jumping between controls, so the accessible name says field and card number.
   const label = t("logistics.schools.cell", {
     column: t(field.labelKey),
     row: String(index + 1),
@@ -634,7 +634,11 @@ function renderSchoolCell(
     @input=${onInput}
   />`;
   return html`
-    <td class="logistics-schools__cell logistics-schools__cell--${field.key}" data-label=${label}>
+    <label
+      class="logistics-schools__cell logistics-schools__cell--${field.key}"
+      data-label=${label}
+    >
+      ${renderFieldName(t(field.labelKey), field.hintKey ? t(field.hintKey) : undefined)}
       ${field.control === "notes"
         ? html`
             <textarea
@@ -647,16 +651,40 @@ function renderSchoolCell(
             ></textarea>
           `
         : html` ${field.control === "date" ? renderDateControl(input, row[field.key]) : input} `}
-    </td>
+    </label>
   `;
 }
 
+const PRIMARY_SCHOOL_FIELDS = SCHOOL_PRIMARY_FIELDS.map(
+  (key) => SCHOOL_FIELDS.find((field) => field.key === key)!,
+);
+const DETAIL_SCHOOL_FIELDS = SCHOOL_FIELDS.filter(
+  (field) => !SCHOOL_PRIMARY_FIELDS.includes(field.key),
+);
+
+// One school as a card: the three things a letter writer is held to up front, and the member's own
+// bookkeeping folded under "More details". Every control stays in the DOM whether or not the fold is
+// open, so a restored draft keeps its values and the fold is only a matter of what is on screen.
 function renderSchoolRow(props: LettersProps, row: RecommendationSchool, index: number) {
   const named = row.school.trim();
+  const filledDetails = DETAIL_SCHOOL_FIELDS.filter((field) => row[field.key].trim()).length;
   return html`
-    <tr class="logistics-schools__row">
-      ${SCHOOL_FIELDS.map((field) => renderSchoolCell(props, row, index, field))}
-      <td class="logistics-schools__cell logistics-schools__cell--remove">
+    <article class="logistics-schools__row logistics-letters__item">
+      <div class="logistics-letters__grid">
+        ${PRIMARY_SCHOOL_FIELDS.map((field) => renderSchoolCell(props, row, index, field))}
+      </div>
+      <details class="logistics-letters__more">
+        <summary>
+          ${t("logistics.schools.moreDetails")}
+          ${filledDetails
+            ? html`<span class="logistics-letters__count">${filledDetails}</span>`
+            : nothing}
+        </summary>
+        <div class="logistics-letters__grid">
+          ${DETAIL_SCHOOL_FIELDS.map((field) => renderSchoolCell(props, row, index, field))}
+        </div>
+      </details>
+      <div class="logistics-schools__cell logistics-schools__cell--remove">
         <button
           class="btn btn--icon btn--xs"
           type="button"
@@ -668,14 +696,33 @@ function renderSchoolRow(props: LettersProps, row: RecommendationSchool, index: 
         >
           ${icons.x}
         </button>
-      </td>
-    </tr>
+      </div>
+    </article>
+  `;
+}
+
+function renderAddButton(label: string, onClick: () => void, testId?: string) {
+  return html`
+    <div class="logistics-schools__actions">
+      <button
+        class="btn btn--sm logistics-letters__add"
+        type="button"
+        data-testid=${testId ?? nothing}
+        @click=${onClick}
+      >
+        <span aria-hidden="true">${icons.plus}</span>
+        ${label}
+      </button>
+    </div>
   `;
 }
 
 function renderSchoolsSection(props: LettersProps) {
   return html`
-    <section class="logistics-request__section logistics-schools" data-testid="logistics-schools">
+    <section
+      class="logistics-request__section logistics-letters__step"
+      data-testid="logistics-schools"
+    >
       <h3 class="card-title">${t("logistics.schools.title")}</h3>
       <p class="card-sub">${t("logistics.schools.sub")}</p>
 
@@ -683,46 +730,18 @@ function renderSchoolsSection(props: LettersProps) {
       ${renderStatusOptions(LETTER_STATUS_LIST_ID, LETTER_STATUS_SUGGESTIONS)}
       ${renderStatusOptions(TIMEZONE_LIST_ID, ["AoE", ...timezoneSuggestions()])}
 
-      <!-- Eight columns do not fit a laptop, and squeezing them would leave every field too narrow
-           to read what was typed in it. The table keeps its width and this wrapper scrolls. -->
-      <div class="logistics-schools__scroll">
-        <table class="logistics-schools__table">
-          <thead>
-            <tr>
-              ${SCHOOL_FIELDS.map((field) => renderSchoolHead(field))}
-              <th scope="col" class="logistics-schools__head logistics-schools__head--remove">
-                <span class="sr-only">${t("logistics.schools.removeColumn")}</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            ${props.schools.length
-              ? repeat(
-                  props.schools,
-                  (row) => row.id,
-                  (row, index) => renderSchoolRow(props, row, index),
-                )
-              : html`
-                  <tr>
-                    <td class="logistics-schools__empty" colspan=${SCHOOL_FIELDS.length + 1}>
-                      ${t("logistics.schools.empty")}
-                    </td>
-                  </tr>
-                `}
-          </tbody>
-        </table>
+      <div class="logistics-letters__list">
+        ${props.schools.length
+          ? repeat(
+              props.schools,
+              (row) => row.id,
+              (row, index) => renderSchoolRow(props, row, index),
+            )
+          : html`<p class="logistics-schools__empty">${t("logistics.schools.empty")}</p>`}
       </div>
-
-      <div class="logistics-schools__actions">
-        <button
-          class="btn btn--sm"
-          type="button"
-          @click=${() => props.onSchoolsChange([...props.schools, createSchoolRow()])}
-        >
-          <span aria-hidden="true">${icons.plus}</span>
-          ${t("logistics.schools.add")}
-        </button>
-      </div>
+      ${renderAddButton(t("logistics.schools.add"), () =>
+        props.onSchoolsChange([...props.schools, createSchoolRow()]),
+      )}
     </section>
   `;
 }
@@ -738,7 +757,7 @@ function renderSchoolsSection(props: LettersProps) {
  * The line under the heading routes to My Projects, which is where the member's projects and their
  * current step already live -- it is the fastest way to remember what they worked on. It is not a
  * source to copy from: there is no per-week contribution log anywhere yet (the brainstorming doc
- * still lists that as open), so what goes in this table is written here or not at all.
+ * still lists that as open), so what goes in these cards is written here or not at all.
  */
 function renderFactsSection(props: LettersProps) {
   const update = (row: LetterFact, key: "project" | "contribution") => (event: Event) => {
@@ -747,15 +766,20 @@ function renderFactsSection(props: LettersProps) {
       return;
     }
     props.onFactsChange(
-      // Found by id, not by index: a removal above this row renumbers everything under it between
+      // Found by id, not by index: a removal above this card renumbers everything under it between
       // the handler being made and being called.
       props.facts.map((candidate) =>
         candidate.id === row.id ? { ...candidate, [key]: control.value } : candidate,
       ),
     );
   };
+  const cellLabel = (column: string, index: number) =>
+    t("logistics.schools.cell", { column, row: String(index + 1) });
   return html`
-    <section class="logistics-request__section logistics-schools" data-testid="logistics-facts">
+    <section
+      class="logistics-request__section logistics-letters__step"
+      data-testid="logistics-facts"
+    >
       <h3 class="card-title">${t("logistics.facts.title")}</h3>
       <p class="card-sub">
         ${t("logistics.facts.sub")}
@@ -768,103 +792,69 @@ function renderFactsSection(props: LettersProps) {
         </button>
       </p>
 
-      <div class="logistics-schools__scroll">
-        <table class="logistics-schools__table">
-          <thead>
-            <tr>
-              <th scope="col" class="logistics-schools__head">
-                <span class="logistics-schools__head-name">${t("logistics.facts.project")}</span>
-              </th>
-              <th scope="col" class="logistics-schools__head">
-                <span class="logistics-schools__head-name"
-                  >${t("logistics.facts.contribution")}</span
-                >
-                <small class="logistics-schools__head-hint"
-                  >${t("logistics.facts.contributionHint")}</small
-                >
-              </th>
-              <th scope="col" class="logistics-schools__head logistics-schools__head--remove">
-                <span class="sr-only">${t("logistics.schools.removeColumn")}</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            ${props.facts.length
-              ? repeat(
-                  props.facts,
-                  (row) => row.id,
-                  (row, index) => html`
-                    <tr class="logistics-schools__row">
-                      <td
-                        class="logistics-schools__cell"
-                        data-label=${t("logistics.facts.project")}
-                      >
-                        <input
-                          class="logistics-schools__input"
-                          type="text"
-                          aria-label=${t("logistics.schools.cell", {
-                            column: t("logistics.facts.project"),
-                            row: String(index + 1),
-                          })}
-                          placeholder=${t("logistics.facts.projectPlaceholder")}
-                          .value=${row.project}
-                          @input=${update(row, "project")}
-                        />
-                      </td>
-                      <td
-                        class="logistics-schools__cell"
-                        data-label=${t("logistics.facts.contribution")}
-                      >
-                        <textarea
-                          class="logistics-schools__input logistics-schools__notes"
-                          rows="2"
-                          aria-label=${t("logistics.schools.cell", {
-                            column: t("logistics.facts.contribution"),
-                            row: String(index + 1),
-                          })}
-                          placeholder=${t("logistics.facts.contributionPlaceholder")}
-                          .value=${row.contribution}
-                          @input=${update(row, "contribution")}
-                        ></textarea>
-                      </td>
-                      <td class="logistics-schools__cell logistics-schools__cell--remove">
-                        <button
-                          class="btn btn--icon btn--xs"
-                          type="button"
-                          aria-label=${t("logistics.facts.removeRow", { row: String(index + 1) })}
-                          @click=${() =>
-                            props.onFactsChange(
-                              props.facts.filter((candidate) => candidate.id !== row.id),
-                            )}
-                        >
-                          ${icons.x}
-                        </button>
-                      </td>
-                    </tr>
-                  `,
-                )
-              : html`
-                  <tr>
-                    <td class="logistics-schools__empty" colspan="3">
-                      ${t("logistics.facts.empty")}
-                    </td>
-                  </tr>
-                `}
-          </tbody>
-        </table>
+      <div class="logistics-letters__list">
+        ${props.facts.length
+          ? repeat(
+              props.facts,
+              (row) => row.id,
+              (row, index) => html`
+                <article class="logistics-schools__row logistics-letters__item">
+                  <div class="logistics-letters__grid logistics-letters__grid--fact">
+                    <label
+                      class="logistics-schools__cell logistics-letters__fact-project"
+                      data-label=${t("logistics.facts.project")}
+                    >
+                      ${renderFieldName(t("logistics.facts.project"))}
+                      <input
+                        class="logistics-schools__input"
+                        type="text"
+                        aria-label=${cellLabel(t("logistics.facts.project"), index)}
+                        placeholder=${t("logistics.facts.projectPlaceholder")}
+                        .value=${row.project}
+                        @input=${update(row, "project")}
+                      />
+                    </label>
+                    <label
+                      class="logistics-schools__cell logistics-letters__fact-contribution"
+                      data-label=${t("logistics.facts.contribution")}
+                    >
+                      ${renderFieldName(
+                        t("logistics.facts.contribution"),
+                        t("logistics.facts.contributionHint"),
+                      )}
+                      <textarea
+                        class="logistics-schools__input logistics-schools__notes"
+                        rows="2"
+                        aria-label=${cellLabel(t("logistics.facts.contribution"), index)}
+                        placeholder=${t("logistics.facts.contributionPlaceholder")}
+                        .value=${row.contribution}
+                        @input=${update(row, "contribution")}
+                      ></textarea>
+                    </label>
+                  </div>
+                  <div class="logistics-schools__cell logistics-schools__cell--remove">
+                    <button
+                      class="btn btn--icon btn--xs"
+                      type="button"
+                      aria-label=${t("logistics.facts.removeRow", { row: String(index + 1) })}
+                      @click=${() =>
+                        props.onFactsChange(
+                          props.facts.filter((candidate) => candidate.id !== row.id),
+                        )}
+                    >
+                      ${icons.x}
+                    </button>
+                  </div>
+                </article>
+              `,
+            )
+          : html`<p class="logistics-schools__empty">${t("logistics.facts.empty")}</p>`}
       </div>
-
-      <div class="logistics-schools__actions">
-        <button
-          class="btn btn--sm"
-          type="button"
-          data-testid="logistics-facts-add"
-          @click=${() => props.onFactsChange([...props.facts, createFactRow()])}
-        >
-          <span aria-hidden="true">${icons.plus}</span>
-          ${t("logistics.facts.add")}
-        </button>
-      </div>
+      ${renderAddButton(
+        t("logistics.facts.add"),
+        () => props.onFactsChange([...props.facts, createFactRow()]),
+        "logistics-facts-add",
+      )}
     </section>
   `;
 }
@@ -1140,7 +1130,10 @@ type LinkFieldProps = {
 
 function renderLinkField(props: LinkFieldProps) {
   return html`
-    <section class="logistics-request__section logistics-link" data-testid=${props.testId}>
+    <section
+      class="logistics-request__section logistics-link logistics-letters__step logistics-letters__half"
+      data-testid=${props.testId}
+    >
       <h3 class="card-title" id=${props.titleId}>${props.title}</h3>
       <p class="card-sub">${props.description}</p>
       <input
@@ -1340,72 +1333,74 @@ function renderSignatureRequest(props: SignatureProps) {
   `;
 }
 
-// The same container shape for letters: the schools the request covers, the two links that travel
-// with it, then Save and Submit.
+const GUIDEBOOK_URL =
+  "https://docs.google.com/document/d/1H9Bt4z9uvDtieujh8Wp9YXDeLDhkq7vsKYGUvPnktN8/edit?tab=t.0#heading=h.7kpgc8qat88o";
+const GUIDEBOOK_RECOMMENDER_URL =
+  "https://docs.google.com/document/d/1H9Bt4z9uvDtieujh8Wp9YXDeLDhkq7vsKYGUvPnktN8/edit?tab=t.0#heading=h.ypvr8psn5zdy";
+
+// The same container shape for letters, laid out as numbered steps: the schools, what the member
+// did, the two links, then the confirmation and Save and Submit. The numbers come from a CSS
+// counter on the step headings, so a heading's text stays just its name.
 function renderLettersRequest(props: LettersProps) {
   return html`
     <div
-      class="card adminbot-card adminbot-card--wide logistics-request"
+      class="card adminbot-card adminbot-card--wide logistics-request logistics-letters"
       data-testid="logistics-letters"
     >
       <section
-        class="logistics-request__section"
+        class="logistics-request__section logistics-letters__intro"
         aria-labelledby="logistics-letters-guide-title"
         data-testid="logistics-letters-guide"
       >
         <h3 class="card-title" id="logistics-letters-guide-title">
           ${t("logistics.lettersGuide.title")}
         </h3>
-        <p class="card-sub">${t("logistics.lettersGuide.sub")}</p>
-        <p>
+        <p class="card-sub">
+          ${t("logistics.lettersGuide.sub")}
           <a
-            href="https://docs.google.com/document/d/1H9Bt4z9uvDtieujh8Wp9YXDeLDhkq7vsKYGUvPnktN8/edit?tab=t.0#heading=h.7kpgc8qat88o"
+            class="logistics-link__folder"
+            href=${GUIDEBOOK_URL}
             target="_blank"
             rel="noreferrer noopener"
+            >${t("logistics.lettersGuide.open")}
+            <span aria-hidden="true">${icons.externalLink}</span></a
           >
-            ${t("logistics.lettersGuide.open")}
-          </a>
         </p>
-        <!-- The checklist is reference for the first request; the confirmation below stays out. -->
-        <details class="adminbot-fold" data-testid="logistics-letters-checklist">
+        <!-- Reference for a first request, so it stays folded; the confirmation sits by Submit. -->
+        <details class="logistics-letters__more" data-testid="logistics-letters-checklist">
           <summary>What to prepare</summary>
-          <ul>
+          <ul class="logistics-letters__checklist">
             <li>${t("logistics.lettersGuide.folder")}</li>
             <li>${t("logistics.lettersGuide.schools")}</li>
             <li>${t("logistics.lettersGuide.materials")}</li>
             <li>${t("logistics.lettersGuide.facts")}</li>
+            <li>
+              ${t("logistics.lettersGuide.portal")}
+              <a href=${GUIDEBOOK_RECOMMENDER_URL} target="_blank" rel="noreferrer noopener"
+                >${t("logistics.lettersGuide.portalLink")}</a
+              >
+            </li>
           </ul>
           <p class="card-sub">${t("logistics.lettersGuide.reminders")}</p>
         </details>
-        <p>
-          <label style="display:flex;gap:12px;align-items:flex-start;cursor:pointer">
-            <input
-              type="checkbox"
-              required
-              data-testid="logistics-email-confirmation"
-              style="flex-shrink:0;margin-top:5px"
-            />
-            <span style="min-width:0"
-              >I confirm that I have sent all application-portal invitations for this request to
-              <strong>zjin.admin@cs.toronto.edu</strong>, not Zhijing's main email.<span
-                class="cron-required-marker"
-                aria-hidden="true"
-                >*</span
-              ></span
-            >
-          </label>
-          <a
-            href="https://docs.google.com/document/d/1H9Bt4z9uvDtieujh8Wp9YXDeLDhkq7vsKYGUvPnktN8/edit?tab=t.0#heading=h.ypvr8psn5zdy"
-            target="_blank"
-            rel="noreferrer noopener"
-          >
-            ${t("logistics.lettersGuide.portalLink")}
-          </a>
-        </p>
         ${props.eligibility ? renderRecLetterAdvisory(props.eligibility) : nothing}
       </section>
       ${renderSchoolsSection(props)} ${renderFactsSection(props)} ${renderCvOverleafSection(props)}
-      ${renderDriveFolderSection(props)} ${renderRequestActions(props)}
+      ${renderDriveFolderSection(props)}
+      <!-- Beside Submit, because it is the last thing to check before pressing it. Submit finds it
+           through .closest(".logistics-request"), and Discard clears it. -->
+      <label class="logistics-letters__confirm">
+        <input type="checkbox" required data-testid="logistics-email-confirmation" />
+        <span
+          >I confirm that I have sent all application-portal invitations for this request to
+          <strong>zjin.admin@cs.toronto.edu</strong>, not Zhijing's main email.<span
+            class="cron-required-marker"
+            aria-hidden="true"
+            >*</span
+          ></span
+        >
+      </label>
+      ${renderRequestActions(props)}
     </div>
   `;
 }

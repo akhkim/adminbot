@@ -2409,6 +2409,7 @@ export const en: TranslationMap = {
       notesHint: "If it is not a regular program, what it looks for.",
       notesPlaceholder: "ex. joint degree — wants a letter that speaks to statistics coursework.",
       cell: "{column}, row {row}",
+      moreDetails: "More details",
       add: "Add a school",
       remove: "Remove {school}",
       removeRow: "Remove row {row}",

@@ -867,27 +867,29 @@ describe("list of schools", () => {
   });
 
   it("tracks a request by the eleven things a letter writer has to know", () => {
-    const { container } = drawLetters();
+    const { container } = drawLetters({ schools: [createSchoolRow()] });
     const names = [...schoolsTable(container).querySelectorAll(".logistics-schools__head-name")];
     expect(names.map((name) => name.textContent?.trim())).toEqual([
+      // What every school needs up front: where, what, and when the letter is due.
       "School",
-      "Application deadline",
-      // Each deadline carries its own clock, and one zone covers both: a school states its
-      // cutoffs on one clock, so two zone columns would be two chances to disagree.
-      "Time",
+      "Program",
       "Letter deadline",
+      // Each deadline carries its own clock, and one zone covers both: a school states its
+      // cutoffs on one clock, so two zone fields would be two chances to disagree.
       "Time",
       "Time zone",
+      // The rest folds under "More details".
+      "Application deadline",
+      "Time",
       "Application status",
       "Letter status",
-      "Program",
       "Program link",
       "Program notes",
     ]);
   });
 
-  it("qualifies the column names that need it", () => {
-    const { container } = drawLetters();
+  it("qualifies the field names that need it", () => {
+    const { container } = drawLetters({ schools: [createSchoolRow()] });
     const hints = [...schoolsTable(container).querySelectorAll(".logistics-schools__head-hint")];
     expect(hints.map((hint) => hint.textContent?.trim())).toEqual([
       "Required",

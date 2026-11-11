@@ -2057,3 +2057,313 @@ adminbot-offline-access .btn {
 .paper-card-dialog--review p {
   margin: 8px 0;
 }
+
+/* Recommendation Letters: numbered steps of cards instead of wide tables.
+
+   Each school is a card with the fields a letter writer is held to up front and the member's own
+   bookkeeping folded under "More details". Every selector is scoped to .logistics-letters, because
+   Book Meeting still uses the logistics-schools table classes these cards borrow for their hooks. */
+
+.logistics-letters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: var(--space-6);
+  counter-reset: letters-step;
+}
+
+.logistics-letters > * {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.logistics-letters > .logistics-letters__half {
+  grid-column: auto;
+}
+
+.logistics-letters > .logistics-request__section + .logistics-request__section {
+  margin-top: var(--space-5);
+  padding-top: var(--space-5);
+}
+
+/* The intro is a lead-in, not a step: smaller title, no rule under it. */
+.logistics-letters__intro > .card-title {
+  font-size: var(--control-ui-text-lg);
+}
+
+.logistics-letters__intro > .card-sub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+}
+
+.logistics-letters__intro .rec-eligibility {
+  margin-bottom: 0;
+}
+
+.logistics-letters__step > .card-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--control-ui-text-md);
+}
+
+.logistics-letters__step > .card-title::before {
+  counter-increment: letters-step;
+  content: counter(letters-step);
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: var(--radius-full);
+  background: var(--accent-subtle);
+  color: var(--accent);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 700;
+}
+
+.logistics-letters__step > .card-sub {
+  margin-left: calc(1.5rem + var(--space-2));
+}
+
+.logistics-letters__list {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+.logistics-letters__item {
+  position: relative;
+  padding: var(--space-4);
+  padding-right: calc(var(--space-4) + 2rem);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+
+.logistics-letters__item:focus-within {
+  border-color: var(--border-hover);
+}
+
+.logistics-letters__grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.logistics-letters .logistics-schools__cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  grid-column: span 2;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+.logistics-letters .logistics-schools__row:hover .logistics-schools__cell {
+  background: none;
+}
+
+.logistics-letters .logistics-schools__cell--school,
+.logistics-letters .logistics-schools__cell--program {
+  grid-column: span 3;
+}
+
+.logistics-letters .logistics-schools__cell--programLink {
+  grid-column: span 4;
+}
+
+.logistics-letters .logistics-schools__cell--notes,
+.logistics-letters .logistics-letters__fact-contribution {
+  grid-column: 1 / -1;
+}
+
+.logistics-letters .logistics-letters__fact-project {
+  grid-column: 1 / -1;
+}
+
+.logistics-letters__label {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0 var(--space-2);
+  color: var(--muted-strong);
+  font-size: var(--control-ui-text-sm);
+}
+
+.logistics-letters .logistics-schools__head-name {
+  display: inline;
+  font-weight: 500;
+}
+
+.logistics-letters .logistics-schools__head-hint {
+  display: inline;
+  max-width: none;
+}
+
+.logistics-letters .logistics-schools__input {
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+}
+
+.logistics-letters .logistics-schools__notes {
+  min-width: 0;
+}
+
+/* The remove button pins to the card's corner rather than taking a column of its own. */
+.logistics-letters .logistics-schools__cell--remove {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  width: auto;
+}
+
+.logistics-letters__more {
+  margin-top: var(--space-3);
+}
+
+.logistics-letters__more > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--muted-strong);
+  cursor: pointer;
+  font-size: var(--control-ui-text-sm);
+  list-style: none;
+  user-select: none;
+}
+
+.logistics-letters__more > summary::-webkit-details-marker {
+  display: none;
+}
+
+.logistics-letters__more > summary::before {
+  content: "";
+  width: 0.4rem;
+  height: 0.4rem;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.logistics-letters__more[open] > summary::before {
+  transform: rotate(45deg);
+}
+
+.logistics-letters__more > summary:hover {
+  color: var(--text-strong);
+}
+
+.logistics-letters__more > .logistics-letters__grid {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px dashed var(--border);
+}
+
+.logistics-letters__count {
+  border-radius: var(--radius-full);
+  padding: 0 var(--space-2);
+  background: var(--accent-subtle);
+  color: var(--accent);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 600;
+}
+
+.logistics-letters__checklist {
+  margin: var(--space-3) 0 var(--space-2);
+  padding-left: var(--space-5);
+  color: var(--text);
+  font-size: var(--control-ui-text-sm);
+  line-height: 1.6;
+}
+
+.logistics-letters .logistics-schools__empty {
+  margin: 0;
+  padding: var(--space-6) var(--space-4);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+}
+
+.logistics-letters .logistics-schools__actions {
+  justify-content: flex-start;
+  margin-top: var(--space-3);
+}
+
+.logistics-letters__add {
+  border-style: dashed;
+}
+
+.logistics-letters .logistics-link__input {
+  max-width: none;
+  margin-top: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+}
+
+.logistics-letters__confirm {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  margin-top: var(--space-6);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-muted);
+  cursor: pointer;
+  font-size: var(--control-ui-text-sm);
+  line-height: 1.5;
+}
+
+.logistics-letters__confirm:has(input:checked) {
+  border-color: var(--ok-muted);
+  background: var(--ok-subtle);
+}
+
+.logistics-letters__confirm input {
+  flex: none;
+  margin-top: 3px;
+  accent-color: var(--accent);
+}
+
+.logistics-letters__confirm > span {
+  min-width: 0;
+}
+
+.logistics-letters .logistics-request__actions {
+  margin-top: var(--space-3);
+  padding-top: 0;
+  border-top: 0;
+}
+
+@media (max-width: 720px) {
+  .logistics-letters > .logistics-letters__half {
+    grid-column: 1 / -1;
+  }
+
+  .logistics-letters__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .logistics-letters .logistics-schools__cell,
+  .logistics-letters .logistics-schools__cell--school,
+  .logistics-letters .logistics-schools__cell--program,
+  .logistics-letters .logistics-schools__cell--programLink {
+    grid-column: 1 / -1;
+  }
+
+  /* A time and its zone are short enough to share a line even on a phone. */
+  .logistics-letters .logistics-schools__cell--letterDeadlineTime,
+  .logistics-letters .logistics-schools__cell--deadlineTimezone,
+  .logistics-letters .logistics-schools__cell--applicationStatus,
+  .logistics-letters .logistics-schools__cell--letterStatus {
+    grid-column: span 1;
+  }
+
+  .logistics-letters__step > .card-sub {
+    margin-left: 0;
+  }
+}
