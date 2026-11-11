@@ -4,6 +4,7 @@
 // Carried over from the old my-work tests when the card deck became a card list plus project
 // pages; each describe names the capability it guards.
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { saveStoredMemberSession } from "../auth/session.ts";
 import type { SlackChannelCheck } from "../controllers/admin.ts";
 import { loadHistory, recordHistory } from "../paper-grid.ts";
 import { projectsListMode } from "./full-views.ts";
@@ -653,6 +654,21 @@ describe("the flat view", () => {
     expect(container.querySelector('[data-testid="my-work-step-p1"]')).toBeNull();
     expect(container.querySelector('[data-testid="my-work-map-p1"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="paper-legacy-report-p1"]')).not.toBeNull();
+  });
+
+  // The flat view drafts posts too, so it offers the OpenReview option beside the PDF drafts.
+  it("offers OpenReview To Tweet in an admin's social drafts, and not a member's", () => {
+    saveStoredMemberSession({ sessionToken: "synthetic-session", expiresAt: "" });
+    const member = openFlat({ slots: { p1: emptyCycle() } });
+    expect(member.container.querySelector('[data-testid="paper-cycle-p1"]')).not.toBeNull();
+    expect(member.container.querySelector('[data-testid="paper-openreview-tweet-p1"]')).toBeNull();
+    resetProjectsSessionState();
+    const admin = openFlat({ slots: { p1: emptyCycle() }, viewerIsAdmin: true });
+    expect(
+      admin.container.querySelector(
+        '[id="paper-social-drafts-p1"] [data-testid="paper-openreview-tweet-p1"] adminbot-notification-drafts',
+      ),
+    ).not.toBeNull();
   });
 
   it("keeps the conference branch shut until the paper is accepted", () => {

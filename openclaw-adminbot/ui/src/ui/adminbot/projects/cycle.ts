@@ -3,7 +3,7 @@
 //
 // Only drawn once the project's cycle has been read: an empty log and an unloaded one look the
 // same, and only one of them means nobody has written anything.
-import { nothing } from "lit";
+import { html, nothing } from "lit";
 import type { AppViewState } from "../../app-view-state.ts";
 import { draftLinkedInPost, draftXPost } from "../api/papers.ts";
 import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
@@ -50,6 +50,59 @@ export function announcementVenue(paper: AdminBotPaperRecord): string {
   return `${venue}${year}${format}`;
 }
 
+/**
+ * OpenReview To Tweet, on the paper it is for: drawn inside the paper's Social drafts, beside the
+ * X drafts that generate from the PDF, so every surface that drafts a paper's posts (the project's
+ * Social tab and the flat all-fields view) offers both. It used to be a General Tools tab of its
+ * own. Admin-only, as the service's route is: the caller passes it only for an admin. The tool's
+ * module is fetched on first open, so the page pays nothing until then.
+ */
+export function renderOpenReviewTweet(state: AppViewState, paper: AdminBotPaperRecord) {
+  const session = loadStoredMemberSession();
+  if (!session) {
+    return nothing;
+  }
+  return html`<details
+    class="paper-cycle__draft paper-cycle__openreview"
+    id=${`paper-openreview-tweet-${paper.id}`}
+    data-testid=${`paper-openreview-tweet-${paper.id}`}
+    @toggle=${(event: Event) => {
+      if ((event.currentTarget as HTMLDetailsElement).open) {
+        void import("../views/notification-drafts.ts");
+      }
+    }}
+  >
+    <summary><strong>Draft from OpenReview</strong></summary>
+    <p class="paper-slot__note">
+      Instead of the PDF: the lab's acceptance announcement for this conference, built from
+      OpenReview acceptance notifications, with images of the paper list. Nothing is saved here;
+      copy what you want into the X thread above.
+    </p>
+    <adminbot-notification-drafts
+      embedded
+      .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
+      .sessionToken=${session.sessionToken}
+      .presetConference=${paper.venue?.trim() ?? ""}
+    ></adminbot-notification-drafts>
+  </details>`;
+}
+
+/**
+ * Opens the paper's OpenReview panel and scrolls to it. It sits inside the Social drafts group,
+ * which starts closed, so every enclosing <details> is opened too or the scroll lands on nothing.
+ */
+export function openOpenReviewTweet(paperId: string) {
+  const el = document.getElementById(`paper-openreview-tweet-${paperId}`);
+  if (!(el instanceof HTMLDetailsElement)) {
+    return;
+  }
+  for (let node: Element | null = el; node; node = node.parentElement?.closest("details") ?? null) {
+    (node as HTMLDetailsElement).open = true;
+  }
+  void import("../views/notification-drafts.ts");
+  el.scrollIntoView?.({ behavior: "smooth", block: "start" });
+}
+
 /** What to say when the console cannot reach AdminBot at all, rather than a bare "could not". */
 const UNREACHABLE =
   "Could not reach AdminBot. Check your connection and the AdminBot URL in settings, then press Generate again.";
@@ -91,6 +144,7 @@ export function renderCycle(
     paperAuthors: paper.authors ?? [],
     creditMembers: state.adminBotData?.members ?? [],
     defaultVenue: announcementVenue(paper),
+    ...(props.viewerIsAdmin ? { openReviewTool: renderOpenReviewTweet(state, paper) } : {}),
     onSaveDraft: (platform, body, xThread) => props.onSaveDraft(paper.id, platform, body, xThread),
     onCirculateDraft: (draftId: string) => props.onCirculateDraft(paper.id, draftId),
     // The service reads the Drive copy the page already chases, unless a PDF was dropped on the

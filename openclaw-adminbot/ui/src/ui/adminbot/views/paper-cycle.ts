@@ -1,4 +1,4 @@
-import { html, nothing } from "lit";
+import { html, nothing, type TemplateResult } from "lit";
 import {
   X_ANNOUNCEMENT_STAGES,
   readXThreadDraft,
@@ -47,6 +47,11 @@ export type PaperCycleProps = {
     xThread?: import("../../../../../extensions/adminbot/src/workflows/papers/x-draft.js").XThreadDraft,
   ) => void;
   onCirculateDraft: (draftId: string) => void;
+  /**
+   * The other way to draft the X announcement: OpenReview To Tweet, drawn by the host beside the
+   * PDF-based X drafts. The host decides who sees it (admins only); absent, nothing is drawn.
+   */
+  openReviewTool?: TemplateResult | typeof nothing;
   /**
    * LinkedIn only: run the model draft with the panel's venue/context inputs and store the text.
    * `pdfBase64` is a PDF dropped on the panel; absent, the service reads the card's arXiv or Drive
@@ -1125,7 +1130,7 @@ export function renderPaperCycle(props: PaperCycleProps) {
               )}
             </div>`
           : renderDraft(props, "x")}
-        ${renderDraft(props, "linkedin")}
+        ${props.openReviewTool ?? nothing} ${renderDraft(props, "linkedin")}
       </details>
 
       ${props.missingAcceptanceDetails.length

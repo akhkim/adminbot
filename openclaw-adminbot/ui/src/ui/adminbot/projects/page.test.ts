@@ -836,7 +836,7 @@ describe("drafting announcements on the Social tab", () => {
     });
   });
 
-  it("puts OpenReview To Tweet on the social lane for an admin, and nowhere for a member", async () => {
+  it("puts OpenReview To Tweet in the social drafts for an admin, and nowhere for a member", async () => {
     const member = drawPage({ tab: "social", slots: { p1: emptyCycle() }, viewerIsAdmin: false });
     expect(member.container.querySelector('[data-testid="paper-openreview-tweet-p1"]')).toBeNull();
     expect(
@@ -844,14 +844,24 @@ describe("drafting announcements on the Social tab", () => {
     ).toBeNull();
 
     const admin = drawPage({ tab: "social", slots: { p1: emptyCycle() }, viewerIsAdmin: true });
-    const panel = admin.container.querySelector<HTMLDetailsElement>(
+    // One OpenReview panel, beside the PDF-based drafts rather than a panel of its own.
+    expect(
+      admin.container.querySelectorAll('[data-testid="paper-openreview-tweet-p1"]'),
+    ).toHaveLength(1);
+    const drafts = admin.container.querySelector<HTMLDetailsElement>(
+      '[id="paper-social-drafts-p1"]',
+    )!;
+    const panel = drafts.querySelector<HTMLDetailsElement>(
       '[data-testid="paper-openreview-tweet-p1"]',
     );
     expect(panel?.querySelector("adminbot-notification-drafts")).toBeTruthy();
+    expect(drafts.open).toBe(false);
     expect(panel?.open).toBe(false);
+    // The gate's button has to open the closed Social drafts group too, or it reveals nothing.
     admin.container
       .querySelector<HTMLButtonElement>('[data-testid="paper-slot-p1-openreview-tweet"]')
       ?.click();
+    expect(drafts.open).toBe(true);
     expect(panel?.open).toBe(true);
   });
 
