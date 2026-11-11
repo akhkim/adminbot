@@ -16,6 +16,7 @@ import {
   submitLogisticsRequest,
   updateLogisticsRequest,
   withdrawLogisticsRequest,
+  confirmLetterSubmitted,
   deleteLogisticsRequest,
   type LogisticsAttachment,
   type LogisticsRequest,
@@ -353,6 +354,34 @@ export async function withdrawAdminBotLogisticsRequest(
 }
 
 /**
+ * The requester saying their letter went in, or taking that back. Shares the open-card spinner
+ * with withdraw: both are the requester acting on one request, and the card shows the result.
+ */
+export async function confirmAdminBotLetterSubmitted(
+  host: AdminBotLogisticsHost,
+  requestId: string,
+  undo: boolean,
+): Promise<void> {
+  const wire = session(host);
+  if (!wire) {
+    host.adminBotLogisticsRequestsError = t("logistics.requests.error.signIn");
+    return;
+  }
+  host.adminBotLogisticsOpenLoading = true;
+  host.adminBotLogisticsRequestsError = null;
+  try {
+    const result = await confirmLetterSubmitted(requestId, undo, wire.token, wire.baseUrl);
+    if (!result.ok) {
+      host.adminBotLogisticsRequestsError = failureText(result, wire.baseUrl);
+      return;
+    }
+    replaceRequest(host, result.value);
+  } finally {
+    host.adminBotLogisticsOpenLoading = false;
+  }
+}
+
+/**
  * An admin removing a request. It leaves every list it was in and, if it was the one open, the
  * card closes: there is nothing left to show.
  */
@@ -566,8 +595,18 @@ export async function setDeskLetterSubmitted(
  * and dropping them here would blank the documents an admin is looking at.
  */
 function replaceRequest(host: AdminBotLogisticsHost, updated: LogisticsRequest): void {
+  // The service drops the confirmation fields when a letter is reopened, and a plain spread would
+  // keep the stale ones from the row it merges into; name all four so absent means cleared.
+  const confirmation = {
+    confirmed_by: updated.confirmed_by,
+    confirmed_by_name: updated.confirmed_by_name,
+    confirmed_at: updated.confirmed_at,
+    confirmed_via: updated.confirmed_via,
+  };
   const merge = (requests: LogisticsRequest[]) =>
-    requests.map((request) => (request.id === updated.id ? { ...request, ...updated } : request));
+    requests.map((request) =>
+      request.id === updated.id ? { ...request, ...updated, ...confirmation } : request,
+    );
   host.adminBotLogisticsRequests = merge(host.adminBotLogisticsRequests);
   if (host.adminBotDeskLetters.requests.some((request) => request.id === updated.id)) {
     host.adminBotDeskLetters = {
@@ -580,6 +619,7 @@ function replaceRequest(host: AdminBotLogisticsHost, updated: LogisticsRequest):
     host.adminBotLogisticsOpenRequest = {
       ...open,
       ...updated,
+      ...confirmation,
       ...keptBytes(open, updated),
     };
   }

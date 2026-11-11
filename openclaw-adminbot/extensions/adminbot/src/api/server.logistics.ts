@@ -165,6 +165,22 @@ export async function handleLogisticsRoute(
     );
     return;
   }
+  // The requester saying their recommendation letter went in, and taking that back. Their own
+  // request only: the service answers 404 for anyone else's, admins included, since an admin has
+  // the status route for this and the record should say which side closed it.
+  const confirmed = /^\/logistics\/requests\/([^/]+)\/confirm-submitted(\/undo)?$/u.exec(
+    url.pathname,
+  );
+  if (req.method === "POST" && confirmed?.[1]) {
+    const requestId = decodeURIComponent(confirmed[1]);
+    sendServiceResult(
+      res,
+      confirmed[2]
+        ? service.undoLetterConfirmation(requestId, member.id)
+        : service.confirmLetterSubmitted(requestId, member.id),
+    );
+    return;
+  }
   const signed = /^\/logistics\/requests\/([^/]+)\/signed$/u.exec(url.pathname);
   if (req.method === "POST" && signed?.[1]) {
     // Returning a signed document is the lab acting, and it mails the member: admin-only, and the

@@ -270,7 +270,10 @@ Website: `/signatures, /rec-letters, /meeting-requests` · Who: member (queues: 
 | `post-logistics-eligibility-attestations`                                  | POST `/logistics/eligibility-attestations`                                 |
 | `post-logistics-freeze-incidents`                                          | POST `/logistics/freeze-incidents`                                         |
 | `post-logistics-rec-letter-channel-run`                                    | POST `/logistics/rec-letter-channel/run`                                   |
+| `post-logistics-rec-letter-overdue-run`                                    | POST `/logistics/rec-letter-overdue/run` (dry-run)                         |
 | `post-logistics-rec-letter-reminders-run`                                  | POST `/logistics/rec-letter-reminders/run`                                 |
+| `post-logistics-requests-by-requests-id-confirm-submitted-undo`            | POST `/logistics/requests/{requests_id}/confirm-submitted/undo`            |
+| `post-logistics-requests-by-requests-id-confirm-submitted`                 | POST `/logistics/requests/{requests_id}/confirm-submitted`                 |
 | `post-logistics-requests-by-requests-id-signed`                            | POST `/logistics/requests/{requests_id}/signed`                            |
 | `post-logistics-requests-by-requests-id-withdraw`                          | POST `/logistics/requests/{requests_id}/withdraw`                          |
 | `post-logistics-requests`                                                  | POST `/logistics/requests`                                                 |
