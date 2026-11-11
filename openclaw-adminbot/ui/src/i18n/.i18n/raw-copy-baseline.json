@@ -2973,6 +2973,20 @@
       "count": 1,
       "kind": "html-text",
       "name": "text",
+      "path": "ui/src/ui/adminbot/projects/cycle.ts",
+      "text": "Draft from OpenReview"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/projects/cycle.ts",
+      "text": "Instead of the PDF: the lab's acceptance announcement for this conference, built from OpenReview acceptance notifications, with images of the paper list. Nothing is saved here; copy what you want into the X thread above."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
       "path": "ui/src/ui/adminbot/projects/details.ts",
       "text": "Names the Slack channel for a project that does not have one yet. Renaming it here does not rename a channel that already exists."
     },
@@ -5018,6 +5032,13 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/arr-reviewers.ts",
+      "text": "ARR-eligible reviewers only"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/arr-reviewers.ts",
       "text": "Loading reviewers…"
     },
     {
@@ -6916,6 +6937,76 @@
       "name": "text",
       "path": "ui/src/ui/adminbot/views/lab-papers.ts",
       "text": "What have we already done about this?"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/adminbot/views/lab-projects.ts",
+      "text": "Search projects"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/adminbot/views/lab-projects.ts",
+      "text": "Status"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/adminbot/views/lab-projects.ts",
+      "text": "Search by title, member or topic"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "title",
+      "path": "ui/src/ui/adminbot/views/lab-projects.ts",
+      "text": "Open the project page"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/lab-projects.ts",
+      "text": "Every status"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/lab-projects.ts",
+      "text": "GitHub repo"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/lab-projects.ts",
+      "text": "Last update"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/lab-projects.ts",
+      "text": "Loading the lab's projects…"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/lab-projects.ts",
+      "text": "No paper, repo or doc linked yet"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/lab-projects.ts",
+      "text": "No project matches."
     },
     {
       "count": 1,
@@ -8927,6 +9018,13 @@
       "text": "Where is it?"
     },
     {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "title",
+      "path": "ui/src/ui/adminbot/views/paper-slots.ts",
+      "text": "Generate tweet drafts and images from OpenReview acceptance notifications"
+    },
+    {
       "count": 2,
       "kind": "html-text",
       "name": "text",
@@ -8952,6 +9050,13 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/paper-slots.ts",
+      "text": "Draft from OpenReview"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/paper-slots.ts",
       "text": "Earlier abstract excerpt:"
     },
     {
@@ -8960,6 +9065,13 @@
       "name": "text",
       "path": "ui/src/ui/adminbot/views/paper-slots.ts",
       "text": "i"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/paper-slots.ts",
+      "text": "list of decks"
     },
     {
       "count": 1,
@@ -9037,6 +9149,13 @@
       "name": "text",
       "path": "ui/src/ui/adminbot/views/paper-slots.ts",
       "text": "Public metadata has not been confirmed yet. Private submissions may not be visible to AdminBot."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot/views/paper-slots.ts",
+      "text": "Quick Pointers"
     },
     {
       "count": 1,
@@ -9204,7 +9323,7 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/adminbot/views/papermentor.ts",
-      "text": "Also check every reference the paper cites against Crossref, Semantic Scholar, OpenAlex, DBLP and arXiv. Only the references are sent, read from the paper's .bib (or its PDF if it has none)."
+      "text": "Also check every reference the paper cites against Crossref, Semantic Scholar, OpenAlex, DBLP and arXiv. Only the references are sent, read from the zip's .bib files (or its \\bibitem list)."
     },
     {
       "count": 1,

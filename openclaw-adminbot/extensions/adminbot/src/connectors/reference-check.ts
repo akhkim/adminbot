@@ -233,9 +233,33 @@ export function mainTextBeforeReferences(text: string): string {
     .trim();
 }
 
-/** Looks up references already split into single citation strings, one at a time, in order. */
+/**
+ * One reference, already separated from the rest of the bibliography.
+ *
+ * A string is a citation as printed, which the lookup has to parse for its title, authors and year
+ * -- a heuristic that misreads titles with periods or colons in them. An entry read from a .bib
+ * carries those fields already (connectors/bib-references.ts), so they are handed to the lookup as
+ * they are and nothing is re-parsed. Its `citation` is what the finding shows, and where the lookup
+ * reads a DOI or arXiv ID from for its direct resolution.
+ */
+export type ReferenceEntry = string | StructuredReference;
+export type StructuredReference = {
+  citation: string;
+  title: string;
+  /** "A, B, and C", as the lookup's author matching reads them. */
+  authors?: string;
+  year?: string;
+  /** Journal, proceedings or other container. */
+  venue?: string;
+};
+
+export function referenceCitation(entry: ReferenceEntry): string {
+  return typeof entry === "string" ? entry : entry.citation;
+}
+
+/** Looks up references already split into single entries, one at a time, in order. */
 export type ReferenceListChecker = (
-  references: readonly string[],
+  references: readonly ReferenceEntry[],
   signal: AbortSignal,
   onProgress?: (progress: ReferenceProgress) => void,
   options?: PdfReferenceCheckOptions,
@@ -281,7 +305,7 @@ export function createPdfReferenceChecker(
 }
 
 /**
- * A checker for references that are already single entries -- rendered from a paper's own .bib, so
+ * A checker for references that are already single entries -- read from a paper's own source, so
  * nothing had to be split out of PDF text. The same lookups and verdicts as a PDF's references.
  */
 export function createReferenceListChecker(
@@ -298,7 +322,8 @@ export function createReferenceListChecker(
     const findings: ReferenceFinding[] = [];
     onProgress?.({ completed: 0, total: references.length });
     const lastRequest = new Map<string, number>();
-    for (const citation of references) {
+    for (const entry of references) {
+      const citation = referenceCitation(entry);
       signal.throwIfAborted();
       if (citation.length >= OVERSIZED_REFERENCE) {
         // Never looked up: a query built from several run-together entries can only mislead.
@@ -323,7 +348,19 @@ export function createReferenceListChecker(
       }
       const failures = new Set<string>();
       const available = new Set<string>();
-      const parsed = parseGeneric(citation);
+      // A .bib entry's own fields are the expected metadata; only a printed citation is parsed.
+      const expected =
+        typeof entry === "string"
+          ? (() => {
+              const parsed = parseGeneric(citation);
+              return parsed.title ? parsed : undefined;
+            })()
+          : {
+              title: entry.title,
+              ...(entry.authors ? { authors: entry.authors } : {}),
+              ...(entry.year ? { year: entry.year } : {}),
+              ...(entry.venue ? { journal: entry.venue } : {}),
+            };
       const result = await lookupContext.run(
         {
           signal,
@@ -337,8 +374,7 @@ export function createReferenceListChecker(
           ...(options.maxCooldownWaitMs ? { maxCooldownWaitMs: options.maxCooldownWaitMs } : {}),
           userAgent,
         },
-        () =>
-          checkWithFallback(parsed.title || citation, parsed.title ? parsed : undefined, citation),
+        () => checkWithFallback(expected?.title || citation, expected, citation),
       );
       signal.throwIfAborted();
       const matched =

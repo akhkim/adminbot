@@ -1085,14 +1085,19 @@ finished review offers:
 - the **reference check**, read in place.
 
 **The reference check.** On by default, with its own consent to querying the scholarly databases.
-It reads the entries of the paper's `.bib` that the `.tex` files actually cite
-(`connectors/bib-references.ts`) instead of splitting a bibliography out of PDF text -- the step
-the PDF checker most often fails at -- and falls back to the built PDF when the zip has no `.bib`.
-The lookups are the PDF checker's (Crossref, Semantic Scholar, OpenAlex, DBLP, arXiv), with two
-differences: "not found" is only claimed once Crossref and a broad index answered, since nobody is
-there to retry, and up to 200 references are checked. It goes through the same request-scoped
-`reference.scan` approval as the PDF check and is audited as `reference_check.pdf_checked` with
-`papermentor: { input: "bib" | "pdf" }` and the hash of what was sent.
+It reads the references straight out of the uploaded zip -- the entries of its `.bib` files that
+the `.tex` files actually cite (`connectors/bib-references.ts`) -- and never splits a
+bibliography out of PDF text, the step the PDF checker most often fails at. Each `.bib` entry goes
+to the lookup as its own fields (title, authors, year, venue), so nothing is re-parsed from a
+citation string; a DOI or arXiv ID in the entry is resolved directly. A paper that writes its
+bibliography by hand (`thebibliography` in a `.tex`, or a committed `.bbl`) is read from its
+`\bibitem`s, one entry each. A zip with neither is reported as not checked; the PDF is not a
+fallback. The lookups are the PDF checker's (Crossref, Semantic Scholar, OpenAlex, DBLP, arXiv),
+with two differences: "not found" is only claimed once Crossref and a broad index answered, since
+nobody is there to retry, and up to 200 references are checked. It goes through the same
+request-scoped `reference.scan` approval as the PDF check and is audited as
+`reference_check.pdf_checked` with `papermentor: { input: "bib" }` and the hash of the citations
+sent (rows from before the PDF fallback was dropped may say `"pdf"`).
 
 **PDF only.** Below the reviews, the PDF reference check for a paper without its source. Unchanged,
 except that GPTZero is offered only when `GPTZERO_API_KEY` is set on the service.

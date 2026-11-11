@@ -1,24 +1,33 @@
-// The references a LaTeX paper cites, read from its own .bib files rather than out of PDF text.
+// The references a LaTeX paper cites, read from its own source rather than out of PDF text.
 //
 // The PDF reference checker has to find the References heading in extracted text and split it into
 // entries, and it refuses a paper whose bibliography it cannot split reliably -- the most common
 // reason a check fails. A PaperMentor upload carries the source, which already has every entry
 // separated and labelled, so for it the check reads the entries the paper actually cites (an
-// uncited entry in a shared .bib is not the paper's problem) and renders each one as a plain
-// citation in ACL style -- "Authors. Year. Title. In Venue." -- which is the form the lookup's
-// parser (third-party/references-validation/plain-text-parser.ts) reads most exactly.
+// uncited entry in a shared .bib is not the paper's problem).
+//
+// A .bib entry goes to the lookup as its own fields -- title, authors, year, venue -- so nothing is
+// re-parsed out of a citation string; the ACL-style rendering ("Authors. Year. Title. In Venue.")
+// is only what the finding shows, and carries the DOI or arXiv ID the lookup resolves directly. A
+// paper that writes its bibliography by hand (`thebibliography`, or a committed `.bbl`) has no
+// fields to read, so each `\bibitem` goes as its printed text -- still one entry per item, never a
+// split of PDF text.
 //
 // Deliberately small: entries, fields, braces, quotes, `#` concatenation and @string macros. Not a
 // full BibTeX implementation; an entry it cannot read is counted as skipped, never guessed at.
 import fs from "node:fs";
 import path from "node:path";
+import type { ReferenceEntry, StructuredReference } from "./reference-check.js";
 
 export type BibReferences = {
-  /** One citation string per cited entry with a title, in the order the paper first cites them. */
-  references: string[];
-  /** Distinct keys the .tex files cite (every entry, with \nocite{*}). */
+  /**
+   * One entry per cited reference with a title, in the order the paper first cites them: a .bib
+   * entry's fields, or a \bibitem's text. Uncited \bibitems follow, since LaTeX prints every one.
+   */
+  references: ReferenceEntry[];
+  /** Distinct keys the .tex files cite (every .bib entry, with \nocite{*}). */
   cited: number;
-  /** Cited keys with no entry in any .bib, or an entry without a title. Not checked. */
+  /** Cited keys with no entry in any .bib or \bibitem list, or an entry without a title. */
   skipped: number;
 };
 
@@ -28,14 +37,12 @@ const MAX_FILES = 2000;
 const MAX_BYTES = 20 * 1024 * 1024;
 
 /**
- * The cited entries of the paper in `dir`, or undefined when there is nothing to read them from (no
- * .bib, or no cited key resolves) -- the caller then falls back to the PDF.
+ * The cited entries of the paper in `dir`, or undefined when its source holds none to read (no
+ * .bib or \bibitem list, or no cited key resolves). There is no PDF fallback: a reference split out
+ * of PDF text is exactly what this exists to avoid.
  */
 export function citedBibReferences(dir: string): BibReferences | undefined {
-  const { tex, bib } = sourceFiles(dir);
-  if (!bib.length) {
-    return undefined;
-  }
+  const { tex, bib, bbl } = sourceFiles(dir);
   const strings = new Map<string, string>(MONTHS);
   const entries = new Map<string, BibEntry>();
   for (const file of bib) {
@@ -46,25 +53,65 @@ export function citedBibReferences(dir: string): BibReferences | undefined {
       }
     }
   }
+  const items = new Map<string, string>();
+  for (const file of [...tex, ...bbl]) {
+    for (const [key, text] of bibItems(file)) {
+      if (!items.has(key)) {
+        items.set(key, text);
+      }
+    }
+  }
+  if (!entries.size && !items.size) {
+    return undefined;
+  }
   const { keys, all } = citedKeys(tex);
-  const order = all ? [...new Set([...keys, ...entries.keys()])] : keys;
-  const references: string[] = [];
+  const citedOrder = all ? [...new Set([...keys, ...entries.keys()])] : keys;
+  // Every \bibitem is printed whether or not it is cited, so each is the paper's reference.
+  const order = [...new Set([...citedOrder, ...items.keys()])];
+  const references: ReferenceEntry[] = [];
   let skipped = 0;
   for (const key of order) {
+    // The .bib entry wins over a \bibitem for the same key: a committed .bbl is usually its output.
     const entry = entries.get(key);
-    const citation = entry ? renderCitation(entry) : undefined;
-    if (citation) {
-      references.push(citation);
+    const reference = entry ? bibReference(entry) : items.get(key);
+    if (reference) {
+      references.push(reference);
     } else {
       skipped += 1;
     }
   }
-  return references.length ? { references, cited: order.length, skipped } : undefined;
+  return references.length ? { references, cited: citedOrder.length, skipped } : undefined;
 }
 
-function sourceFiles(dir: string): { tex: string[]; bib: string[] } {
+/**
+ * The `\bibitem`s of every `thebibliography` in one file, as [lowercased key, printed text]. The
+ * label argument (`\bibitem[Smith et al.(2020)]{key}`) is skipped; the text is the item's TeX with
+ * the markup taken out, which is what the lookup's citation parser reads.
+ */
+export function bibItems(text: string): Array<[string, string]> {
+  const out: Array<[string, string]> = [];
+  const body = withoutComments(text);
+  const blocks = body.matchAll(
+    /\\begin\s*\{thebibliography\}([\s\S]*?)(?:\\end\s*\{thebibliography\}|$)/gu,
+  );
+  for (const block of blocks) {
+    const parts = block[1].split(/\\bibitem\s*(?:\[(?:[^[\]]|\[[^\]]*\])*\])?\s*\{([^}]*)\}/u);
+    // split with one capture group: [preamble, key1, text1, key2, text2, ...]
+    for (let i = 1; i + 1 < parts.length; i += 2) {
+      const key = parts[i].trim().toLowerCase();
+      const printed = plainTex(parts[i + 1]);
+      if (key && printed) {
+        out.push([key, printed]);
+      }
+    }
+  }
+  return out;
+}
+
+function sourceFiles(dir: string): { tex: string[]; bib: string[]; bbl: string[] } {
   const tex: string[] = [];
   const bib: string[] = [];
+  const bbl: string[] = [];
   let bytes = 0;
   const walk = (current: string, depth: number) => {
     if (depth > 8 || tex.length + bib.length >= MAX_FILES) {
@@ -82,17 +129,20 @@ function sourceFiles(dir: string): { tex: string[]; bib: string[] } {
       const full = path.join(current, entry.name);
       if (entry.isDirectory()) {
         walk(full, depth + 1);
-      } else if (entry.isFile() && /\.(tex|bib)$/iu.test(entry.name)) {
+      } else if (entry.isFile() && /\.(tex|bib|bbl)$/iu.test(entry.name)) {
         bytes += fs.statSync(full).size;
         if (bytes > MAX_BYTES) {
           return;
         }
-        (entry.name.toLowerCase().endsWith(".bib") ? bib : tex).push(fs.readFileSync(full, "utf8"));
+        const extension = entry.name.slice(-4).toLowerCase();
+        (extension === ".bib" ? bib : extension === ".bbl" ? bbl : tex).push(
+          fs.readFileSync(full, "utf8"),
+        );
       }
     }
   };
   walk(dir, 0);
-  return { tex, bib };
+  return { tex, bib, bbl };
 }
 
 /** Keys in first-cited order, lowercased (BibTeX keys are case-insensitive). */
@@ -316,28 +366,59 @@ function authorList(field: string | undefined): string {
     : (names[0] ?? "");
 }
 
-/** One entry as an ACL-style citation, or undefined for one with no title to look up. */
-export function renderCitation(entry: BibEntry): string | undefined {
+/** The fields the lookup matches on, read once for both the structured entry and its rendering. */
+function bibFields(entry: BibEntry) {
   const f = entry.fields;
   const title = plainTex(f.title ?? "").replace(/[.\s]+$/u, "");
   if (!title) {
     return undefined;
   }
-  // Digits in the author segment would stop the parser reading the leading names as authors.
-  const authors = authorList(f.author ?? f.editor).replace(/\d+/gu, "");
-  const year = /\b(1[89]\d{2}|20\d{2})\b/u.exec(f.year ?? f.date ?? "")?.[1];
   const arxiv =
     (f.archiveprefix ?? f.eprinttype ?? "").toLowerCase() === "arxiv" && f.eprint
       ? `arXiv preprint arXiv:${f.eprint.trim()}`
       : undefined;
-  const venue = plainTex(
-    f.booktitle ?? f.journal ?? f.journaltitle ?? f.school ?? f.institution ?? arxiv ?? "",
-  );
-  const doi = /10\.\d{4,9}\/\S+/u.exec(f.doi ?? "")?.[0];
-  const head = [authors || "Anonymous", year].filter(Boolean).join(". ");
+  return {
+    title,
+    authors: authorList(f.author ?? f.editor),
+    year: /\b(1[89]\d{2}|20\d{2})\b/u.exec(f.year ?? f.date ?? "")?.[1],
+    venue: plainTex(
+      f.booktitle ?? f.journal ?? f.journaltitle ?? f.school ?? f.institution ?? arxiv ?? "",
+    ),
+    doi: /10\.\d{4,9}\/\S+/u.exec(f.doi ?? "")?.[0],
+  };
+}
+
+/** One entry as an ACL-style citation, or undefined for one with no title to look up. */
+export function renderCitation(entry: BibEntry): string | undefined {
+  const fields = bibFields(entry);
+  if (!fields) {
+    return undefined;
+  }
+  // Digits in the author segment would stop a parser reading the leading names as authors.
+  const authors = fields.authors.replace(/\d+/gu, "");
+  const head = [authors || "Anonymous", fields.year].filter(Boolean).join(". ");
   return [
-    `${head}. ${title}.`,
-    venue ? ` ${entry.type === "inproceedings" ? "In " : ""}${venue}.` : "",
-    doi ? ` DOI: ${doi}` : "",
+    `${head}. ${fields.title}.`,
+    fields.venue ? ` ${entry.type === "inproceedings" ? "In " : ""}${fields.venue}.` : "",
+    fields.doi ? ` DOI: ${fields.doi}` : "",
   ].join("");
+}
+
+/**
+ * One entry as the lookup takes it: its own fields, plus the rendered citation the finding shows
+ * (and the lookup reads a DOI or arXiv ID from). Undefined for an entry with no title.
+ */
+export function bibReference(entry: BibEntry): StructuredReference | undefined {
+  const fields = bibFields(entry);
+  const citation = renderCitation(entry);
+  if (!fields || !citation) {
+    return undefined;
+  }
+  return {
+    citation,
+    title: fields.title,
+    ...(fields.authors ? { authors: fields.authors } : {}),
+    ...(fields.year ? { year: fields.year } : {}),
+    ...(fields.venue ? { venue: fields.venue } : {}),
+  };
 }

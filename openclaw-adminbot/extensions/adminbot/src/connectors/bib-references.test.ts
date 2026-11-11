@@ -4,12 +4,15 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { parseGeneric } from "../third-party/references-validation/plain-text-parser.js";
 import {
+  bibItems,
+  bibReference,
   citedBibReferences,
   citedKeys,
   parseBib,
   plainTex,
   renderCitation,
 } from "./bib-references.js";
+import { referenceCitation } from "./reference-check.js";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -79,10 +82,31 @@ As shown by \citet{lovelace2020} and \citep[p.~3]{synthetic2017garden, LOVELACE2
     const result = citedBibReferences(dir)!;
     expect(result.cited).toBe(5);
     expect(result.skipped).toBe(2);
+    // Each entry goes to the lookup as its own fields; the citation is only what a finding shows.
     expect(result.references).toEqual([
-      "Ada Lovelace. 2020. A Study of Muller's Method. Journal of Synthetic Results. DOI: 10.1234/synthetic.5678",
-      "Ada Vaswani and Ben Shazeer. 2017. Attention to Synthetic Gardens. In Advances in Neural Information Processing Systems 30.",
-      "Alan Turing. 2023. Synthetic Preprints. arXiv preprint arXiv:2301.00001.",
+      {
+        citation:
+          "Ada Lovelace. 2020. A Study of Muller's Method. Journal of Synthetic Results. DOI: 10.1234/synthetic.5678",
+        title: "A Study of Muller's Method",
+        authors: "Ada Lovelace",
+        year: "2020",
+        venue: "Journal of Synthetic Results",
+      },
+      {
+        citation:
+          "Ada Vaswani and Ben Shazeer. 2017. Attention to Synthetic Gardens. In Advances in Neural Information Processing Systems 30.",
+        title: "Attention to Synthetic Gardens",
+        authors: "Ada Vaswani and Ben Shazeer",
+        year: "2017",
+        venue: "Advances in Neural Information Processing Systems 30",
+      },
+      {
+        citation: "Alan Turing. 2023. Synthetic Preprints. arXiv preprint arXiv:2301.00001.",
+        title: "Synthetic Preprints",
+        authors: "Alan Turing",
+        year: "2023",
+        venue: "arXiv preprint arXiv:2301.00001",
+      },
     ]);
   });
 
@@ -91,11 +115,82 @@ As shown by \citet{lovelace2020} and \citep[p.~3]{synthetic2017garden, LOVELACE2
     expect(citedBibReferences(dir)!.references).toHaveLength(4);
   });
 
-  it("is nothing to read from without a .bib, or when no cited key resolves", () => {
+  it("is nothing to read from without a .bib or \\bibitem list, or when no cited key resolves", () => {
     expect(citedBibReferences(paper({ "main.tex": String.raw`\cite{x}` }))).toBeUndefined();
     expect(
       citedBibReferences(paper({ "main.tex": String.raw`\cite{x}`, "refs.bib": BIB })),
     ).toBeUndefined();
+  });
+
+  it("reads a hand-written bibliography's \\bibitems, every one, cited ones first", () => {
+    const dir = paper({
+      "main.tex": String.raw`\documentclass{article}
+\begin{document}
+As in \cite{second} and \cite{gone}.
+\begin{thebibliography}{9}
+\bibitem[{Lovelace(2020)}]{first} Ada Lovelace. 2020. \newblock \emph{Synthetic Results}. Journal of Tests.
+% \bibitem{commented} Not a reference.
+\bibitem{second} Alan Turing. 2023. Synthetic Preprints. arXiv preprint arXiv:2301.00001.
+\end{thebibliography}
+\end{document}`,
+    });
+    const result = citedBibReferences(dir)!;
+    expect(result.references).toEqual([
+      "Alan Turing. 2023. Synthetic Preprints. arXiv preprint arXiv:2301.00001.",
+      // Not cited, but LaTeX prints every \bibitem, so it is the paper's reference too.
+      "Ada Lovelace. 2020. Synthetic Results. Journal of Tests.",
+    ]);
+    expect(result).toMatchObject({ cited: 2, skipped: 1 });
+  });
+
+  it("reads a committed .bbl, and prefers the .bib entry for a key in both", () => {
+    const bbl = String.raw`\begin{thebibliography}{2}
+\bibitem{lovelace2020} Stale rendering of the Lovelace paper.
+\bibitem{bblonly} Grace Hopper. 1952. The Education of a Computer.
+\end{thebibliography}`;
+    const dir = paper({
+      "main.tex": String.raw`\cite{lovelace2020,bblonly}`,
+      "main.bbl": bbl,
+      "refs.bib": BIB,
+    });
+    const references = citedBibReferences(dir)!.references;
+    expect(references).toHaveLength(2);
+    expect(references[0]).toMatchObject({ title: "A Study of Muller's Method" });
+    expect(references[1]).toBe("Grace Hopper. 1952. The Education of a Computer.");
+  });
+});
+
+describe("bibItems", () => {
+  it("splits on \\bibitem with or without a nested label, and drops the markup", () => {
+    expect(
+      bibItems(String.raw`\begin{thebibliography}{99}
+\bibitem[{Smith et~al.(2020)Smith, Jones}]{Smith2020} J.~Smith and K.~Jones. \newblock {Gardens}. \newblock In \textit{Proc. Tests}, 2020.
+\bibitem[{[2]}]{b} B. 2021.
+\end{thebibliography}`),
+    ).toEqual([
+      ["smith2020", "J. Smith and K. Jones. Gardens. In Proc. Tests, 2020."],
+      ["b", "B. 2021."],
+    ]);
+    expect(bibItems(String.raw`\bibitem{outside} not in a thebibliography`)).toEqual([]);
+  });
+});
+
+describe("structured entries", () => {
+  it("keep a title the citation parser would cut at its first period", () => {
+    const [entry] = parseBib(String.raw`@article{k,
+      title = {{GPT-4.5}: Results. A Synthetic Retrospective},
+      author = {Lovelace, Ada},
+      year = {2025},
+      journal = {Journal of Tests},
+    }`);
+    const reference = bibReference(entry)!;
+    expect(reference.title).toBe("GPT-4.5: Results. A Synthetic Retrospective");
+    // What the lookup would have guessed had the rendered citation been re-parsed instead.
+    expect(parseGeneric(referenceCitation(reference)).title).not.toBe(reference.title);
+  });
+
+  it("are nothing for an entry with no title", () => {
+    expect(bibReference({ type: "misc", key: "k", fields: { author: "A" } })).toBeUndefined();
   });
 });
 

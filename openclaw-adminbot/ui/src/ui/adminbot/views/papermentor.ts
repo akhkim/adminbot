@@ -404,7 +404,8 @@ export class PaperMentorView extends LitElement {
       return html`<p class="hint">${references.message ?? "The references were not checked."}</p>`;
     }
     const opened = this.findings[review.id];
-    const from = references.source === "bib" ? "the paper's .bib" : "the PDF";
+    // "pdf" only on a review from before the check stopped reading the built PDF.
+    const from = references.source === "pdf" ? "the PDF" : "the paper's source";
     return html`<p>
         ${references.total ?? 0} references checked (from ${from}) · ${references.matched ?? 0}
         matched · ${references.not_found ?? 0} not found ·
@@ -412,7 +413,7 @@ export class PaperMentorView extends LitElement {
       </p>
       ${references.skipped_entries
         ? html`<p class="hint">
-            ${references.skipped_entries} cited key(s) had no usable .bib entry and were not
+            ${references.skipped_entries} cited key(s) had no usable bibliography entry and were not
             checked.
           </p>`
         : nothing}
@@ -504,8 +505,8 @@ export class PaperMentorView extends LitElement {
               }}
             />
             Also check every reference the paper cites against Crossref, Semantic Scholar, OpenAlex,
-            DBLP and arXiv. Only the references are sent, read from the paper's .bib (or its PDF if
-            it has none).</label
+            DBLP and arXiv. Only the references are sent, read from the zip's .bib files (or its
+            \\bibitem list).</label
           >`
         : nothing}
       <button ?disabled=${!this.ready()} @click=${() => void this.submit()}>
