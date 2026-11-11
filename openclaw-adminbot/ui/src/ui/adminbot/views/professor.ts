@@ -99,6 +99,11 @@ export type ProfessorViewProps = {
   onRetryPiReview?: () => void;
   onOpen: (tab: Tab) => void;
   /**
+   * Open one rec-letter request on its own page. Absent, a letter row opens the queue instead.
+   * The row is about one student, so landing on the top of forty requests made her find it again.
+   */
+  onOpenLetterRequest?: (requestId: string) => void;
+  /**
    * Row lists open past their preview cap, keyed by list id.
    *
    * Per list rather than per section, because the adoption section is three lists side by side and
@@ -547,7 +552,11 @@ function section(params: {
   body: unknown;
 }) {
   return html`
-    <section class="professor__section" data-testid=${`professor-${params.id}`}>
+    <section
+      class="professor__section"
+      data-testid=${`professor-${params.id}`}
+      data-section=${params.id}
+    >
       <div class="professor__head">
         <div class="card-title">${params.title}</div>
         <span class="professor__count ab-num" data-empty=${params.count === 0 ? "true" : "false"}
@@ -784,11 +793,24 @@ function letterSchoolsText(request: LogisticsRequest): string {
  * under and the relative date beside it, so "Overdue" is answerable at a glance instead of being
  * something she works out from four ISO dates.
  */
+/** One letter's own request when the page can open it, else the queue it sits in. */
+function openLetter(
+  props: Pick<ProfessorViewProps, "onOpen" | "onOpenLetterRequest">,
+  requestId: string,
+) {
+  if (props.onOpenLetterRequest) {
+    props.onOpenLetterRequest(requestId);
+    return;
+  }
+  props.onOpen("adminbotRecLetters");
+}
+
 function letterBody(
   due: readonly RecLetterDue[],
   props: Pick<
     ProfessorViewProps,
     | "onOpen"
+    | "onOpenLetterRequest"
     | "expanded"
     | "onToggleExpand"
     | "onLetterSubmitted"
@@ -830,7 +852,7 @@ function letterBody(
                 ${group.rows.map((entry) =>
                   rowButton({
                     action: t("professor.letters.open"),
-                    onOpen: () => props.onOpen("adminbotRecLetters"),
+                    onOpen: () => openLetter(props, entry.request.id),
                     body: html`<strong>${entry.request.member_name}</strong>
                       <span class="muted"
                         >${entry.request.schools?.length
@@ -888,7 +910,7 @@ function letterBody(
  */
 function lettersAlreadyInList(
   requests: readonly LogisticsRequest[],
-  props: Pick<ProfessorViewProps, "onOpen">,
+  props: Pick<ProfessorViewProps, "onOpen" | "onOpenLetterRequest">,
 ) {
   return historyToggle({
     testId: "professor-letters-history",
@@ -903,11 +925,7 @@ function lettersAlreadyInList(
         <strong>${request.member_name}</strong>
         <span class="muted">${letterSchoolsText(request)}</span>
         <span>${t("professor.letters.history.allSubmitted")}</span>
-        <button
-          type="button"
-          class="btn btn--sm"
-          @click=${() => props.onOpen("adminbotRecLetters")}
-        >
+        <button type="button" class="btn btn--sm" @click=${() => openLetter(props, request.id)}>
           ${t("professor.letters.open")}
         </button>
       </span>`,
@@ -956,35 +974,38 @@ function adoptionBody(
   profiles: readonly MemberProfileOverviewRow[],
   props: Pick<ProfessorViewProps, "onOpen" | "expanded" | "onToggleExpand" | "adoptionCounts">,
 ) {
-  return html`<div class="professor__columns">
-    ${adoptionColumns(profiles, props.adoptionCounts).map(
-      (column) => html`<div
-        class="professor__column"
-        data-testid=${`professor-adoption-${column.id}`}
-        data-empty=${column.total === 0 ? "true" : "false"}
-      >
-        <div class="professor__column-head">
-          <span>${column.label}</span>
-          <span class="ab-num">${column.total}</span>
-        </div>
-        ${rows({
-          id: `adoption-${column.id}`,
-          total: column.total,
-          items: column.rows.map((row) =>
-            rowButton({
-              action: t("professor.adoption.open"),
-              onOpen: () => props.onOpen("adminbotProfileOverview"),
-              body: html`<strong>${row.name}</strong>
-                <span class="muted">${column.detail(row)}</span>`,
-            }),
-          ),
-          empty: t("professor.adoption.empty"),
-          expanded: props.expanded,
-          onToggleExpand: props.onToggleExpand,
-        })}
-      </div>`,
-    )}
-  </div>`;
+  return html`<details class="professor__fold" data-testid="professor-fold-adoption">
+    <summary>${t("professor.adoption.show")}</summary>
+    <div class="professor__columns">
+      ${adoptionColumns(profiles, props.adoptionCounts).map(
+        (column) => html`<div
+          class="professor__column"
+          data-testid=${`professor-adoption-${column.id}`}
+          data-empty=${column.total === 0 ? "true" : "false"}
+        >
+          <div class="professor__column-head">
+            <span>${column.label}</span>
+            <span class="ab-num">${column.total}</span>
+          </div>
+          ${rows({
+            id: `adoption-${column.id}`,
+            total: column.total,
+            items: column.rows.map((row) =>
+              rowButton({
+                action: t("professor.adoption.open"),
+                onOpen: () => props.onOpen("adminbotProfileOverview"),
+                body: html`<strong>${row.name}</strong>
+                  <span class="muted">${column.detail(row)}</span>`,
+              }),
+            ),
+            empty: t("professor.adoption.empty"),
+            expanded: props.expanded,
+            onToggleExpand: props.onToggleExpand,
+          })}
+        </div>`,
+      )}
+    </div>
+  </details>`;
 }
 
 const AVAILABILITY_CHOICES = ["away", "busy", "available", "unknown"] as const;
@@ -1019,18 +1040,34 @@ function broadcastBox(props: ProfessorViewProps) {
     availability !== liveBroadcast?.availability ||
     timezone.trim() !== (liveBroadcast?.timezone ?? "");
 
+  // Folded to one line by default: the live sentence and its end date are what she needs to see on
+  // arrival, and the compose box is a weekly errand. It opens itself while there is something to
+  // finish -- an edit not yet posted, or the result of the last post.
+  const startOpen = Boolean(props.broadcastNotice) || (props.broadcastDraft !== undefined && dirty);
   return html`
-    <section class="professor__section professor__broadcast" data-testid="professor-broadcast">
-      <div class="professor__head">
-        <div class="card-title">${t("professor.broadcast.title")}</div>
+    <details
+      class="professor__section professor__broadcast"
+      data-testid="professor-broadcast"
+      ?open=${startOpen}
+    >
+      <summary class="professor__broadcast-bar">
+        <span class="professor__broadcast-label">${t("professor.broadcast.title")}</span>
+        <span class="professor__broadcast-live" data-testid="professor-broadcast-live"
+          >${liveBroadcast
+            ? liveBroadcast.message
+            : html`<span class="muted">${t("professor.broadcast.none")}</span>`}</span
+        >
         ${liveBroadcast
           ? html`<span class="professor__when" data-testid="professor-broadcast-until"
               >${t("professor.broadcast.until", {
                 date: liveBroadcast.expires_at.slice(0, 10),
               })}</span
             >`
-          : html`<span class="professor__when muted">${t("professor.broadcast.none")}</span>`}
-      </div>
+          : nothing}
+        <span class="professor__broadcast-edit"
+          >${liveBroadcast ? t("professor.broadcast.edit") : t("professor.broadcast.write")}</span
+        >
+      </summary>
 
       <p class="professor__empty">${t("professor.broadcast.hint")}</p>
 
@@ -1130,7 +1167,7 @@ function broadcastBox(props: ProfessorViewProps) {
             ${props.broadcastNotice.text}
           </p>`
         : nothing}
-    </section>
+    </details>
   `;
 }
 
@@ -1265,6 +1302,41 @@ function paperActionButton(
   });
 }
 
+/**
+ * The page's first line: each queue with something in it, as a jump to that section.
+ *
+ * Five sections stacked is a long page, and what she wants on arrival is "how much is there and
+ * where" -- answered before the first scroll, in the same order the sections below are in.
+ */
+function summaryStrip(sections: ReadonlyArray<{ id: string; count: number | null }>) {
+  const waiting = sections.filter((entry) => entry.count);
+  const jump = (event: Event, id: string) => {
+    (event.currentTarget as HTMLElement)
+      .closest(".professor")
+      ?.querySelector(`[data-section="${id}"]`)
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+  return html`<nav
+    class="professor__summary"
+    data-testid="professor-summary"
+    aria-label=${t("professor.summary.label")}
+  >
+    ${waiting.length
+      ? waiting.map(
+          (entry) => html`<button
+            type="button"
+            class="professor__jump"
+            data-testid=${`professor-jump-${entry.id}`}
+            @click=${(event: Event) => jump(event, entry.id)}
+          >
+            <span class="ab-num">${entry.count}</span>
+            ${t(`professor.summary.${entry.id}`)}
+          </button>`,
+        )
+      : html`<span class="muted">${t("professor.summary.clear")}</span>`}
+  </nav>`;
+}
+
 function defaultExpiryDate(now = new Date()): string {
   return new Date(now.getTime() + 7 * 86_400_000).toISOString().slice(0, 10);
 }
@@ -1287,8 +1359,17 @@ export function renderProfessorView(props: ProfessorViewProps) {
     new Set(adoptionColumns(props.profiles).flatMap((column) => column.rows.map((row) => row.id)))
       .size;
 
-  const sections: Array<{ settled: boolean; pinned?: boolean; body: unknown }> = [
+  const sections: Array<{
+    id: string;
+    count: number | null;
+    settled: boolean;
+    /** Fixed at the foot of the page, in this order, whatever is in it. */
+    pinned?: number;
+    body: unknown;
+  }> = [
     {
+      id: "pi-review",
+      count: props.piReviewLoading || props.piReviewError ? null : props.piReview.length,
       settled: !props.piReviewLoading && !props.piReviewError && props.piReview.length === 0,
       body: section({
         id: "pi-review",
@@ -1437,11 +1518,13 @@ export function renderProfessorView(props: ProfessorViewProps) {
       }),
     },
     {
+      id: "escalated",
+      count: escalatedNudgeTotal(props.escalated),
       settled: props.escalated.length === 0,
       // Pinned last whether or not it has anything in it. Everything above is a queue she works
       // through on her own; this one is the lab asking her to go and chase a person, which is the
       // slowest and least frequent thing on the page and should not sit between two reading lists.
-      pinned: true,
+      pinned: 1,
       body: section({
         id: "escalated",
         title: t("professor.escalated.title"),
@@ -1477,6 +1560,8 @@ export function renderProfessorView(props: ProfessorViewProps) {
       }),
     },
     {
+      id: "letters",
+      count: props.requestsLoading ? null : letters.length,
       // A queue still loading is not an empty one, so it holds its place rather than sinking.
       settled:
         !props.requestsLoading &&
@@ -1517,6 +1602,8 @@ export function renderProfessorView(props: ProfessorViewProps) {
       }),
     },
     {
+      id: "drafts",
+      count: drafts.length,
       settled: drafts.length === 0,
       body: section({
         id: "drafts",
@@ -1547,7 +1634,13 @@ export function renderProfessorView(props: ProfessorViewProps) {
       }),
     },
     {
+      id: "adoption",
+      count: toRemind,
       settled: toRemind === 0,
+      // Pinned to the foot of the page and folded: who has not filled in a profile is worth a
+      // glance once in a while, not the first screen of every visit. Below even the escalations:
+      // those want a word from her, this only wants a reminder sent by somebody.
+      pinned: 2,
       body: section({
         id: "adoption",
         title: t("professor.adoption.title"),
@@ -1564,16 +1657,13 @@ export function renderProfessorView(props: ProfessorViewProps) {
   // page is read top down, and nothing outstanding should not cost the first screen. A pinned
   // section sits below both -- its place on the page is fixed, so it is not somewhere different
   // depending on how her week is going.
+  const sorted = sections.toSorted(
+    (left, right) =>
+      (left.pinned ?? 0) - (right.pinned ?? 0) || Number(left.settled) - Number(right.settled),
+  );
   return html`
     <div class="professor">
-      ${broadcastBox(props)}
-      ${sections
-        .toSorted(
-          (left, right) =>
-            Number(Boolean(left.pinned)) - Number(Boolean(right.pinned)) ||
-            Number(left.settled) - Number(right.settled),
-        )
-        .map((entry) => entry.body)}
+      ${broadcastBox(props)} ${summaryStrip(sorted)} ${sorted.map((entry) => entry.body)}
     </div>
   `;
 }

@@ -1532,19 +1532,23 @@
   flex-wrap: wrap;
 }
 
-/* Sits still at the end of the row, and only colours in on hover: a chevron per row at full
-   strength is five arrows pointing at nothing in particular. */
+/* Always visible, so a row reads as something that opens; it takes the accent on hover. */
 .professor__row-go {
   flex: none;
   align-self: center;
   display: inline-flex;
-  color: var(--muted);
-  opacity: 0.5;
+  color: var(--muted-strong);
+  opacity: 0.85;
+  transition:
+    transform 120ms ease,
+    color 120ms ease;
 }
 
 .professor__row:hover .professor__row-go,
 .professor__row:focus-visible .professor__row-go {
   opacity: 1;
+  color: var(--accent, currentColor);
+  transform: translateX(2px);
 }
 
 .professor__row-go svg {
@@ -1632,11 +1636,117 @@
   font-size: var(--control-ui-text-sm);
 }
 
-/* The broadcast composer. Carries the accent edge the dashboard banner does, so the box she types
-   into and the strip the lab reads are visibly the same object seen from both ends. */
+/* The page's first line: one jump per queue with something in it. Plain text links with the
+   count leading, not chips -- it is a table of contents, not a row of buttons (ui/DESIGN.md). */
+.professor__summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-5, 1.5rem);
+  font-size: var(--control-ui-text-sm);
+}
+
+.professor__jump {
+  all: unset;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  color: var(--text);
+}
+
+.professor__jump .ab-num {
+  font-weight: 600;
+  color: var(--accent, currentColor);
+}
+
+.professor__jump:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.professor__jump:focus-visible {
+  outline: 2px solid var(--accent, currentColor);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.professor__section[data-section] {
+  scroll-margin-top: var(--space-6, 2rem);
+}
+
+/* The broadcast, folded to one line: the live sentence and its end date, with the composer under
+   it. Carries the accent edge the dashboard banner does, so the box she types into and the strip
+   the lab reads are visibly the same object seen from both ends. */
 .professor__broadcast {
   border-inline-start: 2px solid var(--accent, currentColor);
   padding-inline-start: var(--space-4);
+}
+
+.professor__broadcast-bar {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  cursor: pointer;
+  list-style: none;
+  font-size: var(--control-ui-text-sm);
+}
+
+.professor__broadcast-bar::-webkit-details-marker {
+  display: none;
+}
+
+.professor__broadcast-label {
+  flex: none;
+  font-weight: 600;
+}
+
+.professor__broadcast-live {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.professor__broadcast-bar > .professor__when {
+  margin-left: 0;
+  flex: none;
+}
+
+.professor__broadcast-edit {
+  flex: none;
+  color: var(--accent, currentColor);
+}
+
+.professor__broadcast[open] .professor__broadcast-edit {
+  visibility: hidden;
+}
+
+@media (max-width: 640px) {
+  .professor__broadcast-bar {
+    flex-wrap: wrap;
+  }
+  .professor__broadcast-live {
+    flex-basis: 100%;
+    order: 3;
+    white-space: normal;
+  }
+}
+
+/* A section whose rows are folded behind one line (adoption). */
+.professor__fold {
+  margin-top: var(--space-3);
+}
+
+.professor__fold > summary {
+  cursor: pointer;
+  color: var(--accent, currentColor);
+  font-size: var(--control-ui-text-sm);
+}
+
+.professor__fold[open] > summary {
+  margin-bottom: var(--space-3);
 }
 
 .professor__broadcast-box {
