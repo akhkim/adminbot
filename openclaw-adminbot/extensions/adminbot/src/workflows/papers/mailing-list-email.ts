@@ -9,12 +9,9 @@
  * `reply_to` is set: this mail invites a reply from somebody outside the lab (a funder, a
  * collaborator, a mailing list owner), and replies to the bot mailbox are read by nobody.
  */
-import { execFile as execFileCallback } from "node:child_process";
-import { promisify } from "node:util";
 import { renderEmailBodyHtml } from "../../connectors/email-html.js";
-import { resolveGogExecutable } from "../../connectors/gog.js";
+import { resolveGogExecutable, runGogPaced } from "../../connectors/gog.js";
 
-const execFile = promisify(execFileCallback);
 const GOG_TIMEOUT_MS = 45_000;
 const GOG_MAX_OUTPUT_BYTES = 1024 * 1024;
 
@@ -72,11 +69,10 @@ export function createPublicationMailingRunner(
       return;
     }
     try {
-      await execFile(gog, args, {
+      await runGogPaced(gog, args, {
         env: options.env ?? process.env,
         maxBuffer: GOG_MAX_OUTPUT_BYTES,
-        timeout: GOG_TIMEOUT_MS,
-        windowsHide: true,
+        timeoutMs: GOG_TIMEOUT_MS,
       });
     } catch (error) {
       const failure = error as { code?: unknown; stderr?: unknown };

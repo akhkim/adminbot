@@ -1182,6 +1182,47 @@ function pacedGog<T>(task: () => Promise<T>): Promise<T> {
   return result;
 }
 
+/**
+ * Runs one gog command on the shared pace chain, with the same rate-limit retry createGogCapture
+ * uses. For callers that build their own argv and format their own errors (the account, reset and
+ * mailing-list mails, Drive provisioning, Slides) and so used to exec gog directly -- which let them
+ * burst past the pacing and fail on Google's per-user rate limit instead of waiting it out.
+ *
+ * The original exec error is rethrown unchanged (stderr, code and killed intact), so each caller's
+ * classification and message stay what they were. Pass `retries: 0` where the caller already
+ * retries, so the two layers do not multiply.
+ */
+export function runGogPaced(
+  executable: string,
+  args: string[],
+  options: {
+    env?: NodeJS.ProcessEnv;
+    timeoutMs: number;
+    maxBuffer: number;
+    retries?: number;
+    exec?: GogExec;
+    sleep?: (ms: number) => Promise<void>;
+  },
+): Promise<{ stdout: string }> {
+  const exec = options.exec ?? (execFile as unknown as GogExec);
+  return pacedGog(() =>
+    withGogRateLimitRetry(
+      () =>
+        exec(executable, args, {
+          env: options.env ?? process.env,
+          maxBuffer: options.maxBuffer,
+          timeout: options.timeoutMs,
+          windowsHide: true,
+        }),
+      {
+        isTransient: isRetryableMailSendFailure,
+        ...(options.sleep ? { sleep: options.sleep } : {}),
+        ...(options.retries !== undefined ? { retries: options.retries } : {}),
+      },
+    ),
+  );
+}
+
 function createGogRunner(env: NodeJS.ProcessEnv | undefined): GogRun {
   const capture = createGogCapture(env);
   return async (args) => {

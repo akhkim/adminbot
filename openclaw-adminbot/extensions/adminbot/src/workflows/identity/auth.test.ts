@@ -287,7 +287,9 @@ describe("AdminBotAuthService claim/login flow", () => {
     const sendAccountApprovedEmail = vi
       .fn<() => Promise<void>>()
       .mockRejectedValue(
-        new Error('gog gmail send failed: oauth2: "invalid_grant" "Token has been expired or revoked."'),
+        new Error(
+          'gog gmail send failed: oauth2: "invalid_grant" "Token has been expired or revoked."',
+        ),
       );
     const { store, auth } = setup({ sendAccountApprovedEmail });
     store.saveLabMember(member("ada", "ada@example.com"));
@@ -1555,6 +1557,102 @@ describe("AdminBotAuthService password reset", () => {
     expect(result.ok).toBe(true);
     await flushMicrotasks();
     expect(sent).toHaveLength(0);
+  });
+
+  it("mails only the first address when the correspondence field holds two", async () => {
+    // A live roster shape: the field is free text and members write both their addresses into it.
+    // Passed through whole, the string became gog's --to and the send failed outright.
+    const { store, auth, sent } = setupWithMail();
+    await claimAndApprove(store, auth, "ada", "ada@cs.toronto.edu");
+    const member = store.getLabMember("ada")!;
+    store.saveLabMember({
+      ...member,
+      correspondence_email: " ada@cmu.edu / ada.lovelace@gmail.com",
+    });
+
+    await auth.requestPasswordReset({ email: "ada@cs.toronto.edu" });
+
+    await flushMicrotasks();
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.email).toBe("ada@cmu.edu");
+  });
+
+  it("falls back to the login address when the correspondence field has no address in it", async () => {
+    const { store, auth, sent } = setupWithMail();
+    await claimAndApprove(store, auth, "ada", "ada@cs.toronto.edu");
+    const member = store.getLabMember("ada")!;
+    store.saveLabMember({ ...member, correspondence_email: "n/a" });
+
+    await auth.requestPasswordReset({ email: "ada@cs.toronto.edu" });
+
+    await flushMicrotasks();
+    expect(sent[0]?.email).toBe("ada@cs.toronto.edu");
+  });
+
+  it("still sends a reset after the member has used up their login attempts", async () => {
+    // Forgetting a password is exactly when someone mistypes it ten times; the reset that fixes it
+    // must not be refused for that.
+    const { store, auth, sent } = setupWithMail();
+    await claimAndApprove(store, auth, "ada", "ada@example.com");
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      await auth.login({
+        email: "ada@example.com",
+        password: "wrong-password",
+        remoteIp: "1.2.3.4",
+      });
+    }
+    const locked = await auth.login({
+      email: "ada@example.com",
+      password: "wrong-password",
+      remoteIp: "1.2.3.4",
+    });
+    expect(locked.status).toBe(429);
+
+    const result = await auth.requestPasswordReset({
+      email: "ada@example.com",
+      remoteIp: "1.2.3.4",
+    });
+
+    expect(result.ok).toBe(true);
+    await flushMicrotasks();
+    expect(sent).toHaveLength(1);
+  });
+
+  it("does not spend login attempts on reset requests", async () => {
+    const { store, auth } = setupWithMail();
+    await claimAndApprove(store, auth, "ada", "ada@example.com");
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await auth.requestPasswordReset({ email: "ada@example.com", remoteIp: "1.2.3.4" });
+    }
+    for (let attempt = 0; attempt < 9; attempt += 1) {
+      await auth.login({
+        email: "ada@example.com",
+        password: "wrong-password",
+        remoteIp: "1.2.3.4",
+      });
+    }
+
+    const login = await auth.login({
+      email: "ada@example.com",
+      password: "correcthorse",
+      remoteIp: "1.2.3.4",
+    });
+
+    expect(login.ok).toBe(true);
+  });
+
+  it("still caps how often one address can be sent a reset", async () => {
+    const { store, auth, sent } = setupWithMail();
+    await claimAndApprove(store, auth, "ada", "ada@example.com");
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      await auth.requestPasswordReset({ email: "ada@example.com" });
+    }
+
+    const limited = await auth.requestPasswordReset({ email: "ada@example.com" });
+
+    expect(limited.status).toBe(429);
+    await flushMicrotasks();
+    expect(sent).toHaveLength(10);
   });
 
   it("falls back to the login address when there is no correspondence one", async () => {

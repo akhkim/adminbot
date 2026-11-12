@@ -4,15 +4,12 @@
 // stored OAuth token. Each call is pinned with --enable-commands-exact to the one method it makes,
 // so a malformed argument can never turn into a different Google call.
 
-import { execFile as execFileCallback } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { promisify } from "node:util";
 import type { GoogleSlidesClient, SlidesPresentation } from "../contracts/google-slides.js";
-import { resolveGogExecutable } from "./gog.js";
+import { resolveGogExecutable, runGogPaced } from "./gog.js";
 
-const execFile = promisify(execFileCallback);
 const GOG_TIMEOUT_MS = 120_000;
 // A whole deck's page elements, even trimmed by `fields`, can run to several megabytes.
 const GOG_MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
@@ -28,11 +25,10 @@ export function createGogSlidesCapture(env: NodeJS.ProcessEnv = process.env): Go
   const executable = resolveGogExecutable(env);
   return async (args) => {
     try {
-      const result = await execFile(executable, args, {
+      const result = await runGogPaced(executable, args, {
         env,
         maxBuffer: GOG_MAX_OUTPUT_BYTES,
-        timeout: GOG_TIMEOUT_MS,
-        windowsHide: true,
+        timeoutMs: GOG_TIMEOUT_MS,
       });
       return result.stdout;
     } catch (error) {

@@ -9,11 +9,8 @@
 //
 // Verified against the live prototype before this shipped, including that shortcuts copy as
 // shortcuts (keeping their targets) rather than duplicating what they point at.
-import { execFile as execFileCallback } from "node:child_process";
-import { promisify } from "node:util";
-import { resolveGogExecutable } from "../../connectors/gog.js";
+import { resolveGogExecutable, runGogPaced } from "../../connectors/gog.js";
 
-const execFile = promisify(execFileCallback);
 const GOG_TIMEOUT_MS = 120_000;
 const GOG_MAX_OUTPUT_BYTES = 4 * 1024 * 1024;
 const FOLDER_MIME = "application/vnd.google-apps.folder";
@@ -87,11 +84,10 @@ export function createDriveWorkspaceProvisioner(
   const run: GogRun =
     options.run ??
     (async (args) => {
-      const { stdout } = await execFile(gog, args, {
+      const { stdout } = await runGogPaced(gog, args, {
         env,
         maxBuffer: GOG_MAX_OUTPUT_BYTES,
-        timeout: GOG_TIMEOUT_MS,
-        windowsHide: true,
+        timeoutMs: GOG_TIMEOUT_MS,
       });
       return stdout;
     });

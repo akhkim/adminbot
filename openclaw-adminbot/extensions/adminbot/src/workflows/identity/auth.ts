@@ -21,7 +21,10 @@ import {
   sendMailWithRetry,
 } from "../../connectors/mail-send-failure.js";
 import { adminBotMemberRoles } from "../../contracts/actions.js";
-import { adminBotCalendarShareEmail } from "../../contracts/member-outreach-email.js";
+import {
+  adminBotCalendarShareEmail,
+  adminBotOutreachEmail,
+} from "../../contracts/member-outreach-email.js";
 import {
   formatAdminBotMemberRoles,
   parseAdminBotMemberRoles,
@@ -1125,7 +1128,12 @@ export class AdminBotAuthService {
     remoteIp?: string;
   }): Promise<AdminBotAuthResponse<{ requested: true }>> {
     const email = request.email.trim().toLowerCase();
-    const keys = rateLimitKeys(email, request.remoteIp);
+    // Its own bucket, not login's. Sharing one meant every reset request spent a login attempt and
+    // every mistyped password spent a reset: a member who fumbled their password a few times was
+    // then refused the very link that would fix it, and on a shared campus address one person's
+    // failures could lock everybody else out of both. The reset bucket still caps how often one
+    // address or one client can make the service send mail.
+    const keys = rateLimitKeys(email, request.remoteIp).map((key) => `reset:${key}`);
     const limited = await this.checkRateLimit(keys, email, request.remoteIp);
     if (limited) {
       return limited;
@@ -1219,9 +1227,17 @@ export class AdminBotAuthService {
     loginEmail: string,
     member: AdminBotLabMember | undefined,
   ): string {
-    const correspondence =
-      typeof member?.correspondence_email === "string" ? member.correspondence_email.trim() : "";
-    return correspondence || loginEmail;
+    // Through the same resolver every other member-facing mail uses. The roster field is free text
+    // and routinely holds two addresses ("a@uni.edu / b@gmail.com"); passed through raw, that whole
+    // string became gog's --to and the send failed, so the member never got a link at all.
+    return (
+      adminBotOutreachEmail({
+        email: loginEmail,
+        ...(typeof member?.correspondence_email === "string"
+          ? { correspondence_email: member.correspondence_email }
+          : {}),
+      }) || loginEmail
+    );
   }
 
   private async notifyPasswordReset(

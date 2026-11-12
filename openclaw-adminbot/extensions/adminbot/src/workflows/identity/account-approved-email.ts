@@ -1,10 +1,7 @@
-import { execFile as execFileCallback } from "node:child_process";
-import { promisify } from "node:util";
 import { renderEmailBodyHtml } from "../../connectors/email-html.js";
-import { resolveGogExecutable } from "../../connectors/gog.js";
+import { resolveGogExecutable, runGogPaced } from "../../connectors/gog.js";
 import { resolveAdminBotControlUiUrl } from "../../contracts/control-ui.js";
 
-const execFile = promisify(execFileCallback);
 const GOG_TIMEOUT_MS = 45_000;
 const GOG_MAX_OUTPUT_BYTES = 1024 * 1024;
 
@@ -67,11 +64,13 @@ export function createAccountApprovedEmailRunner(
       return;
     }
     try {
-      await execFile(gog, args, {
+      // Paced only: the auth service already retries this send (sendAccountApprovedWithRetry), so
+      // a second retry layer here would multiply the attempts.
+      await runGogPaced(gog, args, {
         env: options.env ?? process.env,
         maxBuffer: GOG_MAX_OUTPUT_BYTES,
-        timeout: GOG_TIMEOUT_MS,
-        windowsHide: true,
+        timeoutMs: GOG_TIMEOUT_MS,
+        retries: 0,
       });
     } catch (error) {
       throw new Error(formatGogEmailError(error), { cause: error });
