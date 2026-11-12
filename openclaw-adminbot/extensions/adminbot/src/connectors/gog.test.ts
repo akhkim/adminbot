@@ -16,6 +16,7 @@ import {
   readGogSheetRows,
   readGogSheetTabs,
   readDriveFileBase64,
+  runGogPaced,
   withGogRateLimitRetry,
 } from "./gog.js";
 
@@ -1083,5 +1084,80 @@ describe("gog rate-limit handling", () => {
       ),
     ).rejects.toMatchObject({ stderr: expect.stringContaining("rateLimitExceeded") });
     expect(calls).toBe(3);
+  });
+});
+
+describe("runGogPaced", () => {
+  const rateLimitedError = () =>
+    Object.assign(new Error("Command failed: gog gmail send"), {
+      code: 1,
+      stderr: "Google API error (403 rateLimitExceeded): Rate Limit Exceeded",
+    });
+  const options = { timeoutMs: 1000, maxBuffer: 1024, sleep: async () => {} };
+
+  it("waits out Google's burst rate limit instead of failing the send", async () => {
+    let calls = 0;
+    const result = await runGogPaced("gog", ["gmail", "send"], {
+      ...options,
+      exec: async () => {
+        calls += 1;
+        if (calls < 3) {
+          throw rateLimitedError();
+        }
+        return { stdout: "{}" };
+      },
+    });
+    expect(result.stdout).toBe("{}");
+    expect(calls).toBe(3);
+  });
+
+  it("rethrows the original exec error so callers keep their own formatting", async () => {
+    const failure = Object.assign(new Error("Command failed"), {
+      code: 1,
+      stderr: "invalid To header",
+    });
+    let calls = 0;
+    await expect(
+      runGogPaced("gog", ["gmail", "send"], {
+        ...options,
+        exec: async () => {
+          calls += 1;
+          throw failure;
+        },
+      }),
+    ).rejects.toBe(failure);
+    // A rejected send is not retried: it would fail the same way, and it may not be idempotent.
+    expect(calls).toBe(1);
+  });
+
+  it("does not retry when the caller already retries", async () => {
+    let calls = 0;
+    await expect(
+      runGogPaced("gog", ["gmail", "send"], {
+        ...options,
+        retries: 0,
+        exec: async () => {
+          calls += 1;
+          throw rateLimitedError();
+        },
+      }),
+    ).rejects.toMatchObject({ stderr: expect.stringContaining("rateLimitExceeded") });
+    expect(calls).toBe(1);
+  });
+
+  it("runs calls one at a time on the shared chain", async () => {
+    let running = 0;
+    let peak = 0;
+    const exec = async () => {
+      running += 1;
+      peak = Math.max(peak, running);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      running -= 1;
+      return { stdout: "" };
+    };
+    await Promise.all(
+      Array.from({ length: 4 }, () => runGogPaced("gog", ["gmail", "send"], { ...options, exec })),
+    );
+    expect(peak).toBe(1);
   });
 });
