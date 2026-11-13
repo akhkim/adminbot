@@ -58,6 +58,11 @@ type StartOptions = {
   /** Rows on the DCS sheet below its header. Absent: no DCS sheet configured at all. */
   dcsRows?: string[][];
   memberSheetRows?: string[][];
+  /**
+   * The department's taken logins (apps0's /etc/passwd). Defaults to nobody; a function that
+   * rejects stands in for an SSH read that failed.
+   */
+  departmentUsernames?: () => Promise<Iterable<string>>;
 };
 
 async function startService(options: StartOptions = {}) {
@@ -90,6 +95,7 @@ async function startService(options: StartOptions = {}) {
       read: vi.fn(async () => [MEMBER_SHEET_HEADER, ...(options.memberSheetRows ?? [])]),
     },
     ...(dcsRosterSheet ? { dcsRosterSheet } : {}),
+    dcsDepartmentUsernames: options.departmentUsernames ?? (async () => []),
   });
   await new Promise<void>((resolve, reject) => {
     mock.server.once("error", reject);
@@ -292,6 +298,60 @@ describe("a Lab Members tab save that makes somebody a major coauthor or a full 
     const [added] = auditOf(mock, "auth.dcs_roster_row_added");
     expect(added?.details).toMatchObject({ member_id: "minnie", dcs_username: "minor" });
     expect(JSON.stringify(mock.store.listAuditEvents())).not.toMatch(/password/iu);
+  });
+
+  // The sheet and roster only know the lab; DCS refused `luca`, `van` and `vincent` because
+  // somebody elsewhere in the department held them. apps0's passwd is checked too.
+  it("steps past a name the department already holds on apps0", async () => {
+    const { baseUrl, mock, appended } = await startService({
+      dcsRows: [HOLDS_MINNIE],
+      departmentUsernames: async () => ["minor"],
+    });
+    const token = await adminToken(mock, baseUrl);
+
+    const steps = await save(baseUrl, token, "minnie", { member_type: "coauthor-major" });
+
+    expect(dcsStep(steps)?.status).toBe("done");
+    expect(appended.map((row) => row[2])).toEqual(["mminor"]);
+  });
+
+  it("refuses to file when apps0's /etc/passwd cannot be read, and appends nothing", async () => {
+    const { baseUrl, mock, appended } = await startService({
+      dcsRows: [],
+      departmentUsernames: async () => {
+        throw new Error("could not read /etc/passwd on apps0.cs.toronto.edu over ssh");
+      },
+    });
+    const token = await adminToken(mock, baseUrl);
+
+    const steps = await save(baseUrl, token, "minnie", { member_type: "coauthor-major" });
+
+    expect(dcsStep(steps)).toMatchObject({ status: "failed" });
+    expect(dcsStep(steps)?.detail).toMatch(/could not read \/etc\/passwd/u);
+    expect(appended).toEqual([]);
+    expect(dcsProposals(mock)[0]?.status).not.toBe("executed");
+    const [failed] = auditOf(mock, "auth.dcs_roster_row_failed");
+    expect(failed?.details).toMatchObject({ member_id: "minnie" });
+  });
+
+  // Their own account is on apps0 because it exists; only a name being chosen is checked.
+  it("files a stored account name without reading apps0 at all", async () => {
+    const departmentUsernames = vi.fn(async (): Promise<string[]> => {
+      throw new Error("apps0 should not be read for a stored name");
+    });
+    const { baseUrl, mock, appended } = await startService({ dcsRows: [], departmentUsernames });
+    const token = await adminToken(mock, baseUrl);
+
+    const steps = await save(baseUrl, token, "nova-newcomer", {
+      name: "Nova Newcomer",
+      email: "nova@lab.test",
+      member_type: "full",
+      dcs_username: "nnewcomer",
+    });
+
+    expect(dcsStep(steps)?.status).toBe("done");
+    expect(appended.map((row) => row[2])).toEqual(["nnewcomer"]);
+    expect(departmentUsernames).not.toHaveBeenCalled();
   });
 
   it("files a major coauthor's row again when they become a full member", async () => {

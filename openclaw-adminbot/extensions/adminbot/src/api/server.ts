@@ -356,10 +356,14 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
           appendGogSheetRows(spreadsheetId, rows),
       })
     : undefined;
+  // The department's taken login names, read live from apps0's /etc/passwd right before a row is
+  // written. Both filing paths below refuse to pick a new username without it.
+  const dcsDepartmentUsernames = options.dcsDepartmentUsernames;
   if (dcsRosterSheet) {
     onboardingArms.dcsRoster = {
       read: dcsRosterSheet.read,
       append: dcsRosterSheet.append,
+      ...(dcsDepartmentUsernames ? { departmentUsernames: dcsDepartmentUsernames } : {}),
       rosterUsernames: () => {
         const roster = service.listLabMembers();
         return roster.ok
@@ -412,6 +416,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
               .filter((entry): entry is string => Boolean(entry))
           : [];
       },
+      ...(dcsDepartmentUsernames ? { departmentUsernames: dcsDepartmentUsernames } : {}),
     });
   const onboardingSender =
     options.onboardingSender ??

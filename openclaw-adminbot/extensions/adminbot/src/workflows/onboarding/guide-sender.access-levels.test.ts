@@ -102,6 +102,8 @@ async function send(
       },
       generatePassword: () => "TEST-TEMP-PASSWORD",
       now: () => new Date("2026-09-20T00:00:00Z"),
+      // Nobody in the department holds these names; the apps0 check itself is tested elsewhere.
+      departmentUsernames: async () => [],
     }),
     headProfessorWhatsapp: () => "+1 555 0100",
     // Always injected. See the file header: this is the only option with a real-world fallback.

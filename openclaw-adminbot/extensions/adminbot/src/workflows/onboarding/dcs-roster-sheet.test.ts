@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   assertDcsRosterHeader,
   buildDcsRosterRow,
@@ -240,10 +240,44 @@ describe("createDcsRosterSheetRecorder", () => {
       },
       generatePassword: () => "TEMPpw",
       now: () => new Date("2026-09-20T00:00:00Z"),
+      departmentUsernames: async () => [],
       ...overrides,
     });
     return { recorder, appended };
   }
+
+  // The department's namespace is wider than the lab's: `luca`, `van` and `vincent` were all free
+  // on the sheet and all held by somebody else on apps0.
+  it("steps past a username somebody outside the lab holds on apps0", async () => {
+    const { recorder } = harness([HEADER], { departmentUsernames: async () => ["andrew"] });
+    const record = await recorder!({ name: "Andrew Kim", email: "andrew@example.com" });
+    expect(record.username).toBe("kim");
+  });
+
+  it("refuses to pick a name when apps0's /etc/passwd cannot be read", async () => {
+    const { recorder, appended } = harness([HEADER], {
+      departmentUsernames: async () => {
+        throw new Error("could not read /etc/passwd on apps0.cs.toronto.edu over ssh");
+      },
+    });
+    await expect(recorder!({ name: "Andrew Kim", email: "a@example.com" })).rejects.toThrow(
+      /could not read \/etc\/passwd/u,
+    );
+    expect(appended).toEqual([]);
+  });
+
+  it("refuses to pick a name when no apps0 reader is wired at all", async () => {
+    const append = vi.fn(async () => {});
+    const recorder = createDcsRosterSheetRecorder({
+      spreadsheetId: "sheet-1",
+      readRows: async () => [HEADER],
+      appendRows: append,
+    });
+    await expect(recorder!({ name: "Andrew Kim", email: "a@example.com" })).rejects.toThrow(
+      /no apps0 \/etc\/passwd reader/u,
+    );
+    expect(append).not.toHaveBeenCalled();
+  });
 
   it("appends one row with the first free username", async () => {
     const { recorder, appended } = harness([HEADER]);

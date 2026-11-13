@@ -213,8 +213,25 @@ export type DcsRosterSheetWriter = {
   append: (spreadsheetId: string, rows: string[][]) => Promise<void>;
   /** Account names the roster holds that the sheet may not carry yet. */
   rosterUsernames: () => Iterable<string>;
+  /**
+   * Every login name the department already holds, read live from apps0's `/etc/passwd`
+   * (`connectors/apps0-passwd.ts`), or a rejection saying why it could not be read. Absent means
+   * "not wired", which is refused the same way: a name the department was never asked about is
+   * how `luca`, `van` and `vincent` collided.
+   */
+  departmentUsernames?: () => Promise<Iterable<string>>;
   recordAudit: (event: Pick<AdminBotAuditEvent, "type" | "actor" | "details">) => void;
 };
+
+/** The department's taken names, throwing when there is no list to check a new name against. */
+async function departmentUsernamesOf(writer: DcsRosterSheetWriter): Promise<Iterable<string>> {
+  if (!writer.departmentUsernames) {
+    throw new Error(
+      "no apps0 /etc/passwd reader is wired, so a new DCS username cannot be checked against the department; refusing to pick one",
+    );
+  }
+  return writer.departmentUsernames();
+}
 
 function stringRecord(value: unknown): Record<string, string> {
   if (!value || typeof value !== "object") {
@@ -284,9 +301,14 @@ export async function addDcsRosterRow(
         `${memberId} is already on the DCS roster sheet (row ${existing}); nothing was appended`,
       );
     }
+    // apps0 is read live, right before the write, and only when a name has to be chosen: a stored
+    // account name is the person's own, and is on apps0 precisely because it already exists.
+    const department =
+      values.dcs_username || candidates.length === 0 ? [] : await departmentUsernamesOf(writer);
     username = resolveDcsRosterUsername(values, candidates, [
       ...dcsRosterSheetUsernames(rows),
       ...writer.rosterUsernames(),
+      ...department,
     ]);
     row = dcsRosterRowForHeader(rows, { ...values, dcs_username: username });
   } catch (error) {

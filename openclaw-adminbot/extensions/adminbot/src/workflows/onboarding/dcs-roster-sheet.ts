@@ -147,11 +147,11 @@ export function dcsUsernameCandidates(name: string): string[] {
 /**
  * The first candidate nobody already holds.
  *
- * "Taken" is judged against the usernames already on the sheet plus whatever the roster knows,
- * which is everything this side can see. It is not the department's whole account namespace -- the
- * sysadmin is still the one who finds out that `jchen@` collided with a student in another group --
- * so a chosen name is a proposal, and the two candidates it beat travel with the row so she can
- * take the next one without coming back to ask.
+ * "Taken" is judged against the usernames already on the sheet, whatever the roster knows, and the
+ * department's whole account namespace -- the login names on apps0's `/etc/passwd`, read live by
+ * `connectors/apps0-passwd.ts` right before the row is written. Without that last one `luca`, `van` and `vincent`
+ * were proposed as free and refused by the sysadmin, because somebody outside the lab held them.
+ * The callers pass all three; this function only compares.
  *
  * Comparison runs through `normalizeDcsUsername` on both sides, so case, padding and a stray
  * full-address spelling all still match.
@@ -397,6 +397,12 @@ export type DcsRosterSheetOptions = {
   lookupMember?: (email: string) => DcsRosterMemberFacts | undefined;
   /** Usernames held by people who are not on the sheet yet. */
   rosterUsernames?: () => Iterable<string>;
+  /**
+   * Every login name the department holds, read live from apps0's `/etc/passwd` (see
+   * `connectors/apps0-passwd.ts`). Rejects when that read fails. Absent is refused too: a name
+   * only checked against the lab's own records is a guess at the department's namespace.
+   */
+  departmentUsernames?: () => Promise<Iterable<string>>;
   now?: () => Date;
   generatePassword?: () => string;
 };
@@ -429,9 +435,15 @@ export function createDcsRosterSheetRecorder(
       .slice(1)
       .map((row) => row[USERNAME_COLUMN_INDEX] ?? "")
       .filter(Boolean);
+    if (!options.departmentUsernames) {
+      throw new Error(
+        "no apps0 /etc/passwd reader is wired, so a new DCS username cannot be checked against the department; refusing to pick one",
+      );
+    }
     const username = chooseDcsUsername(candidates, [
       ...onSheet,
       ...(options.rosterUsernames?.() ?? []),
+      ...(await options.departmentUsernames()),
     ]);
     if (!username) {
       throw new Error(

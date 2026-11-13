@@ -1479,22 +1479,60 @@ not reach the department's sheet by omission (the test setup also clears the var
 not an error and not a silent skip: each role change reports the `dcs_roster` step as skipped with
 "no DCS roster sheet configured".
 
+### Checking a new username against the department
+
+DCS mints every account in the department under one namespace, and the sheet and roster only see
+the lab's corner of it. `luca`, `van` and `vincent` were all free on the sheet and all refused by
+the sysadmin as duplicates. So every time a row is about to be written with a **new** account name,
+the service reads the login names on `apps0.cs.toronto.edu`'s `/etc/passwd` **live** and skips any
+candidate held there, in the same `firstname` → `lastname` → `{first initial}{lastname}` order.
+
+The read is `ssh -o BatchMode=yes apps0.cs.toronto.edu cut -d: -f1 /etc/passwd`
+(`extensions/adminbot/src/connectors/apps0-passwd.ts`). Only the login column leaves apps0 (no real
+names, homes or shells), and no candidate name is ever put into the remote command. One read is
+reused for a minute, so a backfill filing a dozen rows makes one round-trip. A failure is never
+cached.
+
+| Variable                   | What it does                                      |
+| -------------------------- | ------------------------------------------------- |
+| `ADMINBOT_DCS_PASSWD_HOST` | The host to read (default `apps0.cs.toronto.edu`) |
+
+The check **fails closed**. When a row needs a name chosen and the SSH read fails, times out or
+returns fewer than 100 login names, the filing fails (`auth.dcs_roster_row_failed`, and a failed
+`dcs_roster` step naming the SSH error) and nothing is appended. A stored `dcs_username` is not
+re-checked: it is the person's own account, and is on apps0 precisely because it exists. The
+service host needs an SSH key apps0 accepts and apps0's host key in `known_hosts` for the service
+user. Confirm with `ssh -o BatchMode=yes apps0.cs.toronto.edu true` as that user.
+
+To fix a row the sysadmin bounced as a duplicate, ask for the next free name under the hierarchy.
+The script reads apps0 the same way the service does and writes nothing; correct the sheet cell and
+the member's stored `dcs_username` by hand:
+
+```bash
+set -a; . ~/.config/jinesis-adminbot/adminbot.env; set +a
+node --import tsx scripts/adminbot-dcs-username-check.ts --sheet "Ada Example"
+# Ada Example: aexample  [ada (taken: apps0), example (taken: sheet), aexample (free)]
+```
+
+`--passwd <file>` reads a passwd copy instead, for a host that cannot reach apps0. It exits 1 when
+every candidate is held. That case is still for a human to agree with the sysadmin.
+
 The row is laid out against the sheet's **own header, by column name**, when it is written -- not
 when it is proposed, since a card the roster sync files may be approved days later. A column the
 sheet gains is left blank, one it loses is not written, and a sheet with no `full_name` or
 `adminbot_internal_id` column is refused as not being the DCS roster. The values, by column:
 
-| Column                    | Value                                                                      |
-| ------------------------- | -------------------------------------------------------------------------- |
-| `full_name`               | The roster name                                                            |
-| `adminbot_internal_id`    | The member id                                                              |
-| `dcs_username`            | The stored account name, else the first free candidate (below), else blank |
-| `non_dcs_email`           | The first address on file that is not `@cs.toronto.edu`                    |
-| `career_stage`            | One of the sheet's four dropdown values (below), else blank                |
-| `at_uoft_or_not`          | `yes` / `no`, or blank when the roster does not know                       |
-| `permission`              | The DCS access already granted, else `UofT-CSlab-noDiskusage-justSlack`    |
-| `date_of_this_row_change` | The filing date                                                            |
-| anything else (`UTORid`)  | Left blank for the sysadmin                                                |
+| Column                    | Value                                                                                                     |
+| ------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `full_name`               | The roster name                                                                                           |
+| `adminbot_internal_id`    | The member id                                                                                             |
+| `dcs_username`            | The stored account name, else the first candidate free on the sheet, roster and apps0 (above), else blank |
+| `non_dcs_email`           | The first address on file that is not `@cs.toronto.edu`                                                   |
+| `career_stage`            | One of the sheet's four dropdown values (below), else blank                                               |
+| `at_uoft_or_not`          | `yes` / `no`, or blank when the roster does not know                                                      |
+| `permission`              | The DCS access already granted, else `UofT-CSlab-noDiskusage-justSlack`                                   |
+| `date_of_this_row_change` | The filing date                                                                                           |
+| anything else (`UTORid`)  | Left blank for the sysadmin                                                                               |
 
 `career_stage` is limited by the sheet's validation to `grad student (at uoft)`,
 `undergrad (at uoft)`, `postdoc (at uoft)` and `external (from another org)`. `dcsCareerStage` in
@@ -1548,7 +1586,9 @@ live header before every write:
 
 A row is one account. `dcs_username` is chosen from three candidates, in the lab's order of
 preference -- `firstname`, `lastname`, then `{first initial}{lastname}` -- taking the first that is
-held by nobody on the sheet and nobody on the roster. A name with no family name in it is refused
+held by nobody on the sheet, nobody on the roster and nobody on apps0, read live right before the
+write (see "Checking a new username against the department" above; it fails closed the same way
+here). A name with no family name in it is refused
 rather than guessed at, and so is a name with all three candidates taken; both report a failure for
 a human to file by hand. The guide itself still goes out either way -- the row is a side errand,
 and the member is waiting on the mail.
