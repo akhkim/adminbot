@@ -376,6 +376,13 @@ export type AdminBotMockServiceOptions = {
   // same shape the retired DCS form script had, for the same reason.
   dcsRosterSheetId?: string;
   /**
+   * The department's taken login names, read live from apps0's `/etc/passwd` before a new DCS
+   * username is written (`connectors/apps0-passwd.ts`). The host wires the SSH reader; tests pass
+   * a list. Unset leaves the check unwired, and every filing that has to pick a name refuses --
+   * there is no default here, so a test run cannot SSH to the department by omission.
+   */
+  dcsDepartmentUsernames?: () => Promise<Iterable<string>>;
+  /**
    * The DCS roster sheet as the role-change step reads it and the `dcs_roster.add_row` arm writes
    * it. Overrides the gog-backed one built from `dcsRosterSheetId`, so a test can see the row
    * without a Google session.

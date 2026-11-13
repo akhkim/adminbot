@@ -17,6 +17,7 @@ import {
   type DevicePairingApproval,
   type DeviceTokenIssuance,
 } from "../src/api/server.js";
+import { createApps0PasswdReader } from "../src/connectors/apps0-passwd.js";
 import { createCompositeAdminBotExecutor } from "../src/connectors/composite.js";
 import {
   createGogCalendarMembershipReader,
@@ -867,6 +868,14 @@ export function createAdminBotHost(deps: AdminBotHostDeps) {
   const slidesWorkingGroups = slidesWorkingGroupsFromEnv(process.env);
   return createAdminBotMockService({
     databasePath: path.join(repoRoot, "state/adminbot.sqlite"),
+    // Every new DCS username is checked live against apps0's /etc/passwd before it is written to
+    // the roster sheet. Wired here rather than defaulted in the server so no test run can SSH to
+    // the department by omission. ADMINBOT_DCS_PASSWD_HOST overrides the host.
+    dcsDepartmentUsernames: createApps0PasswdReader({
+      ...(process.env.ADMINBOT_DCS_PASSWD_HOST
+        ? { host: process.env.ADMINBOT_DCS_PASSWD_HOST }
+        : {}),
+    }),
     auditRetentionDays: AUDIT_RETENTION_DAYS,
     executor: createCompositeAdminBotExecutor([
       createAdminBotOverleafExecutor(),
