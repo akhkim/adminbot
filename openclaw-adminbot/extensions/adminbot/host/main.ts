@@ -871,11 +871,9 @@ export function createAdminBotHost(deps: AdminBotHostDeps) {
     // Every new DCS username is checked live against apps0's /etc/passwd before it is written to
     // the roster sheet. Wired here rather than defaulted in the server so no test run can SSH to
     // the department by omission. ADMINBOT_DCS_PASSWD_HOST overrides the host.
-    dcsDepartmentUsernames: createApps0PasswdReader({
-      ...(process.env.ADMINBOT_DCS_PASSWD_HOST
-        ? { host: process.env.ADMINBOT_DCS_PASSWD_HOST }
-        : {}),
-    }),
+    dcsDepartmentUsernames: createApps0PasswdReader(
+      process.env.ADMINBOT_DCS_PASSWD_HOST ? { host: process.env.ADMINBOT_DCS_PASSWD_HOST } : {},
+    ),
     auditRetentionDays: AUDIT_RETENTION_DAYS,
     executor: createCompositeAdminBotExecutor([
       createAdminBotOverleafExecutor(),
