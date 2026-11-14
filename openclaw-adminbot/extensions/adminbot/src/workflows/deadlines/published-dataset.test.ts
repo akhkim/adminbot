@@ -65,6 +65,25 @@ it("uses the collector after a manual addition and preserves reviewed date chang
   expect(mergePublishedDeadlines([generated], [initial, correction])).toMatchObject([
     { deadline_aoe: "2027-01-24 23:59:00", deadline_source_status: "administrator_approved" },
   ]);
+  const revisedAddition = { ...correction, revision: 2, previous_deadline_aoe: undefined };
+  expect(mergePublishedDeadlines([generated], [initial, revisedAddition])).toMatchObject([
+    { deadline_aoe: "2027-01-24 23:59:00", deadline_source_status: "administrator_approved" },
+  ]);
+  const revisedAbstract = {
+    ...stage,
+    revision: 2,
+    deadline: { ...stage.deadline, deadlineDate: "2027-01-15" },
+  };
+  expect(
+    mergePublishedDeadlines([generated, abstract], [initial, stage, revisedAbstract]),
+  ).toMatchObject([
+    { abstract_deadline_id: abstractId, schedule: [] },
+    {
+      id: abstractId,
+      deadline_aoe: "2027-01-15 23:59:00",
+      deadline_source_status: "administrator_approved",
+    },
+  ]);
 });
 
 it("shows known archival main conferences and ARR commitments without assuming custom venues are archival", () => {

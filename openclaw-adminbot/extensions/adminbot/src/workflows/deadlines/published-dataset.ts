@@ -51,9 +51,10 @@ export function mergePublishedDeadlines(
     const original = merged.get(String(update.id)) as Record<string, unknown> | undefined;
     const latest = primary.toSorted(comparePublication).at(-1)!;
     const previous = latest.previous_deadline_aoe;
-    const isDateCorrection =
-      previous && previous.slice(0, 16) !== String(update.deadline_aoe).slice(0, 16);
-    if (original && collectorManagedDeadlines.has(latest.deadline_id) && !isDateCorrection) {
+    const isReviewedChange =
+      latest.revision > 1 ||
+      (previous && previous.slice(0, 16) !== String(update.deadline_aoe).slice(0, 16));
+    if (original && collectorManagedDeadlines.has(latest.deadline_id) && !isReviewedChange) {
       continue;
     }
     merged.set(
@@ -102,6 +103,20 @@ export function mergePublishedDeadlines(
       record.deadline.stage.milestone === "abstract" &&
       record.deadline.stage.operation === "add"
     ) {
+      if (record.revision > 1 && validated.ok) {
+        const abstract = merged.get("icml2027_abstract") as Record<string, unknown>;
+        const update = publishedDeadlineVenue([record]);
+        merged.set("icml2027_abstract", {
+          ...abstract,
+          deadline_aoe: update.deadline_aoe,
+          deadline_at: update.deadline_at,
+          deadline_date: update.deadline_date,
+          deadline_timezone: update.deadline_timezone,
+          deadline_time_precision: update.deadline_time_precision,
+          deadline_source_kind: "manual",
+          deadline_source_status: "administrator_approved",
+        });
+      }
       continue;
     }
     if (target && validated.ok) {
