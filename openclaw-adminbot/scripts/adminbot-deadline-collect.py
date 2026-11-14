@@ -37,6 +37,7 @@ from adminbot_conference_deadlines import (
     refresh_configured_conferences as refresh_conference_milestones,
 )
 from adminbot_schedule_sources import refresh_schedules
+from adminbot_lab_venues import fetch_lab_papers, lab_venue_conferences
 from adminbot_workshop_notifications import refresh_workshop_dates
 from adminbot_deadlines import AoEClock, is_sweep_due
 from adminbot_deadline_time import TIME_FIELDS, timing_fields
@@ -1926,6 +1927,11 @@ def main():
             for seed in EMNLP_WORKSHOPS] + fetch_openreview_conferences(
         previous_by_id, clock
     )
+    # Venues the lab's own paper records name but the configured list does not carry yet.
+    lab_rows, lab_gaps = lab_venue_conferences(
+        fetch_lab_papers(), items, previous_by_id, clock,
+        read_deadlines=_openreview_submission_deadlines, checked_at=checked_at)
+    items += lab_rows
     fetched, failures = fetch_workshops(previous_by_id)
     items += fetched
     fallback_ids = set()
@@ -1995,6 +2001,10 @@ def main():
         print(f"\n{len(PENDING)} tracked venue(s) awaiting an announced date:")
         for name, where in PENDING:
             print(f"  - {name}  ({where})")
+    if lab_gaps:
+        print(f"\n{len(lab_gaps)} venue(s) in the lab's paper records with no deadline source:")
+        for gap in lab_gaps:
+            print(f"  - {gap}")
 
 
 if __name__ == "__main__":

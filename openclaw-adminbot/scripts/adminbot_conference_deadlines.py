@@ -90,7 +90,8 @@ def refresh_configured_conferences(items, previous_by_id, clock, force_refresh=F
         if observation:
             item["openreview_invitation"] = observation
     refresh_conference_lists(items, clock, force_refresh, fetch_html, checked_at)
-    return refresh_conference_tables(items, previous_by_id, clock, force_refresh, fetch_html, checked_at)
+    refresh_conference_tables(items, previous_by_id, clock, force_refresh, fetch_html, checked_at)
+    return confirm_with_openreview(items, read_invitations, checked_at)
 
 
 def refresh_conference_lists(items, clock, force_refresh, fetch_html, checked_at):
@@ -232,4 +233,60 @@ def refresh_conference_tables(items, previous_by_id, clock, force_refresh, fetch
                     deadline_source_precision='exact' if global_time else 'date_only', deadline_source_evidence=evidence,
                     deadline_official_url=url, deadline_official_evidence=evidence,
                     source_checked_at=checked_at())
+    return items
+
+
+# The portal behind a row that is read from a CFP page. Same rule as CONFERENCE_INVITATIONS: one
+# invitation per milestone, and only where the invitation closes on the row's own cutoff. An
+# invitation that does not exist yet costs nothing -- the row simply stays portal_unverified
+# until the venue opens it.
+CONFERENCE_OPENREVIEW_CHECKS = {
+    'community_f43e7729-6593-4aed-90fd-fca5ff390806': 'ICML.cc/2027/Conference/-/Submission',
+    # AISTATS closes its Submission invitation on the abstract date; the paper has no invitation.
+    'aistats2027_abstract': 'aistats.org/AISTATS/2027/Conference/-/Submission',
+    'arr_2026_may': 'aclweb.org/ACL/ARR/2026/May/-/Submission',
+    'arr_2026_august': 'aclweb.org/ACL/ARR/2026/August/-/Submission',
+    'arr_2026_october': 'aclweb.org/ACL/ARR/2026/October/-/Submission',
+    'naacl2027_paper': 'aclweb.org/ACL/ARR/2026/October/-/Submission',
+    'emnlp2026_commitment': 'EMNLP/2026/Conference/-/Submission',
+}
+
+
+def confirm_with_openreview(items, read_invitations, checked_at):
+    """Check CFP-sourced rows against their portal, and fall back to it when the CFP is down.
+
+    Three outcomes, and only two of them change the row. Agreement on the date upgrades the row
+    from an announced date to a confirmed one and takes the portal's clock, which is the cutoff
+    authors actually meet. A CFP that could not be read falls back to the portal, so a venue
+    redesigning its site no longer stales a deadline the portal still publishes. A disagreement
+    changes nothing but the recorded evidence: these mappings are matched by hand rather than by an abstract/paper
+    reconciliation, so the CFP stays in charge and the portal's date is recorded beside it.
+    """
+    due = [item for item in items
+           if item.get('_primary_attempted') and item['id'] in CONFERENCE_OPENREVIEW_CHECKS]
+    if not due:
+        return items
+    observations = read_invitations(sorted({CONFERENCE_OPENREVIEW_CHECKS[item['id']] for item in due}))
+    for item in due:
+        invitation = CONFERENCE_OPENREVIEW_CHECKS[item['id']]
+        observation = observations.get(invitation)
+        if not observation:
+            continue
+        portal = observation['duedate_aoe']
+        url = 'https://openreview.net/invitation?id=' + urllib.parse.quote(invitation, safe='/')
+        item['openreview_invitation'] = observation
+        same_date = item.get('deadline_aoe', '')[:10] == portal[:10]
+        if item.get('deadline_source_status') == 'source_unavailable':
+            # A portal date that contradicts the last CFP reading is not a fallback; it is a
+            # conflict nobody has looked at. Leave the row unobserved with the evidence attached.
+            if item.get('deadline_aoe') and not same_date:
+                continue
+            item.update(timing_fields(portal, timezone='UTC'))
+            item.update(_source_observed=True, source_url=url, deadline_source_kind='openreview',
+                        deadline_source_status='openreview_only', deadline_source_precision='exact',
+                        deadline_source_evidence='Official page unavailable; matched OpenReview invitation cutoff.',
+                        source_checked_at=checked_at())
+        elif same_date:
+            item.update(timing_fields(portal, timezone='UTC'))
+            item.update(deadline_source_status='official_date_matches_openreview')
     return items

@@ -12,21 +12,9 @@ const collectorManagedDeadlines = new Set([
   "community_207f3047-46da-4ce9-9805-ccccd048cb56", // COLING 2027 ARR commitment
 ]);
 
-// Match the collector's known archival main programs. A custom venue or workshop needs evidence.
-const archivalConferenceFamilies = new Set([
-  "aacl",
-  "acl",
-  "aistats",
-  "clear",
-  "colm",
-  "coling",
-  "eacl",
-  "emnlp",
-  "iclr",
-  "icml",
-  "naacl",
-  "neurips",
-]);
+// Mirrors NON_ARCHIVAL_FAMILIES in scripts/adminbot_deadlines.py. A main program is archival
+// unless it is listed here; a workshop still needs evidence from its own CFP.
+const nonArchivalConferenceFamilies = new Set(["iaseai"]);
 
 /** Merge the public projection while keeping approved corrections authoritative. */
 export function mergePublishedDeadlines(
@@ -148,7 +136,7 @@ function publishedDeadlineVenue(records_: PublishedDeadlineRecord[]): Record<str
     (entryType === "main_conference" ||
       entryType === "arr_commitment" ||
       entryType === "arr_direct_submission") &&
-    archivalConferenceFamilies.has(family.toLowerCase());
+    !nonArchivalConferenceFamilies.has((family ?? "").toLowerCase());
   const parentGroup =
     [family, latest.deadline.parentYear].filter(Boolean).join(" ") || latest.deadline.name;
   const group =

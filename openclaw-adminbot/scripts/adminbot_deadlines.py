@@ -102,11 +102,17 @@ def entry_type_of(venue_type: str, track: str, submission_type: str = "") -> str
 
 
 def archival_status_of(family: str, track: str) -> str:
-    """Known archival status without treating an absent classification as safe."""
-    if track in ARCHIVAL_TRACKS and family in PRIMARY_ARCHIVAL_FAMILIES + SECONDARY_ARCHIVAL_FAMILIES:
-        return ARCHIVAL
+    """Archival status of a dated entry; a main or demo track is archival unless known otherwise.
+
+    The default view of the board shows publication actions only, so a main conference that
+    fell through to "unknown" because nobody had listed its family was simply missing from it.
+    A main program publishing proceedings is the rule and IASEAI is the exception, so the
+    exception is what gets written down. Workshops, cycles and rebuttals still need evidence.
+    """
     if family in NON_ARCHIVAL_FAMILIES:
         return NON_ARCHIVAL
+    if track in ARCHIVAL_TRACKS:
+        return ARCHIVAL
     return UNKNOWN_ARCHIVAL
 
 

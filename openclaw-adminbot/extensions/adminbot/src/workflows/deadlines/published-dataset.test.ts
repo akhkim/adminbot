@@ -86,7 +86,7 @@ it("uses the collector after a manual addition and preserves reviewed date chang
   ]);
 });
 
-it("shows known archival main conferences and ARR commitments without assuming custom venues are archival", () => {
+it("defaults every main conference and ARR commitment to archival, leaving workshops and IASEAI out", () => {
   const input = (family: string, entryType: PublishedDeadlineRecord["deadline"]["entryType"]) => ({
     ...initial,
     deadline: { ...initial.deadline, parentConference: family, entryType },
@@ -98,6 +98,9 @@ it("shows known archival main conferences and ARR commitments without assuming c
     { entry_type: "arr_commitment", archival: true, archival_status: "archival" },
   ]);
   expect(mergePublishedDeadlines([], [input("Example", "main_conference")])).toMatchObject([
+    { archival: true, archival_status: "archival" },
+  ]);
+  expect(mergePublishedDeadlines([], [input("IASEAI", "main_conference")])).toMatchObject([
     { archival: false, archival_status: "unknown" },
   ]);
   expect(mergePublishedDeadlines([], [input("ICML", "workshop")])).toMatchObject([
