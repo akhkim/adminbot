@@ -152,3 +152,55 @@ describe("workshop refresh between website checks", () => {
     expect(item.profile_extracted_at).toBe("2035-01-02T12:00:00Z");
   });
 });
+
+it("refreshes the two ICML cutoffs, ACL's ARR date, and CLeaR from their own sources", () => {
+  const result = execFileSync(
+    "python3",
+    [
+      "-c",
+      `
+import importlib.util, json, sys
+sys.path.insert(0, ${JSON.stringify(scripts)})
+spec = importlib.util.spec_from_file_location('collector', ${JSON.stringify(scripts)} + 'adminbot-deadline-collect.py')
+m = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(m)
+from adminbot_conference_deadlines import COLING_CFP, ICML_CFP, CONFERENCE_LIST_STAGES
+clear_id = 'community_9e9c9619-a1ac-41f9-b67e-05dfd81accf5'
+acl_id = 'community_91ccb05a-8e08-4684-bcbe-aa5b3a53c0fa'
+ids = [*CONFERENCE_LIST_STAGES, acl_id, clear_id]
+pages = {
+    ICML_CFP: '<h1>Important dates for this conference</h1><ul><li>Abstract submission deadline: January 14, 2027 11:59 PM AOE</li><li>Full paper submission deadline: January 22, 2027 11:59 PM AOE</li></ul>',
+    COLING_CFP: '<h1>Important dates for the main conference</h1><ul><li>Commitment after meta-reviews: December 23, 2026</li></ul>',
+    'https://2027.aclweb.org/calls/main/': '<table><tr><td>ARR submission deadline (long &amp; short papers)</td><td>Jan 4, 2027</td></tr></table><p>All deadlines are 11:59PM UTC-12:00 (“anywhere on Earth”).</p>',
+    'https://www.cclear.cc/2027/CallforPapers': '<noscript>Enable JavaScript</noscript>',
+}
+m._fetch_html = lambda url: (url, pages[url])
+invite = 'cclear.cc/CLeaR/2027/Conference/-/Submission'
+m.fetch_invitation_observations = lambda ids: {invite: {'id': invite, 'duedate_aoe': '2026-11-16 23:59:00'}}
+m.checked_at = lambda: '2026-11-14T12:00:00Z'
+clock = m.AoEClock.resolve('2026-11-14')
+def seeds():
+    return [dict(next(row for row in m.CONFERENCES if row['id'] == key)) for key in ids]
+rows = m.refresh_configured_conferences(seeds(), {}, clock, True)
+del pages[ICML_CFP]
+retry = m.refresh_configured_conferences(seeds(), {row['id']: row for row in rows}, clock, True)
+assert rows[2]['deadline_date'] == '2026-12-23'
+assert rows[2]['deadline_time_precision'] == 'date_only'
+assert not rows[2]['deadline_at']
+print(json.dumps([[row['deadline_aoe'] for row in rows],
+    [retry[0]['deadline_aoe'], retry[0]['deadline_source_status'], retry[0]['source_checked_at']]]))
+`,
+    ],
+    { encoding: "utf8" },
+  );
+  expect(JSON.parse(result.trim())).toEqual([
+    [
+      "2027-01-14 23:59:00",
+      "2027-01-22 23:59:00",
+      "2026-12-21 22:00:00",
+      "2027-01-04 23:59:00",
+      "2026-11-16 23:59:00",
+    ],
+    ["2027-01-14 23:59:00", "source_unavailable", "2026-11-14T12:00:00Z"],
+  ]);
+});

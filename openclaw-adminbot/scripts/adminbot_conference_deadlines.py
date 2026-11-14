@@ -4,7 +4,11 @@ import re
 
 from adminbot_deadlines import is_sweep_due
 from adminbot_deadline_time import TIME_FIELDS, timing_fields
-from adminbot_workshop_deadlines import deadline_candidates_from_html, reconcile_deadline_candidates, _candidate_is_abstract, _global_aoe_time
+from adminbot_schedule_sources import source_text
+from adminbot_workshop_deadlines import (
+    _all_dates, _candidate_is_abstract, _candidate_stamp, _global_aoe_time,
+    deadline_candidates_from_html, reconcile_deadline_candidates,
+)
 
 
 def fetch_invitation_observations(invitation_ids, fetch, to_aoe, batch_size=40):
@@ -30,7 +34,16 @@ def fetch_invitation_observations(invitation_ids, fetch, to_aoe, batch_size=40):
 
 
 # Each mapping names one specific milestone; never map an abstract invitation to a paper row.
+ICML_CFP = "https://icml.cc/Conferences/2027/CallForPapers"
+COLING_CFP = "https://2027.coling-iccl.org/calls/main_conference_papers/"
+CONFERENCE_LIST_STAGES = {
+    "icml2027_abstract": (ICML_CFP, "Abstract submission deadline", 2027),
+    "community_f43e7729-6593-4aed-90fd-fca5ff390806": (ICML_CFP, "Full paper submission deadline", 2027),
+    "community_207f3047-46da-4ce9-9805-ccccd048cb56": (COLING_CFP, "Commitment after meta-reviews", 2026),
+}
+
 CONFERENCE_INVITATIONS = {
+    "community_9e9c9619-a1ac-41f9-b67e-05dfd81accf5": "cclear.cc/CLeaR/2027/Conference/-/Submission",
     "iclr2027_abstract": "ICLR.cc/2027/Conference/-/Submission",
     "iclr2027_paper": "ICLR.cc/2027/Conference/-/Full_Submission",
     "eacl2027_demo": "eacl.org/EACL/2027/Demo/-/Submission",
@@ -76,11 +89,59 @@ def refresh_configured_conferences(items, previous_by_id, clock, force_refresh=F
         item["source_checked_at"] = checked_at()
         if observation:
             item["openreview_invitation"] = observation
+    refresh_conference_lists(items, clock, force_refresh, fetch_html, checked_at)
     return refresh_conference_tables(items, previous_by_id, clock, force_refresh, fetch_html, checked_at)
+
+
+def refresh_conference_lists(items, clock, force_refresh, fetch_html, checked_at):
+    pages = {}
+    for item in items:
+        source = CONFERENCE_LIST_STAGES.get(item["id"])
+        if not source or not (force_refresh or is_sweep_due(
+            clock, "conference", item["deadline_aoe"], item.get("source_checked_at")
+        )):
+            continue
+        item["_primary_attempted"] = True
+        url, label, year = source
+        if url not in pages:
+            try:
+                final_url, html = fetch_html(url)
+                pages[url] = source_text(html).splitlines() if final_url == url else []
+            except Exception:
+                pages[url] = []
+        matches = [line for line in pages[url] if line.casefold().startswith(label.casefold() + ":")]
+        evidence = matches[0] if len(matches) == 1 else ""
+        dates = _all_dates(evidence, year)
+        if len(dates) != 1:
+            item["deadline_source_status"] = "source_unavailable"
+            continue
+        start, end, date = dates[0]
+        stamp, precision, zone = _candidate_stamp(evidence, start, end, date)
+        # A missing clock must not downgrade an already verified exact cutoff.
+        date_only = precision == "date-only" or precision.endswith("-date")
+        if date_only and item.get("deadline_time_precision") == "exact":
+            item["deadline_source_status"] = "source_unavailable"
+            continue
+        item.update(timing_fields(stamp, date_only=date_only, timezone=zone))
+        item.update(_source_observed=True, source_url=url,
+                    deadline_source_kind="official_cfp", deadline_source_status="portal_unverified",
+                    deadline_source_precision="date_only" if date_only else "exact",
+                    deadline_source_evidence=evidence, deadline_official_url=url,
+                    deadline_official_evidence=evidence, source_checked_at=checked_at())
 
 
 # Match a named row and its date cell, never the nearest date in a whole conference page.
 CONFERENCE_TABLE_ROWS = {
+    'aistats2027_abstract': (
+        'https://virtual.aistats.org/Conferences/2027/CallForPapers', r'Abstract submission deadline'
+    ),
+    'aistats2027_paper': (
+        'https://virtual.aistats.org/Conferences/2027/CallForPapers',
+        r'Full paper submission deadline \(including all supplementary material\)'
+    ),
+    'community_91ccb05a-8e08-4684-bcbe-aa5b3a53c0fa': (
+        'https://2027.aclweb.org/calls/main/', r'ARR submission deadline \(long & short papers\)'
+    ),
     'aacl2026_commitment': ('https://2026.aaclnet.org/calls/main_conference_papers/', r'Commitment deadline'),
     'aacl2026_commitment_second': ('https://2026.aaclnet.org/calls/main_conference_papers/', r'Second-round commitment deadline'),
     'aacl2026_demo': ('https://2026.aaclnet.org/calls/demos/', r'Paper Submission Deadline'),
@@ -148,7 +209,11 @@ def refresh_conference_tables(items, previous_by_id, clock, force_refresh, fetch
                 pages[url] = fetch_html(url)[1]
             except Exception:
                 pages[url] = ''
-        observed = conference_table_deadline(pages[url], label, int(item['deadline_aoe'][:4] or str(clock.today.year)))
+        edition = re.search(r"20\d{2}", item.get("venue_group", ""))
+        year = item.get("source_year") or int(
+            item["deadline_aoe"][:4] or (edition[0] if edition else clock.today.year)
+        )
+        observed = conference_table_deadline(pages[url], label, year)
         item['_source_observed'] = bool(observed)
         if not observed:
             item['deadline_source_status'] = 'source_unavailable'
@@ -164,7 +229,7 @@ def refresh_conference_tables(items, previous_by_id, clock, force_refresh, fetch
             item.update(timing_fields(date, date_only=True, timezone=zone))
         item.update(source_url=url,
                     deadline_source_kind='official_cfp', deadline_source_status='portal_unverified',
-                    deadline_source_precision='date_only', deadline_source_evidence=evidence,
+                    deadline_source_precision='exact' if global_time else 'date_only', deadline_source_evidence=evidence,
                     deadline_official_url=url, deadline_official_evidence=evidence,
                     source_checked_at=checked_at())
     return items

@@ -4,6 +4,30 @@ import {
 } from "../../contracts/deadline-proposals.js";
 import { applyStageProposal } from "../../contracts/deadline-proposals.stage.js";
 
+// These published additions now have an official collector source using the same board ID.
+const collectorManagedDeadlines = new Set([
+  "community_f43e7729-6593-4aed-90fd-fca5ff390806", // ICML 2027
+  "community_91ccb05a-8e08-4684-bcbe-aa5b3a53c0fa", // ACL 2027 ARR submission
+  "community_9e9c9619-a1ac-41f9-b67e-05dfd81accf5", // CLeaR 2027
+  "community_207f3047-46da-4ce9-9805-ccccd048cb56", // COLING 2027 ARR commitment
+]);
+
+// Match the collector's known archival main programs. A custom venue or workshop needs evidence.
+const archivalConferenceFamilies = new Set([
+  "aacl",
+  "acl",
+  "aistats",
+  "clear",
+  "colm",
+  "coling",
+  "eacl",
+  "emnlp",
+  "iclr",
+  "icml",
+  "naacl",
+  "neurips",
+]);
+
 /** Merge the public projection while keeping approved corrections authoritative. */
 export function mergePublishedDeadlines(
   generated: readonly unknown[],
@@ -25,6 +49,13 @@ export function mergePublishedDeadlines(
     }
     const update = publishedDeadlineVenue(primary);
     const original = merged.get(String(update.id)) as Record<string, unknown> | undefined;
+    const latest = primary.toSorted(comparePublication).at(-1)!;
+    const previous = latest.previous_deadline_aoe;
+    const isDateCorrection =
+      previous && previous.slice(0, 16) !== String(update.deadline_aoe).slice(0, 16);
+    if (original && collectorManagedDeadlines.has(latest.deadline_id) && !isDateCorrection) {
+      continue;
+    }
     merged.set(
       String(update.id),
       original
@@ -57,14 +88,22 @@ export function mergePublishedDeadlines(
         : update,
     );
   }
-  for (const record of published.toSorted(
-    (a, b) => a.published_at.localeCompare(b.published_at) || a.revision - b.revision,
-  )) {
+  for (const record of published.toSorted(comparePublication)) {
     if (!record.deadline.stage?.venueId) {
       continue;
     }
     const target = merged.get(record.deadline_id) as Record<string, unknown> | undefined;
     const validated = validateDeadlineProposalInput(record.deadline);
+    // The collector publishes ICML's abstract as a separate, linked deadline.
+    // Retire the initial manual stage addition once that row is available.
+    if (
+      target?.abstract_deadline_id === "icml2027_abstract" &&
+      merged.has("icml2027_abstract") &&
+      record.deadline.stage.milestone === "abstract" &&
+      record.deadline.stage.operation === "add"
+    ) {
+      continue;
+    }
     if (target && validated.ok) {
       merged.set(
         record.deadline_id,
@@ -75,11 +114,12 @@ export function mergePublishedDeadlines(
   return [...merged.values()];
 }
 
+function comparePublication(left: PublishedDeadlineRecord, right: PublishedDeadlineRecord): number {
+  return left.published_at.localeCompare(right.published_at) || left.revision - right.revision;
+}
+
 function publishedDeadlineVenue(records_: PublishedDeadlineRecord[]): Record<string, unknown> {
-  const records = records_.toSorted(
-    (left, right) =>
-      left.published_at.localeCompare(right.published_at) || left.revision - right.revision,
-  );
+  const records = records_.toSorted(comparePublication);
   const latest = records.at(-1)!;
   const validated = validateDeadlineProposalInput(latest.deadline);
   if (!validated.ok) {
@@ -89,6 +129,11 @@ function publishedDeadlineVenue(records_: PublishedDeadlineRecord[]): Record<str
   const aoe = new Date(instant - 12 * 60 * 60 * 1000).toISOString().replace("T", " ").slice(0, 19);
   const entryType = latest.deadline.entryType;
   const family = latest.deadline.parentConference;
+  const archival =
+    (entryType === "main_conference" ||
+      entryType === "arr_commitment" ||
+      entryType === "arr_direct_submission") &&
+    archivalConferenceFamilies.has(family.toLowerCase());
   const parentGroup =
     [family, latest.deadline.parentYear].filter(Boolean).join(" ") || latest.deadline.name;
   const group =
@@ -115,9 +160,9 @@ function publishedDeadlineVenue(records_: PublishedDeadlineRecord[]): Record<str
     venue_group: group,
     ...(family ? { venue_family: family } : {}),
     entry_type: entryType,
-    archival_status: "unknown",
+    archival_status: archival ? "archival" : "unknown",
     venue_priority: "standard",
-    archival: false,
+    archival,
     stale: false,
     milestone:
       latest.deadline.stage?.milestone ??

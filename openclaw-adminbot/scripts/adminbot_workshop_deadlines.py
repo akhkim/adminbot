@@ -95,7 +95,7 @@ OLD_HINT_RIGHT = re.compile(r"(?i)^\s*(?:\)?\s*)?(?:extended\s+(?:to|until)|→|
 GLOBAL_DEADLINE_TIME = re.compile(
     r"(?i)all\s+(?:dates|deadlines)[^.;]{0,80}?"
     r"(?P<hour>[01]?\d|2[0-3]):(?P<minute>\d{2})\s*"
-    r"(?P<ampm>a\.?m\.?|p\.?m\.?)?.{0,100}?(?:AoE|Anywhere\s+on\s+Earth)"
+    r"(?P<ampm>a\.?m\.?|p\.?m\.?)?.{0,100}?(?:AoE|Anywhere\s+on\s+Earth|UTC\s*[-−]12)"
 )
 LOCAL_TIME = re.compile(
     r"(?i)(?<!\d)(?P<hour>[01]?\d|2[0-3]):(?P<minute>\d{2})\s*"
