@@ -37,6 +37,7 @@ from adminbot_conference_deadlines import (
     refresh_configured_conferences as refresh_conference_milestones,
 )
 from adminbot_schedule_sources import refresh_schedules
+from adminbot_lab_venues import fetch_lab_papers, lab_venue_conferences
 from adminbot_workshop_notifications import refresh_workshop_dates
 from adminbot_deadlines import AoEClock, is_sweep_due
 from adminbot_deadline_time import TIME_FIELDS, timing_fields
@@ -126,6 +127,39 @@ CONFERENCES = [
          venue_type="conference", venue_group="ICLR 2027", track="main",
          deadline_label="full paper", deadline_aoe="",
          notification_aoe="", link="https://iclr.cc/Conferences/2027"),
+    dict(id="icml2027_abstract", name="ICML 2027",
+         venue_type="conference", venue_group="ICML 2027", track="main",
+         deadline_label="abstract deadline", deadline_aoe="",
+         notification_aoe="", link="https://icml.cc/Conferences/2027"),
+    # Reuse the live community IDs so a source refresh updates existing board links.
+    dict(id="community_f43e7729-6593-4aed-90fd-fca5ff390806", name="ICML 2027 Main Track",
+         venue_type="conference", venue_group="ICML 2027", track="main",
+         deadline_label="full paper", deadline_aoe="",
+         notification_aoe="", link="https://icml.cc/Conferences/2027"),
+    dict(id="community_91ccb05a-8e08-4684-bcbe-aa5b3a53c0fa",
+         name="ACL 2027 (ARR January submission)",
+         venue_type="conference", venue_group="ACL 2027", track="main",
+         submission_type="direct", deadline_label="paper submission (ARR)", deadline_aoe="",
+         notification_aoe="", link="https://2027.aclweb.org/calls/main/"),
+    dict(id="community_9e9c9619-a1ac-41f9-b67e-05dfd81accf5", name="CLeaR 2027",
+         venue_type="conference", venue_group="CLeaR 2027", venue_family="CLeaR", track="main",
+         deadline_label="paper submission", deadline_aoe="",
+         notification_aoe="", link="https://www.cclear.cc/2027/CallforPapers"),
+    dict(id="community_207f3047-46da-4ce9-9805-ccccd048cb56",
+         name="COLING 2027 (main, ARR commitment)",
+         venue_type="conference", venue_group="COLING 2027", track="main",
+         submission_type="commitment", deadline_label="commitment", deadline_aoe="",
+         notification_aoe="", link="https://2027.coling-iccl.org/calls/main_conference_papers/"),
+    dict(id="aistats2027_abstract", name="AISTATS 2027",
+         venue_type="conference", venue_group="AISTATS 2027", track="main",
+         source_year=2026,
+         deadline_label="abstract deadline", deadline_aoe="",
+         notification_aoe="", link="https://virtual.aistats.org/Conferences/2027/CallForPapers"),
+    dict(id="aistats2027_paper", name="AISTATS 2027",
+         venue_type="conference", venue_group="AISTATS 2027", track="main",
+         source_year=2026,
+         deadline_label="full paper", deadline_aoe="",
+         notification_aoe="", link="https://virtual.aistats.org/Conferences/2027/CallForPapers"),
     # COLM's latest announced round; 2027 stays in PENDING until colm.cc publishes its dates.
     dict(id="colm2026_abstract", name="COLM 2026",
          venue_type="conference", venue_group="COLM 2026", track="main",
@@ -175,9 +209,7 @@ PENDING = [
     ("NeurIPS 2026 (main camera-ready)", "https://neurips.cc/Conferences/2026/Dates"),
     ("ICLR 2027 (main camera-ready)", "https://iclr.cc/Conferences/2027/Dates"),
     ("NeurIPS 2027 (main)", "https://neurips.cc/Conferences/2027"),
-    ("ICML 2027 (main)", "https://icml.cc/Conferences/2027"),
     ("COLM 2027 (main)", "https://colm.cc/"),
-    ("CLeaR 2027 (main)", "https://www.cclear.cc/"),
     ("IASEAI 2027 submission (OpenReview venue exists; deadline not announced)",
      "https://openreview.net/group?id=IASEAI.org/2027/Conference"),
 ]
@@ -1228,7 +1260,12 @@ def refresh_configured_conferences(items, previous_by_id, clock, force_refresh=F
         item['_source_observed'] = False
     refresh_conference_milestones(items, previous_by_id, clock, force_refresh,
         read_invitations=fetch_invitation_observations, fetch_html=fetch_page, checked_at=checked_at)
-    return refresh_schedules(items, previous_by_id, clock, force_refresh, fetch_html=fetch_page)
+    refresh_schedules(items, previous_by_id, clock, force_refresh, fetch_html=fetch_page)
+    for item in items:
+        previous = previous_by_id.get(item["id"], {})
+        if not item.get("_primary_attempted") and previous.get("source_checked_at") and not previous.get("stale"):
+            item["_source_observed"] = True
+    return items
 
 
 def fetch_workshop_source(source, previous_by_id=None):
@@ -1890,6 +1927,11 @@ def main():
             for seed in EMNLP_WORKSHOPS] + fetch_openreview_conferences(
         previous_by_id, clock
     )
+    # Venues the lab's own paper records name but the configured list does not carry yet.
+    lab_rows, lab_gaps = lab_venue_conferences(
+        fetch_lab_papers(), items, previous_by_id, clock,
+        read_deadlines=_openreview_submission_deadlines, checked_at=checked_at)
+    items += lab_rows
     fetched, failures = fetch_workshops(previous_by_id)
     items += fetched
     fallback_ids = set()
@@ -1959,6 +2001,10 @@ def main():
         print(f"\n{len(PENDING)} tracked venue(s) awaiting an announced date:")
         for name, where in PENDING:
             print(f"  - {name}  ({where})")
+    if lab_gaps:
+        print(f"\n{len(lab_gaps)} venue(s) in the lab's paper records with no deadline source:")
+        for gap in lab_gaps:
+            print(f"  - {gap}")
 
 
 if __name__ == "__main__":
