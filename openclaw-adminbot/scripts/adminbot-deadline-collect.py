@@ -1259,7 +1259,12 @@ def refresh_configured_conferences(items, previous_by_id, clock, force_refresh=F
         item['_source_observed'] = False
     refresh_conference_milestones(items, previous_by_id, clock, force_refresh,
         read_invitations=fetch_invitation_observations, fetch_html=fetch_page, checked_at=checked_at)
-    return refresh_schedules(items, previous_by_id, clock, force_refresh, fetch_html=fetch_page)
+    refresh_schedules(items, previous_by_id, clock, force_refresh, fetch_html=fetch_page)
+    for item in items:
+        previous = previous_by_id.get(item["id"], {})
+        if not item.get("_primary_attempted") and previous.get("source_checked_at") and not previous.get("stale"):
+            item["_source_observed"] = True
+    return items
 
 
 def fetch_workshop_source(source, previous_by_id=None):

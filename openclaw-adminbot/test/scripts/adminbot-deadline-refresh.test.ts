@@ -153,7 +153,7 @@ describe("workshop refresh between website checks", () => {
   });
 });
 
-it("refreshes the two ICML cutoffs, ACL's ARR date, and CLeaR from their own sources", () => {
+it("refreshes ICML, ACL, COLING and CLeaR from their own sources", () => {
   const result = execFileSync(
     "python3",
     [
@@ -183,7 +183,11 @@ def seeds():
     return [dict(next(row for row in m.CONFERENCES if row['id'] == key)) for key in ids]
 rows = m.refresh_configured_conferences(seeds(), {}, clock, True)
 del pages[ICML_CFP]
-retry = m.refresh_configured_conferences(seeds(), {row['id']: row for row in rows}, clock, True)
+previous = {row['id']: {key: value for key, value in row.items() if not key.startswith('_')} for row in rows}
+cached = m.refresh_configured_conferences(seeds(), previous, m.AoEClock.resolve('2026-11-15'), False)
+assert cached[0]['_source_observed'] and cached[0]['source_checked_at'] == rows[0]['source_checked_at']
+retry = m.refresh_configured_conferences(seeds(), previous, clock, True)
+assert not retry[0]['_source_observed']
 assert rows[2]['deadline_date'] == '2026-12-23'
 assert rows[2]['deadline_time_precision'] == 'date_only'
 assert not rows[2]['deadline_at']
