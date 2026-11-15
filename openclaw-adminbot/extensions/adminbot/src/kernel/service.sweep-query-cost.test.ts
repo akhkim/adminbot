@@ -116,20 +116,6 @@ function seed(store: SeedStore, papers: number): void {
         } as never);
       }
     }
-    if (index % 2 === 1) {
-      store.savePaperMentorRun({
-        id: `proj${id}:2026-04-0${(index % 8) + 1}`,
-        paper_id: id,
-        project_id: `proj${id}`,
-        reviewed_at: `2026-04-0${(index % 8) + 1}T00:00:00.000Z`,
-        ingested_at: "2026-04-10T00:00:00.000Z",
-        comments_total: index,
-        by_severity: { major: index % 3, minor: 1 },
-        by_category: {},
-        by_document: [],
-        failed_agents: [],
-      } as never);
-    }
     if (index % 3 === 1) {
       store.savePaperflowEvidence({
         paper_id: id,
@@ -213,7 +199,6 @@ describe("all-paper sweeps read each per-paper table once", () => {
       "listSocialDrafts",
       "listConferenceAttendees",
       "listPaperReimbursements",
-      "listPaperMentorRuns",
       "listPaperflowEvidence",
     ] as const;
     for (const paper of store.listPapers()) {

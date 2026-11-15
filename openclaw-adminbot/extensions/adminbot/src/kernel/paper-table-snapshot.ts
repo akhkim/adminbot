@@ -5,7 +5,6 @@ import type {
 } from "../contracts/paper-cycle.js";
 import type { AdminBotPaperSlotRecord } from "../contracts/paper-slots.js";
 import type { AdminBotPaperflowEvidenceRecord } from "../contracts/paperflow-stages.js";
-import type { AdminBotPaperMentorRun } from "../contracts/papermentor.js";
 
 /** The per-paper reads an all-paper sweep makes, keyed the way the store keys them. */
 export type PaperRowReader = {
@@ -13,7 +12,6 @@ export type PaperRowReader = {
   listSocialDrafts(paperId?: string, draftId?: string): AdminBotSocialDraftRecord[];
   listConferenceAttendees(paperId?: string): AdminBotConferenceAttendeeRecord[];
   listPaperReimbursements(paperId?: string): AdminBotPaperReimbursementRecord[];
-  listPaperMentorRuns(paperId?: string): AdminBotPaperMentorRun[];
   listPaperflowEvidence(paperId?: string): AdminBotPaperflowEvidenceRecord[];
 };
 
@@ -74,10 +72,6 @@ export class PaperTableSnapshot implements PaperRowReader {
 
   listPaperReimbursements(paperId?: string): AdminBotPaperReimbursementRecord[] {
     return this.rows("reimbursements", paperId, () => this.store.listPaperReimbursements());
-  }
-
-  listPaperMentorRuns(paperId?: string): AdminBotPaperMentorRun[] {
-    return this.rows("papermentor", paperId, () => this.store.listPaperMentorRuns());
   }
 
   listPaperflowEvidence(paperId?: string): AdminBotPaperflowEvidenceRecord[] {

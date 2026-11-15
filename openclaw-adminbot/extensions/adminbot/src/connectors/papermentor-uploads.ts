@@ -2,9 +2,8 @@
 // papermentor-pdf (github.com/akhkim/papermentor-pdf) reviews it, compiles it and writes every
 // comment onto the PDF and into the .tex files, and the member downloads the post-review zip.
 //
-// This is not the paper-stage review (connectors/papermentor-review.ts), which asks the lab's
-// Overleaf to review a paper it already hosts. Nothing here touches Overleaf, a paper record or a
-// paper slot: an upload is reviewed, handed back, and deleted after a retention window.
+// Nothing here touches Overleaf, a paper record or a paper slot: an upload is reviewed, handed
+// back, and deleted after a retention window.
 //
 // What leaves the process:
 // - the draft's text, to the model provider papermentor-pdf is configured for -- the lab's LLM

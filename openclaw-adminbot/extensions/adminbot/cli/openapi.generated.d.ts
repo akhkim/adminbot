@@ -4183,41 +4183,6 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/papers/papermentor/reviews/run": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** POST /papers/papermentor/reviews/run */
-    post: operations["post-papers-papermentor-reviews-run"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/papers/papermentor/runs": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** GET /papers/papermentor/runs */
-    get: operations["get-papers-papermentor-runs"];
-    put?: never;
-    /** POST /papers/papermentor/runs */
-    post: operations["post-papers-papermentor-runs"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   "/papers/pi-review": {
     parameters: {
       query?: never;
@@ -5439,9 +5404,6 @@ export interface components {
         | "rec_letter_reminders.swept"
         | "professor_digest.swept"
         | "rec_letter_overdue.swept"
-        | "papermentor.run_recorded"
-        | "papermentor.review_requested"
-        | "papermentor.project_linked"
         | "papermentor.upload_requested"
         | "papermentor.upload_finished"
         | "paper_evidence.verified"
@@ -9090,7 +9052,7 @@ export interface components {
       provided_at?: string;
       validated_at?: string;
       /** @enum {string} */
-      verified_by?: "openreview" | "arxiv" | "papermentor" | "google_drive" | "adminbot_post";
+      verified_by?: "openreview" | "arxiv" | "google_drive" | "adminbot_post";
       verified_at?: string;
       verified_title?: string;
       previous_submission_id?: string;
@@ -9400,32 +9362,6 @@ export interface components {
       nudge_count: number;
       due: boolean;
       exhausted?: boolean;
-    } & {
-      [key: string]: unknown;
-    };
-    AdminBotPaperMentorRun: {
-      project_id: string;
-      reviewed_at: string;
-      model?: string;
-      paper_type?: string;
-      comments_total: number;
-      by_severity: {
-        [key: string]: number;
-      };
-      by_category: {
-        [key: string]: number;
-      };
-      by_document: components["schemas"]["AdminBotPaperMentorDocument"][];
-      failed_agents: string[];
-      id: string;
-      paper_id: string;
-      ingested_at: string;
-    } & {
-      [key: string]: unknown;
-    };
-    AdminBotPaperMentorDocument: {
-      path: string;
-      comments: number;
     } & {
       [key: string]: unknown;
     };
@@ -26139,170 +26075,6 @@ export interface operations {
             papers_considered: number;
             unroutable: string[];
             exhausted: string[];
-          } & {
-            [key: string]: unknown;
-          };
-        };
-      };
-      /** @description Authentication, authorization, validation, policy, or connector error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            error?: unknown;
-          };
-        };
-      };
-    };
-  };
-  "post-papers-papermentor-reviews-run": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": {
-          limit?: number;
-          dry_run?: unknown;
-        } & {
-          [key: string]: unknown;
-        };
-      };
-    };
-    responses: {
-      /** @description Successful service result */
-      "2XX": {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            dry_run: boolean;
-            due: number;
-            requests: ({
-              paper_id: string;
-              title: string;
-              /** @enum {string} */
-              reason: "stale" | "never";
-              /** @enum {string} */
-              status:
-                | "rejected"
-                | "failed"
-                | "recent"
-                | "busy"
-                | "not_found"
-                | "running"
-                | "started"
-                | "would_request";
-              project_id?: string;
-              message?: string;
-            } & {
-              [key: string]: unknown;
-            })[];
-          } & {
-            [key: string]: unknown;
-          };
-        };
-      };
-      /** @description Authentication, authorization, validation, policy, or connector error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            error?: unknown;
-          };
-        };
-      };
-    };
-  };
-  "get-papers-papermentor-runs": {
-    parameters: {
-      query?: {
-        paper_id?: string;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful service result */
-      "2XX": {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            runs: components["schemas"]["AdminBotPaperMentorRun"][];
-          } & {
-            [key: string]: unknown;
-          };
-        };
-      };
-      /** @description Authentication, authorization, validation, policy, or connector error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            error?: unknown;
-          };
-        };
-      };
-    };
-  };
-  "post-papers-papermentor-runs": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": {
-          [key: string]: unknown;
-        };
-      };
-    };
-    responses: {
-      /** @description Server response */
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            error: {
-              message: string;
-            } & {
-              [key: string]: unknown;
-            };
-          } & {
-            [key: string]: unknown;
-          };
-        };
-      };
-      /** @description Successful service result */
-      "2XX": {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            paper_id: string;
-            run_id: string;
-            recorded: boolean;
-            /** @enum {string} */
-            review_slot: "invalid" | "missing" | "provided" | "waived";
           } & {
             [key: string]: unknown;
           };

@@ -2796,16 +2796,6 @@ export type AdminBotAuditEvent = {
     // One after-deadline pass that mailed at least one student, failed, or skipped somebody for
     // having no address on file. Quiet runs (off, nothing due) are not recorded.
     | "rec_letter_overdue.swept"
-    // One PaperMentor review, as the collector reported it. Recorded on every pass rather than
-    // only the first, so "when did we last hear from PaperMentor about this paper" has an answer
-    // even on the days it re-sent the review it sent yesterday. Counts only -- see the table.
-    | "papermentor.run_recorded"
-    // AdminBot asked the lab's Overleaf to review a paper at its review step, and what it said.
-    // One row per request, including the refusals, so a paper that is never reviewed has a trail.
-    | "papermentor.review_requested"
-    // The project a paper's share link resolved to, written onto the paper so the review that
-    // follows can find it. The row names the link it replaced, if any.
-    | "papermentor.project_linked"
     // A member uploaded a zip in the PaperMentor tab, and how its review ended. Counts only: the
     // comments are on an unpublished draft and stay in the files the member downloads.
     | "papermentor.upload_requested"

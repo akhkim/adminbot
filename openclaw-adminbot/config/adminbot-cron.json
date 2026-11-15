@@ -383,26 +383,6 @@
       "timeoutSeconds": 900
     },
     {
-      "name": "adminbot-papermentor-reviews",
-      "description": "Ask PaperMentor to review the papers at their review step whose edit link is on the lab's Overleaf",
-      "cron": "2 8-20/2 * * *",
-      "argv": [
-        "bash",
-        "scripts/adminbot-papermentor-review-cron.sh"
-      ],
-      "timeoutSeconds": 600
-    },
-    {
-      "name": "adminbot-papermentor-runs",
-      "description": "Collect PaperMentor's cached reviews and record them against their papers",
-      "cron": "35 * * * *",
-      "argv": [
-        "bash",
-        "scripts/adminbot-papermentor-cron.sh"
-      ],
-      "timeoutSeconds": 900
-    },
-    {
       "name": "adminbot-rec-letter-reminders",
       "description": "Mail the head professor the letters due within three days",
       "cron": "25 10 * * *",
@@ -541,6 +521,14 @@
     {
       "name": "adminbot-email-automation",
       "reason": "Hand-registered agent-turn job that had the model run scripts/adminbot-email-automation.ts with exec/write/message tools. adminbot-email runs the same pass hourly as a plain command."
+    },
+    {
+      "name": "adminbot-papermentor-reviews",
+      "reason": "Asked the lab's Overleaf to run PaperMentor at each paper's review step. The lab no longer uses that Overleaf; PaperMentor runs on uploaded zips in the PaperMentor tab."
+    },
+    {
+      "name": "adminbot-papermentor-runs",
+      "reason": "Collected PaperMentor reviews from the Overleaf host's cache, which Aurora never had, so it failed every run. Removed with the Overleaf PaperMentor integration."
     }
   ]
 }
