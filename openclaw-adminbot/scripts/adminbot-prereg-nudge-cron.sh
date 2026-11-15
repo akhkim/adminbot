@@ -37,7 +37,7 @@ response="$(
     -d "{\"venue\":\"${VENUE}\"}" \
     "http://127.0.0.1:${PORT}/papers/pre-registration/run"
 )" || {
-  printf 'pre-registration nudge: could not reach the AdminBot service on 127.0.0.1:%s\n' "$PORT" >&2
+  adminbot_curl_failure "pre-registration nudge" "$?" "$PORT"
   exit 1
 }
 

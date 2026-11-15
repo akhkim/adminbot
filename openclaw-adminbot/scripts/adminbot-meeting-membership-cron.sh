@@ -43,7 +43,7 @@ response="$(
     -d "{\"surface\":\"${SURFACE}\"}" \
     "http://127.0.0.1:${PORT}/meetings/invite-membership/run"
 )" || {
-  printf 'meeting membership: could not reach the AdminBot service on 127.0.0.1:%s\n' "$PORT" >&2
+  adminbot_curl_failure "meeting membership" "$?" "$PORT"
   exit 1
 }
 

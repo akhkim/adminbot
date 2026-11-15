@@ -37,7 +37,7 @@ response="$(
     --data '{"dry_run":false}' \
     "http://127.0.0.1:${PORT}/papers/papermentor/reviews/run"
 )" || {
-  printf 'papermentor reviews: could not reach the AdminBot service on 127.0.0.1:%s\n' "$PORT" >&2
+  adminbot_curl_failure "papermentor reviews" "$?" "$PORT"
   exit 1
 }
 

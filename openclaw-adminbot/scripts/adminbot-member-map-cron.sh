@@ -32,13 +32,13 @@ adminbot_load_cron_env "member map refresh" || exit 1
 PORT="${ADMINBOT_PORT:-8765}"
 
 response="$(
-  curl --silent --show-error --max-time 300 \
+  curl --silent --show-error --max-time 840 \
     --write-out '\n%{http_code}' \
     -X POST \
     -H "Authorization: Bearer ${ADMINBOT_SERVICE_TOKEN}" \
     "http://127.0.0.1:${PORT}/member-map/refresh"
 )" || {
-  printf 'member map refresh: could not reach the AdminBot service on 127.0.0.1:%s\n' "$PORT" >&2
+  adminbot_curl_failure "member map refresh" "$?" "$PORT"
   exit 1
 }
 

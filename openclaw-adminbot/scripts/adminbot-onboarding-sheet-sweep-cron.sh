@@ -43,7 +43,7 @@ response="$(
     -d "{\"dry_run\":${DRY_RUN}}" \
     "http://127.0.0.1:${PORT}/onboarding/sheet-sweep/run"
 )" || {
-  printf 'onboarding sheet sweep: could not reach the AdminBot service on 127.0.0.1:%s\n' "$PORT" >&2
+  adminbot_curl_failure "onboarding sheet sweep" "$?" "$PORT"
   exit 1
 }
 

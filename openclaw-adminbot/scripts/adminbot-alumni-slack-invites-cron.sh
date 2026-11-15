@@ -30,7 +30,7 @@ response="$(
     -H "Authorization: Bearer ${ADMINBOT_SERVICE_TOKEN}" \
     "http://127.0.0.1:${PORT}/onboarding/alumni-slack-invites/run"
 )" || {
-  printf 'alumni Slack invites: could not reach the AdminBot service on 127.0.0.1:%s\n' "$PORT" >&2
+  adminbot_curl_failure "alumni Slack invites" "$?" "$PORT"
   exit 1
 }
 
