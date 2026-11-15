@@ -45,12 +45,12 @@ export class OpenReviewCitationChecks extends LitElement {
     :host {
       display: block;
       max-width: 760px;
-      margin: 24px auto;
+      margin: var(--space-6, 24px) auto;
     }
+    /* Follows PaperMentor on the same page: a hairline and space, not a box (ui/DESIGN.md). */
     section {
-      padding: 28px;
-      border: 1px solid var(--border, #8885);
-      border-radius: 14px;
+      padding-top: var(--space-6, 24px);
+      border-top: 1px solid var(--border, #8885);
     }
     h2 {
       margin-top: 0;
@@ -69,29 +69,37 @@ export class OpenReviewCitationChecks extends LitElement {
       color: var(--danger, #dc5353);
     }
     article {
-      --finding-color: #29966b;
-      border: 1px solid color-mix(in srgb, var(--finding-color) 40%, transparent);
-      background: color-mix(in srgb, var(--finding-color) 6%, transparent);
-      border-radius: 12px;
-      padding: 14px 18px;
-      margin-top: 12px;
+      --finding-color: var(--ok, #29966b);
+      border-top: 1px solid var(--border, #8885);
+      padding: var(--space-4, 16px) 0;
       overflow-wrap: anywhere;
     }
     article[data-state="flagged"] {
-      --finding-color: #d96068;
+      --finding-color: var(--danger, #d96068);
     }
     article[data-state="unchecked"] {
-      --finding-color: #b78a32;
+      --finding-color: var(--warn, #b78a32);
     }
     article h3 {
-      margin: 0 0 4px;
+      margin: 0 0 var(--space-1, 4px);
       font-size: 16px;
     }
+    /* The row is unboxed, so a dot before the title carries the check's state. */
+    article h3::before {
+      content: "";
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      margin-right: var(--space-2, 8px);
+      border-radius: 50%;
+      background: var(--finding-color);
+      vertical-align: middle;
+    }
     article p {
-      margin: 6px 0;
+      margin: var(--space-2, 8px) 0;
     }
     li {
-      margin: 8px 0;
+      margin: var(--space-2, 8px) 0;
     }
     summary {
       cursor: pointer;

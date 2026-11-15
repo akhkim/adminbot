@@ -737,18 +737,18 @@ class AdminbotOpportunitiesView extends LitElement {
     return html`
       <style>
         .opportunities-view {
-          padding: 4px 2px 24px;
+          padding: 0 0 var(--space-6);
         }
         .opportunities-view .intro {
           color: var(--muted);
           font-size: 13.5px;
-          margin: 0 0 14px;
+          margin: 0 0 var(--space-4);
         }
         .opp-tabs {
           display: flex;
           flex-wrap: wrap;
-          gap: 6px;
-          margin-bottom: 14px;
+          gap: var(--space-2);
+          margin-bottom: var(--space-4);
         }
         .opp-tab {
           display: inline-flex;
@@ -777,18 +777,20 @@ class AdminbotOpportunitiesView extends LitElement {
         .opp-list {
           display: flex;
           flex-direction: column;
-          gap: 8px;
         }
+        /* A row of the list, not a card (ui/DESIGN.md): the urgency stripe stays on the left edge,
+           and a hairline separates rows in place of a filled, bordered box. */
         .opp-row {
           display: grid;
           grid-template-columns: 160px 1fr auto;
-          gap: 12px;
-          padding: 11px 14px;
-          border: 1px solid var(--border, #26324a);
-          border-left: 4px solid var(--u);
-          border-radius: 10px;
-          background: var(--bg-elevated);
+          gap: var(--space-3);
+          padding: var(--space-3) 0 var(--space-3) var(--space-3);
+          border-bottom: 1px solid var(--border);
+          box-shadow: inset 3px 0 0 var(--u);
           align-items: start;
+        }
+        .opp-row:last-child {
+          border-bottom: 0;
         }
         .opp-when {
           display: flex;
@@ -812,6 +814,7 @@ class AdminbotOpportunitiesView extends LitElement {
         .opp-name {
           font-size: 13.5px;
           display: flex;
+          flex-wrap: wrap;
           align-items: center;
           gap: 6px;
         }
@@ -841,12 +844,12 @@ class AdminbotOpportunitiesView extends LitElement {
           border: 1px solid var(--border, #26324a);
         }
         .opp-notice--success {
-          border-color: rgba(52, 199, 123, 0.4);
+          border-color: color-mix(in srgb, var(--ok) 40%, transparent);
           color: var(--ok);
           background: var(--ok-subtle);
         }
         .opp-notice--error {
-          border-color: rgba(248, 113, 113, 0.4);
+          border-color: color-mix(in srgb, var(--danger) 40%, transparent);
           color: var(--danger);
           background: var(--danger-subtle);
         }
@@ -871,7 +874,7 @@ class AdminbotOpportunitiesView extends LitElement {
         .opp-proposal {
           margin-top: 8px;
           padding: 8px 10px;
-          border: 1px solid rgba(96, 165, 250, 0.35);
+          border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
           border-radius: 6px;
           background: var(--accent-subtle);
           display: grid;
@@ -887,7 +890,7 @@ class AdminbotOpportunitiesView extends LitElement {
         .opp-proposal__evidence {
           margin: 0;
           padding-left: 10px;
-          border-left: 2px solid rgba(148, 163, 184, 0.4);
+          border-left: 2px solid var(--border-strong);
           color: var(--muted, #94a3b8);
           font-size: 12px;
           line-height: 1.45;
@@ -962,7 +965,7 @@ class AdminbotOpportunitiesView extends LitElement {
           display: flex;
           align-items: center;
           justify-content: center;
-          margin: 12px 0 0 auto;
+          margin: var(--space-3) 0 0 auto;
           flex-shrink: 0;
           padding: 0;
           transition:
@@ -1051,9 +1054,9 @@ class AdminbotOpportunitiesView extends LitElement {
         }
         .opp-form-input {
           padding: 8px 10px;
-          border: 1px solid var(--border, #26324a);
+          border: 1px solid var(--input);
           border-radius: 6px;
-          background: var(--bg);
+          background: transparent;
           color: var(--text, #d7e2f4);
           font-size: 13px;
           font-family: inherit;

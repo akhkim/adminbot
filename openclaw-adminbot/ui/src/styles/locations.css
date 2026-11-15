@@ -369,19 +369,20 @@
 .lab-travel__groups {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: var(--space-3);
+  gap: var(--space-4) var(--space-6);
 }
 
+/* A titled column under a hairline, not a bordered tile (ui/DESIGN.md), so names line up with the
+   card's own heading. */
 .lab-travel__group {
-  padding: var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
   min-width: 0;
 }
 
 .lab-travel__group-title {
   font-weight: 600;
   margin-bottom: var(--space-2);
+  padding-bottom: var(--space-1);
+  border-bottom: 1px solid var(--border);
 }
 
 .lab-travel__matches {
@@ -445,8 +446,9 @@
 }
 
 /* An admin's location log for one member, under their schedule: a dated list, newest first. */
+/* No top margin: the report grid it sits in already spaces its sections. */
 .adminbot-location-log {
-  margin-top: var(--space-4);
+  margin-top: 0;
 }
 
 .adminbot-location-log__title {

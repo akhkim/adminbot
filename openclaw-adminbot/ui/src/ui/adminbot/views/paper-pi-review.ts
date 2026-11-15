@@ -109,7 +109,7 @@ export function renderPaperPiReview(
                 ></textarea>
               </label>
               <p class="muted">Completing feedback does not approve publication.</p>
-              <button class="btn btn--primary" type="submit" ?disabled=${busy}>
+              <button class="btn primary" type="submit" ?disabled=${busy}>
                 ${busy ? "Saving…" : "Mark feedback done"}
               </button>
             </form>`}
@@ -124,7 +124,7 @@ export function renderPaperPiReview(
       ${approval?.status === "provided"
         ? html`<p role="status">Publication approved</p>`
         : html`<button
-            class="btn btn--primary"
+            class="btn primary"
             ?disabled=${busy}
             @click=${() => props.onSaveSlot(paper.id, "pi_approval", { done: true })}
           >

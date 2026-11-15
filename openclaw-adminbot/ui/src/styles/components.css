@@ -74,13 +74,11 @@
 
 /* The "you may already have an account" line. Reads as a note rather than as an error: nothing has
    gone wrong yet, and styling it like a warning would make every arrival look like a failed one.
-   The tinted panel is what stops it being read as the form's own subtitle and skipped. */
+   The accent rule down its edge is what stops it being read as the form's own subtitle and
+   skipped; it carries no fill or frame, so it does not sit as a grey box in the form. */
 .login-gate__hint {
-  border: 1px solid var(--border);
   border-left: 3px solid var(--accent);
-  border-radius: var(--radius-sm);
-  background: var(--bg-muted);
-  padding: var(--space-3);
+  padding: var(--space-1) 0 var(--space-1) var(--space-3);
   color: var(--muted-strong);
   font-size: var(--control-ui-text-sm);
   line-height: 1.5;
@@ -323,7 +321,6 @@
   overflow-y: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: var(--card);
 }
 
 .login-gate__picker-option {
@@ -388,9 +385,8 @@
   gap: var(--space-3);
   min-height: var(--control-h-lg);
   padding: 0 var(--space-3);
-  border: 1px solid var(--border);
+  border: 1px solid var(--input);
   border-radius: var(--radius-sm);
-  background: var(--card);
 }
 
 .login-gate__picker-selected-name {
@@ -878,6 +874,12 @@
   align-items: start;
 }
 
+/* The shell's gap already separates the leading panel from the toolbar or notice above it; the
+   card's own top padding on top of that left a double gap. */
+.adminbot-grid > .adminbot-card--wide:first-child {
+  padding-top: 0;
+}
+
 .adminbot-card {
   min-width: 0;
 }
@@ -941,7 +943,7 @@
   grid-template-columns: 7.5rem 1fr;
   align-items: baseline;
   gap: var(--space-3);
-  padding: 6px 0;
+  padding: var(--space-2) 0;
   border-bottom: 1px solid var(--border);
 }
 
@@ -1452,11 +1454,9 @@ details[open] > .projects-nav__toggle::after {
   margin-top: var(--space-2);
 }
 
+/* A plain section of the queue: the queue's own gap sets it apart, so it needs no box. */
 .workshop-nudges__coverage {
-  padding: var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--bg-muted);
+  min-width: 0;
 }
 
 .workshop-nudges__detail {
@@ -1501,7 +1501,7 @@ details[open] > .projects-nav__toggle::after {
 
 .workshop-nudges__recommendations {
   list-style: none;
-  margin: 18px 0 0;
+  margin: var(--space-4) 0 0;
   padding: 0;
 }
 
@@ -1552,7 +1552,7 @@ details[open] > .projects-nav__toggle::after {
 .workshop-nudges__evidence div {
   display: grid;
   grid-template-columns: 130px minmax(0, 1fr);
-  gap: 10px;
+  gap: var(--space-3);
 }
 
 .workshop-nudges__evidence dt {
@@ -1587,10 +1587,10 @@ details[open] > .projects-nav__toggle::after {
 }
 
 .workshop-nudges__preview pre {
-  margin: 8px 0 0;
-  padding: 14px;
+  margin: var(--space-2) 0 0;
+  padding: var(--space-3);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--bg-muted);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -1667,10 +1667,8 @@ details[open] > .projects-nav__toggle::after {
   gap: var(--space-4);
   flex-wrap: wrap;
   margin-top: var(--space-4);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--bg-accent);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border);
 }
 
 .adminbot-action-bulk__all {
@@ -1700,7 +1698,6 @@ details[open] > .projects-nav__toggle::after {
 .adminbot-nudge-list {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
   margin-top: var(--space-4);
 }
 
@@ -1711,10 +1708,10 @@ details[open] > .projects-nav__toggle::after {
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-4);
-  padding: var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--bg-accent);
+  /* Rows, not cards: a hairline between items and no side inset, so each lines up with the
+     section heading above the list. */
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--border);
   transition: border-color var(--duration-fast) var(--ease-out);
 }
 
@@ -2055,11 +2052,9 @@ details[open] > .projects-nav__toggle::after {
   grid-template-columns: minmax(0, 1fr);
   gap: var(--space-4);
   margin-top: var(--space-4);
-  padding: var(--space-4);
+  /* A page section, not a box: no fill, border or inset, so the heading and the filters start on
+     the same edge as everything else on the page. */
   overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--bg-accent);
 }
 
 .adminbot-member-sheet__heading {
@@ -2135,8 +2130,8 @@ details[open] > .projects-nav__toggle::after {
   height: var(--control-h-md);
   border: 1px solid var(--input);
   border-radius: var(--radius-md);
-  padding: 0 10px;
-  background: var(--bg);
+  padding: 0 var(--space-3);
+  background: transparent;
   color: var(--text);
   font-size: var(--control-ui-input-text-size);
   font-weight: 400;
@@ -4536,31 +4531,28 @@ details[open] > .projects-nav__toggle::after {
   justify-content: space-between;
   align-items: center;
   flex-wrap: wrap;
-  gap: 12px;
-  margin-top: var(--space-6);
+  gap: var(--space-3);
+  margin-top: var(--space-4);
 }
 
 .conference-papers__actions .btn.primary {
-  background: color-mix(in srgb, var(--accent) 85%, white);
-  border-color: var(--accent);
-  color: #fff;
   font-size: var(--control-ui-text-md);
   padding: 0 var(--space-5);
 }
 
 .conference-papers__list {
   list-style: none;
-  margin: 12px 0 0;
+  margin: var(--space-3) 0 0;
   padding: 0;
   display: grid;
-  gap: 14px;
+  gap: var(--space-3);
 }
 
 .conference-papers__hit {
   display: flex;
-  gap: 14px;
+  gap: var(--space-3);
   align-items: flex-start;
-  padding-bottom: 14px;
+  padding-bottom: var(--space-3);
   border-bottom: 1px solid var(--border);
 }
 
@@ -4574,7 +4566,7 @@ details[open] > .projects-nav__toggle::after {
 .conference-papers__match {
   flex: 0 0 3.5rem;
   display: grid;
-  gap: 4px;
+  gap: var(--space-1);
   justify-items: center;
 }
 
@@ -4604,7 +4596,7 @@ details[open] > .projects-nav__toggle::after {
 .conference-papers__body {
   min-width: 0;
   display: grid;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
 .conference-papers__title {
@@ -4626,7 +4618,7 @@ details[open] > .projects-nav__toggle::after {
 .conference-papers__keywords {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .conference-papers__keyword {
@@ -4669,7 +4661,7 @@ details[open] > .projects-nav__toggle::after {
     grid-auto-flow: column;
     justify-items: start;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-2);
     width: 100%;
   }
 
@@ -9950,8 +9942,8 @@ details[open] > .ov-expandable-toggle::after {
 }
 
 .adminbot-reimbursement-check--ready {
-  border-color: color-mix(in srgb, #22c55e 40%, transparent);
-  background: color-mix(in srgb, #22c55e 7%, var(--bg));
+  border-color: color-mix(in srgb, var(--ok) 40%, transparent);
+  background: color-mix(in srgb, var(--ok) 7%, var(--bg));
 }
 
 .adminbot-reimbursement-check__funder {
@@ -10029,7 +10021,7 @@ details[open] > .ov-expandable-toggle::after {
   margin-top: var(--space-3);
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-sm);
-  background: color-mix(in srgb, #22c55e 10%, var(--bg));
+  background: color-mix(in srgb, var(--ok) 10%, var(--bg));
   font-size: 0.9em;
 }
 
@@ -10222,7 +10214,7 @@ details[open] > .ov-expandable-toggle::after {
 
 .adminbot-reimbursement-fields > div {
   min-width: 0;
-  padding: 10px var(--space-3);
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--bg);
@@ -10365,8 +10357,9 @@ details[open] > .ov-expandable-toggle::after {
   text-align: center;
 }
 
+/* No bottom margin: the report grid's gap spaces it from the tables, and both together doubled it. */
 .adminbot-time-chart-wrap {
-  margin-bottom: var(--space-4);
+  margin-bottom: 0;
 }
 
 /* The schedule chart. Read as a calendar: equal bins left to right, the soonest first. Ink is spent
@@ -10984,8 +10977,9 @@ details[open] > .ov-expandable-toggle::after {
 
 .adminbot-calendar__matches label {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
-  gap: var(--space-3);
+  gap: var(--space-1) var(--space-3);
   padding: var(--space-2) var(--space-3);
   cursor: pointer;
 }
@@ -11027,7 +11021,7 @@ details[open] > .ov-expandable-toggle::after {
    reaches it and it sat flush against the frame. Matching the cells' 14px keeps it aligned with
    the first column rather than merely off the edge. */
 .adminbot-time-allocation-table-wrap > .card-sub {
-  padding: var(--space-3) 14px;
+  padding: var(--space-3) var(--space-4);
 }
 
 .adminbot-time-allocation-table {
@@ -11038,7 +11032,7 @@ details[open] > .ov-expandable-toggle::after {
 
 .adminbot-time-allocation-table th,
 .adminbot-time-allocation-table td {
-  padding: 11px 14px;
+  padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--border);
   text-align: left;
   font-variant-numeric: tabular-nums;
@@ -11179,11 +11173,9 @@ details[open] > .ov-expandable-toggle::after {
   gap: var(--space-3);
 }
 
+/* No panel of its own (ui/DESIGN.md): the picker's tabs and hairline already frame the form. */
 .adminbot-time-availability__editor {
-  padding: var(--space-4);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: color-mix(in srgb, var(--bg) 88%, var(--bg-accent));
+  padding: 0;
 }
 
 /* ── Add commitment button + picker ────────────────────────────────────────── */
@@ -11194,17 +11186,13 @@ details[open] > .ov-expandable-toggle::after {
 }
 
 .adminbot-time-availability__commitment-picker {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: color-mix(in srgb, var(--bg) 88%, var(--bg-accent));
-  overflow: hidden;
+  border-top: 1px solid var(--border);
 }
 
 .adminbot-time-availability__commitment-tabs {
   display: flex;
   gap: 0;
   border-bottom: 1px solid var(--border);
-  background: color-mix(in srgb, var(--bg) 92%, var(--bg-accent));
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   justify-content: center;
@@ -11239,33 +11227,30 @@ details[open] > .ov-expandable-toggle::after {
 .adminbot-time-availability__commitment-tab:nth-child(
     1
   ).adminbot-time-availability__commitment-tab--active {
-  border-bottom-color: #a49dfa;
+  border-bottom-color: var(--accent);
 }
 .adminbot-time-availability__commitment-tab:nth-child(
     2
   ).adminbot-time-availability__commitment-tab--active {
-  border-bottom-color: #8bb89a;
+  border-bottom-color: var(--accent);
 }
 .adminbot-time-availability__commitment-tab:nth-child(
     3
   ).adminbot-time-availability__commitment-tab--active {
-  border-bottom-color: #c9a0b0;
+  border-bottom-color: var(--accent);
 }
 .adminbot-time-availability__commitment-tab:nth-child(
     4
   ).adminbot-time-availability__commitment-tab--active {
-  border-bottom-color: #c4b5a0;
+  border-bottom-color: var(--accent);
 }
 
 .adminbot-time-availability__commitment-form {
-  padding: var(--space-4);
+  padding: var(--space-4) 0;
   width: 100%;
 }
 
 .adminbot-time-availability__commitment-form .adminbot-time-availability__editor {
-  padding: 0;
-  border: none;
-  background: transparent;
   width: 100%;
 }
 
@@ -11282,7 +11267,6 @@ details[open] > .ov-expandable-toggle::after {
 .adminbot-time-availability__commitment-actions {
   display: flex;
   justify-content: flex-end;
-  padding: 0 var(--space-4) var(--space-4);
   width: 100%;
 }
 
@@ -11376,10 +11360,6 @@ details[open] > .ov-expandable-toggle::after {
   display: grid;
   gap: var(--space-1);
   align-content: start;
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: color-mix(in srgb, var(--bg) 88%, var(--bg-accent));
 }
 
 /* Across the full width the list reads as tiles rather than a stack: each deadline is a short
@@ -11544,7 +11524,6 @@ details[open] > .ov-expandable-toggle::after {
 
 .adminbot-time-availability__deadline-list li[data-own="true"] {
   border-color: color-mix(in srgb, var(--deadline-urgency, var(--border)) 40%, var(--border));
-  background: color-mix(in srgb, var(--bg-accent) 40%, var(--bg));
 }
 
 /* Shrunk with the tile: at the shared button padding these two set the row height for every
@@ -11587,16 +11566,13 @@ details[open] > .ov-expandable-toggle::after {
 }
 
 /* The overall note sits below the two commitment tables: it explains the rows above it, so it
-   reads as the closing card of the report rather than as a caption for it. Same grey panel as the
-   tables and the editor cards, so the report is a run of blocks rather than one card with prose
-   hanging off the side. */
+   reads as the closing section of the report rather than as a caption for it. A hairline, not a
+   grey panel (ui/DESIGN.md), sets it off from the tables. */
 .adminbot-time-availability__notes {
   display: grid;
   gap: var(--space-3);
-  padding: var(--space-4);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: color-mix(in srgb, var(--bg) 88%, var(--bg-accent));
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
 }
 
 .adminbot-time-availability__notes-text {
@@ -11614,7 +11590,7 @@ details[open] > .ov-expandable-toggle::after {
   width: 100%;
   height: auto;
   min-height: calc(var(--control-h-md) * 2.5);
-  padding: 8px 10px;
+  padding: var(--space-2) var(--space-3);
   line-height: 1.5;
   resize: vertical;
 }
@@ -12008,13 +11984,12 @@ select.input:focus {
    requests. One card per person, laid out like the duplicate-records panel below it, so the two
    roster-wide lists on the tab read as the same kind of thing. */
 .adminbot-member-requests-panel {
-  margin-block: var(--space-4);
+  margin-block: var(--space-4) var(--space-5);
 }
 
 .adminbot-member-requests {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
   list-style: none;
   margin: var(--space-3) 0 0;
   padding: 0;
@@ -12053,10 +12028,10 @@ select.input:focus {
 .adminbot-member-request__reason {
   flex: 1 1 18rem;
   min-width: 12rem;
-  padding: 4px 8px;
-  border: 1px solid var(--border);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--input);
   border-radius: var(--radius-sm);
-  background: var(--bg);
+  background: transparent;
   color: var(--text-strong);
   font: inherit;
 }
@@ -12069,10 +12044,15 @@ select.input:focus {
 .adminbot-duplicates__list {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
   list-style: none;
   margin: var(--space-3) 0 0;
   padding: 0;
+}
+
+/* The roster-wide sections under the people database had no top margin of their own and sat
+   flush against the table; they follow it on the page's section rhythm. */
+.adminbot-member-sheet ~ :is(.adminbot-panel, .adminbot-duplicates) {
+  margin-top: var(--space-6);
 }
 
 .adminbot-duplicates > nav {
@@ -12094,10 +12074,8 @@ select.input:focus {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--bg-muted);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--border);
 }
 
 .adminbot-duplicate__why {
@@ -12122,10 +12100,6 @@ select.input:focus {
   flex-direction: column;
   align-items: flex-start;
   gap: var(--space-1);
-  padding: var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg);
 }
 
 .adminbot-duplicate__name {

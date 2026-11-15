@@ -36,20 +36,12 @@ export class NotificationDrafts extends LitElement {
     :host {
       display: block;
       max-width: 960px;
-      margin: 24px auto;
+      margin: var(--space-6, 24px) auto;
       color: var(--text);
     }
     :host([embedded]) {
       max-width: none;
-      margin: 12px 0 0;
-    }
-    :host([embedded]) section {
-      padding: 18px;
-    }
-    section {
-      border: 1px solid var(--border, #8885);
-      border-radius: 16px;
-      padding: 28px;
+      margin: var(--space-3, 12px) 0 0;
     }
     h2 {
       margin-top: 0;
@@ -64,26 +56,26 @@ export class NotificationDrafts extends LitElement {
     .drop {
       display: block;
       text-align: center;
-      padding: 28px 16px;
-      margin: 22px 0;
+      padding: var(--space-6, 24px) var(--space-4, 16px);
+      margin: var(--space-5, 20px) 0;
       border: 2px dashed var(--border, #8885);
-      border-radius: 12px;
+      border-radius: var(--radius-lg, 8px);
       overflow-wrap: anywhere;
       cursor: pointer;
     }
     .drop input {
       display: block;
       max-width: 100%;
-      margin: 14px auto 0;
+      margin: var(--space-3, 12px) auto 0;
     }
     .fields {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 16px;
+      gap: var(--space-4, 16px);
     }
     .fields label {
       display: grid;
-      gap: 8px;
+      gap: var(--space-2, 8px);
       font-size: 14px;
     }
     input,
@@ -93,9 +85,9 @@ export class NotificationDrafts extends LitElement {
       font: inherit;
       color: inherit;
       background: var(--bg, transparent);
-      border: 1px solid var(--border, #8885);
-      border-radius: 8px;
-      padding: 10px;
+      border: 1px solid var(--input, #8885);
+      border-radius: var(--radius-lg, 8px);
+      padding: var(--space-2, 8px) var(--space-3, 12px);
       min-width: 0;
     }
     textarea {
@@ -106,7 +98,7 @@ export class NotificationDrafts extends LitElement {
     }
     .check {
       display: block;
-      margin: 20px 0;
+      margin: var(--space-5, 20px) 0;
     }
     button,
     .download {
@@ -114,8 +106,8 @@ export class NotificationDrafts extends LitElement {
       font: inherit;
       cursor: pointer;
       border: 1px solid var(--border, #8885);
-      border-radius: 8px;
-      padding: 9px 14px;
+      border-radius: var(--radius-lg, 8px);
+      padding: var(--space-2, 8px) var(--space-4, 16px);
       color: inherit;
       background: transparent;
       text-decoration: none;
@@ -134,40 +126,37 @@ export class NotificationDrafts extends LitElement {
       outline-offset: 3px;
     }
     article {
-      margin-top: 24px;
+      margin-top: var(--space-6, 24px);
       border-top: 1px solid var(--border, #8885);
-      padding-top: 16px;
+      padding-top: var(--space-4, 16px);
     }
     .actions {
       display: flex;
       flex-wrap: wrap;
-      gap: 8px;
-      margin-top: 10px;
+      gap: var(--space-2, 8px);
+      margin-top: var(--space-3, 12px);
     }
     .previews {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 20px;
+      gap: var(--space-5, 20px);
     }
     figure {
-      margin: 16px 0;
+      margin: var(--space-4, 16px) 0;
     }
     img {
       width: 100%;
-      border-radius: 10px;
+      border-radius: var(--radius-lg, 8px);
       border: 1px solid var(--border, #8885);
     }
     figcaption {
-      margin-top: 10px;
+      margin-top: var(--space-2, 8px);
       overflow-wrap: anywhere;
     }
     [role="alert"] {
       color: var(--danger, #d45b65);
     }
     @media (max-width: 600px) {
-      section {
-        padding: 18px;
-      }
       .fields,
       .previews {
         grid-template-columns: 1fr;

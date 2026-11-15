@@ -76,47 +76,47 @@ const expiry = (iso: string) => (iso.startsWith("9999-") ? "When unused 90 days"
 const shared = css`
   :host {
     display: block;
-    margin-bottom: 20px;
+    margin-bottom: var(--space-6);
   }
+  /* A section of My Profile like the ones above it: no fill, no frame and no side inset, closed by
+     the same hairline (ui/DESIGN.md, "No grey boxes"). */
   section {
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 16px;
-    background: var(--card);
+    padding: 0 0 var(--space-6);
+    border-bottom: 1px solid var(--border);
   }
   h3 {
-    margin: 0 0 4px;
+    margin: 0 0 var(--space-1);
     font-size: 1rem;
   }
   p {
-    margin: 4px 0 12px;
+    margin: var(--space-1) 0 var(--space-3);
     color: var(--muted);
     font-size: 0.875rem;
   }
   form {
     display: grid;
-    gap: 10px;
+    gap: var(--space-3);
     max-width: 420px;
   }
   label {
     display: grid;
-    gap: 4px;
+    gap: var(--space-1);
     font-size: 0.875rem;
   }
   input,
   select {
     font: inherit;
-    padding: 6px 8px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--bg);
+    padding: var(--space-2);
+    border: 1px solid var(--input);
+    border-radius: var(--radius-md);
+    background: transparent;
     color: var(--text);
   }
   button {
     font: inherit;
-    padding: 6px 12px;
+    padding: var(--space-2) var(--space-3);
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--radius-md);
     background: var(--bg);
     color: var(--text);
     cursor: pointer;
@@ -124,19 +124,19 @@ const shared = css`
   button.primary {
     background: var(--accent);
     border-color: var(--accent);
-    color: var(--accent-foreground, #fff);
+    color: var(--accent-foreground);
   }
   button.danger {
-    color: var(--danger, #c0392b);
+    color: var(--danger);
   }
   .row {
     display: flex;
-    gap: 8px;
+    gap: var(--space-2);
     align-items: center;
     flex-wrap: wrap;
   }
   [role="alert"] {
-    color: var(--danger, #c0392b);
+    color: var(--danger);
     font-size: 0.875rem;
   }
   code {
@@ -237,24 +237,32 @@ export class ApiTokensSection extends LitElement {
   static styles = [
     shared,
     css`
+      /* It follows the page's last section rather than sitting in the page's own column, so it
+         brings the gap that column would have given it. */
+      :host {
+        margin-top: var(--space-6);
+      }
       table {
         width: 100%;
         border-collapse: collapse;
         font-size: 0.875rem;
-        margin-bottom: 12px;
+        margin-bottom: var(--space-3);
       }
       th,
       td {
         text-align: left;
-        padding: 6px 8px;
+        padding: var(--space-2) var(--space-2) var(--space-2) 0;
         border-bottom: 1px solid var(--border);
         vertical-align: top;
       }
       .issued {
         border: 1px solid var(--accent);
-        border-radius: 8px;
-        padding: 12px;
-        margin-bottom: 12px;
+        border-radius: var(--radius-lg);
+        padding: var(--space-3);
+        margin-bottom: var(--space-3);
+      }
+      .issued .row {
+        margin-top: var(--space-2);
       }
       .issued input {
         width: 100%;
@@ -288,7 +296,7 @@ export class ApiTokensSection extends LitElement {
             >
             <p>Keep it out of prompts, chat messages and repositories.</p>
             <input readonly .value=${this.issued.token} aria-label="New API token" />
-            <div class="row" style="margin-top: 8px">
+            <div class="row">
               <button type="button" @click=${() => void this.copy()}>Copy</button>
               <button type="button" class="primary" @click=${() => (this.issued = null)}>
                 Done

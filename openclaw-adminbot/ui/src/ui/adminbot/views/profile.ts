@@ -1846,7 +1846,7 @@ function renderPhotoCompliance(state: AppViewState, member: LabMember, props: Pr
                           <div class="profile__form-actions">
                             <button
                               type="button"
-                              class="btn btn--sm primary"
+                              class="btn btn--sm"
                               ?disabled=${state.adminBotPhotoApplyBusy || variant.id === selectedId}
                               @click=${() => props.onApplyPolishedPhoto?.(variant.id)}
                             >

@@ -114,7 +114,10 @@ import { navigateToProject, ownPapers } from "./adminbot/projects/model.ts";
 import { renderProjectsNav, type ProjectsNavState } from "./adminbot/projects/nav.ts";
 import { openPaperForViewer } from "./adminbot/projects/open-paper.ts";
 import { needsLabRoster } from "./adminbot/roster-required.ts";
-import { renderAdminPanelsSurface } from "./adminbot/surfaces/admin-panels.ts";
+import {
+  adminPanelsHoldMembersFilter,
+  renderAdminPanelsSurface,
+} from "./adminbot/surfaces/admin-panels.ts";
 import { renderCollaborateSurface } from "./adminbot/surfaces/collaborate.ts";
 import { renderDashboardSurface } from "./adminbot/surfaces/dashboard.ts";
 import { renderEventsSurface, syncEvents } from "./adminbot/surfaces/events.ts";
@@ -3292,7 +3295,10 @@ export function renderApp(state: AppViewState) {
                 : nothing}
             </div>`
           : renderPageTabs(state, accessRole)}
-        ${state.tab === "adminbotMembers" && !profileBlocked
+        ${state.tab === "adminbotMembers" &&
+        !profileBlocked &&
+        // With the people database on screen the filter sits in its actions row instead.
+        (membersArrFilter || !adminPanelsHoldMembersFilter(state, adminBotSurfaces))
           ? renderArrReviewerFilter({
               active: state.adminBotMembersArrFilter,
               onToggle: (on) => {

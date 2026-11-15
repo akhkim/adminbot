@@ -109,11 +109,13 @@ export class PaperMentorView extends LitElement {
         display: block;
         max-width: 860px;
       }
+      /* Sections are separated by space and a hairline, not boxed (ui/DESIGN.md). */
       section {
-        padding: 28px;
-        border: 1px solid var(--border, #8885);
-        border-radius: 14px;
-        margin-bottom: 20px;
+        margin-bottom: var(--space-6, 24px);
+      }
+      section + section {
+        padding-top: var(--space-6, 24px);
+        border-top: 1px solid var(--border, #8885);
       }
       h3 {
         margin-top: 0;
@@ -127,29 +129,29 @@ export class PaperMentorView extends LitElement {
       }
       label.field {
         display: block;
-        margin: 12px 0;
+        margin: var(--space-3, 12px) 0;
       }
       select {
         font: inherit;
-        padding: 10px;
+        padding: var(--space-2, 8px) var(--space-3, 12px);
         width: 100%;
         box-sizing: border-box;
         color: var(--text, inherit);
         background: var(--bg, transparent);
-        border: 1px solid var(--border, #8885);
-        border-radius: 8px;
-        margin-top: 6px;
+        border: 1px solid var(--input, #8885);
+        border-radius: var(--radius-lg, 8px);
+        margin-top: var(--space-2, 8px);
       }
       .drop {
         overflow-wrap: anywhere;
         display: block;
         position: relative;
-        padding: 28px 20px;
+        padding: var(--space-6, 24px) var(--space-5, 20px);
         border: 2px dashed var(--border, #8885);
-        border-radius: 10px;
+        border-radius: var(--radius-lg, 8px);
         text-align: center;
         cursor: pointer;
-        margin: 12px 0;
+        margin: var(--space-3, 12px) 0;
       }
       .drop:focus-within {
         outline: 2px solid var(--accent, #5875e8);
@@ -161,26 +163,27 @@ export class PaperMentorView extends LitElement {
         opacity: 0;
       }
       button {
-        padding: 10px 20px;
+        padding: var(--space-2, 8px) var(--space-5, 20px);
         border: 0;
-        border-radius: 8px;
+        border-radius: var(--radius-lg, 8px);
         cursor: pointer;
         background: var(--accent, #5875e8);
         color: var(--accent-foreground, white);
         font: inherit;
       }
       button.secondary {
-        padding: 6px 12px;
+        padding: var(--space-1, 4px) var(--space-3, 12px);
         font-size: 13px;
         background: transparent;
         color: inherit;
         border: 1px solid var(--border, #8885);
-        margin: 6px 8px 0 0;
+        margin: var(--space-2, 8px) var(--space-2, 8px) 0 0;
       }
+      /* The main download of each review. Every review has one, so it is marked by weight and
+         a stronger outline rather than an accent fill: one accent button per section. */
       button.secondary.primary {
-        background: var(--accent, #5875e8);
-        color: var(--accent-foreground, white);
-        border-color: transparent;
+        font-weight: 600;
+        border-color: var(--border-hover, #888);
       }
       button:disabled {
         opacity: 0.5;
@@ -190,28 +193,26 @@ export class PaperMentorView extends LitElement {
         color: var(--danger, #dc5353);
       }
       .review {
-        border: 1px solid var(--border, #8885);
-        border-radius: 12px;
-        padding: 14px 18px;
-        margin-top: 12px;
+        border-top: 1px solid var(--border, #8885);
+        padding: var(--space-4, 16px) 0;
         overflow-wrap: anywhere;
       }
       .review header {
         display: flex;
         justify-content: space-between;
-        gap: 12px;
+        gap: var(--space-3, 12px);
         flex-wrap: wrap;
       }
       .status {
         font-size: 12px;
-        padding: 3px 9px;
-        border-radius: 6px;
+        padding: 2px var(--space-2, 8px);
+        border-radius: var(--radius-md, 6px);
         border: 1px solid var(--border, #8885);
         white-space: nowrap;
       }
       .status[data-status="reviewed"] {
-        color: #29966b;
-        border-color: #29966b;
+        color: var(--ok, #29966b);
+        border-color: var(--ok, #29966b);
       }
       .status[data-status="failed"],
       .status[data-status="rejected"] {
@@ -219,10 +220,10 @@ export class PaperMentorView extends LitElement {
         border-color: var(--danger, #dc5353);
       }
       .findings {
-        margin-top: 8px;
+        margin-top: var(--space-3, 12px);
       }
       h3.pdf-only {
-        margin: 32px 0 6px;
+        margin: var(--space-8, 32px) 0 var(--space-2, 8px);
       }
     `,
   ];

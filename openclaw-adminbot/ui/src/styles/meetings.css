@@ -2,10 +2,21 @@
    Card, button and muted-text chrome all come from components.css; this only spaces the parts of a
    card and keeps the roster editor readable. */
 
+/* No flex gap: each card already carries its own padding and a hairline above it, and a gap on
+   top of that left more room above every rule than below it. */
 .meetings {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+}
+
+.meetings > p {
+  margin: 0 0 var(--space-4);
+}
+
+/* The closing pointer is a section like the cards above it, with the same rule and padding. */
+.meetings__archive {
+  padding: var(--space-5) 0;
+  border-top: 1px solid var(--border);
 }
 
 .meetings__more {

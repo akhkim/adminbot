@@ -243,6 +243,8 @@ export type AdminBotProps = {
   onLoadFullRoster?: () => void;
   busyActionId: string | null;
   notice: { kind: "success" | "error"; text: string } | null;
+  /** A page filter drawn at the left of the actions row, so filter and actions share one toolbar. */
+  actionsLead?: unknown;
   onRefresh: () => void;
   onApprove: (proposal: AdminBotActionProposal) => void;
   onRemove: (proposal: AdminBotActionProposal) => void;
@@ -4177,6 +4179,7 @@ export function renderAdminBot(props: AdminBotProps) {
   return html`
     <section class="adminbot-shell" aria-busy=${props.loading ? "true" : "false"}>
       <div class="adminbot-actions">
+        ${props.actionsLead ?? nothing}
         ${addMember
           ? html`<button
               class="btn btn--sm primary"

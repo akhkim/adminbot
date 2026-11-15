@@ -114,7 +114,7 @@ export function renderPaperFeedback(
               >
               <p class="muted">${t("paperFeedback.hint")}</p>
               <p role="alert"></p>
-              <button class="btn btn--primary" type="submit" ?disabled=${props.loading}>
+              <button class="btn primary" type="submit" ?disabled=${props.loading}>
                 ${props.loading ? t("paperFeedback.saving") : t("paperFeedback.queue", { label })}
               </button>
             </form>`}
