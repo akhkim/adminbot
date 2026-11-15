@@ -41,7 +41,7 @@ response="$(
     --data '{"changed_only":true}' \
     "http://127.0.0.1:${PORT}/venue-papers/index"
 )" || {
-  printf 'venue index watch: could not reach the AdminBot service on 127.0.0.1:%s\n' "$PORT" >&2
+  adminbot_curl_failure "venue index watch" "$?" "$PORT"
   exit 1
 }
 

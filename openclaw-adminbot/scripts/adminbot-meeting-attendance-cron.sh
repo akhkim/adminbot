@@ -34,7 +34,7 @@ response="$(
     -H "Authorization: Bearer ${ADMINBOT_SERVICE_TOKEN}" \
     "http://127.0.0.1:${PORT}/meetings/attendance-nudges"
 )" || {
-  printf 'meeting attendance reminder: could not reach the AdminBot service on 127.0.0.1:%s\n' "$PORT" >&2
+  adminbot_curl_failure "meeting attendance reminder" "$?" "$PORT"
   exit 1
 }
 

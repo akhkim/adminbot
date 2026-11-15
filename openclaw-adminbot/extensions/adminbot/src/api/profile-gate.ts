@@ -22,6 +22,8 @@ export function isBlockedByProfile(
   if (isImpersonating || !requiresProfileCompletion(member)) return false;
   if (method === "GET" && pathname === "/lab/members/self") return false;
   if (method === "POST" && pathname === "/drive/check-edit-access") return false;
+  // Somebody stuck on the profile form is exactly who an error report should still reach us from.
+  if (method === "POST" && pathname === "/ui/errors") return false;
   if (method === "PUT" && pathname === `/lab/members/${encodeURIComponent(member.id)}`)
     return false;
   return true;

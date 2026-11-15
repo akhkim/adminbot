@@ -35,6 +35,7 @@ import {
   type AdminBotServiceStore,
 } from "../kernel/service.js";
 import { createCollaboratorChatRequestStore } from "../persistence/collaborator-chat-requests.js";
+import { createMemoryErrorLog } from "../persistence/error-log.js";
 import { createMemoryFailedRequestLedger } from "../persistence/failed-requests.js";
 import { createMemberDraftStore } from "../persistence/member-drafts.js";
 import { AdminBotSqliteStore, createAdminBotSqliteService } from "../persistence/sqlite.js";
@@ -89,6 +90,7 @@ import type {
 } from "./routes/context.js";
 import type { AdminBotMockServiceOptions } from "./routes/context.js";
 import { runCvDailySweep } from "./routes/directory.js";
+import { recordServerRouteError } from "./routes/error-log.js";
 import { AUTHENTICATED_ROUTES } from "./routes/index.js";
 import { memberEnrollmentContext } from "./routes/onboarding.js";
 import { DEFAULT_ALLOWED_ORIGINS, applyCors, parseOrigins, remoteIp } from "./routes/origin.js";
@@ -214,6 +216,9 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     (store instanceof AdminBotSqliteStore
       ? store.failedRequestLedger()
       : createMemoryFailedRequestLedger());
+  const errorLog =
+    options.errorLog ??
+    (store instanceof AdminBotSqliteStore ? store.errorLog() : createMemoryErrorLog());
   const llmRouter =
     options.llmRouter ??
     createLlmLoadRouter({
@@ -615,6 +620,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       options.piApproverIds ?? parseMemberApproverIds(process.env.ADMINBOT_PI_APPROVER_IDS),
     llmRouter,
     failedRequestLedger,
+    errorLog,
   };
   // Needs the route context -- the member sheet, the Monday meeting reader -- so it is bound last.
   onboardingArms.enroll = (proposal) =>
@@ -861,7 +867,19 @@ async function handleAuthenticatedRoute(
       return;
     }
   }
-  if (await dispatchRoute(AUTHENTICATED_ROUTES, { req, res, url, ctx, principal })) {
+  let handled: boolean;
+  try {
+    handled = await dispatchRoute(AUTHENTICATED_ROUTES, { req, res, url, ctx, principal });
+  } catch (error) {
+    // A handler that threw is about to become a 500 in createServer's catch. Note it in the error
+    // log on the way past, where the member is still known, and let it carry on unchanged. The two
+    // errors that are the caller's doing (too large, too fast) are answered 413 and 429, not 500.
+    if (!(error instanceof PayloadTooLargeError) && !(error instanceof ApiTokenRateLimitedError)) {
+      recordServerRouteError(ctx, { error, method: req.method, pathname: url.pathname }, principal);
+    }
+    throw error;
+  }
+  if (handled) {
     return;
   }
   sendJson(res, 404, { error: { message: "not found" } });

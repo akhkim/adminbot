@@ -1,5 +1,6 @@
 // Control UI module implements main behavior.
 import "./styles.css";
+import { installAdminBotErrorReporter } from "./ui/adminbot/error-reporter-install.ts";
 import "./ui/app.ts";
 import { inferControlUiPublicAssetPath } from "./ui/public-assets.ts";
 
@@ -12,6 +13,8 @@ type ViteImportMeta = ImportMeta & {
 declare const OPENCLAW_CONTROL_UI_BUILD_ID: string | undefined;
 
 const isProd = (import.meta as ViteImportMeta).env?.PROD === true;
+
+installAdminBotErrorReporter();
 
 // Remove the one-time service-worker bypass after native reverse-proxy authentication.
 const navigationUrl = new URL(window.location.href);

@@ -28,7 +28,7 @@ response="$(
     -H "Authorization: Bearer ${ADMINBOT_SERVICE_TOKEN}" \
     "http://127.0.0.1:${PORT}/papers/project-channels/run"
 )" || {
-  printf 'project channels: could not reach the AdminBot service on 127.0.0.1:%s\n' "$PORT" >&2
+  adminbot_curl_failure "project channels" "$?" "$PORT"
   exit 1
 }
 

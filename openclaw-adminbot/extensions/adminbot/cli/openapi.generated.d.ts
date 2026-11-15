@@ -3600,6 +3600,40 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/ops/errors": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** GET /ops/errors */
+    get: operations["get-ops-errors"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/ops/errors/{errors_id}/resolve": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** POST /ops/errors/{errors_id}/resolve */
+    post: operations["post-ops-errors-by-errors-id-resolve"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/ops/failed-requests": {
     parameters: {
       query?: never;
@@ -4949,6 +4983,23 @@ export interface paths {
     get: operations["get-travel-whos-in"];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/ui/errors": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** POST /ui/errors */
+    post: operations["post-ui-errors"];
     delete?: never;
     options?: never;
     head?: never;
@@ -8745,6 +8796,35 @@ export interface components {
       source_url: string;
       evidence: string;
       found_at: string;
+    } & {
+      [key: string]: unknown;
+    };
+    AdminBotErrorGroupView: {
+      id: string;
+      /** @enum {string} */
+      kind: "error" | "unhandled_rejection" | "api" | "server";
+      message: string;
+      name?: string;
+      page?: string;
+      api_method?: string;
+      api_path?: string;
+      api_status?: number;
+      count: number;
+      member_ids: string[];
+      members_capped?: boolean;
+      first_seen_at: string;
+      last_seen_at: string;
+      sample_stack?: string;
+      build?: string;
+      user_agent?: string;
+      resolved_at?: string;
+      resolved_by?: string;
+      members: ({
+        id: string;
+        name: string;
+      } & {
+        [key: string]: unknown;
+      })[];
     } & {
       [key: string]: unknown;
     };
@@ -23584,6 +23664,98 @@ export interface operations {
       };
     };
   };
+  "get-ops-errors": {
+    parameters: {
+      query?: {
+        limit?: string;
+        resolved?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            groups: components["schemas"]["AdminBotErrorGroupView"][];
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "post-ops-errors-by-errors-id-resolve": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        errors_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            group: components["schemas"]["AdminBotErrorGroupView"];
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Server response */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
   "get-ops-failed-requests": {
     parameters: {
       query?: never;
@@ -28934,6 +29106,83 @@ export interface operations {
             to: string;
             people: components["schemas"]["AdminBotTravelMatch"][];
             sharing_members: number;
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "post-ui-errors": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          [key: string]: unknown;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            recorded: boolean;
+            id: string;
+            count: number;
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Server response */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Server response */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
           } & {
             [key: string]: unknown;
           };

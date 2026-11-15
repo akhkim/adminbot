@@ -51,7 +51,7 @@ response="$(
     --data-binary "@${request_file}" \
     "http://127.0.0.1:${PORT}/papers/openreview-sync/run"
 )" || {
-  printf 'paper openreview sync: could not reach the AdminBot service on 127.0.0.1:%s\n' "$PORT" >&2
+  adminbot_curl_failure "paper openreview sync" "$?" "$PORT"
   exit 1
 }
 

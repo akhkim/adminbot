@@ -46,7 +46,7 @@ response="$(
     -H "Authorization: Bearer ${ADMINBOT_SERVICE_TOKEN}" \
     "http://127.0.0.1:${PORT}/workshop-nudges/run"
 )" || {
-  printf 'workshop nudge: could not reach the AdminBot service on 127.0.0.1:%s\n' "$PORT" >&2
+  adminbot_curl_failure "workshop nudge" "$?" "$PORT"
   exit 1
 }
 

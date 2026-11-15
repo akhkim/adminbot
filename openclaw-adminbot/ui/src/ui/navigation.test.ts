@@ -78,6 +78,7 @@ describe("iconForTab", () => {
       adminbotArrReviewers: "check",
       adminbotTalkLeaderboard: "mic",
       adminbotTabUsage: "barChart",
+      adminbotErrorLog: "bug",
       adminbotGrantReport: "scrollText",
       adminbotMailingList: "send",
       adminbotProfessor: "lobster",
@@ -143,6 +144,7 @@ describe("titleForTab", () => {
       adminbotArrReviewers: "ARR Eligible Reviewers",
       adminbotTalkLeaderboard: "Talk Leaderboard",
       adminbotTabUsage: "Tab Usage",
+      adminbotErrorLog: "Error Log",
       adminbotGrantReport: "Grant Report",
       adminbotMailingList: "Mailing List",
       adminbotProfessor: "My Desk",
@@ -206,6 +208,7 @@ describe("subtitleForTab", () => {
       adminbotArrReviewers: "Self-reported ARR reviewer qualification and capacity.",
       adminbotTalkLeaderboard: "This year's talks and orals, counted from members' CVs.",
       adminbotTabUsage: "Which parts of AdminBot the lab actually opens.",
+      adminbotErrorLog: "What broke for the people using AdminBot.",
       adminbotGrantReport:
         "Every paper mapped to a safety area, and the track record behind each ask.",
       adminbotMailingList: "Mail our publications for a date range to one address.",

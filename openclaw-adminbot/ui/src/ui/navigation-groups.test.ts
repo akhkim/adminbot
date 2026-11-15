@@ -182,6 +182,8 @@ describe("TAB_GROUPS", () => {
       // Tab Usage is the other half of the completeness question -- what members came to look at
       // rather than what they filled in -- so it rides on Lab Overview too.
       "adminbotTabUsage",
+      // The error log is the same operator's-eye view: where AdminBot failed the people using it.
+      "adminbotErrorLog",
     ]);
     // Neither is its own sidebar entry any more, which is the whole point of the move.
     const sidebarTabs = TAB_GROUPS.flatMap((group) => group.tabs as readonly string[]);
