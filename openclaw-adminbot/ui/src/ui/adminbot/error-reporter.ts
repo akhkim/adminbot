@@ -1,3 +1,5 @@
+import { memberAuthHeaders } from "./api/device-clock.ts";
+
 // Tells AdminBot when the Control UI breaks for somebody.
 //
 // Three things are reported, from every signed-in member on every page: an exception nobody
@@ -221,7 +223,7 @@ export function createErrorReporter(deps: ErrorReporterDeps): ErrorReporter {
           // sendBeacon is not used because it cannot carry the Authorization header.
           await deps.fetch(`${wire.baseUrl}${ERROR_REPORT_PATH}`, {
             method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: `Bearer ${wire.token}` },
+            headers: { "Content-Type": "application/json", ...memberAuthHeaders(wire.token) },
             body: JSON.stringify(queue[0]),
             keepalive: true,
             credentials: "omit",
