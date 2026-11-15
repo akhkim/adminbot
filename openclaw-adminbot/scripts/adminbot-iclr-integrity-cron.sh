@@ -26,7 +26,7 @@ response="$(
     -H "Authorization: Bearer ${ADMINBOT_SERVICE_TOKEN}" \
     "http://127.0.0.1:${PORT}/openreview/integrity-checks/run"
 )" || {
-  printf 'ICLR integrity checks: could not reach the AdminBot service on 127.0.0.1:%s\n' "$PORT" >&2
+  adminbot_curl_failure "ICLR integrity checks" "$?" "$PORT"
   exit 1
 }
 

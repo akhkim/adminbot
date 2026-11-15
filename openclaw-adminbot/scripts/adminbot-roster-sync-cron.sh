@@ -42,7 +42,7 @@ response="$(
     -d '{}' \
     "http://127.0.0.1:${PORT}/members/roster-sync"
 )" || {
-  printf 'roster sync: could not reach the AdminBot service on 127.0.0.1:%s\n' "$PORT" >&2
+  adminbot_curl_failure "roster sync" "$?" "$PORT"
   exit 1
 }
 

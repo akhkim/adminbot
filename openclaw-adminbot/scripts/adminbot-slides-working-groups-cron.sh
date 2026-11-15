@@ -36,7 +36,7 @@ response="$(
     --data '{"trigger":"schedule"}' \
     "http://127.0.0.1:${PORT}/slides/working-groups/apply"
 )" || {
-  printf 'working-groups slide: could not reach the AdminBot service on 127.0.0.1:%s\n' "$PORT" >&2
+  adminbot_curl_failure "working-groups slide" "$?" "$PORT"
   exit 1
 }
 

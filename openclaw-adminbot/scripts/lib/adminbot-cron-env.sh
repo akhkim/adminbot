@@ -42,3 +42,29 @@ adminbot_service_state_dir() {
     printf '%s/state\n' "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
   fi
 }
+
+# Says why a curl call to the local service failed, from curl's own exit status.
+#
+# Every wrapper used to print "could not reach the AdminBot service" for any curl failure. That is
+# only true for a refused connection: a request the service was still working on when --max-time
+# ran out is the opposite case, and reading it as an outage sends whoever is on call to restart a
+# healthy service while the real fix is a longer limit or a faster route.
+#
+# Call as `adminbot_curl_failure "label" "$?" "$PORT"` first thing in the failure branch.
+adminbot_curl_failure() {
+  local label="$1" status="$2" port="$3"
+  case "$status" in
+    28)
+      printf '%s: the AdminBot service on 127.0.0.1:%s did not answer within the time limit (curl exit 28); it was reachable and may still finish the work\n' "$label" "$port" >&2
+      ;;
+    7)
+      printf '%s: could not reach the AdminBot service on 127.0.0.1:%s (connection refused)\n' "$label" "$port" >&2
+      ;;
+    52 | 56)
+      printf '%s: the AdminBot service on 127.0.0.1:%s dropped the connection before answering (curl exit %s); it may have restarted mid-request\n' "$label" "$port" "$status" >&2
+      ;;
+    *)
+      printf '%s: request to the AdminBot service on 127.0.0.1:%s failed (curl exit %s)\n' "$label" "$port" "$status" >&2
+      ;;
+  esac
+}
