@@ -69,7 +69,16 @@ import { renderArrReviewerFilter } from "../views/arr-reviewers.ts";
 import type { AdminBotSurfaceScope } from "./scope.ts";
 
 // The page's view loads on first visit rather than in the first bundle.
-const lazyAdmin = createLazyView(() => import("../views/admin.ts"), notifyLazyViewHost);
+const lazyAdmin = createLazyView(() => import("../views/admin.ts"), notifyLazyViewHost, {
+  tabs: [
+    "adminbot",
+    "adminbotSettings",
+    "adminbotReimbursements",
+    "adminbotMembers",
+    "adminbotPapers",
+    "adminbotAnnouncements",
+  ],
+});
 
 /**
  * Whether the Lab Members actions row is drawing the ARR filter itself. False until the view

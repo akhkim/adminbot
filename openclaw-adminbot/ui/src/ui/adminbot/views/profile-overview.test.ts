@@ -343,7 +343,9 @@ describe("profile overview", () => {
       )?.textContent,
     ).toContain("Could not reach");
     expect(
-      draw({ loading: true }).container.querySelector(".logistics-requests__empty")?.textContent,
+      draw({ loading: true })
+        .container.querySelector('.skeleton[role="status"]')
+        ?.getAttribute("aria-label"),
     ).toContain("Reading profiles…");
   });
 

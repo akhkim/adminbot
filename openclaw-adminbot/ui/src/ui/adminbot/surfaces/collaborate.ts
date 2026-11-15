@@ -10,7 +10,9 @@ import { createLazyView, notifyLazyViewHost, renderLazyView } from "../../lazy-v
 import type { AdminBotSurfaceScope } from "./scope.ts";
 
 // The page's view loads on first visit rather than in the first bundle.
-const lazyLabSharing = createLazyView(() => import("../views/lab-sharing.ts"), notifyLazyViewHost);
+const lazyLabSharing = createLazyView(() => import("../views/lab-sharing.ts"), notifyLazyViewHost, {
+  tabs: ["labSharing"],
+});
 
 export function renderCollaborateSurface(state: AppViewState, _scope: AdminBotSurfaceScope) {
   return state.tab === "labSharing"

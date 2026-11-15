@@ -331,7 +331,11 @@ describe("renderAdminBotMeetings", () => {
   });
 
   it("distinguishes an empty lab from one that is still loading", () => {
-    expect(renderView({ meetings: [], loading: true }).textContent).toContain("Loading meetings");
+    expect(
+      renderView({ meetings: [], loading: true })
+        .querySelector('.skeleton[role="status"]')
+        ?.getAttribute("aria-label"),
+    ).toContain("Loading meetings");
     expect(renderView({ meetings: [], loading: false }).textContent).toContain(
       "No meeting recordings yet",
     );

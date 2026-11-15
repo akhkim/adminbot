@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { forgetSessionReads, sharedRead } from "./read-cache.ts";
+import {
+  currentWarmEpoch,
+  forgetReadsInFlight,
+  forgetSessionReads,
+  keepWarmRead,
+  sharedRead,
+  takeWarmRead,
+} from "./read-cache.ts";
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -35,5 +42,45 @@ describe("sharedRead", () => {
     void sharedRead("ada", "/lab/members", start);
     void sharedRead("bob", "/lab/members", start);
     expect(start).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("warm reads", () => {
+  it("hands a prefetched read to one loader, once", () => {
+    keepWarmRead("tok", "/lab/members/self", { id: "ada" }, currentWarmEpoch());
+    expect(takeWarmRead("tok", "/lab/members/self")).toEqual({ id: "ada" });
+    expect(takeWarmRead("tok", "/lab/members/self")).toBeUndefined();
+  });
+
+  it("stops offering a prefetched read after a few seconds", () => {
+    keepWarmRead("tok", "/lab/members/self", { id: "ada" }, currentWarmEpoch());
+    vi.advanceTimersByTime(5_001);
+    expect(takeWarmRead("tok", "/lab/members/self")).toBeUndefined();
+  });
+
+  it("never crosses sessions", () => {
+    keepWarmRead("ada", "/lab/members/self", { id: "ada" }, currentWarmEpoch());
+    expect(takeWarmRead("bob", "/lab/members/self")).toBeUndefined();
+    expect(takeWarmRead(null, "/lab/members/self")).toBeUndefined();
+  });
+
+  it("is dropped by a write, including one that lands while the prefetch is in flight", () => {
+    keepWarmRead("tok", "/papers", { papers: [] }, currentWarmEpoch());
+    forgetReadsInFlight();
+    expect(takeWarmRead("tok", "/papers")).toBeUndefined();
+
+    const startedBeforeWrite = currentWarmEpoch();
+    forgetReadsInFlight();
+    keepWarmRead("tok", "/papers", { papers: [] }, startedBeforeWrite);
+    expect(takeWarmRead("tok", "/papers")).toBeUndefined();
+  });
+
+  it("is dropped on sign-out or a change of session", () => {
+    const epoch = currentWarmEpoch();
+    keepWarmRead("tok", "/lab/members/self", { id: "ada" }, epoch);
+    forgetSessionReads();
+    expect(takeWarmRead("tok", "/lab/members/self")).toBeUndefined();
+    keepWarmRead("tok", "/lab/members/self", { id: "ada" }, epoch);
+    expect(takeWarmRead("tok", "/lab/members/self")).toBeUndefined();
   });
 });

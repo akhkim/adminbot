@@ -21,6 +21,15 @@ const JOIN_WINDOW_MS = 15_000;
 const remembered = new Map<string, RememberedRead>();
 const inFlight = new Map<string, { promise: Promise<unknown>; startedAt: number }>();
 
+// A read fetched ahead of the loader that needs it (the profile read that starts beside the
+// session check on boot). It is handed to exactly one caller, and only for a few seconds, so it
+// is never "the cache": every later read goes to the service as before.
+const WARM_WINDOW_MS = 5_000;
+const warm = new Map<string, { value: unknown; keptAt: number }>();
+// Bumped by every write and every change of session. A prefetch that started before the bump
+// may hold the state from before it and is dropped when it lands.
+let warmEpoch = 0;
+
 function readKey(token: string | null, url: string): string {
   return `${token ?? ""}\n${url}`;
 }
@@ -82,10 +91,52 @@ export function sharedRead<T>(
 
 export function forgetReadsInFlight(): void {
   inFlight.clear();
+  warm.clear();
+  warmEpoch += 1;
 }
 
 /** Sign-out, View-as, and any change of session token. */
 export function forgetSessionReads(): void {
   remembered.clear();
   inFlight.clear();
+  warm.clear();
+  warmEpoch += 1;
+}
+
+/** Captured when a prefetch starts and handed back to `keepWarmRead` when it lands. */
+export function currentWarmEpoch(): number {
+  return warmEpoch;
+}
+
+/**
+ * Keeps a prefetched read for the one loader about to ask for it. Dropped instead when a write or
+ * a change of session happened since `epoch` was captured. Callers keep successful reads only: a
+ * refusal or an error is never held, so the loader's own request reports the real state.
+ */
+export function keepWarmRead(
+  token: string | null,
+  url: string,
+  value: unknown,
+  epoch: number,
+  now: number = Date.now(),
+): void {
+  if (epoch !== warmEpoch) {
+    return;
+  }
+  warm.set(readKey(token, url), { value, keptAt: now });
+}
+
+/** The prefetched read for this session and URL, once, if it is still within its few seconds. */
+export function takeWarmRead<T>(
+  token: string | null,
+  url: string,
+  now: number = Date.now(),
+): T | undefined {
+  const key = readKey(token, url);
+  const entry = warm.get(key);
+  if (!entry) {
+    return undefined;
+  }
+  warm.delete(key);
+  return now - entry.keptAt <= WARM_WINDOW_MS ? (entry.value as T) : undefined;
 }

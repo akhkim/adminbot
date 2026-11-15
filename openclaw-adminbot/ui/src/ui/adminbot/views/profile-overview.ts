@@ -21,6 +21,7 @@ import {
 } from "../../../../../extensions/adminbot/src/workflows/members/profile-overview-filter.js";
 import { t } from "../../../i18n/index.ts";
 import { icons } from "../../icons.ts";
+import { renderSkeleton } from "../../loading/skeleton.ts";
 import type {
   MemberActivityCounts,
   MemberAdoptionSummary,
@@ -500,7 +501,7 @@ export function renderAdminBotProfileOverview(props: AdminBotProfileOverviewProp
           ? html`<p class="logistics-requests__error" role="alert">${props.error}</p>`
           : nothing}
         ${props.loading && !rows.length
-          ? html`<p class="logistics-requests__empty">${t("profileOverview.loading")}</p>`
+          ? renderSkeleton({ label: t("profileOverview.loading") })
           : rows.length
             ? html`
                 <div class="profile-overview__scroll">

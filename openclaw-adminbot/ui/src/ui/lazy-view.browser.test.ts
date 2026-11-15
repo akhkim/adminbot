@@ -30,9 +30,12 @@ describe("lazy view rendering", () => {
       container,
     );
 
-    expect(
-      container.querySelector(".lazy-view-state--loading .card-title")?.textContent?.trim(),
-    ).toBe("Loading panel");
+    const placeholder = container.querySelector(
+      '.lazy-view-state--loading [data-testid="lazy-view-loading"]',
+    );
+    expect(placeholder?.getAttribute("role")).toBe("status");
+    expect(placeholder?.getAttribute("aria-label")).toBe("Loading panel");
+    expect(container.querySelector(".lazy-view-state--loading.card")).toBeNull();
 
     await flushPromises();
     render(

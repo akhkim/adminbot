@@ -68,7 +68,9 @@ import type { LogisticsTemplate } from "../views/logistics.ts";
 import type { AdminBotSurfaceScope } from "./scope.ts";
 
 // The page's view loads on first visit rather than in the first bundle.
-const lazyLogistics = createLazyView(() => import("../views/logistics.ts"), notifyLazyViewHost);
+const lazyLogistics = createLazyView(() => import("../views/logistics.ts"), notifyLazyViewHost, {
+  tabs: ["adminbotSignatures", "adminbotRecLetters", "adminbotMeetingRequests"],
+});
 
 export function renderLogisticsSurface(state: AppViewState, scope: AdminBotSurfaceScope) {
   if (!isLogisticsTab(state.tab)) {

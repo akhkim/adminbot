@@ -71,6 +71,8 @@ import { loadSkills, reconcileSkillsAgentId, type SkillsState } from "./controll
 import { loadUsage, type UsageState } from "./controllers/usage.ts";
 import { resolveCronJobLastRunStatus } from "./cron-status.ts";
 import { syncCustomThemeStyleTag } from "./custom-theme.ts";
+import { notePageIntent, trackPageActivity } from "./loading/page-activity.ts";
+import { rememberPageScroll, restorePageScroll } from "./loading/page-scroll.ts";
 import { isMonitoredAuthProvider } from "./model-auth-helpers.ts";
 import {
   inferBasePathFromPathname,
@@ -827,6 +829,16 @@ function applyTabSelection(
     host.adminBotMembersArrFilter = false;
   }
   const prev = host.tab;
+  if (prev !== next) {
+    // Navigation is something the viewer asked for: the progress line may show for what follows,
+    // and each page keeps its own place in the shared content pane.
+    notePageIntent();
+    const pane = () => globalThis.document?.querySelector<HTMLElement>("main.content");
+    rememberPageScroll(prev, pane());
+    if (next !== "chat") {
+      restorePageScroll(next, pane, () => host.tab === next);
+    }
+  }
   host.tab = next;
   // Whatever brought us here -- a click, Back, a deep link -- the tab on screen is now a choice,
   // so the viewer's home no longer gets to replace it.
@@ -855,7 +867,7 @@ function applyTabSelection(
   );
 
   if (options.refreshPolicy === "always" || host.connected) {
-    void refreshActiveTab(host);
+    void trackPageActivity(refreshActiveTab(host));
   }
 
   if (options.syncUrl || profileRedirect || arrRedirect) {

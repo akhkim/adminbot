@@ -5,6 +5,7 @@ import { t } from "../../../i18n/index.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
 import "../../components/modal-dialog.ts";
 import { icons } from "../../icons.ts";
+import { renderSkeleton } from "../../loading/skeleton.ts";
 import type { BadgeDefinition, BadgeDefinitionInput } from "../api/badges.ts";
 import type { BadgeNominationView, BadgeSuggestionView, LabMember } from "../auth/session.ts";
 import type { BadgeLoadError } from "../data/badges.ts";
@@ -500,7 +501,7 @@ function renderNominations(props: AdminBotBadgesProps) {
     <div class="card adminbot-card adminbot-card--wide">
       <div class="card-title">${t("adminbotBadges.nominations")}</div>
       ${props.nominationsLoading && props.nominations.length === 0
-        ? html`<div class="adminbot-form__meta">${t("adminbotBadges.loading")}</div>`
+        ? renderSkeleton({ label: t("adminbotBadges.loading") })
         : props.nominations.length === 0
           ? html`<div class="adminbot-form__meta">${t("adminbotBadges.emptyNominations")}</div>`
           : html`<ul class="adminbot-badge-nominations">
@@ -582,7 +583,7 @@ function renderSuggestions(props: AdminBotBadgesProps) {
       <div class="card-title">${t("adminbotBadges.suggestion.title")}</div>
       <div class="card-sub">${t("adminbotBadges.suggestion.sub")}</div>
       ${props.suggestionsLoading && props.suggestions.length === 0
-        ? html`<div class="adminbot-form__meta">${t("adminbotBadges.loading")}</div>`
+        ? renderSkeleton({ label: t("adminbotBadges.loading") })
         : pending.length === 0
           ? html`<div class="adminbot-form__meta">
               ${t("adminbotBadges.suggestion.emptyPending")}

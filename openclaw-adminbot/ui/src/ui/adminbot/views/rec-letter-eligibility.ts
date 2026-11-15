@@ -12,6 +12,7 @@
 import { html, nothing } from "lit";
 import { live } from "lit/directives/live.js";
 import { t } from "../../../i18n/index.ts";
+import { renderSkeleton } from "../../loading/skeleton.ts";
 import { pathForTab } from "../../navigation.ts";
 import {
   isRecLetterEligibility,
@@ -490,7 +491,7 @@ export function renderRecLetterAdvisory(props: RecLetterAdvisoryProps) {
       <div class="rec-readiness__head"><h4>${t("logistics.eligibility.title")}</h4></div>
       <p class="muted">${policy}</p>
       ${props.loading
-        ? html`<p class="muted">${t("logistics.eligibility.loading")}</p>`
+        ? renderSkeleton({ shape: "lines", count: 2, label: t("logistics.eligibility.loading") })
         : html`<p class="muted" data-testid="rec-eligibility-unavailable">${unavailableText()}</p>`}
     </aside>`;
   }
