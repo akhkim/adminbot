@@ -225,6 +225,10 @@ def refresh_conference_tables(items, previous_by_id, clock, force_refresh, fetch
         if global_time:
             hour, minute = global_time
             item.update(timing_fields(f"{date} {hour:02d}:{minute:02d}:00", timezone="AoE"))
+        elif item.get("deadline_time_precision") == "exact" and item.get("deadline_aoe", "")[:10] == date:
+            # The page repeats the known date without a clock. Keeping the exact cutoff matters:
+            # a date-only reading would replace it with the earliest instant that date can mean.
+            pass
         else:
             zone = "AoE" if re.search(r"(?i)all\s+deadlines.{0,100}(?:AoE|Anywhere\s+on\s+Earth)", page) else ""
             item.update(timing_fields(date, date_only=True, timezone=zone))
@@ -275,7 +279,11 @@ def confirm_with_openreview(items, read_invitations, checked_at):
         portal = observation['duedate_aoe']
         url = 'https://openreview.net/invitation?id=' + urllib.parse.quote(invitation, safe='/')
         item['openreview_invitation'] = observation
-        same_date = item.get('deadline_aoe', '')[:10] == portal[:10]
+        # A date-only row stores the earliest instant its date can mean, which is a day or two
+        # before the announced date, so compare the announced date itself.
+        announced = (item.get('deadline_date') if item.get('deadline_time_precision') == 'date_only'
+                     else '') or item.get('deadline_aoe', '')[:10]
+        same_date = announced == portal[:10]
         if item.get('deadline_source_status') == 'source_unavailable':
             # A portal date that contradicts the last CFP reading is not a fallback; it is a
             # conflict nobody has looked at. Leave the row unobserved with the evidence attached.

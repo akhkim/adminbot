@@ -14,7 +14,7 @@ import json, sys
 sys.path.insert(0, ${JSON.stringify(scripts)})
 from adminbot_deadlines import AoEClock
 from adminbot_lab_venues import lab_venue_conferences, lab_venue_counts, paper_family
-from adminbot_conference_deadlines import confirm_with_openreview
+from adminbot_conference_deadlines import confirm_with_openreview, refresh_conference_tables
 clock = AoEClock.resolve('2035-01-02')
 checked = lambda: '2035-01-02T12:00:00Z'
 ${body}
@@ -130,5 +130,36 @@ print(json.dumps(confirm_with_openreview([item], read, checked)[0]))`);
         openreview_invitation: { duedate_aoe: "2026-10-19 23:59:00" },
       });
     }
+  });
+
+  it("matches a date-only row on its announced date, not its earliest instant", () => {
+    expect(
+      confirm(
+        "deadline_aoe='2026-10-10 22:00:00', deadline_date='2026-10-12', deadline_time_precision='date_only', deadline_source_status='portal_unverified'",
+        "2026-10-12 23:59:00",
+      ),
+    ).toMatchObject({
+      deadline_aoe: "2026-10-12 23:59:00",
+      deadline_source_status: "official_date_matches_openreview",
+    });
+  });
+
+  it("keeps an exact cutoff when the official table repeats its date without a clock", () => {
+    const refresh = (cell: string) =>
+      runPython(`
+item = dict(id='arr_2026_october', venue_group='ARR October 2026', deadline_aoe='2026-10-12 23:59:00',
+            deadline_time_precision='exact', source_checked_at='')
+page = '<table><tr><td>October 2026</td><td>${cell}</td></tr></table>'
+refresh_conference_tables([item], {}, clock, True, lambda url: (url, page), checked)
+print(json.dumps(item))`);
+    expect(refresh("October 12")).toMatchObject({
+      deadline_aoe: "2026-10-12 23:59:00",
+      deadline_time_precision: "exact",
+      deadline_source_status: "portal_unverified",
+    });
+    expect(refresh("October 19")).toMatchObject({
+      deadline_date: "2026-10-19",
+      deadline_time_precision: "date_only",
+    });
   });
 });
