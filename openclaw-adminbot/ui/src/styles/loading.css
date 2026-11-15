@@ -1,0 +1,103 @@
+/* Loading states shared by every page: the skeleton placeholder (ui/loading/skeleton.ts) and the
+   thin progress line at the top of the window (ui/loading/page-progress.ts).
+
+   Both are deliberately quiet -- lines and hairline dividers on the page background, no panels --
+   and both wait a moment before appearing, so a load that finishes quickly shows nothing. */
+
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  max-width: 720px;
+  padding: var(--space-2) 0;
+  /* Invisible for the first moment, then simply there: the delay is the point, not the fade. */
+  opacity: 0;
+  animation: skeleton-reveal 1ms linear 180ms forwards;
+}
+
+.skeleton--lines {
+  gap: var(--space-3);
+}
+
+.skeleton__row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.skeleton__row:last-child {
+  border-bottom: 0;
+}
+
+.skeleton__line {
+  display: block;
+  height: 10px;
+  max-width: 100%;
+  border-radius: var(--radius-sm);
+  background: var(--border-strong);
+}
+
+.skeleton__line--lead {
+  height: 12px;
+  max-width: 40%;
+}
+
+@keyframes skeleton-reveal {
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes skeleton-breathe {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+page-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  height: 2px;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--duration-slow) var(--ease-out);
+}
+
+page-progress[active] {
+  opacity: 1;
+}
+
+.page-progress__bar {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--accent);
+  /* Still, for viewers who asked for less motion: a steady line says "working" well enough. */
+  opacity: 0.7;
+}
+
+@keyframes page-progress-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .skeleton__line {
+    animation: skeleton-breathe 1.6s var(--ease-in-out) infinite;
+  }
+
+  page-progress[active] .page-progress__bar {
+    width: 40%;
+    opacity: 1;
+    animation: page-progress-slide 1.1s var(--ease-in-out) infinite;
+  }
+}

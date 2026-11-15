@@ -5,6 +5,7 @@
 // localStorage; the gateway token it returns is a secret that must only flow
 // through the existing sessionStorage-scoped token plumbing via applySettings.
 import { getSafeLocalStorage } from "../../../local-storage.ts";
+import { trackPageActivity } from "../../loading/page-activity.ts";
 import type { UiSettings } from "../../storage.ts";
 import { normalizeOptionalString } from "../../string-coerce.ts";
 import { memberAuthHeaders } from "../api/device-clock.ts";
@@ -23,12 +24,15 @@ import {
   storedOwnRead,
 } from "./offline-reads.ts";
 import {
+  currentWarmEpoch,
   forgetRead,
   forgetReadsInFlight,
   forgetSessionReads,
+  keepWarmRead,
   rememberRead,
   rememberedRead,
   sharedRead,
+  takeWarmRead,
 } from "./read-cache.ts";
 
 const SESSION_STORAGE_KEY = "openclaw.adminbot.session.v1";
@@ -413,15 +417,73 @@ export async function authedJson(
     // A read that started before this write may answer with the state from before it; the reload
     // the write triggers must send its own request rather than join that one.
     forgetReadsInFlight();
-    return await authedJsonOnce(baseUrl, path, method, token, payload, signal);
+    return await trackPageActivity(authedJsonOnce(baseUrl, path, method, token, payload, signal));
   }
   // An abortable read belongs to its caller alone; sharing it would let one caller cancel another.
   if (signal) {
-    return await authedJsonOnce(baseUrl, path, method, token, payload, signal);
+    return await trackPageActivity(authedJsonOnce(baseUrl, path, method, token, payload, signal));
   }
-  return await sharedRead(token, `${baseUrl}${path}`, () =>
-    authedJsonOnce(baseUrl, path, method, token, payload),
+  const url = `${baseUrl}${path}`;
+  // A read prefetched moments ago for exactly this loader (prefetchAuthedRead) is used once.
+  const prefetched = takeWarmRead<AuthedJsonResult>(token, url);
+  if (prefetched) {
+    return prefetched;
+  }
+  return await trackPageActivity(
+    sharedRead(token, url, () => authedJsonOnce(baseUrl, path, method, token, payload)),
   );
+}
+
+/**
+ * Starts a GET ahead of the loader that will ask for it, so the two overlap instead of queueing.
+ *
+ * A loader that asks while this is in flight joins it; one that asks within a few seconds of it
+ * landing takes the answer once. Only a fresh 200 from the service is kept -- never a refusal, an
+ * error, an offline copy, or anything fetched before a write or a change of session -- so a
+ * permission change or an expired session is always reported by the loader's own request.
+ */
+export function prefetchAuthedRead(
+  baseUrl: string,
+  path: string,
+  token: string | null,
+): { renew: () => void } {
+  const url = `${baseUrl}${path}`;
+  let epoch = currentWarmEpoch();
+  let kept: { value: AuthedJsonResult; at: number } | undefined;
+  let settled = false;
+  const pending = sharedRead(token, url, () => authedJsonOnce(baseUrl, path, "GET", token));
+  void pending
+    .then(
+      (result) => {
+        if ("unreachable" in result || result.fromCache || result.response.status !== 200) {
+          return;
+        }
+        // A copy of the body: a loader that joined this request holds the original and may edit
+        // it in place.
+        const body: unknown =
+          result.body === undefined ? undefined : JSON.parse(JSON.stringify(result.body));
+        kept = { value: { ...result, body }, at: Date.now() };
+        keepWarmRead(token, url, kept.value, epoch, kept.at);
+      },
+      () => undefined,
+    )
+    .finally(() => {
+      settled = true;
+    });
+  return {
+    // For the one caller that clears the session's kept reads while this request is still the
+    // answer to its own question: resuming a session resets member-scoped data once the session
+    // check returns, and this read was sent beside that check with the same token. It stays
+    // joinable, and keeps its original age.
+    renew: () => {
+      epoch = currentWarmEpoch();
+      if (!settled) {
+        void sharedRead(token, url, () => pending).catch(() => undefined);
+      } else if (kept) {
+        keepWarmRead(token, url, kept.value, epoch, kept.at);
+      }
+    },
+  };
 }
 
 type AuthedJsonResult =

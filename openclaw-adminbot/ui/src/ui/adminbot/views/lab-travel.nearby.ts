@@ -1,6 +1,7 @@
 import { html, nothing } from "lit";
 import { live } from "lit/directives/live.js";
 import { t } from "../../../i18n/index.ts";
+import { renderSkeleton } from "../../loading/skeleton.ts";
 import type { LabTravelNotice, LookupDraft } from "../controllers/lab-travel.ts";
 import type { LocationTrackerSnapshot } from "../controllers/location-tracker.ts";
 import type {
@@ -334,7 +335,7 @@ export function renderTravelNearby(props: TravelNearbyProps) {
       ${overview
         ? renderSharing(props, overview)
         : props.loading
-          ? html`<p class="muted">${t("labTravel.loading")}</p>`
+          ? renderSkeleton({ label: t("labTravel.loading") })
           : nothing}
     </details>
   `;

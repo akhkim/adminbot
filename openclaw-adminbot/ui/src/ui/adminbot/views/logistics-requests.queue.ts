@@ -8,6 +8,7 @@
 // writes are returning the signed file and answering, and both belong to the lab.
 import { html, nothing } from "lit";
 import { t } from "../../../i18n/index.ts";
+import { renderSkeleton } from "../../loading/skeleton.ts";
 import type {
   LogisticsRequest,
   LogisticsRequestKind,
@@ -261,7 +262,7 @@ export function renderAdminBotLogisticsQueue(props: AdminBotLogisticsQueueProps)
         ? html`<p class="logistics-requests__error" role="alert">${props.error}</p>`
         : nothing}
       ${props.loading && !rows.length
-        ? html`<p class="logistics-requests__empty">${t("logistics.requests.loading")}</p>`
+        ? renderSkeleton({ label: t("logistics.requests.loading") })
         : rows.length
           ? html`
               <div class="logistics-queue__scroll">

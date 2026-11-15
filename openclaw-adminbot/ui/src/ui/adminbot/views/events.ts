@@ -6,6 +6,7 @@
 import { html, nothing, type TemplateResult } from "lit";
 import { t } from "../../../i18n/index.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
+import { renderSkeleton } from "../../loading/skeleton.ts";
 import { sayHiBusyKey, type EventsNotice } from "../controllers/events.ts";
 import { plainDateLabel } from "../data/deadline-time.ts";
 import type {
@@ -387,7 +388,7 @@ export function renderEvents(props: EventsProps) {
         : nothing}
       ${!overview
         ? props.loading
-          ? html`<div class="muted">${t("events.loading")}</div>`
+          ? renderSkeleton({ label: t("events.loading") })
           : nothing
         : html`
             ${renderHeader(props, overview)} ${props.nearby ?? nothing}

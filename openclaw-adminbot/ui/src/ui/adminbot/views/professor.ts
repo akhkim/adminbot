@@ -49,6 +49,7 @@ import {
 } from "../../../../../extensions/adminbot/src/workflows/members/profile-overview-filter.js";
 import { t } from "../../../i18n/index.ts";
 import { icons } from "../../icons.ts";
+import { renderSkeleton } from "../../loading/skeleton.ts";
 import type { Tab } from "../../navigation.ts";
 import type { LabBroadcast } from "../api/lab-sharing.ts";
 import type { LogisticsRequest } from "../api/logistics.ts";
@@ -1576,7 +1577,7 @@ export function renderProfessorView(props: ProfessorViewProps) {
         linkLabel: t("professor.letters.open"),
         onOpen: props.onOpen,
         body: props.requestsLoading
-          ? html`<p class="professor__empty">${t("professor.loading")}</p>`
+          ? renderSkeleton({ count: 3, label: t("professor.loading") })
           : html`${searchBox({
               id: "letters",
               label: t("professor.letters.searchLabel"),

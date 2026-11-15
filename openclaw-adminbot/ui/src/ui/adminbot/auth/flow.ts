@@ -2,6 +2,7 @@ import { t } from "../../../i18n/index.ts";
 import { resolveAdvertisedGatewayUrl } from "../../advertised-gateway-url.ts";
 import { clearDeviceAuthToken, storeDeviceAuthToken } from "../../device-auth.ts";
 import { loadOrCreateDeviceIdentity } from "../../device-identity.ts";
+import { forgetPageScroll } from "../../loading/page-scroll.ts";
 import { clearSignedOutView, goToSignedOutView } from "../../signed-out-view.ts";
 import type { UiSettings } from "../../storage.ts";
 import {
@@ -69,6 +70,7 @@ import {
   hasAcknowledgedOnboardingChecklist,
   loadStoredMemberSession,
   logoutMember,
+  prefetchAuthedRead,
   markOnboardingChecklistAcknowledged,
   resolveAdminBotBaseUrl,
   saveStoredMemberSession,
@@ -563,6 +565,7 @@ async function connectAsMember(
 function clearMemberScopedData(host: MemberAuthHost): void {
   // Kept read bodies and shared in-flight reads are the departing member's data too.
   forgetSessionReads();
+  forgetPageScroll();
   forgetAdminQueues(host);
   host.adminBotRosterRequestId = (host.adminBotRosterRequestId ?? 0) + 1;
   host.adminBotRosterLoadedAt = null;
@@ -996,6 +999,9 @@ export async function resumeMemberSession(
     return "no-session";
   }
   const baseUrl = resolveAdminBotBaseUrl(host.settings);
+  // Every signed-in page starts from the member's own profile. Ask for it beside the session
+  // check instead of after it; if the session turns out to be dead the answer is never kept.
+  const profileRead = prefetchAuthedRead(baseUrl, "/lab/members/self", stored.sessionToken);
   const result = await fetchMemberSession(stored.sessionToken, baseUrl);
   if (isCurrent?.() === false || loadStoredMemberSession()?.sessionToken !== stored.sessionToken) {
     return "no-session";
@@ -1006,6 +1012,8 @@ export async function resumeMemberSession(
       host.memberPrivilegeLevel !== (result.value.member?.privilege_level ?? null)
     ) {
       clearMemberScopedData(host);
+      // That reset also dropped the profile read sent beside this check; it is this session's.
+      profileRead.renew();
     }
     saveStoredMemberSession({
       sessionToken: stored.sessionToken,

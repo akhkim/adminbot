@@ -14,7 +14,9 @@ import { openPaperForViewer } from "../projects/open-paper.ts";
 import type { AdminBotSurfaceScope } from "./scope.ts";
 
 // The page's view loads on first visit rather than in the first bundle.
-const lazyProfessor = createLazyView(() => import("../views/professor.ts"), notifyLazyViewHost);
+const lazyProfessor = createLazyView(() => import("../views/professor.ts"), notifyLazyViewHost, {
+  tabs: ["adminbotProfessor"],
+});
 
 export function renderProfessorSurface(state: AppViewState, scope: AdminBotSurfaceScope) {
   const { adminBotMode, requestHostUpdate } = scope;

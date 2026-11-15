@@ -175,9 +175,11 @@ describe("loading, errors and notices", () => {
     failed.container.querySelector<HTMLButtonElement>(".callout button")?.click();
     expect(failed.props.onRetry).toHaveBeenCalledOnce();
     document.body.innerHTML = "";
-    expect(draw({ overview: null, loading: true }).container.textContent).toContain(
-      "Loading who is nearby",
-    );
+    expect(
+      draw({ overview: null, loading: true })
+        .container.querySelector('.skeleton[role="status"]')
+        ?.getAttribute("aria-label"),
+    ).toContain("Loading who is nearby");
   });
 
   it("says what the last sharing action did inside the card", () => {

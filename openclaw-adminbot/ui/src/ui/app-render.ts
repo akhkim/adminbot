@@ -278,12 +278,14 @@ import { getCronJobPayload } from "./cron-payload.ts";
 import { formatTimeMs } from "./format.ts";
 import { formatRelativeTimestamp } from "./format.ts";
 import { icons } from "./icons.ts";
+import "./loading/page-progress.ts";
 import {
   createLazyView,
   notifyLazyViewHost,
   renderLazyView,
   setLazyViewHost,
 } from "./lazy-view.ts";
+import { renderSkeleton } from "./loading/skeleton.ts";
 import {
   iconForTab,
   isLogisticsTab,
@@ -610,21 +612,32 @@ function renderChatRecentSession(state: AppViewState, row: GatewaySessionRow) {
 
 // Lazy-loaded view modules are deferred so the initial bundle stays small.
 // The shared loader renders visible fallback states instead of leaving a tab blank.
-const lazyAgents = createLazyView(() => import("./views/agents.ts"), notifyLazyViewHost);
-const lazyActivity = createLazyView(() => import("./views/activity.ts"), notifyLazyViewHost);
-const lazyChannels = createLazyView(() => import("./views/channels.ts"), notifyLazyViewHost);
-const lazyCron = createLazyView(() => import("./views/cron.ts"), notifyLazyViewHost);
+const lazyAgents = createLazyView(() => import("./views/agents.ts"), notifyLazyViewHost, {
+  tabs: ["agents"],
+});
+const lazyActivity = createLazyView(() => import("./views/activity.ts"), notifyLazyViewHost, {
+  tabs: ["activity"],
+});
+const lazyChannels = createLazyView(() => import("./views/channels.ts"), notifyLazyViewHost, {
+  tabs: ["channels"],
+});
+const lazyCron = createLazyView(() => import("./views/cron.ts"), notifyLazyViewHost, {
+  tabs: ["cron"],
+});
 const lazyDeadlines = createLazyView(
   () => import("./adminbot/views/deadlines.ts"),
   notifyLazyViewHost,
+  { tabs: ["adminbotDeadlines"] },
 );
 const lazyTalkLeaderboard = createLazyView(
   () => import("./adminbot/views/talk-leaderboard.ts"),
   notifyLazyViewHost,
+  { tabs: ["adminbotTalkLeaderboard"] },
 );
 const lazyLabProjects = createLazyView(
   () => import("./adminbot/views/lab-projects.ts"),
   notifyLazyViewHost,
+  { tabs: ["adminbotLabProjects"] },
 );
 const lazyPublicShell = createLazyView(
   () => import("./adminbot/views/public-shell.ts"),
@@ -633,45 +646,66 @@ const lazyPublicShell = createLazyView(
 const lazyOpportunities = createLazyView(
   () => import("./adminbot/views/opportunities.ts"),
   notifyLazyViewHost,
+  { tabs: ["adminbotOpportunities"] },
 );
 const lazyGrantReport = createLazyView(
   () => import("./adminbot/views/grant-report.ts"),
   notifyLazyViewHost,
+  { tabs: ["adminbotGrantReport"] },
 );
 const lazyMailingList = createLazyView(
   () => import("./adminbot/views/mailing-list.ts"),
   notifyLazyViewHost,
+  { tabs: ["adminbotMailingList"] },
 );
 const lazyConferencePapers = createLazyView(
   () => import("./adminbot/views/conference-papers.ts"),
   notifyLazyViewHost,
+  { tabs: ["adminbotConferencePapers"] },
 );
 const lazyWorkshopNudges = createLazyView(
   () => import("./adminbot/views/workshop-nudges.ts"),
   notifyLazyViewHost,
+  { tabs: ["adminbotWorkshopNudges"] },
 );
-const lazyDebug = createLazyView(() => import("./views/debug.ts"), notifyLazyViewHost);
-const lazyLogs = createLazyView(() => import("./views/logs.ts"), notifyLazyViewHost);
-const lazyNodes = createLazyView(() => import("./views/nodes.ts"), notifyLazyViewHost);
-const lazySessions = createLazyView(() => import("./views/sessions.ts"), notifyLazyViewHost);
-const lazySkills = createLazyView(() => import("./views/skills.ts"), notifyLazyViewHost);
-const lazyUsage = createLazyView(() => import("./views/usage.ts"), notifyLazyViewHost);
+const lazyDebug = createLazyView(() => import("./views/debug.ts"), notifyLazyViewHost, {
+  tabs: ["debug"],
+});
+const lazyLogs = createLazyView(() => import("./views/logs.ts"), notifyLazyViewHost, {
+  tabs: ["logs"],
+});
+const lazyNodes = createLazyView(() => import("./views/nodes.ts"), notifyLazyViewHost, {
+  tabs: ["nodes"],
+});
+const lazySessions = createLazyView(() => import("./views/sessions.ts"), notifyLazyViewHost, {
+  tabs: ["sessions"],
+});
+const lazySkills = createLazyView(() => import("./views/skills.ts"), notifyLazyViewHost, {
+  tabs: ["skills"],
+});
+const lazyUsage = createLazyView(() => import("./views/usage.ts"), notifyLazyViewHost, {
+  tabs: ["usage"],
+});
 const lazyAdminBotRegistrations = createLazyView(
   () => import("./adminbot/views/registrations.ts"),
   notifyLazyViewHost,
+  { tabs: ["adminbotRegistrations"] },
 );
 const lazyAdminBotBadges = createLazyView(
   () => import("./adminbot/views/badges.ts"),
   notifyLazyViewHost,
+  { tabs: ["adminbotBadges"] },
 );
 
 const lazyAdminBotOnboarding = createLazyView(
   () => import("./adminbot/views/onboarding.ts"),
   notifyLazyViewHost,
+  { tabs: ["adminbotOnboarding"] },
 );
 const lazyAdminBotCalendar = createLazyView(
   () => import("./adminbot/views/calendar.ts"),
   notifyLazyViewHost,
+  { tabs: ["adminbotCalendar"] },
 );
 
 function adminBotPanelForTab(tab: Tab, mode: AdminBotLoadMode = "admin"): AdminBotPanel | null {
@@ -1626,8 +1660,10 @@ export function renderApp(state: AppViewState) {
       void refreshActiveTab(state).finally(() => requestHostUpdate?.());
     }
     return html`<main class="content">
-      <div class="card" role="status" data-testid="profile-loading">
-        <p>${state.adminBotError || t("common.loading")}</p>
+      <div class=${state.adminBotError ? "card" : ""} role="status" data-testid="profile-loading">
+        ${state.adminBotError
+          ? html`<p>${state.adminBotError}</p>`
+          : renderSkeleton({ shape: "lines", testId: "profile-loading-skeleton" })}
         ${state.adminBotError
           ? html`<button class="btn" @click=${loadProfile}>${t("profile.gate.retry")}</button>`
           : nothing}
@@ -3232,6 +3268,7 @@ export function renderApp(state: AppViewState) {
           </div>
         </aside>
       </div>
+      <page-progress></page-progress>
       <main
         class="content ${isChat ? "content--chat" : ""} ${state.tab === "logs"
           ? "content--logs"

@@ -10,8 +10,10 @@ import type { ChatProps } from "./views/chat.ts";
 import type { QuickSettingsProps } from "./views/config-quick.ts";
 import type { ConfigProps } from "./views/config.ts";
 
-const lazyChat = createLazyView(loadChatView, notifyLazyViewHost);
-const lazyConfig = createLazyView(() => import("./views/config.ts"), notifyLazyViewHost);
+const lazyChat = createLazyView(loadChatView, notifyLazyViewHost, { tabs: ["chat"] });
+const lazyConfig = createLazyView(() => import("./views/config.ts"), notifyLazyViewHost, {
+  tabs: ["config"],
+});
 const lazyQuickSettings = createLazyView(
   () => import("./views/config-quick.ts"),
   notifyLazyViewHost,
@@ -26,6 +28,7 @@ const lazyPaperMentor = createLazyView(
       import("./adminbot/views/openreview-citation-checks.ts"),
     ]),
   notifyLazyViewHost,
+  { tabs: ["adminbotPaperMentor"] },
 );
 
 export const renderChat = (props: ChatProps) =>

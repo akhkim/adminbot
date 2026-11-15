@@ -2,6 +2,7 @@ import { html, nothing } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import { t } from "../../../i18n/index.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
+import { renderSkeleton } from "../../loading/skeleton.ts";
 import type {
   MeetingAttendanceNudgePreview,
   MeetingAttendanceNudgeResult,
@@ -718,7 +719,7 @@ export function renderAdminBotMeetings(props: AdminBotMeetingsProps) {
       ${props.viewerIsAdmin && props.nudge ? renderNudgePanel(props.nudge) : nothing}
       ${props.viewerIsAdmin ? renderFileForm(props) : nothing}
       ${props.loading && props.series.length === 0
-        ? html`<p class="muted">${t("adminbotMeetings.loading")}</p>`
+        ? renderSkeleton({ label: t("adminbotMeetings.loading") })
         : nothing}
       ${!props.loading && !props.error && props.series.length === 0
         ? html`<p class="muted">${t("adminbotMeetings.empty")}</p>`

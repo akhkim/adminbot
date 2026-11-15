@@ -22,6 +22,7 @@ import type { AdminBotSurfaceScope } from "./scope.ts";
 const lazyTimeAvailability = createLazyView(
   () => import("../views/time-availability.ts"),
   notifyLazyViewHost,
+  { tabs: ["adminbotTimeAvailability"] },
 );
 
 export function renderTimeAvailabilitySurface(state: AppViewState, scope: AdminBotSurfaceScope) {

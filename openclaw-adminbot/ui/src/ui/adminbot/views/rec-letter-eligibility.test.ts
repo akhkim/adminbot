@@ -311,7 +311,11 @@ describe("partial or missing eligibility data", () => {
 
   it("says checking while the read is in flight, and unavailable offline once it is not", () => {
     const checking = draw(renderRecLetterAdvisory({ value: null, loading: true, error: null }));
-    expect(byTestId(checking, "rec-eligibility-advisory")?.textContent).toContain("Checking");
+    expect(
+      byTestId(checking, "rec-eligibility-advisory")
+        ?.querySelector('.skeleton[role="status"]')
+        ?.getAttribute("aria-label"),
+    ).toContain("Checking");
     const onLine = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
     try {
       const offline = draw(renderRecLetterAdvisory({ value: null, loading: false, error: null }));

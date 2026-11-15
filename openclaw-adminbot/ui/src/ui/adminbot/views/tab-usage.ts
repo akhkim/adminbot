@@ -10,6 +10,7 @@
 import { html, nothing } from "lit";
 import { t } from "../../../i18n/index.ts";
 import { icons } from "../../icons.ts";
+import { renderSkeleton } from "../../loading/skeleton.ts";
 import type { TabVisitRate, TabVisitReport } from "../api/workspace.ts";
 import { TAB_USAGE_WINDOWS } from "../controllers/tab-usage.ts";
 
@@ -155,7 +156,7 @@ export function renderAdminBotTabUsage(props: TabUsageViewProps) {
           </p>`
         : nothing}
       ${props.loading && !report
-        ? html`<p class="tab-usage__empty">${t("tabUsage.loading")}</p>`
+        ? renderSkeleton({ label: t("tabUsage.loading") })
         : nothing}
       ${report && !report.tabs.length
         ? html`<p class="tab-usage__empty" data-testid="tab-usage-empty">${t("tabUsage.empty")}</p>`

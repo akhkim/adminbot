@@ -22,7 +22,9 @@ import { renderMeetupToggleSurface } from "./events.ts";
 import type { AdminBotSurfaceScope } from "./scope.ts";
 
 // The page's view loads on first visit rather than in the first bundle.
-const lazyProfile = createLazyView(() => import("../views/profile.ts"), notifyLazyViewHost);
+const lazyProfile = createLazyView(() => import("../views/profile.ts"), notifyLazyViewHost, {
+  tabs: ["profile"],
+});
 
 export function renderProfileSurface(state: AppViewState, scope: AdminBotSurfaceScope) {
   const { requestHostUpdate } = scope;

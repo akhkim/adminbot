@@ -12,6 +12,7 @@ import { html, nothing } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import { t } from "../../../i18n/index.ts";
 import { icons } from "../../icons.ts";
+import { renderSkeleton } from "../../loading/skeleton.ts";
 import type {
   LogisticsAttachment,
   LogisticsFact,
@@ -232,7 +233,7 @@ function renderRequestsList(props: AdminBotLogisticsRequestsProps) {
         ? html`<p class="logistics-requests__error" role="alert">${props.error}</p>`
         : nothing}
       ${props.loading
-        ? html`<p class="logistics-requests__empty">${t("logistics.requests.loading")}</p>`
+        ? renderSkeleton({ label: t("logistics.requests.loading") })
         : props.requests.length
           ? html`
               <div class="logistics-requests__scroll">

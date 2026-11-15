@@ -1,9 +1,9 @@
-import { isProfileBlocked } from "./adminbot/views/profile-gate.ts";
 // Control UI module implements app render behavior.
 import { html, nothing } from "lit";
 import { t } from "../i18n/index.ts";
 import { visibleTabsForMember, type AccessRole } from "./adminbot/access.ts";
 import { navigateToProject } from "./adminbot/projects/model.ts";
+import { isProfileBlocked } from "./adminbot/views/profile-gate.ts";
 import {
   createChatSessionsLoadOverrides,
   flushChatQueueAfterIdleSessionReconciliation,
@@ -34,6 +34,7 @@ import {
   syncSelectedSessionMessageSubscription,
 } from "./controllers/sessions.ts";
 import { icons } from "./icons.ts";
+import { notePrefetchableNavTab, prefetchTab } from "./loading/page-prefetch.ts";
 import {
   iconForTab,
   isSettingsTab,
@@ -308,10 +309,17 @@ export function renderTab(state: AppViewState, tab: Tab, opts?: { collapsed?: bo
       </span>
     `;
   }
+  // Pointing at, focusing or touching the link starts that page's code on its way; the idle pass
+  // picks up the rest of this viewer's sidebar after first paint.
+  notePrefetchableNavTab(tab);
+  const warm = () => prefetchTab(tab);
   return html`
     <a
       href=${href}
       class="nav-item ${isActive ? "nav-item--active" : ""}"
+      @pointerenter=${warm}
+      @focus=${warm}
+      @touchstart=${{ handleEvent: warm, passive: true }}
       @click=${(event: MouseEvent) => {
         if (
           event.defaultPrevented ||

@@ -622,9 +622,11 @@ describe("renderProfessorView", () => {
   it("says it is still reading rather than claiming an empty queue", () => {
     // An empty letter queue and an unloaded one look identical, and only one of them is good news.
     const { container } = draw({ requestsLoading: true });
-    expect(container.querySelector('[data-testid="professor-letters"]')?.textContent).toContain(
-      "Reading",
-    );
+    expect(
+      container
+        .querySelector('[data-testid="professor-letters"] .skeleton[role="status"]')
+        ?.getAttribute("aria-label"),
+    ).toContain("Reading");
   });
 
   it("counts people rather than rows: one member short on two counts is one reminder", () => {
