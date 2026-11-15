@@ -3,6 +3,7 @@
 // Controller for this zone: loads through api/members.ts and writes the result onto the host state.
 // Cut from controllers/admin.ts, which keeps the host shape and the shared lab read.
 
+import { t } from "../../../i18n/index.ts";
 import {
   deleteLabMemberAsAdmin,
   fetchMembersWithoutEmail,
@@ -18,6 +19,7 @@ import {
 } from "../api/members.ts";
 import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 import { describeMemberTypeChange } from "../data/member-type-change.ts";
+import { PROFILE_FIELDS } from "../member-fields.ts";
 import {
   ADMINBOT_SERVICE_UNREACHABLE_MESSAGE,
   type AdminBotExternalCollaboratorSubgroup,
@@ -320,16 +322,52 @@ export async function mergeAdminBotMembers(
     };
     return;
   }
-  const conflicts = result.value.conflicts ?? [];
+  const kept = mergeConflictLabels(
+    (result.value.conflicts ?? []).map((conflict) => conflict.field),
+  );
   host.adminBotNotice = {
     kind: "success",
-    text: conflicts.length
-      ? `Merged ${duplicateId} into ${survivorId}. Kept ${survivorId}'s answer for ${conflicts
-          .map((conflict) => conflict.field)
-          .join(", ")}.`
+    text: kept.length
+      ? `Merged ${duplicateId} into ${survivorId}. Kept ${survivorId}'s answer for ${kept.join(", ")}.`
       : `Merged ${duplicateId} into ${survivorId}.`,
   };
   await loadAdminBot(host);
+}
+
+// Record bookkeeping the merge reconciles on its own; naming it in the notice tells an admin
+// nothing they can act on.
+const MERGE_INTERNAL_FIELDS = new Set([
+  "id",
+  "onboarding",
+  "field_provenance",
+  "created_at",
+  "updated_at",
+]);
+
+// Roster fields an admin sees under another name than the profile form's, or that the profile
+// form does not list at all.
+const MERGE_FIELD_LABELS: Record<string, string> = {
+  privilege_level: "access level",
+  avatar_url: "photo",
+  timezone: "time zone",
+  status: "status",
+  email: "email",
+  name: "name",
+};
+
+/** The merge's conflicting record keys, as what the roster calls those fields. */
+export function mergeConflictLabels(fields: readonly string[]): string[] {
+  const labels = fields
+    .filter((field) => !MERGE_INTERNAL_FIELDS.has(field))
+    .map((field) => {
+      const known = MERGE_FIELD_LABELS[field];
+      if (known) {
+        return known;
+      }
+      const profileField = PROFILE_FIELDS.find((candidate) => candidate.key === field);
+      return profileField ? t(profileField.labelKey) : field.replaceAll("_", " ");
+    });
+  return [...new Set(labels)];
 }
 
 /**

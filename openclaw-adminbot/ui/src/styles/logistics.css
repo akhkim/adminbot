@@ -94,20 +94,18 @@
 
 .logistics-upload__files {
   display: grid;
-  gap: var(--space-2);
   margin: var(--space-4) 0 0;
   padding: 0;
   list-style: none;
 }
 
+/* Rows, not cards (ui/DESIGN.md): a hairline between files, no side padding. */
 .logistics-upload__file {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--bg);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border);
   font-size: var(--control-ui-text-sm);
 }
 
@@ -322,7 +320,6 @@
   margin-top: var(--space-4);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  background: color-mix(in srgb, var(--bg) 95%, white);
 }
 
 .logistics-schools__table {
@@ -492,9 +489,7 @@
   margin: var(--space-3) 0 0;
   padding: var(--space-2) var(--space-3);
   border-left: 3px solid var(--warn);
-  border-radius: var(--radius-1, 6px);
-  background: var(--panel-strong);
-  font-size: 0.875rem;
+  font-size: var(--control-ui-text-sm);
 }
 
 /* The admin band above the templates, and the request list it opens. */
@@ -930,7 +925,7 @@
 
 .logistics-queue__status {
   min-height: var(--control-h-sm);
-  border: 1px solid var(--border);
+  border: 1px solid var(--input);
   border-radius: var(--radius-md);
   padding: 0 var(--space-2);
   background: var(--bg);
@@ -1372,12 +1367,10 @@
   flex-direction: column;
   gap: var(--space-2);
   align-items: flex-start;
-  border: 1px solid var(--border);
+  /* The tone rule down the edge is the whole signal: no fill or frame, so the warning does not
+     become one more grey box above the stack. */
   border-left: 4px solid var(--accent);
-  border-radius: var(--radius-md);
-  background: var(--bg-muted);
-  padding: var(--space-3) var(--space-4);
-  margin-bottom: var(--space-4);
+  padding: var(--space-1) 0 var(--space-1) var(--space-4);
 }
 
 .dashboard__nudge-warning[data-tone="warn"] {
@@ -1402,7 +1395,13 @@
   justify-content: flex-end;
   gap: var(--space-2);
   flex-wrap: wrap;
-  margin-bottom: var(--space-3);
+  align-items: center;
+}
+
+/* A page filter handed to the row (Lab Members' ARR switch) keeps the left edge; the actions stay
+   right and wrap under it at phone width. */
+.adminbot-actions > .chip-row {
+  margin-right: auto;
 }
 
 /* "Only you and the admins", on the four fields where it is not what a member would assume. Quiet:
@@ -1583,9 +1582,9 @@
   font: inherit;
   font-size: var(--control-ui-text-sm);
   padding: var(--space-1) var(--space-2);
-  border: 1px solid var(--border);
+  border: 1px solid var(--input);
   border-radius: var(--radius-sm);
-  background: var(--bg);
+  background: transparent;
   color: inherit;
 }
 
@@ -1903,8 +1902,8 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
 }
 
 .logistics-sync > span {
@@ -1912,7 +1911,7 @@
   flex: 1 1 220px;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 /* Tab Usage: which parts of AdminBot the lab opens.
@@ -2060,6 +2059,7 @@
 .logistics-queue__filters {
   display: flex;
   flex-wrap: wrap;
+  align-items: flex-end;
   gap: var(--space-3);
   margin-block: var(--space-4);
 }
@@ -2252,14 +2252,14 @@ adminbot-offline-access .btn {
 
 .logistics-letters__item {
   position: relative;
-  padding: var(--space-4);
-  padding-right: calc(var(--space-4) + 2rem);
+  /* No left inset, so fields start under the step heading; the right inset is the lane the
+     corner-pinned remove button sits in, which a bare `padding-inline: 0` let it overlap. */
+  padding: var(--space-4) calc(var(--space-2) + 2rem) var(--space-4) 0;
   border: 0;
   border-bottom: 1px solid var(--border);
   border-radius: 0;
   background: transparent;
   transition: border-color var(--duration-fast) var(--ease-out);
-  padding-inline: 0;
 }
 
 .logistics-letters__item:focus-within {
@@ -2337,7 +2337,7 @@ adminbot-offline-access .btn {
 .logistics-letters .logistics-schools__cell--remove {
   position: absolute;
   top: var(--space-3);
-  right: var(--space-3);
+  right: 0;
   width: auto;
 }
 

@@ -82,7 +82,7 @@
    are amber, a freeze is the accent color rather than red, and an unknown month is hatched grey
    because a gap in the records says nothing about the member. */
 .rec-readiness {
-  background: var(--bg-elevated);
+  background: transparent;
 }
 
 .rec-readiness__head {

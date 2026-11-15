@@ -65,47 +65,45 @@ export function renderReferenceFindings(findings: readonly ReferenceFindingView[
 }
 
 export const referenceFindingStyles = css`
+  /* A finding is a row under a hairline; its status chip carries the state color. */
   article {
     --finding-color: var(--muted, #888);
-    border: 1px solid color-mix(in srgb, var(--finding-color) 25%, transparent);
-    border-left: 3px solid color-mix(in srgb, var(--finding-color) 65%, transparent);
-    background: color-mix(in srgb, var(--finding-color) 7%, transparent);
-    border-radius: 12px;
-    padding: 18px 20px;
-    margin-top: 12px;
+    border-top: 1px solid var(--border, #8885);
+    padding: var(--space-4, 16px) 0;
     overflow-wrap: anywhere;
   }
   article[data-status="matched"] {
-    --finding-color: #29966b;
+    --finding-color: var(--ok, #29966b);
   }
   article[data-status="not_found"],
   article[data-status="fake"] {
-    --finding-color: #d96068;
+    --finding-color: var(--danger, #d96068);
   }
   article[data-status="review"],
   article[data-status="exist_with_issues"] {
-    --finding-color: #b78a32;
+    --finding-color: var(--warn, #b78a32);
   }
   article p {
-    margin: 10px 0;
+    margin: var(--space-2, 8px) 0;
   }
   article strong {
     display: inline-block;
-    padding: 4px 9px;
-    border-radius: 6px;
+    padding: var(--space-1, 4px) var(--space-2, 8px);
+    border-radius: var(--radius-md, 6px);
+    border: 1px solid color-mix(in srgb, var(--finding-color) 45%, transparent);
     background: color-mix(in srgb, var(--finding-color) 12%, transparent);
     font-size: 12px;
     letter-spacing: 0.02em;
   }
   .result-action {
     display: inline-block;
-    padding: 8px 12px;
-    margin: 8px 0 0;
+    padding: var(--space-1, 4px) var(--space-3, 12px);
+    margin: var(--space-1, 4px) 0 0;
     font-size: 13px;
     font-weight: 600;
     color: inherit;
     border: 1px solid var(--border, #8885);
-    border-radius: 8px;
+    border-radius: var(--radius-lg, 8px);
     text-decoration: none;
   }
   .result-action:hover {
@@ -144,11 +142,6 @@ export class ReferenceChecker extends LitElement {
         display: block;
         max-width: 760px;
       }
-      section {
-        padding: 28px;
-        border: 1px solid var(--border, #8885);
-        border-radius: 14px;
-      }
       h2 {
         margin-top: 0;
       }
@@ -162,12 +155,12 @@ export class ReferenceChecker extends LitElement {
       .drop {
         overflow-wrap: anywhere;
         display: block;
-        padding: 36px 20px;
+        padding: var(--space-8, 32px) var(--space-5, 20px);
         border: 2px dashed var(--border, #8885);
-        border-radius: 10px;
+        border-radius: var(--radius-lg, 8px);
         text-align: center;
         cursor: pointer;
-        margin: 24px 0 16px;
+        margin: var(--space-4, 16px) 0;
       }
       .drop:focus-within {
         outline: 2px solid var(--accent, #5875e8);
@@ -180,26 +173,26 @@ export class ReferenceChecker extends LitElement {
       }
       select {
         font: inherit;
-        padding: 10px;
-        margin-left: 12px;
+        padding: var(--space-2, 8px) var(--space-3, 12px);
+        margin-left: var(--space-3, 12px);
         max-width: 100%;
         color: var(--text, inherit);
         background: var(--bg, transparent);
-        border: 1px solid var(--border, #8885);
-        border-radius: 8px;
+        border: 1px solid var(--input, #8885);
+        border-radius: var(--radius-lg, 8px);
       }
       .browse {
         display: inline-block;
-        margin-top: 16px;
+        margin-top: var(--space-4, 16px);
         text-decoration: underline;
       }
       a {
         color: var(--accent, #5875e8);
       }
       button {
-        padding: 10px 20px;
+        padding: var(--space-2, 8px) var(--space-5, 20px);
         border: 0;
-        border-radius: 8px;
+        border-radius: var(--radius-lg, 8px);
         cursor: pointer;
         background: var(--accent, #5875e8);
         color: var(--accent-foreground, white);
@@ -213,7 +206,7 @@ export class ReferenceChecker extends LitElement {
         color: var(--danger, #dc5353);
       }
       .results {
-        margin-top: 24px;
+        margin-top: var(--space-6, 24px);
       }
     `,
   ];

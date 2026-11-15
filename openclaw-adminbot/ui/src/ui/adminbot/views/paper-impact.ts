@@ -113,7 +113,7 @@ export function renderPaperImpact(
           Write as much as the argument needs — about half a page is a guide, not a minimum. Drafts
           save. ${SEPARATE}
         </p>
-        <button class="btn btn--primary" type="submit" ?disabled=${props.loading}>
+        <button class="btn primary" type="submit" ?disabled=${props.loading}>
           ${props.loading ? "Saving…" : "Save statement"}
         </button>
       </form>
@@ -180,7 +180,7 @@ export function renderPaperImpactReview(params: {
             ></textarea>
           </label>
           <p class="muted">${SEPARATE}</p>
-          <button class="btn btn--primary" type="submit" ?disabled=${busy}>
+          <button class="btn primary" type="submit" ?disabled=${busy}>
             ${busy ? "Saving…" : "Mark impact statement reviewed"}
           </button>
         </form>`

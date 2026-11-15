@@ -3,12 +3,12 @@ adminbot-collaborator-chats {
 }
 adminbot-collaborator-chats .card {
   display: grid;
-  gap: 16px;
+  gap: var(--space-4);
   min-width: 0;
 }
 adminbot-collaborator-chats label {
   display: grid;
-  gap: 8px;
+  gap: var(--space-2);
   min-width: 0;
   font-weight: 500;
 }
@@ -16,12 +16,12 @@ adminbot-collaborator-chats select,
 adminbot-collaborator-chats textarea {
   box-sizing: border-box;
   width: 100%;
-  padding: 10px 12px;
+  padding: var(--space-2) var(--space-3);
   min-height: 96px;
   color: var(--text);
-  background: var(--input-bg, var(--bg));
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  background: transparent;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-md);
   font: inherit;
 }
 adminbot-collaborator-chats button {
@@ -29,8 +29,12 @@ adminbot-collaborator-chats button {
   max-width: 100%;
   white-space: normal;
 }
+/* A grid, because the headings and paragraphs inside carry no margins of their own. */
 adminbot-collaborator-chats article {
-  padding-top: 16px;
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+  padding-top: var(--space-4);
   border-top: 1px solid var(--border);
   min-width: 0;
 }

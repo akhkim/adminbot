@@ -3,11 +3,17 @@
    collapsible Past section, and the meetup-intro settings. Everything wraps, so a 390px phone gets
    the same content in one column. Colours are theme tokens only, so light and dark both follow. */
 
+/* No flex gap: each section already carries its own padding and a hairline above it, and a gap on
+   top of that left more room above every rule than below it. */
 .events {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
   min-width: 0;
+}
+
+.events > .callout,
+.events > .muted {
+  margin-bottom: var(--space-3);
 }
 
 .events__intro {
@@ -46,23 +52,22 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
 }
 
+/* A row of the list, not a card: no side padding, so it starts where the section title starts,
+   and a hairline between rows. An event in the viewer's own metro is marked by its "near you"
+   pill alone. */
 .events__card {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--border);
   min-width: 0;
 }
 
-/* An event in the viewer's own metro is the one they can most easily walk to. */
-.events__card--near {
-  border-color: var(--accent);
-  box-shadow: inset 3px 0 0 var(--accent);
+.events__card:last-child {
+  border-bottom: 0;
 }
 
 .events__card-head {
@@ -131,7 +136,8 @@
   height: 28px;
   margin-left: -6px;
   border-radius: 50%;
-  border: 2px solid var(--card);
+  /* The ring separates overlapping faces, so it is the page ground they sit on. */
+  border: 2px solid var(--bg);
   object-fit: cover;
   flex: none;
   display: inline-flex;

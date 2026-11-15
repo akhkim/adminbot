@@ -75,9 +75,9 @@ export class LabProjectsView extends LitElement {
     .controls {
       display: flex;
       flex-wrap: wrap;
-      gap: 8px;
+      gap: var(--space-2);
       align-items: center;
-      margin-bottom: 12px;
+      margin-bottom: var(--space-3);
     }
     input[type="search"] {
       flex: 1 1 18rem;
@@ -89,9 +89,9 @@ export class LabProjectsView extends LitElement {
       font: inherit;
       color: inherit;
       background: transparent;
-      border: 1px solid var(--border, #8885);
-      border-radius: 8px;
-      padding: 6px 10px;
+      border: 1px solid var(--input, var(--border));
+      border-radius: var(--radius-md);
+      padding: var(--space-1) var(--space-3);
     }
     button,
     select {
@@ -99,30 +99,33 @@ export class LabProjectsView extends LitElement {
     }
     .hint {
       color: var(--muted);
-      font-size: 13px;
-      margin: 0 0 12px;
+      font-size: var(--control-ui-text-sm);
+      margin: 0 0 var(--space-3);
     }
     .error {
-      color: var(--danger, #c0392b);
+      color: var(--danger);
     }
     ul {
       list-style: none;
       margin: 0;
       padding: 0;
       display: grid;
-      gap: 10px;
     }
+    /* Rows, not cards: a hairline between projects and no side padding, so each title starts
+       on the same edge as the search box above. */
     li {
-      border: 1px solid var(--border, #8885);
-      border-radius: 12px;
-      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+      padding: var(--space-3) 0;
       display: grid;
-      gap: 6px;
+      gap: var(--space-1);
+    }
+    li:last-child {
+      border-bottom: 0;
     }
     .head {
       display: flex;
       flex-wrap: wrap;
-      gap: 8px;
+      gap: var(--space-2);
       align-items: baseline;
     }
     .title {
@@ -132,7 +135,7 @@ export class LabProjectsView extends LitElement {
       border: 0;
       padding: 0;
       text-align: left;
-      color: var(--accent, #486bdf);
+      color: var(--accent);
     }
     .title:hover {
       text-decoration: underline;
@@ -144,29 +147,29 @@ export class LabProjectsView extends LitElement {
     }
     .pill {
       display: inline-block;
-      padding: 1px 8px;
-      border-radius: 999px;
-      font-size: 12px;
-      border: 1px solid var(--border, #8885);
+      padding: 1px var(--space-2);
+      border-radius: var(--radius-full);
+      font-size: var(--control-ui-text-xs);
+      border: 1px solid var(--border);
     }
     .pill.active {
-      border-color: var(--accent, #486bdf);
-      color: var(--accent, #486bdf);
+      border-color: var(--accent);
+      color: var(--accent);
     }
     .links {
       display: flex;
       flex-wrap: wrap;
-      gap: 6px 14px;
-      font-size: 13px;
+      gap: var(--space-1) var(--space-3);
+      font-size: var(--control-ui-text-sm);
     }
     .links a {
-      color: var(--accent, #486bdf);
+      color: var(--accent);
     }
     .slot.empty {
       color: var(--muted);
     }
     :focus-visible {
-      outline: 2px solid var(--accent, #486bdf);
+      outline: 2px solid var(--accent);
       outline-offset: 3px;
     }
   `;

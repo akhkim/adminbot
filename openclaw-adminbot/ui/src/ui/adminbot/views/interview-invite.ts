@@ -66,13 +66,15 @@ export class InterviewInvite extends LitElement {
   static styles = css`
     :host {
       display: block;
-      margin-bottom: 20px;
+      margin-bottom: var(--space-4);
     }
+    /* A plain fold: no fill or box, so the summary starts on the page's left edge. The hairline
+       is what separates it from the section below. */
     details {
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 16px;
-      background: var(--card);
+      border-bottom: 1px solid var(--border);
+    }
+    details[open] {
+      padding-bottom: var(--space-4);
     }
     summary {
       display: flex;
@@ -102,13 +104,13 @@ export class InterviewInvite extends LitElement {
     form,
     label {
       display: grid;
-      gap: 12px;
+      gap: var(--space-3);
     }
     form {
-      margin-top: 16px;
+      margin-top: var(--space-2);
     }
     label {
-      gap: 6px;
+      gap: var(--space-1);
     }
     input,
     textarea,
@@ -121,10 +123,10 @@ export class InterviewInvite extends LitElement {
     input,
     textarea,
     select {
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 10px;
+      background: transparent;
+      border: 1px solid var(--input);
+      border-radius: var(--radius-md);
+      padding: var(--space-2) var(--space-3);
       width: 100%;
     }
     textarea {
@@ -134,12 +136,12 @@ export class InterviewInvite extends LitElement {
     .pair {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 12px;
+      gap: var(--space-3);
     }
     button {
-      padding: 12px;
+      padding: var(--space-3);
       border: 1px solid var(--border);
-      border-radius: 8px;
+      border-radius: var(--radius-md);
       background: var(--bg);
       cursor: pointer;
       min-height: 44px;
@@ -163,9 +165,6 @@ export class InterviewInvite extends LitElement {
     @media (max-width: 500px) {
       .pair {
         grid-template-columns: 1fr;
-      }
-      details {
-        padding: 12px;
       }
     }
   `;

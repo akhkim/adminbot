@@ -532,8 +532,10 @@ function renderNominations(props: AdminBotBadgesProps) {
                       </div>
                     </div>
                     <div class="adminbot-form__actions">
+                      <!-- Not primary: every row carries one, and a column of accent buttons marks
+                           nothing. -->
                       <button
-                        class="btn primary"
+                        class="btn btn--sm"
                         type="button"
                         ?disabled=${props.busyKey !== null}
                         @click=${() => props.onDecide(nomination.id, "approve")}
@@ -541,7 +543,7 @@ function renderNominations(props: AdminBotBadgesProps) {
                         ${t("adminbotBadges.approve")}
                       </button>
                       <button
-                        class="btn danger"
+                        class="btn btn--sm danger"
                         type="button"
                         ?disabled=${props.busyKey !== null}
                         @click=${() => props.onDecide(nomination.id, "reject")}
@@ -607,7 +609,7 @@ function renderSuggestions(props: AdminBotBadgesProps) {
                     </div>
                     <div class="adminbot-form__actions">
                       <button
-                        class="btn btn--sm primary"
+                        class="btn btn--sm"
                         type="button"
                         ?disabled=${props.suggestionBusy}
                         data-testid=${`adminbot-badge-suggestion-approve-${suggestion.id}`}

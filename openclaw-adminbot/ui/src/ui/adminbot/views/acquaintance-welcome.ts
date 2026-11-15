@@ -177,7 +177,7 @@ export class AcquaintanceWelcome extends LitElement {
         ? html`<section aria-label="Exact welcome email preview">
             <p>Correspondence recipient: ${this.preview.email}</p>
             <p>Subject: ${this.preview.subject}</p>
-            <pre style="white-space:pre-wrap;overflow-wrap:anywhere">${this.preview.body}</pre>
+            <pre>${this.preview.body}</pre>
             <button
               class="btn btn--sm primary"
               type="button"

@@ -113,7 +113,7 @@ export class InternalPeerReview extends LitElement {
         Save possible reviewers for when your paper is ready. This private working copy sends no
         invitation and grants no document access. Nominations are not accepted assignments.
       </p>
-      <button type="button" ?disabled=${this.busy} @click=${() => this.run()}>
+      <button class="btn btn--sm" type="button" ?disabled=${this.busy} @click=${() => this.run()}>
         Load my draft and suggestions
       </button>
       ${this.loaded
@@ -157,6 +157,7 @@ export class InternalPeerReview extends LitElement {
                     ${candidate.name} (${candidate.member_id}):
                     ${candidate.matched_topics.join(", ")}
                     <button
+                      class="btn btn--sm"
                       type="button"
                       ?disabled=${this.busy ||
                       this.data.nominee_ids.includes(candidate.member_id) ||
@@ -176,7 +177,12 @@ export class InternalPeerReview extends LitElement {
             ${this.suggestions.length
               ? ""
               : "No topical matches. You may nominate a known member by ID."}
-            <button type="button" ?disabled=${this.busy} @click=${() => this.run(true)}>
+            <button
+              class="btn btn--sm"
+              type="button"
+              ?disabled=${this.busy}
+              @click=${() => this.run(true)}
+            >
               Save private draft
             </button>`
         : ""}

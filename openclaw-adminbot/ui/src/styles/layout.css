@@ -1405,9 +1405,7 @@
    at the top of that column reads as one more task rather than as somebody talking. */
 .dashboard__broadcast {
   border-inline-start: 3px solid var(--accent, currentColor);
-  border-radius: var(--radius-2, 6px);
-  background: var(--bg-muted, transparent);
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-1) 0 var(--space-1) var(--space-4);
 }
 
 .dashboard__broadcast-head {
@@ -1484,11 +1482,11 @@
   text-decoration: underline;
 }
 
+/* Rows under their heading, not a framed box: the hairline between rows is the only rule, and the
+   rows start on the heading's own edge. */
 .dashboard__next-deadlines-list {
   margin: 0;
   padding: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
   list-style: none;
 }
 
@@ -1501,7 +1499,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-1) var(--space-3);
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-2) 0;
 }
 
 .dashboard__next-deadline + .dashboard__next-deadline {
@@ -1591,10 +1589,11 @@
   letter-spacing: var(--tracking-normal);
 }
 
+/* No gap: each card is a row that already pads itself evenly either side of its hairline. */
 .dashboard__stack {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: 0;
 }
 
 .dashboard__empty {
@@ -1615,7 +1614,7 @@
 }
 
 .getting-started__progress {
-  padding: var(--space-5) var(--space-6);
+  padding: 0 0 var(--space-5);
   border: 0;
   border-bottom: 1px solid var(--border);
   border-radius: 0;
@@ -1681,6 +1680,11 @@
   margin-bottom: var(--space-6);
 }
 
+/* The page's own column gap already follows the last group. */
+.getting-started__group:last-child {
+  margin-bottom: 0;
+}
+
 .getting-started__group-title {
   margin: 0 0 var(--space-3);
   font-size: var(--control-ui-text-sm);
@@ -1693,7 +1697,7 @@
 .getting-started__steps {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-5);
 }
 
 .getting-started__step-footer {
@@ -1701,8 +1705,7 @@
   align-items: center;
   justify-content: flex-end;
   gap: var(--space-3);
-  padding: var(--space-4) var(--space-5);
-  border-top: 1px solid var(--border);
+  padding: var(--space-4) 0 0;
 }
 
 .getting-started__auto {
@@ -1758,12 +1761,16 @@
   font-size: var(--control-ui-text-md);
 }
 
+/* A step is a block in a list, not a framed card: no fill, frame or side inset, so its label
+   starts under the group title, and a hairline closes it off from the next step. */
 .onboarding-step-card {
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-xl);
-  background: var(--bg);
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.2);
-  overflow: hidden;
+  padding-bottom: var(--space-5);
+  border-bottom: 1px solid var(--border);
+}
+
+.onboarding-step-card:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
 }
 
 .onboarding-step-card__row {
@@ -1775,7 +1782,7 @@
 }
 
 .onboarding-step-card__row--task {
-  padding: var(--space-5);
+  padding: 0 0 var(--space-4);
   align-items: flex-start;
 }
 
@@ -1832,12 +1839,11 @@
 }
 
 .onboarding-step-card__badge--status[data-status="complete"] {
-  background: color-mix(in srgb, var(--ok, #34d3a6) 18%, transparent);
-  color: var(--ok, #34d3a6);
+  background: color-mix(in srgb, var(--ok) 18%, transparent);
+  color: var(--ok);
 }
 
 .onboarding-step-card__body {
-  padding: 0 var(--space-5) var(--space-5);
   font-size: var(--control-ui-text-md);
   line-height: 1.7;
   color: var(--text);
@@ -1850,7 +1856,7 @@
 
 .onboarding-step-card__bullets {
   margin: 0;
-  padding-left: 20px;
+  padding-left: var(--space-5);
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
@@ -1858,7 +1864,7 @@
 
 .onboarding-step-card__points {
   margin: var(--space-1) 0 0;
-  padding-left: 18px;
+  padding-left: var(--space-5);
   font-size: var(--control-ui-text-sm);
   color: var(--muted);
 }
@@ -3441,7 +3447,9 @@
   align-items: center;
   flex-wrap: wrap;
   gap: var(--space-5);
-  padding: var(--space-6);
+  /* No side or top padding: the name starts on the page's own edge, and the page already pads
+     above the first block. */
+  padding: 0 0 var(--space-6);
   border: 0;
   border-bottom: 1px solid var(--border);
   border-radius: 0;
@@ -4104,6 +4112,13 @@
   background: transparent;
 }
 
+/* On My Profile the sections are a flat column: no side inset, so a section's title starts where
+   the name above it starts, and no top padding, because the column's own gap already follows the
+   hairline. Scoped to the page because paper-legacy reuses .profile__section inside its own frame. */
+.profile > .profile__section {
+  padding: 0 0 var(--space-6);
+}
+
 /* Top of the card's type hierarchy: section title, then group title, then field label, then the
    placeholder example inside the control. Each step down is a step dimmer, so the level a piece of
    text sits at is legible from its color alone. This was the mono micro-label at --muted, which
@@ -4744,14 +4759,14 @@
 .profile__project-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--space-2);
   align-items: center;
 }
 
 .profile__project-chip {
   display: inline-flex;
   align-items: center;
-  padding: 4px 10px;
+  padding: var(--space-1) var(--space-3);
   border-radius: var(--radius-sm, 4px);
   border: 1px solid var(--border);
   background: var(--bg-muted, var(--bg));
@@ -5601,7 +5616,7 @@
   grid-area: auto;
   flex: 1;
   min-width: 0;
-  padding: 24px clamp(16px, 4vw, 48px) 48px;
+  padding: var(--space-6) clamp(var(--space-4), 4vw, var(--space-12)) var(--space-12);
   /* The public shell grows with its content, so the document -- not this main element -- is the
      scroller. Keeping the signed-in pane's overflow/overscroll boundary here swallows wheel and
      trackpad gestures instead of letting them reach the document. */
@@ -5621,7 +5636,7 @@
 }
 
 .login-gate__public-back {
-  margin-top: 10px;
+  margin-top: var(--space-3);
 }
 
 @media (max-width: 720px) {
@@ -5869,9 +5884,9 @@ adminbot-deadlines-view {
   width: 100%;
   min-height: var(--control-h-md);
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--input);
   border-radius: var(--radius-md);
-  background: var(--bg-elevated);
+  background: transparent;
   color: var(--text);
   font: inherit;
 }
@@ -5926,7 +5941,6 @@ adminbot-deadlines-view {
   padding: var(--space-3) var(--space-4);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-md);
-  background: var(--bg-elevated);
   font-size: var(--control-ui-text-sm);
 }
 
@@ -6115,9 +6129,9 @@ adminbot-deadlines-view {
   width: 100%;
   min-height: 32px;
   padding: 0 var(--space-2);
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--input);
   border-radius: var(--radius-md);
-  background: var(--bg-elevated);
+  background: transparent;
   color: var(--text);
   font: inherit;
   font-size: 12px;
@@ -7014,7 +7028,6 @@ adminbot-deadline-timezone {
   overflow-x: auto;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-xl);
-  background: var(--card);
 }
 
 .deadline-table {
@@ -8355,7 +8368,7 @@ adminbot-deadline-timezone {
 .lab-sharing-seek__results {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(16rem, 100%), 1fr));
-  gap: var(--space-3);
+  gap: var(--space-4) var(--space-5);
 }
 
 .lab-sharing-seek__results > p {
@@ -8367,10 +8380,9 @@ adminbot-deadline-timezone {
   flex-direction: column;
   gap: var(--space-2);
   min-width: 0;
-  padding: var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--bg);
+  /* A result is a row under a hairline, flush with the search heading -- not a boxed card. */
+  padding: var(--space-3) 0 0;
+  border-top: 1px solid var(--border);
 }
 
 .lab-sharing-member__header {
@@ -8428,10 +8440,6 @@ adminbot-deadline-timezone {
   flex-direction: column;
   gap: var(--space-3);
   min-width: 0;
-  padding: var(--space-4);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--bg);
 }
 
 .lab-sharing-project__header {
@@ -8639,7 +8647,7 @@ adminbot-deadline-timezone {
 .lab-sharing-resources__grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(14rem, 100%), 1fr));
-  gap: var(--space-3);
+  gap: var(--space-4) var(--space-5);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -8651,22 +8659,18 @@ adminbot-deadline-timezone {
   gap: var(--space-1);
   height: 100%;
   box-sizing: border-box;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--bg);
+  border-radius: var(--radius-sm);
   color: inherit;
   text-decoration: none;
-  transition: border-color var(--duration-fast) var(--ease-out);
 }
 
-.lab-sharing-resources__link:hover {
-  border-color: var(--border-strong);
+/* Unboxed, so the title is what answers the pointer. */
+.lab-sharing-resources__link:hover .lab-sharing-resources__title {
+  text-decoration: underline;
 }
 
 .lab-sharing-resources__link:focus-visible {
   outline: none;
-  border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--focus);
 }
 
@@ -9003,9 +9007,9 @@ adminbot-deadline-timezone {
 .my-work__hidden-line {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-2);
   flex-wrap: wrap;
-  margin-top: 12px;
+  margin-top: var(--space-3);
   color: var(--muted);
   font-size: var(--control-ui-text-xs);
 }
@@ -9013,10 +9017,10 @@ adminbot-deadline-timezone {
 .my-work-item__danger {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-2);
   flex-wrap: wrap;
-  margin-top: 18px;
-  padding-top: 14px;
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
   border-top: 1px solid var(--border);
 }
 
@@ -9696,8 +9700,8 @@ adminbot-deadline-timezone {
 .my-work-item__blockers {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin: 10px 0 0;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
   padding: 0;
   list-style: none;
 }
@@ -9705,11 +9709,11 @@ adminbot-deadline-timezone {
 .my-work-item__blocker {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border);
-  border-left: 3px solid #d9a441;
-  border-radius: 8px;
+  border-left: 3px solid var(--warn);
+  border-radius: var(--radius-lg);
 }
 
 .my-work-item__blocker-icon svg {
@@ -9717,7 +9721,7 @@ adminbot-deadline-timezone {
   width: 15px;
   height: 15px;
   fill: none;
-  stroke: #d9a441;
+  stroke: var(--warn);
   stroke-width: 1.8;
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -9728,7 +9732,7 @@ adminbot-deadline-timezone {
   flex: 1;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 4px 10px;
+  gap: var(--space-1) var(--space-2);
   min-width: 0;
 }
 
@@ -9745,12 +9749,12 @@ adminbot-deadline-timezone {
 /* Says what this is for before someone types the wrong thing into it. */
 .blocker-form__notice {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   margin: 0;
-  padding: 9px 10px;
-  border: 1px solid rgb(217 164 65 / 35%);
-  border-radius: 8px;
-  background: rgb(217 164 65 / 8%);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--warn-muted);
+  border-radius: var(--radius-lg);
+  background: var(--warn-subtle);
   font-size: var(--control-ui-text-sm);
   line-height: 1.45;
   color: var(--text);
@@ -9761,7 +9765,7 @@ adminbot-deadline-timezone {
   width: 15px;
   height: 15px;
   fill: none;
-  stroke: #d9a441;
+  stroke: var(--warn);
   stroke-width: 1.8;
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -11089,9 +11093,9 @@ adminbot-deadline-timezone {
 .decision-todo__body {
   width: 100%;
   padding: var(--space-3);
-  border: 1px solid var(--border);
+  border: 1px solid var(--input);
   border-radius: var(--radius-sm);
-  background: var(--bg-elevated, var(--bg));
+  background: transparent;
   color: var(--text);
   font: inherit;
   line-height: 1.5;
@@ -12551,6 +12555,36 @@ html[data-theme="light"] .deadline-board [data-urgency] {
   border-bottom: 0;
 }
 
+/* Rows, not cards (ui/DESIGN.md): a group is one line of the list. It keeps the urgency stripe on
+   its left edge and gives up the filled, bordered, rounded box; a hairline separates groups. */
+.deadline-board .deadline-board__group-list {
+  gap: 0;
+}
+.deadline-board .deadline-group,
+.deadline-board .deadline-group[data-urgency] {
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+}
+.deadline-board .deadline-group:last-child {
+  border-bottom: 0;
+}
+.deadline-board .deadline-group__summary,
+.deadline-board .deadline-group > .deadline-group__row,
+.deadline-board .deadline-group__section:last-child > .deadline-group__row:last-child,
+.deadline-board .deadline-group__section:last-child > .deadline-workshop-schedule:last-child {
+  border-radius: 0;
+}
+/* With square groups the last row's stripe runs straight down instead of turning a corner. */
+.deadline-board .deadline-group__section:last-child > .deadline-group__row:last-child::before {
+  width: 2px;
+  border: 0;
+  border-radius: 0;
+  background: var(--deadline-glow-stripe);
+  mask-image: none;
+}
+
 /* SVG geometry centers the chevron independently of font metrics. */
 .deadline-board .deadline-group__chevron {
   display: inline-flex;
@@ -13069,7 +13103,7 @@ html[data-theme="light"] .deadline-board [data-urgency] {
 .paper-cycle__composer {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 24px;
+  gap: var(--space-6);
 }
 .paper-cycle__thread,
 .paper-cycle__preview {
@@ -13077,14 +13111,14 @@ html[data-theme="light"] .deadline-board [data-urgency] {
 }
 .paper-cycle__post {
   min-width: 0;
-  margin: 0 0 16px;
-  padding: 16px;
+  margin: 0 0 var(--space-4);
+  padding: var(--space-4);
   border: 1px solid var(--branch-border);
-  border-radius: 12px;
+  border-radius: var(--radius-xl);
 }
 .paper-cycle__post legend {
   display: flex;
-  gap: 24px;
+  gap: var(--space-6);
   color: var(--muted);
   font-size: var(--control-ui-text-sm);
 }
@@ -13094,12 +13128,12 @@ html[data-theme="light"] .deadline-board [data-urgency] {
 }
 .paper-cycle__post label {
   display: block;
-  margin-top: 12px;
+  margin-top: var(--space-3);
   font-size: var(--control-ui-text-sm);
 }
 .paper-cycle__post input[type="file"] {
   max-width: 100%;
-  margin-top: 6px;
+  margin-top: var(--space-2);
 }
 .paper-cycle__post img,
 .paper-cycle__preview img {
@@ -13109,21 +13143,21 @@ html[data-theme="light"] .deadline-board [data-urgency] {
   border-radius: 10px;
 }
 .paper-cycle__preview h5 {
-  margin: 0 0 8px;
+  margin: 0 0 var(--space-2);
   font-size: 16px;
 }
 .paper-cycle__preview-post {
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr);
-  gap: 12px;
-  padding: 16px 0;
+  gap: var(--space-3);
+  padding: var(--space-4) 0;
   border-bottom: 1px solid var(--branch-border);
 }
 .paper-cycle__preview-post p {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   line-height: 1.6;
-  margin: 8px 0 12px;
+  margin: var(--space-2) 0 var(--space-3);
 }
 .paper-cycle__post-number {
   width: 28px;
@@ -13135,15 +13169,15 @@ html[data-theme="light"] .deadline-board [data-urgency] {
   color: var(--muted);
 }
 .paper-cycle__draft-settings {
-  margin-bottom: 20px;
+  margin-bottom: var(--space-5);
 }
 .paper-cycle__draft-settings summary {
   cursor: pointer;
-  padding: 8px 0;
+  padding: var(--space-2) 0;
   color: var(--muted);
 }
 .paper-cycle__draft-settings[open] summary {
-  margin-bottom: 12px;
+  margin-bottom: var(--space-3);
 }
 .paper-cycle__over-limit {
   color: var(--danger, #dc2626);
@@ -13151,13 +13185,13 @@ html[data-theme="light"] .deadline-board [data-urgency] {
 @media (max-width: 760px) {
   .paper-cycle__composer {
     grid-template-columns: minmax(0, 1fr);
-    gap: 20px;
+    gap: var(--space-5);
   }
 }
 
 .paper-cycle__attachments summary {
   cursor: pointer;
-  margin-top: 12px;
+  margin-top: var(--space-3);
   color: var(--muted);
   font-size: var(--control-ui-text-sm);
 }

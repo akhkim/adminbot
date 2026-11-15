@@ -241,7 +241,7 @@ class AdminbotMailingListView extends LitElement {
       </details>
       <div class="adminbot-mailing-list__send">
         <button
-          class="btn btn--primary"
+          class="btn primary"
           type="button"
           ?disabled=${!sendable}
           @click=${() => this.props.onSend()}

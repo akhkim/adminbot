@@ -51,9 +51,7 @@ const UNREAD_TEXT: Record<NonNullable<TalkLeaderboard["unread"]>[number]["reason
 /** One line per kind of unread CV, so each person can see what they need to do. */
 export function unreadLines(board: TalkLeaderboard): string[] {
   if (!board.unread) {
-    return board.unscanned.length
-      ? [`${UNREAD_TEXT.pending}: ${board.unscanned.join(", ")}.`]
-      : [];
+    return board.unscanned.length ? [`${UNREAD_TEXT.pending}: ${board.unscanned.join(", ")}.`] : [];
   }
   const unread = board.unread;
   return (Object.keys(UNREAD_TEXT) as Array<keyof typeof UNREAD_TEXT>).flatMap((reason) => {
@@ -122,24 +120,19 @@ export class TalkLeaderboardView extends LitElement {
       max-width: 860px;
       color: var(--text);
     }
-    section {
-      border: 1px solid var(--border, #8885);
-      border-radius: 16px;
-      padding: 24px 28px;
-    }
     header {
       display: flex;
       flex-wrap: wrap;
       align-items: center;
       justify-content: space-between;
-      gap: 12px;
+      gap: var(--space-3);
     }
     header .hint {
       margin: 0;
       flex: 1 1 18rem;
     }
     details {
-      margin-top: 16px;
+      margin-top: var(--space-4);
     }
     summary {
       cursor: pointer;
@@ -157,7 +150,7 @@ export class TalkLeaderboardView extends LitElement {
       content: "";
       width: 7px;
       height: 7px;
-      margin-left: 10px;
+      margin-left: var(--space-2);
       border-right: 2px solid var(--muted);
       border-bottom: 2px solid var(--muted);
       transform: rotate(45deg);
@@ -171,38 +164,44 @@ export class TalkLeaderboardView extends LitElement {
     }
     .hint {
       color: var(--muted);
-      font-size: 13px;
+      font-size: var(--control-ui-text-sm);
     }
     select,
     button {
       font: inherit;
       color: inherit;
       background: transparent;
-      border: 1px solid var(--border, #8885);
-      border-radius: 8px;
-      padding: 6px 10px;
+      border: 1px solid var(--input);
+      border-radius: var(--radius-md);
+      padding: var(--space-1) var(--space-3);
       cursor: pointer;
     }
     .controls {
       display: flex;
-      gap: 8px;
+      flex-wrap: wrap;
+      gap: var(--space-2);
     }
     table {
       width: 100%;
       border-collapse: collapse;
-      margin-top: 16px;
+      margin-top: var(--space-4);
       font-variant-numeric: tabular-nums;
     }
     th,
     td {
       text-align: left;
-      padding: 10px 8px;
-      border-bottom: 1px solid var(--border, #8885);
+      padding: var(--space-3) var(--space-2);
+      border-bottom: 1px solid var(--border);
+    }
+    /* The first column carries no side inset, so the names start on the heading's edge. */
+    th:first-child,
+    td:first-child {
+      padding-left: 0;
     }
     th {
       color: var(--muted);
       font-weight: 500;
-      font-size: 13px;
+      font-size: var(--control-ui-text-sm);
     }
     td.num,
     th.num {
@@ -216,34 +215,31 @@ export class TalkLeaderboardView extends LitElement {
       font-weight: 600;
     }
     tr.you td {
-      background: color-mix(in srgb, var(--accent, #486bdf) 10%, transparent);
+      background: color-mix(in srgb, var(--accent) 10%, transparent);
     }
     .pill {
       display: inline-block;
-      margin-left: 8px;
-      padding: 1px 8px;
-      border-radius: 999px;
-      font-size: 12px;
-      border: 1px solid var(--accent, #486bdf);
-      color: var(--accent, #486bdf);
+      margin-left: var(--space-2);
+      padding: 1px var(--space-2);
+      border-radius: var(--radius-full);
+      font-size: var(--control-ui-text-sm);
+      border: 1px solid var(--accent);
+      color: var(--accent);
     }
     .status {
-      font-size: 13px;
-      padding: 8px 12px;
-      border-radius: 8px;
-      background: color-mix(in srgb, var(--accent, #486bdf) 8%, transparent);
+      font-size: var(--control-ui-text-sm);
+      padding: var(--space-2) var(--space-3);
+      border-radius: var(--radius-md);
+      background: color-mix(in srgb, var(--accent) 8%, transparent);
     }
     .error {
-      color: var(--danger, #c0392b);
+      color: var(--danger);
     }
     :focus-visible {
-      outline: 2px solid var(--accent, #486bdf);
+      outline: 2px solid var(--accent);
       outline-offset: 3px;
     }
     @media (max-width: 560px) {
-      section {
-        padding: 18px 16px;
-      }
       .other {
         display: none;
       }

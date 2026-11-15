@@ -139,11 +139,12 @@
 .project-card {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-2);
   padding: var(--space-3);
   border: 1px solid var(--border);
-  border-radius: var(--radius-md, 10px);
-  background: var(--bg-elevated, var(--bg));
+  border-radius: var(--radius-md);
+  /* Outline only: DESIGN.md rules out a grey fill together with a border. */
+  background: transparent;
   color: var(--text);
   text-decoration: none;
 }
@@ -181,8 +182,8 @@
 .project-card__todos,
 .project__todos {
   display: grid;
-  gap: 4px;
-  margin: 4px 0 0;
+  gap: var(--space-1);
+  margin: var(--space-1) 0 0;
   padding: 0;
   list-style: none;
   font-size: var(--control-ui-text-xs);
@@ -191,7 +192,7 @@
 .project-card__todos li,
 .project__todos li {
   display: flex;
-  gap: 6px;
+  gap: var(--space-2);
   align-items: center;
 }
 
@@ -222,7 +223,7 @@
 }
 
 .project__head h2 {
-  margin: var(--space-2) 0 4px;
+  margin: var(--space-2) 0 var(--space-1);
   color: var(--text-strong);
 }
 
@@ -232,7 +233,7 @@
 }
 
 .project__alias {
-  margin-right: 6px;
+  margin-right: var(--space-2);
   color: var(--text);
 }
 
@@ -246,10 +247,10 @@
 
 .project__tab {
   display: inline-flex;
-  gap: 6px;
+  gap: var(--space-2);
   align-items: center;
   margin-bottom: -1px;
-  padding: 8px 12px;
+  padding: var(--space-2) var(--space-3);
   border-bottom: 2px solid transparent;
   color: var(--muted);
   text-decoration: none;
@@ -261,8 +262,8 @@
 }
 
 .project__tab small {
-  padding: 0 6px;
-  border-radius: 999px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
   background: var(--bg-muted);
   font-size: var(--control-ui-text-xs);
 }
@@ -270,17 +271,17 @@
 .project__grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: var(--space-3);
+  gap: var(--space-3) var(--space-6);
   margin-bottom: var(--space-3);
 }
 
+/* A hairline above each panel instead of a box, so its heading and rows start on the page edge. */
 .project__panel {
   display: grid;
   gap: var(--space-2);
   align-content: start;
-  padding: var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md, 10px);
+  padding: var(--space-3) 0 0;
+  border-top: 1px solid var(--border);
 }
 
 .project__panel h3 {
@@ -329,20 +330,23 @@
 
 .projects__other-list {
   display: grid;
-  gap: 4px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
+/* Rows with a hairline between them and no side padding, lined up under the section title. */
 .projects__other {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
   align-items: baseline;
-  padding: 6px var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm, 6px);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.projects__other:last-child {
+  border-bottom: 0;
 }
 
 .projects__other-link {
@@ -372,7 +376,7 @@
   padding: 2px;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  background: var(--bg-elevated, transparent);
+  background: transparent;
 }
 
 .projects__mode {
@@ -410,9 +414,9 @@
   width: 100%;
   min-height: 40px;
   padding: 0 var(--space-3);
-  border: 1px solid var(--border);
+  border: 1px solid var(--input);
   border-radius: var(--radius-md);
-  background: var(--bg, transparent);
+  background: transparent;
   color: var(--text);
   /* 16px stops iOS Safari zooming the page when the box takes focus. */
   font: inherit;

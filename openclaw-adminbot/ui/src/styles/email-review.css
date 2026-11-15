@@ -56,15 +56,19 @@
 
 .email-review-list {
   display: grid;
-  gap: var(--space-3);
   margin-top: var(--space-4);
 }
 
+/* Each held email is a row under a hairline, flush with the queue heading (ui/DESIGN.md). */
 .email-review {
-  padding: var(--space-4);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--bg-accent);
+  min-width: 0;
+  padding: var(--space-4) 0;
+  border-top: 1px solid var(--border);
+}
+
+.email-review:first-child {
+  padding-top: 0;
+  border-top: 0;
 }
 
 .email-review__header {
@@ -152,6 +156,7 @@
 
 .email-review__actions {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-2);
 }
 
@@ -189,7 +194,6 @@
 
 .email-review-history__list {
   display: grid;
-  gap: var(--space-2);
 }
 
 .email-review-history__item {
@@ -197,10 +201,8 @@
   grid-template-columns: minmax(180px, 1fr) minmax(240px, 1.4fr) auto;
   align-items: center;
   gap: var(--space-3);
-  padding: var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--bg-accent);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--border);
 }
 
 .email-review-history__message,

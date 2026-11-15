@@ -17,7 +17,7 @@ export function renderArrReviewerFilter(props: {
   active: boolean;
   onToggle: (on: boolean) => void;
 }) {
-  return html`<div class="chip-row" style="margin-bottom: 12px;">
+  return html`<div class="chip-row">
     <label class="chip" data-testid="arr-reviewer-filter">
       <input
         type="checkbox"
@@ -38,7 +38,7 @@ export function renderArrReviewers(props: {
     .filter((member) => member.arr_reviewer_qualified === true)
     .toSorted((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
   return html` <section class="card">
-    <div class="row" style="justify-content: space-between; gap: 16px; flex-wrap: wrap;">
+    <div class="row" style="justify-content: space-between; gap: var(--space-4); flex-wrap: wrap;">
       <p class="card-sub" style="margin: 0;">
         Qualification and review capacity are self-reported in My Profile.
       </p>
@@ -56,7 +56,7 @@ export function renderArrReviewers(props: {
                 ${reviewers.length} eligible reviewer${reviewers.length === 1 ? "" : "s"}
               </p>
               <div style="overflow-x: auto;">
-                <table style="width: 100%; text-align: left; border-spacing: 0 12px;">
+                <table style="width: 100%; text-align: left; border-spacing: 0 var(--space-3);">
                   <thead>
                     <tr>
                       <th scope="col">Name</th>

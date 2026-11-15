@@ -65,10 +65,24 @@ import {
 } from "../controllers/reimbursements.ts";
 import { saveAdminBotSettings } from "../controllers/workspace.ts";
 import { openPaperForViewer } from "../projects/open-paper.ts";
+import { renderArrReviewerFilter } from "../views/arr-reviewers.ts";
 import type { AdminBotSurfaceScope } from "./scope.ts";
 
 // The page's view loads on first visit rather than in the first bundle.
 const lazyAdmin = createLazyView(() => import("../views/admin.ts"), notifyLazyViewHost);
+
+/**
+ * Whether the Lab Members actions row is drawing the ARR filter itself. False until the view
+ * module has loaded, so the shell keeps the filter on screen while (or if) the page is not there.
+ */
+export function adminPanelsHoldMembersFilter(state: AppViewState, scope: AdminBotSurfaceScope) {
+  return (
+    state.tab === "adminbotMembers" &&
+    Boolean(scope.adminBotPanel) &&
+    !scope.rosterPendingForTab &&
+    lazyAdmin.read() !== null
+  );
+}
 
 export function renderAdminPanelsSurface(state: AppViewState, scope: AdminBotSurfaceScope) {
   const {
@@ -83,6 +97,16 @@ export function renderAdminPanelsSurface(state: AppViewState, scope: AdminBotSur
     ? renderLazyView(lazyAdmin, (m) =>
         m.renderAdminBot({
           panel: adminBotPanel,
+          actionsLead:
+            state.tab === "adminbotMembers"
+              ? renderArrReviewerFilter({
+                  active: state.adminBotMembersArrFilter,
+                  onToggle: (on) => {
+                    state.adminBotMembersArrFilter = on;
+                    requestHostUpdate?.();
+                  },
+                })
+              : undefined,
           onRerender: () => requestHostUpdate?.(),
           paperSlotOverview: state.adminBotPaperSlotOverview,
           // Active Papers' bulk sheet writes evidence the same way the card does.
