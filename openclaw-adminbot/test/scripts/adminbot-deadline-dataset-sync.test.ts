@@ -265,8 +265,8 @@ describe("AdminBot deadline dataset generation", () => {
   });
 
   it("keeps conference policy separate from source-established workshop policy", () => {
-    const ARR = ["ACL", "EMNLP", "NAACL", "EACL", "AACL"];
-    const ML = ["NeurIPS", "ICML", "ICLR", "COLM", "CLeaR"];
+    const ARR = ["ACL", "EMNLP", "NAACL", "EACL", "AACL", "COLING"];
+    const ML = ["NeurIPS", "ICML", "ICLR", "COLM", "CLeaR", "AISTATS"];
     for (const venue of controlUiVenues.filter(
       (candidate) => candidate.archival && candidate.track !== "workshop",
     )) {
