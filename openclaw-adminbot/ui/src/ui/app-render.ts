@@ -145,6 +145,7 @@ import { renderLanding } from "./adminbot/views/landing.ts";
 import { renderLoginGate, renderSessionRestorePending } from "./adminbot/views/login-gate.ts";
 import { findOwnMember } from "./adminbot/views/profile-fields.ts";
 import { isProfileBlocked, profileAccessState } from "./adminbot/views/profile-gate.ts";
+import "./adminbot/views/error-log.ts";
 import { renderAdminBotTabUsage } from "./adminbot/views/tab-usage.ts";
 import {
   createChatSessionsLoadOverrides,
@@ -3341,6 +3342,9 @@ export function renderApp(state: AppViewState) {
         ${renderProfessorSurface(state, adminBotSurfaces)}
         ${renderCollaborateSurface(state, adminBotSurfaces)}
         ${renderEventsSurface(state, adminBotSurfaces)}
+        ${state.tab === "adminbotErrorLog"
+          ? html`<adminbot-error-log></adminbot-error-log>`
+          : nothing}
         ${state.tab === "adminbotTabUsage"
           ? renderAdminBotTabUsage({
               report: state.adminBotTabUsage,

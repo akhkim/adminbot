@@ -9,6 +9,7 @@ import { conferencePapersRoutes } from "./conference-papers.js";
 import { deadlinesRoutes } from "./deadlines.js";
 import { directoryRoutes } from "./directory.js";
 import { emailReviewRoutes } from "./email-review.js";
+import { errorLogRoutes } from "./error-log.js";
 import { eventsRoutes } from "./events.js";
 import { governanceRoutes } from "./governance.js";
 import { labSharingRoutes } from "./lab-sharing.js";
@@ -38,6 +39,7 @@ export const AUTHENTICATED_ROUTES: readonly Route[] = [
   ...deadlinesRoutes,
   ...emailReviewRoutes,
   ...automationHealthRoutes,
+  ...errorLogRoutes,
   ...directoryRoutes,
   ...conferencePapersRoutes,
   ...reimbursementsRoutes,
