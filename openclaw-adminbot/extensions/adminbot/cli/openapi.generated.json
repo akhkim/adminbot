@@ -369,10 +369,14 @@
                       "items": {
                         "$ref": "#/components/schemas/AdminBotAuditEvent"
                       }
+                    },
+                    "total": {
+                      "type": "number"
                     }
                   },
                   "required": [
-                    "events"
+                    "events",
+                    "total"
                   ],
                   "additionalProperties": true
                 }
@@ -6634,6 +6638,15 @@
           "deadlines"
         ],
         "x-source": "src/api/server.public.ts",
+        "parameters": [
+          {
+            "name": "detail",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "security": [],
         "responses": {
           "200": {
@@ -6650,6 +6663,34 @@
                   },
                   "required": [
                     "items"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
                   ],
                   "additionalProperties": true
                 }
@@ -20940,6 +20981,15 @@
           "openreview"
         ],
         "x-source": "src/api/routes/reviews.ts",
+        "parameters": [
+          {
+            "name": "view",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Success",
@@ -20951,10 +21001,20 @@
                       "type": "object",
                       "properties": {
                         "checks": {
-                          "type": "array",
-                          "items": {
-                            "$ref": "#/components/schemas/OpenReviewCitationCheck"
-                          }
+                          "anyOf": [
+                            {
+                              "type": "array",
+                              "items": {
+                                "$ref": "#/components/schemas/OpenReviewCitationCheck"
+                              }
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "$ref": "#/components/schemas/OpenReviewCitationCheckSummary"
+                              }
+                            }
+                          ]
                         },
                         "notify_email": {
                           "anyOf": [
@@ -21053,10 +21113,20 @@
                       "type": "object",
                       "properties": {
                         "checks": {
-                          "type": "array",
-                          "items": {
-                            "$ref": "#/components/schemas/OpenReviewCitationCheck"
-                          }
+                          "anyOf": [
+                            {
+                              "type": "array",
+                              "items": {
+                                "$ref": "#/components/schemas/OpenReviewCitationCheck"
+                              }
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "$ref": "#/components/schemas/OpenReviewCitationCheckSummary"
+                              }
+                            }
+                          ]
                         },
                         "running": {
                           "type": "boolean"
@@ -21073,6 +21143,34 @@
                       "additionalProperties": true
                     }
                   ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
                 }
               }
             }
@@ -25319,6 +25417,7 @@
                               "poster",
                               "arxiv",
                               "overleaf_view",
+                              "submission_id",
                               "feedback_arr",
                               "feedback_arxiv",
                               "feedback_camera_ready",
@@ -25328,7 +25427,6 @@
                               "papermentor_review",
                               "fixes_merged",
                               "pdf_ready",
-                              "submission_id",
                               "drive_pdf_arxiv",
                               "authors_ack",
                               "arxiv_paper_password",
@@ -25369,6 +25467,7 @@
                               "poster",
                               "arxiv",
                               "overleaf_view",
+                              "submission_id",
                               "feedback_arr",
                               "feedback_arxiv",
                               "feedback_camera_ready",
@@ -25378,7 +25477,6 @@
                               "papermentor_review",
                               "fixes_merged",
                               "pdf_ready",
-                              "submission_id",
                               "drive_pdf_arxiv",
                               "authors_ack",
                               "arxiv_paper_password",
@@ -25419,6 +25517,7 @@
                               "poster",
                               "arxiv",
                               "overleaf_view",
+                              "submission_id",
                               "feedback_arr",
                               "feedback_arxiv",
                               "feedback_camera_ready",
@@ -25428,7 +25527,6 @@
                               "papermentor_review",
                               "fixes_merged",
                               "pdf_ready",
-                              "submission_id",
                               "drive_pdf_arxiv",
                               "authors_ack",
                               "arxiv_paper_password",
@@ -25473,6 +25571,7 @@
                               "poster",
                               "arxiv",
                               "overleaf_view",
+                              "submission_id",
                               "feedback_arr",
                               "feedback_arxiv",
                               "feedback_camera_ready",
@@ -25482,7 +25581,6 @@
                               "papermentor_review",
                               "fixes_merged",
                               "pdf_ready",
-                              "submission_id",
                               "drive_pdf_arxiv",
                               "authors_ack",
                               "arxiv_paper_password",
@@ -42644,6 +42742,96 @@
         ],
         "additionalProperties": true
       },
+      "OpenReviewCitationCheckSummary": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "failed",
+              "completed",
+              "unreadable"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "submission_id": {
+            "type": "string"
+          },
+          "pdf_path": {
+            "type": "string"
+          },
+          "pdf_sha256": {
+            "type": "string"
+          },
+          "venue_id": {
+            "type": "string"
+          },
+          "checked_at": {
+            "type": "string"
+          },
+          "attempts": {
+            "type": "number"
+          },
+          "notification_proposal_id": {
+            "type": "string"
+          },
+          "extractor_version": {
+            "type": "number"
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "not_found",
+                    "matched",
+                    "review",
+                    "unavailable"
+                  ]
+                },
+                "citation": {
+                  "type": "string"
+                },
+                "explanation": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "status",
+                "citation",
+                "explanation"
+              ],
+              "additionalProperties": true
+            }
+          },
+          "finding_count": {
+            "type": "number"
+          },
+          "version_count": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "status",
+          "title",
+          "submission_id",
+          "pdf_path",
+          "venue_id",
+          "checked_at",
+          "attempts",
+          "finding_count",
+          "version_count"
+        ],
+        "additionalProperties": true
+      },
       "OpenReviewCitationSweepStart": {
         "type": "object",
         "properties": {
@@ -44139,6 +44327,7 @@
               "poster",
               "arxiv",
               "overleaf_view",
+              "submission_id",
               "feedback_arr",
               "feedback_arxiv",
               "feedback_camera_ready",
@@ -44148,7 +44337,6 @@
               "papermentor_review",
               "fixes_merged",
               "pdf_ready",
-              "submission_id",
               "drive_pdf_arxiv",
               "authors_ack",
               "arxiv_paper_password",
@@ -45561,6 +45749,7 @@
                 "poster",
                 "arxiv",
                 "overleaf_view",
+                "submission_id",
                 "feedback_arr",
                 "feedback_arxiv",
                 "feedback_camera_ready",
@@ -45570,7 +45759,6 @@
                 "papermentor_review",
                 "fixes_merged",
                 "pdf_ready",
-                "submission_id",
                 "drive_pdf_arxiv",
                 "authors_ack",
                 "arxiv_paper_password",
@@ -46664,8 +46852,8 @@
             "enum": [
               "unchanged",
               "update",
-              "missing",
               "full",
+              "missing",
               "untouched"
             ]
           },

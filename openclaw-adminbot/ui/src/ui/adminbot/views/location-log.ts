@@ -10,7 +10,8 @@
 // state on the app: give it a member and a base URL and it fetches when either changes.
 import { html, LitElement, nothing } from "lit";
 import { t } from "../../../i18n/index.ts";
-import { fetchMemberResource, loadStoredMemberSession } from "../auth/session.ts";
+import { renderSkeleton } from "../../loading/skeleton.ts";
+import { fetchMemberResource, loadStoredMemberSession, peekAuthedRead } from "../auth/session.ts";
 
 /** One row of GET /lab/members/:id/locations, as far as this view reads it. */
 export type LocationLogEntry = {
@@ -126,19 +127,26 @@ class AdminbotLocationLog extends LitElement {
     if (!token) {
       return;
     }
-    this.loadState = { kind: "loading", key };
-    void fetchMemberResource(
-      `/lab/members/${encodeURIComponent(this.memberId)}/locations?limit=${LOCATION_LOG_LIMIT}`,
-      token,
-      this.baseUrl,
-    ).then((result) => {
+    const path = `/lab/members/${encodeURIComponent(this.memberId)}/locations?limit=${LOCATION_LOG_LIMIT}`;
+    // This member's log was read earlier in the session: it is drawn at once, and the request
+    // below -- which still goes out -- replaces it.
+    const seen = peekAuthedRead(this.baseUrl, path, token);
+    this.loadState =
+      seen === undefined || seen === null
+        ? { kind: "loading", key }
+        : { kind: "loaded", key, entries: parseLocationLog(seen) };
+    void fetchMemberResource(path, token, this.baseUrl).then((result) => {
       // A different member picked while this was in flight: that read owns the panel now.
       if ("key" in this.loadState && this.loadState.key !== key) {
         return;
       }
-      this.loadState = result.ok
-        ? { kind: "loaded", key, entries: parseLocationLog(result.value) }
-        : { kind: "failed", key };
+      if (result.ok) {
+        this.loadState = { kind: "loaded", key, entries: parseLocationLog(result.value) };
+      } else if (result.kind !== "unreachable" || this.loadState.kind !== "loaded") {
+        // Rows already on screen stay only when the service could not be reached; a refusal
+        // takes them down.
+        this.loadState = { kind: "failed", key };
+      }
     });
   }
 
@@ -149,9 +157,13 @@ class AdminbotLocationLog extends LitElement {
         <h4 class="adminbot-location-log__title">${t("locationLog.title")}</h4>
         ${state.kind === "loaded"
           ? renderLocationLogRows(locationLogRows(state.entries))
-          : html`<p class="muted">
-              ${state.kind === "failed" ? t("locationLog.failed") : t("locationLog.loading")}
-            </p>`}
+          : state.kind === "failed"
+            ? html`<p class="muted">${t("locationLog.failed")}</p>`
+            : renderSkeleton({
+                count: 3,
+                label: t("locationLog.loading"),
+                testId: "location-log-loading",
+              })}
       </section>
     `;
   }

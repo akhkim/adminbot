@@ -29,7 +29,9 @@ it("loads and refreshes reviewers for a gateway-only admin and displays loading/
 
   draw();
   expect(load).toHaveBeenCalledOnce();
-  expect(container.textContent).toContain("Loading reviewers");
+  expect(container.querySelector('.skeleton[role="status"]')?.getAttribute("aria-label")).toContain(
+    "Loading reviewers",
+  );
   expect(container.textContent).not.toContain("No users have confirmed");
 
   app.adminBotLoading = false;

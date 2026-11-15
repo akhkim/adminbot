@@ -1,4 +1,5 @@
 import { html } from "lit";
+import { renderSkeleton } from "../../loading/skeleton.ts";
 import type { AdminBotLabMember } from "../controllers/admin.ts";
 
 type Reviewer = Pick<
@@ -48,8 +49,8 @@ export function renderArrReviewers(props: {
     </div>
     ${props.error
       ? html`<p class="callout danger" role="alert">${props.error}</p>`
-      : props.loading
-        ? html`<p class="muted" role="status">Loading reviewers…</p>`
+      : props.loading && reviewers.length === 0
+        ? renderSkeleton({ count: 5, label: "Loading reviewers…", testId: "arr-reviewers-loading" })
         : reviewers.length === 0
           ? html`<p class="muted">No users have confirmed ARR reviewer qualification yet.</p>`
           : html` <p class="muted">

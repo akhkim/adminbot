@@ -9,6 +9,27 @@ import { findAvatar } from "./avatars.js";
 import { isForeignOrigin } from "./routes/origin.js";
 import { sendAvatar, sendHtml, sendJson, sendRedirect } from "./server.http.js";
 
+// What the collector keeps on a record to explain how it settled on a date: every dated phrase it
+// saw on the venue's pages and every observation it weighed, each with the surrounding text. Over
+// two thirds of the feed's bytes, and neither the board nor the reminder, calendar and digest jobs
+// read them (the collector re-reads its own deadlines.json, not this feed). `?detail=full` keeps
+// them for anyone inspecting a decision.
+const COLLECTOR_WORKING_FIELDS = ["website_deadline_candidates", "deadline_observations"] as const;
+
+function withoutCollectorWorking(item: unknown): unknown {
+  if (!item || typeof item !== "object" || Array.isArray(item)) {
+    return item;
+  }
+  if (!COLLECTOR_WORKING_FIELDS.some((field) => field in item)) {
+    return item;
+  }
+  const row: Record<string, unknown> = { ...item };
+  for (const field of COLLECTOR_WORKING_FIELDS) {
+    delete row[field];
+  }
+  return row;
+}
+
 /**
  * The routes answered before anyone is identified: page shells, the public deadline feed and
  * profile photos. Nothing here reads a session, so nothing here may depend on who is asking.
@@ -44,7 +65,13 @@ export function servePublicRoute(
     return true;
   }
   if (req.method === "GET" && url.pathname === "/deadlines") {
-    sendJson(res, 200, { items: ctx.service.deadlineReadModel(DEADLINE_VENUES) });
+    const detail = url.searchParams.get("detail");
+    if (detail !== null && detail !== "full") {
+      sendJson(res, 400, { error: { message: "invalid deadline detail" } });
+      return true;
+    }
+    const items = ctx.service.deadlineReadModel(DEADLINE_VENUES);
+    sendJson(res, 200, { items: detail === "full" ? items : items.map(withoutCollectorWorking) });
     return true;
   }
   // Public and login-free by design: the deck asks for the venue guide to be reachable by anyone

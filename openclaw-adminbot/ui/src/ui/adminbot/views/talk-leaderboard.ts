@@ -5,7 +5,8 @@
 // and the CV Updates doc can never disagree about who is level with whom.
 import { css, html, LitElement, nothing, type PropertyValues } from "lit";
 import { property, state } from "lit/decorators.js";
-import { memberAuthHeaders } from "../api/device-clock.ts";
+import { renderSkeleton, skeletonStyles } from "../../loading/skeleton.ts";
+import { authedJson, peekAuthedRead } from "../auth/session.ts";
 
 /** What GET /cv/talk-leaderboard answers with. Mirrors the service; ui/ cannot import extensions/. */
 export type TalkLeaderboard = {
@@ -110,191 +111,205 @@ export class TalkLeaderboardView extends LitElement {
   @state() private board: TalkLeaderboard | null = null;
   @state() private loading = false;
   @state() private error = "";
-  private controller?: AbortController;
+  // Counts loads so an answer that arrives after a newer one was asked for is dropped.
+  private request = 0;
   // While the service is reading CVs the counts and progress move, so the page re-asks each minute.
   private refreshTimer?: ReturnType<typeof setTimeout>;
 
-  static override styles = css`
-    :host {
-      display: block;
-      max-width: 860px;
-      color: var(--text);
-    }
-    header {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      justify-content: space-between;
-      gap: var(--space-3);
-    }
-    header .hint {
-      margin: 0;
-      flex: 1 1 18rem;
-    }
-    details {
-      margin-top: var(--space-4);
-    }
-    summary {
-      cursor: pointer;
-      min-height: 44px;
-      display: flex;
-      align-items: center;
-      font-weight: 600;
-      list-style: none;
-    }
-    summary::-webkit-details-marker {
-      display: none;
-    }
-    /* The same chevron as the light DOM's .adminbot-fold, so every fold in the app reads alike. */
-    summary::after {
-      content: "";
-      width: 7px;
-      height: 7px;
-      margin-left: var(--space-2);
-      border-right: 2px solid var(--muted);
-      border-bottom: 2px solid var(--muted);
-      transform: rotate(45deg);
-      transition: transform 0.15s ease;
-    }
-    details[open] > summary::after {
-      transform: rotate(225deg);
-    }
-    p {
-      line-height: 1.6;
-    }
-    .hint {
-      color: var(--muted);
-      font-size: var(--control-ui-text-sm);
-    }
-    select,
-    button {
-      font: inherit;
-      color: inherit;
-      background: transparent;
-      border: 1px solid var(--input);
-      border-radius: var(--radius-md);
-      padding: var(--space-1) var(--space-3);
-      cursor: pointer;
-    }
-    .controls {
-      display: flex;
-      flex-wrap: wrap;
-      gap: var(--space-2);
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: var(--space-4);
-      font-variant-numeric: tabular-nums;
-    }
-    th,
-    td {
-      text-align: left;
-      padding: var(--space-3) var(--space-2);
-      border-bottom: 1px solid var(--border);
-    }
-    /* The first column carries no side inset, so the names start on the heading's edge. */
-    th:first-child,
-    td:first-child {
-      padding-left: 0;
-    }
-    th {
-      color: var(--muted);
-      font-weight: 500;
-      font-size: var(--control-ui-text-sm);
-    }
-    td.num,
-    th.num {
-      text-align: right;
-    }
-    td.total {
-      font-weight: 600;
-    }
-    td.rank {
-      width: 3em;
-      font-weight: 600;
-    }
-    tr.you td {
-      background: color-mix(in srgb, var(--accent) 10%, transparent);
-    }
-    .pill {
-      display: inline-block;
-      margin-left: var(--space-2);
-      padding: 1px var(--space-2);
-      border-radius: var(--radius-full);
-      font-size: var(--control-ui-text-sm);
-      border: 1px solid var(--accent);
-      color: var(--accent);
-    }
-    .status {
-      font-size: var(--control-ui-text-sm);
-      padding: var(--space-2) var(--space-3);
-      border-radius: var(--radius-md);
-      background: color-mix(in srgb, var(--accent) 8%, transparent);
-    }
-    .error {
-      color: var(--danger);
-    }
-    :focus-visible {
-      outline: 2px solid var(--accent);
-      outline-offset: 3px;
-    }
-    @media (max-width: 560px) {
-      .other {
+  static override styles = [
+    skeletonStyles,
+    css`
+      :host {
+        display: block;
+        max-width: 860px;
+        color: var(--text);
+      }
+      header {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--space-3);
+      }
+      header .hint {
+        margin: 0;
+        flex: 1 1 18rem;
+      }
+      details {
+        margin-top: var(--space-4);
+      }
+      summary {
+        cursor: pointer;
+        min-height: 44px;
+        display: flex;
+        align-items: center;
+        font-weight: 600;
+        list-style: none;
+      }
+      summary::-webkit-details-marker {
         display: none;
       }
-    }
-  `;
+      /* The same chevron as the light DOM's .adminbot-fold, so every fold in the app reads alike. */
+      summary::after {
+        content: "";
+        width: 7px;
+        height: 7px;
+        margin-left: var(--space-2);
+        border-right: 2px solid var(--muted);
+        border-bottom: 2px solid var(--muted);
+        transform: rotate(45deg);
+        transition: transform 0.15s ease;
+      }
+      details[open] > summary::after {
+        transform: rotate(225deg);
+      }
+      p {
+        line-height: 1.6;
+      }
+      .hint {
+        color: var(--muted);
+        font-size: var(--control-ui-text-sm);
+      }
+      select,
+      button {
+        font: inherit;
+        color: inherit;
+        background: transparent;
+        border: 1px solid var(--input);
+        border-radius: var(--radius-md);
+        padding: var(--space-1) var(--space-3);
+        cursor: pointer;
+      }
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-2);
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: var(--space-4);
+        font-variant-numeric: tabular-nums;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: var(--space-3) var(--space-2);
+        border-bottom: 1px solid var(--border);
+      }
+      /* The first column carries no side inset, so the names start on the heading's edge. */
+      th:first-child,
+      td:first-child {
+        padding-left: 0;
+      }
+      th {
+        color: var(--muted);
+        font-weight: 500;
+        font-size: var(--control-ui-text-sm);
+      }
+      td.num,
+      th.num {
+        text-align: right;
+      }
+      td.total {
+        font-weight: 600;
+      }
+      td.rank {
+        width: 3em;
+        font-weight: 600;
+      }
+      tr.you td {
+        background: color-mix(in srgb, var(--accent) 10%, transparent);
+      }
+      .pill {
+        display: inline-block;
+        margin-left: var(--space-2);
+        padding: 1px var(--space-2);
+        border-radius: var(--radius-full);
+        font-size: var(--control-ui-text-sm);
+        border: 1px solid var(--accent);
+        color: var(--accent);
+      }
+      .status {
+        font-size: var(--control-ui-text-sm);
+        padding: var(--space-2) var(--space-3);
+        border-radius: var(--radius-md);
+        background: color-mix(in srgb, var(--accent) 8%, transparent);
+      }
+      .error {
+        color: var(--danger);
+      }
+      :focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 3px;
+      }
+      @media (max-width: 560px) {
+        .other {
+          display: none;
+        }
+      }
+    `,
+  ];
 
   protected override willUpdate(changed: PropertyValues) {
     if (changed.has("sessionToken") || changed.has("baseUrl")) {
+      // A board read for one session is never left on screen under another.
+      this.board = null;
       void this.load();
     }
   }
 
   override disconnectedCallback() {
-    this.controller?.abort();
+    this.request += 1;
     clearTimeout(this.refreshTimer);
     super.disconnectedCallback();
   }
 
   private async load() {
-    this.controller?.abort();
+    const request = ++this.request;
     clearTimeout(this.refreshTimer);
     if (!this.sessionToken) {
       this.board = null;
       this.error = "Sign in to see the leaderboard.";
       return;
     }
-    const controller = new AbortController();
-    this.controller = controller;
+    const baseUrl = this.baseUrl.replace(/\/$/, "");
+    const path = `/cv/talk-leaderboard?year=${this.year}`;
+    // Opened before in this session: the board it showed then is drawn at once, and the request
+    // below -- which still goes out -- replaces it or reports why it cannot.
+    const seen = peekAuthedRead(baseUrl, path, this.sessionToken) as TalkLeaderboard | null;
+    if (seen && Array.isArray(seen.rows) && seen.year === this.year) {
+      this.board = seen;
+    } else if (this.board && this.board.year !== this.year) {
+      // Another year was chosen and this one has not been read yet: last year's rows under this
+      // year's heading would be wrong, so the placeholder shows until the answer lands.
+      this.board = null;
+    }
     this.loading = true;
     this.error = "";
     try {
-      const response = await fetch(
-        `${this.baseUrl.replace(/\/$/, "")}/cv/talk-leaderboard?year=${this.year}`,
-        { headers: memberAuthHeaders(this.sessionToken), signal: controller.signal },
-      );
-      const body = (await response.json().catch(() => null)) as
-        | (TalkLeaderboard & { error?: { message?: string } })
-        | null;
-      if (!response.ok || !body) {
+      const result = await authedJson(baseUrl, path, "GET", this.sessionToken);
+      if (request !== this.request) {
+        return;
+      }
+      if ("unreachable" in result) {
+        // A board already on screen stays: an unreachable service should not also blank it.
+        this.error = "The leaderboard could not load: AdminBot could not be reached.";
+        return;
+      }
+      const body = result.body as (TalkLeaderboard & { error?: { message?: string } }) | null;
+      if (!result.response.ok || !body) {
         this.board = null;
-        this.error = body?.error?.message ?? `The leaderboard could not load (${response.status}).`;
+        this.error =
+          body?.error?.message ?? `The leaderboard could not load (${result.response.status}).`;
         return;
       }
       this.board = body;
       if (body.sweep?.state === "reading") {
         this.refreshTimer = setTimeout(() => void this.load(), 60_000);
       }
-    } catch (error) {
-      if (controller.signal.aborted) {
-        return;
-      }
-      this.board = null;
-      this.error = error instanceof Error ? error.message : String(error);
     } finally {
-      if (this.controller === controller) {
+      if (request === this.request) {
         this.loading = false;
       }
     }
@@ -373,7 +388,11 @@ export class TalkLeaderboardView extends LitElement {
       ${board
         ? this.renderRows(board)
         : this.loading
-          ? html`<p class="hint" data-testid="talk-leaderboard-loading">Loading the board…</p>`
+          ? renderSkeleton({
+              count: 6,
+              label: "Loading the board…",
+              testId: "talk-leaderboard-loading",
+            })
           : nothing}
       ${board && unreadLines(board).length
         ? html`<div data-testid="talk-leaderboard-unscanned">

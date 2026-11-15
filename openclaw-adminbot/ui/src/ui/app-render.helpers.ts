@@ -34,6 +34,10 @@ import {
   syncSelectedSessionMessageSubscription,
 } from "./controllers/sessions.ts";
 import { icons } from "./icons.ts";
+import {
+  cancelPendingTabDataPrefetch,
+  prefetchTabDataOnIntent,
+} from "./loading/page-data-prefetch.ts";
 import { notePrefetchableNavTab, prefetchTab } from "./loading/page-prefetch.ts";
 import {
   iconForTab,
@@ -309,16 +313,25 @@ export function renderTab(state: AppViewState, tab: Tab, opts?: { collapsed?: bo
       </span>
     `;
   }
-  // Pointing at, focusing or touching the link starts that page's code on its way; the idle pass
-  // picks up the rest of this viewer's sidebar after first paint.
+  // Pointing at, focusing or touching the link starts that page's code on its way, and -- if the
+  // viewer stays on it for a moment -- the page's first read too; the idle pass picks up the code
+  // for the rest of this viewer's sidebar after first paint.
   notePrefetchableNavTab(tab);
-  const warm = () => prefetchTab(tab);
+  const warm = () => {
+    prefetchTab(tab);
+    // The page in front has already asked for its own data.
+    if (!isActive) {
+      prefetchTabDataOnIntent(tab);
+    }
+  };
   return html`
     <a
       href=${href}
       class="nav-item ${isActive ? "nav-item--active" : ""}"
       @pointerenter=${warm}
+      @pointerleave=${cancelPendingTabDataPrefetch}
       @focus=${warm}
+      @blur=${cancelPendingTabDataPrefetch}
       @touchstart=${{ handleEvent: warm, passive: true }}
       @click=${(event: MouseEvent) => {
         if (

@@ -232,48 +232,52 @@ function renderRequestsList(props: AdminBotLogisticsRequestsProps) {
       ${props.error
         ? html`<p class="logistics-requests__error" role="alert">${props.error}</p>`
         : nothing}
-      ${props.loading
-        ? renderSkeleton({ label: t("logistics.requests.loading") })
-        : props.requests.length
-          ? html`
-              <div class="logistics-requests__scroll">
-                <table class="logistics-requests__table">
-                  <thead>
-                    <tr>
-                      ${props.viewerIsAdmin
-                        ? html`
-                            <th scope="col" class="logistics-requests__head">
-                              ${t("logistics.requests.user")}
-                            </th>
-                          `
-                        : nothing}
-                      <th scope="col" class="logistics-requests__head">
-                        ${t("logistics.requests.type")}
-                      </th>
-                      <th scope="col" class="logistics-requests__head">
-                        ${t("logistics.requests.earliestDeadline")}
-                      </th>
-                      <th scope="col" class="logistics-requests__head">
-                        ${t("logistics.requests.statusColumn")}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    ${repeat(
-                      props.requests,
-                      (request) => request.id,
-                      (request) => renderRequestRow(props, request),
-                    )}
-                  </tbody>
-                </table>
-              </div>
-              ${renderLoadMore(props.more, "logistics-requests-more")}
-            `
-          : html`<p class="logistics-requests__empty">
-              ${props.viewerIsAdmin
-                ? t("logistics.requests.empty")
-                : t("logistics.requests.mineEmpty")}
-            </p>`}
+      ${
+        // Only the first read draws a placeholder. A refresh keeps the rows already on screen and
+        // swaps them when the answer lands, so the list never blinks out under the reader.
+        props.loading && !props.requests.length
+          ? renderSkeleton({ label: t("logistics.requests.loading") })
+          : props.requests.length
+            ? html`
+                <div class="logistics-requests__scroll">
+                  <table class="logistics-requests__table">
+                    <thead>
+                      <tr>
+                        ${props.viewerIsAdmin
+                          ? html`
+                              <th scope="col" class="logistics-requests__head">
+                                ${t("logistics.requests.user")}
+                              </th>
+                            `
+                          : nothing}
+                        <th scope="col" class="logistics-requests__head">
+                          ${t("logistics.requests.type")}
+                        </th>
+                        <th scope="col" class="logistics-requests__head">
+                          ${t("logistics.requests.earliestDeadline")}
+                        </th>
+                        <th scope="col" class="logistics-requests__head">
+                          ${t("logistics.requests.statusColumn")}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${repeat(
+                        props.requests,
+                        (request) => request.id,
+                        (request) => renderRequestRow(props, request),
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                ${renderLoadMore(props.more, "logistics-requests-more")}
+              `
+            : html`<p class="logistics-requests__empty">
+                ${props.viewerIsAdmin
+                  ? t("logistics.requests.empty")
+                  : t("logistics.requests.mineEmpty")}
+              </p>`
+      }
     </div>
   `;
 }
@@ -694,7 +698,12 @@ export function renderAdminBotLogisticsRequests(props: AdminBotLogisticsRequests
   if (props.open === null && props.openLoading) {
     return html`
       <div class="card adminbot-card adminbot-card--wide logistics-requests">
-        <p class="logistics-requests__empty">${t("logistics.requests.loading")}</p>
+        ${renderSkeleton({
+          shape: "lines",
+          count: 6,
+          label: t("logistics.requests.loading"),
+          testId: "logistics-request-loading",
+        })}
       </div>
     `;
   }

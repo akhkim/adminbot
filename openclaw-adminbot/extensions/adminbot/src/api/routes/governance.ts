@@ -22,6 +22,9 @@ import {
 import { limitParam } from "./query-params.js";
 import { get, post, type Route } from "./router.js";
 
+/** How many of the newest audit events GET /audit sends when the caller gives no `limit`. */
+export const AUDIT_DEFAULT_LIMIT = 1000;
+
 export const governanceRoutes: readonly Route[] = [
   post("/proposals", async ({ req, res, ctx }) => {
     const { service } = ctx;
@@ -124,8 +127,18 @@ export const governanceRoutes: readonly Route[] = [
   get(
     "/audit",
     privilegedOnly(({ res, url, ctx }) => {
+      // The log grows without bound (tens of thousands of events, megabytes of JSON), so a read
+      // that does not say how many gets the newest AUDIT_DEFAULT_LIMIT. `?limit=all` is the whole
+      // log, for an export; `total` says how many there are, so a short answer is visibly short.
       const events = ctx.service.listAuditEvents();
-      sendJson(res, 200, { events: events.slice(-(limitParam(url) ?? events.length)) });
+      const limit =
+        url.searchParams.get("limit") === "all"
+          ? events.length
+          : (limitParam(url) ?? AUDIT_DEFAULT_LIMIT);
+      sendJson(res, 200, {
+        events: limit >= events.length ? events : events.slice(-limit),
+        total: events.length,
+      });
     }),
   ),
 ];

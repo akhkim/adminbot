@@ -18,6 +18,7 @@ import { html, nothing } from "lit";
 import { t } from "../../../i18n/index.ts";
 import type { AppViewState } from "../../app-view-state.ts";
 import { icons } from "../../icons.ts";
+import { renderSkeleton } from "../../loading/skeleton.ts";
 import { iconForTab, isKnownTab, type Tab } from "../../navigation.ts";
 import type { AccessRole } from "../access.ts";
 import type { MemberNotification } from "../api/workspace.ts";
@@ -746,9 +747,11 @@ export function renderDashboard(state: AppViewState, role: AccessRole, onRetry?:
                   </button>`
                 : nothing}
             </div>`
-          : html`<p role="status" data-testid="dashboard-loading">
-              ${ownProfile ? "Loading your papers…" : "Loading your dashboard…"}
-            </p>`}
+          : renderSkeleton({
+              count: 4,
+              label: ownProfile ? "Loading your papers…" : "Loading your dashboard…",
+              testId: "dashboard-loading",
+            })}
         ${profileItem
           ? html`<div class="dashboard__stack">${renderAttentionCard(profileItem, 0)}</div>`
           : nothing}

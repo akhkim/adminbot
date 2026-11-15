@@ -665,9 +665,7 @@ function renderSuggestions(props: AdminBotBadgesProps) {
 export function renderAdminBotBadges(props: AdminBotBadgesProps) {
   if (props.definitionsLoading && props.definitions.length === 0) {
     return html`<section class="adminbot-shell">
-      <div class="card adminbot-card adminbot-card--wide">
-        <div class="adminbot-form__meta">${t("adminbotBadges.loading")}</div>
-      </div>
+      ${renderSkeleton({ count: 5, label: t("adminbotBadges.loading"), testId: "badges-loading" })}
     </section>`;
   }
   if (props.definitionsError) {

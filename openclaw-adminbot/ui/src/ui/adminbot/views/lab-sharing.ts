@@ -23,6 +23,7 @@ import "./collaborator-chats.ts";
 import { html, nothing } from "lit";
 import { t } from "../../../i18n/index.ts";
 import type { AppViewState } from "../../app-view-state.ts";
+import { renderSkeleton } from "../../loading/skeleton.ts";
 import { loadStoredMemberSession } from "../auth/session.ts";
 import {
   askAdminBotLabSharingMember,
@@ -1452,8 +1453,8 @@ export function renderLabSharing(state: AppViewState) {
           ></adminbot-collaborator-chats>`
         : nothing}
       ${loading
-        ? html`<div class="muted lab-sharing__loading" role="status">
-            ${t("labSharing.loading")}
+        ? html`<div class="lab-sharing__loading">
+            ${renderSkeleton({ count: 4, label: t("labSharing.loading") })}
           </div>`
         : html`${renderDirectorPanel(state)} ${renderSeekHelpPanel(state)}
           ${renderInvitesPanel(state)} ${renderYourRequestsPanel(state)}

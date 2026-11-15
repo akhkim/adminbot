@@ -6532,6 +6532,12 @@ adminbot-deadline-timezone {
   border-radius: 0;
   background: transparent;
   padding-inline: 0;
+  /* The board draws a couple of hundred of these. A card far outside the window is laid out and
+     painted only when it comes near; until then it holds a remembered (or estimated) height so
+     the scrollbar stays honest. The card already clips its own overflow, so nothing is cut that
+     was not cut before, and find-in-page still reaches the text. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 220px;
 }
 
 .deadline-card__topline {

@@ -265,6 +265,47 @@ describe("proposeCallSheetPush", () => {
     });
   });
 
+  it("reads the sheet while the links are still being checked", async () => {
+    const { service } = fakeService([request()]);
+    const order: string[] = [];
+    let finishProbe: (status: number) => void = () => {};
+    const slowProbe: DocPrepProbe = () =>
+      new Promise((resolve) => {
+        order.push("probe started");
+        finishProbe = resolve;
+      });
+    const sheet: CallSheetSource = {
+      ...source(),
+      read: vi.fn(async () => {
+        order.push("sheet read");
+        // Only now does the link check come back: the read did not wait for it.
+        finishProbe(200);
+        return GRID;
+      }),
+    };
+    const result = await previewCallSheetPush(service, sheet, { probe: slowProbe });
+    expect(order).toEqual(["probe started", "sheet read"]);
+    expect(result).toMatchObject({ placed: [{ request_id: "req-1" }] });
+  });
+
+  it("answers with the listing error, not a stray rejection, when the sheet also fails", async () => {
+    const service = {
+      listLogisticsRequests: () => ({
+        ok: false as const,
+        status: 403,
+        error: { message: "admin privilege required" },
+      }),
+    } as unknown as AdminBotService;
+    const broken: CallSheetSource = {
+      ...source(),
+      read: vi.fn(async () => {
+        throw new Error("gog command failed: 403");
+      }),
+    };
+    const result = await previewCallSheetPush(service, broken, { probe: opens });
+    expect(result).toEqual({ error: { status: 403, message: "admin privilege required" } });
+  });
+
   it("refuses a tab that is not the call sheet rather than writing into it", async () => {
     const { service } = fakeService([request()]);
     const result = await proposeCallSheetPush(service, source([["Title", "Venue"]]), "andrew", {

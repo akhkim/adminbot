@@ -11,7 +11,8 @@ import type {
   AdminBotLabProjectPaperLinkKind,
   AdminBotLabProjectStatus,
 } from "../../../../../extensions/adminbot/src/workflows/papers/lab-projects.js";
-import { memberAuthHeaders } from "../api/device-clock.ts";
+import { renderSkeleton, skeletonStyles } from "../../loading/skeleton.ts";
+import { authedJson, peekAuthedRead } from "../auth/session.ts";
 import { stepLabels } from "../data/paper-steps.ts";
 
 export type LabProject = AdminBotLabProject;
@@ -64,164 +65,177 @@ export class LabProjectsView extends LitElement {
   @state() private status: AdminBotLabProjectStatus | "all" = "all";
   @state() private loading = false;
   @state() private error = "";
-  private controller?: AbortController;
+  // Counts loads so an answer that arrives after a newer one was asked for is dropped.
+  private request = 0;
 
-  static override styles = css`
-    :host {
-      display: block;
-      max-width: 1100px;
-      color: var(--text);
-    }
-    .controls {
-      display: flex;
-      flex-wrap: wrap;
-      gap: var(--space-2);
-      align-items: center;
-      margin-bottom: var(--space-3);
-    }
-    input[type="search"] {
-      flex: 1 1 18rem;
-      min-height: 36px;
-    }
-    input,
-    select,
-    button {
-      font: inherit;
-      color: inherit;
-      background: transparent;
-      border: 1px solid var(--input, var(--border));
-      border-radius: var(--radius-md);
-      padding: var(--space-1) var(--space-3);
-    }
-    button,
-    select {
-      cursor: pointer;
-    }
-    .hint {
-      color: var(--muted);
-      font-size: var(--control-ui-text-sm);
-      margin: 0 0 var(--space-3);
-    }
-    .error {
-      color: var(--danger);
-    }
-    ul {
-      list-style: none;
-      margin: 0;
-      padding: 0;
-      display: grid;
-    }
-    /* Rows, not cards: a hairline between projects and no side padding, so each title starts
+  static override styles = [
+    skeletonStyles,
+    css`
+      :host {
+        display: block;
+        max-width: 1100px;
+        color: var(--text);
+      }
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-2);
+        align-items: center;
+        margin-bottom: var(--space-3);
+      }
+      input[type="search"] {
+        flex: 1 1 18rem;
+        min-height: 36px;
+      }
+      input,
+      select,
+      button {
+        font: inherit;
+        color: inherit;
+        background: transparent;
+        border: 1px solid var(--input, var(--border));
+        border-radius: var(--radius-md);
+        padding: var(--space-1) var(--space-3);
+      }
+      button,
+      select {
+        cursor: pointer;
+      }
+      .hint {
+        color: var(--muted);
+        font-size: var(--control-ui-text-sm);
+        margin: 0 0 var(--space-3);
+      }
+      .error {
+        color: var(--danger);
+      }
+      ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+      }
+      /* Rows, not cards: a hairline between projects and no side padding, so each title starts
        on the same edge as the search box above. */
-    li {
-      border-bottom: 1px solid var(--border);
-      padding: var(--space-3) 0;
-      display: grid;
-      gap: var(--space-1);
-    }
-    li:last-child {
-      border-bottom: 0;
-    }
-    .head {
-      display: flex;
-      flex-wrap: wrap;
-      gap: var(--space-2);
-      align-items: baseline;
-    }
-    .title {
-      font: inherit;
-      font-weight: 600;
-      font-size: 15px;
-      border: 0;
-      padding: 0;
-      text-align: left;
-      color: var(--accent);
-    }
-    .title:hover {
-      text-decoration: underline;
-    }
-    .alias,
-    .meta {
-      color: var(--muted);
-      font-size: 13px;
-    }
-    .pill {
-      display: inline-block;
-      padding: 1px var(--space-2);
-      border-radius: var(--radius-full);
-      font-size: var(--control-ui-text-xs);
-      border: 1px solid var(--border);
-    }
-    .pill.active {
-      border-color: var(--accent);
-      color: var(--accent);
-    }
-    .links {
-      display: flex;
-      flex-wrap: wrap;
-      gap: var(--space-1) var(--space-3);
-      font-size: var(--control-ui-text-sm);
-    }
-    .links a {
-      color: var(--accent);
-    }
-    .slot.empty {
-      color: var(--muted);
-    }
-    :focus-visible {
-      outline: 2px solid var(--accent);
-      outline-offset: 3px;
-    }
-  `;
+      li {
+        border-bottom: 1px solid var(--border);
+        padding: var(--space-3) 0;
+        display: grid;
+        gap: var(--space-1);
+      }
+      li:last-child {
+        border-bottom: 0;
+      }
+      .head {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-2);
+        align-items: baseline;
+      }
+      .title {
+        font: inherit;
+        font-weight: 600;
+        font-size: 15px;
+        border: 0;
+        padding: 0;
+        text-align: left;
+        color: var(--accent);
+      }
+      .title:hover {
+        text-decoration: underline;
+      }
+      .alias,
+      .meta {
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .pill {
+        display: inline-block;
+        padding: 1px var(--space-2);
+        border-radius: var(--radius-full);
+        font-size: var(--control-ui-text-xs);
+        border: 1px solid var(--border);
+      }
+      .pill.active {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-1) var(--space-3);
+        font-size: var(--control-ui-text-sm);
+      }
+      .links a {
+        color: var(--accent);
+      }
+      .slot.empty {
+        color: var(--muted);
+      }
+      :focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 3px;
+      }
+    `,
+  ];
 
   protected override willUpdate(changed: PropertyValues) {
     if (changed.has("sessionToken") || changed.has("baseUrl")) {
+      // A list read for one session is never left on screen under another.
+      this.projects = null;
       void this.load();
     }
   }
 
   override disconnectedCallback() {
-    this.controller?.abort();
+    this.request += 1;
     super.disconnectedCallback();
   }
 
   private async load() {
-    this.controller?.abort();
+    const request = ++this.request;
     if (!this.sessionToken) {
       this.projects = null;
       this.error = "Sign in as an admin to see the lab's projects.";
       return;
     }
-    const controller = new AbortController();
-    this.controller = controller;
+    const baseUrl = this.baseUrl.replace(/\/$/, "");
+    // Opened before in this session: the list it showed then is drawn at once, and the request
+    // below -- which still goes out -- replaces it or reports why it cannot.
+    const seen = peekAuthedRead(baseUrl, "/lab/projects", this.sessionToken) as {
+      projects?: LabProject[];
+    } | null;
+    if (Array.isArray(seen?.projects)) {
+      this.projects = seen.projects;
+    }
     this.loading = true;
     this.error = "";
     try {
-      const response = await fetch(`${this.baseUrl.replace(/\/$/, "")}/lab/projects`, {
-        headers: memberAuthHeaders(this.sessionToken),
-        signal: controller.signal,
-      });
-      const body = (await response.json().catch(() => null)) as {
+      const result = await authedJson(baseUrl, "/lab/projects", "GET", this.sessionToken);
+      if (request !== this.request) {
+        return;
+      }
+      if ("unreachable" in result) {
+        // A list already on screen stays: an unreachable service should not also blank it.
+        this.error = "The project list could not load: AdminBot could not be reached.";
+        return;
+      }
+      const body = result.body as {
         projects?: LabProject[];
         error?: { message?: string };
       } | null;
-      if (!response.ok || !body?.projects) {
+      if (!result.response.ok || !body?.projects) {
         this.projects = null;
         this.error =
-          response.status === 403
+          result.response.status === 403
             ? "Lab Projects is for admins."
-            : (body?.error?.message ?? `The project list could not load (${response.status}).`);
+            : (body?.error?.message ??
+              `The project list could not load (${result.response.status}).`);
         return;
       }
       this.projects = body.projects;
-    } catch (error) {
-      if (controller.signal.aborted) {
-        return;
-      }
-      this.projects = null;
-      this.error = error instanceof Error ? error.message : String(error);
     } finally {
-      if (this.controller === controller) {
+      if (request === this.request) {
         this.loading = false;
       }
     }
@@ -339,7 +353,11 @@ export class LabProjectsView extends LitElement {
                 </ul>`
               : html`<p class="hint" data-testid="lab-projects-empty">No project matches.</p>`}`
         : this.loading
-          ? html`<p class="hint">Loading the lab's projects…</p>`
+          ? renderSkeleton({
+              count: 6,
+              label: "Loading the lab's projects…",
+              testId: "lab-projects-loading",
+            })
           : nothing}
     </section>`;
   }

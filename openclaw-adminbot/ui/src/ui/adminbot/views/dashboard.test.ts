@@ -60,7 +60,9 @@ describe("renderDashboard", () => {
     expect(
       container.querySelector('[data-testid="dashboard-attention-mandatoryFields"]'),
     ).not.toBeNull();
-    expect(container.textContent).toContain("Loading your papers");
+    expect(
+      container.querySelector('[data-testid="dashboard-loading"]')?.getAttribute("aria-label"),
+    ).toContain("Loading your papers");
     expect(container.querySelector('[data-testid="dashboard-summary-myWork"]')).toBeNull();
   });
 

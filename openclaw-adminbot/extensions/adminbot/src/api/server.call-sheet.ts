@@ -191,15 +191,24 @@ async function planPush(
     }
   | CallSheetError
 > {
+  // The link checks and the sheet read do not depend on each other and each is a round-trip to
+  // Google, so they run side by side. The sheet's outcome is caught into a value straight away:
+  // if the requests cannot be listed the function returns before looking at it, and a rejection
+  // nobody was waiting on would otherwise go unhandled.
+  const sheet = (async () => {
+    const target = await resolveTarget(source);
+    return { target, values: await source.read(rangeFor(target.tab)) };
+  })().then(
+    (read) => ({ ok: true as const, ...read }),
+    (error: unknown) => ({ ok: false as const, error }),
+  );
   const gathered = await gather(service, options);
   if ("error" in gathered) {
     return gathered;
   }
-  const target = await resolveTarget(source);
-  let values: string[][];
-  try {
-    values = await source.read(rangeFor(target.tab));
-  } catch (error) {
+  const read = await sheet;
+  if (!read.ok) {
+    const { error } = read;
     return {
       error: {
         status: 502,
@@ -207,6 +216,7 @@ async function planPush(
       },
     };
   }
+  const { target, values } = read;
   const plan = planCallRequestAppend(
     target.tab,
     values,

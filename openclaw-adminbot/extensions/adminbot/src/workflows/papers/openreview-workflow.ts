@@ -15,6 +15,7 @@ import type {
   AdminBotOpenReviewMilestoneStatus,
   AdminBotOpenReviewRole,
 } from "../../contracts/actions.js";
+import { createCachedRead, mapWithLimit } from "../../kernel/cached-read.js";
 import type { AdminBotService, AdminBotServiceStore } from "../../kernel/service.js";
 import {
   dueMilestones,
@@ -36,6 +37,8 @@ const BRIDGE_MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
 // would otherwise mail an entire committee; hitting the cap aborts the run rather than
 // half-sending, so the operator sees it before anything else goes out.
 const DEFAULT_MAX_SENDS_PER_RUN = 50;
+// How many venues' forms are fetched at once. See loadForms.
+const LOAD_FORM_CONCURRENCY = 3;
 
 type BridgeResult = Record<string, unknown>;
 
@@ -103,6 +106,29 @@ export function createAdminBotOpenReviewWorkflow(
 ): AdminBotOpenReviewWorkflow {
   const run = options.run ?? createBridgeRunner(options);
   const now = options.now ?? (() => Date.now());
+
+  // Every bridge call is its own process and its own OpenReview login, so one venue's form costs
+  // seconds and a dozen in a row cost most of a minute. They are independent, so a few run side by
+  // side; not all of them, because a burst of logins is what OpenReview rate-limits.
+  const loadFormsOnce = async (): Promise<BridgeResult[]> => {
+    const discovered = await run(["discover"]);
+    if (discovered.ok !== true) {
+      return [];
+    }
+    const venues = asRecords(discovered.venues).flatMap((venue) => {
+      const venueId = asString(venue.venue_id);
+      const role = asRole(venue.role);
+      return venueId && role ? [{ venueId, role }] : [];
+    });
+    const forms = await mapWithLimit(venues, LOAD_FORM_CONCURRENCY, ({ venueId, role }) =>
+      run(["load-form", "--venue", venueId, "--role", role]),
+    );
+    return forms.filter((form) => form.ok === true);
+  };
+  // Nothing is kept between calls -- a form can change on OpenReview at any moment -- but a second
+  // caller that arrives while the first is still loading waits for that answer instead of
+  // starting the whole walk again.
+  const formsRead = createCachedRead(loadFormsOnce, { freshMs: 0, keep: () => false });
   const maxSends = options.maxSendsPerRun ?? DEFAULT_MAX_SENDS_PER_RUN;
 
   async function statusFor(venueId: string, role: AdminBotOpenReviewRole): Promise<BridgeResult> {
@@ -239,24 +265,8 @@ export function createAdminBotOpenReviewWorkflow(
       return result;
     },
 
-    async loadForms() {
-      const discovered = await run(["discover"]);
-      if (discovered.ok !== true) {
-        return [];
-      }
-      const forms: BridgeResult[] = [];
-      for (const venue of asRecords(discovered.venues)) {
-        const venueId = asString(venue.venue_id);
-        const role = asRole(venue.role);
-        if (!venueId || !role) {
-          continue;
-        }
-        const form = await run(["load-form", "--venue", venueId, "--role", role]);
-        if (form.ok === true) {
-          forms.push(form);
-        }
-      }
-      return forms;
+    loadForms() {
+      return formsRead.read();
     },
 
     // The emergency-reviewer worklist: for every submission still missing a review, the
@@ -417,11 +427,7 @@ async function fireMilestone(input: {
   // deploy-time kill switch answering for one -- because they are the same fact to whoever reads
   // this: the cycle ran and nothing went out.
   const status: AdminBotOpenReviewMilestoneStatus =
-    input.dryRun || withheld > 0
-      ? "dry_run"
-      : needsApproval
-        ? "proposed"
-        : "sent";
+    input.dryRun || withheld > 0 ? "dry_run" : needsApproval ? "proposed" : "sent";
   return { status, recipients: sent, ...(detail ? { detail } : {}) };
 }
 

@@ -1,6 +1,7 @@
 // Control UI view renders the admin "Member requests" approval queue.
 import { html, nothing } from "lit";
 import { t } from "../../../i18n/index.ts";
+import { renderSkeleton } from "../../loading/skeleton.ts";
 import type { MemberRegistration } from "../auth/session.ts";
 import type { RegistrationDecision, RegistrationsLoadError } from "../data/registrations.ts";
 
@@ -175,9 +176,11 @@ function renderDecisionButtons(
 export function renderAdminBotRegistrations(props: AdminBotRegistrationsProps) {
   if (props.loading && props.registrations.length === 0) {
     return html`<section class="adminbot-shell">
-      <div class="card adminbot-card adminbot-card--wide">
-        <div class="adminbot-form__meta">${t("adminbotRegistrations.loading")}</div>
-      </div>
+      ${renderSkeleton({
+        count: 4,
+        label: t("adminbotRegistrations.loading"),
+        testId: "registrations-loading",
+      })}
     </section>`;
   }
   if (props.error) {

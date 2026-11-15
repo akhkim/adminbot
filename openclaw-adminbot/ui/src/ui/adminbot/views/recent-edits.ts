@@ -12,6 +12,7 @@ import { html, nothing } from "lit";
 import { adminBotPaperSlotRegistry } from "../../../../../extensions/adminbot/src/contracts/paper-slots.js";
 import { t } from "../../../i18n/index.ts";
 import { formatRelativeTimestamp } from "../../format.ts";
+import { renderSkeleton } from "../../loading/skeleton.ts";
 import type { RecentUpdateRow } from "../auth/session.ts";
 import { PROFILE_FIELDS } from "../member-fields.ts";
 
@@ -106,11 +107,17 @@ export function renderRecentEditsBody(props: Omit<RecentEditsProps, "onOpen">) {
       ? html`<ol class="recent-edits__list" data-testid="recent-edits-list">
           ${props.updates.map((row) => renderRow(row, props.subject))}
         </ol>`
-      : props.loading || props.error
-        ? nothing
-        : html`<p class="recent-edits__empty" data-testid="recent-edits-empty">
-            ${t("recentEdits.empty")}
-          </p>`}
+      : props.loading
+        ? renderSkeleton({
+            count: 3,
+            label: t("recentEdits.loading"),
+            testId: "recent-edits-loading",
+          })
+        : props.error
+          ? nothing
+          : html`<p class="recent-edits__empty" data-testid="recent-edits-empty">
+              ${t("recentEdits.empty")}
+            </p>`}
   `;
 }
 
@@ -127,9 +134,13 @@ export function renderRecentEdits(props: RecentEditsProps) {
     >
       <summary class="recent-edits__summary">
         ${t("recentEdits.title")}
-        ${props.loading
-          ? html`<span class="recent-edits__loading">${t("recentEdits.loading")}</span>`
-          : nothing}
+        ${
+          // With rows on screen this is the quiet "refreshing" note; the first read draws the
+          // placeholder in the body instead.
+          props.loading && props.updates.length
+            ? html`<span class="recent-edits__loading">${t("recentEdits.loading")}</span>`
+            : nothing
+        }
       </summary>
       ${renderRecentEditsBody(props)}
     </details>

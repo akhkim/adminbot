@@ -1,6 +1,8 @@
 // The console shows the latest audit, not a month of it: `/audit?limit=N` is the newest N events,
-// still oldest first. Without `limit` the route answers as it always has.
+// still oldest first. Without `limit` the route sends the newest AUDIT_DEFAULT_LIMIT, and
+// `?limit=all` is the whole log.
 import { afterEach, describe, expect, it } from "vitest";
+import { AUDIT_DEFAULT_LIMIT } from "./routes/governance.js";
 import { createAdminBotMockService } from "./server.js";
 
 const SERVICE_TOKEN = "test-service-token";
@@ -47,5 +49,31 @@ describe("GET /audit", () => {
     expect(await ids(baseUrl, "?limit=2")).toEqual(["e2", "e3"]);
     expect(await ids(baseUrl)).toEqual(["e1", "e2", "e3"]);
     expect(await ids(baseUrl, "?limit=junk")).toEqual(["e1", "e2", "e3"]);
+  });
+
+  it("caps an unlimited read at the default and sends everything for limit=all", async () => {
+    const baseUrl = await start();
+    const mock = running.at(-1)!;
+    for (let n = 0; n < AUDIT_DEFAULT_LIMIT; n++) {
+      mock.store.recordAudit({
+        id: `bulk${n}`,
+        type: "test.event",
+        timestamp: `2026-11-01T00:00:00.${String(n % 1000).padStart(3, "0")}Z`,
+        actor: "service",
+      } as Parameters<typeof mock.store.recordAudit>[0]);
+    }
+    const read = async (query: string) => {
+      const response = await fetch(`${baseUrl}/audit${query}`, { headers: auth });
+      return (await response.json()) as { events: Array<{ id: string }>; total: number };
+    };
+    const capped = await read("");
+    expect(capped.events).toHaveLength(AUDIT_DEFAULT_LIMIT);
+    expect(capped.total).toBeGreaterThanOrEqual(AUDIT_DEFAULT_LIMIT + 3);
+    // The three older events fall outside the default window; the newest one stays last.
+    expect(capped.events.some((event) => event.id === "e1")).toBe(false);
+    expect(capped.events.at(-1)?.id).toBe(`bulk${AUDIT_DEFAULT_LIMIT - 1}`);
+    const all = await read("?limit=all");
+    expect(all.events).toHaveLength(all.total);
+    expect(all.events.some((event) => event.id === "e1")).toBe(true);
   });
 });

@@ -40,6 +40,7 @@ import {
   type AdminBotPaperSlotDefinition,
 } from "../../../../../extensions/adminbot/src/contracts/paper-slots.js";
 import { icons } from "../../icons.ts";
+import { renderSkeleton } from "../../loading/skeleton.ts";
 import "./internal-peer-review.ts";
 import type { PaperflowStageRow, PaperSlotRow, PaperTalkMaterials } from "../api/papers.ts";
 import { loadStoredMemberSession } from "../auth/session.ts";
@@ -1101,7 +1102,11 @@ export function renderOpenReviewIdentity(props: Pick<PaperSlotsProps, "slots" | 
 
 export function renderPaperSlots(props: PaperSlotsProps) {
   if (props.loading && props.slots.length === 0) {
-    return html`<p class="paper-slots__loading">Loading this paper's checklist…</p>`;
+    return renderSkeleton({
+      count: 5,
+      label: "Loading this paper's checklist…",
+      testId: "paper-slots-loading",
+    });
   }
 
   return html`

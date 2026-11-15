@@ -1382,7 +1382,11 @@ export function renderProfessorView(props: ProfessorViewProps) {
         linkLabel: t("professor.piReview.open"),
         onOpen: props.onOpen,
         body: props.piReviewLoading
-          ? html`<p role="status">Loading PI review queue…</p>`
+          ? renderSkeleton({
+              count: 2,
+              label: "Loading PI review queue…",
+              testId: "professor-pi-review-loading",
+            })
           : props.piReviewError
             ? html`<p role="alert">
                   Could not load the PI review queue. Approval status is unknown.
@@ -1576,30 +1580,36 @@ export function renderProfessorView(props: ProfessorViewProps) {
         tab: "adminbotRecLetters",
         linkLabel: t("professor.letters.open"),
         onOpen: props.onOpen,
-        body: props.requestsLoading
-          ? renderSkeleton({ count: 3, label: t("professor.loading") })
-          : html`${searchBox({
-              id: "letters",
-              label: t("professor.letters.searchLabel"),
-              placeholder: t("professor.letters.searchPlaceholder"),
-              value: letterQuery,
-              onSearchChange: letters.length || letterQuery ? props.onSearchChange : undefined,
-            })}
-            ${searchSummary({
-              query: letterQuery,
-              count: shownLetters.length,
-              matches: t("professor.letters.matches", {
-                count: String(shownLetters.length),
-                query: letterQuery.trim(),
-              }),
-            })}
-            ${props.letterError
-              ? html`<p class="professor__error" role="alert" data-testid="professor-letter-error">
-                  ${props.letterError}
-                </p>`
-              : nothing}
-            ${letterBody(shownLetters, props, searchTokens(letterQuery).length > 0)}
-            ${letterDoneList(lettersDone, props)} ${lettersAlreadyInList(lettersIn, props)}`,
+        // Only a queue with nothing to show yet draws the placeholder; a refresh keeps its rows.
+        body:
+          props.requestsLoading && !letters.length
+            ? renderSkeleton({ count: 3, label: t("professor.loading") })
+            : html`${searchBox({
+                id: "letters",
+                label: t("professor.letters.searchLabel"),
+                placeholder: t("professor.letters.searchPlaceholder"),
+                value: letterQuery,
+                onSearchChange: letters.length || letterQuery ? props.onSearchChange : undefined,
+              })}
+              ${searchSummary({
+                query: letterQuery,
+                count: shownLetters.length,
+                matches: t("professor.letters.matches", {
+                  count: String(shownLetters.length),
+                  query: letterQuery.trim(),
+                }),
+              })}
+              ${props.letterError
+                ? html`<p
+                    class="professor__error"
+                    role="alert"
+                    data-testid="professor-letter-error"
+                  >
+                    ${props.letterError}
+                  </p>`
+                : nothing}
+              ${letterBody(shownLetters, props, searchTokens(letterQuery).length > 0)}
+              ${letterDoneList(lettersDone, props)} ${lettersAlreadyInList(lettersIn, props)}`,
       }),
     },
     {

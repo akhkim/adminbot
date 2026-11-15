@@ -4,7 +4,7 @@
 // The delay lives in CSS (styles/loading.css): the block is laid out at once but stays invisible
 // for the first moment, so a load that finishes quickly never flashes a placeholder at all. That
 // needs no timer and no state, which is why any render function can call this.
-import { html, type TemplateResult } from "lit";
+import { css, html, type TemplateResult } from "lit";
 import { t } from "../../i18n/index.ts";
 
 export type SkeletonShape = "rows" | "lines";
@@ -62,3 +62,57 @@ export function renderSkeleton(options: SkeletonOptions = {}): TemplateResult {
     </div>
   `;
 }
+
+/**
+ * The skeleton's rules for a page that draws inside its own shadow root, where the app's
+ * stylesheet does not reach. Kept rule for rule with styles/loading.css (skeleton.test.ts checks).
+ */
+export const skeletonStyles = css`
+  .skeleton {
+    display: flex;
+    flex-direction: column;
+    max-width: 720px;
+    padding: var(--space-2) 0;
+    opacity: 0;
+    animation: skeleton-reveal 1ms linear 180ms forwards;
+  }
+  .skeleton--lines {
+    gap: var(--space-3);
+  }
+  .skeleton__row {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-3) 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .skeleton__row:last-child {
+    border-bottom: 0;
+  }
+  .skeleton__line {
+    display: block;
+    height: 10px;
+    max-width: 100%;
+    border-radius: var(--radius-sm);
+    background: var(--border-strong);
+  }
+  .skeleton__line--lead {
+    height: 12px;
+    max-width: 40%;
+  }
+  @keyframes skeleton-reveal {
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes skeleton-breathe {
+    50% {
+      opacity: 0.45;
+    }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .skeleton__line {
+      animation: skeleton-breathe 1.6s var(--ease-in-out) infinite;
+    }
+  }
+`;

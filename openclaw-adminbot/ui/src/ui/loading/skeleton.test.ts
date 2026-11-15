@@ -1,12 +1,16 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { render } from "lit";
 import { describe, expect, it } from "vitest";
 import { rememberPageScroll, rememberedPageScroll, restorePageScroll } from "./page-scroll.ts";
-import { renderSkeleton, skeletonCount } from "./skeleton.ts";
+import { renderSkeleton, skeletonCount, skeletonStyles } from "./skeleton.ts";
 
-// Vitest runs from the ui package root; jsdom gives this module a non-file URL.
-const css = readFileSync(resolve(process.cwd(), "src/styles/loading.css"), "utf8");
+// jsdom gives this module a non-file URL, so the stylesheet is found from where Vitest was started:
+// the ui package root, or the repository root one level above it.
+const stylesheet = ["src/styles/loading.css", "ui/src/styles/loading.css"]
+  .map((candidate) => resolve(process.cwd(), candidate))
+  .find((candidate) => existsSync(candidate));
+const css = readFileSync(stylesheet ?? "src/styles/loading.css", "utf8");
 
 describe("skeleton placeholder", () => {
   it("draws quiet rows that a screen reader hears as one status", () => {
@@ -54,6 +58,35 @@ describe("skeleton placeholder", () => {
   it("uses theme tokens rather than fixed colours", () => {
     expect(css).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
     expect(css).not.toMatch(/rgba?\(/);
+  });
+
+  it("gives a page inside its own shadow root the same rules as the app's stylesheet", () => {
+    // The declarations of the first rule for a selector, without comments or line breaks.
+    const rule = (sheet: string, selector: string) => {
+      const start = sheet.indexOf(`${selector} {`);
+      expect(start).toBeGreaterThanOrEqual(0);
+      const open = sheet.indexOf("{", start);
+      return sheet
+        .slice(open + 1, sheet.indexOf("}", open))
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    };
+    const own = skeletonStyles.cssText;
+    for (const selector of [
+      ".skeleton",
+      ".skeleton--lines",
+      ".skeleton__row",
+      ".skeleton__row:last-child",
+      ".skeleton__line",
+      ".skeleton__line--lead",
+    ]) {
+      expect(rule(own, selector), selector).toBe(rule(css, selector));
+    }
+    // The pulse stays behind the same reduced-motion question.
+    const motion = own.slice(own.indexOf("@media (prefers-reduced-motion: no-preference)"));
+    expect(motion).toContain("skeleton-breathe");
+    expect(own.slice(0, own.length - motion.length)).not.toMatch(/animation:[^;]*skeleton-breathe/);
   });
 });
 

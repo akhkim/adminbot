@@ -5,6 +5,8 @@ import { forgetSessionReads } from "./read-cache.ts";
 import {
   authedJson,
   clearStoredMemberSession,
+  hasAuthedRead,
+  peekAuthedRead,
   prefetchAuthedRead,
   saveStoredMemberSession,
 } from "./session.ts";
@@ -165,5 +167,67 @@ describe("prefetchAuthedRead", () => {
     await settle();
     const next = await authedJson(BASE, "/lab/members/self", "GET", "tok");
     expect(await bodyOf(next)).toEqual({ member: { id: "ada" } });
+  });
+});
+
+describe("peekAuthedRead", () => {
+  function tagged(body: unknown): Response {
+    return new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { "Content-Type": "application/json", ETag: '"v1"' },
+    });
+  }
+
+  it("is empty until the session has read the URL, and never asks the service itself", async () => {
+    const fetchMock = vi.fn(async () => tagged({ projects: [{ id: "p1" }] }));
+    vi.stubGlobal("fetch", fetchMock);
+    expect(peekAuthedRead(BASE, "/lab/projects", "tok")).toBeUndefined();
+    expect(hasAuthedRead(BASE, "/lab/projects", "tok")).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    await authedJson(BASE, "/lab/projects", "GET", "tok");
+    expect(peekAuthedRead(BASE, "/lab/projects", "tok")).toEqual({ projects: [{ id: "p1" }] });
+    expect(hasAuthedRead(BASE, "/lab/projects", "tok")).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("hands out a fresh copy each time, so a caller editing one does not change the next", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => tagged({ projects: [{ id: "p1" }] })),
+    );
+    await authedJson(BASE, "/lab/projects", "GET", "tok");
+    const first = peekAuthedRead(BASE, "/lab/projects", "tok") as { projects: unknown[] };
+    first.projects.length = 0;
+    expect(peekAuthedRead(BASE, "/lab/projects", "tok")).toEqual({ projects: [{ id: "p1" }] });
+  });
+
+  it("never shows one session what another read, and is emptied by sign-out and View as", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => tagged({ projects: [{ id: "p1" }] })),
+    );
+    await authedJson(BASE, "/lab/projects", "GET", "ada-token");
+    expect(peekAuthedRead(BASE, "/lab/projects", "bob-token")).toBeUndefined();
+
+    // View as: the stored session changes token.
+    saveStoredMemberSession({ sessionToken: "ada-token", expiresAt: "2999-01-01T00:00:00Z" });
+    await authedJson(BASE, "/lab/projects", "GET", "ada-token");
+    saveStoredMemberSession({ sessionToken: "viewing-as-bob", expiresAt: "2999-01-01T00:00:00Z" });
+    expect(peekAuthedRead(BASE, "/lab/projects", "ada-token")).toBeUndefined();
+
+    await authedJson(BASE, "/lab/projects", "GET", "viewing-as-bob");
+    expect(peekAuthedRead(BASE, "/lab/projects", "viewing-as-bob")).toBeDefined();
+    clearStoredMemberSession();
+    expect(peekAuthedRead(BASE, "/lab/projects", "viewing-as-bob")).toBeUndefined();
+  });
+
+  it("keeps nothing from a refusal", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse(403, { error: { message: "no" } })),
+    );
+    await authedJson(BASE, "/lab/projects", "GET", "tok");
+    expect(peekAuthedRead(BASE, "/lab/projects", "tok")).toBeUndefined();
   });
 });

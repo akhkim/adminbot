@@ -376,7 +376,11 @@ describe("renderAdminBotMeetings", () => {
     );
     expect(folds).toEqual([true, false]);
     // A closed, unread series says it is loading rather than claiming to be empty.
-    expect(dropdowns[1]?.textContent).toContain("Loading recordings");
+    expect(
+      dropdowns[1]
+        ?.querySelector('[data-testid="meetings-series-loading"]')
+        ?.getAttribute("aria-label"),
+    ).toContain("Loading recordings");
   });
 
   it("reads a series when its dropdown is opened", () => {

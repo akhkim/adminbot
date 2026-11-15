@@ -136,7 +136,6 @@ import type { MemberMap } from "./adminbot/data/member-map.ts";
 import type { RegistrationsLoadError } from "./adminbot/data/registrations.ts";
 import { EMPTY_PAGED_LIST, type PagedListState } from "./adminbot/load-more.ts";
 import type { ProjectSummary } from "./adminbot/projects/model.ts";
-import { resetProjectsSessionState } from "./adminbot/projects/view.ts";
 import type {
   BlockerDraft,
   ProjectDetailsDraft,
@@ -1394,8 +1393,7 @@ export class OpenClawApp extends LitElement {
   }
 
   resetMemberViewSessionState() {
-    resetProjectsSessionState();
-    // Profile, Lab Sharing and the admin panels register their resets when they load.
+    // My Projects, Profile, Lab Sharing and the admin panels register their resets when they load.
     resetViewSessions();
   }
 

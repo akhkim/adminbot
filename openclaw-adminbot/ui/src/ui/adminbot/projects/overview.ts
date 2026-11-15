@@ -9,6 +9,7 @@
 import "../paper-visibility.ts";
 import { html, nothing } from "lit";
 import { t } from "../../../i18n/index.ts";
+import { renderSkeleton } from "../../loading/skeleton.ts";
 import type { AdminBotPaperRecord } from "../controllers/admin.ts";
 import { clearHiddenPapers, partitionHiddenPapers, readHiddenPapers } from "../hidden-papers.ts";
 import { partitionByCompletion } from "../paper-completion.ts";
@@ -179,7 +180,11 @@ function renderCards(
       ${renderOtherPapers(state, props, others)}`;
   }
   if (state.myProjects === null) {
-    return html`<p class="projects__empty">Loading your projects…</p>`;
+    return renderSkeleton({
+      count: 5,
+      label: "Loading your projects…",
+      testId: "projects-loading",
+    });
   }
   const rerender = () => props.onRerender?.();
   const listed = windowLists(projects, others);

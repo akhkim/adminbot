@@ -487,7 +487,11 @@ function renderSeries(props: AdminBotMeetingsProps, series: MeetingSeries, index
       </summary>
       ${page?.error ? html`<p class="callout danger" role="alert">${page.error}</p>` : nothing}
       ${!page || (page.loading && meetings.length === 0)
-        ? html`<p class="muted">${t("adminbotMeetings.seriesLoading")}</p>`
+        ? renderSkeleton({
+            count: 3,
+            label: t("adminbotMeetings.seriesLoading"),
+            testId: "meetings-series-loading",
+          })
         : nothing}
       ${meetings.length
         ? html`<ol class="meetings__recordings">
@@ -614,7 +618,12 @@ function renderNudgePanel(nudge: NonNullable<AdminBotMeetingsProps["nudge"]>) {
       <p class="card-sub">${t("adminbotMeetings.nudge.sub")}</p>
       ${nudge.error ? html`<p class="callout danger" role="alert">${nudge.error}</p>` : nothing}
       ${nudge.busy && !preview
-        ? html`<p class="muted">${t("adminbotMeetings.nudge.loading")}</p>`
+        ? renderSkeleton({
+            shape: "lines",
+            count: 3,
+            label: t("adminbotMeetings.nudge.loading"),
+            testId: "meetings-nudge-loading",
+          })
         : nothing}
       ${preview && !preview.invite_resolved
         ? html`<p class="notice notice--warn" data-testid="meetings-nudge-no-invite">

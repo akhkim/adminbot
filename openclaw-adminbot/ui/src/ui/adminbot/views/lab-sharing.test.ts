@@ -366,7 +366,9 @@ describe("renderLabSharing states", () => {
   // Until the first read lands, "nothing posted yet" would be a claim about data that is not here.
   it("shows a loading line instead of empty panels before the first read", () => {
     const { container } = renderView({ labSharing: undefined, labSharingLoading: true });
-    expect(container.querySelector(".lab-sharing__loading")?.textContent).toContain("Loading");
+    const placeholder = container.querySelector('.lab-sharing__loading .skeleton[role="status"]');
+    expect(placeholder?.getAttribute("aria-busy")).toBe("true");
+    expect(placeholder?.getAttribute("aria-label")).toContain("Loading");
     expect(container.querySelector('[data-testid="lab-sharing-requests"]')).toBeNull();
     expect(container.querySelector('[data-testid="lab-sharing-open-projects"]')).toBeNull();
   });
