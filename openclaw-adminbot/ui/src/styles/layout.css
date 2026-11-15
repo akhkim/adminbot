@@ -5644,8 +5644,11 @@
     flex-direction: column;
   }
 
-  .sidebar--public {
-    flex: none;
+  /* A later phone rule for the signed-in sidebar lets it grow; stacked above public content
+     that leaves half a screen of blank nav, so pin this one to the height of its links. */
+  .public-shell-body > .sidebar--public {
+    flex: 0 0 auto;
+    height: auto;
     max-width: none;
     border-right: none;
     border-bottom: 1px solid var(--border);

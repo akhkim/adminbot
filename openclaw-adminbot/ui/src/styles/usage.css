@@ -545,14 +545,11 @@ details.usage-filter-select summary::-webkit-details-marker,
 }
 
 .callout.warning {
-  border-color: color-mix(in srgb, var(--warn) 22%, var(--border));
-  background: var(--warn-subtle);
-  color: var(--text);
+  border-left-color: var(--warn);
 }
 
 .callout.warning.usage-cache-warning {
-  border-color: color-mix(in srgb, var(--accent) 32%, var(--border));
-  background: var(--warn-subtle);
+  border-left-color: var(--accent);
   color: var(--accent);
   font-weight: 600;
   box-shadow: none;

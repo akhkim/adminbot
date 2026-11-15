@@ -994,6 +994,16 @@
   padding: var(--space-3);
 }
 
+/* The same markup is a floating popover in some places and a page section in others. Only the
+   popover floats over content, so only it keeps a ground; in the page it is a divided section. */
+.adminbot-editor-card:not(.adminbot-popover) {
+  padding: var(--space-4) 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+}
+
 .adminbot-editor-card__header {
   display: flex;
   align-items: flex-start;
@@ -3102,9 +3112,7 @@ details[open] > .projects-nav__toggle::after {
   align-items: center;
   gap: var(--space-3);
   margin-top: var(--space-4);
-  padding: var(--space-4);
-  border: 1px dashed var(--border-strong);
-  border-radius: var(--radius-md);
+  padding: var(--space-3) 0;
   color: var(--muted);
   font-size: var(--control-ui-text-sm);
   line-height: 1.5;
@@ -5025,10 +5033,9 @@ details[open] > .projects-nav__toggle::after {
    =========================================== */
 
 .callout {
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-md);
-  background: var(--bg-accent);
-  border: 1px solid var(--border);
+  /* A notice is marked by a rule in its state color, not a filled box. */
+  padding: var(--space-1) 0 var(--space-1) var(--space-3);
+  border-left: 2px solid var(--border-strong);
   color: var(--text);
   font-size: var(--control-ui-text-sm);
   letter-spacing: var(--tracking-normal);
@@ -5036,6 +5043,11 @@ details[open] > .projects-nav__toggle::after {
   /* Errors quote ids and URLs verbatim; they break rather than widen whatever holds them. */
   overflow-wrap: anywhere;
   position: relative;
+}
+
+/* A recovery action under a notice (Retry) needs air, or it reads as part of the message. */
+.callout + .btn {
+  margin-top: var(--space-3);
 }
 
 .callout--dismissible {
@@ -5073,21 +5085,15 @@ details[open] > .projects-nav__toggle::after {
 }
 
 .callout.danger {
-  border-color: var(--danger-muted);
-  background: var(--danger-subtle);
-  color: var(--text);
+  border-left-color: var(--danger);
 }
 
 .callout.info {
-  border-color: var(--accent-2-muted);
-  background: var(--accent-subtle);
-  color: var(--text);
+  border-left-color: var(--info);
 }
 
 .callout.success {
-  border-color: var(--ok-muted);
-  background: var(--ok-subtle);
-  color: var(--text);
+  border-left-color: var(--ok);
 }
 
 /* Compaction indicator */
@@ -10040,10 +10046,6 @@ details[open] > .ov-expandable-toggle::after {
   min-width: 0;
   flex-direction: column;
   gap: var(--space-4);
-  padding: var(--space-5);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--bg-accent);
 }
 
 .adminbot-reimbursement-chat__heading,
