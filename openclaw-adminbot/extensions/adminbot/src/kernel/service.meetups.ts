@@ -163,6 +163,19 @@ function freshPartners(
   return withWildcard(subject, fresh, seed).slice(0, CONFERENCE_INTRO_PARTNERS);
 }
 
+/**
+ * The three derived lists every event card asks about, read once for a whole Events tab.
+ *
+ * Each is a walk over every paper (the deadline read model and the conference rosters) or every
+ * trip. Asking again per card made the tab cost one such walk per upcoming event, all of it on the
+ * synchronous store, so the page took seconds and every other request waited behind it.
+ */
+type EventReads = {
+  sites: readonly TravelConferenceSite[];
+  rosters: ReturnType<Host["listConferenceRosters"]>;
+  trips: ReturnType<typeof canonicalConferenceTrips>;
+};
+
 function addPairs(pairs: Set<string>, group: readonly IntroCandidate[]): void {
   for (const a of group) {
     for (const b of group) {
@@ -195,9 +208,13 @@ export class MeetupService {
   }
 
   /** Member ids Going to a conference: paper roster "yes" plus Travel tab RSVPs. */
-  private goingIds(groupKey: string, sites: readonly TravelConferenceSite[]): Set<string> {
+  private goingIds(
+    groupKey: string,
+    sites: readonly TravelConferenceSite[],
+    reads?: EventReads,
+  ): Set<string> {
     const ids = new Set<string>();
-    const rosters = this.host.listConferenceRosters();
+    const rosters = reads?.rosters ?? this.host.listConferenceRosters();
     const roster = rosters.ok
       ? rosters.payload.conferences.find((entry) => entry.key === groupKey)
       : undefined;
@@ -207,7 +224,7 @@ export class MeetupService {
       }
     }
     const keys = new Set([groupKey, ...sites.map((site) => site.key)]);
-    for (const trip of canonicalConferenceTrips(this.store.listConferenceTrips())) {
+    for (const trip of reads?.trips ?? canonicalConferenceTrips(this.store.listConferenceTrips())) {
       if (trip.intent === "going" && keys.has(trip.conference_key)) {
         ids.add(trip.member_id);
       }
@@ -592,11 +609,12 @@ export class MeetupService {
     me: AdminBotLabMember & { slack_user_id: string },
     groupKey: string,
     pairs: ReadonlySet<string>,
+    reads?: EventReads,
   ): IntroPartner[] {
     const today = this.today();
-    const sites = this.allSites().filter((site) => site.group_key === groupKey);
+    const sites = (reads?.sites ?? this.allSites()).filter((site) => site.group_key === groupKey);
     const others: IntroCandidate[] = [];
-    for (const id of [...this.goingIds(groupKey, sites)].toSorted()) {
+    for (const id of [...this.goingIds(groupKey, sites, reads)].toSorted()) {
       const member = this.store.getLabMember(id);
       if (id !== me.id && reachable(member) && meetupIntrosAllowed(member, "event", today)) {
         others.push(candidate(member));
@@ -769,7 +787,9 @@ export class MeetupService {
       (rosters.ok ? rosters.payload.conferences : []).map((roster) => [roster.key, roster]),
     );
     const oldest = addDays(today, -PAST_DAYS);
-    const sites = this.allSites().filter((site) => {
+    // Shared by every card's Say hi check below, so the tab pays for these walks once.
+    const reads: EventReads = { sites: this.allSites(), rosters, trips };
+    const sites = reads.sites.filter((site) => {
       const last = site.ends ?? site.starts;
       return last ? last >= oldest : site.year >= Number(today.slice(0, 4));
     });
@@ -780,7 +800,10 @@ export class MeetupService {
     const canSayHi = new Map<string, boolean>();
     const sayHiTo = (groupKey: string) => {
       if (!canSayHi.has(groupKey)) {
-        canSayHi.set(groupKey, reachable(me) && this.sayHiPartners(me, groupKey, pairs).length > 0);
+        canSayHi.set(
+          groupKey,
+          reachable(me) && this.sayHiPartners(me, groupKey, pairs, reads).length > 0,
+        );
       }
       return canSayHi.get(groupKey)!;
     };
@@ -893,7 +916,7 @@ export class MeetupService {
       past: cards
         .filter((card) => card.status === "past")
         .toSorted((a, b) => (b.ends ?? "").localeCompare(a.ends ?? "")),
-      ...this.alsoNearby(me, where?.place, today),
+      ...this.alsoNearby(me, where?.place, today, sayHiSent),
     };
     return ok(overview);
   }
@@ -907,6 +930,7 @@ export class MeetupService {
     me: AdminBotLabMember,
     here: MeetupPlace | undefined,
     today: string,
+    sent: ReadonlyMap<string, string>,
   ): Pick<AdminBotEventsOverview, "also_nearby"> {
     if (me.do_not_contact) {
       return {};
@@ -917,7 +941,6 @@ export class MeetupService {
     if (!here) {
       return {};
     }
-    const sent = this.sentKeys();
     const people = this.nearbyFor(me, here, today)
       .map((member) => {
         const face = person(member);

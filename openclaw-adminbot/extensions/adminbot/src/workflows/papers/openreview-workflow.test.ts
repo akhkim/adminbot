@@ -366,3 +366,88 @@ describe("suggestReviewers", () => {
     expect(submission?.suggestions).toEqual([]);
   });
 });
+
+describe("loadForms", () => {
+  const venues = ["A.cc/2026", "B.cc/2026", "C.cc/2026", "D.cc/2026", "E.cc/2026"];
+
+  /** A bridge whose `load-form` calls stay open until the test answers them. */
+  function slowBridge() {
+    const open: { venue: string; answer: (ok?: boolean) => void }[] = [];
+    let discovers = 0;
+    let peak = 0;
+    const store = new AdminBotMemoryStore();
+    const workflow = createAdminBotOpenReviewWorkflow({
+      scriptPath: "/unused",
+      service: new AdminBotService(store),
+      store,
+      run: async (args) => {
+        if (args[0] === "discover") {
+          discovers += 1;
+          return {
+            ok: true,
+            venues: [
+              ...venues.map((venue_id) => ({ venue_id, role: "ac" })),
+              { venue_id: "NoRole.cc/2026" },
+            ],
+          };
+        }
+        const venue = args[2] ?? "";
+        return new Promise((resolve) => {
+          open.push({
+            venue,
+            answer: (ok = true) => {
+              open.splice(
+                open.findIndex((entry) => entry.venue === venue),
+                1,
+              );
+              resolve({ ok, venue_id: venue });
+            },
+          });
+          peak = Math.max(peak, open.length);
+        });
+      },
+    });
+    /** Answers whatever is open, newest first, until nothing more is asked for. */
+    const drain = async (failing = new Set<string>()) => {
+      for (let idle = 0; idle < 5; ) {
+        const last = open.at(-1);
+        if (last) {
+          last.answer(!failing.has(last.venue));
+          idle = 0;
+        } else {
+          idle += 1;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+    };
+    return { workflow, drain, counts: () => ({ discovers, peak }) };
+  }
+
+  it("fetches a few venues' forms at a time and returns them in discovery order", async () => {
+    const { workflow, drain, counts } = slowBridge();
+    const loading = workflow.loadForms();
+    // Answered newest first, so order in the result cannot come from order of arrival.
+    await drain(new Set(["C.cc/2026"]));
+    expect((await loading).map((form) => form.venue_id)).toEqual([
+      "A.cc/2026",
+      "B.cc/2026",
+      "D.cc/2026",
+      "E.cc/2026",
+    ]);
+    expect(counts()).toEqual({ discovers: 1, peak: 3 });
+  });
+
+  it("gives a second caller the load already under way, then loads afresh next time", async () => {
+    const { workflow, drain, counts } = slowBridge();
+    const first = workflow.loadForms();
+    const second = workflow.loadForms();
+    await drain();
+    expect(await second).toEqual(await first);
+    expect(counts().discovers).toBe(1);
+
+    const later = workflow.loadForms();
+    await drain();
+    expect(await later).toHaveLength(venues.length);
+    expect(counts().discovers).toBe(2);
+  });
+});

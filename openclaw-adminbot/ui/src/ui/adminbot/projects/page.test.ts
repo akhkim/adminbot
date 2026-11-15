@@ -805,7 +805,11 @@ describe("the lane tabs", () => {
 
   it("says it is still reading a checklist it does not have", () => {
     const { container } = drawPage({ tab: "writing" });
-    expect(container.textContent).toContain("Loading this paper's checklist");
+    expect(
+      container
+        .querySelector('[data-testid="project-checklist-loading"]')
+        ?.getAttribute("aria-label"),
+    ).toContain("Loading this paper's checklist");
   });
 });
 

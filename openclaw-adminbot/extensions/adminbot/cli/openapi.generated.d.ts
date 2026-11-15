@@ -8577,6 +8577,32 @@ export interface components {
     } & {
       [key: string]: unknown;
     };
+    OpenReviewCitationCheckSummary: {
+      /** @enum {string} */
+      status: "failed" | "completed" | "unreadable";
+      title: string;
+      error?: string;
+      submission_id: string;
+      pdf_path: string;
+      pdf_sha256?: string;
+      venue_id: string;
+      checked_at: string;
+      attempts: number;
+      notification_proposal_id?: string;
+      extractor_version?: number;
+      findings?: ({
+        /** @enum {string} */
+        status: "not_found" | "matched" | "review" | "unavailable";
+        citation: string;
+        explanation: string;
+      } & {
+        [key: string]: unknown;
+      })[];
+      finding_count: number;
+      version_count: number;
+    } & {
+      [key: string]: unknown;
+    };
     OpenReviewCitationSweepStart: {
       started: boolean;
       submissions: number;
@@ -9056,6 +9082,7 @@ export interface components {
         | "poster"
         | "arxiv"
         | "overleaf_view"
+        | "submission_id"
         | "feedback_arr"
         | "feedback_arxiv"
         | "feedback_camera_ready"
@@ -9065,7 +9092,6 @@ export interface components {
         | "papermentor_review"
         | "fixes_merged"
         | "pdf_ready"
-        | "submission_id"
         | "drive_pdf_arxiv"
         | "authors_ack"
         | "arxiv_paper_password"
@@ -9523,6 +9549,7 @@ export interface components {
         | "poster"
         | "arxiv"
         | "overleaf_view"
+        | "submission_id"
         | "feedback_arr"
         | "feedback_arxiv"
         | "feedback_camera_ready"
@@ -9532,7 +9559,6 @@ export interface components {
         | "papermentor_review"
         | "fixes_merged"
         | "pdf_ready"
-        | "submission_id"
         | "drive_pdf_arxiv"
         | "authors_ack"
         | "arxiv_paper_password"
@@ -9951,7 +9977,7 @@ export interface components {
       theme: null | string;
       keywords: string[];
       /** @enum {string} */
-      status: "unchanged" | "update" | "missing" | "full" | "untouched";
+      status: "unchanged" | "update" | "full" | "missing" | "untouched";
       reason?: string;
       box: null | components["schemas"]["Rect"];
       content: null | components["schemas"]["Rect"];
@@ -10742,6 +10768,7 @@ export interface operations {
         content: {
           "application/json": {
             events: components["schemas"]["AdminBotAuditEvent"][];
+            total: number;
           } & {
             [key: string]: unknown;
           };
@@ -14709,7 +14736,9 @@ export interface operations {
   };
   "get-deadlines": {
     parameters: {
-      query?: never;
+      query?: {
+        detail?: string;
+      };
       header?: never;
       path?: never;
       cookie?: never;
@@ -14724,6 +14753,23 @@ export interface operations {
         content: {
           "application/json": {
             items: unknown[];
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Server response */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
           } & {
             [key: string]: unknown;
           };
@@ -22849,7 +22895,9 @@ export interface operations {
   };
   "get-openreview-citation-checks": {
     parameters: {
-      query?: never;
+      query?: {
+        view?: string;
+      };
       header?: never;
       path?: never;
       cookie?: never;
@@ -22864,7 +22912,9 @@ export interface operations {
         content: {
           "application/json":
             | ({
-                checks: components["schemas"]["OpenReviewCitationCheck"][];
+                checks:
+                  | components["schemas"]["OpenReviewCitationCheck"][]
+                  | components["schemas"]["OpenReviewCitationCheckSummary"][];
                 notify_email: null | string;
                 last_sweep?: {
                   started_at: string;
@@ -22894,12 +22944,31 @@ export interface operations {
                 [key: string]: unknown;
               })
             | ({
-                checks: components["schemas"]["OpenReviewCitationCheck"][];
+                checks:
+                  | components["schemas"]["OpenReviewCitationCheck"][]
+                  | components["schemas"]["OpenReviewCitationCheckSummary"][];
                 running: boolean;
                 enabled: boolean;
               } & {
                 [key: string]: unknown;
               });
+        };
+      };
+      /** @description Server response */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
+          } & {
+            [key: string]: unknown;
+          };
         };
       };
       /** @description Authentication, authorization, validation, policy, or connector error */
@@ -25375,6 +25444,7 @@ export interface operations {
                 | "poster"
                 | "arxiv"
                 | "overleaf_view"
+                | "submission_id"
                 | "feedback_arr"
                 | "feedback_arxiv"
                 | "feedback_camera_ready"
@@ -25384,7 +25454,6 @@ export interface operations {
                 | "papermentor_review"
                 | "fixes_merged"
                 | "pdf_ready"
-                | "submission_id"
                 | "drive_pdf_arxiv"
                 | "authors_ack"
                 | "arxiv_paper_password"
@@ -25411,6 +25480,7 @@ export interface operations {
                 | "poster"
                 | "arxiv"
                 | "overleaf_view"
+                | "submission_id"
                 | "feedback_arr"
                 | "feedback_arxiv"
                 | "feedback_camera_ready"
@@ -25420,7 +25490,6 @@ export interface operations {
                 | "papermentor_review"
                 | "fixes_merged"
                 | "pdf_ready"
-                | "submission_id"
                 | "drive_pdf_arxiv"
                 | "authors_ack"
                 | "arxiv_paper_password"
@@ -25447,6 +25516,7 @@ export interface operations {
                 | "poster"
                 | "arxiv"
                 | "overleaf_view"
+                | "submission_id"
                 | "feedback_arr"
                 | "feedback_arxiv"
                 | "feedback_camera_ready"
@@ -25456,7 +25526,6 @@ export interface operations {
                 | "papermentor_review"
                 | "fixes_merged"
                 | "pdf_ready"
-                | "submission_id"
                 | "drive_pdf_arxiv"
                 | "authors_ack"
                 | "arxiv_paper_password"
@@ -25484,6 +25553,7 @@ export interface operations {
                 | "poster"
                 | "arxiv"
                 | "overleaf_view"
+                | "submission_id"
                 | "feedback_arr"
                 | "feedback_arxiv"
                 | "feedback_camera_ready"
@@ -25493,7 +25563,6 @@ export interface operations {
                 | "papermentor_review"
                 | "fixes_merged"
                 | "pdf_ready"
-                | "submission_id"
                 | "drive_pdf_arxiv"
                 | "authors_ack"
                 | "arxiv_paper_password"

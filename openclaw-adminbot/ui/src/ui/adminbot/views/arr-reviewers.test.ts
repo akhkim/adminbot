@@ -48,7 +48,9 @@ it("shows empty, loading and error states and supports refresh", () => {
   expect(mount().textContent).toContain("No users have confirmed");
   const loading = mount({ loading: true });
   expect(loading.querySelector("button")!.disabled).toBe(true);
-  expect(loading.textContent).toContain("Loading reviewers");
+  expect(
+    loading.querySelector('[data-testid="arr-reviewers-loading"]')?.getAttribute("aria-label"),
+  ).toContain("Loading reviewers");
   expect(mount({ error: "Roster unavailable" }).querySelector('[role="alert"]')!.textContent).toBe(
     "Roster unavailable",
   );

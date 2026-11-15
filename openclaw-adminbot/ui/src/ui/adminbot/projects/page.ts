@@ -11,6 +11,7 @@
 // checklist itself, drawn by the same renderer the flat view uses, one branch per tab, with the
 // venue decision on Venue and the drafts and conference rows on Social.
 import { html, nothing, type TemplateResult } from "lit";
+import { renderSkeleton } from "../../loading/skeleton.ts";
 import type { AdminBotPaperRecord } from "../controllers/admin.ts";
 import { isPaperCompleted } from "../paper-completion.ts";
 import { openPreRegistrationDialog } from "../pre-registration.ts";
@@ -377,6 +378,10 @@ function renderLaneTab(
               }
             : {}),
         })
-      : html`<p class="projects__empty">Loading this paper's checklist…</p>`}
+      : renderSkeleton({
+          count: 5,
+          label: "Loading this paper's checklist…",
+          testId: "project-checklist-loading",
+        })}
     ${extra}`;
 }

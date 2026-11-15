@@ -26,7 +26,7 @@ async function mount(response: Response) {
   el.memberId = "m-cy";
   document.body.append(el);
   await el.updateComplete;
-  await vi.waitFor(() => expect(el.shadowRoot!.textContent).not.toContain("Loading"));
+  await vi.waitFor(() => expect(el.shadowRoot!.querySelector(".skeleton")).toBeNull());
   await el.updateComplete;
   return { el, fetchMock };
 }

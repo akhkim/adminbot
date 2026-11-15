@@ -15,6 +15,7 @@ import {
   draftMemberBlurb,
   runAdminBotCvScan,
 } from "../../cv-scan.js";
+import { createCachedRead } from "../../kernel/cached-read.js";
 import {
   AdminBotService,
   type AdminBotServiceResponse,
@@ -53,7 +54,32 @@ export const LEDGER_EPOCH = "1970-01-01T00:00:00.000Z";
  */
 export const SLACK_CHANNEL_CACHE_MS = 5 * 60 * 1000;
 
-export let slackChannelCache: { at: number; names: string[] } | undefined;
+/**
+ * How much longer an older list is still handed back while Slack is asked again behind it.
+ *
+ * Past five minutes the form no longer waits on the walk: it gets the list it had and the next
+ * check gets the new one. Past half an hour the list is too old to answer "does this channel
+ * exist" with, and the caller waits for a real one.
+ */
+export const SLACK_CHANNEL_STALE_MS = 25 * 60 * 1000;
+
+// The fetch belongs to the request's context, the cache to the process, so the cache calls
+// whichever fetch the latest request brought.
+let slackChannelFetch: (() => Promise<string[]>) | undefined;
+const slackChannelNames = createCachedRead(
+  () => {
+    if (!slackChannelFetch) {
+      throw new Error("slack channel lookup is not configured on this deployment");
+    }
+    return slackChannelFetch();
+  },
+  { freshMs: SLACK_CHANNEL_CACHE_MS, staleMs: SLACK_CHANNEL_STALE_MS },
+);
+
+/** Drops the kept channel names, so the next read asks Slack. */
+export function forgetSlackChannelNames(): void {
+  slackChannelNames.invalidate();
+}
 
 export const directoryRoutes: readonly Route[] = [
   get("/member-map", ({ res, url, principal, ctx }) => {
@@ -330,6 +356,8 @@ export const directoryRoutes: readonly Route[] = [
         ...(asString(body.purpose) ? { purpose: asString(body.purpose) } : {}),
         ...(asString(body.topic) ? { topic: asString(body.topic) } : {}),
       };
+      // Slack is saying a channel was made or renamed, so the kept names are out of date.
+      forgetSlackChannelNames();
       sendServiceResult(
         res,
         await service.processSlackChannelNamingEvent(event, principalActor(principal)),
@@ -387,17 +415,13 @@ export const directoryRoutes: readonly Route[] = [
  * A failure is deliberately not cached: the next press should retry rather than repeat an error
  * for five minutes, because the usual cause is a token or a scope somebody is in the middle of
  * fixing.
+ *
+ * Requests that arrive while Slack is being asked share that one walk; before, each started its
+ * own.
  */
-export async function readSlackChannelNames(
-  fetchNames: () => Promise<string[]>,
-): Promise<string[]> {
-  const now = Date.now();
-  if (slackChannelCache && now - slackChannelCache.at < SLACK_CHANNEL_CACHE_MS) {
-    return slackChannelCache.names;
-  }
-  const names = await fetchNames();
-  slackChannelCache = { at: now, names };
-  return names;
+export function readSlackChannelNames(fetchNames: () => Promise<string[]>): Promise<string[]> {
+  slackChannelFetch = fetchNames;
+  return slackChannelNames.read();
 }
 
 export type CvScanFailure = Extract<AdminBotServiceResponse<never>, { ok: false }>;

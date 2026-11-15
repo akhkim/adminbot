@@ -486,6 +486,33 @@ export function prefetchAuthedRead(
   };
 }
 
+/**
+ * The body this session last received for a GET, or undefined when it has not read it yet.
+ *
+ * For a page that is opened again: it can draw what it showed last time straight away and let its
+ * own request -- which still goes out, and still reports a refusal or a changed answer -- replace
+ * it. Nothing is fetched here. The copy belongs to this token alone and is dropped with every
+ * other kept read when the session changes (sign-out, View as), so one member never sees what
+ * another loaded. Each call parses afresh, so the caller may edit what it gets.
+ */
+export function peekAuthedRead(baseUrl: string, path: string, token: string | null): unknown {
+  const url = `${baseUrl}${path}`;
+  const previous = rememberedRead(token, url);
+  if (!previous) {
+    return undefined;
+  }
+  try {
+    return parseApiJson(previous.text, previous.url);
+  } catch {
+    return undefined;
+  }
+}
+
+/** True when this session already holds an answer to this GET for this token. */
+export function hasAuthedRead(baseUrl: string, path: string, token: string | null): boolean {
+  return rememberedRead(token, `${baseUrl}${path}`) !== undefined;
+}
+
 type AuthedJsonResult =
   | { response: Response; body: unknown; fromCache?: boolean; revalidated?: boolean }
   | { unreachable: true };

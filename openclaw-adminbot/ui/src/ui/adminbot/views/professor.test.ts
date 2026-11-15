@@ -1094,7 +1094,11 @@ it("shows an unavailable PI queue with a working retry instead of an empty succe
 it("does not claim an empty PI queue while loading", () => {
   const { container } = draw({ piReviewLoading: true });
   const section = container.querySelector('[data-testid="professor-pi-review"]');
-  expect(section?.textContent).toContain("Loading PI review queue");
+  expect(
+    section
+      ?.querySelector('[data-testid="professor-pi-review-loading"]')
+      ?.getAttribute("aria-label"),
+  ).toContain("Loading PI review queue");
   expect(section?.textContent).not.toContain("No paper is waiting");
 });
 

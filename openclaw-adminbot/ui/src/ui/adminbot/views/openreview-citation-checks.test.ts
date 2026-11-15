@@ -37,6 +37,7 @@ const check = {
   ],
 };
 
+// Every version with every reference: what a service older than the summary view still sends.
 it("shows each submission's latest version and its flagged references", async () => {
   const { el, fetcher, text } = await mount({
     ok: true,
@@ -58,13 +59,16 @@ it("shows each submission's latest version and its flagged references", async ()
       ],
     }),
   });
-  expect(fetcher).toHaveBeenCalledWith("http://localhost:8765/openreview/citation-checks", {
-    // The token and the browser's clock, through the shared helper.
-    headers: expect.objectContaining({
-      Authorization: "Bearer synthetic-admin",
-      "X-AdminBot-Device-TZ-Offset": expect.any(String),
-    }),
-  });
+  expect(fetcher).toHaveBeenCalledWith(
+    "http://localhost:8765/openreview/citation-checks?view=summary",
+    {
+      // The token and the browser's clock, through the shared helper.
+      headers: expect.objectContaining({
+        Authorization: "Bearer synthetic-admin",
+        "X-AdminBot-Device-TZ-Offset": expect.any(String),
+      }),
+    },
+  );
   const articles = [...el.shadowRoot!.querySelectorAll("article")];
   expect(articles.map((article) => article.dataset.state)).toEqual(["flagged", "clean"]);
   expect(text()).toContain("2 versions checked");
@@ -75,6 +79,33 @@ it("shows each submission's latest version and its flagged references", async ()
   expect(text()).toContain("All 1 references matched");
   const forum = articles[0].querySelector("h3 a")!;
   expect(forum.getAttribute("href")).toBe("https://openreview.net/forum?id=paperAAAA");
+});
+
+it("reads the reference and version totals from a summary row", async () => {
+  const { el, text } = await mount({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      enabled: true,
+      running: false,
+      checks: [
+        { ...check, findings: [check.findings[1]], finding_count: 40, version_count: 3 },
+        {
+          ...check,
+          submission_id: "paperBBBB",
+          title: "Synthetic clean paper",
+          findings: [],
+          finding_count: 25,
+          version_count: 1,
+        },
+      ],
+    }),
+  });
+  const articles = [...el.shadowRoot!.querySelectorAll("article")];
+  expect(articles.map((article) => article.dataset.state)).toEqual(["flagged", "clean"]);
+  expect(text()).toContain("3 versions checked");
+  expect(text()).toContain("1 not found · 0 to check · 40 references");
+  expect(text()).toContain("All 25 references matched");
 });
 
 it("says so when the deployment has not enabled automatic checks", async () => {

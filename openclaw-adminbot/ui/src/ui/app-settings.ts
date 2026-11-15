@@ -2,6 +2,7 @@ import { ADMINBOT_PASSWORD_RESET_PATH } from "../../../extensions/adminbot/src/c
 // Control UI module implements app settings behavior.
 import { roleScopesAllow } from "../../../src/shared/operator-scope-compat.js";
 import { t } from "../i18n/index.ts";
+import { registerAdminBotPageReads } from "./adminbot/auth/page-reads.ts";
 import { loadStoredMemberSession } from "./adminbot/auth/session.ts";
 import { ensureAdminQueuesForTab } from "./adminbot/controllers/admin-queues.ts";
 import {
@@ -72,6 +73,7 @@ import { loadUsage, type UsageState } from "./controllers/usage.ts";
 import { resolveCronJobLastRunStatus } from "./cron-status.ts";
 import { syncCustomThemeStyleTag } from "./custom-theme.ts";
 import { notePageIntent, trackPageActivity } from "./loading/page-activity.ts";
+import { prefetchTabDataNow } from "./loading/page-data-prefetch.ts";
 import { rememberPageScroll, restorePageScroll } from "./loading/page-scroll.ts";
 import { isMonitoredAuthProvider } from "./model-auth-helpers.ts";
 import {
@@ -175,6 +177,9 @@ type SettingsAppHost = SettingsHost &
     attentionItems: AttentionItem[];
     hello: { auth?: { role?: string; scopes?: string[] } } | null;
   };
+
+// Which read each AdminBot page opens with, so choosing or approaching a tab can start it early.
+registerAdminBotPageReads();
 
 export function applySettings(host: SettingsHost, next: UiSettings) {
   const normalized = {
@@ -833,6 +838,8 @@ function applyTabSelection(
     // Navigation is something the viewer asked for: the progress line may show for what follows,
     // and each page keeps its own place in the shared content pane.
     notePageIntent();
+    // The page's first read goes out now, beside the download of its code, not after it.
+    prefetchTabDataNow(next);
     const pane = () => globalThis.document?.querySelector<HTMLElement>("main.content");
     rememberPageScroll(prev, pane());
     if (next !== "chat") {

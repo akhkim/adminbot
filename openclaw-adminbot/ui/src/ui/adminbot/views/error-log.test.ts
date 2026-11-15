@@ -3,10 +3,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const authedJson = vi.fn();
+const peekAuthedRead = vi.fn();
 let storedSession: { sessionToken: string } | null = { sessionToken: "token" };
 
 vi.mock("../auth/session.ts", () => ({
   authedJson: (...args: unknown[]) => authedJson(...args),
+  peekAuthedRead: (...args: unknown[]) => peekAuthedRead(...args),
   calendarFailure: () => ({ kind: "failed" }),
   loadStoredMemberSession: () => storedSession,
   resolveAdminBotBaseUrl: () => "http://localhost",
@@ -57,6 +59,7 @@ async function settle(element: InstanceType<typeof AdminBotErrorLog>): Promise<v
 
 beforeEach(() => {
   authedJson.mockReset();
+  peekAuthedRead.mockReset();
   storedSession = { sessionToken: "token" };
 });
 
@@ -87,6 +90,31 @@ describe("the error log page", () => {
     expect(row?.querySelector("pre")?.textContent).toContain("at render");
     // DESIGN.md: rows, not cards.
     expect(element.querySelector(".card")).toBeNull();
+  });
+
+  it("draws a quiet placeholder, not the word Loading, while the first read is out", async () => {
+    authedJson.mockReturnValue(new Promise(() => undefined));
+    const element = await mount();
+    const placeholder = element.querySelector('[data-testid="error-log-loading"]');
+    expect(placeholder?.getAttribute("aria-busy")).toBe("true");
+    expect(placeholder?.getAttribute("aria-label")).toBeTruthy();
+    expect(placeholder?.textContent?.trim()).toBe("");
+  });
+
+  it("draws the list it read earlier in the session at once, then the fresh answer", async () => {
+    peekAuthedRead.mockReturnValue({ groups: [group()] });
+    let land: (value: unknown) => void = () => undefined;
+    authedJson.mockReturnValue(new Promise((resolve) => (land = resolve)));
+    const element = await mount();
+
+    expect(peekAuthedRead).toHaveBeenCalledWith("http://localhost", "/ops/errors", "token");
+    expect(element.querySelector('[data-testid="error-log-row-err_1"]')).not.toBeNull();
+    expect(element.querySelector('[data-testid="error-log-loading"]')).toBeNull();
+
+    land(answer(200, { groups: [group({ id: "err_2" })] }));
+    await settle(element);
+    expect(element.querySelector('[data-testid="error-log-row-err_1"]')).toBeNull();
+    expect(element.querySelector('[data-testid="error-log-row-err_2"]')).not.toBeNull();
   });
 
   it("says so when nothing is open", async () => {

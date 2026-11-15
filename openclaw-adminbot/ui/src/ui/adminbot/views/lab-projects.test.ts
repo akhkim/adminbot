@@ -66,7 +66,7 @@ async function mount(response: Response) {
   el.onOpen = onOpen;
   document.body.append(el);
   await el.updateComplete;
-  await vi.waitFor(() => expect(el.shadowRoot!.textContent).not.toContain("Loading the"));
+  await vi.waitFor(() => expect(el.shadowRoot!.querySelector(".skeleton")).toBeNull());
   await el.updateComplete;
   return { el, fetchMock, onOpen };
 }
@@ -125,4 +125,40 @@ it("says so, and shows no rows, when the service refuses a non-admin", async () 
   );
   expect(el.shadowRoot!.querySelector('[role="alert"]')?.textContent).toContain("for admins");
   expect(el.shadowRoot!.querySelectorAll("li")).toHaveLength(0);
+});
+
+it("draws the list from the last visit at once, keeps it through the refresh, then shows the new one", async () => {
+  // The service tags its answers, which is what lets the session keep one to draw from.
+  const tagged = (projects: LabProject[]) =>
+    new Response(JSON.stringify({ projects }), {
+      status: 200,
+      headers: { "Content-Type": "application/json", ETag: `"${projects.length}"` },
+    });
+  const first = await mount(tagged(ROWS));
+  first.el.remove();
+
+  // The second visit's request is held open: whatever is on screen now came from the first.
+  let land: (response: Response) => void = () => undefined;
+  const fetchMock = vi.fn(() => new Promise<Response>((resolve) => (land = resolve)));
+  vi.stubGlobal("fetch", fetchMock);
+  const el = new LabProjectsView();
+  el.baseUrl = "http://localhost:8765/";
+  el.sessionToken = "synthetic";
+  document.body.append(el);
+  await el.updateComplete;
+  expect(el.shadowRoot!.querySelectorAll("li")).toHaveLength(ROWS.length);
+  expect(el.shadowRoot!.querySelector(".skeleton")).toBeNull();
+  await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+  land(tagged(ROWS.slice(0, 1)));
+  await vi.waitFor(() => expect(el.shadowRoot!.querySelectorAll("li")).toHaveLength(1));
+
+  // Another session never starts from this one's list.
+  const other = new LabProjectsView();
+  other.baseUrl = "http://localhost:8765/";
+  other.sessionToken = "someone-else";
+  document.body.append(other);
+  await other.updateComplete;
+  expect(other.shadowRoot!.querySelectorAll("li")).toHaveLength(0);
+  expect(other.shadowRoot!.querySelector(".skeleton")).not.toBeNull();
 });

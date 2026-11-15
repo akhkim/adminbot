@@ -1554,7 +1554,7 @@ function renderMemberEditsPopover(member: AdminBotLabMember, index: number, prop
       <div class="card-title">${t("recentEdits.title")}</div>
       <div class="card-sub">
         ${member.name} · ${member.id}
-        ${state.loading
+        ${state.loading && state.updates.length
           ? html`<span class="recent-edits__loading">${t("recentEdits.loading")}</span>`
           : nothing}
       </div>

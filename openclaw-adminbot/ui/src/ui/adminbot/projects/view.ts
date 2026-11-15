@@ -1,3 +1,4 @@
+import { onViewSessionReset } from "../view-session-reset.ts";
 // My Projects & Papers: the card list at /my-work, or one project's page below it.
 import { resetDecisionBannerState } from "./decisions.ts";
 import { resetProjectDetailsState } from "./details.ts";
@@ -29,3 +30,6 @@ export function resetProjectsSessionState(): void {
   resetProjectsListViews();
   resetProjectPageState();
 }
+
+// Run at sign-out and View-as without the app importing this module to reach it.
+onViewSessionReset(resetProjectsSessionState);

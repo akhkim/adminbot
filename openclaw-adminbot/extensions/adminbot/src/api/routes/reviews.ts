@@ -15,6 +15,7 @@ import {
 } from "../../connectors/reference-check.js";
 import { type AdminBotServiceStore, AdminBotService } from "../../kernel/service.js";
 import { IclrIntegrityWatch } from "../../workflows/papers/iclr-integrity-watch.js";
+import { summarizeOpenReviewCitationChecks } from "../../workflows/papers/openreview-citation-summary.js";
 import { OpenReviewCitationWatch } from "../../workflows/papers/openreview-citation-watch.js";
 import { readJson, readRecord, sendJson, sendServiceResult } from "../server.http.js";
 import type { AdminBotMockServiceOptions } from "./context.js";
@@ -35,12 +36,20 @@ export const reviewsRoutes: readonly Route[] = [
   }),
   get(
     "/openreview/citation-checks",
-    privilegedOnly(({ res, ctx }) => {
+    privilegedOnly(({ res, url, ctx }) => {
       const watch = ctx.openReviewCitationWatch;
+      const view = url.searchParams.get("view");
+      if (view !== null && view !== "summary") {
+        sendJson(res, 400, { error: { message: "invalid citation check view" } });
+        return;
+      }
+      // The page asks for `view=summary`: one row per paper with only the references to look at.
+      // The unqualified read keeps every reference of every checked version.
+      const checks = ctx.store.listOpenReviewCitationChecks();
       sendJson(res, 200, {
         enabled: Boolean(watch),
         ...(watch ? watch.status() : { running: false }),
-        checks: ctx.store.listOpenReviewCitationChecks(),
+        checks: view === "summary" ? summarizeOpenReviewCitationChecks(checks) : checks,
       });
     }),
   ),

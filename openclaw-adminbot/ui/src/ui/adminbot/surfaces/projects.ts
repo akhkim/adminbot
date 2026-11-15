@@ -6,6 +6,7 @@
 // what every surface is handed.
 import { nothing } from "lit";
 import type { AppViewState } from "../../app-view-state.ts";
+import { createLazyView, notifyLazyViewHost, renderLazyView } from "../../lazy-view.ts";
 import { EMPTY_SLACK_CHANNEL_CHECK, saveAdminBotPaper } from "../controllers/admin.ts";
 import { loadSlackChannelNames } from "../controllers/directory.ts";
 import {
@@ -24,9 +25,15 @@ import { loadAdminBotRecentEdits } from "../controllers/recent-edits.ts";
 import type { ProjectsNavState } from "../projects/nav.ts";
 import { isPiReviewViewer } from "../projects/open-paper.ts";
 import { renderPaperReviewDialog, type ReviewPaper } from "../projects/review-dialog.ts";
-import { renderMyProjects } from "../projects/view.ts";
 import type { PaperWorkspaceProps } from "../projects/workspace.ts";
 import type { AdminBotSurfaceScope } from "./scope.ts";
+
+// The card list and the project pages are the largest views in the app, and most visits start on
+// another tab: they load on first visit, or ahead of it from the sidebar link. The review dialog
+// below is small and stays in the first bundle.
+const lazyMyProjects = createLazyView(() => import("../projects/view.ts"), notifyLazyViewHost, {
+  tabs: ["myWork"],
+});
 
 // Evidence ids asked for in the current task, sent together. See `onLoadSlots` below.
 const slotBatch = new Set<string>();
@@ -132,7 +139,9 @@ export function renderProjectsSurface(state: AppViewState, scope: AdminBotSurfac
   if (state.tab !== "myWork" || scope.rosterPendingForTab) {
     return nothing;
   }
-  return renderMyProjects(state as ProjectsNavState, paperWorkspaceProps(state, scope));
+  return renderLazyView(lazyMyProjects, (m) =>
+    m.renderMyProjects(state as ProjectsNavState, paperWorkspaceProps(state, scope)),
+  );
 }
 
 /**

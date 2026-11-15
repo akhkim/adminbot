@@ -71,7 +71,9 @@ describe("the card list", () => {
 
   it("says it is still reading rather than claiming there is nothing", () => {
     const { container } = drawOverview({ projects: null });
-    expect(container.textContent).toContain("Loading your projects");
+    expect(
+      container.querySelector('[data-testid="projects-loading"]')?.getAttribute("aria-label"),
+    ).toContain("Loading your projects");
     expect(container.textContent).not.toContain("No active projects");
   });
 

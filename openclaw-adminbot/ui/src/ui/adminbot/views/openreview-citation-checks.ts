@@ -12,7 +12,11 @@ type Check = {
   status: "completed" | "unreadable" | "failed";
   checked_at: string;
   attempts: number;
+  // The summary view sends only the flagged references, with the totals beside them. Both counts
+  // are absent from a service that predates the view, which sends every reference and version.
   findings?: Finding[];
+  finding_count?: number;
+  version_count?: number;
   error?: string;
   notification_proposal_id?: string;
 };
@@ -126,7 +130,7 @@ export class OpenReviewCitationChecks extends LitElement {
     }
     try {
       const response = await fetch(
-        `${this.baseUrl.replace(/\/$/u, "")}/openreview/citation-checks`,
+        `${this.baseUrl.replace(/\/$/u, "")}/openreview/citation-checks?view=summary`,
         { headers: memberAuthHeaders(this.sessionToken) },
       );
       if (generation !== this.generation) {
@@ -187,7 +191,9 @@ export class OpenReviewCitationChecks extends LitElement {
       ${rows.length === 0 && listing.enabled
         ? html`<p>No submissions have been checked yet.</p>`
         : nothing}
-      ${rows.map((check) => this.renderCheck(check, versions.get(check.submission_id) ?? 1))}
+      ${rows.map((check) =>
+        this.renderCheck(check, check.version_count ?? versions.get(check.submission_id) ?? 1),
+      )}
       ${rows.length
         ? html`<p class="hint">
             Automated checks can be wrong. A missing match is not proof of fabrication.
@@ -203,6 +209,7 @@ export class OpenReviewCitationChecks extends LitElement {
   private renderCheck(check: Check, versionCount: number) {
     const findings = check.findings ?? [];
     const issues = findings.filter(flagged);
+    const referenceCount = check.finding_count ?? findings.length;
     const notFound = issues.filter((finding) => finding.status === "not_found").length;
     const tone = check.status !== "completed" ? "unchecked" : issues.length ? "flagged" : "clean";
     return html`<article data-state=${tone}>
@@ -221,8 +228,8 @@ export class OpenReviewCitationChecks extends LitElement {
       <p>
         ${check.status === "completed"
           ? issues.length
-            ? `${notFound} not found · ${issues.length - notFound} to check · ${findings.length} references`
-            : `All ${findings.length} references matched a record.`
+            ? `${notFound} not found · ${issues.length - notFound} to check · ${referenceCount} references`
+            : `All ${referenceCount} references matched a record.`
           : check.status === "unreadable"
             ? `Not fully checked: ${check.error ?? "the PDF could not be read."}${
                 issues.length

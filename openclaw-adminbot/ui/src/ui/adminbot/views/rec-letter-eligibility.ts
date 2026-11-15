@@ -338,7 +338,12 @@ export type RecLetterDetailPanelProps = {
 export function renderRecLetterDetailPanel(props: RecLetterDetailPanelProps) {
   if (props.loading && !props.value) {
     return html`<section class="rec-eligibility" data-testid="rec-eligibility-panel">
-      <p class="muted">${t("logistics.eligibility.loading")}</p>
+      ${renderSkeleton({
+        shape: "lines",
+        count: 4,
+        label: t("logistics.eligibility.loading"),
+        testId: "rec-eligibility-loading",
+      })}
     </section>`;
   }
   if (props.error) {
@@ -687,7 +692,11 @@ export function renderRecLetterFreezeAdmin(props: RecLetterFreezeAdminProps) {
         ? html`<p class="logistics-requests__error" role="alert">${props.error}</p>`
         : nothing}
       ${props.loading && props.incidents.length === 0
-        ? html`<p class="muted">${t("logistics.eligibility.incidents.loading")}</p>`
+        ? renderSkeleton({
+            count: 3,
+            label: t("logistics.eligibility.incidents.loading"),
+            testId: "rec-eligibility-incidents-loading",
+          })
         : props.incidents.length === 0
           ? html`<p class="muted">${t("logistics.eligibility.incidents.empty")}</p>`
           : html`<ul class="rec-eligibility-admin__list">

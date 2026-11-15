@@ -453,6 +453,51 @@ describe("the Events tab", () => {
     });
     expect(service.meetups().overview("ada")).toMatchObject({ ok: false, status: 403 });
   });
+
+  it("reads papers and trips once for the whole tab, however many events are upcoming", () => {
+    const upcoming = [1, 2, 3, 4].map((n) => ({
+      id: `manyconf${n}_2027`,
+      name: `ManyConf${n} 2027`,
+      venue_type: "conference",
+      venue_group: `ManyConf${n} 2027`,
+      venue_family: `ManyConf${n}`,
+      conference_location: "Lisbon, Portugal",
+      homepage_url: "https://manyconf.test/",
+      schedule: [
+        {
+          milestone: "conference",
+          label: "Main conference",
+          starts: `2027-0${n}-10`,
+          ends: `2027-0${n}-12`,
+        },
+      ],
+    }));
+    const { service, store, add } = lab("2026-10-15T18:00:00Z", upcoming);
+    add({ id: "ada", topics: ["Causal inference"] });
+    add({ id: "bob", topics: ["Causal inference"] });
+    unwrap(
+      service.setConferenceTrip({
+        conferenceKey: "manyconf3:2027",
+        memberId: "bob",
+        intent: "going",
+        funding: "none",
+      }),
+    );
+    const papers = vi.spyOn(store, "listPapers");
+    const trips = vi.spyOn(store, "listConferenceTrips");
+
+    const view = unwrap(service.meetups().overview("ada"));
+
+    const cards = view.events.filter((event) => event.key.startsWith("manyconf"));
+    expect(cards).toHaveLength(4);
+    // The answer is still per event: only the one somebody is going to offers Say hi.
+    expect(cards.filter((card) => card.can_say_hi).map((card) => card.key)).toEqual([
+      "manyconf3:2027",
+    ]);
+    // One walk for the deadline read model and one for the rosters, not one pair per card.
+    expect(papers.mock.calls.length).toBeLessThanOrEqual(2);
+    expect(trips).toHaveBeenCalledTimes(1);
+  });
 });
 
 // --- zero setup, serendipity and Say hi ------------------------------------------------------------

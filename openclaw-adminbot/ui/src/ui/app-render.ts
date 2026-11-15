@@ -104,7 +104,6 @@ import {
   loadAdminBotRegistrations,
 } from "./adminbot/data/registrations.ts";
 import { feedbackConfigForTab } from "./adminbot/feedback-tab.ts";
-import "./components/feedback-widget.ts";
 import { buildGlobalSearchRecords } from "./adminbot/global-search.ts";
 import { seedMemberSearch } from "./adminbot/member-search-seed.ts";
 import { agoLabel, alertText, nudgeAlerts } from "./adminbot/nudge-alerts.ts";
@@ -140,13 +139,10 @@ import {
   renderChangePasswordPopover,
   renderChangePasswordTrigger,
 } from "./adminbot/views/change-password.ts";
-import { renderGettingStarted } from "./adminbot/views/getting-started.ts";
 import { renderLanding } from "./adminbot/views/landing.ts";
 import { renderLoginGate, renderSessionRestorePending } from "./adminbot/views/login-gate.ts";
 import { findOwnMember } from "./adminbot/views/profile-fields.ts";
 import { isProfileBlocked, profileAccessState } from "./adminbot/views/profile-gate.ts";
-import "./adminbot/views/error-log.ts";
-import { renderAdminBotTabUsage } from "./adminbot/views/tab-usage.ts";
 import {
   createChatSessionsLoadOverrides,
   hasAbortableSessionRun,
@@ -167,8 +163,14 @@ import {
   switchChatSession,
 } from "./app-render.helpers.ts";
 import {
+  loadFeedbackWidget,
+  renderAdminBotTabUsage,
   renderChat,
   renderConfig,
+  renderErrorLogPage,
+  renderGettingStarted,
+  renderGuestReimbursements,
+  renderOverview,
   renderQuickSettings,
   renderPaperMentorPage,
 } from "./app-render.lazy-pages.ts";
@@ -340,9 +342,7 @@ import {
 } from "./views/cron-quick-create.ts";
 import { renderExecApprovalPrompt } from "./views/exec-approval.ts";
 import { renderGatewayUrlConfirmation } from "./views/gateway-url-confirmation.ts";
-import { renderGuestReimbursements } from "./views/guest-reimbursements.ts";
 import { renderMcp } from "./views/mcp.ts";
-import { renderOverview } from "./views/overview.ts";
 
 function runUiTask<Args extends unknown[]>(
   task: (...args: Args) => Promise<unknown>,
@@ -798,6 +798,7 @@ function renderFeedbackWidget(state: AppViewState) {
   if (!config) {
     return nothing;
   }
+  loadFeedbackWidget();
   return html`
     <adminbot-feedback-widget
       feature-id=${config.featureId}
@@ -3379,9 +3380,7 @@ export function renderApp(state: AppViewState) {
         ${renderProfessorSurface(state, adminBotSurfaces)}
         ${renderCollaborateSurface(state, adminBotSurfaces)}
         ${renderEventsSurface(state, adminBotSurfaces)}
-        ${state.tab === "adminbotErrorLog"
-          ? html`<adminbot-error-log></adminbot-error-log>`
-          : nothing}
+        ${state.tab === "adminbotErrorLog" ? renderErrorLogPage() : nothing}
         ${state.tab === "adminbotTabUsage"
           ? renderAdminBotTabUsage({
               report: state.adminBotTabUsage,

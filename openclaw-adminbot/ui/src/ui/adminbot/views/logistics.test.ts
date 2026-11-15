@@ -1359,9 +1359,26 @@ describe("request modes", () => {
       openLoading: true,
     });
     expect(container.querySelector(".logistics-requests__table")).toBeNull();
-    expect(container.querySelector(".logistics-requests__empty")?.textContent).toContain(
-      "Reading requests…",
-    );
+    // A quiet placeholder, with the words kept for a screen reader.
+    const waiting = container.querySelector("[data-testid='logistics-request-loading']");
+    expect(waiting?.getAttribute("aria-busy")).toBe("true");
+    expect(waiting?.getAttribute("aria-label")).toBe("Reading requests…");
+  });
+
+  it("keeps the rows on screen while the list is read again", () => {
+    const refreshing = draw({
+      role: "member",
+      mode: "view",
+      requests: [letters],
+      requestsLoading: true,
+    });
+    expect(refreshing.container.querySelectorAll(".logistics-requests__row")).toHaveLength(1);
+    expect(refreshing.container.querySelector(".skeleton")).toBeNull();
+
+    // Only a first read, with nothing to show yet, draws the placeholder.
+    const first = draw({ role: "member", mode: "view", requests: [], requestsLoading: true });
+    expect(first.container.querySelector(".logistics-requests__table")).toBeNull();
+    expect(first.container.querySelector(".skeleton")?.getAttribute("aria-busy")).toBe("true");
   });
 
   it("shows a letters request in full, read-only, with a way back", () => {

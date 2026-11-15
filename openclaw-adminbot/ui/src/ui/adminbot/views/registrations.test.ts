@@ -64,7 +64,12 @@ describe("renderAdminBotRegistrations", () => {
     render(renderAdminBotRegistrations(baseProps({ loading: true })), container);
     await Promise.resolve();
 
-    expect(container.textContent).toContain("Loading member requests");
+    const placeholder = container.querySelector('[data-testid="registrations-loading"]');
+    expect(placeholder?.getAttribute("aria-busy")).toBe("true");
+    expect(placeholder?.getAttribute("aria-label")).toContain("Loading member requests");
+    // A placeholder in the page's own shape: no words on screen and no boxed card.
+    expect(container.textContent?.trim()).toBe("");
+    expect(container.querySelector(".card")).toBeNull();
     expect(container.querySelector("button")).toBeNull();
   });
 

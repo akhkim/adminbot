@@ -18,7 +18,7 @@ let datasetPath: string;
 let previousDatasetPath: string | undefined;
 const running: Array<ReturnType<typeof createAdminBotMockService>> = [];
 
-function writeDataset(checkedAt: string) {
+function writeDataset(checkedAt: string, extra: Record<string, unknown> = {}) {
   writeFileSync(
     datasetPath,
     JSON.stringify({
@@ -29,13 +29,14 @@ function writeDataset(checkedAt: string) {
           venue_type: "conference",
           deadline_aoe: "2099-01-15 23:59:59",
           source_checked_at: checkedAt,
+          ...extra,
         },
       ],
     }),
   );
 }
 
-async function readDeadlines(durable: boolean) {
+async function readDeadlines(durable: boolean, query = "") {
   const mock = createAdminBotMockService(
     durable ? { databasePath: join(dir, "adminbot.sqlite") } : {},
   );
@@ -47,7 +48,7 @@ async function readDeadlines(durable: boolean) {
     throw new Error("expected a TCP address");
   }
   return async () => {
-    const response = await fetch(`http://127.0.0.1:${address.port}/deadlines`);
+    const response = await fetch(`http://127.0.0.1:${address.port}/deadlines${query}`);
     expect(response.status).toBe(200);
     return ((await response.json()) as { items: Array<Record<string, unknown>> }).items;
   };
@@ -90,6 +91,43 @@ describe.each(BACKENDS)("GET /deadlines ($name)", ({ durable }) => {
 
     writeDataset("2099-01-02T00:00:00Z");
     expect((await read())[0]).toMatchObject({ source_checked_at: "2099-01-02T00:00:00Z" });
+  });
+
+  it("leaves the collector's working out of the feed unless detail=full asks for it", async () => {
+    const working = {
+      website_deadline_candidates: [{ date: "2099-01-15", evidence: "Papers due January 15." }],
+      deadline_observations: [{ date: "2099-01-15", decision: "accepted" }],
+    };
+    writeDataset("2099-01-01T00:00:00Z", {
+      ...working,
+      revisions: [{ deadline_aoe: "2099-01-15 23:59:59" }],
+    });
+
+    const [item] = await (await readDeadlines(durable))();
+    expect(item).not.toHaveProperty("website_deadline_candidates");
+    expect(item).not.toHaveProperty("deadline_observations");
+    // Everything a reader of the board uses is still there.
+    expect(item).toMatchObject({
+      id: "synthconf2099_paper",
+      deadline_aoe: "2099-01-15 23:59:59",
+      revisions: [{ deadline_aoe: "2099-01-15 23:59:59" }],
+    });
+
+    const [full] = await (await readDeadlines(durable, "?detail=full"))();
+    expect(full).toMatchObject(working);
+  });
+
+  it("refuses a detail level it does not know", async () => {
+    writeDataset("2099-01-01T00:00:00Z");
+    const mock = createAdminBotMockService();
+    running.push(mock);
+    await mock.listen(0);
+    const address = mock.server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("expected a TCP address");
+    }
+    const response = await fetch(`http://127.0.0.1:${address.port}/deadlines?detail=everything`);
+    expect(response.status).toBe(400);
   });
 
   it("falls back to the compiled snapshot when the dataset file is unreadable", async () => {

@@ -165,6 +165,51 @@ describe("OpenReview citation check routes", () => {
     expect(await listed.json()).toMatchObject({ enabled: false, running: false, checks: [] });
   });
 
+  it("sends the page one trimmed row per paper for view=summary", async () => {
+    const { app, call } = await setup({ configured: false });
+    const row = {
+      submission_id: "paperAAAA",
+      title: "Synthetic paper",
+      venue_id: "Synthetic.cc/2027/Conference/Submission",
+      status: "completed" as const,
+      attempts: 1,
+    };
+    app.store.saveOpenReviewCitationCheck({
+      ...row,
+      pdf_path: "/pdf/v1.pdf",
+      checked_at: "2027-01-01T00:00:00.000Z",
+      findings: [{ citation: "Old ref", status: "matched", explanation: "Found." }],
+    });
+    app.store.saveOpenReviewCitationCheck({
+      ...row,
+      pdf_path: "/pdf/v2.pdf",
+      checked_at: "2027-01-02T00:00:00.000Z",
+      findings: [
+        { citation: "Good ref", status: "matched", explanation: "Found.", source: "crossref" },
+        { citation: "Missing ref", status: "not_found", explanation: "No record.", url: "x" },
+      ],
+    });
+    const summary = (await (await call("/openreview/citation-checks?view=summary")).json()) as {
+      checks: unknown[];
+    };
+    expect(summary.checks).toEqual([
+      {
+        ...row,
+        pdf_path: "/pdf/v2.pdf",
+        checked_at: "2027-01-02T00:00:00.000Z",
+        findings: [{ citation: "Missing ref", status: "not_found", explanation: "No record." }],
+        finding_count: 2,
+        version_count: 2,
+      },
+    ]);
+    // The unqualified read is unchanged: every version, every reference.
+    const full = (await (await call("/openreview/citation-checks")).json()) as {
+      checks: Array<{ findings: unknown[] }>;
+    };
+    expect(full.checks.map((check) => check.findings.length)).toEqual([2, 1]);
+    expect((await call("/openreview/citation-checks?view=other")).status).toBe(400);
+  });
+
   it("refuses unauthenticated callers", async () => {
     const { call, reader } = await setup();
     expect((await call("/openreview/citation-checks", {}, false)).status).toBe(401);

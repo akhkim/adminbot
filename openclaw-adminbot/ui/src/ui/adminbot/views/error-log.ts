@@ -11,10 +11,12 @@ import { LitElement, html, nothing } from "lit";
 import { state } from "lit/decorators.js";
 import { t } from "../../../i18n/index.ts";
 import { formatRelativeTimestamp } from "../../format.ts";
+import { renderSkeleton } from "../../loading/skeleton.ts";
 import { loadSettings } from "../../storage.ts";
 import {
   authedJson,
   calendarFailure,
+  peekAuthedRead,
   loadStoredMemberSession,
   resolveAdminBotBaseUrl,
 } from "../auth/session.ts";
@@ -102,15 +104,19 @@ export class AdminBotErrorLog extends LitElement {
       this.error = t("errorLog.error.signIn");
       return;
     }
+    const path = `/ops/errors${this.showResolved ? "?resolved=1" : ""}`;
+    // Read before in this session: that list is drawn at once, and the request below -- which
+    // still goes out -- replaces it or reports why it cannot.
+    const seen = (
+      peekAuthedRead(session.baseUrl, path, session.token) as { groups?: unknown } | null
+    )?.groups;
+    if (Array.isArray(seen)) {
+      this.groups = seen as ErrorGroup[];
+    }
     this.loading = true;
     this.error = null;
     try {
-      const result = await authedJson(
-        session.baseUrl,
-        `/ops/errors${this.showResolved ? "?resolved=1" : ""}`,
-        "GET",
-        session.token,
-      );
+      const result = await authedJson(session.baseUrl, path, "GET", session.token);
       if ("unreachable" in result) {
         // The list already on screen stays: an unreachable service should not also blank it.
         this.error = t("errorLog.error.unreachable", { url: session.baseUrl });
@@ -254,7 +260,7 @@ export class AdminBotErrorLog extends LitElement {
           </p>`
         : nothing}
       ${this.loading && !groups
-        ? html`<p class="error-log__empty">${t("errorLog.loading")}</p>`
+        ? renderSkeleton({ count: 5, label: t("errorLog.loading"), testId: "error-log-loading" })
         : nothing}
       ${groups && !groups.length
         ? html`<p class="error-log__empty" data-testid="error-log-empty">
