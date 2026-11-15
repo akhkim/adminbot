@@ -379,7 +379,6 @@ Website: `/papers, /announcements, /grant-report, /professor, /arr-eligible-revi
 | `get-papers-nudge-batches`                                                | GET `/papers/nudge-batches`                                               |
 | `get-papers-nudges`                                                       | GET `/papers/nudges`                                                      |
 | `get-papers-paperflow-stages`                                             | GET `/papers/paperflow-stages`                                            |
-| `get-papers-papermentor-runs`                                             | GET `/papers/papermentor/runs`                                            |
 | `get-papers-pi-review`                                                    | GET `/papers/pi-review`                                                   |
 | `get-papers-pre-registration-pending`                                     | GET `/papers/pre-registration/pending`                                    |
 | `get-papers-relevant`                                                     | GET `/papers/relevant`                                                    |
@@ -403,8 +402,6 @@ Website: `/papers, /announcements, /grant-report, /professor, /arr-eligible-revi
 | `post-papers-openreview-sync-run`                                         | POST `/papers/openreview-sync/run` (dry-run)                              |
 | `post-papers-paperflow-evidence`                                          | POST `/papers/paperflow-evidence`                                         |
 | `post-papers-paperflow-stages-run`                                        | POST `/papers/paperflow-stages/run`                                       |
-| `post-papers-papermentor-reviews-run`                                     | POST `/papers/papermentor/reviews/run` (dry-run)                          |
-| `post-papers-papermentor-runs`                                            | POST `/papers/papermentor/runs`                                           |
 | `post-papers-pi-review-ack`                                               | POST `/papers/pi-review/ack`                                              |
 | `post-papers-pre-registration-run`                                        | POST `/papers/pre-registration/run`                                       |
 | `post-papers-project-channels-run`                                        | POST `/papers/project-channels/run`                                       |

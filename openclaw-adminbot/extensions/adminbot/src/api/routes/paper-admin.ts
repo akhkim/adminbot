@@ -4,7 +4,6 @@
 // decorator from guards.ts; the order below is the order the old if-chain tried them in.
 
 import { randomUUID } from "node:crypto";
-import { parsePaperMentorRunInput } from "../../contracts/papermentor.js";
 import { gatherOpenReviewPaperEvidence } from "../../workflows/papers/openreview-paper-sync-sources.js";
 import {
   asString,
@@ -233,52 +232,6 @@ export const paperAdminRoutes: readonly Route[] = [
           key: body.key,
           reviewed: body.reviewed,
         }),
-      );
-    }),
-  ),
-  post(
-    "/papers/papermentor/runs",
-    privilegedOnly(async ({ req, res, principal, ctx }) => {
-      const { service } = ctx;
-      const run = parsePaperMentorRunInput(await readJsonOrEmpty(req));
-      if (!run) {
-        sendJson(res, 400, {
-          error: { message: "a PaperMentor run needs at least project_id and reviewed_at" },
-        });
-        return;
-      }
-      sendServiceResult(res, service.recordPaperMentorRun(principalActor(principal), run));
-    }),
-  ),
-  get(
-    "/papers/papermentor/runs",
-    privilegedOnly(({ res, url, ctx }) => {
-      const { service } = ctx;
-      sendServiceResult(
-        res,
-        service.listPaperMentorRuns(url.searchParams.get("paper_id") ?? undefined),
-      );
-    }),
-  ),
-  // Ask PaperMentor to review the papers at their review step. Dry run unless the body says
-  // `dry_run: false`, so a hand-run call names the papers before it asks for anything; the cron
-  // passes false. Answers 503 on a live pass when no Overleaf secret is configured.
-  post(
-    "/papers/papermentor/reviews/run",
-    privilegedOnly(async ({ req, res, principal, ctx }) => {
-      const { service } = ctx;
-      const body = readRecord(await readJsonOrEmpty(req));
-      const limit =
-        typeof body.limit === "number" && Number.isInteger(body.limit)
-          ? Math.min(Math.max(body.limit, 1), 20)
-          : undefined;
-      sendServiceResult(
-        res,
-        await service.requestPaperMentorReviews(
-          principalActor(principal),
-          ctx.paperMentorReviewRequester,
-          { dryRun: body.dry_run !== false, ...(limit ? { limit } : {}) },
-        ),
       );
     }),
   ),

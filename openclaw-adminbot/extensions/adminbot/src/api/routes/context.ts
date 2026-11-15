@@ -2,7 +2,6 @@ import type {
   CalendarMembershipReader,
   CalendarAccessReader,
 } from "../../connectors/calendar-membership.js";
-import type { PaperMentorReviewRequester } from "../../connectors/papermentor-review.js";
 import type { PaperMentorUploadReviewer } from "../../connectors/papermentor-uploads.js";
 // What every route is handed: the principal the request resolved to, the service and its
 // connectors (AdminBotRouteContext), and the options createAdminBotMockService builds them from.
@@ -89,8 +88,6 @@ export type AdminBotRouteContext = {
   placeAttribution?: { text: string; url: string };
   /** Sends the publication digest. Absent leaves /papers/mailing-list/send answering 503. */
   publicationMailingRunner?: PublicationMailingRunner;
-  /** Asks the lab's Overleaf for a PaperMentor review. Absent leaves a live review pass answering 503. */
-  paperMentorReviewRequester?: PaperMentorReviewRequester;
   /** Reviews a zip a member uploads in the PaperMentor tab. Absent, the tab says it is not set up. */
   paperMentorUploadReviewer?: PaperMentorUploadReviewer;
   venuePapersReader?: import("../../connectors/openreview-notes.js").OpenReviewNotesReader;
@@ -294,9 +291,6 @@ export type AdminBotMockServiceOptions = {
   cvDigestPublisher?: AdminBotCvDigestPublisher;
   /** Sends the publication digest. Absent leaves /papers/mailing-list/send answering 503. */
   publicationMailingRunner?: PublicationMailingRunner;
-  // Asks the lab's Overleaf for PaperMentor reviews. Injected so tests never reach an Overleaf;
-  // otherwise built from ADMINBOT_PAPERMENTOR_SERVICE_TOKEN, and absent while that is unset.
-  paperMentorReviewRequester?: PaperMentorReviewRequester;
   // Runs papermentor-pdf on this host for the PaperMentor tab's uploads. Injected so tests never
   // spawn a review; otherwise built from ADMINBOT_PAPERMENTOR_PDF_DIR, and absent while that is unset.
   paperMentorUploadReviewer?: PaperMentorUploadReviewer;

@@ -1133,136 +1133,23 @@ adds `ADMINBOT_PAPERMENTOR_PDF_DIR` and `ADMINBOT_PAPERMENTOR_BIN_DIR` to the un
 review uses `LLM_GATEWAY_URL`/`LLM_GATEWAY_TOKEN` (the shared gateway's public route) when set,
 else `OPENROUTER_API_KEY`, else `OPENAI_API_KEY`; `ADMINBOT_PAPERMENTOR_MODEL` overrides the model.
 
-## PaperMentor reviews
+## The PaperMentor review step
 
-Every paper is reviewed by PaperMentor -- the multi-agent reviewer built into the lab's own
-Overleaf -- before it is submitted. `papermentor_review` has been an evidence slot since the slot
-registry existed, but it was a `bool`: the author ticked a box and the lab took their word for it,
-which meant `fixes_merged` was chased with no idea whether there was anything to fix.
+Every paper is reviewed by PaperMentor before it is submitted. `papermentor_review` is a `bool`
+slot on the evidence checklist, and the author ticks it. To get the review, the author downloads
+the project's source zip from Overleaf (Menu, then Download, then Source) and uploads it in the
+PaperMentor tab above. The post-review zip marks each comment with a `%PAPERMENTOR:` line.
+`fixes_merged` follows it and is ticked once the cheap fixes are in.
 
-Now the reviewer says so itself.
+The paper-slot nudge sweep chases the review step like any other slot. Its line tells the author to
+download the source zip from Overleaf and upload it in the PaperMentor tab.
 
-**What is kept, and what is not.** PaperMentor writes each finished review to
-`/var/lib/overleaf/ai-tutor-cache/<project id>/review_comments.json` on the Overleaf host, and
-attaches the comments themselves to the author's project as threads. AdminBot keeps **only the
-counting half**: when the review ran, how many comments, by severity and category, how many landed
-in each file, and which agents failed. Not one word of the comments, the quoted text, the paper
-type summary or the agents' error prose. Those are unpublished paper content, they already exist
-where they are useful, and `contracts/papermentor.ts` is the boundary that keeps them there --
-written as an allow-list, so a field the fork adds later arrives as nothing rather than as a leak.
-
-**How a review finds its paper.** By the Overleaf project id, read out of a project link the paper
-already carries (a stored `overleaf_edit` row, or `artifacts.overleaf_edit_url`). Both sides go
-through `adminBotOverleafProjectRef`, so this is a comparison of two ids and never anything that
-follows a URL. The card no longer collects the project link -- the share links it takes carry a
-token, not an id -- so a paper filed since then is matched once an automated review (below) has
-resolved its share link and written the project link onto `artifacts.overleaf_edit_url`. Until
-then, and wherever automated reviews are off, an author ticks `papermentor_review` by hand. A
-review of a project no paper claims is refused with a 404 and named in the run summary rather than
-stored as an orphan -- that is usually a paper nobody registered, which is the thing for somebody
-to go and fix.
-
-**What it changes on the paper.** The `papermentor_review` slot is marked provided, dated from the
-review rather than from the ingest, and with no member credited: nobody ticked a box, and crediting
-an author would inflate the number that measures whether people are using the checklist. A slot an
-admin **waived** stays waived -- the review is still recorded next to it, which is what makes the
-override visible.
-
-**The collector.** `scripts/adminbot-papermentor-runs.ts`, wrapped by
-`scripts/adminbot-papermentor-cron.sh` and registered as `adminbot-papermentor-runs` (hourly). It
-reads the cache directory, summarizes each review and posts it to
-`POST /papers/papermentor/runs` under the service token. Idempotent by construction: a run is
-identified by its project and the instant it ran, so re-reading the same cached file records
-nothing new and needs no local cursor.
-
-```bash
-# Where PaperMentor caches its reviews, if not the default above.
-export ADMINBOT_PAPERMENTOR_CACHE_DIR="/var/lib/overleaf/ai-tutor-cache"
-# Where to post them, if not the loopback service.
-export ADMINBOT_URL="https://adminbot.example:8443"
-
-scripts/adminbot-papermentor-cron.sh --dry-run          # read and summarize, post nothing
-scripts/adminbot-papermentor-cron.sh --since 2026-09-01 # ignore reviews older than this
-```
-
-Run it on the Overleaf host with `ADMINBOT_URL` pointed at the service, or on the AdminBot host
-with the cache directory mounted or synced and `ADMINBOT_URL` left unset. A first pass against a
-full cache would otherwise report a year of old reviews as news, which is what `--since` is for.
-
-With neither, every run fails, naming the cache path it looked for. On an AdminBot host that has no
-cache and is not meant to (the reviews are collected on the Overleaf host, or not yet at all), set
-`ADMINBOT_PAPERMENTOR_DISABLED=1` in the cron environment and the job exits 0 saying it is off on
-purpose. The flag only covers "no cache here": a cache named in `ADMINBOT_PAPERMENTOR_CACHE_DIR`
-that goes missing or unreadable still fails, and a cache that appears later is read without
-clearing the flag. Until reviews are collected, authors tick `papermentor_review` by hand.
-
-`GET /papers/papermentor/runs?paper_id=` reads back what has been ingested, newest first, for an
-operator checking the collector is working.
-
-**Automated reviews.** AdminBot runs the review step for the author.
-`scripts/adminbot-papermentor-review-cron.sh`, registered as `adminbot-papermentor-reviews` (every
-two hours, 08:02 to 20:02), calls `POST /papers/papermentor/reviews/run` with `dry_run: false`.
-The service picks the papers at their review step and asks the lab's Overleaf to review at most
-three per pass. A paper is at its review step when it is open, not dormant and unsubmitted, and its
-`papermentor_review` is either open and never reviewed or re-opened because the last review is
-stale. A waived slot, and a hand tick with no review behind it, are left alone. Never-reviewed
-papers go first. Each request goes to the fork's `POST /internal/papermentor/review` with a shared
-secret, naming the paper by the author's own `overleaf_share` link. The fork resolves that link to
-its project, so nobody's Overleaf account is involved, and answers with the project id, which
-AdminBot writes onto the paper. The review runs in the background on the Overleaf host, and its
-counts arrive through the collector like any other review.
-
-**The link must be from the lab's PaperMentor Overleaf** (`overleaf.safe.eu`) for the review to run
-automatically. The share link is a credential, so it is only ever sent to the instance that minted
-it, and a link from `overleaf.com` names a project PaperMentor cannot see. Those papers are not
-asked about. The `overleaf_share` hint on the paper card says this where the link is pasted, and
-the nudge tells the author to move the draft.
-
-Nothing is written into the paper without a person. The review waits in the project's AI Tutor
-panel, which offers **Load Automated Review** to the next author who opens it. Apply then adds it
-once for the whole project, and a review someone runs by hand replaces it. The fork runs at most
-two automated reviews at a time and at most one per project a day, whatever came of it, so the
-pass is safe at any cadence. A hand run is a dry run unless the body says `dry_run: false`. It names
-the papers due and asks for nothing.
-
-```bash
-# The same secret as PAPERMENTOR_SERVICE_TOKEN on the Overleaf host. Unset, the job says it is off.
-export ADMINBOT_PAPERMENTOR_SERVICE_TOKEN="..."
-# Where the lab's Overleaf answers, if not https://overleaf.safe.eu.
-export ADMINBOT_OVERLEAF_URL="https://overleaf.safe.eu"
-```
-
-Every request writes a `papermentor.review_requested` audit row with what the Overleaf answered:
-`started`, `running`, `recent`, `busy`, `not_found` (the link was regenerated, or link sharing is
-off), `rejected` or `failed`. Every resolved project writes `papermentor.project_linked`.
-
-**What the lab chases.** The review is a step on the evidence checklist, so it rides the paper-slot
-nudge sweep rather than a sweep of its own -- one message per person per cadence, however many
-papers and however many kinds of thing they owe. Three things the slot's own status cannot say are
-added to the line:
-
-| The paper                             | The line says                                                                                                                                                   |
-| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Draft is on `overleaf.com`            | it has to move to the lab's Overleaf before PaperMentor can read it at all, or review it automatically                                                          |
-| On the lab's Overleaf, never reviewed | where to run it -- the AI Tutor panel in the project -- or, with automated reviews on, where to load and apply the one PaperMentor ran                          |
-| Reviewed, fixes still open            | what the reviewer found: "PaperMentor left 14 comments 3 days ago (3 critical, 5 warnings)", and to load them from the panel if they are not in the project yet |
-
-The first is the one worth having. Every paper is reviewed before submission and PaperMentor only
-reads its own instance, so a draft on `overleaf.com` cannot clear the step at all -- and the worst
-moment to discover that is deadline week. The link is on the paper from the start, so the lab can
-say it in week one.
-
-**Freshness.** A review older than `adminBotPaperMentorFreshnessDays` (**21 days**) re-opens
-`papermentor_review` in the nudge, saying how old the last one was. A draft three weeks into a
-writing push is a different paper: the sections the review called thin have been rewritten, and the
-ones written since have never been read. Three weeks is a guess at how fast a draft moves rather
-than a fact about this lab, which is why it is a named constant.
-
-Two deliberate limits on that. It only re-opens while the paper is **unsubmitted** -- re-reviewing a
-paper that is already with a venue is work that cannot change anything -- and it is **not a write**:
-the stored row keeps saying the review happened, because it did. Only the chase knows about
-staleness, so the paper card still shows the tick; a card that reads "reviewed, and due for another"
-is the next piece of UI work, not something the sweep should fake by clearing a row.
+AdminBot used to ask the lab's own Overleaf to run PaperMentor (`adminbot-papermentor-reviews`)
+and to collect the review counts from that host's cache (`adminbot-papermentor-runs`). The lab no
+longer runs that Overleaf, so both jobs were removed, along with `GET`/`POST
+/papers/papermentor/runs` and `POST /papers/papermentor/reviews/run`. The cron manifest lists both
+jobs under `retired`, so the next sync deletes them from the store. An older database keeps its
+`adminbot_papermentor_runs` table, which nothing reads any more.
 
 ## Recommendation letter deadlines
 
@@ -1787,8 +1674,6 @@ a job that was never registered is silent: nobody is nudged and nothing errors.
 | `adminbot-onboarding-chase`           | `40 9 * * 1-5`       | Chase setup checklists still open after ten days, then every two months                     |
 | `adminbot-thesis-milestones`          | `50 9 * * 1-5`       | Guidebook nudge before a thesis deadline, grading reminder five days after                  |
 | `adminbot-paper-stages`               | `45 * * * *`         | Verify the evidence, advance each paper on it, and queue the PI's gate                      |
-| `adminbot-papermentor-reviews`        | `2 8-20/2 * * *`     | Ask PaperMentor to review the papers at their review step, on the lab's Overleaf            |
-| `adminbot-papermentor-runs`           | `35 * * * *`         | Collect PaperMentor's cached reviews and record them against their papers                   |
 | `adminbot-rec-letter-reminders`       | `25 10 * * *`        | Mail the head professor the letters due within three days                                   |
 | `adminbot-rec-letter-overdue-confirm` | `35 10 * * *`        | Ask students whether a past-due, still-open letter went in (off until enabled)              |
 | `adminbot-professor-digest`           | `8 * * * *`          | Daily digest to the head professor of what is overdue, due soon, or long waiting on her     |

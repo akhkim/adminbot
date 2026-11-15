@@ -21,11 +21,7 @@ const LINKS: Partial<Record<AdminBotPaperSlot, string>> = {
   drive_pdf_arxiv: "https://drive.google.com/file/d/1PdF9x",
 };
 
-/**
- * `legacyProject` gives the paper the Overleaf project id a PaperMentor review is matched by. Only
- * papers filed before the project-link slot was retired carry one, on the artifact.
- */
-function lab(options: { legacyProject?: boolean } = {}) {
+function lab() {
   const service = new AdminBotService();
   unwrap(
     service.upsertLabMember({
@@ -50,13 +46,6 @@ function lab(options: { legacyProject?: boolean } = {}) {
       current_step: "brainstorming_docs",
       first_author_member_id: "ada",
       venue: "ICLR 2027",
-      ...(options.legacyProject
-        ? {
-            artifacts: {
-              overleaf_edit_url: `https://${ADMINBOT_LAB_OVERLEAF_HOST}/project/65f2a1c9d4e3b7a801f6`,
-            },
-          }
-        : {}),
     }),
   );
   return service;
@@ -140,29 +129,6 @@ describe("advancing a paper on its own evidence", () => {
     unwrap(service.syncPaperStages("cron"));
 
     expect(stepOf(service)).toBe("arxiv_polish");
-  });
-
-  it("advances on a PaperMentor run, which is evidence with no member behind it", () => {
-    const service = lab({ legacyProject: true });
-    give(service, "project_folder");
-    give(service, "overleaf_share");
-    give(service, "fixes_merged");
-    give(service, "pdf_ready");
-    expect(stepOf(service)).toBe("overleaf_writing");
-
-    unwrap(
-      service.recordPaperMentorRun("cron", {
-        project_id: "65f2a1c9d4e3b7a801f6",
-        reviewed_at: "2026-09-12T11:04:09.221Z",
-        comments_total: 2,
-        by_severity: { warning: 2 },
-        by_category: { results: 2 },
-        by_document: [],
-        failed_agents: [],
-      }),
-    );
-
-    expect(stepOf(service)).toBe("submission");
   });
 
   it("is idempotent: a second pass over the same evidence advances nothing", () => {

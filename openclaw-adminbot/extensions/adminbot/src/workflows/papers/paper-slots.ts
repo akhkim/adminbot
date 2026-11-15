@@ -43,13 +43,6 @@ import {
   type AdminBotPaperSlotOwner,
   type AdminBotPaperSlotRecord,
 } from "../../contracts/paper-slots.js";
-import {
-  isPaperMentorReviewStale,
-  paperMentorFixesDetail,
-  paperMentorReviewDetail,
-  paperMentorReviewState,
-  type PaperMentorContext,
-} from "./papermentor-nudges.js";
 
 /** A paper this old is dormant: it is not late, it is resting, and nudging it trains people to ignore nudges. */
 const DORMANT_MONTHS = 24;
@@ -465,6 +458,8 @@ const NUDGE_HOW: Partial<Record<AdminBotPaperSlot, string>> = {
   project_folder: "paste the Google Drive folder or doc where this paper lives",
   overleaf_share:
     "in Overleaf, Share → turn on link sharing → copy the “Anyone with this link can edit” link",
+  papermentor_review:
+    "download the project's source zip from Overleaf and upload it in AdminBot's PaperMentor tab",
   pdf_ready: "tick it once Overleaf compiles with no errors and this is the PDF you would submit",
   submission: "paste your paper's page on the venue's system (the OpenReview forum, CMT or HotCRP)",
   submission_id: "the ID the venue assigned you, shown on the submission page",
@@ -512,7 +507,6 @@ export function actionablePaperSlots(
   stored: AdminBotPaperSlotRecord[],
   now: Date,
   drafts: AdminBotSocialDraftRecord[] = [],
-  papermentor: PaperMentorContext = {},
 ): NudgeItem[] {
   if (isPaperDormant(paper, now) || isPaperClosed(paper)) {
     return [];
@@ -527,13 +521,6 @@ export function actionablePaperSlots(
   const settled = (slot: AdminBotPaperSlot) =>
     passed.has(slot) || isAdminBotPaperSlotSettled(rows.get(slot)?.status ?? "missing");
 
-  // What the reviewer has said about this paper, which two of the slots below speak for. A review
-  // that has gone stale re-opens its own slot -- and only while the paper is unsubmitted, because
-  // asking somebody to re-review a paper that is already with a venue is asking for work that
-  // cannot change anything. The stored row keeps saying the review happened: it did.
-  const reviewState = paperMentorReviewState(papermentor, now);
-  const reviewStale = isPaperMentorReviewStale(reviewState) && !settled("submission");
-
   const out: NudgeItem[] = [];
   for (const slot of adminBotPaperSlots) {
     const definition = adminBotPaperSlotRegistry[slot];
@@ -544,8 +531,7 @@ export function actionablePaperSlots(
     if (!record) {
       continue;
     }
-    const reopened = slot === "papermentor_review" && reviewStale;
-    if ((isAdminBotPaperSlotSettled(record.status) || passed.has(slot)) && !reopened) {
+    if (isAdminBotPaperSlotSettled(record.status) || passed.has(slot)) {
       continue;
     }
     // Both lists, not either: `chaseAfter` says when the lab starts asking, `upstream` says when
@@ -555,19 +541,10 @@ export function actionablePaperSlots(
     if (![...definition.upstream, ...(definition.chaseAfter ?? [])].every(settled)) {
       continue;
     }
-    // Four sources for the line under the label, in the order they matter: a value the service
-    // refused, what the reviewer said, the slides' second half, and what a valid answer looks like.
+    // Three sources for the line under the label, in the order they matter: a value the service
+    // refused, the slides' second half, and what a valid answer looks like.
     const invalid = record.status === "invalid" ? invalidSlotDetail(record) : undefined;
-    const detail =
-      invalid ??
-      (slot === "papermentor_review"
-        ? paperMentorReviewDetail(reviewState)
-        : slot === "fixes_merged"
-          ? paperMentorFixesDetail(papermentor.latest, now)
-          : slot === "slides"
-            ? SLIDES_DETAIL
-            : undefined) ??
-      NUDGE_HOW[slot];
+    const detail = invalid ?? (slot === "slides" ? SLIDES_DETAIL : undefined) ?? NUDGE_HOW[slot];
     out.push({
       domain: "paper_slot",
       subjectId: adminBotPaperSlotSubjectId(paper.id, slot),

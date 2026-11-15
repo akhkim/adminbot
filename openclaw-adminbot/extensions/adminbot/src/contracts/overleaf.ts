@@ -99,13 +99,7 @@ export type AdminBotOverleafProjectRef = {
   /** The origin it was found on, normalized -- no trailing slash, no path. */
   origin: string;
   host: string;
-  /**
-   * Whether this project is on the lab's own Overleaf, and so is one PaperMentor can review.
-   *
-   * The reason this type carries a flag rather than the caller re-deriving it: "can PaperMentor
-   * see this paper" is the question the whole review requirement turns on, and a second copy of
-   * the host comparison somewhere downstream is a second place for it to drift.
-   */
+  /** Whether this project is on the lab's own Overleaf rather than overleaf.com or another fork. */
   lab: boolean;
 };
 

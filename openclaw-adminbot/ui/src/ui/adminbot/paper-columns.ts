@@ -548,7 +548,7 @@ const RECORD_COLUMNS: Column[] = [
     save: "overleafEditUrl",
     label: "Overleaf (edit)",
     short: "Overleaf edit",
-    hint: "The project link coauthors can write in — on the lab's Overleaf, so PaperMentor can review it",
+    hint: "The project link coauthors can write in",
   },
   {
     key: "overleaf_share_url",

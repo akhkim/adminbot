@@ -34,8 +34,6 @@ function cronEnv(dir: string, extra: Record<string, string>): NodeJS.ProcessEnv 
   const env: NodeJS.ProcessEnv = { ...process.env, HOME: path.join(dir, "home"), ...extra };
   delete env.PYTHONPATH;
   delete env.ADMINBOT_PYTHON;
-  delete env.ADMINBOT_PAPERMENTOR_CACHE_DIR;
-  delete env.ADMINBOT_PAPERMENTOR_DISABLED;
   delete env.ADMINBOT_OPENREVIEW_RESULTS_JSON;
   delete env.ADMINBOT_DB_PATH;
   env.PYTHONNOUSERSITE = "1";
@@ -214,98 +212,5 @@ describe("cron service state dir", () => {
   it("honors ADMINBOT_DB_PATH, ignoring a blank one", () => {
     expect(serviceStateDir({ ADMINBOT_DB_PATH: "/srv/state/x.sqlite" })).toBe("/srv/state");
     expect(serviceStateDir({ ADMINBOT_DB_PATH: "  " })).toBe(path.join(repoRoot, "state"));
-  });
-});
-
-function runPaperMentor(
-  cacheDir: string | undefined,
-  args: string[] = [],
-  { disabled = false } = {},
-) {
-  const dir = tempDir("adminbot-papermentor-cron-");
-  mkdirSync(path.join(dir, "home"), { recursive: true });
-  const envFile = path.join(dir, "env");
-  writeFileSync(
-    envFile,
-    "ADMINBOT_SERVICE_TOKEN=synthetic-test-token\n" +
-      (cacheDir ? `ADMINBOT_PAPERMENTOR_CACHE_DIR=${cacheDir}\n` : "") +
-      (disabled ? "ADMINBOT_PAPERMENTOR_DISABLED=1\n" : ""),
-  );
-  return spawnSync("bash", ["scripts/adminbot-papermentor-cron.sh", ...args], {
-    encoding: "utf8",
-    env: cronEnv(dir, { ADMINBOT_ENV_FILE: envFile }),
-  });
-}
-
-describe("papermentor runs cron", () => {
-  it.skipIf(existsSync("/var/lib/overleaf/ai-tutor-cache"))(
-    "says the cache is unconfigured in one line when neither the variable nor the default exists",
-    () => {
-      const run = runPaperMentor(undefined);
-      expect(run.status).toBe(1);
-      const lines = run.stderr.trim().split("\n");
-      expect(lines).toHaveLength(1);
-      expect(lines[0]).toContain(
-        "papermentor runs: PaperMentor cache /var/lib/overleaf/ai-tutor-cache is not a directory",
-      );
-      expect(lines[0]).toContain("ADMINBOT_PAPERMENTOR_CACHE_DIR is not set");
-      expect(lines[0]).toContain("or set ADMINBOT_PAPERMENTOR_DISABLED=1");
-    },
-  );
-
-  it.skipIf(existsSync("/var/lib/overleaf/ai-tutor-cache"))(
-    "exits 0 saying so when a host without a cache turns the job off on purpose",
-    () => {
-      const run = runPaperMentor(undefined, [], { disabled: true });
-      expect(run.stderr).toBe("");
-      expect(run.status).toBe(0);
-      expect(run.stdout.trim()).toBe(
-        "papermentor runs: disabled on purpose (ADMINBOT_PAPERMENTOR_DISABLED=1); no PaperMentor cache on this host",
-      );
-    },
-  );
-
-  it("still fails on a configured cache that is missing, even with the job turned off", () => {
-    // Naming a cache says one is supposed to be here; the opt-out must not hide that it broke.
-    const missing = path.join(tempDir("adminbot-papermentor-cache-"), "gone");
-    const run = runPaperMentor(missing, [], { disabled: true });
-    expect(run.status).toBe(1);
-    const lines = run.stderr.trim().split("\n");
-    expect(lines).toHaveLength(1);
-    expect(lines[0]).toContain(`PaperMentor cache ${missing} is not a directory`);
-    expect(lines[0]).toContain("from ADMINBOT_PAPERMENTOR_CACHE_DIR");
-    expect(lines[0]).not.toContain("ADMINBOT_PAPERMENTOR_DISABLED");
-  });
-
-  it("walks a configured cache even with the job turned off", () => {
-    // A cache mounted later is read without anyone having to remember to clear the flag.
-    const cache = tempDir("adminbot-papermentor-cache-");
-    const run = runPaperMentor(cache, ["--dry-run"], { disabled: true });
-    expect(run.stderr).toBe("");
-    expect(run.status).toBe(0);
-    expect(run.stdout).toContain("papermentor runs: 0 to post");
-  });
-
-  it.skipIf(process.getuid?.() === 0)(
-    "says a configured cache it cannot list is unreadable, instead of a bare EACCES",
-    () => {
-      const cache = tempDir("adminbot-papermentor-cache-");
-      chmodSync(cache, 0o000);
-      const run = runPaperMentor(cache);
-      expect(run.status).toBe(1);
-      const lines = run.stderr.trim().split("\n");
-      expect(lines).toHaveLength(1);
-      expect(lines[0]).toContain(`PaperMentor cache ${cache} is not readable`);
-      expect(lines[0]).toContain("from ADMINBOT_PAPERMENTOR_CACHE_DIR");
-      expect(run.stderr).not.toContain("EACCES");
-    },
-  );
-
-  it("walks a readable configured cache", () => {
-    const cache = tempDir("adminbot-papermentor-cache-");
-    const run = runPaperMentor(cache, ["--dry-run"]);
-    expect(run.stderr).toBe("");
-    expect(run.status).toBe(0);
-    expect(run.stdout).toContain("papermentor runs: 0 to post");
   });
 });

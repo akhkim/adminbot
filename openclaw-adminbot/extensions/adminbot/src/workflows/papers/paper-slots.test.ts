@@ -496,6 +496,27 @@ describe("actionablePaperSlots", () => {
     }
   });
 
+  // PaperMentor runs on an uploaded zip now, not inside the lab's Overleaf, so the chase points at
+  // the tab rather than at a panel in the project.
+  it("sends the PaperMentor review to the upload tab", () => {
+    const open = actionablePaperSlots(paper(), upTo("overleaf_share"), NOW);
+    const review = open.find((item) => item.slot === "papermentor_review");
+    expect(review?.detail).toBe(
+      "download the project's source zip from Overleaf and upload it in AdminBot's PaperMentor tab",
+    );
+    expect(open.map((item) => item.slot)).not.toContain("fixes_merged");
+  });
+
+  it("leaves a ticked PaperMentor review closed, however long ago it was ticked", () => {
+    const ticked = {
+      ...provided("papermentor_review"),
+      provided_at: "2020-01-01T00:00:00.000Z",
+    };
+    const open = actionablePaperSlots(paper(), [...upTo("overleaf_share"), ticked], NOW);
+    expect(open.map((item) => item.slot)).not.toContain("papermentor_review");
+    expect(open.map((item) => item.slot)).toContain("fixes_merged");
+  });
+
   it("has no rebuttal slot: the venue ladder closes that one from a bcc now", () => {
     // It used to be a link somebody pasted, chased only while the venue had not decided. Keeping
     // both it and the `rebuttal` stage would give the card two accounts of the same fact.

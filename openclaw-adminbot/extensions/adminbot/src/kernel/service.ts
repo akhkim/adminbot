@@ -8,10 +8,6 @@ import {
   gogFailedBeforeSending,
   needsOperatorForMailFailure,
 } from "../connectors/mail-send-failure.js";
-import type {
-  PaperMentorReviewRequester,
-  PaperMentorReviewRequestStatus,
-} from "../connectors/papermentor-review.js";
 import type { PaperMentorUpload } from "../connectors/papermentor-uploads.js";
 import type { ReverseGeocoder } from "../connectors/reverse-geocode.js";
 import type { AdminBotExternalCollaboratorSubgroup } from "../contracts/actions.js";
@@ -228,11 +224,6 @@ import {
   type AdminBotOpportunityView,
 } from "../contracts/opportunities.js";
 import {
-  adminBotOverleafProjectRef,
-  adminBotOverleafShareRef,
-  resolveAdminBotLabOverleafHost,
-} from "../contracts/overleaf.js";
-import {
   adminBotArxivId,
   adminBotOpenReviewForumId,
   adminBotTitlesLookLikeTheSamePaper,
@@ -261,14 +252,12 @@ import {
   adminBotPaperSlotBranchPriority,
   adminBotPaperSlotVerifier,
   isAdminBotPaperAcceptanceUnblocked,
-  isAdminBotPaperSlotSettled,
   validateAdminBotPaperSlotUrl,
   type AdminBotPaperSlot,
   type AdminBotPaperSlotVerifier,
   type AdminBotPaperSlotInput,
   type AdminBotPaperSlotOwner,
   type AdminBotPaperSlotRecord,
-  type AdminBotPaperSlotStatus,
 } from "../contracts/paper-slots.js";
 import {
   adminBotWeeklyUpdateBodyMax,
@@ -287,12 +276,6 @@ import {
   type AdminBotPaperflowEvidenceRecord,
   type AdminBotPaperflowStage,
 } from "../contracts/paperflow-stages.js";
-import {
-  ADMINBOT_PAPERMENTOR_SERVICE_TOKEN_ENV,
-  adminBotPaperMentorRunId,
-  type AdminBotPaperMentorRun,
-  type AdminBotPaperMentorRunInput,
-} from "../contracts/papermentor.js";
 import { missingMandatoryProfileFields } from "../contracts/profile-completion.js";
 import type { RecLetterAttestationStore } from "../contracts/rec-letter-attestations.js";
 import type { RecLetterFreezeIncidentStore } from "../contracts/rec-letter-freezes.js";
@@ -539,16 +522,6 @@ import {
   paperflowRecipient,
   paperflowStageEmail,
 } from "../workflows/papers/paperflow-stages.js";
-import {
-  adminBotPaperMentorAutoReviewLimit,
-  paperMentorAutoReviewCandidate,
-  paperMentorAutoReviewQueue,
-  type PaperMentorAutoReviewCandidate,
-} from "../workflows/papers/papermentor-auto-review.js";
-import {
-  reviewProvesFixesMerged,
-  type PaperMentorContext,
-} from "../workflows/papers/papermentor-nudges.js";
 import { applyPiReviewAcks } from "../workflows/papers/pi-review-ack.js";
 import {
   paperFeedbackHistory,
@@ -854,15 +827,6 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   savePaperSlot(record: AdminBotPaperSlotRecord): void;
   /** One paper's slots, or every paper's when the id is omitted. */
   listPaperSlots(paperId?: string): AdminBotPaperSlotRecord[];
-  /**
-   * One PaperMentor review, by its own id. First sighting wins, like the paperflow evidence
-   * below: the collector re-reads the same cached review until a newer one replaces it, so a
-   * second write of the same run is the same pass running again rather than news.
-   */
-  savePaperMentorRun(record: AdminBotPaperMentorRun): void;
-  getPaperMentorRun(id: string): AdminBotPaperMentorRun | undefined;
-  /** One paper's reviews newest first, or every paper's when the id is omitted. */
-  listPaperMentorRuns(paperId?: string): AdminBotPaperMentorRun[];
   /** First sighting wins: a stage that already closed keeps the mail that closed it. */
   savePaperflowEvidence(record: AdminBotPaperflowEvidenceRecord): void;
   /** One paper's stage evidence, or every paper's when the id is omitted. */
@@ -7757,104 +7721,6 @@ export class AdminBotService {
     return { ok: true, status: 200, payload: { slot: result.record } };
   }
 
-  /**
-   * Record that PaperMentor reviewed a paper, and tick the slot that says so.
-   *
-   * Every paper is reviewed before submission, and until now the lab's only evidence of that was
-   * the author ticking a box. This is the same fact arriving from the reviewer itself: the
-   * collector reads the review PaperMentor cached on the Overleaf host, summarizes it to counts --
-   * see contracts/papermentor.ts, which is the boundary that keeps the comments themselves on that
-   * machine -- and posts it here.
-   *
-   * The link between the two systems is the project id, taken from the Overleaf link the author
-   * already maintains as evidence. That is why Phase 0 had to come first: the id is read through
-   * `adminBotOverleafProjectRef`, so "which paper is this" is a comparison of two ids rather than
-   * anything that follows a URL.
-   *
-   * A review of a project no paper claims is a 404 rather than a stored orphan. Somebody reviewing
-   * a draft AdminBot has never heard of is a real and ordinary thing -- a paper nobody registered
-   * -- and a row filed against no paper would be invisible to every reader that matters.
-   */
-  recordPaperMentorRun(
-    actor: string,
-    input: AdminBotPaperMentorRunInput,
-    options: { nowIso?: string } = {},
-  ): AdminBotServiceResponse<{
-    paper_id: string;
-    run_id: string;
-    /** False when this exact run was already on file, which is the ordinary case on a re-run. */
-    recorded: boolean;
-    review_slot: AdminBotPaperSlotStatus;
-  }> {
-    const paper = this.paperForOverleafProject(input.project_id);
-    if (!paper) {
-      return serviceError(
-        404,
-        `no paper on file carries Overleaf project ${input.project_id}; add the project link to the paper first`,
-      );
-    }
-    const nowIso = options.nowIso ?? new Date().toISOString();
-    const runId = adminBotPaperMentorRunId(input.project_id, input.reviewed_at);
-    const existing = this.store.getPaperMentorRun(runId);
-    const run: AdminBotPaperMentorRun = {
-      ...input,
-      id: runId,
-      paper_id: paper.id,
-      ingested_at: existing?.ingested_at ?? nowIso,
-    };
-    if (!existing) {
-      this.store.savePaperMentorRun(run);
-    }
-    const reviewSlot = this.markPaperMentorReviewed(paper, run, nowIso);
-    // Audited on every pass, not only the first: a re-post is the collector saying the same review
-    // is still the newest one, and an audit row that appears once is no use for "when did we last
-    // hear from PaperMentor at all".
-    this.recordAudit({
-      type: "papermentor.run_recorded",
-      actor,
-      details: {
-        paper_id: paper.id,
-        project_id: input.project_id,
-        reviewed_at: input.reviewed_at,
-        comments: input.comments_total,
-        critical: input.by_severity.critical ?? 0,
-        failed_agents: input.failed_agents.length,
-        recorded: !existing,
-        review_slot: reviewSlot,
-      },
-    });
-    this.closeFixesMergedIfClean(paper, run, nowIso);
-    // The review just settled a slot that gates submission, so the paper may have moved. The
-    // ingest is the one evidence path with no member behind it, which is exactly why it has to say
-    // so here rather than wait for the hourly walk.
-    this.syncOnePaperStage(
-      this.store.getPaper(paper.id) ?? paper,
-      actor,
-      nowIso,
-      this.nudgeLedgerIndex(),
-    );
-    return {
-      ok: true,
-      status: 200,
-      payload: {
-        paper_id: paper.id,
-        run_id: runId,
-        recorded: !existing,
-        review_slot: reviewSlot,
-      },
-    };
-  }
-
-  /** One paper's PaperMentor reviews, newest first. */
-  listPaperMentorRuns(
-    paperId?: string,
-  ): AdminBotServiceResponse<{ runs: AdminBotPaperMentorRun[] }> {
-    if (paperId && !this.store.getPaper(paperId)) {
-      return serviceError(404, "paper not found");
-    }
-    return { ok: true, status: 200, payload: { runs: this.store.listPaperMentorRuns(paperId) } };
-  }
-
   /** The ledger's line for a zip a member uploaded in the PaperMentor tab. */
   auditPaperMentorUpload(
     memberId: string,
@@ -7926,176 +7792,6 @@ export class AdminBotService {
       tab: "adminbotPaperMentor",
       created_at: nowIso,
     });
-  }
-
-  /**
-   * Ask PaperMentor to review the papers at their review step, so nobody has to press the button.
-   *
-   * Which papers is workflows/papers/papermentor-auto-review.ts: open, unsubmitted, never reviewed
-   * or reviewed too long ago, and on the lab's own Overleaf. The request names the paper by the
-   * edit share link its author gave, and the lab's Overleaf answers with the project it resolved
-   * that link to. That id is written onto the paper, which is how the review -- arriving later
-   * through the ordinary collector -- finds the paper it belongs to.
-   *
-   * Dry run unless the caller says otherwise, like the other sweeps a person may run by hand. A
-   * live pass asks for at most `limit` reviews and stops early when the Overleaf says it is busy.
-   * Asking twice is harmless: the Overleaf runs at most one automated review per project a day.
-   */
-  async requestPaperMentorReviews(
-    actor: string,
-    requester: PaperMentorReviewRequester | undefined,
-    options: { dryRun?: boolean; limit?: number; nowIso?: string } = {},
-  ): Promise<
-    AdminBotServiceResponse<{
-      dry_run: boolean;
-      /** Every paper at its review step, of which `requests` are the ones asked about this pass. */
-      due: number;
-      requests: Array<{
-        paper_id: string;
-        title: string;
-        reason: PaperMentorAutoReviewCandidate["reason"];
-        status: PaperMentorReviewRequestStatus | "would_request";
-        project_id?: string;
-        message?: string;
-      }>;
-    }>
-  > {
-    const nowIso = options.nowIso ?? new Date().toISOString();
-    const now = new Date(nowIso);
-    const dryRun = options.dryRun !== false;
-    const limit = options.limit ?? adminBotPaperMentorAutoReviewLimit;
-    const due = this.withPaperTables(() =>
-      paperMentorAutoReviewQueue(
-        this.store.listPapers().flatMap((paper) => {
-          const [latest] = this.paperRows().listPaperMentorRuns(paper.id);
-          const candidate = paperMentorAutoReviewCandidate({
-            paper,
-            slots: this.paperRows().listPaperSlots(paper.id),
-            ...(latest ? { latest } : {}),
-            now,
-          });
-          return candidate ? [candidate] : [];
-        }),
-      ),
-    );
-    const batch = due.slice(0, limit);
-    if (dryRun) {
-      return {
-        ok: true,
-        status: 200,
-        payload: {
-          dry_run: true,
-          due: due.length,
-          requests: batch.map(({ paper_id, title, reason }) => ({
-            paper_id,
-            title,
-            reason,
-            status: "would_request" as const,
-          })),
-        },
-      };
-    }
-    if (!requester) {
-      return serviceError(
-        503,
-        `automated PaperMentor reviews are not configured; set ${ADMINBOT_PAPERMENTOR_SERVICE_TOKEN_ENV}`,
-      );
-    }
-    const requests = [];
-    for (const candidate of batch) {
-      const outcome = await requester(
-        candidate.target,
-        candidate.venue ? { venue: candidate.venue } : {},
-      );
-      if (outcome.project_id) {
-        this.rememberPaperMentorProject(candidate.paper_id, outcome.project_id, actor, nowIso);
-      }
-      this.recordAudit({
-        type: "papermentor.review_requested",
-        actor,
-        details: {
-          paper_id: candidate.paper_id,
-          reason: candidate.reason,
-          status: outcome.status,
-          ...(outcome.project_id ? { project_id: outcome.project_id } : {}),
-          ...(outcome.message ? { message: outcome.message } : {}),
-        },
-      });
-      requests.push({
-        paper_id: candidate.paper_id,
-        title: candidate.title,
-        reason: candidate.reason,
-        status: outcome.status,
-        ...(outcome.project_id ? { project_id: outcome.project_id } : {}),
-        ...(outcome.message ? { message: outcome.message } : {}),
-      });
-      // The Overleaf is running as many as it will; the rest wait for the next pass.
-      if (outcome.status === "busy") {
-        break;
-      }
-    }
-    return { ok: true, status: 200, payload: { dry_run: false, due: due.length, requests } };
-  }
-
-  /**
-   * Write the project a paper's share link resolved to onto the paper, as its project link.
-   *
-   * `artifacts.overleaf_edit_url` is the field the ingest and the nudge already read a project id
-   * from, and the one the grid shows as the paper's Overleaf edit URL -- which this is. The id is
-   * inert on its own: opening it still takes an invitation, unlike the share link it came from.
-   */
-  private rememberPaperMentorProject(
-    paperId: string,
-    projectId: string,
-    actor: string,
-    nowIso: string,
-  ): void {
-    const paper = this.store.getPaper(paperId);
-    if (!paper) {
-      return;
-    }
-    const existing = paper.artifacts?.overleaf_edit_url;
-    if (existing && adminBotOverleafProjectRef(existing)?.projectId === projectId) {
-      return;
-    }
-    this.store.savePaper({
-      ...paper,
-      artifacts: {
-        ...paper.artifacts,
-        overleaf_edit_url: `https://${resolveAdminBotLabOverleafHost()}/project/${projectId}`,
-      },
-      updated_at: (paper.updated_at ?? "") < nowIso ? nowIso : paper.updated_at,
-    });
-    this.recordAudit({
-      type: "papermentor.project_linked",
-      actor,
-      details: {
-        paper_id: paperId,
-        project_id: projectId,
-        ...(existing ? { replaced: existing } : {}),
-      },
-    });
-  }
-
-  /**
-   * The paper a project id belongs to, by the link its author keeps.
-   *
-   * The evidence slot is asked first and the legacy `artifacts.overleaf_edit_url` second, because
-   * the slot is the field the paper card writes and the one an author is chased about; the
-   * artifact is where the same link lived before slots existed and is still filled by the grid.
-   */
-  private paperForOverleafProject(projectId: string): AdminBotPaperRecord | undefined {
-    const isThisProject = (url: string | undefined): boolean =>
-      Boolean(url && adminBotOverleafProjectRef(url)?.projectId === projectId);
-    const slot = this.store
-      .listPaperSlots()
-      .find((row) => row.slot === "overleaf_edit" && isThisProject(row.url));
-    if (slot) {
-      return this.store.getPaper(slot.paper_id);
-    }
-    return this.store
-      .listPapers()
-      .find((paper) => isThisProject(paper.artifacts?.overleaf_edit_url));
   }
 
   /**
@@ -8902,8 +8598,8 @@ export class AdminBotService {
           : undefined;
       }
       default:
-        // Including `papermentor` and `adminbot_post`: both are written by the thing that did the
-        // work, at the moment it did it, so there is nothing for a later pass to go and ask.
+        // Including `adminbot_post`: it is written by the thing that did the work, at the moment
+        // it did it, so there is nothing for a later pass to go and ask.
         return undefined;
     }
   }
@@ -8972,122 +8668,6 @@ export class AdminBotService {
       const desk = this.sweepPiReviewQueue();
       const rows = desk.ok ? [...desk.payload.papers, ...desk.payload.history] : [];
       return writePiReviewAck(this.store, { ...input, actor, rows, now: new Date().toISOString() });
-    });
-  }
-
-  /**
-   * What the nudge layer needs to know about PaperMentor for one paper.
-   *
-   * Two facts, both already on file: which Overleaf the draft lives on -- so a paper PaperMentor
-   * physically cannot read is chased about *that* rather than about not having been reviewed --
-   * and the newest review, which carries the counts the fixes reminder quotes.
-   *
-   * Built per paper rather than once for the whole sweep because the runs are indexed by paper and
-   * the slot row is already in hand; the walk that calls this has both.
-   */
-  private paperMentorContext(
-    paper: AdminBotPaperRecord,
-    stored: AdminBotPaperSlotRecord[],
-  ): PaperMentorContext {
-    const link =
-      stored.find((row) => row.slot === "overleaf_edit")?.url ?? paper.artifacts?.overleaf_edit_url;
-    // The share link stands in for a project link until the first review resolves it: where it is
-    // hosted is all the nudge needs, and an overleaf.com link is exactly the case worth catching.
-    const share = stored.find((row) => row.slot === "overleaf_share")?.url;
-    const project =
-      (link ? adminBotOverleafProjectRef(link) : undefined) ??
-      (share ? adminBotOverleafShareRef(share) : undefined);
-    const [latest] = this.paperRows().listPaperMentorRuns(paper.id);
-    return {
-      ...(project ? { project: { lab: project.lab, host: project.host } } : {}),
-      ...(latest ? { latest } : {}),
-    };
-  }
-
-  /**
-   * Tick `papermentor_review` on the strength of the review itself.
-   *
-   * Written straight to the store rather than through `setPaperSlot`, and deliberately: that path
-   * takes a member id, checks whether that member owns the paper, and files an update event that
-   * counts towards how much of the checklist its authors fill in themselves. None of those are
-   * true here. AdminBot saw the review; nobody ticked a box, and crediting an author for it would
-   * quietly inflate the one number that measures whether people are using the system.
-   *
-   * A waived slot is left alone. An admin who decided this paper does not need the review has
-   * overridden the requirement, and a review arriving afterwards does not undo their decision --
-   * the run is still recorded, which is what makes the override visible next to the evidence.
-   */
-  private markPaperMentorReviewed(
-    paper: AdminBotPaperRecord,
-    run: AdminBotPaperMentorRun,
-    nowIso: string,
-  ): AdminBotPaperSlotStatus {
-    const existing = this.store
-      .listPaperSlots(paper.id)
-      .find((row) => row.slot === "papermentor_review");
-    if (existing?.status === "waived") {
-      return "waived";
-    }
-    this.store.savePaperSlot({
-      paper_id: paper.id,
-      slot: "papermentor_review",
-      status: "provided",
-      // The review's own instant, not the ingest's: the slot should say when the paper was
-      // reviewed, which is the date its author will be asked about.
-      provided_at: run.reviewed_at,
-      validated_at: nowIso,
-      // The one piece of evidence on a paper that was never anybody's claim: the reviewer said it
-      // itself. `verified_by` is what lets the stage audit tell that apart from a ticked box.
-      verified_by: "papermentor",
-      verified_at: nowIso,
-    });
-    if ((paper.updated_at ?? "") < nowIso) {
-      this.store.savePaper({ ...paper, updated_at: nowIso });
-    }
-    return "provided";
-  }
-
-  /**
-   * Tick `fixes_merged` when a later review proves there is nothing left to merge.
-   *
-   * The second of the two PaperMentor verifiers, and the conservative one: only a review that
-   * follows an earlier one and comes back with no critical and no warning comments closes this.
-   * See `reviewProvesFixesMerged` for why a count that merely dropped is not enough.
-   *
-   * Like the review slot, this is written rather than nudged for, and credited to nobody: the
-   * evidence is the reviewer's, not an author's claim about their own work.
-   */
-  private closeFixesMergedIfClean(
-    paper: AdminBotPaperRecord,
-    latest: AdminBotPaperMentorRun,
-    nowIso: string,
-  ): void {
-    const [newest, previous] = this.store.listPaperMentorRuns(paper.id);
-    if (!newest || newest.id !== latest.id) {
-      // A run older than the one already on file: history arriving late, which says nothing about
-      // the state of the draft now.
-      return;
-    }
-    if (!reviewProvesFixesMerged({ latest, ...(previous ? { previous } : {}) })) {
-      return;
-    }
-    const existing = this.store.listPaperSlots(paper.id).find((row) => row.slot === "fixes_merged");
-    if (existing && isAdminBotPaperSlotSettled(existing.status)) {
-      return;
-    }
-    this.store.savePaperSlot({
-      paper_id: paper.id,
-      slot: "fixes_merged",
-      status: "provided",
-      provided_at: latest.reviewed_at,
-      validated_at: nowIso,
-      verified_by: "papermentor",
-      verified_at: nowIso,
-    });
-    this.recordAudit({
-      type: "paper_slot.updated",
-      actor: "papermentor",
-      details: { paper_id: paper.id, slot: "fixes_merged", status: "provided" },
     });
   }
 
@@ -9955,13 +9535,7 @@ export class AdminBotService {
       // rather than the number of half-filled rows -- see the note on the card read above.
       const attendees = this.conferenceRollCall(paper);
       const reimbursements = this.paperRows().listPaperReimbursements(paper.id);
-      const actionable = actionablePaperSlots(
-        paper,
-        stored,
-        now,
-        drafts,
-        this.paperMentorContext(paper, stored),
-      );
+      const actionable = actionablePaperSlots(paper, stored, now, drafts);
       const progress = paperSlotProgress(paper.id, stored, drafts);
       const lastNudged = actionable
         .map((item) => ledger.get(`paper_slot|${item.subjectId}`)?.last_nudged_at)
@@ -10276,13 +9850,7 @@ export class AdminBotService {
         return done;
       };
 
-      for (const item of actionablePaperSlots(
-        paper,
-        stored,
-        now,
-        drafts,
-        this.paperMentorContext(paper, stored),
-      )) {
+      for (const item of actionablePaperSlots(paper, stored, now, drafts)) {
         for (const memberId of this.resolvePaperSlotOwner(paper, item.owner)) {
           // The slides chase names the recipient's own topic deck rather than a generic one.
           enqueue(

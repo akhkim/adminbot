@@ -388,12 +388,7 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
       "Overleaf's “Anyone with this link can edit” URL, from the Share menu with link sharing " +
       "turned on. Treat it as a credential: it grants write access to whoever holds it, without " +
       "an invitation and without appearing in the project's member list, and everyone who can " +
-      "read this paper's record can use it. " +
-      // The automated review resolves this link on the lab's Overleaf -- the instance that minted
-      // it -- so a link from anywhere else cannot be reviewed without the author moving the draft.
-      `For PaperMentor to review the paper automatically, the link must be from the lab's ` +
-      `PaperMentor Overleaf (${ADMINBOT_LAB_OVERLEAF_HOST}); a link from ${OVERLEAF_COM_HOST} ` +
-      "cannot be reviewed until the project is moved there.",
+      "read this paper's record can use it.",
     example: `https://${OVERLEAF_COM_HOST}/1234567890abcdefghijkl#a1b2c3`,
   },
   overleaf_edit: {
@@ -421,7 +416,9 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     upstream: ["overleaf_share"],
     required: true,
     deadlineBearing: true,
-    hint: "Tick once PaperMentor has run over the draft and you have its comments back.",
+    hint:
+      "Tick once you have run the draft through PaperMentor and have its comments back: download " +
+      "the project's source zip from Overleaf and upload it in AdminBot's PaperMentor tab.",
   },
   fixes_merged: {
     kind: "bool",
@@ -733,7 +730,6 @@ export function isConfidentialPaperSlot(slot: AdminBotPaperSlot): boolean {
  */
 export const adminBotPaperSlotVerifiers = [
   "google_drive",
-  "papermentor",
   "arxiv",
   "openreview",
   /** AdminBot posted it itself, so the execution record is the evidence. */
@@ -756,10 +752,6 @@ export const adminBotPaperSlotVerifier: Partial<
   drive_pdf_arxiv: "google_drive",
   slides: "google_drive",
   poster: "google_drive",
-  // Both come from the reviewer itself: the review slot from the run being ingested at all, the
-  // fixes from a later run that no longer finds anything serious. See workflows/papers/papermentor.
-  papermentor_review: "papermentor",
-  fixes_merged: "papermentor",
   // The public record. arXiv can be asked outright; OpenReview can only ever confirm, never deny,
   // because a blind submission is invisible to an anonymous reader -- see the probe's own note.
   arxiv: "arxiv",
