@@ -135,6 +135,9 @@ export const TAB_PAGES = [
       // came to look at, and a blank column next to an unopened tab is a different problem from a
       // blank column next to a busy one.
       "adminbotTabUsage",
+      // What broke for the people using it. Beside Tab Usage because both are the lab's use of
+      // AdminBot seen from the operator's side: where people went, and where it failed them.
+      "adminbotErrorLog",
     ],
   },
   { page: "nudges", tabs: ["adminbotAnnouncements", "adminbotWorkshopNudges"] },
@@ -226,6 +229,7 @@ export type Tab =
   | "adminbotOpportunities"
   | "adminbotProfileOverview"
   | "adminbotTabUsage"
+  | "adminbotErrorLog"
   | "adminbotProfessor"
   | "adminbotTimeAvailability"
   | "adminbotMeetings"
@@ -319,6 +323,7 @@ const TAB_PATHS: Record<Tab, string> = {
   adminbotOpportunities: "/opportunities",
   adminbotProfileOverview: "/profile-overview",
   adminbotTabUsage: "/tab-usage",
+  adminbotErrorLog: "/error-log",
   adminbotProfessor: "/professor",
   adminbotTimeAvailability: "/time-availability",
   adminbotMeetings: "/meetings",
@@ -592,6 +597,8 @@ export function iconForTab(tab: Tab): IconName {
       return "check";
     case "adminbotTabUsage":
       return "barChart";
+    case "adminbotErrorLog":
+      return "bug";
     case "adminbotProfessor":
       return "lobster";
     // A document assembled out of the lab's own record, not a live board.

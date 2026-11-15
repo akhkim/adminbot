@@ -104,6 +104,7 @@ import {
   adminBotResolvedEmailReviewFromRow,
   ensureAdminBotEmailReviewSchema,
 } from "./email-review.js";
+import { createErrorLogFromDatabase, type ErrorLog } from "./error-log.js";
 import {
   createFailedRequestLedgerFromDatabase,
   type FailedExternalRequestLedger,
@@ -306,6 +307,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
   private readonly db: DatabaseSync;
   private readonly failedRequests: FailedExternalRequestLedger;
+  private readonly errors: ErrorLog;
   private readonly venueIndex: SqliteVenuePaperIndex;
   private readonly members: SqliteLabMemberCache;
   private readonly versions: SqliteTableVersions;
@@ -1035,6 +1037,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     migratePaperSlotColumns(this.db);
     migrateSocialDraftColumns(this.db);
     this.failedRequests = createFailedRequestLedgerFromDatabase(this.db);
+    this.errors = createErrorLogFromDatabase(this.db);
     this.migrateWorkshopMatchRuns();
     this.migrateSessionColumns();
     this.migrateBadgeNominationColumns();
@@ -1151,6 +1154,10 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
           WHERE status = 'running'`,
       )
       .run(new Date().toISOString());
+  }
+
+  errorLog(): ErrorLog {
+    return this.errors;
   }
 
   failedRequestLedger(): FailedExternalRequestLedger {

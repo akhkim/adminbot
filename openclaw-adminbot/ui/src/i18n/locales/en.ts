@@ -660,6 +660,45 @@ export const en: TranslationMap = {
     },
   },
 
+  errorLog: {
+    title: "What broke for people",
+    blurb:
+      "Errors from everyone's browser and from the service itself, one row per problem. Repeats are counted, not listed.",
+    refresh: "Refresh",
+    showResolved: "Show resolved",
+    loading: "Reading\u2026",
+    empty: "Nothing open. No errors have been reported since the last one was resolved.",
+    emptyAll: "No errors have been reported.",
+    resolve: "Mark resolved",
+    details: "Stack and browser",
+    count: "{count} times",
+    countOne: "Once",
+    lastSeen: "Last seen {when}",
+    firstSeen: "First seen {when}",
+    resolvedAt: "Resolved {when}",
+    build: "Build {build}",
+    browser: "Browser: {browser}",
+    whereRequestOnPage: "{request}, from {page}",
+    whereUnknown: "Page not recorded",
+    peopleNone: "No member recorded",
+    peopleAndMore: "{names} and others",
+    kind: {
+      error: "Page error",
+      unhandled_rejection: "Unhandled failure",
+      api: "Request failed",
+      server: "Service error",
+    },
+    // Said on the page so the list is not over-read: these are the ways it under- and over-counts.
+    caveat:
+      "Each browser reports a given problem once per page load, so the count is closer to how many sittings hit it than how many times it fired. A failed request can appear twice, once as the browser saw it and once as the service did. Requests the service refused on purpose (sign-in, permissions, validation) are not errors and are not listed. A resolved problem comes back here if it happens again.",
+    error: {
+      signIn: "Sign in to read the error log.",
+      unreachable: "Could not reach AdminBot at {url}.",
+      forbidden: "The error log is admin-only.",
+      failed: "Could not read the error log.",
+    },
+  },
+
   pages: {
     labOverview: "Lab Overview",
     nudges: "Nudges",
@@ -687,6 +726,7 @@ export const en: TranslationMap = {
     adminbotTalkLeaderboard: "Talk Leaderboard",
     adminbotProfileOverview: "Profile Completeness",
     adminbotTabUsage: "Tab Usage",
+    adminbotErrorLog: "Error Log",
     adminbotProfessor: "My Desk",
     adminbotTimeAvailability: "Time Availability",
     adminbotMeetings: "Meeting Recordings",
@@ -746,6 +786,7 @@ export const en: TranslationMap = {
     adminbotLabProjects: "Every project in the lab: who is on it, where it stands, and its links.",
     adminbotProfileOverview: "Who has filled in their profile and planned their term.",
     adminbotTabUsage: "Which parts of AdminBot the lab actually opens.",
+    adminbotErrorLog: "What broke for the people using AdminBot.",
     adminbotProfessor: "What is waiting on you, across every queue.",
     adminbotTimeAvailability: "Who is committed to what, and when.",
     adminbotMeetings: "Recordings, attendance and summaries of lab meetings.",

@@ -122,6 +122,8 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   // Everybody's browsing at once, which is the lab's data and not one member's. The service gates
   // the read as well -- this only decides whether the tab is offered.
   adminbotTabUsage: "admin",
+  // Everybody's errors, with the names of who hit them. The service gates the read as well.
+  adminbotErrorLog: "admin",
   // Everything on it is an admin read already -- the letter queue, the roster's adoption, everyone's
   // timelines. It is the same data with the "what is waiting on me" question asked of it.
   adminbotProfessor: "admin",

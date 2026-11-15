@@ -207,6 +207,7 @@ Website: `/settings` · Who: admin
 | ------------------------------------------- | ------------------------------------------- |
 | `get-automation-email-review`               | GET `/automation/email/review`              |
 | `get-automation-health`                     | GET `/automation/health`                    |
+| `get-ops-errors`                            | GET `/ops/errors`                           |
 | `get-ops-failed-requests`                   | GET `/ops/failed-requests`                  |
 | `get-ops-llm-load`                          | GET `/ops/llm-load`                         |
 | `get-settings`                              | GET `/settings`                             |
@@ -218,8 +219,10 @@ Website: `/settings` · Who: admin
 | `post-automation-email-run`                 | POST `/automation/email/run`                |
 | `post-automation-health-heartbeat`          | POST `/automation/health/heartbeat`         |
 | `post-automation-health-run`                | POST `/automation/health/run`               |
+| `post-ops-errors-by-errors-id-resolve`      | POST `/ops/errors/{errors_id}/resolve`      |
 | `post-slack-channel-naming-events`          | POST `/slack/channel-naming/events`         |
 | `post-slack-channel-naming-sweep-run`       | POST `/slack/channel-naming/sweep/run`      |
+| `post-ui-errors`                            | POST `/ui/errors`                           |
 | `post-ui-tab-visits`                        | POST `/ui/tab-visits`                       |
 | `put-settings`                              | PUT `/settings`                             |
 
