@@ -2621,7 +2621,9 @@ export function renderApp(state: AppViewState) {
   // The automatic device refresh, after the member's own record is in (it carries their map
   // visibility). On sign-in and on each arrival at the dashboard the browser's location prompt is
   // raised whenever location is not granted; where it is granted the reading is silent, one an hour.
-  if (hasMemberSession && findOwnMember(state)) {
+  // Never while viewing as somebody else: the device is the admin's, not the member's, and the
+  // service refuses the report (403) on every page of the view.
+  if (hasMemberSession && !state.memberImpersonatedBy && findOwnMember(state)) {
     startAdminBotPreciseLocationRefresh(state, () => requestHostUpdate?.());
     noteAdminBotTabForPreciseLocation(state.tab);
   }

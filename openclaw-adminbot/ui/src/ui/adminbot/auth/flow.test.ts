@@ -411,7 +411,8 @@ describe("memberPrivilegeLevel wiring", () => {
     host.memberEmail = "b@example.com";
     host.memberPassword = "password-b";
     await submitMemberAuth(host);
-    expect(resetViews).toHaveBeenCalledTimes(2);
+    // Once for A's sign-out, and twice for B's sign-in: before and after the token changes.
+    expect(resetViews).toHaveBeenCalledTimes(3);
     expect(host.memberId).toBe("b");
     expect(loadStoredMemberSession()?.sessionToken).toBe("session-b");
     expect(host.adminBotLocationDrift).toBeUndefined();
@@ -1005,6 +1006,51 @@ describe("viewing the lab as another member", () => {
     await endViewAs(host);
     expect(host.adminBotData?.members).toEqual([]);
     expect(host.adminBotMemberList?.rows).toEqual([]);
+  });
+
+  it("leaves nothing loading from the admin's session once the swap is done", async () => {
+    const host = signedInAdmin();
+    mockService({});
+    // A render between the first clear and the token change starts a dashboard read on the admin's
+    // session. It finds the token changed when it lands, so it never resets its own loading flag.
+    let cleared = 0;
+    host.resetMemberViewSessionState = () => {
+      cleared += 1;
+      if (cleared === 1) {
+        queueMicrotask(() => {
+          host.adminBotLoading = true;
+          host.adminBotData = {
+            ...createEmptyAdminBotDashboardData(),
+            members: [{ id: "root" } as never],
+          };
+        });
+      }
+    };
+
+    await beginViewAs(host, "ada");
+
+    expect(host.adminBotLoading).toBe(false);
+    expect(host.adminBotData?.members).toEqual([]);
+  });
+
+  it("keeps the way back across a reload in the middle of a view-as session", async () => {
+    const host = signedInAdmin();
+    mockService({});
+    await beginViewAs(host, "ada");
+
+    // The reload: the stored view-as session is read back and confirmed with the service.
+    mockService({
+      session: () =>
+        jsonResponse(200, {
+          expires_at: "2026-09-03T10:30:00Z",
+          member: { id: "ada", privilege_level: "member" },
+          impersonated_by: { id: "root", name: "Root" },
+        }),
+    });
+    expect(await resumeMemberSession(host)).toBe("resumed");
+
+    expect(host.memberImpersonatedBy).toEqual({ id: "root", name: "Root" });
+    expect(loadStoredMemberSession()?.impersonator?.sessionToken).toBe(ADMIN_TOKEN);
   });
 
   it("puts the admin back where they were, and drops the parked token", async () => {

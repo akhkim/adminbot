@@ -1887,6 +1887,17 @@ describe("AdminBotAuthService impersonation", () => {
     expect(principal?.session.impersonated_by).toBe("root");
   });
 
+  it("names the admin in the reply that starts the session, not only on a later read", async () => {
+    const { auth, admin } = await twoAccounts();
+    const started = await auth.startImpersonation({ admin, memberId: "ada" });
+    // The browser draws its "viewing as" banner, and holds back the admin's own device reports,
+    // from this reply. Without the name here it behaved as the member until the next reload.
+    expect(started.ok && started.payload.impersonated_by).toEqual({
+      id: "root",
+      name: admin.member.name,
+    });
+  });
+
   it("leaves the admin's own session working, so there is a way back", async () => {
     const { auth, admin, adminToken } = await twoAccounts();
     await impersonate(auth, admin);

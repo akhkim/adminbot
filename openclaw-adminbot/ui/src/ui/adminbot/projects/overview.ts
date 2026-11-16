@@ -186,6 +186,23 @@ function renderCards(
       testId: "projects-loading",
     });
   }
+  // "No papers on file" is a claim about the paper list, so it waits for that list. With no active
+  // project and the papers not read yet, an author of four papers was told they had none.
+  const papersRead = Boolean(
+    state.adminBotData?.papersLoadedAt || state.adminBotData?.ownPapersLoadedAt,
+  );
+  if (projects.length === 0 && others.length === 0 && hiddenCount === 0 && !papersRead) {
+    if (state.adminBotError) {
+      return html`<p class="my-work__error-line" role="alert" data-testid="projects-papers-error">
+        Could not load your papers. Reload the page to try again.
+      </p>`;
+    }
+    return renderSkeleton({
+      count: 5,
+      label: "Loading your projects…",
+      testId: "projects-loading",
+    });
+  }
   const rerender = () => props.onRerender?.();
   const listed = windowLists(projects, others);
   return html`${projects.length === 0
