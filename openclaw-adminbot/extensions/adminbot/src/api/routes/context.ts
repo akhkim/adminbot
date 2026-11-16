@@ -42,7 +42,9 @@ import type { PublicationMailingRunner } from "../../workflows/papers/mailing-li
 import { OpenReviewCitationWatch } from "../../workflows/papers/openreview-citation-watch.js";
 import type { OpenReviewPaperSyncSourceDeps } from "../../workflows/papers/openreview-paper-sync-sources.js";
 import type { AdminBotOpenReviewWorkflow } from "../../workflows/papers/openreview-workflow.js";
+import type { OutreachConfig } from "../../workflows/papers/paper-outreach.js";
 import type { AdminBotReimbursementWorkflow } from "../../workflows/reimbursements/workflow.js";
+import type { AcceptanceSheet } from "../acceptance-sheet.js";
 import type { CallSheetSource } from "../call-sheet-config.js";
 import type { createNotificationDraftHandler } from "../notification-drafts.js";
 import { createPdfReferenceCheckHandler } from "../pdf-reference-check.js";
@@ -89,6 +91,10 @@ export type AdminBotRouteContext = {
   placeAttribution?: { text: string; url: string };
   /** Sends the publication digest. Absent leaves /papers/mailing-list/send answering 503. */
   publicationMailingRunner?: PublicationMailingRunner;
+  /** Who each research-outreach outlet is sent to. Empty leaves every outlet copy-only. */
+  outreachConfig: OutreachConfig;
+  /** The lab's acceptance tab. Absent leaves /papers/outreach/acceptance-sheet answering 503. */
+  acceptanceSheet?: AcceptanceSheet;
   /** Asks the lab's Overleaf for a PaperMentor review. Absent leaves a live review pass answering 503. */
   paperMentorReviewRequester?: PaperMentorReviewRequester;
   /** Reviews a zip a member uploads in the PaperMentor tab. Absent, the tab says it is not set up. */
@@ -294,6 +300,12 @@ export type AdminBotMockServiceOptions = {
   cvDigestPublisher?: AdminBotCvDigestPublisher;
   /** Sends the publication digest. Absent leaves /papers/mailing-list/send answering 503. */
   publicationMailingRunner?: PublicationMailingRunner;
+  // Research outreach recipients, otherwise parsed from ADMINBOT_OUTREACH_CONFIG. Injected so a
+  // test never reads a developer's environment.
+  outreachConfig?: OutreachConfig;
+  // The acceptance tab, otherwise built from ADMINBOT_ACCEPTANCE_SHEET_URL. Injected so tests
+  // never shell out to `gog` or touch a real spreadsheet.
+  acceptanceSheet?: AcceptanceSheet;
   // Asks the lab's Overleaf for PaperMentor reviews. Injected so tests never reach an Overleaf;
   // otherwise built from ADMINBOT_PAPERMENTOR_SERVICE_TOKEN, and absent while that is unset.
   paperMentorReviewRequester?: PaperMentorReviewRequester;

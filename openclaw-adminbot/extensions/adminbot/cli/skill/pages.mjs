@@ -65,7 +65,7 @@ const PAGES = [
   ],
   ["Meetings", "/meetings", "member", /^\/(meetings|lab\/meetings|slides)/u],
   ["Workshop nudges", "/workshop-nudges", "admin", /^\/workshop-nudges/u],
-  ["Mailing list", "/mailing-list", "admin", /^\/papers\/mailing-list/u],
+  ["Mailing list", "/mailing-list", "admin", /^\/papers\/(mailing-list|outreach)/u],
   [
     "My work (your papers, weekly notes, checklist)",
     "/my-work",

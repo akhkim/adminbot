@@ -120,6 +120,103 @@ export async function sendPublicationDigest(
   };
 }
 
+/** One outlet's draft for a venue's acceptances, as GET /papers/outreach returns it. */
+export type PaperOutreachDraft = {
+  key: string;
+  institute: string;
+  label: string;
+  stage: "acceptance" | "camera_ready" | "pre_conference";
+  channel: "email" | "form";
+  cadence: string;
+  paper_ids: string[];
+  subject: string;
+  body: string;
+  /** The body still holds a placeholder a person must write, so it can only be copied. */
+  needs_edit: boolean;
+  notes: string[];
+  to: string[];
+  cc: string[];
+  form_url?: string;
+  sendable: boolean;
+};
+
+/** One accepted paper as a row of the lab's acceptance tab. */
+export type PaperAcceptanceRow = {
+  paper_id: string;
+  year: string;
+  title: string;
+  conference: string;
+  authors: string;
+  paper_link: string;
+};
+
+export type PaperOutreach = {
+  /** Absent when no venue was asked for: the acceptance rows still come back. */
+  venue?: string;
+  paper_count: number;
+  drafts: PaperOutreachDraft[];
+  acceptance_rows: PaperAcceptanceRow[];
+  /** The outreach configuration did not parse, so nothing can be sent until it is fixed. */
+  config_error?: string;
+  acceptance_sheet_configured: boolean;
+};
+
+export type AcceptanceSheetSync = {
+  dry_run: boolean;
+  total: number;
+  /** The rows our records hold that the sheet does not. */
+  missing: PaperAcceptanceRow[];
+  added: number;
+};
+
+async function outreachCall<T>(
+  baseUrl: string,
+  path: string,
+  method: "GET" | "POST",
+  sessionToken: string,
+  body?: unknown,
+): Promise<AuthResult<T>> {
+  const result = await authedJson(baseUrl, path, method, sessionToken, body);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body as T };
+}
+
+/** Every outlet's draft for one venue's acceptances, plus the acceptance-tab rows. Read-only. */
+export function fetchPaperOutreach(
+  venue: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<PaperOutreach>> {
+  const search = venue ? `?${new URLSearchParams({ venue }).toString()}` : "";
+  return outreachCall(baseUrl, `/papers/outreach${search}`, "GET", sessionToken);
+}
+
+/**
+ * Mails one outlet's draft. Only the venue and the outlet's key go up: the service recomposes the
+ * draft and reads the recipients from its own configuration, so nothing here chooses either.
+ */
+export function sendPaperOutreach(
+  params: { venue: string; outlet: string },
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ sent: true; outlet: string; recipients: string[]; papers: number }>> {
+  return outreachCall(baseUrl, "/papers/outreach/send", "POST", sessionToken, params);
+}
+
+/** Compares the acceptance tab with our records; with `dry_run: false`, appends what is missing. */
+export function syncAcceptanceSheet(
+  params: { dry_run: boolean },
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<AcceptanceSheetSync>> {
+  return outreachCall(baseUrl, "/papers/outreach/acceptance-sheet", "POST", sessionToken, params);
+}
+
 // Creates or edits a paper over the member's own session (PUT /papers/:id). Papers are written on
 // the member Bearer rather than the gateway tool path because the service decides there what a
 // plain member may touch -- their own submissions, without the governance fields -- and because a

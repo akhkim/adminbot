@@ -254,6 +254,7 @@ export type AppViewState = {
   adminBotMailingListEmail: string;
   adminBotMailingListVenue: string;
   adminBotMailingListVenues: import("./adminbot/api/paper-admin.ts").PublicationDigestVenue[];
+  adminBotOutreach: import("./adminbot/controllers/paper-outreach.ts").AdminBotOutreachState;
   memberImpersonatedBy: import("./adminbot/auth/session.ts").MemberImpersonator | null;
   memberImpersonationBusy: boolean;
   memberImpersonationError: string | null;

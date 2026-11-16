@@ -2987,7 +2987,11 @@ export type AdminBotAuditEvent = {
     // The publication digest going out to an address an admin typed. Recorded because it leaves
     // the lab: the recipient and the range are the whole of what was disclosed and to whom.
     | "publication_digest.sent"
-    | "publication_digest.failed";
+    | "publication_digest.failed"
+    | "paper_outreach.sent"
+    | "paper_outreach.failed"
+    | "acceptance_sheet.rows_added"
+    | "acceptance_sheet.failed";
   timestamp: string;
   actor?: string;
   details?: Record<string, unknown>;

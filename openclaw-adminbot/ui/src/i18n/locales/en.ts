@@ -1927,6 +1927,54 @@ export const en: TranslationMap = {
       unreachable: "AdminBot is unreachable at {url}.",
       failed: "The mailing list request failed.",
     },
+    outreach: {
+      title: "Research outreach",
+      sub: "One draft per outlet for the {count} papers accepted at {venue}. Which papers an outlet gets follows their authors.",
+      chooseVenue:
+        "Compose from a venue to draft the newsletter and social-media messages for its acceptances.",
+      configError:
+        "The outreach recipients are not set up correctly, so nothing can be sent from here: {reason}",
+      papers: "{count} papers",
+      to: "To {recipients}",
+      cc: "Cc {recipients}",
+      noRecipients:
+        "No recipients are configured for this outlet, so the draft can only be copied.",
+      copy: "Copy draft",
+      openForm: "Open the form",
+      send: "Send",
+      sendAgain: "Send again",
+      sent: "Sent {count} papers to {recipients}.",
+      stage: {
+        acceptance: "On acceptance",
+        camera_ready: "At camera-ready",
+        pre_conference: "Right before the conference",
+      },
+      state: {
+        ready: "ready to send",
+        needsEdit: "needs a summary before it goes",
+        copyOnly: "copy only",
+        form: "submitted through a form",
+        none: "no matching papers",
+        sent: "sent",
+      },
+      sheet: {
+        title: "Acceptance sheet",
+        sub: "The acceptance tab of the lab spreadsheet. AdminBot only adds rows the tab does not hold; it never changes what is there.",
+        unconfigured:
+          "The acceptance tab is not connected, so the rows can be copied and pasted in by hand.",
+        rows: "{count} accepted papers in our records",
+        copy: "Copy rows",
+        check: "Check the sheet",
+        working: "Reading…",
+        add: "Add {count} missing rows",
+        added: "Added {count} rows to the acceptance sheet.",
+        upToDate: "The sheet already holds all {count} accepted papers.",
+        missing: "{count} papers are not on the sheet yet: {titles}",
+      },
+      error: {
+        failed: "The outreach request failed.",
+      },
+    },
   },
   events: {
     loading: "Loading events…",

@@ -489,6 +489,13 @@ import {
   type OpenReviewUpdate,
 } from "../workflows/papers/openreview-updates.js";
 import {
+  type AcceptanceRow,
+  type OutreachConfig,
+  type OutreachDraft,
+  acceptanceRows,
+  composeOutreach,
+} from "../workflows/papers/paper-outreach.js";
+import {
   memberOwnsPaper,
   paperIdsByOwner,
   rosterNameCounts,
@@ -4511,6 +4518,56 @@ export class AdminBotService {
         pending_count: pendingCount,
         subject: digest.subject,
         body: digest.body,
+      },
+    };
+  }
+
+  /**
+   * Research outreach for the papers accepted at one venue: a draft per institute outlet.
+   *
+   * Like the digest above, the preview and the send both read this, so what an admin read is what
+   * is mailed. Without a venue it returns the venue options and the acceptance rows alone, which
+   * is what the tab needs before anybody has picked one.
+   */
+  collectPaperOutreach(params: {
+    venue?: string;
+    config: OutreachConfig;
+  }): AdminBotServiceResponse<{
+    venue?: string;
+    venues: VenueOption[];
+    paper_count: number;
+    drafts: OutreachDraft[];
+    acceptance_rows: AcceptanceRow[];
+    config_error?: string;
+  }> {
+    const papers = this.store.listPapers();
+    const venues = collectVenues(papers);
+    const requested = params.venue?.trim() ?? "";
+    const wanted = venueKey(requested);
+    const venue = wanted ? venues.find((option) => option.key === wanted)?.label : undefined;
+    if (wanted && !venue) {
+      return serviceError(404, `no paper in our records names the venue "${requested}"`);
+    }
+    const piMemberId = this.headProfessorMemberId();
+    const plan = venue
+      ? composeOutreach({
+          papers,
+          roster: this.store.listLabMembers(),
+          ...(piMemberId ? { piMemberId } : {}),
+          venue,
+          config: params.config,
+        })
+      : undefined;
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        ...(venue ? { venue } : {}),
+        venues,
+        paper_count: plan?.papers.length ?? 0,
+        drafts: plan?.drafts ?? [],
+        acceptance_rows: acceptanceRows(papers),
+        ...(params.config.error ? { config_error: params.config.error } : {}),
       },
     };
   }

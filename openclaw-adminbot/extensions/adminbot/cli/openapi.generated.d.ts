@@ -4132,6 +4132,57 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/papers/outreach": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** GET /papers/outreach */
+    get: operations["get-papers-outreach"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/papers/outreach/acceptance-sheet": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** POST /papers/outreach/acceptance-sheet */
+    post: operations["post-papers-outreach-acceptance-sheet"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/papers/outreach/send": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** POST /papers/outreach/send */
+    post: operations["post-papers-outreach-send"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/papers/paperflow-evidence": {
     parameters: {
       query?: never;
@@ -5567,7 +5618,11 @@ export interface components {
         | "cv.sweep_failed"
         | "venue_index.rebuilt"
         | "publication_digest.sent"
-        | "publication_digest.failed";
+        | "publication_digest.failed"
+        | "paper_outreach.sent"
+        | "paper_outreach.failed"
+        | "acceptance_sheet.rows_added"
+        | "acceptance_sheet.failed";
       timestamp: string;
       actor?: string;
       details?: {
@@ -9391,6 +9446,39 @@ export interface components {
       field: string;
       from: unknown;
       to: unknown;
+    } & {
+      [key: string]: unknown;
+    };
+    OutreachDraft: {
+      key: string;
+      institute: string;
+      label: string;
+      /** @enum {string} */
+      stage: "camera_ready" | "acceptance" | "pre_conference";
+      /** @enum {string} */
+      channel: "email" | "form";
+      /** @enum {string} */
+      audience: "pi" | "senior" | "pi_or_senior" | "lab";
+      cadence: string;
+      paper_ids: string[];
+      subject: string;
+      body: string;
+      needs_edit: boolean;
+      notes: string[];
+      to: string[];
+      cc: string[];
+      form_url?: string;
+      sendable: boolean;
+    } & {
+      [key: string]: unknown;
+    };
+    AcceptanceRow: {
+      paper_id: string;
+      year: string;
+      title: string;
+      conference: string;
+      authors: string;
+      paper_link: string;
     } & {
       [key: string]: unknown;
     };
@@ -26083,6 +26171,262 @@ export interface operations {
           } & {
             [key: string]: unknown;
           };
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "get-papers-outreach": {
+    parameters: {
+      query?: {
+        venue?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful service result */
+      "2XX": {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            acceptance_sheet_configured: boolean;
+            venue?: string;
+            venues: components["schemas"]["VenueOption"][];
+            paper_count: number;
+            drafts: components["schemas"]["OutreachDraft"][];
+            acceptance_rows: components["schemas"]["AcceptanceRow"][];
+            config_error?: string;
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "post-papers-outreach-acceptance-sheet": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          [key: string]: unknown;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            dry_run: boolean;
+            total: number;
+            missing: components["schemas"]["AcceptanceRow"][];
+            added: number;
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Server response */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Successful service result */
+      "2XX": {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": unknown;
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "post-papers-outreach-send": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          outlet?: string;
+          venue?: string;
+        } & {
+          [key: string]: unknown;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            sent: boolean;
+            outlet: string;
+            venue: string;
+            recipients: string[];
+            cc: string[];
+            papers: number;
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Server response */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Server response */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Server response */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Server response */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Server response */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Successful service result */
+      "2XX": {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": unknown;
         };
       };
       /** @description Authentication, authorization, validation, policy, or connector error */

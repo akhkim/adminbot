@@ -59,6 +59,12 @@ import {
 } from "./adminbot/controllers/mailing-list.ts";
 import { loadAdminBotMemberRequests } from "./adminbot/controllers/member-requests.ts";
 import { saveAdminBotOwnSchedule } from "./adminbot/controllers/members.ts";
+import {
+  EMPTY_OUTREACH_STATE,
+  loadAdminBotOutreach,
+  sendAdminBotOutreach,
+  syncAdminBotAcceptanceSheet,
+} from "./adminbot/controllers/paper-outreach.ts";
 import { loadAdminBotPaperSlotOverview } from "./adminbot/controllers/paper-slots.ts";
 import { loadMyProjects } from "./adminbot/controllers/papers.ts";
 import {
@@ -3670,16 +3676,30 @@ export function renderApp(state: AppViewState) {
                   // Cleared with the range it described. A preview left on screen next to two new
                   // dates is the one way this screen could mislead about what would be sent.
                   state.adminBotMailingListPreview = null;
+                  state.adminBotOutreach = EMPTY_OUTREACH_STATE;
                 },
                 onVenueChange: (venue) => {
                   state.adminBotMailingListVenue = venue;
                   // Same rule as the range: the preview described the old composition, so leaving
                   // it up beside a new one is the way this screen could lie about what it sends.
                   state.adminBotMailingListPreview = null;
+                  state.adminBotOutreach = EMPTY_OUTREACH_STATE;
                 },
                 onEmailChange: (email) => (state.adminBotMailingListEmail = email),
-                onPreview: () => void loadAdminBotMailingList(state),
+                // One press reads both: the digest for the composition, and the outlet drafts for
+                // the same venue. By date there is no venue, and the outreach read still returns
+                // the acceptance-tab rows.
+                onPreview: () => {
+                  void loadAdminBotMailingList(state);
+                  void loadAdminBotOutreach(state, state.adminBotMailingListVenue);
+                },
                 onSend: () => void sendAdminBotMailingList(state),
+                outreach: {
+                  ...state.adminBotOutreach,
+                  onSend: (outlet) => void sendAdminBotOutreach(state, outlet),
+                  onCheckSheet: () => void syncAdminBotAcceptanceSheet(state, false),
+                  onAddToSheet: () => void syncAdminBotAcceptanceSheet(state, true),
+                },
               }),
             )
           : nothing}

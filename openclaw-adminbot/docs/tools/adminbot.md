@@ -2302,6 +2302,7 @@ checks and audit logging.
 - [Email template drift check](/tools/adminbot-email-templates)
 - [PaperFlow stage nudges](/tools/adminbot-paperflow-nudges)
 - [Email triage](/tools/adminbot-email-triage)
+- [Research outreach and the acceptance sheet](/operations/research-outreach)
 - [Standing orders](/automation/standing-orders)
 - [Per-agent sandbox and tool restrictions](/tools/multi-agent-sandbox-tools)
 - [Skills config](/tools/skills-config)

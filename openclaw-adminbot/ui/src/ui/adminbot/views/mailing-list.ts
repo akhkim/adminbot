@@ -21,6 +21,7 @@ import type { PublicationDigestPreview, PublicationDigestVenue } from "../api/pa
 // prominently as what is included, and the send is deliberately a second, separate click on a
 // preview that is already on screen.
 import { renderDateControl } from "../date-control.ts";
+import { renderPaperOutreach, type PaperOutreachProps } from "./paper-outreach.ts";
 
 export type MailingListProps = {
   preview: PublicationDigestPreview | null;
@@ -39,6 +40,8 @@ export type MailingListProps = {
   onEmailChange: (email: string) => void;
   onPreview: () => void;
   onSend: () => void;
+  /** The per-outlet drafts and the acceptance tab, read alongside the preview. */
+  outreach?: PaperOutreachProps;
 };
 
 class AdminbotMailingListView extends LitElement {
@@ -158,6 +161,7 @@ class AdminbotMailingListView extends LitElement {
           : nothing}
         ${preview ? this.renderPreview(preview, sendable) : this.renderEmpty()}
       </section>
+      ${props.outreach ? renderPaperOutreach(props.outreach) : nothing}
     `;
   }
 

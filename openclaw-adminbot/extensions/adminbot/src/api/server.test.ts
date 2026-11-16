@@ -4873,6 +4873,284 @@ describe("publication mailing list", () => {
   });
 });
 
+describe("research outreach", () => {
+  type Sent = { to: string; cc?: string[]; subject: string; body: string };
+  const HEADER = ["year", "paper title", "conference", "authors", "paper_link"];
+
+  async function labWithAcceptances(
+    options: {
+      sent?: Sent[];
+      sheet?: { rows: string[][]; appended: string[][][] };
+      runner?: (params: Sent) => Promise<void>;
+    } = {},
+  ) {
+    const { sent = [], sheet } = options;
+    const { baseUrl } = await startService({
+      publicationMailingRunner:
+        options.runner ??
+        (async (params) => {
+          sent.push(params);
+        }),
+      outreachConfig: {
+        senior_authors: ["Grace Hopper"],
+        outlets: {
+          vector: { to: ["news@example.org"], cc: ["editor@example.org"] },
+          sri: { to: ["roundup@example.org"], cc: [] },
+          cls: { to: ["form-owner@example.org"], cc: [], form_url: "https://example.org/form" },
+        },
+      },
+      ...(sheet
+        ? {
+            acceptanceSheet: {
+              read: async () => [...sheet.rows],
+              append: async (rows: string[][]) => {
+                sheet.appended.push(rows);
+                sheet.rows.push(...rows);
+              },
+            },
+          }
+        : {}),
+    });
+    seedMember(baseUrl, "root", {
+      name: "Root Admin",
+      email: "root@cs.toronto.edu",
+      privilege_level: "admin",
+    });
+    await approveClaim(baseUrl, "root", "root@cs.toronto.edu");
+    const token = await loginToken(baseUrl, "root@cs.toronto.edu");
+    await namePi(baseUrl, token, "root");
+    const mock = mockFor(baseUrl);
+    for (const [id, title, authors, venue, arxiv] of [
+      [
+        "with-pi",
+        "With The PI",
+        ["Ada", "Root Admin"],
+        "ICLR 2027",
+        "https://arxiv.org/abs/2610.00001",
+      ],
+      [
+        "with-senior",
+        "With A Senior",
+        ["Ada", "Grace Hopper"],
+        "ICLR 2027",
+        "https://arxiv.org/abs/2610.00002",
+      ],
+      ["elsewhere", "Elsewhere", ["Root Admin"], "ACL 2026", "https://arxiv.org/abs/2603.00003"],
+    ] as const) {
+      const result = mock.service.upsertPaper({
+        id,
+        title,
+        authors: [...authors],
+        venue,
+        venue_decision: "accept",
+        artifacts: { arxiv_url: arxiv },
+      } as never);
+      if (!result.ok) {
+        throw new Error(result.error.message);
+      }
+    }
+    return { baseUrl, token, sent };
+  }
+
+  const auth = (token: string) => jsonHeaders({ Authorization: `Bearer ${token}` });
+
+  it("previews a draft per outlet and the acceptance rows", async () => {
+    const { baseUrl, token } = await labWithAcceptances();
+    const res = await fetch(`${baseUrl}/papers/outreach?venue=iclr%202027`, {
+      headers: auth(token),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      venue: string;
+      paper_count: number;
+      acceptance_sheet_configured: boolean;
+      acceptance_rows: Array<{ title: string; year: string; conference: string }>;
+      drafts: Array<{ key: string; paper_ids: string[]; sendable: boolean; to: string[] }>;
+    };
+    expect(body.venue).toBe("ICLR 2027");
+    expect(body.paper_count).toBe(2);
+    expect(body.acceptance_sheet_configured).toBe(false);
+    // Every accepted paper, whatever venue is being looked at.
+    expect(
+      body.acceptance_rows.map((row) => `${row.year} ${row.conference}: ${row.title}`),
+    ).toEqual(["2027 ICLR: With A Senior", "2027 ICLR: With The PI", "2026 ACL: Elsewhere"]);
+    const byKey = new Map(body.drafts.map((draft) => [draft.key, draft]));
+    expect(byKey.get("vector")).toMatchObject({ paper_ids: ["with-pi"], sendable: true });
+    expect(byKey.get("mpi_record")).toMatchObject({
+      paper_ids: ["with-senior"],
+      to: [],
+      sendable: false,
+    });
+  });
+
+  it("lists venues and acceptance rows before a venue is chosen", async () => {
+    const { baseUrl, token } = await labWithAcceptances();
+    const res = await fetch(`${baseUrl}/papers/outreach`, { headers: auth(token) });
+    const body = (await res.json()) as { drafts: unknown[]; acceptance_rows: unknown[] };
+    expect(res.status).toBe(200);
+    expect(body.drafts).toEqual([]);
+    expect(body.acceptance_rows).toHaveLength(3);
+  });
+
+  it("mails an outlet's draft to the configured recipients, and audits it", async () => {
+    const { baseUrl, token, sent } = await labWithAcceptances();
+    const res = await fetch(`${baseUrl}/papers/outreach/send`, {
+      method: "POST",
+      headers: auth(token),
+      // An address in the request is ignored: the caller names an outlet, not a recipient.
+      body: JSON.stringify({ venue: "ICLR 2027", outlet: "vector", email: "anyone@example.net" }),
+    });
+    expect(res.status).toBe(200);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ to: "news@example.org", cc: ["editor@example.org"] });
+    expect(sent[0]?.body).toContain("With The PI");
+    expect(sent[0]?.body).not.toContain("With A Senior");
+    const audit = mockFor(baseUrl)
+      .service.listAuditEvents()
+      .filter((event) => event.type === "paper_outreach.sent");
+    expect(audit).toHaveLength(1);
+    expect(audit[0]?.details).toMatchObject({
+      outlet: "vector",
+      venue: "ICLR 2027",
+      recipients: ["news@example.org"],
+      papers: ["with-pi"],
+    });
+  });
+
+  it("refuses what cannot be sent, and says why", async () => {
+    const { baseUrl, token, sent } = await labWithAcceptances();
+    const send = (body: Record<string, unknown>) =>
+      fetch(`${baseUrl}/papers/outreach/send`, {
+        method: "POST",
+        headers: auth(token),
+        body: JSON.stringify(body),
+      });
+    const message = async (res: Response) =>
+      ((await res.json()) as { error: { message: string } }).error.message;
+
+    const unwritten = await send({ venue: "ICLR 2027", outlet: "sri" });
+    expect(unwritten.status).toBe(409);
+    expect(await message(unwritten)).toMatch(/text left to write/u);
+
+    const unconfigured = await send({ venue: "ICLR 2027", outlet: "mpi_record" });
+    expect(unconfigured.status).toBe(409);
+    expect(await message(unconfigured)).toMatch(/no recipients/u);
+
+    // Recipients are configured for it, and it is still not mailed: a form is a person's to submit.
+    const form = await send({ venue: "ICLR 2027", outlet: "cls" });
+    expect(form.status).toBe(409);
+    expect(await message(form)).toMatch(/form/u);
+
+    expect((await send({ venue: "ICLR 2027", outlet: "nowhere" })).status).toBe(404);
+    expect((await send({ venue: "NoSuchConf 2031", outlet: "vector" })).status).toBe(404);
+    expect((await send({ outlet: "vector" })).status).toBe(400);
+    expect(sent).toEqual([]);
+  });
+
+  it("keeps the shared service token out of sends and sheet writes", async () => {
+    const sheet = { rows: [HEADER], appended: [] as string[][][] };
+    const { baseUrl, sent } = await labWithAcceptances({ sheet });
+    for (const [path, body] of [
+      ["/papers/outreach/send", { venue: "ICLR 2027", outlet: "vector" }],
+      ["/papers/outreach/acceptance-sheet", { dry_run: false }],
+    ] as const) {
+      const refused = await fetch(`${baseUrl}${path}`, {
+        method: "POST",
+        headers: serviceHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify(body),
+      });
+      expect(refused.status).toBe(403);
+    }
+    expect(sent).toEqual([]);
+    expect(sheet.appended).toEqual([]);
+  });
+
+  it("audits a send that failed", async () => {
+    const { baseUrl, token } = await labWithAcceptances({
+      runner: async () => {
+        throw new Error("mailbox unavailable");
+      },
+    });
+    const res = await fetch(`${baseUrl}/papers/outreach/send`, {
+      method: "POST",
+      headers: auth(token),
+      body: JSON.stringify({ venue: "ICLR 2027", outlet: "vector" }),
+    });
+    expect(res.status).toBe(500);
+    expect(
+      mockFor(baseUrl)
+        .service.listAuditEvents()
+        .filter((event) => event.type === "paper_outreach.failed"),
+    ).toHaveLength(1);
+  });
+
+  it("checks the acceptance sheet without writing, then adds only what is missing", async () => {
+    const sheet = {
+      rows: [HEADER, ["2027", "with the pi", "ICLR", "typed by hand", ""]],
+      appended: [] as string[][][],
+    };
+    const { baseUrl, token } = await labWithAcceptances({ sheet });
+    const call = async (body?: Record<string, unknown>) => {
+      const res = await fetch(`${baseUrl}/papers/outreach/acceptance-sheet`, {
+        method: "POST",
+        headers: auth(token),
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+      return {
+        status: res.status,
+        body: (await res.json()) as { added: number; missing: Array<{ title: string }> },
+      };
+    };
+
+    // No body is a check. Writing to a shared sheet has to be asked for.
+    const check = await call();
+    expect(check.status).toBe(200);
+    expect(check.body.missing.map((row) => row.title)).toEqual(["With A Senior", "Elsewhere"]);
+    expect(check.body.added).toBe(0);
+    expect(sheet.appended).toEqual([]);
+
+    const added = await call({ dry_run: false });
+    expect(added.body.added).toBe(2);
+    expect(sheet.appended).toEqual([
+      [
+        ["2027", "With A Senior", "ICLR", "Ada, Grace Hopper", "https://arxiv.org/abs/2610.00002"],
+        ["2026", "Elsewhere", "ACL", "Root Admin", "https://arxiv.org/abs/2603.00003"],
+      ],
+    ]);
+    expect(
+      mockFor(baseUrl)
+        .service.listAuditEvents()
+        .filter((event) => event.type === "acceptance_sheet.rows_added")[0]?.details,
+    ).toMatchObject({ added: 2, papers: ["with-senior", "elsewhere"] });
+
+    // Pressed twice, it adds nothing the second time.
+    const again = await call({ dry_run: false });
+    expect(again.body.added).toBe(0);
+    expect(sheet.appended).toHaveLength(1);
+  });
+
+  it("will not append under a header that is not the acceptance header", async () => {
+    const sheet = { rows: [["name", "email"]], appended: [] as string[][][] };
+    const { baseUrl, token } = await labWithAcceptances({ sheet });
+    const res = await fetch(`${baseUrl}/papers/outreach/acceptance-sheet`, {
+      method: "POST",
+      headers: auth(token),
+      body: JSON.stringify({ dry_run: false }),
+    });
+    expect(res.status).toBe(500);
+    expect(sheet.appended).toEqual([]);
+  });
+
+  it("answers 503 for the sheet when none is configured", async () => {
+    const { baseUrl, token } = await labWithAcceptances();
+    const res = await fetch(`${baseUrl}/papers/outreach/acceptance-sheet`, {
+      method: "POST",
+      headers: auth(token),
+    });
+    expect(res.status).toBe(503);
+  });
+});
+
 describe("POST /profile/device-location", () => {
   // A two-row GeoNames extract (tab-separated, the columns the reader uses), written to a temp
   // directory so the server's own loader reads it. Synthetic; nothing is downloaded.
