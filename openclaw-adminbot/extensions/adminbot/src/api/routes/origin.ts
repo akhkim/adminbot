@@ -46,6 +46,8 @@ export function firstHeaderValue(value: string | string[] | undefined): string |
   return first || undefined;
 }
 
+const PREFLIGHT_MAX_AGE_SECONDS = 24 * 60 * 60;
+
 export function applyCors(
   req: IncomingMessage,
   res: ServerResponse,
@@ -84,6 +86,11 @@ export function applyCors(
   // nothing to revalidate with.
   res.setHeader("Access-Control-Expose-Headers", "ETag");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+  // Every request from the console carries Authorization, so the browser asks permission first.
+  // Without this it forgets the answer after five seconds and asks again before nearly every
+  // request, which doubles the round trips of each click. Browsers cap the value themselves
+  // (two hours in Chrome, a day in Firefox).
+  res.setHeader("Access-Control-Max-Age", String(PREFLIGHT_MAX_AGE_SECONDS));
   return true;
 }
 
