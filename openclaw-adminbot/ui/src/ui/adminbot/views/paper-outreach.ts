@@ -12,7 +12,9 @@ import type {
 // The digest above it is one list for one address. This is the same acceptances told many ways:
 // each institute newsletter, the department record, the social-media managers, each with its own
 // wording and its own rule about which papers it wants. One row per outlet, folded, grouped by the
-// moment it is due (on acceptance, at camera-ready, right before the conference).
+// moment it is due (after the submission deadline, on acceptance, at camera-ready, right before the
+// conference). The same rows carry the lab's own follow-ups: the note asking authors for their
+// arXiv link, and the outlines for a featured article and a blog post, which are only ever copied.
 //
 // Two things a draft can be, and the row says which. A draft that is complete and has recipients
 // on the service can be sent from here. A draft that still needs a sentence only a person can
@@ -41,6 +43,7 @@ export type PaperOutreachProps = {
 };
 
 const STAGES: ReadonlyArray<PaperOutreachDraft["stage"]> = [
+  "submission",
   "acceptance",
   "camera_ready",
   "pre_conference",
@@ -70,6 +73,9 @@ function draftState(draft: PaperOutreachDraft, sent: boolean): string {
   }
   if (draft.channel === "form") {
     return t("mailingList.outreach.state.form");
+  }
+  if (draft.channel === "doc") {
+    return t("mailingList.outreach.state.doc");
   }
   if (draft.needs_edit) {
     return t("mailingList.outreach.state.needsEdit");

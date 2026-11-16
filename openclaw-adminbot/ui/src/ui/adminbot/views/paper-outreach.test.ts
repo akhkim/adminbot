@@ -153,6 +153,45 @@ describe("renderPaperOutreach", () => {
     expect(link?.getAttribute("rel")).toContain("noopener");
   });
 
+  it("offers an outline to copy and never to send", () => {
+    const container = draw({
+      data: outreach({
+        drafts: [
+          draft({
+            key: "featured_article",
+            stage: "camera_ready",
+            channel: "doc",
+            needs_edit: true,
+            to: [],
+            cc: [],
+            sendable: false,
+          }),
+        ],
+      }),
+    });
+    expect(find(container, "outreach-send-featured_article")).toBeNull();
+    expect(find(container, "outreach-copy-featured_article")).not.toBeNull();
+    const row = find(container, "outreach-outlet-featured_article");
+    expect(row?.textContent).toContain("an outline to write");
+    // No recipients line at all: an outline is not addressed to anybody.
+    expect(row?.textContent).not.toContain("nobody to send");
+  });
+
+  it("puts the submissions record first, under its own moment", () => {
+    const container = draw({
+      data: outreach({
+        drafts: [draft(), draft({ key: "mpi_submissions", stage: "submission" })],
+      }),
+    });
+    const headings = [...container.querySelectorAll(".adminbot-outreach__heading")].map((node) =>
+      node.textContent?.trim(),
+    );
+    expect(headings.indexOf("After the submission deadline")).toBeGreaterThanOrEqual(0);
+    expect(headings.indexOf("After the submission deadline")).toBeLessThan(
+      headings.indexOf("On acceptance"),
+    );
+  });
+
   it("marks an outlet already mailed, so a second send is a visible choice", () => {
     const container = draw({ sent: ["vector"] });
     expect(find(container, "outreach-send-vector")?.textContent).toContain("Send again");

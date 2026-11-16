@@ -18,6 +18,7 @@
 import {
   adminBotIsCoauthorMajorType,
   adminBotIsFullMemberType,
+  adminBotPaperSteps,
   type AdminBotLabMember,
   type AdminBotPaperPresentationType,
   type AdminBotPaperRecord,
@@ -25,8 +26,18 @@ import {
 import { isSamePerson } from "../../contracts/person-names.js";
 import { acceptedVenueOf, venueKey } from "./publication-list.js";
 
-/** The guidebook's three moments: on acceptance, at camera-ready, right before the conference. */
-export type OutreachStage = "acceptance" | "camera_ready" | "pre_conference";
+/**
+ * The guidebook's moments, in the order they come: once the submission deadline has passed, on
+ * acceptance, at camera-ready, right before the conference.
+ */
+export type OutreachStage = "submission" | "acceptance" | "camera_ready" | "pre_conference";
+
+/**
+ * How a draft leaves the lab. `email` can be sent from AdminBot; `form` is pasted into somebody's
+ * web form; `doc` is the start of something a person writes (an article, a blog post) and is never
+ * mailed, whatever is configured.
+ */
+export type OutreachChannel = "email" | "form" | "doc";
 
 /**
  * Which papers an outlet is told about, by who is on them.
@@ -46,18 +57,35 @@ export type OutreachFormat =
   | "brief"
   | "grouped"
   | "pitch"
-  | "social";
+  | "social"
+  | "submission"
+  | "announcement"
+  | "link_nudge"
+  | "article"
+  | "blog";
 
 export type OutreachOutlet = {
   key: string;
   institute: string;
   label: string;
   stage: OutreachStage;
-  /** `form` outlets are submitted by a person through a web form; they are never mailed. */
-  channel: "email" | "form";
+  channel: OutreachChannel;
   audience: OutreachAudience;
   /** Restricts the outlet to papers on one topic. */
   topic?: "multi_agent";
+  /**
+   * Which of the venue's papers the outlet draws from. Unset is the accepted ones. `submitted` is
+   * everything sent to the venue, whatever was decided since; `no_arxiv` is the accepted papers
+   * whose record still has no arXiv link.
+   */
+  source?: "submitted" | "no_arxiv";
+  /** Only the first few papers, most prominent first. */
+  limit?: number;
+  /**
+   * `authors` mails the lab members on the papers themselves, at the addresses the roster holds,
+   * instead of a configured list.
+   */
+  recipients?: "authors";
   cadence: string;
   format: OutreachFormat;
 };
@@ -70,6 +98,17 @@ export type OutreachOutlet = {
  * lab's call and changes when an affiliation does.
  */
 export const OUTREACH_OUTLETS: readonly OutreachOutlet[] = [
+  {
+    key: "mpi_submissions",
+    institute: "MPI-IS",
+    label: "Submissions record",
+    stage: "submission",
+    channel: "email",
+    audience: "senior",
+    source: "submitted",
+    cadence: "once the submission deadline has passed",
+    format: "submission",
+  },
   {
     key: "mpi_record",
     institute: "MPI-IS",
@@ -150,6 +189,49 @@ export const OUTREACH_OUTLETS: readonly OutreachOutlet[] = [
     topic: "multi_agent",
     cadence: "monthly",
     format: "brief",
+  },
+  {
+    key: "external_list",
+    institute: "Jinesis Lab",
+    label: "External mailing list",
+    stage: "acceptance",
+    channel: "email",
+    audience: "lab",
+    cadence: "per conference",
+    format: "announcement",
+  },
+  {
+    key: "author_links",
+    institute: "Paper authors",
+    label: "Add the arXiv link",
+    stage: "camera_ready",
+    channel: "email",
+    audience: "lab",
+    source: "no_arxiv",
+    recipients: "authors",
+    cadence: "after camera-ready",
+    format: "link_nudge",
+  },
+  {
+    key: "featured_article",
+    institute: "Featured article",
+    label: "Outline for the top papers",
+    stage: "camera_ready",
+    channel: "doc",
+    audience: "lab",
+    limit: 2,
+    cadence: "at camera-ready, top one or two papers",
+    format: "article",
+  },
+  {
+    key: "lab_blog",
+    institute: "Lab website",
+    label: "Blog post per paper",
+    stage: "camera_ready",
+    channel: "doc",
+    audience: "lab",
+    cadence: "at camera-ready",
+    format: "blog",
   },
   {
     key: "cifar_insights",
@@ -271,7 +353,11 @@ export function parseOutreachConfig(raw: string | undefined): OutreachConfig {
   }
 }
 
-type RosterMember = Pick<AdminBotLabMember, "id" | "name" | "member_type">;
+type RosterMember = Pick<AdminBotLabMember, "id" | "name" | "member_type"> &
+  Partial<Pick<AdminBotLabMember, "email" | "correspondence_email">>;
+
+/** Where a paper sent to a venue stands there. */
+export type OutreachSubmissionStatus = "under_review" | "accepted" | "rejected" | "withdrawn";
 
 /** One accepted paper, with the questions the outlets ask of it already answered. */
 export type OutreachPaper = {
@@ -290,6 +376,14 @@ export type OutreachPaper = {
   seniors: string[];
   has_lab_member: boolean;
   multi_agent: boolean;
+  /** The record has an arXiv link, not just the Drive PDF. */
+  has_arxiv: boolean;
+  /** The Drive PDF, when that is all the record has. */
+  drive_url?: string;
+  /** Roster addresses of the lab members on the paper, the head professor left out. */
+  author_emails: string[];
+  /** Set when the paper is described as a submission rather than as an acceptance. */
+  status?: OutreachSubmissionStatus;
 };
 
 // The title and the topic somebody typed are the only topical evidence a paper record carries, so
@@ -298,14 +392,53 @@ export type OutreachPaper = {
 const MULTI_AGENT_TITLE =
   /multi[-\s]?agent|cooperat|collusi|negotiat|social dilemma|game[-\s]theor/iu;
 
+type DescribeContext = {
+  roster: readonly RosterMember[];
+  piMemberId?: string;
+  seniorAuthors: string[];
+};
+
 export function describeOutreachPaper(
   paper: AdminBotPaperRecord,
-  context: { roster: readonly RosterMember[]; piMemberId?: string; seniorAuthors: string[] },
+  context: DescribeContext,
 ): OutreachPaper | undefined {
   const venue = acceptedVenueOf(paper);
-  if (!venue) {
-    return undefined;
+  return venue ? describePaperAt(paper, venue, context) : undefined;
+}
+
+const SUBMITTED_FROM = adminBotPaperSteps.indexOf("submission");
+
+/**
+ * Where a paper stands at the venue it was sent to, or undefined when nothing says it was sent.
+ *
+ * "Sent" needs evidence: a decision somebody recorded, an OpenReview submission, or a record that
+ * has moved past the submission step. A paper that merely names a venue it is aiming at is not a
+ * submission, and telling an institute's record-keeper that it was would be a false record.
+ */
+export function submissionStatusOf(
+  paper: AdminBotPaperRecord,
+): OutreachSubmissionStatus | undefined {
+  if (acceptedVenueOf(paper)) {
+    return "accepted";
   }
+  const synced = paper.openreview_sync?.status;
+  if (synced === "withdrawn") {
+    return "withdrawn";
+  }
+  if (paper.venue_decision === "reject" || synced === "rejected" || synced === "desk_rejected") {
+    return "rejected";
+  }
+  const pastSubmission = adminBotPaperSteps.indexOf(paper.current_step) > SUBMITTED_FROM;
+  return paper.venue_decision === "pending" || synced || pastSubmission
+    ? "under_review"
+    : undefined;
+}
+
+function describePaperAt(
+  paper: AdminBotPaperRecord,
+  venue: string,
+  context: DescribeContext,
+): OutreachPaper {
   const authors = paper.authors ?? [];
   const links = paper.author_links ?? [];
   const byId = new Map(context.roster.map((member) => [member.id, member]));
@@ -331,7 +464,18 @@ export function describeOutreachPaper(
     });
   // arXiv once it is up; until then the Drive PDF, which every submitted paper is meant to have,
   // so an acceptance can go out before camera-ready.
-  const url = paper.artifacts?.arxiv_url?.trim() || paper.artifacts?.google_drive_pdf_url?.trim();
+  const arxiv = paper.artifacts?.arxiv_url?.trim();
+  const drive = paper.artifacts?.google_drive_pdf_url?.trim();
+  const url = arxiv || drive;
+  const authorEmails = new Set<string>();
+  for (const id of memberIds) {
+    const member = id === pi?.id ? undefined : byId.get(id);
+    // The address the lab writes to, else the one the member signs in with.
+    const address = (member?.correspondence_email || member?.email || "").trim();
+    if (ADDRESS_SHAPE.test(address)) {
+      authorEmails.add(address);
+    }
+  }
   const summary = normalizeOutreachSummary(paper.artifacts?.outreach_summary ?? "");
   return {
     id: paper.id,
@@ -348,6 +492,9 @@ export function describeOutreachPaper(
     ),
     has_lab_member: hasLabMember,
     multi_agent: MULTI_AGENT_TITLE.test(`${paper.title} ${paper.artifacts?.topic ?? ""}`),
+    has_arxiv: Boolean(arxiv),
+    ...(!arxiv && drive ? { drive_url: drive } : {}),
+    author_emails: [...authorEmails],
   };
 }
 
@@ -426,7 +573,27 @@ function withLink(paper: OutreachPaper): string {
   return paper.url ?? "link not recorded";
 }
 
-type RenderContext = { venue: string; piName?: string; papers: OutreachPaper[] };
+type RenderContext = {
+  venue: string;
+  piName?: string;
+  papers: OutreachPaper[];
+  /** The venue's camera-ready date and whether it has gone by, when the deadline data has one. */
+  cameraReady?: { date: string; passed: boolean };
+};
+
+const STATUS_LABEL: Record<OutreachSubmissionStatus, string> = {
+  under_review: "under review",
+  accepted: "accepted",
+  rejected: "rejected",
+  withdrawn: "withdrawn",
+};
+
+/** A bracketed prompt in a `doc` draft: the part a person writes. */
+const write = (prompt: string): string => `[${prompt}]`;
+
+function presentationTag(paper: OutreachPaper): string {
+  return paper.presentation ? ` [${PRESENTATION_LABEL[paper.presentation]}]` : "";
+}
 
 function renderBody(format: OutreachFormat, context: RenderContext): string {
   const { venue, papers } = context;
@@ -579,8 +746,124 @@ function renderBody(format: OutreachFormat, context: RenderContext): string {
         "",
         SIGN_OFF,
       ].join("\n");
+    case "submission": {
+      const seniors = [...new Set(papers.flatMap((paper) => paper.seniors))];
+      const involving = seniors.length > 0 ? ` involving ${seniors.join(" and ")}` : "";
+      return [
+        "Dear all,",
+        "",
+        `For the record, here ${plural(count, "is the paper", `are the ${count} papers`)}${involving} submitted to ${venue}:`,
+        "",
+        ...papers.map(
+          (paper, index) =>
+            `${index + 1}. ${paper.title} — ${authorLine(paper)} — ${STATUS_LABEL[paper.status ?? "under_review"]}`,
+        ),
+        "",
+        // Only a promise while something is still undecided; a record of settled papers ends there.
+        ...(papers.some((paper) => (paper.status ?? "under_review") === "under_review")
+          ? ["The decisions will follow once they are out.", ""]
+          : []),
+        SIGN_OFF,
+      ].join("\n");
+    }
+    case "announcement":
+      return [
+        "Hello everyone,",
+        "",
+        `The Jinesis Lab has ${count} ${plural(count, "paper", "papers")} accepted at ${venue}:`,
+        "",
+        ...papers.map((paper) =>
+          [
+            `• ${paper.title}${presentationTag(paper)}`,
+            `  ${authorLine(paper)}`,
+            // A summary helps here but the list reads without one, so its absence is not a gap.
+            ...(paper.summary ? [`  ${paper.summary}`] : []),
+            `  ${withLink(paper)}`,
+          ].join("\n"),
+        ),
+        "",
+        SIGN_OFF,
+      ].join("\n");
+    case "link_nudge": {
+      const due = context.cameraReady;
+      return [
+        "Hi all,",
+        "",
+        `${
+          due
+            ? `The ${venue} camera-ready ${due.passed ? "was" : "is"} due on ${due.date}. `
+            : `Congratulations again on ${venue}. `
+        }${plural(count, "The paper below has", "The papers below have")} no arXiv link in AdminBot yet.`,
+        "",
+        "Once the camera-ready version is on arXiv, please add the link on the paper's page in AdminBot. The institute newsletters, the lab's acceptance sheet and the conference posts all take the link from there, so until it is in, they go out with a Drive link or none.",
+        "",
+        ...papers.map(
+          (paper) =>
+            `• ${paper.title}\n  Now: ${paper.drive_url ? `Drive PDF only (${paper.drive_url})` : "no link recorded"}`,
+        ),
+        "",
+        SIGN_OFF,
+      ].join("\n");
+    }
+    case "article":
+      return [
+        `Featured-article outlines for ${venue}, most prominent first. The bracketed parts are for a person to write; everything else is from the paper's record.`,
+        "",
+        ...papers.flatMap((paper) => [
+          `# ${paper.title}`,
+          `${authorLine(paper)} · ${venue}${presentationTag(paper)}`,
+          `Paper: ${withLink(paper)}`,
+          "",
+          `In one sentence: ${paper.summary ?? write("one-sentence summary")}`,
+          "",
+          write("Opening: the question this paper asks, for a reader outside the field"),
+          write("What the authors did"),
+          write("What they found, with one concrete result"),
+          write("Why it matters, and what comes next"),
+          write("A quote from one of the authors"),
+          "",
+        ]),
+      ]
+        .join("\n")
+        .trimEnd();
+    case "blog":
+      return papers
+        .flatMap((paper) => [
+          "---",
+          `title: ${JSON.stringify(paper.title)}`,
+          `authors: ${JSON.stringify(paper.authors)}`,
+          `venue: ${JSON.stringify(`${venue}${paper.presentation ? ` (${PRESENTATION_LABEL[paper.presentation]})` : ""}`)}`,
+          `paper: ${JSON.stringify(paper.url ?? "")}`,
+          "---",
+          "",
+          paper.summary ?? write("one-sentence summary"),
+          "",
+          write("Two or three paragraphs: the problem, the approach, the main result"),
+          write("A figure from the paper, with a caption"),
+          "",
+          `Read the paper: ${withLink(paper)}`,
+          "",
+        ])
+        .join("\n")
+        .trimEnd();
     default:
       return format satisfies never;
+  }
+}
+
+function subjectOf(outlet: OutreachOutlet, venue: string, count: number): string {
+  const papers = `${count} ${plural(count, "paper", "papers")}`;
+  switch (outlet.format) {
+    case "submission":
+      return `Jinesis Lab: ${papers} submitted to ${venue}`;
+    case "link_nudge":
+      return `${venue}: please add the arXiv link for ${plural(count, "your paper", "your papers")}`;
+    case "article":
+      return `Featured article: ${venue}`;
+    case "blog":
+      return `Lab blog: ${venue}`;
+    default:
+      return `Jinesis Lab: ${papers} accepted at ${venue}`;
   }
 }
 
@@ -589,7 +872,7 @@ export type OutreachDraft = {
   institute: string;
   label: string;
   stage: OutreachStage;
-  channel: "email" | "form";
+  channel: OutreachChannel;
   audience: OutreachAudience;
   cadence: string;
   paper_ids: string[];
@@ -613,7 +896,15 @@ export type OutreachPlan = {
   config_error?: string;
 };
 
-/** Every outlet's draft for the papers accepted at one venue. */
+/** Addresses out of a settings field a person typed: commas, semicolons or spaces between them. */
+function addressesIn(value: string | undefined): string[] {
+  return (value ?? "")
+    .split(/[\s,;]+/u)
+    .map((entry) => entry.trim())
+    .filter((entry) => ADDRESS_SHAPE.test(entry));
+}
+
+/** Every outlet's draft for one venue: its submissions first, then what was accepted there. */
 export function composeOutreach(params: {
   papers: readonly AdminBotPaperRecord[];
   roster: readonly RosterMember[];
@@ -621,27 +912,64 @@ export function composeOutreach(params: {
   /** The venue as the records spell it; matched with `venueKey`. */
   venue: string;
   config: OutreachConfig;
+  /**
+   * Settings' "where the submissions snapshot goes". Used for the submissions record when the
+   * outlet has no recipients of its own in the configuration.
+   */
+  submissionReportEmail?: string;
+  /** The venue's camera-ready deadline as an ISO instant, when the deadline data has one. */
+  cameraReadyIso?: string;
+  now?: Date;
 }): OutreachPlan {
   const wanted = venueKey(params.venue);
   const pi = params.roster.find((member) => member.id === params.piMemberId);
+  const context: DescribeContext = {
+    roster: params.roster,
+    ...(pi ? { piMemberId: pi.id } : {}),
+    seniorAuthors: params.config.senior_authors,
+  };
   const accepted = params.papers
-    .map((paper) =>
-      describeOutreachPaper(paper, {
-        roster: params.roster,
-        ...(pi ? { piMemberId: pi.id } : {}),
-        seniorAuthors: params.config.senior_authors,
-      }),
-    )
+    .map((paper) => describeOutreachPaper(paper, context))
     .filter((paper): paper is OutreachPaper => Boolean(paper && venueKey(paper.venue) === wanted))
     // Stable within a rank, so papers keep the order the records list them in.
     .toSorted((left, right) => prominence(left) - prominence(right));
 
+  // Everything sent to the venue, in record order. A paper accepted somewhere else after a
+  // rejection here still names this venue only if `venue` does, so it is matched on that.
+  const submitted: OutreachPaper[] = [];
+  let unsubmitted = 0;
+  for (const paper of params.papers) {
+    const venue = acceptedVenueOf(paper) ?? paper.venue?.trim();
+    if (!venue || venueKey(venue) !== wanted) {
+      continue;
+    }
+    const status = submissionStatusOf(paper);
+    if (status) {
+      submitted.push({ ...describePaperAt(paper, venue, context), status });
+    } else {
+      unsubmitted += 1;
+    }
+  }
+
+  const now = params.now ?? new Date();
+  const due = params.cameraReadyIso ? new Date(params.cameraReadyIso) : undefined;
+  const cameraReady =
+    due && !Number.isNaN(due.getTime())
+      ? { date: due.toISOString().slice(0, 10), passed: due.getTime() <= now.getTime() }
+      : undefined;
+
   const drafts = OUTREACH_OUTLETS.map((outlet): OutreachDraft => {
     const configured = params.config.outlets[outlet.key];
     const audience = configured?.audience ?? outlet.audience;
-    const papers = accepted.filter(
-      (paper) => inAudience(paper, audience) && (!outlet.topic || paper.multi_agent),
-    );
+    const pool =
+      outlet.source === "submitted"
+        ? submitted
+        : outlet.source === "no_arxiv"
+          ? accepted.filter((paper) => !paper.has_arxiv)
+          : accepted;
+    const papers = pool
+      .filter((paper) => inAudience(paper, audience) && (!outlet.topic || paper.multi_agent))
+      .slice(0, outlet.limit);
     const notes: string[] = [];
     if (!pi && audience !== "senior") {
       notes.push("No head professor is set in Settings, so their papers cannot be recognised.");
@@ -652,11 +980,32 @@ export function composeOutreach(params: {
     if (outlet.topic === "multi_agent") {
       notes.push("Papers are suggested from their titles. Check each one is multi-agent work.");
     }
-    const missingLinks = papers.filter((paper) => !paper.url).length;
+    if (outlet.source === "submitted" && unsubmitted > 0) {
+      notes.push(
+        `${unsubmitted} ${plural(unsubmitted, "paper names", "papers name")} this venue but ${plural(unsubmitted, "is", "are")} not marked as submitted, and ${plural(unsubmitted, "is", "are")} left out.`,
+      );
+    }
+    // A link is what an acceptance notice is for. A submission has none to give, the nudge exists
+    // because it is missing, and a document a person finishes can have it added while they write.
+    const wantsLinks = !outlet.source && outlet.channel !== "doc";
+    const missingLinks = wantsLinks ? papers.filter((paper) => !paper.url).length : 0;
     if (missingLinks > 0) {
       notes.push(
         `${missingLinks} ${plural(missingLinks, "paper has", "papers have")} no arXiv or Drive link recorded.`,
       );
+    }
+    if (outlet.format === "link_nudge") {
+      notes.push(
+        cameraReady
+          ? `Camera-ready ${cameraReady.passed ? "was" : "is"} due ${cameraReady.date}${cameraReady.passed ? "" : ". Authors may not have an arXiv version yet"}.`
+          : "No camera-ready date is known for this venue, so check it has passed before sending.",
+      );
+      const unreachable = papers.filter((paper) => paper.author_emails.length === 0).length;
+      if (unreachable > 0) {
+        notes.push(
+          `${unreachable} ${plural(unreachable, "paper has", "papers have")} no lab member with an email on the roster, so nobody is written to about ${plural(unreachable, "it", "them")}.`,
+        );
+      }
     }
     const body =
       papers.length > 0
@@ -664,15 +1013,28 @@ export function composeOutreach(params: {
             venue: params.venue,
             ...(pi ? { piName: pi.name } : {}),
             papers,
+            ...(cameraReady ? { cameraReady } : {}),
           })
         : "";
-    const needsEdit = body.includes(OUTREACH_SUMMARY_PLACEHOLDER);
-    if (needsEdit) {
+    const missingSummary = body.includes(OUTREACH_SUMMARY_PLACEHOLDER);
+    if (missingSummary) {
       notes.push(
         "Add each paper's one-sentence summary above. Until then this can be copied, not sent.",
       );
     }
-    const to = configured?.to ?? [];
+    if (outlet.channel === "doc") {
+      notes.push(
+        "A starting point for a person to write from. AdminBot fills in what the records hold and nothing else, and never sends it.",
+      );
+    }
+    const needsEdit = missingSummary || (outlet.channel === "doc" && papers.length > 0);
+    const configuredTo = configured?.to ?? [];
+    const to =
+      outlet.recipients === "authors"
+        ? [...new Set(papers.flatMap((paper) => paper.author_emails))]
+        : configuredTo.length > 0 || outlet.source !== "submitted"
+          ? configuredTo
+          : addressesIn(params.submissionReportEmail);
     const cc = configured?.cc ?? [];
     return {
       key: outlet.key,
@@ -683,7 +1045,7 @@ export function composeOutreach(params: {
       audience,
       cadence: outlet.cadence,
       paper_ids: papers.map((paper) => paper.id),
-      subject: `Jinesis Lab: ${papers.length} ${plural(papers.length, "paper", "papers")} accepted at ${params.venue}`,
+      subject: subjectOf(outlet, params.venue, papers.length),
       body,
       needs_edit: needsEdit,
       notes,

@@ -1928,7 +1928,7 @@ export const en: TranslationMap = {
     },
     outreach: {
       title: "Research outreach",
-      sub: "One draft per outlet for the {count} papers accepted at {venue}. Which papers an outlet gets follows their authors.",
+      sub: "One draft per outlet for {venue}, where {count} papers are accepted. Which papers an outlet gets follows their authors.",
       chooseVenue:
         "Compose from a venue to draft the newsletter and social-media messages for its acceptances.",
       configError:
@@ -1937,14 +1937,14 @@ export const en: TranslationMap = {
       onePaper: "1 paper",
       to: "To {recipients}",
       cc: "Cc {recipients}",
-      noRecipients:
-        "No recipients are configured for this outlet, so the draft can only be copied.",
+      noRecipients: "There is nobody to send this to yet, so the draft can only be copied.",
       copy: "Copy draft",
       openForm: "Open the form",
       send: "Send",
       sendAgain: "Send again",
       sent: "Sent {count} papers to {recipients}.",
       stage: {
+        submission: "After the submission deadline",
         acceptance: "On acceptance",
         camera_ready: "At camera-ready",
         pre_conference: "Right before the conference",
@@ -1954,6 +1954,7 @@ export const en: TranslationMap = {
         needsEdit: "needs a summary before it goes",
         copyOnly: "copy only",
         form: "submitted through a form",
+        doc: "an outline to write",
         none: "no matching papers",
         sent: "sent",
       },

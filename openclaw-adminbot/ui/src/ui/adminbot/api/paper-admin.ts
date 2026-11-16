@@ -125,8 +125,9 @@ export type PaperOutreachDraft = {
   key: string;
   institute: string;
   label: string;
-  stage: "acceptance" | "camera_ready" | "pre_conference";
-  channel: "email" | "form";
+  stage: "submission" | "acceptance" | "camera_ready" | "pre_conference";
+  /** `form` is pasted into a web form; `doc` is an outline a person writes. Neither is mailed. */
+  channel: "email" | "form" | "doc";
   cadence: string;
   paper_ids: string[];
   subject: string;

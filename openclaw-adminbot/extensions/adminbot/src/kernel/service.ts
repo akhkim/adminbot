@@ -504,6 +504,7 @@ import {
 } from "../workflows/papers/paper-ownership.js";
 import {
   buildCameraReadyNotice,
+  cameraReadyDeadline,
   isPaperConferenceOver,
   openReviewPaperHistory,
   openReviewPaperQueue,
@@ -4553,6 +4554,11 @@ export class AdminBotService {
       return serviceError(404, `no paper in our records names the venue "${requested}"`);
     }
     const piMemberId = this.headProfessorMemberId();
+    const now = new Date();
+    const reportEmail = this.store.getSettings()?.papers_submission_report_email?.trim();
+    const cameraReadyIso = venue
+      ? cameraReadyDeadline(venue, this.deadlineReadModel(DEADLINE_VENUES), now)
+      : undefined;
     const plan = venue
       ? composeOutreach({
           papers,
@@ -4560,6 +4566,9 @@ export class AdminBotService {
           ...(piMemberId ? { piMemberId } : {}),
           venue,
           config: params.config,
+          ...(reportEmail ? { submissionReportEmail: reportEmail } : {}),
+          ...(cameraReadyIso ? { cameraReadyIso } : {}),
+          now,
         })
       : undefined;
     return {

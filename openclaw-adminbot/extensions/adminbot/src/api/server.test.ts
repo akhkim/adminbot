@@ -5047,6 +5047,49 @@ describe("research outreach", () => {
     expect(sent).toEqual([]);
   });
 
+  it("mails the arXiv-link nudge to the paper's own authors, and never an outline", async () => {
+    const { baseUrl, token, sent } = await labWithAcceptances();
+    seedMember(baseUrl, "alan", {
+      name: "Alan Turing",
+      email: "alan.login@example.org",
+      // The address the lab writes to wins over the one the member signs in with.
+      correspondence_email: "alan@example.org",
+      member_type: "full",
+    });
+    const seeded = mockFor(baseUrl).service.upsertPaper({
+      id: "no-arxiv",
+      title: "No ArXiv Yet",
+      authors: ["Alan Turing"],
+      venue: "ICLR 2027",
+      venue_decision: "accept",
+      first_author_member_id: "alan",
+      artifacts: { google_drive_pdf_url: "https://drive.example.org/pdf" },
+    } as never);
+    expect(seeded.ok).toBe(true);
+    const send = (outlet: string) =>
+      fetch(`${baseUrl}/papers/outreach/send`, {
+        method: "POST",
+        headers: auth(token),
+        // Naming an address changes nothing: the authors come from the roster.
+        body: JSON.stringify({ venue: "ICLR 2027", outlet, email: "anyone@example.net" }),
+      });
+
+    const nudge = await send("author_links");
+    expect(nudge.status).toBe(200);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.to).toBe("alan@example.org");
+    expect(sent[0]?.body).toContain("No ArXiv Yet");
+    // Papers that already have their arXiv link are nobody's to chase.
+    expect(sent[0]?.body).not.toContain("With The PI");
+
+    const outline = await send("featured_article");
+    expect(outline.status).toBe(409);
+    expect(((await outline.json()) as { error: { message: string } }).error.message).toMatch(
+      /outline for a person to write/u,
+    );
+    expect(sent).toHaveLength(1);
+  });
+
   it("keeps the shared service token out of sends and sheet writes", async () => {
     const sheet = { rows: [HEADER], appended: [] as string[][][] };
     const { baseUrl, sent } = await labWithAcceptances({ sheet });

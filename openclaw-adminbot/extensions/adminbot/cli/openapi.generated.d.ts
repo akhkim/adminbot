@@ -9472,9 +9472,9 @@ export interface components {
       institute: string;
       label: string;
       /** @enum {string} */
-      stage: "camera_ready" | "acceptance" | "pre_conference";
+      stage: "camera_ready" | "submission" | "acceptance" | "pre_conference";
       /** @enum {string} */
-      channel: "email" | "form";
+      channel: "email" | "form" | "doc";
       /** @enum {string} */
       audience: "pi" | "senior" | "pi_or_senior" | "lab";
       cadence: string;

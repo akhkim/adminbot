@@ -19,8 +19,14 @@ import {
 } from "./paper-outreach.js";
 
 const ROSTER = [
-  { id: "m_pi", name: "Ada Lovelace", member_type: "professor" },
-  { id: "m_full", name: "Alan Turing", member_type: "full" },
+  { id: "m_pi", name: "Ada Lovelace", member_type: "professor", email: "ada@example.org" },
+  {
+    id: "m_full",
+    name: "Alan Turing",
+    member_type: "full",
+    email: "alan.login@example.org",
+    correspondence_email: "alan@example.org",
+  },
   { id: "m_guest", name: "Edsger Dijkstra", member_type: "coauthor-minor" },
 ] as unknown as AdminBotLabMember[];
 
@@ -335,6 +341,197 @@ describe("composeOutreach", () => {
     const vector = plan.drafts.find((draft) => draft.key === "vector");
     expect(vector?.paper_ids).toEqual([]);
     expect(vector?.notes.join(" ")).toMatch(/No head professor/u);
+  });
+});
+
+describe("the lab's own follow-ups", () => {
+  const SENIOR = ["Alan Turing", "Grace Hopper"];
+  const submittedTo = (overrides: Partial<AdminBotPaperRecord>) =>
+    paper({
+      authors: SENIOR,
+      venue: "NeurIPS 2026",
+      venue_decision: "pending",
+      accepted_venue: undefined,
+      artifacts: {},
+      ...overrides,
+    } as Partial<AdminBotPaperRecord>);
+
+  it("records every paper sent to the venue with where it stands, and no paper that was not", () => {
+    const { draft } = compose([
+      submittedTo({ id: "review", title: "Still Under Review" }),
+      submittedTo({ id: "no", title: "Turned Down", venue_decision: "reject" }),
+      paper({ id: "yes", title: "Got In", authors: SENIOR }),
+      submittedTo({
+        id: "aiming",
+        title: "Only Aiming",
+        venue_decision: undefined,
+        current_step: "overleaf_writing",
+      }),
+    ]);
+    const record = draft("mpi_submissions");
+    expect(record.stage).toBe("submission");
+    expect(record.paper_ids).toEqual(["review", "no", "yes"]);
+    expect(record.subject).toBe("Jinesis Lab: 3 papers submitted to NeurIPS 2026");
+    expect(record.body).toContain(
+      "1. Still Under Review — Alan Turing, Grace Hopper — under review",
+    );
+    expect(record.body).toContain("Turned Down — Alan Turing, Grace Hopper — rejected");
+    expect(record.body).toContain("Got In — Alan Turing, Grace Hopper — accepted");
+    expect(record.body).not.toContain("Only Aiming");
+    expect(record.body).toContain("The decisions will follow");
+    // Once nothing is pending, the record stops promising decisions.
+    const settled = compose([paper({ id: "yes", title: "Got In", authors: SENIOR })]);
+    expect(settled.draft("mpi_submissions").body).not.toContain("decisions will follow");
+    expect(record.notes.join(" ")).toMatch(
+      /1 paper names this venue but is not marked as submitted/u,
+    );
+  });
+
+  it("sends the submissions record to the address in Settings, with no link to wait for", () => {
+    const base = {
+      papers: [submittedTo({})],
+      roster: ROSTER,
+      piMemberId: "m_pi",
+      venue: "NeurIPS 2026",
+    };
+    const find = (plan: ReturnType<typeof composeOutreach>) =>
+      plan.drafts.find((draft) => draft.key === "mpi_submissions");
+
+    expect(find(composeOutreach({ ...base, config: CONFIG }))?.sendable).toBe(false);
+
+    const fromSettings = find(
+      composeOutreach({
+        ...base,
+        config: CONFIG,
+        submissionReportEmail: "manager@example.org; not-an-address",
+      }),
+    );
+    expect(fromSettings?.to).toEqual(["manager@example.org"]);
+    expect(fromSettings?.sendable).toBe(true);
+
+    // The outlet's own recipients win: configuration is the more specific statement.
+    const configured = find(
+      composeOutreach({
+        ...base,
+        config: {
+          ...CONFIG,
+          outlets: { ...CONFIG.outlets, mpi_submissions: { to: ["own@example.org"], cc: [] } },
+        },
+        submissionReportEmail: "manager@example.org",
+      }),
+    );
+    expect(configured?.to).toEqual(["own@example.org"]);
+  });
+
+  it("asks the authors themselves for an arXiv link, only for papers that lack one", () => {
+    const { draft } = compose([
+      paper({ id: "done" }),
+      paper({
+        id: "drive",
+        title: "Drive Only",
+        artifacts: { google_drive_pdf_url: "https://drive.example.org/pdf" },
+        author_links: [{ member_id: "m_full" }, { member_id: "m_pi" }],
+      } as Partial<AdminBotPaperRecord>),
+    ]);
+    const nudge = draft("author_links");
+    expect(nudge.paper_ids).toEqual(["drive"]);
+    // The address the lab writes to, not the sign-in one, and not the professor who is asking.
+    expect(nudge.to).toEqual(["alan@example.org"]);
+    expect(nudge.body).toContain("Drive PDF only (https://drive.example.org/pdf)");
+    expect(nudge.subject).toMatch(/please add the arXiv link/u);
+    expect(nudge.sendable).toBe(true);
+  });
+
+  it("takes the nudge's recipients from the roster, never from configuration", () => {
+    const { draft } = compose([paper({ artifacts: {}, first_author_member_id: "m_full" })], {
+      ...CONFIG,
+      outlets: { author_links: { to: ["elsewhere@example.org"], cc: ["pi@example.org"] } },
+    });
+    expect(draft("author_links").to).toEqual(["alan@example.org"]);
+    expect(draft("author_links").cc).toEqual(["pi@example.org"]);
+  });
+
+  it("does not send a nudge nobody would receive, and says which papers have nobody", () => {
+    const { draft } = compose([paper({ artifacts: {} })]);
+    const nudge = draft("author_links");
+    expect(nudge.paper_ids).toEqual(["p1"]);
+    expect(nudge.to).toEqual([]);
+    expect(nudge.sendable).toBe(false);
+    expect(nudge.notes.join(" ")).toMatch(/no lab member with an email on the roster/u);
+  });
+
+  it("says whether the camera-ready date has passed, or that it is not known", () => {
+    const nudgeAt = (cameraReadyIso?: string) =>
+      composeOutreach({
+        papers: [paper({ artifacts: {}, first_author_member_id: "m_full" })],
+        roster: ROSTER,
+        piMemberId: "m_pi",
+        venue: "NeurIPS 2026",
+        config: CONFIG,
+        now: new Date("2026-11-01T00:00:00.000Z"),
+        ...(cameraReadyIso ? { cameraReadyIso } : {}),
+      }).drafts.find((draft) => draft.key === "author_links");
+
+    expect(nudgeAt("2026-10-20T23:59:00.000Z")?.body).toContain("was due on 2026-10-20");
+    expect(nudgeAt("2026-11-20T23:59:00.000Z")?.body).toContain("is due on 2026-11-20");
+    expect(nudgeAt("2026-11-20T23:59:00.000Z")?.notes.join(" ")).toMatch(/may not have an arXiv/u);
+    expect(nudgeAt()?.notes.join(" ")).toMatch(/No camera-ready date is known/u);
+  });
+
+  it("outlines a featured article for the top two papers and never offers to send it", () => {
+    const { draft } = compose(
+      [
+        paper({ id: "poster", title: "Poster", presentation_type: "poster" }),
+        paper({ id: "oral", title: "Oral", presentation_type: "oral" }),
+        paper({ id: "award", title: "Award", presentation_type: "award" }),
+      ],
+      {
+        ...CONFIG,
+        outlets: { featured_article: { to: ["editor@example.org"], cc: [] } },
+      },
+    );
+    const article = draft("featured_article");
+    expect(article.channel).toBe("doc");
+    expect(article.paper_ids).toEqual(["award", "oral"]);
+    expect(article.body).toContain("# Award");
+    expect(article.body).toContain("[What they found, with one concrete result]");
+    expect(article.needs_edit).toBe(true);
+    // Recipients or not: an outline with bracketed prompts is not something to mail.
+    expect(article.sendable).toBe(false);
+  });
+
+  it("starts a blog post per paper from what the record holds", () => {
+    const { draft } = compose([
+      paper({
+        artifacts: { outreach_summary: "Judges disagree.", arxiv_url: "https://arxiv.org/abs/1" },
+      }),
+    ]);
+    const blog = draft("lab_blog");
+    expect(blog.channel).toBe("doc");
+    expect(blog.body).toContain('title: "A Paper"');
+    expect(blog.body).toContain("Judges disagree.");
+    expect(blog.body).toContain("Read the paper: https://arxiv.org/abs/1");
+    expect(blog.sendable).toBe(false);
+  });
+
+  it("announces to the external list without waiting on summaries, and prints one when there is one", () => {
+    const config = {
+      ...CONFIG,
+      outlets: { external_list: { to: ["friends@example.org"], cc: [] } },
+    };
+    const bare = compose([paper()], config).draft("external_list");
+    expect(bare.sendable).toBe(true);
+    expect(bare.body).not.toContain(OUTREACH_SUMMARY_PLACEHOLDER);
+
+    const withSummary = compose(
+      [
+        paper({
+          artifacts: { outreach_summary: "Judges disagree.", arxiv_url: "https://arxiv.org/abs/1" },
+        }),
+      ],
+      config,
+    ).draft("external_list");
+    expect(withSummary.body).toContain("Judges disagree.");
   });
 });
 

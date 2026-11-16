@@ -145,13 +145,15 @@ export const paperAdminRoutes: readonly Route[] = [
         outreach.payload.config_error ??
         (draft.channel === "form"
           ? "this outlet is submitted through a form, not by email"
-          : draft.paper_ids.length === 0
-            ? "no accepted paper at this venue is for this outlet"
-            : draft.to.length === 0
-              ? "no recipients are configured for this outlet"
-              : draft.needs_edit
-                ? "this draft has text left to write, so it can only be copied"
-                : "a paper in this draft has no link recorded");
+          : draft.channel === "doc"
+            ? "this draft is an outline for a person to write, not an email"
+            : draft.paper_ids.length === 0
+              ? "no paper at this venue is for this outlet"
+              : draft.to.length === 0
+                ? "there is nobody to send this to: no recipients are configured or on the roster"
+                : draft.needs_edit
+                  ? "this draft has text left to write, so it can only be copied"
+                  : "a paper in this draft has no link recorded");
       sendJson(res, 409, { error: { message: reason } });
       return;
     }

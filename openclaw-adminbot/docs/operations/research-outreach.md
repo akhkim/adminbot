@@ -1,8 +1,9 @@
-# Research outreach (acceptances to newsletters, and the acceptance sheet)
+# Research outreach (submissions and acceptances to newsletters, and the acceptance sheet)
 
-When a venue's decisions are in, the same acceptances have to be told several ways: each institute
-newsletter, the department's publication record, the social-media managers, and the lab's own
-acceptance sheet. AdminBot drafts all of them from the paper records and an admin sends, copies or
+A venue's papers have to be told several ways, at four moments: the record of what was submitted,
+then on acceptance each institute newsletter, the department's publication record and the lab's
+own lists, then the follow-ups at camera-ready, and the social-media managers before the meeting.
+Beside those sits the lab's own acceptance sheet. AdminBot drafts all of them from the paper records and an admin sends, copies or
 appends each one. Nothing here runs on a schedule and nothing leaves the lab without a press.
 
 It lives on **Lab Overview > Mailing list**. Compose from a venue and press Preview: the digest
@@ -12,8 +13,12 @@ appears as before, and under it **Research outreach** lists one folded row per o
 
 The papers recorded as accepted at the chosen venue (the same rule as the venue digest: the
 recorded decision, not where a paper is aimed), the roster, and the head professor on file
-(`head_professor_member_id`). A paper with no decision recorded is not in any draft. If the lab has
-heard back, the decision belongs on the paper first.
+(`head_professor_member_id`). A paper with no decision recorded is not in any acceptance draft. If
+the lab has heard back, the decision belongs on the paper first.
+
+The submissions record is the one exception: it lists every paper sent to the venue, with where
+each stands (under review, accepted, rejected, withdrawn). A paper aimed at the venue that has not
+reached the submission step is left out, and the row says how many were.
 
 ## Which papers go to which outlet
 
@@ -26,18 +31,23 @@ Routing follows the authors:
 | `pi_or_senior` | either of the above                       |
 | `lab`          | any author is a lab member on the roster  |
 
-| Outlet key        | Stage              | Channel | Default audience | Draft                                                    |
-| ----------------- | ------------------ | ------- | ---------------- | -------------------------------------------------------- |
-| `mpi_record`      | On acceptance      | Email   | `senior`         | Numbered list: title, authors, link. Complete as drafted |
-| `mpi_minerva`     | On acceptance      | Email   | `pi_or_senior`   | Short summary per paper                                  |
-| `vector`          | On acceptance      | Email   | `pi`             | Faculty-newsletter spotlight item                        |
-| `dcs`             | On acceptance      | Email   | `pi`             | One congratulation line per paper                        |
-| `sri`             | On acceptance      | Email   | `pi`             | Round-up line: title, venue, name, one-sentence summary  |
-| `ellis`           | On acceptance      | Email   | `pi_or_senior`   | Achievement item                                         |
-| `cls`             | On acceptance      | Form    | `pi_or_senior`   | Papers grouped by kind, pasted into the form             |
-| `caif`            | On acceptance      | Email   | `lab`            | Multi-agent papers only                                  |
-| `cifar_insights`  | At camera-ready    | Form    | `lab`            | A pitch for a non-technical post                         |
-| `social_managers` | Before the meeting | Email   | `lab`            | Post copy with links, for the institutes' social teams   |
+| Outlet key         | Stage              | Channel | Default audience | Draft                                                     |
+| ------------------ | ------------------ | ------- | ---------------- | --------------------------------------------------------- |
+| `mpi_submissions`  | After the deadline | Email   | `senior`         | Every paper submitted to the venue, with its status       |
+| `mpi_record`       | On acceptance      | Email   | `senior`         | Numbered list: title, authors, link. Complete as drafted  |
+| `mpi_minerva`      | On acceptance      | Email   | `pi_or_senior`   | Short summary per paper                                   |
+| `vector`           | On acceptance      | Email   | `pi`             | Faculty-newsletter spotlight item                         |
+| `dcs`              | On acceptance      | Email   | `pi`             | One congratulation line per paper                         |
+| `sri`              | On acceptance      | Email   | `pi`             | Round-up line: title, venue, name, one-sentence summary   |
+| `ellis`            | On acceptance      | Email   | `pi_or_senior`   | Achievement item                                          |
+| `cls`              | On acceptance      | Form    | `pi_or_senior`   | Papers grouped by kind, pasted into the form              |
+| `caif`             | On acceptance      | Email   | `lab`            | Multi-agent papers only                                   |
+| `external_list`    | On acceptance      | Email   | `lab`            | Announcement for the lab's external mailing list          |
+| `author_links`     | At camera-ready    | Email   | `lab`            | Asks authors of papers with no arXiv link to add it       |
+| `featured_article` | At camera-ready    | Outline | `lab`            | Article outline for the first two papers; a person writes |
+| `lab_blog`         | At camera-ready    | Outline | `lab`            | A blog-post skeleton per paper for the lab website        |
+| `cifar_insights`   | At camera-ready    | Form    | `lab`            | A pitch for a non-technical post                          |
+| `social_managers`  | Before the meeting | Email   | `lab`            | Post copy with links, for the institutes' social teams    |
 
 The multi-agent filter is a match on the title, so the row says to review the selection. An
 outlet's audience can be overridden in the configuration.
@@ -46,7 +56,20 @@ outlet's audience can be overridden in the configuration.
 
 A row offers **Send** only when all of these hold: the outlet is an email outlet, recipients are
 configured, at least one paper matches, every paper has a link, and the draft has nothing left for
-a person to write. Form outlets link to their form.
+a person to write. Form outlets link to their form. Outlines (the featured article, the blog posts)
+are starting points for a writer: they are copied, never mailed.
+
+Three outlets are addressed differently:
+
+- `mpi_submissions` goes to its configured `to`, or, when none is configured, to the
+  submission-report address in **Settings**.
+- `author_links` goes to the authors themselves. The addresses are read from the roster (the
+  address the lab writes to, else the sign-in address) for authors linked to the paper; the head
+  professor is left out. A configured `to` is ignored, `cc` is honoured. An author who is not on
+  the roster cannot be reached, and the row says so. The row also says whether the venue's
+  camera-ready deadline has passed, when one is on file.
+- `external_list` should be given one list or group address. Everything in `to` is visible to every
+  recipient, so do not paste individual subscribers there.
 
 Some outlets print one sentence beside each paper. Those sentences are typed once, in **One
 sentence per paper** above the outlets: one box per accepted paper, saved on the paper when the
@@ -122,5 +145,7 @@ All four are admin-only and appear in the generated OpenAPI spec and CLI.
 ## Not built yet
 
 - Detecting acceptances on OpenReview. Today the decision is recorded on the paper by a person.
-- Writing the one-sentence summaries and the featured articles for the top one or two papers.
-- A separate notice on submission (the department record of submissions).
+- Writing the one-sentence summaries, and the prose of the featured articles and blog posts.
+  AdminBot outlines them; a person writes them.
+- Publishing a blog post to the lab website. The skeleton is copied into the site's repository
+  by hand.

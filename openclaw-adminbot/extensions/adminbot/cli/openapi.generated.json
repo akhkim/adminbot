@@ -45842,6 +45842,7 @@
             "type": "string",
             "enum": [
               "camera_ready",
+              "submission",
               "acceptance",
               "pre_conference"
             ]
@@ -45850,7 +45851,8 @@
             "type": "string",
             "enum": [
               "email",
-              "form"
+              "form",
+              "doc"
             ]
           },
           "audience": {
