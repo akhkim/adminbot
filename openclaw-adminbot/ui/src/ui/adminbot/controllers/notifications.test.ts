@@ -5,8 +5,14 @@ const showToast = vi.fn<(options: ToastOptions) => () => void>(() => () => {});
 const markNotificationsRead = vi.fn(async () => ({ ok: true as const, value: undefined }));
 
 vi.mock("../../toast.ts", () => ({ showToast }));
+// Set by a test to stand for an admin viewing the lab as this member.
+let impersonator: { sessionToken: string; expiresAt: string } | undefined;
+
 vi.mock("../auth/session.ts", () => ({
-  loadStoredMemberSession: () => ({ sessionToken: "synthetic-session" }),
+  loadStoredMemberSession: () => ({
+    sessionToken: "synthetic-session",
+    ...(impersonator ? { impersonator } : {}),
+  }),
   resolveAdminBotBaseUrl: () => "http://127.0.0.1:8765",
 }));
 vi.mock("../api/workspace.ts", () => ({
@@ -33,6 +39,7 @@ const {
 } = await import("./notifications.ts");
 
 afterEach(() => {
+  impersonator = undefined;
   resetNotificationPopups();
   vi.clearAllMocks();
 });
@@ -88,4 +95,21 @@ it("forgets what was acknowledged on sign-out", async () => {
   resetNotificationPopups();
   await loadAdminBotNotifications(host);
   expect(host.adminBotNotifications?.[0]?.read_at).toBeUndefined();
+});
+
+it("shows an admin viewing as the member their notifications without popping or marking them", async () => {
+  impersonator = { sessionToken: "synthetic-admin-session", expiresAt: "2026-01-02T00:00:00.000Z" };
+  type Host = Parameters<typeof loadAdminBotNotifications>[0];
+  const host = { settings: {} } as unknown as Host & {
+    adminBotNotifications?: Array<{ id: string; read_at?: string }>;
+  };
+
+  await loadAdminBotNotifications(host);
+  expect(host.adminBotNotifications?.map((entry) => entry.id)).toEqual(["n-1"]);
+  expect(showToast).not.toHaveBeenCalled();
+
+  await markAdminBotNotificationsRead(host, ["n-1"]);
+  await markAdminBotNotificationsRead(host);
+  expect(markNotificationsRead).not.toHaveBeenCalled();
+  expect(host.adminBotNotifications?.[0]?.read_at).toBeFalsy();
 });
