@@ -6,6 +6,11 @@ import {
   scryptSync,
   timingSafeEqual,
 } from "node:crypto";
+import {
+  classifyMailSendFailure,
+  MailSendFailedError,
+  sendMailWithRetry,
+} from "../../connectors/mail-send-failure.js";
 import type {
   AdminBotAccountRegistration,
   AdminBotAuditEvent,
@@ -15,11 +20,6 @@ import type {
   AdminBotRegistrationKind,
   AdminBotRegistrationStatus,
 } from "../../contracts/actions.js";
-import {
-  classifyMailSendFailure,
-  MailSendFailedError,
-  sendMailWithRetry,
-} from "../../connectors/mail-send-failure.js";
 import { adminBotMemberRoles } from "../../contracts/actions.js";
 import {
   adminBotCalendarShareEmail,
@@ -121,6 +121,8 @@ export type AdminBotAuthSessionPayload = {
   session_token: string;
   expires_at: string;
   member: AdminBotLabMember;
+  /** Present only on the reply that starts a "view as" session. */
+  impersonated_by?: { id: string; name: string };
   gateway?: { url: string };
 };
 
@@ -1043,7 +1045,13 @@ export class AdminBotAuthService {
     if (!started) {
       throw new Error("impersonation session could not be saved");
     }
-    const { payload } = started;
+    // Named here as GET /auth/session names it. Without it the browser that just started the view
+    // cannot tell it is one until a reload: no banner, no way back, and its automatic reports go
+    // out as if the admin were the member.
+    const payload: AdminBotAuthSessionPayload = {
+      ...started.payload,
+      impersonated_by: { id: admin.member.id, name: admin.member.name },
+    };
     // Audited on the admin, like every other governance action, and carrying the subject -- so
     // "who was looking at my account, and when" is answerable from the trail alone.
     await this.audit("auth.impersonation_started", admin.member.id, {

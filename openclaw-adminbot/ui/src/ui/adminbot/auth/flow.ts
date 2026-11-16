@@ -827,6 +827,11 @@ async function applyMemberSession(host: MemberAuthHost, session: MemberSession) 
     sessionToken: session.session_token,
     expiresAt: session.expires_at,
   });
+  // Again, now that the token has changed. The write above waited, and a render in that gap starts
+  // reads on the departing session: one that landed left that member's row behind, and one still
+  // in flight will find the token changed and leave its loading flag set, which nothing else
+  // clears -- the new member's dashboard then never loads ("Loading lab members…" for good).
+  clearMemberScopedData(host);
   host.memberPassword = "";
   host.memberPasswordConfirm = "";
   host.memberFormError = null;
@@ -1018,6 +1023,10 @@ export async function resumeMemberSession(
     saveStoredMemberSession({
       sessionToken: stored.sessionToken,
       expiresAt: result.value.expires_at,
+      // The admin's own session, parked while they view as this member. Dropping it here meant a
+      // reload mid-view left no way back but signing in again, and let the viewed member's reads
+      // be kept on the admin's device as if they were the admin's own.
+      ...(stored.impersonator ? { impersonator: stored.impersonator } : {}),
     });
     host.memberPrivilegeLevel = result.value.member?.privilege_level ?? null;
     host.memberId = result.value.member?.id ?? null;

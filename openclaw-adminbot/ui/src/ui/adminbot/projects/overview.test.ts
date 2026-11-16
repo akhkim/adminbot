@@ -77,6 +77,31 @@ describe("the card list", () => {
     expect(container.textContent).not.toContain("No active projects");
   });
 
+  it("does not say there are no papers before the paper list has been read", () => {
+    const { container } = drawOverview({ papers: [], projects: [] });
+    expect(container.querySelector('[data-testid="my-work-empty"]')).toBeNull();
+    expect(container.querySelector('[data-testid="projects-loading"]')).not.toBeNull();
+  });
+
+  it("says the papers could not be read rather than that there are none", () => {
+    const state = makeState({ papers: [], projects: [] });
+    (state as { adminBotError?: string | null }).adminBotError = "AdminBot is not reachable.";
+    const { container } = drawOverview({ state });
+    expect(container.querySelector('[data-testid="my-work-empty"]')).toBeNull();
+    expect(container.querySelector('[data-testid="projects-papers-error"]')?.textContent).toContain(
+      "Could not load your papers",
+    );
+  });
+
+  it("says there are no papers once the list has been read and is empty", () => {
+    const state = makeState({ papers: [], projects: [] });
+    (state.adminBotData as { papersLoadedAt?: number }).papersLoadedAt = 1;
+    const { container } = drawOverview({ state });
+    expect(container.querySelector('[data-testid="my-work-empty"]')?.textContent).toContain(
+      "No papers on file",
+    );
+  });
+
   it("says why the list failed and asks again on request", () => {
     const state = makeState();
     state.myProjects = null;
