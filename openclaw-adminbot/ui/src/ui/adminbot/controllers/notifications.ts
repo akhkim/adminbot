@@ -70,6 +70,11 @@ export async function loadAdminBotNotifications(
   host.adminBotNotificationsError = null;
   const notifications = withAcknowledged(result.value);
   host.adminBotNotifications = notifications;
+  // An admin viewing as the member sees the cards, not the popups: the popups are the member's
+  // "something arrived" signal, and a backlog of someone else's covers the page being checked.
+  if (stored.impersonator) {
+    return;
+  }
   for (const notification of notifications) {
     popNotification(host, notification, options.onOpen);
   }
@@ -126,6 +131,11 @@ export async function markAdminBotNotificationsRead(
 ): Promise<void> {
   const stored = loadStoredMemberSession();
   if (!stored) {
+    return;
+  }
+  // Read means the member saw it, and the nudge escalation counts on that. An admin looking at
+  // the lab as the member has not shown them anything, so nothing here is marked on their behalf.
+  if (stored.impersonator) {
     return;
   }
   const baseUrl = resolveAdminBotBaseUrl(host.settings);
