@@ -280,6 +280,8 @@ export type OutreachPaper = {
   authors: string[];
   venue: string;
   url?: string;
+  /** One sentence a person wrote for the newsletters that ask for one. */
+  summary?: string;
   presentation?: AdminBotPaperPresentationType;
   has_pi: boolean;
   /** The head professor is the first printed author. */
@@ -290,9 +292,9 @@ export type OutreachPaper = {
   multi_agent: boolean;
 };
 
-// A title is the only topical evidence a paper record carries, so this is a suggestion an admin
-// reads rather than a classification: it decides which papers a draft *offers* a multi-agent
-// newsletter, and the draft says so.
+// The title and the topic somebody typed are the only topical evidence a paper record carries, so
+// this is a suggestion an admin reads rather than a classification: it decides which papers a
+// draft *offers* a multi-agent newsletter, and the draft says so.
 const MULTI_AGENT_TITLE =
   /multi[-\s]?agent|cooperat|collusi|negotiat|social dilemma|game[-\s]theor/iu;
 
@@ -327,13 +329,17 @@ export function describeOutreachPaper(
       const type = byId.get(id)?.member_type;
       return adminBotIsFullMemberType(type) || adminBotIsCoauthorMajorType(type);
     });
-  const url = paper.artifacts?.arxiv_url?.trim();
+  // arXiv once it is up; until then the Drive PDF, which every submitted paper is meant to have,
+  // so an acceptance can go out before camera-ready.
+  const url = paper.artifacts?.arxiv_url?.trim() || paper.artifacts?.google_drive_pdf_url?.trim();
+  const summary = normalizeOutreachSummary(paper.artifacts?.outreach_summary ?? "");
   return {
     id: paper.id,
     title: paper.title,
     authors,
     venue,
     ...(url ? { url } : {}),
+    ...(summary ? { summary } : {}),
     ...(paper.presentation_type ? { presentation: paper.presentation_type } : {}),
     has_pi: piIndex >= 0,
     pi_leads: piIndex === 0,
@@ -341,7 +347,7 @@ export function describeOutreachPaper(
       authors.some((author) => isSamePerson(author, name)),
     ),
     has_lab_member: hasLabMember,
-    multi_agent: MULTI_AGENT_TITLE.test(paper.title),
+    multi_agent: MULTI_AGENT_TITLE.test(`${paper.title} ${paper.artifacts?.topic ?? ""}`),
   };
 }
 
@@ -386,6 +392,26 @@ const PRESENTATION_LABEL: Record<AdminBotPaperPresentationType, string> = {
 
 /** The placeholder a person replaces. Its presence is what makes a draft copy-only. */
 export const OUTREACH_SUMMARY_PLACEHOLDER = "[one-sentence summary]";
+export const OUTREACH_SUMMARY_MAX = 400;
+
+/** One line, however it was pasted: a summary sits inside a sentence of somebody's newsletter. */
+export function normalizeOutreachSummary(value: string): string {
+  return value.replace(/\s+/gu, " ").trim();
+}
+
+function summaryOf(paper: OutreachPaper): string {
+  return paper.summary ?? OUTREACH_SUMMARY_PLACEHOLDER;
+}
+
+/** How the institute's own conference posts mark each kind of presentation. */
+const PRESENTATION_EMOJI: Record<AdminBotPaperPresentationType, string> = {
+  award: "🏆",
+  oral: "🎤",
+  spotlight: "🌟",
+  main: "📄",
+  findings: "📄",
+  poster: "📌",
+};
 const SIGN_OFF = "— AdminBot, on behalf of the Jinesis Lab";
 
 function plural(count: number, one: string, many: string): string {
@@ -458,7 +484,7 @@ function renderBody(format: OutreachFormat, context: RenderContext): string {
         "",
         ...papers.map(
           (paper) =>
-            `*${paper.title}* (*${venue}*), ${who} (${paper.pi_leads ? "lead author" : "co-author"}) — ${OUTREACH_SUMMARY_PLACEHOLDER} ${withLink(paper)}`,
+            `*${paper.title}* (*${venue}*), ${who} (${paper.pi_leads ? "lead author" : "co-author"}) — ${summaryOf(paper)} ${withLink(paper)}`,
         ),
         "",
         SIGN_OFF,
@@ -499,7 +525,9 @@ function renderBody(format: OutreachFormat, context: RenderContext): string {
       // the per-paper block below is what lets the person writing the post say something about each.
       const groups = new Map<string, OutreachPaper[]>();
       for (const paper of papers) {
-        const label = paper.presentation ? PRESENTATION_LABEL[paper.presentation] : "Accepted";
+        const label = paper.presentation
+          ? `${PRESENTATION_EMOJI[paper.presentation]} ${PRESENTATION_LABEL[paper.presentation]}`
+          : "📄 Accepted";
         groups.set(label, [...(groups.get(label) ?? []), paper]);
       }
       return [
@@ -517,7 +545,7 @@ function renderBody(format: OutreachFormat, context: RenderContext): string {
           `Authors: ${authorLine(paper)}`,
           `Presentation: ${paper.presentation ? PRESENTATION_LABEL[paper.presentation] : "not recorded"}`,
           `Link: ${withLink(paper)}`,
-          `Summary: ${OUTREACH_SUMMARY_PLACEHOLDER}`,
+          `Summary: ${summaryOf(paper)}`,
           "",
         ]),
       ]
@@ -532,7 +560,7 @@ function renderBody(format: OutreachFormat, context: RenderContext): string {
           `${paper.title}${paper.presentation ? ` [${PRESENTATION_LABEL[paper.presentation]}]` : ""}`,
           `Authors: ${authorLine(paper)}`,
           `Link: ${withLink(paper)}`,
-          `Why it matters to a non-technical reader: ${OUTREACH_SUMMARY_PLACEHOLDER}`,
+          `Why it matters to a non-technical reader: ${summaryOf(paper)}`,
           "",
         ]),
       ]
@@ -627,7 +655,7 @@ export function composeOutreach(params: {
     const missingLinks = papers.filter((paper) => !paper.url).length;
     if (missingLinks > 0) {
       notes.push(
-        `${missingLinks} ${plural(missingLinks, "paper has", "papers have")} no arXiv link recorded.`,
+        `${missingLinks} ${plural(missingLinks, "paper has", "papers have")} no arXiv or Drive link recorded.`,
       );
     }
     const body =
@@ -640,7 +668,9 @@ export function composeOutreach(params: {
         : "";
     const needsEdit = body.includes(OUTREACH_SUMMARY_PLACEHOLDER);
     if (needsEdit) {
-      notes.push("Write the summaries before this goes anywhere. It can be copied, not sent.");
+      notes.push(
+        "Add each paper's one-sentence summary above. Until then this can be copied, not sent.",
+      );
     }
     const to = configured?.to ?? [];
     const cc = configured?.cc ?? [];
@@ -720,7 +750,8 @@ export function acceptanceRows(papers: readonly AdminBotPaperRecord[]): Acceptan
       // The year has its own column, so the conference reads "NeurIPS", not "NeurIPS 2026".
       conference: venue.replace(YEAR_IN_VENUE, "").replace(/\s+/gu, " ").trim(),
       authors: (paper.authors ?? []).join(", "),
-      paper_link: paper.artifacts?.arxiv_url?.trim() ?? "",
+      paper_link:
+        paper.artifacts?.arxiv_url?.trim() || paper.artifacts?.google_drive_pdf_url?.trim() || "",
     });
   }
   return rows.toSorted(

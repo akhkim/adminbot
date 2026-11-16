@@ -26604,6 +26604,29 @@
                     "paper_count": {
                       "type": "number"
                     },
+                    "papers": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "summary": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "title",
+                          "summary"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
                     "drafts": {
                       "type": "array",
                       "items": {
@@ -26624,6 +26647,7 @@
                     "acceptance_sheet_configured",
                     "venues",
                     "paper_count",
+                    "papers",
                     "drafts",
                     "acceptance_rows"
                   ],
@@ -26975,6 +26999,102 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/papers/outreach/summary": {
+      "post": {
+        "operationId": "post-papers-outreach-summary",
+        "summary": "POST /papers/outreach/summary",
+        "tags": [
+          "papers"
+        ],
+        "x-source": "src/api/routes/paper-admin.ts",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "paper_id": {
+                    "type": "string"
+                  },
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true,
+                "x-schema-coverage": "inferred from property access or downstream casts; semantic validation remains server-side"
+              }
+            }
+          }
+        },
+        "responses": {
+          "400": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "Successful service result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "paper_id": {
+                      "type": "string"
+                    },
+                    "summary": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "paper_id",
+                    "summary"
+                  ],
+                  "additionalProperties": true
+                }
               }
             }
           },
@@ -44421,6 +44541,9 @@
             "type": "string"
           },
           "topic": {
+            "type": "string"
+          },
+          "outreach_summary": {
             "type": "string"
           },
           "brainstorming_doc_url": {

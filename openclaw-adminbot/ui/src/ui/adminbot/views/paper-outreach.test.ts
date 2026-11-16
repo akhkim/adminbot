@@ -35,6 +35,7 @@ function outreach(overrides: Partial<PaperOutreach> = {}): PaperOutreach {
   return {
     venue: "ICLR 2027",
     paper_count: 1,
+    papers: [{ id: "p1", title: "Judging the Judges", summary: "" }],
     drafts: [draft()],
     acceptance_rows: [
       {
@@ -67,6 +68,7 @@ function draw(overrides: Partial<PaperOutreachProps> = {}) {
     sent: [],
     sheet: null,
     onSend: () => undefined,
+    onSaveSummary: () => undefined,
     onCheckSheet: () => undefined,
     onAddToSheet: () => undefined,
     ...overrides,
@@ -101,6 +103,24 @@ describe("renderPaperOutreach", () => {
     // Still copyable: the draft is the starting point for the person who finishes it.
     expect(find(container, "outreach-copy-vector")).not.toBeNull();
     expect(find(container, "outreach-outlet-vector")?.textContent).toContain("needs a summary");
+  });
+
+  it("asks once for each paper's sentence and saves it by paper", () => {
+    const onSaveSummary = vi.fn();
+    const container = draw({ onSaveSummary });
+    expect(find(container, "outreach-summaries-state")?.textContent).toContain("1");
+    const input = find(container, "outreach-summary-p1") as HTMLInputElement;
+    input.value = "Judges disagree more than they admit.";
+    input.dispatchEvent(new Event("change"));
+    expect(onSaveSummary).toHaveBeenCalledWith("p1", "Judges disagree more than they admit.");
+  });
+
+  it("says so when every paper has its sentence", () => {
+    const container = draw({
+      data: outreach({ papers: [{ id: "p1", title: "Judging the Judges", summary: "Done." }] }),
+    });
+    expect((find(container, "outreach-summary-p1") as HTMLInputElement).value).toBe("Done.");
+    expect(find(container, "outreach-summaries-state")?.textContent).toContain("Every paper");
   });
 
   it("offers neither a send nor a copy for an outlet no paper matches", () => {
@@ -190,7 +210,9 @@ describe("renderPaperOutreach", () => {
   });
 
   it("still shows the acceptance rows when no venue is chosen", () => {
-    const container = draw({ data: outreach({ venue: undefined, drafts: [], paper_count: 0 }) });
+    const container = draw({
+      data: outreach({ venue: undefined, drafts: [], papers: [], paper_count: 0 }),
+    });
     expect(find(container, "outreach-sheet-rows")?.textContent).toContain("Judging the Judges");
     expect(container.querySelector('[data-testid^="outreach-outlet-"]')).toBeNull();
   });

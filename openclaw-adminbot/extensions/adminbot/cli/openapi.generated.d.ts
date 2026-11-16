@@ -4183,6 +4183,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/papers/outreach/summary": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** POST /papers/outreach/summary */
+    post: operations["post-papers-outreach-summary"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/papers/paperflow-evidence": {
     parameters: {
       query?: never;
@@ -9019,6 +9036,7 @@ export interface components {
       publication_track?: string;
       conference?: string;
       topic?: string;
+      outreach_summary?: string;
       brainstorming_doc_url?: string;
       overleaf_view_url?: string;
       overleaf_edit_url?: string;
@@ -26208,6 +26226,13 @@ export interface operations {
             venue?: string;
             venues: components["schemas"]["VenueOption"][];
             paper_count: number;
+            papers: ({
+              id: string;
+              title: string;
+              summary: string;
+            } & {
+              [key: string]: unknown;
+            })[];
             drafts: components["schemas"]["OutreachDraft"][];
             acceptance_rows: components["schemas"]["AcceptanceRow"][];
             config_error?: string;
@@ -26427,6 +26452,68 @@ export interface operations {
         };
         content: {
           "application/json": unknown;
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "post-papers-outreach-summary": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          paper_id?: string;
+          summary?: string;
+        } & {
+          [key: string]: unknown;
+        };
+      };
+    };
+    responses: {
+      /** @description Server response */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Successful service result */
+      "2XX": {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            paper_id: string;
+            summary: string;
+          } & {
+            [key: string]: unknown;
+          };
         };
       };
       /** @description Authentication, authorization, validation, policy, or connector error */

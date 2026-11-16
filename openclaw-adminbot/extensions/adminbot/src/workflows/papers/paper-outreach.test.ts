@@ -233,6 +233,46 @@ describe("composeOutreach", () => {
     expect(roundup.sendable).toBe(false);
   });
 
+  it("fills a written summary in and lets the draft be sent", () => {
+    const { draft } = compose([
+      paper({
+        artifacts: {
+          arxiv_url: "https://arxiv.org/abs/2605.00001",
+          outreach_summary: "  Shows that judges\n disagree. ",
+        },
+      }),
+    ]);
+    const roundup = draft("sri");
+    expect(roundup.body).toContain("(co-author) — Shows that judges disagree. https://arxiv.org");
+    expect(roundup.needs_edit).toBe(false);
+    expect(roundup.sendable).toBe(true);
+  });
+
+  it("still holds a draft back while any one of its papers has no summary", () => {
+    const { draft } = compose([
+      paper({ artifacts: { arxiv_url: "https://arxiv.org/abs/1", outreach_summary: "Done." } }),
+      paper({ id: "p2", title: "Another" }),
+    ]);
+    expect(draft("sri").needs_edit).toBe(true);
+  });
+
+  it("links the Drive PDF until the paper is on arXiv", () => {
+    const drive = "https://drive.google.com/file/d/abc/view";
+    const record = paper({ artifacts: { google_drive_pdf_url: drive } });
+    expect(compose([record]).draft("vector").body).toContain(drive);
+    expect(acceptanceRows([record])[0]?.paper_link).toBe(drive);
+  });
+
+  it("takes a typed topic as well as the title for the multi-agent newsletter", () => {
+    const { draft } = compose([
+      paper({
+        title: "A Benchmark for Reading",
+        artifacts: { arxiv_url: "https://arxiv.org/abs/1", topic: "Multi-agent safety" },
+      }),
+    ]);
+    expect(draft("caif").paper_ids).toEqual(["p1"]);
+  });
+
   it("says lead author only when the head professor is first", () => {
     const { draft } = compose([paper({ authors: ["Ada Lovelace", "Alan Turing"] })]);
     expect(draft("sri").body).toContain("Ada Lovelace (lead author)");
@@ -245,8 +285,8 @@ describe("composeOutreach", () => {
       paper({ id: "b", title: "Poster Two", presentation_type: "poster" }),
     ]);
     const post = draft("cls");
-    expect(post.body).toContain("Spotlight:\n• Starred");
-    expect(post.body).toContain("Poster:\n• Poster One\n• Poster Two");
+    expect(post.body).toContain("🌟 Spotlight:\n• Starred");
+    expect(post.body).toContain("📌 Poster:\n• Poster One\n• Poster Two");
     expect(post.body.match(/^Authors: /gmu)).toHaveLength(3);
     expect(post.form_url).toBe("https://example.org/form");
     // A form is filled in by a person. It is never mailed, whatever is configured.
@@ -272,7 +312,7 @@ describe("composeOutreach", () => {
 
     const linkless = compose([paper({ artifacts: {} })]);
     expect(linkless.draft("vector").body).toContain("link not recorded");
-    expect(linkless.draft("vector").notes.join(" ")).toMatch(/no arXiv link/u);
+    expect(linkless.draft("vector").notes.join(" ")).toMatch(/no arXiv or Drive link/u);
     expect(linkless.draft("vector").sendable).toBe(false);
   });
 

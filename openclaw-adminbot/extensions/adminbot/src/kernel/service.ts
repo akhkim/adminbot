@@ -492,8 +492,10 @@ import {
   type AcceptanceRow,
   type OutreachConfig,
   type OutreachDraft,
+  OUTREACH_SUMMARY_MAX,
   acceptanceRows,
   composeOutreach,
+  normalizeOutreachSummary,
 } from "../workflows/papers/paper-outreach.js";
 import {
   memberOwnsPaper,
@@ -4536,6 +4538,8 @@ export class AdminBotService {
     venue?: string;
     venues: VenueOption[];
     paper_count: number;
+    /** The venue's accepted papers, with the one sentence each newsletter draft borrows. */
+    papers: Array<{ id: string; title: string; summary: string }>;
     drafts: OutreachDraft[];
     acceptance_rows: AcceptanceRow[];
     config_error?: string;
@@ -4565,11 +4569,45 @@ export class AdminBotService {
         ...(venue ? { venue } : {}),
         venues,
         paper_count: plan?.papers.length ?? 0,
+        papers: (plan?.papers ?? []).map((paper) => ({
+          id: paper.id,
+          title: paper.title,
+          summary: paper.summary ?? "",
+        })),
         drafts: plan?.drafts ?? [],
         acceptance_rows: acceptanceRows(papers),
         ...(params.config.error ? { config_error: params.config.error } : {}),
       },
     };
+  }
+
+  /**
+   * The one sentence the newsletter drafts say about a paper. Blank clears it.
+   *
+   * Its own write rather than a whole-record save: the outreach page holds a title and a sentence,
+   * not the record, and a read-modify-write from there could put back a field somebody else has
+   * just changed.
+   */
+  setPaperOutreachSummary(
+    paperId: string,
+    summary: string,
+    origin: AdminBotWriteOrigin,
+  ): AdminBotServiceResponse<{ paper_id: string; summary: string }> {
+    const existing = this.store.getPaper(paperId);
+    if (!existing) {
+      return serviceError(404, "paper not found");
+    }
+    const clean = normalizeOutreachSummary(summary);
+    if (clean.length > OUTREACH_SUMMARY_MAX) {
+      return serviceError(
+        400,
+        `a summary is one sentence: at most ${OUTREACH_SUMMARY_MAX} characters`,
+      );
+    }
+    const saved = this.upsertPaper({ ...existing, artifacts: { outreach_summary: clean } }, origin);
+    return saved.ok
+      ? { ok: true, status: 200, payload: { paper_id: paperId, summary: clean } }
+      : saved;
   }
 
   listMemberRoster(query: MemberRosterQuery, meetingMembers?: ReadonlySet<string>) {

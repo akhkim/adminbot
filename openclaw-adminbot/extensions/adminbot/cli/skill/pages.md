@@ -327,6 +327,7 @@ Website: `/mailing-list` · Who: admin
 | `post-papers-mailing-list-send`         | POST `/papers/mailing-list/send`                   |
 | `post-papers-outreach-acceptance-sheet` | POST `/papers/outreach/acceptance-sheet` (dry-run) |
 | `post-papers-outreach-send`             | POST `/papers/outreach/send`                       |
+| `post-papers-outreach-summary`          | POST `/papers/outreach/summary`                    |
 
 ## My work (your papers, weekly notes, checklist)
 

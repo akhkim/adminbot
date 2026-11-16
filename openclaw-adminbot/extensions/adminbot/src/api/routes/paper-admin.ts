@@ -197,6 +197,26 @@ export const paperAdminRoutes: readonly Route[] = [
       papers: draft.paper_ids.length,
     });
   }),
+  post("/papers/outreach/summary", async ({ req, res, ctx, principal }) => {
+    // Our own record, not an outside system, so it is written at once -- but by a member admin,
+    // so the sentence that later goes out in the lab's name has somebody's name on its edit.
+    if (!requireMemberPrivileged(res, principal) || principal.kind !== "member") {
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    const paperId = asString(body.paper_id).trim();
+    if (!paperId || typeof body.summary !== "string") {
+      sendJson(res, 400, { error: { message: "a paper_id and a summary are required" } });
+      return;
+    }
+    sendServiceResult(
+      res,
+      ctx.service.setPaperOutreachSummary(paperId, body.summary, {
+        source: "admin",
+        actor: principal.member.id,
+      }),
+    );
+  }),
   post("/papers/outreach/acceptance-sheet", async ({ req, res, ctx, principal }) => {
     if (!requireMemberPrivileged(res, principal) || principal.kind !== "member") {
       return;

@@ -1,4 +1,5 @@
 import { html, nothing, type TemplateResult } from "lit";
+import { live } from "lit/directives/live.js";
 import { t } from "../../../i18n/index.ts";
 import type {
   AcceptanceSheetSync,
@@ -18,6 +19,10 @@ import type {
 // write -- a summary, a pitch -- can only be copied, so nothing with a placeholder in it is ever
 // mailed. Recipients are shown, never typed: they come from the service's configuration.
 //
+// Some outlets want a sentence about each paper. Those sentences are typed once, in the list above
+// the outlets, saved on the paper, and reused by every draft that asks for one -- so finishing a
+// draft is filling in a box here, not editing the same placeholder in three copied emails.
+//
 // Under the outlets sits the acceptance tab of the lab's spreadsheet. People keep that tab, so the
 // write is two presses: compare first, and add only the rows the comparison named.
 
@@ -30,6 +35,7 @@ export type PaperOutreachProps = {
   sent: string[];
   sheet: AcceptanceSheetSync | null;
   onSend: (outlet: string) => void;
+  onSaveSummary: (paperId: string, summary: string) => void;
   onCheckSheet: () => void;
   onAddToSheet: () => void;
 };
@@ -81,8 +87,10 @@ function renderDraft(draft: PaperOutreachDraft, props: PaperOutreachProps): Temp
       <summary>
         <span class="adminbot-outreach__name">${draft.institute} — ${draft.label}</span>
         <small class="muted">
-          ${t("mailingList.outreach.papers", { count: String(draft.paper_ids.length) })} ·
-          ${draftState(draft, sent)}
+          ${draft.paper_ids.length === 1
+            ? t("mailingList.outreach.onePaper")
+            : t("mailingList.outreach.papers", { count: String(draft.paper_ids.length) })}
+          · ${draftState(draft, sent)}
         </small>
       </summary>
       <p class="muted">${draft.cadence}</p>
@@ -146,6 +154,38 @@ function renderDraft(draft: PaperOutreachDraft, props: PaperOutreachProps): Temp
           `
         : nothing}
     </details>
+  `;
+}
+
+function renderSummaries(data: PaperOutreach, props: PaperOutreachProps): TemplateResult {
+  const missing = data.papers.filter((paper) => !paper.summary).length;
+  return html`
+    <h3 class="adminbot-outreach__heading">${t("mailingList.outreach.summaries.title")}</h3>
+    <p class="muted" data-testid="outreach-summaries-state">
+      ${missing === 0
+        ? t("mailingList.outreach.summaries.done")
+        : t("mailingList.outreach.summaries.sub", { count: String(missing) })}
+    </p>
+    <ul class="adminbot-form adminbot-outreach__summaries">
+      ${data.papers.map(
+        (paper) => html`
+          <li>
+            <label class="adminbot-form__field">
+              <span>${paper.title}</span>
+              <input
+                type="text"
+                maxlength="400"
+                placeholder=${t("mailingList.outreach.summaries.placeholder")}
+                .value=${live(paper.summary)}
+                @change=${(event: Event) =>
+                  props.onSaveSummary(paper.id, (event.target as HTMLInputElement).value)}
+                data-testid="outreach-summary-${paper.id}"
+              />
+            </label>
+          </li>
+        `,
+      )}
+    </ul>
   `;
 }
 
@@ -242,6 +282,7 @@ export function renderPaperOutreach(props: PaperOutreachProps): TemplateResult |
             ${t("mailingList.outreach.configError", { reason: data.config_error })}
           </div>`
         : nothing}
+      ${data?.venue && data.papers.length > 0 ? renderSummaries(data, props) : nothing}
       ${data?.venue
         ? STAGES.map((stage) => {
             const drafts = data.drafts.filter((draft) => draft.stage === stage);

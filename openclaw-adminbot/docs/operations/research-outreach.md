@@ -46,9 +46,14 @@ outlet's audience can be overridden in the configuration.
 
 A row offers **Send** only when all of these hold: the outlet is an email outlet, recipients are
 configured, at least one paper matches, every paper has a link, and the draft has nothing left for
-a person to write. Drafts that need a one-sentence summary carry the placeholder
-`[one-sentence summary]` and can only be copied, so a placeholder is never mailed. Form outlets
-link to their form.
+a person to write. Form outlets link to their form.
+
+Some outlets print one sentence beside each paper. Those sentences are typed once, in **One
+sentence per paper** above the outlets: one box per accepted paper, saved on the paper when the
+box is left, and reused by every draft that asks for one. Until a paper has its sentence, drafts
+that need it carry the placeholder `[one-sentence summary]` and can only be copied, so a
+placeholder is never mailed. A paper's link is its arXiv link, or its Drive PDF until that exists,
+so an acceptance can go out before the camera-ready.
 
 A send posts only the venue and the outlet key. The service recomposes the draft and takes the
 recipients from its own configuration, so a tab left open cannot mail an old list and no request
@@ -109,9 +114,10 @@ by hand.
 | ---------------------------------------- | ------------------------------------------------------------- |
 | `GET /papers/outreach?venue=`            | Drafts for a venue, the acceptance rows, any config error     |
 | `POST /papers/outreach/send`             | `{venue, outlet}`: mails one sendable draft                   |
+| `POST /papers/outreach/summary`          | `{paper_id, summary}`: saves one paper's sentence (max 400)   |
 | `POST /papers/outreach/acceptance-sheet` | `{dry_run}`: compares; appends only when `dry_run` is `false` |
 
-All three are admin-only and appear in the generated OpenAPI spec and CLI.
+All four are admin-only and appear in the generated OpenAPI spec and CLI.
 
 ## Not built yet
 

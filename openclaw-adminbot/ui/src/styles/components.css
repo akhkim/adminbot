@@ -2650,6 +2650,16 @@ details[open] > .projects-nav__toggle::after {
   font-size: var(--control-ui-text-sm);
 }
 
+.adminbot-outreach__summaries {
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.adminbot-outreach__summaries input {
+  width: 100%;
+}
+
 .adminbot-outreach__actions {
   display: flex;
   flex-wrap: wrap;

@@ -1899,8 +1899,7 @@ export const en: TranslationMap = {
     recipient: "Send to",
     preview: "Preview",
     previewing: "Reading…",
-    empty:
-      "Choose a range and press Preview to see what would be sent, and to fill the venue list.",
+    empty: "Choose a venue or a date range to see what would be sent.",
     summary: "{count} publications between {from} and {to}.",
     venueSummary: "{count} papers accepted at {venue}, by our records.",
     noneInRange: "No publications in our records fall in this range.",
@@ -1935,6 +1934,7 @@ export const en: TranslationMap = {
       configError:
         "The outreach recipients are not set up correctly, so nothing can be sent from here: {reason}",
       papers: "{count} papers",
+      onePaper: "1 paper",
       to: "To {recipients}",
       cc: "Cc {recipients}",
       noRecipients:
@@ -1956,6 +1956,12 @@ export const en: TranslationMap = {
         form: "submitted through a form",
         none: "no matching papers",
         sent: "sent",
+      },
+      summaries: {
+        title: "One sentence per paper",
+        sub: "Still needed for {count}. Some newsletters print one beside each paper; type it once here and every draft that needs it picks it up.",
+        done: "Every paper has its sentence, so the drafts that print one are complete.",
+        placeholder: "What the paper shows, in one plain sentence",
       },
       sheet: {
         title: "Acceptance sheet",

@@ -154,6 +154,8 @@ export type PaperOutreach = {
   /** Absent when no venue was asked for: the acceptance rows still come back. */
   venue?: string;
   paper_count: number;
+  /** The venue's accepted papers and the one sentence each summary-carrying draft borrows. */
+  papers: Array<{ id: string; title: string; summary: string }>;
   drafts: PaperOutreachDraft[];
   acceptance_rows: PaperAcceptanceRow[];
   /** The outreach configuration did not parse, so nothing can be sent until it is fixed. */
@@ -206,6 +208,15 @@ export function sendPaperOutreach(
   baseUrl: string,
 ): Promise<AuthResult<{ sent: true; outlet: string; recipients: string[]; papers: number }>> {
   return outreachCall(baseUrl, "/papers/outreach/send", "POST", sessionToken, params);
+}
+
+/** Saves the one sentence the newsletter drafts say about a paper. Blank clears it. */
+export function savePaperOutreachSummary(
+  params: { paper_id: string; summary: string },
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ paper_id: string; summary: string }>> {
+  return outreachCall(baseUrl, "/papers/outreach/summary", "POST", sessionToken, params);
 }
 
 /** Compares the acceptance tab with our records; with `dry_run: false`, appends what is missing. */

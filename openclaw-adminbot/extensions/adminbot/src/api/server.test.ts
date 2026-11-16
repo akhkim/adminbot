@@ -5065,6 +5065,50 @@ describe("research outreach", () => {
     expect(sheet.appended).toEqual([]);
   });
 
+  it("saves a paper's summary, which is what makes the round-up sendable", async () => {
+    const { baseUrl, token } = await labWithAcceptances();
+    const drafts = async () => {
+      const res = await fetch(`${baseUrl}/papers/outreach?venue=ICLR%202027`, {
+        headers: auth(token),
+      });
+      return (await res.json()) as {
+        papers: Array<{ id: string; summary: string }>;
+        drafts: Array<{ key: string; needs_edit: boolean; sendable: boolean; body: string }>;
+      };
+    };
+    expect((await drafts()).drafts.find((draft) => draft.key === "sri")?.sendable).toBe(false);
+
+    const save = (body: Record<string, unknown>, headers = auth(token)) =>
+      fetch(`${baseUrl}/papers/outreach/summary`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      });
+    // The shared service principal has no name to put on a sentence sent in the lab's name.
+    expect(
+      (
+        await save(
+          { paper_id: "with-pi", summary: "x" },
+          serviceHeaders({ "Content-Type": "application/json" }),
+        )
+      ).status,
+    ).toBe(403);
+    expect((await save({ paper_id: "nope", summary: "x" })).status).toBe(404);
+    expect((await save({ paper_id: "with-pi", summary: "x".repeat(401) })).status).toBe(400);
+    expect((await save({ paper_id: "with-pi", summary: " Judges  disagree. " })).status).toBe(200);
+
+    const after = await drafts();
+    expect(after.papers.find((paper) => paper.id === "with-pi")?.summary).toBe("Judges disagree.");
+    const roundup = after.drafts.find((draft) => draft.key === "sri");
+    expect(roundup?.body).toContain("— Judges disagree. https://arxiv.org/abs/2610.00001");
+    expect(roundup?.sendable).toBe(true);
+    // The rest of the record is untouched by the narrow write.
+    expect(mockFor(baseUrl).service.getPaper("with-pi")).toMatchObject({
+      ok: true,
+      payload: { title: "With The PI" },
+    });
+  });
+
   it("audits a send that failed", async () => {
     const { baseUrl, token } = await labWithAcceptances({
       runner: async () => {

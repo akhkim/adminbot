@@ -2174,6 +2174,8 @@ export type AdminBotPaperArtifactLinks = {
   publication_track?: string;
   conference?: string;
   topic?: string;
+  /** One sentence for the institute newsletters that ask for one. Blank clears it. */
+  outreach_summary?: string;
   brainstorming_doc_url?: string;
   overleaf_view_url?: string;
   overleaf_edit_url?: string;

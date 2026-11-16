@@ -9,6 +9,7 @@ import { t } from "../../../i18n/index.ts";
 import type { UiSettings } from "../../storage.ts";
 import {
   fetchPaperOutreach,
+  savePaperOutreachSummary,
   sendPaperOutreach,
   syncAcceptanceSheet,
   type AcceptanceSheetSync,
@@ -107,6 +108,46 @@ export async function sendAdminBotOutreach(
       recipients: result.value.recipients.join(", "),
     }),
   });
+}
+
+/**
+ * Saves one paper's summary, then re-reads the drafts so the ones that were waiting on it show
+ * the sentence and offer their send.
+ *
+ * Only `data` is replaced by the re-read. The sent marks and the sheet comparison are about things
+ * a summary does not change, and wiping them would make typing a sentence look like a reload.
+ */
+export async function saveAdminBotOutreachSummary(
+  host: AdminBotOutreachHost,
+  paperId: string,
+  summary: string,
+): Promise<void> {
+  const wire = session(host);
+  const data = host.adminBotOutreach.data;
+  const venue = data?.venue;
+  const clean = summary.replaceAll(/\s+/gu, " ").trim();
+  if (!wire || !data || !venue) {
+    return;
+  }
+  if (data.papers.find((paper) => paper.id === paperId)?.summary === clean) {
+    return;
+  }
+  patch(host, { error: null, notice: null });
+  const saved = await savePaperOutreachSummary(
+    { paper_id: paperId, summary: clean },
+    wire.token,
+    wire.baseUrl,
+  );
+  if (!saved.ok) {
+    patch(host, { error: failureText(saved, wire.baseUrl) });
+    return;
+  }
+  const result = await fetchPaperOutreach(venue, wire.token, wire.baseUrl);
+  // Another venue may have been loaded while this was in flight; its drafts are not ours to replace.
+  if (host.adminBotOutreach.data?.venue !== venue) {
+    return;
+  }
+  patch(host, result.ok ? { data: result.value } : { error: failureText(result, wire.baseUrl) });
 }
 
 /** Compares the acceptance tab with our records, or with `write` appends what it lacks. */
