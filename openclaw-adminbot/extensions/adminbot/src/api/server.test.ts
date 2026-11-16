@@ -3222,6 +3222,29 @@ describe("cross-origin refusals", () => {
     }
   });
 
+  it("lets the browser remember the preflight answer instead of asking before every request", async () => {
+    const { baseUrl } = await startService({
+      allowedOrigins: ["https://admin.safe.eu"],
+    });
+
+    const preflight = await fetch(`${baseUrl}/my/projects`, {
+      method: "OPTIONS",
+      headers: {
+        Origin: "https://admin.safe.eu",
+        "Access-Control-Request-Method": "GET",
+        "Access-Control-Request-Headers": "authorization",
+      },
+    });
+    expect(preflight.status).toBe(204);
+    expect(Number(preflight.headers.get("access-control-max-age"))).toBeGreaterThanOrEqual(7200);
+
+    const refused = await fetch(`${baseUrl}/my/projects`, {
+      method: "OPTIONS",
+      headers: { Origin: "https://elsewhere.example", "Access-Control-Request-Method": "GET" },
+    });
+    expect(refused.headers.get("access-control-max-age")).toBeNull();
+  });
+
   it("names the refused origin and the configured list in the log", async () => {
     const warnings: string[] = [];
     const warn = console.warn;
