@@ -2174,6 +2174,8 @@ export type AdminBotPaperArtifactLinks = {
   publication_track?: string;
   conference?: string;
   topic?: string;
+  /** One sentence for the institute newsletters that ask for one. Blank clears it. */
+  outreach_summary?: string;
   brainstorming_doc_url?: string;
   overleaf_view_url?: string;
   overleaf_edit_url?: string;
@@ -2987,7 +2989,11 @@ export type AdminBotAuditEvent = {
     // The publication digest going out to an address an admin typed. Recorded because it leaves
     // the lab: the recipient and the range are the whole of what was disclosed and to whom.
     | "publication_digest.sent"
-    | "publication_digest.failed";
+    | "publication_digest.failed"
+    | "paper_outreach.sent"
+    | "paper_outreach.failed"
+    | "acceptance_sheet.rows_added"
+    | "acceptance_sheet.failed";
   timestamp: string;
   actor?: string;
   details?: Record<string, unknown>;

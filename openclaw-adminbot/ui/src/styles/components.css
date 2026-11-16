@@ -2603,6 +2603,70 @@ details[open] > .projects-nav__toggle::after {
   justify-content: flex-end;
 }
 
+/* Research outreach, under the digest. Rows, not cards: one folded line per outlet with a
+   hairline between, and the draft inside it. No side padding, so a row starts where its heading
+   does (ui/DESIGN.md). */
+.adminbot-outreach {
+  margin-top: var(--space-6);
+}
+
+.adminbot-outreach__heading {
+  margin: var(--space-5) 0 var(--space-2);
+  font-size: var(--control-ui-text-md);
+  font-weight: 600;
+}
+
+.adminbot-outreach__outlet {
+  padding-block: var(--space-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.adminbot-outreach__outlet > summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  align-items: baseline;
+  justify-content: space-between;
+  cursor: pointer;
+}
+
+.adminbot-outreach__outlet > summary:hover {
+  background: var(--bg-hover);
+}
+
+.adminbot-outreach__recipients {
+  margin: var(--space-2) 0;
+  overflow-wrap: anywhere;
+}
+
+.adminbot-outreach__recipients .muted {
+  display: block;
+}
+
+.adminbot-outreach__notes {
+  margin: var(--space-2) 0;
+  padding-left: var(--space-4);
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+}
+
+.adminbot-outreach__summaries {
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.adminbot-outreach__summaries input {
+  width: 100%;
+}
+
+.adminbot-outreach__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-block: var(--space-2);
+}
+
 .adminbot-impersonation-banner {
   position: fixed;
   z-index: 40;

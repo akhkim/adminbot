@@ -7,6 +7,10 @@ import { randomUUID } from "node:crypto";
 import { parsePaperMentorRunInput } from "../../contracts/papermentor.js";
 import { gatherOpenReviewPaperEvidence } from "../../workflows/papers/openreview-paper-sync-sources.js";
 import {
+  acceptanceRowCells,
+  missingAcceptanceRows,
+} from "../../workflows/papers/paper-outreach.js";
+import {
   asString,
   readJson,
   readJsonOrEmpty,
@@ -82,6 +86,198 @@ export const paperAdminRoutes: readonly Route[] = [
       );
     }),
   ),
+  get(
+    "/papers/outreach",
+    privilegedOnly(({ res, url, ctx }) => {
+      const venue = url.searchParams.get("venue")?.trim() ?? "";
+      sendServiceResult(
+        res,
+        mapPayload(
+          ctx.service.collectPaperOutreach({
+            ...(venue ? { venue } : {}),
+            config: ctx.outreachConfig,
+          }),
+          (payload) => ({
+            ...payload,
+            acceptance_sheet_configured: Boolean(ctx.acceptanceSheet),
+          }),
+        ),
+      );
+    }),
+  ),
+  post("/papers/outreach/send", async ({ req, res, ctx, principal }) => {
+    // A member admin, like the digest send. Stricter than the digest in one way: the caller names
+    // an outlet, never an address. Who an institute's newsletter is sent to is deployment
+    // configuration, so a request cannot redirect the lab's acceptance news somewhere else.
+    if (!requireMemberPrivileged(res, principal) || principal.kind !== "member") {
+      return;
+    }
+    if (!ctx.publicationMailingRunner) {
+      sendJson(res, 503, { error: { message: "publication mailing is not configured" } });
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    const outlet = asString(body.outlet).trim();
+    const requestedVenue = asString(body.venue).trim();
+    if (!outlet || !requestedVenue) {
+      sendJson(res, 400, { error: { message: "an outlet and a venue are required" } });
+      return;
+    }
+    const outreach = ctx.service.collectPaperOutreach({
+      venue: requestedVenue,
+      config: ctx.outreachConfig,
+    });
+    if (!outreach.ok) {
+      sendServiceResult(res, outreach);
+      return;
+    }
+    const venue = outreach.payload.venue ?? requestedVenue;
+    const draft = outreach.payload.drafts.find((entry) => entry.key === outlet);
+    if (!draft) {
+      sendJson(res, 404, { error: { message: `"${outlet}" is not an outreach outlet` } });
+      return;
+    }
+    if (!draft.sendable) {
+      // Recomputed here rather than trusted from the page: the reasons are the ones the preview
+      // showed, and a stale page must not be able to mail a draft that has since stopped being
+      // sendable (a paper lost its link, the recipients were removed).
+      const reason =
+        outreach.payload.config_error ??
+        (draft.channel === "form"
+          ? "this outlet is submitted through a form, not by email"
+          : draft.channel === "doc"
+            ? "this draft is an outline for a person to write, not an email"
+            : draft.paper_ids.length === 0
+              ? "no paper at this venue is for this outlet"
+              : draft.to.length === 0
+                ? "there is nobody to send this to: no recipients are configured or on the roster"
+                : draft.needs_edit
+                  ? "this draft has text left to write, so it can only be copied"
+                  : "a paper in this draft has no link recorded");
+      sendJson(res, 409, { error: { message: reason } });
+      return;
+    }
+    const details = {
+      outlet: draft.key,
+      venue,
+      recipients: draft.to,
+      ...(draft.cc.length > 0 ? { cc: draft.cc } : {}),
+      papers: draft.paper_ids,
+    };
+    try {
+      await ctx.publicationMailingRunner({
+        to: draft.to.join(","),
+        ...(draft.cc.length > 0 ? { cc: draft.cc } : {}),
+        subject: draft.subject,
+        body: draft.body,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      ctx.store.recordAudit({
+        id: `aud_${randomUUID()}`,
+        timestamp: new Date().toISOString(),
+        type: "paper_outreach.failed",
+        actor: principalActor(principal),
+        details: { ...details, reason: message },
+      });
+      sendJson(res, 502, { error: { message: `could not send the outreach email: ${message}` } });
+      return;
+    }
+    ctx.store.recordAudit({
+      id: `aud_${randomUUID()}`,
+      timestamp: new Date().toISOString(),
+      type: "paper_outreach.sent",
+      actor: principalActor(principal),
+      details,
+    });
+    sendJson(res, 200, {
+      sent: true,
+      outlet: draft.key,
+      venue,
+      recipients: draft.to,
+      cc: draft.cc,
+      papers: draft.paper_ids.length,
+    });
+  }),
+  post("/papers/outreach/summary", async ({ req, res, ctx, principal }) => {
+    // Our own record, not an outside system, so it is written at once -- but by a member admin,
+    // so the sentence that later goes out in the lab's name has somebody's name on its edit.
+    if (!requireMemberPrivileged(res, principal) || principal.kind !== "member") {
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    const paperId = asString(body.paper_id).trim();
+    if (!paperId || typeof body.summary !== "string") {
+      sendJson(res, 400, { error: { message: "a paper_id and a summary are required" } });
+      return;
+    }
+    sendServiceResult(
+      res,
+      ctx.service.setPaperOutreachSummary(paperId, body.summary, {
+        source: "admin",
+        actor: principal.member.id,
+      }),
+    );
+  }),
+  post("/papers/outreach/acceptance-sheet", async ({ req, res, ctx, principal }) => {
+    if (!requireMemberPrivileged(res, principal) || principal.kind !== "member") {
+      return;
+    }
+    const sheet = ctx.acceptanceSheet;
+    if (!sheet) {
+      sendJson(res, 503, { error: { message: "the acceptance sheet is not configured" } });
+      return;
+    }
+    // A check unless the caller says otherwise, so an empty body can never write to the sheet.
+    const dryRun = readRecord(await readJsonOrEmpty(req)).dry_run !== false;
+    const outreach = ctx.service.collectPaperOutreach({ config: ctx.outreachConfig });
+    if (!outreach.ok) {
+      sendServiceResult(res, outreach);
+      return;
+    }
+    const fail = (status: number, message: string, added?: number) => {
+      ctx.store.recordAudit({
+        id: `aud_${randomUUID()}`,
+        timestamp: new Date().toISOString(),
+        type: "acceptance_sheet.failed",
+        actor: principalActor(principal),
+        details: { reason: message, dry_run: dryRun, ...(added === undefined ? {} : { added }) },
+      });
+      sendJson(res, status, { error: { message } });
+    };
+    let missing;
+    try {
+      // Read at the moment of writing, not taken from an earlier check: two admins pressing the
+      // button a minute apart must not both add the same rows.
+      missing = missingAcceptanceRows(outreach.payload.acceptance_rows, await sheet.read());
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      fail(502, `could not read the acceptance sheet: ${message}`);
+      return;
+    }
+    if (!dryRun && missing.length > 0) {
+      try {
+        await sheet.append(missing.map(acceptanceRowCells));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        fail(502, `could not add rows to the acceptance sheet: ${message}`, missing.length);
+        return;
+      }
+      ctx.store.recordAudit({
+        id: `aud_${randomUUID()}`,
+        timestamp: new Date().toISOString(),
+        type: "acceptance_sheet.rows_added",
+        actor: principalActor(principal),
+        details: { added: missing.length, papers: missing.map((row) => row.paper_id) },
+      });
+    }
+    sendJson(res, 200, {
+      dry_run: dryRun,
+      total: outreach.payload.acceptance_rows.length,
+      missing,
+      added: dryRun ? 0 : missing.length,
+    });
+  }),
   post("/papers/mailing-list/send", async ({ req, res, ctx, principal }) => {
     const { service } = ctx;
     // requireMemberPrivileged, not requirePrivileged: the caller names the recipient, so this is

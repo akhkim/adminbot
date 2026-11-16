@@ -59,6 +59,13 @@ import {
 } from "./adminbot/controllers/mailing-list.ts";
 import { loadAdminBotMemberRequests } from "./adminbot/controllers/member-requests.ts";
 import { saveAdminBotOwnSchedule } from "./adminbot/controllers/members.ts";
+import {
+  EMPTY_OUTREACH_STATE,
+  loadAdminBotOutreach,
+  saveAdminBotOutreachSummary,
+  sendAdminBotOutreach,
+  syncAdminBotAcceptanceSheet,
+} from "./adminbot/controllers/paper-outreach.ts";
 import { loadAdminBotPaperSlotOverview } from "./adminbot/controllers/paper-slots.ts";
 import { loadMyProjects } from "./adminbot/controllers/papers.ts";
 import {
@@ -653,6 +660,8 @@ const lazyGrantReport = createLazyView(
   notifyLazyViewHost,
   { tabs: ["adminbotGrantReport"] },
 );
+/** Hosts whose Mailing List tab has made its opening read, so it is made once, not per render. */
+const mailingListOpened = new WeakSet<object>();
 const lazyMailingList = createLazyView(
   () => import("./adminbot/views/mailing-list.ts"),
   notifyLazyViewHost,
@@ -2731,6 +2740,19 @@ export function renderApp(state: AppViewState) {
     state.adminBotTabUsageLoadedAt = Date.now();
     void loadAdminBotTabUsage(state).finally(() => requestHostUpdate?.());
   }
+  // The venue picker is filled by the first read, so the tab makes it on open: an admin arrives to
+  // a list of venues to choose from, not to a button that has to be pressed before one exists.
+  if (
+    state.tab === "adminbotMailingList" &&
+    hasMemberSession &&
+    !mailingListOpened.has(state) &&
+    !state.adminBotMailingListLoading &&
+    state.adminBotMailingListPreview === null
+  ) {
+    mailingListOpened.add(state);
+    void loadAdminBotMailingList(state).finally(() => requestHostUpdate?.());
+    void loadAdminBotOutreach(state, state.adminBotMailingListVenue);
+  }
   readAdminBotProfileOverview(state, hasMemberSession, requestHostUpdate);
   // The sidebar lists the member's active projects on every tab, so the list is read once a member
   // session exists, and again whenever a write clears it.
@@ -3670,16 +3692,38 @@ export function renderApp(state: AppViewState) {
                   // Cleared with the range it described. A preview left on screen next to two new
                   // dates is the one way this screen could mislead about what would be sent.
                   state.adminBotMailingListPreview = null;
+                  state.adminBotOutreach = EMPTY_OUTREACH_STATE;
                 },
                 onVenueChange: (venue) => {
                   state.adminBotMailingListVenue = venue;
                   // Same rule as the range: the preview described the old composition, so leaving
                   // it up beside a new one is the way this screen could lie about what it sends.
                   state.adminBotMailingListPreview = null;
+                  state.adminBotOutreach = EMPTY_OUTREACH_STATE;
+                  // Choosing a venue is the whole question, and both reads only read, so it is
+                  // answered at once rather than waiting for a second press on Preview.
+                  if (venue) {
+                    void loadAdminBotMailingList(state);
+                    void loadAdminBotOutreach(state, venue);
+                  }
                 },
                 onEmailChange: (email) => (state.adminBotMailingListEmail = email),
-                onPreview: () => void loadAdminBotMailingList(state),
+                // One press reads both: the digest for the composition, and the outlet drafts for
+                // the same venue. By date there is no venue, and the outreach read still returns
+                // the acceptance-tab rows.
+                onPreview: () => {
+                  void loadAdminBotMailingList(state);
+                  void loadAdminBotOutreach(state, state.adminBotMailingListVenue);
+                },
                 onSend: () => void sendAdminBotMailingList(state),
+                outreach: {
+                  ...state.adminBotOutreach,
+                  onSend: (outlet) => void sendAdminBotOutreach(state, outlet),
+                  onSaveSummary: (paperId, summary) =>
+                    void saveAdminBotOutreachSummary(state, paperId, summary),
+                  onCheckSheet: () => void syncAdminBotAcceptanceSheet(state, false),
+                  onAddToSheet: () => void syncAdminBotAcceptanceSheet(state, true),
+                },
               }),
             )
           : nothing}

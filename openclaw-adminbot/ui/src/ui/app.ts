@@ -109,6 +109,10 @@ import {
   resetNotificationPopups,
 } from "./adminbot/controllers/notifications.ts";
 import { createEmptyAdminBotMemberNudgeState } from "./adminbot/controllers/nudges.ts";
+import {
+  EMPTY_OUTREACH_STATE,
+  type AdminBotOutreachState,
+} from "./adminbot/controllers/paper-outreach.ts";
 import type { PreciseLocationState } from "./adminbot/controllers/precise-location.ts";
 import { EMPTY_PROFILE_OVERVIEW_PAGE } from "./adminbot/controllers/profile-overview.ts";
 import { createRecLetterEligibilityState } from "./adminbot/controllers/rec-letter-eligibility.ts";
@@ -517,6 +521,8 @@ export class OpenClawApp extends LitElement {
   // "" is the date range; anything else is a venue key from the last preview.
   @state() adminBotMailingListVenue = "";
   @state() adminBotMailingListVenues: PublicationDigestVenue[] = [];
+  // The research-outreach drafts and the acceptance-tab comparison, read with the preview above.
+  @state() adminBotOutreach: AdminBotOutreachState = EMPTY_OUTREACH_STATE;
   @state() memberImpersonatedBy: MemberImpersonator | null = null;
   @state() memberImpersonationBusy = false;
   @state() memberImpersonationError: string | null = null;

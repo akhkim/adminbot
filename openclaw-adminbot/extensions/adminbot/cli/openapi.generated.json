@@ -26564,6 +26564,556 @@
         }
       }
     },
+    "/papers/outreach": {
+      "get": {
+        "operationId": "get-papers-outreach",
+        "summary": "GET /papers/outreach",
+        "tags": [
+          "papers"
+        ],
+        "x-source": "src/api/routes/paper-admin.ts",
+        "parameters": [
+          {
+            "name": "venue",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Successful service result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "acceptance_sheet_configured": {
+                      "type": "boolean"
+                    },
+                    "venue": {
+                      "type": "string"
+                    },
+                    "venues": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/VenueOption"
+                      }
+                    },
+                    "paper_count": {
+                      "type": "number"
+                    },
+                    "papers": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "summary": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "title",
+                          "summary"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "drafts": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/OutreachDraft"
+                      }
+                    },
+                    "acceptance_rows": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AcceptanceRow"
+                      }
+                    },
+                    "config_error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "acceptance_sheet_configured",
+                    "venues",
+                    "paper_count",
+                    "papers",
+                    "drafts",
+                    "acceptance_rows"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/papers/outreach/acceptance-sheet": {
+      "post": {
+        "operationId": "post-papers-outreach-acceptance-sheet",
+        "summary": "POST /papers/outreach/acceptance-sheet",
+        "tags": [
+          "papers"
+        ],
+        "x-source": "src/api/routes/paper-admin.ts",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": true,
+                "x-schema-coverage": "inferred from property access or downstream casts; semantic validation remains server-side"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "dry_run": {
+                      "type": "boolean"
+                    },
+                    "total": {
+                      "type": "number"
+                    },
+                    "missing": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AcceptanceRow"
+                      }
+                    },
+                    "added": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "dry_run",
+                    "total",
+                    "missing",
+                    "added"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "Successful service result",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/papers/outreach/send": {
+      "post": {
+        "operationId": "post-papers-outreach-send",
+        "summary": "POST /papers/outreach/send",
+        "tags": [
+          "papers"
+        ],
+        "x-source": "src/api/routes/paper-admin.ts",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "outlet": {
+                    "type": "string"
+                  },
+                  "venue": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true,
+                "x-schema-coverage": "inferred from property access or downstream casts; semantic validation remains server-side"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "sent": {
+                      "type": "boolean"
+                    },
+                    "outlet": {
+                      "type": "string"
+                    },
+                    "venue": {
+                      "type": "string"
+                    },
+                    "recipients": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "cc": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "papers": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "sent",
+                    "outlet",
+                    "venue",
+                    "recipients",
+                    "cc",
+                    "papers"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "Successful service result",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/papers/outreach/summary": {
+      "post": {
+        "operationId": "post-papers-outreach-summary",
+        "summary": "POST /papers/outreach/summary",
+        "tags": [
+          "papers"
+        ],
+        "x-source": "src/api/routes/paper-admin.ts",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "paper_id": {
+                    "type": "string"
+                  },
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true,
+                "x-schema-coverage": "inferred from property access or downstream casts; semantic validation remains server-side"
+              }
+            }
+          }
+        },
+        "responses": {
+          "400": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "Successful service result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "paper_id": {
+                      "type": "string"
+                    },
+                    "summary": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "paper_id",
+                    "summary"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/papers/paperflow-evidence": {
       "post": {
         "operationId": "post-papers-paperflow-evidence",
@@ -33236,7 +33786,11 @@
               "cv.sweep_failed",
               "venue_index.rebuilt",
               "publication_digest.sent",
-              "publication_digest.failed"
+              "publication_digest.failed",
+              "paper_outreach.sent",
+              "paper_outreach.failed",
+              "acceptance_sheet.rows_added",
+              "acceptance_sheet.failed"
             ]
           },
           "timestamp": {
@@ -43989,6 +44543,9 @@
           "topic": {
             "type": "string"
           },
+          "outreach_summary": {
+            "type": "string"
+          },
           "brainstorming_doc_url": {
             "type": "string"
           },
@@ -45266,6 +45823,138 @@
           "field",
           "from",
           "to"
+        ],
+        "additionalProperties": true
+      },
+      "OutreachDraft": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "institute": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "stage": {
+            "type": "string",
+            "enum": [
+              "camera_ready",
+              "submission",
+              "acceptance",
+              "pre_conference"
+            ]
+          },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "email",
+              "form",
+              "doc"
+            ]
+          },
+          "audience": {
+            "type": "string",
+            "enum": [
+              "pi",
+              "senior",
+              "pi_or_senior",
+              "lab"
+            ]
+          },
+          "cadence": {
+            "type": "string"
+          },
+          "paper_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "subject": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "needs_edit": {
+            "type": "boolean"
+          },
+          "notes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "to": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cc": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "form_url": {
+            "type": "string"
+          },
+          "sendable": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "key",
+          "institute",
+          "label",
+          "stage",
+          "channel",
+          "audience",
+          "cadence",
+          "paper_ids",
+          "subject",
+          "body",
+          "needs_edit",
+          "notes",
+          "to",
+          "cc",
+          "sendable"
+        ],
+        "additionalProperties": true
+      },
+      "AcceptanceRow": {
+        "type": "object",
+        "properties": {
+          "paper_id": {
+            "type": "string"
+          },
+          "year": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "conference": {
+            "type": "string"
+          },
+          "authors": {
+            "type": "string"
+          },
+          "paper_link": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "paper_id",
+          "year",
+          "title",
+          "conference",
+          "authors",
+          "paper_link"
         ],
         "additionalProperties": true
       },

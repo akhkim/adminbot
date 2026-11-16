@@ -64,7 +64,9 @@ import { createImportColumnMapper } from "../workflows/papers/import-columns.js"
 import { createPublicationMailingRunner } from "../workflows/papers/mailing-list-email.js";
 import type { OpenReviewPaperSyncSourceDeps } from "../workflows/papers/openreview-paper-sync-sources.js";
 import { createAdminBotOpenReviewWorkflow } from "../workflows/papers/openreview-workflow.js";
+import { parseOutreachConfig } from "../workflows/papers/paper-outreach.js";
 import { createLocalWorkshopMatcher } from "../workflows/papers/workshop-match-llm.js";
+import { createAcceptanceSheet } from "./acceptance-sheet.js";
 import { defaultCallSheet } from "./call-sheet-config.js";
 import { memberSheetSource, resolveMemberSheetConfig } from "./member-sheet-config.js";
 import { createNotificationDraftHandler } from "./notification-drafts.js";
@@ -260,6 +262,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
   // Built here rather than injected from the launcher, like the geolocator above: both are pure
   // functions of the environment, and the composition root has nothing to add to either.
   const venuePapersReader = options.venuePapersReader ?? createOpenReviewNotesReader();
+  const acceptanceSheet = options.acceptanceSheet ?? createAcceptanceSheet();
   const paperMentorReviewRequester =
     options.paperMentorReviewRequester ?? paperMentorReviewRequesterFromEnv();
   const paperMentorUploadReviewer =
@@ -569,6 +572,9 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     ...(options.cvScanDeps ? { cvScanDeps: options.cvScanDeps } : {}),
     ...(options.cvDigestPublisher ? { cvDigestPublisher: options.cvDigestPublisher } : {}),
     publicationMailingRunner: options.publicationMailingRunner ?? createPublicationMailingRunner(),
+    outreachConfig:
+      options.outreachConfig ?? parseOutreachConfig(process.env.ADMINBOT_OUTREACH_CONFIG),
+    ...(acceptanceSheet ? { acceptanceSheet } : {}),
     ...(paperMentorReviewRequester ? { paperMentorReviewRequester } : {}),
     ...(paperMentorUploadReviewer ? { paperMentorUploadReviewer } : {}),
     ...(venuePapersReader ? { venuePapersReader } : {}),

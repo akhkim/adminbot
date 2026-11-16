@@ -19,7 +19,10 @@ const GOG_MAX_OUTPUT_BYTES = 1024 * 1024;
 export const PUBLICATION_DIGEST_REPLY_TO = "akim@cs.toronto.edu";
 
 export type PublicationMailingRunner = (params: {
+  /** One address, or several separated by commas. */
   to: string;
+  /** Copied recipients. Only research outreach sets this; the digest goes to one address. */
+  cc?: string[];
   subject: string;
   body: string;
 }) => Promise<void>;
@@ -35,7 +38,7 @@ export function createPublicationMailingRunner(
 ): PublicationMailingRunner {
   const gog = resolveGogExecutable(options.env);
   const replyTo = options.replyTo?.trim() || PUBLICATION_DIGEST_REPLY_TO;
-  return async ({ to, subject, body }) => {
+  return async ({ to, cc, subject, body }) => {
     const recipient = to.trim();
     if (!recipient) {
       throw new Error("the publication digest needs a recipient address");
@@ -53,6 +56,7 @@ export function createPublicationMailingRunner(
       "send",
       "--to",
       recipient,
+      ...(cc?.length ? ["--cc", cc.join(",")] : []),
       "--subject",
       subject,
       "--body",

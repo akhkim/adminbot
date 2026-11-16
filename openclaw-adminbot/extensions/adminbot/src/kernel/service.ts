@@ -489,12 +489,22 @@ import {
   type OpenReviewUpdate,
 } from "../workflows/papers/openreview-updates.js";
 import {
+  type AcceptanceRow,
+  type OutreachConfig,
+  type OutreachDraft,
+  OUTREACH_SUMMARY_MAX,
+  acceptanceRows,
+  composeOutreach,
+  normalizeOutreachSummary,
+} from "../workflows/papers/paper-outreach.js";
+import {
   memberOwnsPaper,
   paperIdsByOwner,
   rosterNameCounts,
 } from "../workflows/papers/paper-ownership.js";
 import {
   buildCameraReadyNotice,
+  cameraReadyDeadline,
   isPaperConferenceOver,
   openReviewPaperHistory,
   openReviewPaperQueue,
@@ -4513,6 +4523,100 @@ export class AdminBotService {
         body: digest.body,
       },
     };
+  }
+
+  /**
+   * Research outreach for the papers accepted at one venue: a draft per institute outlet.
+   *
+   * Like the digest above, the preview and the send both read this, so what an admin read is what
+   * is mailed. Without a venue it returns the venue options and the acceptance rows alone, which
+   * is what the tab needs before anybody has picked one.
+   */
+  collectPaperOutreach(params: {
+    venue?: string;
+    config: OutreachConfig;
+  }): AdminBotServiceResponse<{
+    venue?: string;
+    venues: VenueOption[];
+    paper_count: number;
+    /** The venue's accepted papers, with the one sentence each newsletter draft borrows. */
+    papers: Array<{ id: string; title: string; summary: string }>;
+    drafts: OutreachDraft[];
+    acceptance_rows: AcceptanceRow[];
+    config_error?: string;
+  }> {
+    const papers = this.store.listPapers();
+    const venues = collectVenues(papers);
+    const requested = params.venue?.trim() ?? "";
+    const wanted = venueKey(requested);
+    const venue = wanted ? venues.find((option) => option.key === wanted)?.label : undefined;
+    if (wanted && !venue) {
+      return serviceError(404, `no paper in our records names the venue "${requested}"`);
+    }
+    const piMemberId = this.headProfessorMemberId();
+    const now = new Date();
+    const reportEmail = this.store.getSettings()?.papers_submission_report_email?.trim();
+    const cameraReadyIso = venue
+      ? cameraReadyDeadline(venue, this.deadlineReadModel(DEADLINE_VENUES), now)
+      : undefined;
+    const plan = venue
+      ? composeOutreach({
+          papers,
+          roster: this.store.listLabMembers(),
+          ...(piMemberId ? { piMemberId } : {}),
+          venue,
+          config: params.config,
+          ...(reportEmail ? { submissionReportEmail: reportEmail } : {}),
+          ...(cameraReadyIso ? { cameraReadyIso } : {}),
+          now,
+        })
+      : undefined;
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        ...(venue ? { venue } : {}),
+        venues,
+        paper_count: plan?.papers.length ?? 0,
+        papers: (plan?.papers ?? []).map((paper) => ({
+          id: paper.id,
+          title: paper.title,
+          summary: paper.summary ?? "",
+        })),
+        drafts: plan?.drafts ?? [],
+        acceptance_rows: acceptanceRows(papers),
+        ...(params.config.error ? { config_error: params.config.error } : {}),
+      },
+    };
+  }
+
+  /**
+   * The one sentence the newsletter drafts say about a paper. Blank clears it.
+   *
+   * Its own write rather than a whole-record save: the outreach page holds a title and a sentence,
+   * not the record, and a read-modify-write from there could put back a field somebody else has
+   * just changed.
+   */
+  setPaperOutreachSummary(
+    paperId: string,
+    summary: string,
+    origin: AdminBotWriteOrigin,
+  ): AdminBotServiceResponse<{ paper_id: string; summary: string }> {
+    const existing = this.store.getPaper(paperId);
+    if (!existing) {
+      return serviceError(404, "paper not found");
+    }
+    const clean = normalizeOutreachSummary(summary);
+    if (clean.length > OUTREACH_SUMMARY_MAX) {
+      return serviceError(
+        400,
+        `a summary is one sentence: at most ${OUTREACH_SUMMARY_MAX} characters`,
+      );
+    }
+    const saved = this.upsertPaper({ ...existing, artifacts: { outreach_summary: clean } }, origin);
+    return saved.ok
+      ? { ok: true, status: 200, payload: { paper_id: paperId, summary: clean } }
+      : saved;
   }
 
   listMemberRoster(query: MemberRosterQuery, meetingMembers?: ReadonlySet<string>) {
