@@ -263,11 +263,15 @@ function requestItem(request: AdminBotLogisticsRequest): ProfessorDigestItem | u
       names.length ? describeList(names) : undefined,
       request.description,
     ]);
+    // Only a request that came through the signature form names a day. With one, the item moves
+    // through the due buckets as the day nears instead of sitting in "waiting" until somebody looks.
+    const deadline = requestDeadlineDetails(request, { inferYear: false })?.at;
     return {
-      key: `signature:${request.id}`,
+      key: `signature:${request.id}${deadline ? `:${deadline}` : ""}`,
       source: "signature",
       title: `Signature for ${request.member_name}`,
       ...(detail ? { detail } : {}),
+      ...(deadline ? { deadline_at: deadline } : {}),
       ...since,
       path: "/signatures",
     };

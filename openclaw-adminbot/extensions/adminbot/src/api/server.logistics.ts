@@ -57,6 +57,42 @@ export type MeetingRequestHook = (requestId: string) => Promise<{
   message: string;
 }>;
 
+/**
+ * Keeps a signature-form submission as a `document_signature` request, once.
+ *
+ * Pressing the button again for the same document (the prefilled-form path leaves the answers
+ * typed, and a second press is the obvious next move) answers with the request already open
+ * rather than queueing a second one for the professor to sign.
+ */
+function trackSignatureFormRequest(
+  service: AdminBotService,
+  memberId: string,
+  form: { driveUrl: string; deadline: string; context: string },
+): { ok: true; id: string } | { ok: false; error: string } {
+  const driveUrl = form.driveUrl.trim();
+  const listed = service.listLogisticsRequests(memberId);
+  const open = listed.ok
+    ? listed.payload.requests.find(
+        (request) =>
+          request.kind === "document_signature" &&
+          request.document_url === driveUrl &&
+          (request.status === "submitted" || request.status === "in_progress"),
+      )
+    : undefined;
+  if (open) {
+    return { ok: true, id: open.id };
+  }
+  const submitted = service.submitLogisticsRequest(memberId, {
+    kind: "document_signature",
+    document_url: driveUrl,
+    signature_deadline: form.deadline.trim(),
+    ...(form.context.trim() ? { description: form.context.trim() } : {}),
+  });
+  return submitted.ok
+    ? { ok: true, id: submitted.payload.id }
+    : { ok: false, error: submitted.error.message };
+}
+
 export async function handleLogisticsRoute(
   req: IncomingMessage,
   res: ServerResponse,
@@ -140,21 +176,33 @@ export async function handleLogisticsRoute(
       // Likewise the account's email, never one the page sends: it is how the form says who asked.
       ...(member.email?.trim() ? { email: member.email.trim() } : {}),
     });
-    if (!result.ok && result.prefillUrl) {
+    if (!result.ok && !result.prefillUrl) {
+      sendJson(res, 502, { error: { message: result.error } });
+      return;
+    }
+    // The form's responses sheet is not something AdminBot reads, so a request that exists only
+    // there never reaches the signatures queue or the professor's digest. The same answers are
+    // kept here as a signature request: that record is what is listed, counted down to its
+    // deadline, and marked completed. It is kept when Google wants a sign-in too -- the member
+    // asked, whether or not they go on to press Submit on the form.
+    const tracked = trackSignatureFormRequest(service, member.id, {
+      driveUrl: asString(body.drive_url),
+      deadline: asString(body.deadline),
+      context: asString(body.context),
+    });
+    const tracking = tracked.ok ? { request_id: tracked.id } : { tracking_error: tracked.error };
+    if (!result.ok) {
       // Not a failure of the service or of Google: the form wants a signed-in response, which only
       // the member can give. The answer is the form with their answers in it, for them to submit.
       sendJson(res, 200, {
         submitted: false,
         sign_in_required: true,
         prefill_url: result.prefillUrl,
+        ...tracking,
       });
       return;
     }
-    if (!result.ok) {
-      sendJson(res, 502, { error: { message: result.error } });
-      return;
-    }
-    sendJson(res, 200, { submitted: true });
+    sendJson(res, 200, { submitted: true, ...tracking });
     return;
   }
   const withdraw = /^\/logistics\/requests\/([^/]+)\/withdraw$/u.exec(url.pathname);

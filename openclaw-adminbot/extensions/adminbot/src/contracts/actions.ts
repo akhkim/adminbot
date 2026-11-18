@@ -3569,6 +3569,10 @@ export type AdminBotLogisticsRequestInput = {
   kind: AdminBotLogisticsRequestKind;
   /** Document signature. */
   documents?: AdminBotLogisticsAttachment[];
+  /** The document as a link, when it was asked for through the signature form and never uploaded. */
+  document_url?: string;
+  /** yyyy-mm-dd the signature is needed by, as typed on the signature form. End of that day, AoE. */
+  signature_deadline?: string;
   description?: string;
   attachments?: AdminBotLogisticsAttachment[];
   /** Recommendation letters. */

@@ -7456,6 +7456,8 @@ export interface components {
       /** @enum {string} */
       kind: "document_signature" | "recommendation_letters" | "book_meeting";
       documents?: components["schemas"]["AdminBotLogisticsAttachment"][];
+      document_url?: string;
+      signature_deadline?: string;
       description?: string;
       attachments?: components["schemas"]["AdminBotLogisticsAttachment"][];
       schools?: components["schemas"]["AdminBotLogisticsSchool"][];
@@ -7532,6 +7534,8 @@ export interface components {
       /** @enum {string} */
       kind: "document_signature" | "recommendation_letters" | "book_meeting";
       documents?: components["schemas"]["AdminBotLogisticsAttachment"][];
+      document_url?: string;
+      signature_deadline?: string;
       description?: string;
       attachments?: components["schemas"]["AdminBotLogisticsAttachment"][];
       schools?: components["schemas"]["AdminBotLogisticsSchool"][];
@@ -19431,6 +19435,8 @@ export interface operations {
           /** @enum {string} */
           kind: "document_signature" | "recommendation_letters" | "book_meeting";
           documents?: components["schemas"]["AdminBotLogisticsAttachment"][];
+          document_url?: string;
+          signature_deadline?: string;
           description?: string;
           attachments?: components["schemas"]["AdminBotLogisticsAttachment"][];
           schools?: components["schemas"]["AdminBotLogisticsSchool"][];
@@ -19531,6 +19537,8 @@ export interface operations {
           /** @enum {string} */
           kind: "document_signature" | "recommendation_letters" | "book_meeting";
           documents?: components["schemas"]["AdminBotLogisticsAttachment"][];
+          document_url?: string;
+          signature_deadline?: string;
           description?: string;
           attachments?: components["schemas"]["AdminBotLogisticsAttachment"][];
           schools?: components["schemas"]["AdminBotLogisticsSchool"][];
@@ -19881,11 +19889,21 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": {
-            submitted: boolean;
-          } & {
-            [key: string]: unknown;
-          };
+          "application/json":
+            | ({
+                request_id: string;
+                tracking_error?: unknown;
+                submitted: boolean;
+              } & {
+                [key: string]: unknown;
+              })
+            | ({
+                tracking_error: string;
+                request_id?: unknown;
+                submitted: boolean;
+              } & {
+                [key: string]: unknown;
+              });
         };
       };
       /** @description Server response */

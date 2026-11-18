@@ -510,7 +510,10 @@ describe("POST /logistics/signature-form", () => {
       body: JSON.stringify(body),
     });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ submitted: true });
+    expect(await res.json()).toEqual({
+      submitted: true,
+      request_id: expect.stringMatching(/^logreq_/u),
+    });
     expect(submitSignatureForm).toHaveBeenCalledTimes(1);
     expect(submitSignatureForm.mock.calls[0]?.[0]).toEqual({
       name: "ada",
@@ -555,6 +558,44 @@ describe("POST /logistics/signature-form", () => {
       submitted: false,
       sign_in_required: true,
       prefill_url: "https://docs.google.com/forms/d/e/synthetic/viewform?usp=pp_url",
+      request_id: expect.stringMatching(/^logreq_/u),
+    });
+  });
+
+  // The form's responses sheet is invisible to AdminBot, so the submission is also kept as a
+  // signature request: that is what the queue and the professor's digest read.
+  it("keeps the submission as one open signature request with its link and deadline", async () => {
+    submitSignatureForm.mockClear();
+    const lab = await startLab();
+    const send = async () =>
+      (await (
+        await fetch(`${lab.baseUrl}/logistics/signature-form`, {
+          method: "POST",
+          headers: { ...asMember(lab, "ada"), "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        })
+      ).json()) as { request_id: string };
+    const first = await send();
+    // Pressed again for the same document: the open request answers, no second one is queued.
+    expect((await send()).request_id).toBe(first.request_id);
+    const queue = (await (
+      await fetch(`${lab.baseUrl}/logistics/requests`, { headers: asMember(lab, "zhijing") })
+    ).json()) as { requests: Array<{ id: string; kind: string; deadline_at?: string }> };
+    const rows = queue.requests.filter((row) => row.kind === "document_signature");
+    expect(rows.map((row) => row.id)).toEqual([first.request_id]);
+    // End of the typed day, anywhere on Earth.
+    expect(rows[0]?.deadline_at).toBe("2026-11-07T11:59:00.000Z");
+    const opened = (await (
+      await fetch(`${lab.baseUrl}/logistics/requests/${first.request_id}`, {
+        headers: asMember(lab, "zhijing"),
+      })
+    ).json()) as Record<string, unknown>;
+    expect(opened).toMatchObject({
+      member_id: "ada",
+      status: "submitted",
+      document_url: body.drive_url,
+      signature_deadline: body.deadline,
+      description: body.context,
     });
   });
 
