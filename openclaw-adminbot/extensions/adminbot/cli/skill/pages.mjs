@@ -40,7 +40,7 @@ const PAGES = [
     "Members, roster and member map",
     "/members",
     "member (edits: admin)",
-    /^\/(lab\/members|members|member-map|lab_stats|lab\/location|nudges)/u,
+    /^\/(lab\/members|lab\/scheduled-member-changes|members|member-map|lab_stats|lab\/location|nudges)/u,
   ],
   ["Badges", "/badges", "admin", /^\/badges/u],
   ["Reimbursements", "/reimbursements", "anyone", /^\/reimbursements/u],

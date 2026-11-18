@@ -27,6 +27,7 @@ import { profileRoutes } from "./profile.js";
 import { reimbursementsRoutes } from "./reimbursements.js";
 import { reviewsRoutes } from "./reviews.js";
 import type { Route } from "./router.js";
+import { scheduledMemberChangeRoutes } from "./scheduled-member-changes.js";
 import { slidesRoutes } from "./slides.js";
 import { travelRoutes } from "./travel.js";
 import { workspaceRoutes } from "./workspace.js";
@@ -53,6 +54,7 @@ export const AUTHENTICATED_ROUTES: readonly Route[] = [
   ...labSharingRoutes,
   ...travelRoutes,
   ...eventsRoutes,
+  ...scheduledMemberChangeRoutes,
   ...membersRoutes,
   ...meetingsRoutes,
   ...papersRoutes,

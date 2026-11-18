@@ -313,6 +313,16 @@
       "timeoutSeconds": 900
     },
     {
+      "name": "adminbot-scheduled-member-changes",
+      "description": "Make the Member Type changes whose grace period has run out",
+      "cron": "20 10 * * *",
+      "argv": [
+        "bash",
+        "scripts/adminbot-scheduled-member-changes-cron.sh"
+      ],
+      "timeoutSeconds": 900
+    },
+    {
       "name": "adminbot-topic-channels",
       "description": "Invite collaborators into the #discussion-xxx and #meeting-xxx channels their work matches",
       "cron": "40 10 * * 1-5",

@@ -126,48 +126,52 @@ Website: `/profile-overview` · Who: admin
 
 Website: `/members` · Who: member (edits: admin)
 
-| Operation ID                                 | Route                                                   |
-| -------------------------------------------- | ------------------------------------------------------- |
-| `delete-lab-members-by-members-id`           | DELETE `/lab/members/{members_id}`                      |
-| `get-lab-location-drifts`                    | GET `/lab/location-drifts`                              |
-| `get-lab-members-by-members-id-detail`       | GET `/lab/members/{members_id}/detail`                  |
-| `get-lab-members-by-members-id-locations`    | GET `/lab/members/{members_id}/locations`               |
-| `get-lab-members-by-members-id-recent-edits` | GET `/lab/members/{members_id}/recent-edits`            |
-| `get-lab-members-by-members-id-travel`       | GET `/lab/members/{members_id}/travel`                  |
-| `get-lab-members-collaborator-schedules`     | GET `/lab/members/collaborator-schedules`               |
-| `get-lab-members-duplicates`                 | GET `/lab/members/duplicates`                           |
-| `get-lab-members-roster`                     | GET `/lab/members/roster`                               |
-| `get-lab-members-self`                       | GET `/lab/members/self`                                 |
-| `get-lab-members-without-email`              | GET `/lab/members/without-email`                        |
-| `get-lab-members`                            | GET `/lab/members`                                      |
-| `get-lab_stats-member_map`                   | GET `/lab_stats/member_map`                             |
-| `get-member-map-coverage`                    | GET `/member-map/coverage`                              |
-| `get-member-map`                             | GET `/member-map`                                       |
-| `get-nudges-campaigns`                       | GET `/nudges/campaigns`                                 |
-| `get-nudges-escalated`                       | GET `/nudges/escalated`                                 |
-| `post-lab-members-backfill-calendar-invites` | POST `/lab/members/backfill-calendar-invites` (dry-run) |
-| `post-lab-members-by-members-id-email`       | POST `/lab/members/{members_id}/email`                  |
-| `post-lab-members-by-members-id-id`          | POST `/lab/members/{members_id}/id`                     |
-| `post-lab-members-merge`                     | POST `/lab/members/merge`                               |
-| `post-lab-members-without-email-purge`       | POST `/lab/members/without-email/purge` (dry-run)       |
-| `post-lab-members`                           | POST `/lab/members`                                     |
-| `post-member-map-refresh`                    | POST `/member-map/refresh`                              |
-| `post-members-active-channels-sync`          | POST `/members/active-channels/sync`                    |
-| `post-members-calendar-membership-sync`      | POST `/members/calendar-membership/sync`                |
-| `post-members-city-channels-sync`            | POST `/members/city-channels/sync`                      |
-| `post-members-directory-refresh-slack`       | POST `/members/directory/refresh-slack`                 |
-| `post-members-disengagement-run`             | POST `/members/disengagement/run`                       |
-| `post-members-graduations-run`               | POST `/members/graduations/run`                         |
-| `post-members-notes-migrate`                 | POST `/members/notes/migrate`                           |
-| `post-members-nudge-list-seed`               | POST `/members/nudge-list/seed` (dry-run)               |
-| `post-members-thesis-milestones-run`         | POST `/members/thesis-milestones/run`                   |
-| `post-members-topic-channels-run`            | POST `/members/topic-channels/run`                      |
-| `post-nudges-escalate-run`                   | POST `/nudges/escalate/run`                             |
-| `post-nudges-professor-digest-run`           | POST `/nudges/professor-digest/run` (dry-run)           |
-| `post-nudges-send`                           | POST `/nudges/send`                                     |
-| `post-nudges-slack-stop`                     | POST `/nudges/slack-stop`                               |
-| `post-nudges-snooze`                         | POST `/nudges/snooze`                                   |
-| `put-lab-members-by-members-id`              | PUT `/lab/members/{members_id}`                         |
+| Operation ID                                                         | Route                                                                |
+| -------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `delete-lab-members-by-members-id`                                   | DELETE `/lab/members/{members_id}`                                   |
+| `delete-lab-scheduled-member-changes-by-scheduled-member-changes-id` | DELETE `/lab/scheduled-member-changes/{scheduled_member_changes_id}` |
+| `get-lab-location-drifts`                                            | GET `/lab/location-drifts`                                           |
+| `get-lab-members-by-members-id-detail`                               | GET `/lab/members/{members_id}/detail`                               |
+| `get-lab-members-by-members-id-locations`                            | GET `/lab/members/{members_id}/locations`                            |
+| `get-lab-members-by-members-id-recent-edits`                         | GET `/lab/members/{members_id}/recent-edits`                         |
+| `get-lab-members-by-members-id-travel`                               | GET `/lab/members/{members_id}/travel`                               |
+| `get-lab-members-collaborator-schedules`                             | GET `/lab/members/collaborator-schedules`                            |
+| `get-lab-members-duplicates`                                         | GET `/lab/members/duplicates`                                        |
+| `get-lab-members-roster`                                             | GET `/lab/members/roster`                                            |
+| `get-lab-members-self`                                               | GET `/lab/members/self`                                              |
+| `get-lab-members-without-email`                                      | GET `/lab/members/without-email`                                     |
+| `get-lab-members`                                                    | GET `/lab/members`                                                   |
+| `get-lab-scheduled-member-changes`                                   | GET `/lab/scheduled-member-changes`                                  |
+| `get-lab_stats-member_map`                                           | GET `/lab_stats/member_map`                                          |
+| `get-member-map-coverage`                                            | GET `/member-map/coverage`                                           |
+| `get-member-map`                                                     | GET `/member-map`                                                    |
+| `get-nudges-campaigns`                                               | GET `/nudges/campaigns`                                              |
+| `get-nudges-escalated`                                               | GET `/nudges/escalated`                                              |
+| `post-lab-members-backfill-calendar-invites`                         | POST `/lab/members/backfill-calendar-invites` (dry-run)              |
+| `post-lab-members-by-members-id-email`                               | POST `/lab/members/{members_id}/email`                               |
+| `post-lab-members-by-members-id-id`                                  | POST `/lab/members/{members_id}/id`                                  |
+| `post-lab-members-merge`                                             | POST `/lab/members/merge`                                            |
+| `post-lab-members-without-email-purge`                               | POST `/lab/members/without-email/purge` (dry-run)                    |
+| `post-lab-members`                                                   | POST `/lab/members`                                                  |
+| `post-lab-scheduled-member-changes-run`                              | POST `/lab/scheduled-member-changes/run`                             |
+| `post-lab-scheduled-member-changes`                                  | POST `/lab/scheduled-member-changes`                                 |
+| `post-member-map-refresh`                                            | POST `/member-map/refresh`                                           |
+| `post-members-active-channels-sync`                                  | POST `/members/active-channels/sync`                                 |
+| `post-members-calendar-membership-sync`                              | POST `/members/calendar-membership/sync`                             |
+| `post-members-city-channels-sync`                                    | POST `/members/city-channels/sync`                                   |
+| `post-members-directory-refresh-slack`                               | POST `/members/directory/refresh-slack`                              |
+| `post-members-disengagement-run`                                     | POST `/members/disengagement/run`                                    |
+| `post-members-graduations-run`                                       | POST `/members/graduations/run`                                      |
+| `post-members-notes-migrate`                                         | POST `/members/notes/migrate`                                        |
+| `post-members-nudge-list-seed`                                       | POST `/members/nudge-list/seed` (dry-run)                            |
+| `post-members-thesis-milestones-run`                                 | POST `/members/thesis-milestones/run`                                |
+| `post-members-topic-channels-run`                                    | POST `/members/topic-channels/run`                                   |
+| `post-nudges-escalate-run`                                           | POST `/nudges/escalate/run`                                          |
+| `post-nudges-professor-digest-run`                                   | POST `/nudges/professor-digest/run` (dry-run)                        |
+| `post-nudges-send`                                                   | POST `/nudges/send`                                                  |
+| `post-nudges-slack-stop`                                             | POST `/nudges/slack-stop`                                            |
+| `post-nudges-snooze`                                                 | POST `/nudges/snooze`                                                |
+| `put-lab-members-by-members-id`                                      | PUT `/lab/members/{members_id}`                                      |
 
 ## Badges
 

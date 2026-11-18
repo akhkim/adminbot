@@ -1,4 +1,3 @@
-import { createCollaboratorChatRequestStore } from "./collaborator-chat-requests.js";
 /**
  * In-memory service store.
  *
@@ -29,12 +28,12 @@ import type {
   AdminBotSettings,
 } from "../contracts/actions.js";
 import type { AdminBotStoredProposal } from "../contracts/actions.js";
-import type { AdminBotApiToken, AdminBotApiTokenUsage } from "../contracts/api-tokens.js";
 import type {
   AdminBotLoginEvent,
   AdminBotLoginLocation,
   AdminBotUpdateEvent,
 } from "../contracts/activity-log.js";
+import type { AdminBotApiToken, AdminBotApiTokenUsage } from "../contracts/api-tokens.js";
 import type {
   AdminBotBadgeAssignment,
   AdminBotBadgeDefinition,
@@ -82,6 +81,10 @@ import type { AdminBotPaperMentorRun } from "../contracts/papermentor.js";
 import type { AdminBotRecLetterAttestation } from "../contracts/rec-letter-attestations.js";
 import type { AdminBotRecLetterFreezeIncident } from "../contracts/rec-letter-freezes.js";
 import type { ReferenceScan } from "../contracts/reference-scans.js";
+import type {
+  AdminBotScheduledMemberChange,
+  AdminBotScheduledMemberChangeStatus,
+} from "../contracts/scheduled-member-changes.js";
 import type { AdminBotTabVisit } from "../contracts/tab-visits.js";
 import { MemberRenameBlockedError } from "../kernel/member-rename.js";
 import type {
@@ -96,6 +99,7 @@ import type {
 import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
 import { withApiTokenAttribution } from "../workflows/identity/api-token-context.js";
 import { meetingSeriesKey, meetsDurationFloor } from "../workflows/meetings/records.js";
+import { createCollaboratorChatRequestStore } from "./collaborator-chat-requests.js";
 import { discoverMemoryHelpRequests } from "./lab-sharing-discovery-memory.js";
 
 /** Addresses are matched case-insensitively, as they are in the SQLite store. */
@@ -199,7 +203,9 @@ function compareIndexedPageText(left: string, right: string): number {
 
 export class AdminBotMemoryStore implements AdminBotServiceStore {
   private readonly collaboratorChats = createCollaboratorChatRequestStore();
-  collaboratorChatRequestStore() { return this.collaboratorChats; }
+  collaboratorChatRequestStore() {
+    return this.collaboratorChats;
+  }
   private readonly referenceScans = new Map<string, ReferenceScan>();
   getReferenceScan(submissionId: string, pdfHash: string): ReferenceScan | undefined {
     return this.referenceScans.get(JSON.stringify([submissionId, pdfHash]));
@@ -337,6 +343,7 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   private readonly cvChanges = new Map<string, AdminBotCvChangeEvent>();
   private readonly logisticsRequests = new Map<string, AdminBotLogisticsRequest>();
   private readonly recLetterFreezeIncidents = new Map<string, AdminBotRecLetterFreezeIncident>();
+  private readonly scheduledMemberChanges = new Map<string, AdminBotScheduledMemberChange>();
   private readonly recLetterAttestations = new Map<string, AdminBotRecLetterAttestation>();
   // Append-only, in insertion order. The sqlite store sorts on read; this one relies on the array
   // order being the insertion order, which is the same thing for a store that never updates a row.
@@ -1592,6 +1599,23 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
 
   deleteLogisticsRequest(requestId: string): boolean {
     return this.logisticsRequests.delete(requestId);
+  }
+
+  saveScheduledMemberChange(change: AdminBotScheduledMemberChange): void {
+    this.scheduledMemberChanges.set(change.id, change);
+  }
+
+  /** Soonest due first, ties by entry time, matching the sqlite store's ORDER BY. */
+  listScheduledMemberChanges(
+    status?: AdminBotScheduledMemberChangeStatus,
+  ): AdminBotScheduledMemberChange[] {
+    return [...this.scheduledMemberChanges.values()]
+      .filter((change) => !status || change.status === status)
+      .toSorted(
+        (left, right) =>
+          left.due_on.localeCompare(right.due_on) ||
+          left.created_at.localeCompare(right.created_at),
+      );
   }
 
   saveRecLetterFreezeIncident(incident: AdminBotRecLetterFreezeIncident): void {

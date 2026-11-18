@@ -79,6 +79,10 @@ import type { AdminBotPaperMentorRun } from "../contracts/papermentor.js";
 import type { AdminBotRecLetterAttestation } from "../contracts/rec-letter-attestations.js";
 import type { AdminBotRecLetterFreezeIncident } from "../contracts/rec-letter-freezes.js";
 import type { ReferenceScan } from "../contracts/reference-scans.js";
+import type {
+  AdminBotScheduledMemberChange,
+  AdminBotScheduledMemberChangeStatus,
+} from "../contracts/scheduled-member-changes.js";
 import type { AdminBotTabVisit } from "../contracts/tab-visits.js";
 import { MemberRenameBlockedError } from "../kernel/member-rename.js";
 import {
@@ -167,6 +171,7 @@ import {
   rowToRegistration,
   type AccountRegistrationRow,
 } from "./sqlite.registration-rows.js";
+import { SqliteScheduledMemberChanges } from "./sqlite.scheduled-member-changes.js";
 import {
   listSqliteSocialDrafts,
   migrateSocialDraftColumns,
@@ -315,6 +320,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   private readonly memberRetirements: SqliteMemberRetirements;
   private readonly apiTokens: SqliteApiTokens;
   private readonly recLetterFreezes: SqliteRecLetterFreezeIncidents;
+  private readonly scheduledMemberChanges: SqliteScheduledMemberChanges;
   private readonly recLetterAttestations: SqliteRecLetterAttestations;
 
   constructor(readonly databasePath: string) {
@@ -328,6 +334,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     this.audit = new SqliteAuditLog(this.db);
     this.apiTokens = new SqliteApiTokens(this.db);
     this.recLetterFreezes = new SqliteRecLetterFreezeIncidents(this.db);
+    this.scheduledMemberChanges = new SqliteScheduledMemberChanges(this.db);
     this.recLetterAttestations = new SqliteRecLetterAttestations(this.db);
     // SQLite's built-in lower() only handles ASCII; use the same fold as the in-memory store.
     this.db.function("adminbot_lower", { deterministic: true }, (value) =>
@@ -3435,6 +3442,16 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       this.db.prepare("DELETE FROM adminbot_logistics_requests WHERE id = ?").run(requestId)
         .changes > 0
     );
+  }
+
+  saveScheduledMemberChange(change: AdminBotScheduledMemberChange): void {
+    this.scheduledMemberChanges.save(change);
+  }
+
+  listScheduledMemberChanges(
+    status?: AdminBotScheduledMemberChangeStatus,
+  ): AdminBotScheduledMemberChange[] {
+    return this.scheduledMemberChanges.list(status);
   }
 
   saveRecLetterFreezeIncident(incident: AdminBotRecLetterFreezeIncident): void {

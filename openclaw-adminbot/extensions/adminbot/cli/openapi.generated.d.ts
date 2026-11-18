@@ -2124,6 +2124,58 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/lab/scheduled-member-changes": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** GET /lab/scheduled-member-changes */
+    get: operations["get-lab-scheduled-member-changes"];
+    put?: never;
+    /** POST /lab/scheduled-member-changes */
+    post: operations["post-lab-scheduled-member-changes"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/lab/scheduled-member-changes/{scheduled_member_changes_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** DELETE /lab/scheduled-member-changes/{scheduled_member_changes_id} */
+    delete: operations["delete-lab-scheduled-member-changes-by-scheduled-member-changes-id"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/lab/scheduled-member-changes/run": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** POST /lab/scheduled-member-changes/run */
+    post: operations["post-lab-scheduled-member-changes-run"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/local-chat": {
     parameters: {
       query?: never;
@@ -5590,6 +5642,10 @@ export interface components {
         | "logistics_request.signed_document_sent"
         | "logistics_request.files_cleared"
         | "rec_letter_freeze.recorded"
+        | "scheduled_member_change.created"
+        | "scheduled_member_change.done"
+        | "scheduled_member_change.cancelled"
+        | "scheduled_member_change.failed"
         | "rec_letter_freeze.deleted"
         | "rec_letter_attestation.recorded"
         | "rec_letter_attestation.deleted"
@@ -7020,6 +7076,30 @@ export interface components {
       /** @enum {string} */
       lane: "talk" | "social" | "core" | "venue" | "archive";
       ready: boolean;
+    } & {
+      [key: string]: unknown;
+    };
+    AdminBotScheduledMemberChange: {
+      id: string;
+      member_id: string;
+      member_type: string;
+      due_on: string;
+      silent: boolean;
+      reason?: string;
+      /** @enum {string} */
+      status: "pending" | "failed" | "done" | "cancelled";
+      created_by: string;
+      created_at: string;
+      settled_at?: string;
+      outcome?: string;
+    } & {
+      [key: string]: unknown;
+    };
+    SweepEntry: {
+      id: string;
+      member_id: string;
+      member_type: string;
+      detail: string;
     } & {
       [key: string]: unknown;
     };
@@ -18396,6 +18476,148 @@ export interface operations {
         content: {
           "application/json": {
             projects: components["schemas"]["AdminBotLabProject"][];
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "get-lab-scheduled-member-changes": {
+    parameters: {
+      query?: {
+        status?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful service result */
+      "2XX": {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AdminBotScheduledMemberChange"];
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "post-lab-scheduled-member-changes": {
+    parameters: {
+      query?: {
+        status?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          [key: string]: unknown;
+        };
+      };
+    };
+    responses: {
+      /** @description Successful service result */
+      "2XX": {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AdminBotScheduledMemberChange"];
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "delete-lab-scheduled-member-changes-by-scheduled-member-changes-id": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        scheduled_member_changes_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful service result */
+      "2XX": {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AdminBotScheduledMemberChange"];
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "post-lab-scheduled-member-changes-run": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            done: components["schemas"]["SweepEntry"][];
+            failed: components["schemas"]["SweepEntry"][];
+            held: components["schemas"]["SweepEntry"][];
           } & {
             [key: string]: unknown;
           };

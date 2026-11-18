@@ -298,6 +298,7 @@ import type { RecLetterAttestationStore } from "../contracts/rec-letter-attestat
 import type { RecLetterFreezeIncidentStore } from "../contracts/rec-letter-freezes.js";
 import type { ReferenceScanStore } from "../contracts/reference-scans.js";
 import type { AdminBotReimbursementFunder } from "../contracts/reimbursement-rules.js";
+import type { ScheduledMemberChangeStore } from "../contracts/scheduled-member-changes.js";
 import { paperTargetsVenue } from "../contracts/venue-targets.js";
 import type { createCollaboratorChatRequestStore } from "../persistence/collaborator-chat-requests.js";
 import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
@@ -651,6 +652,7 @@ import {
   sweepRecLetterOverdueConfirmations,
   undoLetterConfirmation,
 } from "./service.rec-letter-overdue.js";
+import { ScheduledMemberChangeService } from "./service.scheduled-member-changes.js";
 import { runSlackRosterSync, type SlackRosterSyncOptions } from "./service.slack-roster-sync.js";
 import {
   affectsWorkingGroupsSlide,
@@ -684,6 +686,7 @@ type AdminBotCitationCheckStores = ReferenceScanStore &
   OpenReviewCitationCheckStore &
   PaperAiTextCheckStore &
   RecLetterFreezeIncidentStore &
+  ScheduledMemberChangeStore &
   RecLetterAttestationStore;
 
 export type AdminBotMeetingArtifactRecord = {
@@ -12487,6 +12490,15 @@ export class AdminBotService {
       return serviceError(404, `unknown logistics request ${requestId}`);
     }
     return { ok: true, status: 200, payload: withCurrentLogisticsDeadline(request) };
+  }
+
+  /** Member Type changes waiting for their day (a grace period), and the sweep's bookkeeping. */
+  scheduledMemberChanges() {
+    return new ScheduledMemberChangeService(
+      this.store,
+      (event) => this.recordAudit(event),
+      this.options.now,
+    );
   }
 
   /** Recommendation-letter eligibility and the freeze incidents behind it. Advisory only. */
