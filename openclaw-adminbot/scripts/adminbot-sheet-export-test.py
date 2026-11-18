@@ -123,6 +123,21 @@ for invalid in [[], [['name']], [['id', 'id']], [['id'], ['p', 'extra']]]:
         raise AssertionError('Invalid export accepted')
 print('PASS: full export preservation, sparse rows, header validation, exact tab names')
 
+# PeopleList order: joined month, then active before inactive; undated rows last, by record age.
+assert [exporter.normalized_join_date(v) for v in ('Jan-25', '25-Sep', 'Sept 2024', 'June 2025', '2025', '206-09', '')] == \
+    ['2025-01', '2025-09', '2024-09', '2025-06', '2025', '', '']
+people = [
+    {'id': 'f', 'name': 'Zed', 'created_at': '2026-07-02'},
+    {'id': 'e', 'name': 'Amy', 'created_at': '2026-09-01'},
+    {'id': 'g', 'name': 'Bo', 'created_at': '2026-07-20', 'status': 'alumni'},
+    {'id': 'd', 'name': 'Ann', 'joined_month': '2026-01'},
+    {'id': 'c', 'name': 'Al', 'joined_month': 'Jan-25', 'member_type': 'full, alumni'},
+    {'id': 'b', 'name': 'Cy', 'joined_month': '2025-01', 'status': 'active'},
+    {'id': 'a', 'name': 'Di', 'joined_month': 'Sept 2024'},
+]
+assert [r['id'] for r in sorted(people, key=exporter.people_sort_key)] == list('abcdfge')
+print('PASS: PeopleList sorts by joined month then active, undated rows by record age')
+
 # Direct database export must include new members and aggregate only explicit IDs.
 c.execute('INSERT INTO adminbot_lab_members VALUES (?,?)', ('new', json.dumps({
     'id': 'new', 'name': 'New person', 'joined_month': '2026-09',

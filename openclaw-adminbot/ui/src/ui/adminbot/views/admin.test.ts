@@ -543,6 +543,58 @@ describe("renderAdminBot members panel — edit affordance", () => {
     expect(email.value).toBe("pat@gmail.com");
   });
 
+  it("shows the add-member save as in progress, ignores a second press, then closes and clears", async () => {
+    let finish!: (saved: boolean) => void;
+    const onSaveMember = vi.fn(() => new Promise<boolean>((resolve) => (finish = resolve)));
+    const container = document.createElement("div");
+    const props = baseProps({ mode: "admin", onSaveMember });
+    props.onRerender = () => render(renderAdminBot(props), container);
+    props.onRerender();
+    const editor = container.querySelector<HTMLElement>("#adminbot-add-member")!;
+    const form = editor.querySelector<HTMLFormElement>("form")!;
+    const name = form.querySelector<HTMLInputElement>('input[name="name"]')!;
+    const submit = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+    const hide = vi.fn();
+    editor.hidePopover = hide;
+    name.value = "Alex Example";
+    const press = () =>
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+
+    press();
+    await Promise.resolve();
+    expect(submit.disabled).toBe(true);
+    expect(submit.textContent).toContain("Adding member");
+    expect(form.querySelector('[role="status"]')).not.toBeNull();
+    press();
+    await Promise.resolve();
+    expect(onSaveMember).toHaveBeenCalledTimes(1);
+    expect(hide).not.toHaveBeenCalled();
+
+    finish(true);
+    await vi.waitFor(() => expect(hide).toHaveBeenCalledTimes(1));
+    expect(submit.disabled).toBe(false);
+    expect(submit.textContent).toContain("Add member");
+    expect(name.value).toBe("");
+  });
+
+  it("keeps the add-member form open and filled in when the save is refused", async () => {
+    const container = document.createElement("div");
+    const props = baseProps({ mode: "admin", onSaveMember: () => Promise.resolve(false) });
+    props.onRerender = () => render(renderAdminBot(props), container);
+    props.onRerender();
+    const editor = container.querySelector<HTMLElement>("#adminbot-add-member")!;
+    const form = editor.querySelector<HTMLFormElement>("form")!;
+    const name = form.querySelector<HTMLInputElement>('input[name="name"]')!;
+    const hide = vi.fn();
+    editor.hidePopover = hide;
+    name.value = "Alex Example";
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    const submit = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+    await vi.waitFor(() => expect(submit.disabled).toBe(false));
+    expect(hide).not.toHaveBeenCalled();
+    expect(name.value).toBe("Alex Example");
+  });
+
   it("asks for Member type as checkboxes, with no Privilege or subgroup field", () => {
     const container = renderToDiv(baseProps({ mode: "admin" }));
     const form = container.querySelector<HTMLElement>("#adminbot-add-member");

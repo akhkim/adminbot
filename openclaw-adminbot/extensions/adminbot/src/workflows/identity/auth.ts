@@ -181,6 +181,8 @@ export type AdminBotRegistrationView = {
   created_at: string;
   member_id?: string;
   member_name?: string;
+  /** Claims only: where the roster record says the member lives. "" when the record has none. */
+  member_location?: string;
   profile?: Record<string, unknown>;
 };
 
@@ -1624,6 +1626,11 @@ export class AdminBotAuthService {
   ): Promise<AdminBotRegistrationView[]> {
     const registrations: AdminBotRegistrationView[] = [];
     for (const registration of await this.store.listAccountRegistrations(status)) {
+      // A claim names a roster record; the approver decides it on who that record says they are.
+      const claimed =
+        registration.kind === "claim" && registration.member_id
+          ? await this.store.getLabMember(registration.member_id)
+          : undefined;
       registrations.push({
         id: registration.id,
         kind: registration.kind,
@@ -1632,7 +1639,7 @@ export class AdminBotAuthService {
         created_at: registration.created_at,
         ...(registration.member_id ? { member_id: registration.member_id } : {}),
         ...(registration.kind === "claim" && registration.member_id
-          ? { member_name: (await this.store.getLabMember(registration.member_id))?.name }
+          ? { member_name: claimed?.name, member_location: claimed?.location?.trim() ?? "" }
           : {}),
         ...(registration.kind === "signup" && registration.profile_json
           ? { profile: JSON.parse(registration.profile_json) as Record<string, unknown> }

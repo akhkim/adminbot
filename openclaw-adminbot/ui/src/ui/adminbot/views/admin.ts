@@ -465,13 +465,45 @@ async function submitMemberForm(event: Event, props: AdminBotProps): Promise<voi
   }
   const pendingWrite = waitForMemberSave(form);
   if (pendingWrite) await pendingWrite;
+  const creating = form.closest("#adminbot-add-member") !== null;
+  // A second press while the first add is still running would create the person twice.
+  if (creating && addingMember) return;
   const saved = saveMemberForm(form, props);
   if (saved === false) {
     return;
   }
-  if (saved instanceof Promise && (await saved) === false) return;
+  if (saved instanceof Promise) {
+    if (creating) {
+      addingMember = true;
+      props.onRerender?.();
+    }
+    let outcome: unknown;
+    try {
+      outcome = await saved;
+    } finally {
+      if (creating) {
+        addingMember = false;
+        props.onRerender?.();
+      }
+    }
+    if (outcome === false) return;
+  }
   form.closest<HTMLElement>("[popover]")?.hidePopover();
+  // The next person starts from an empty form, not from the one just added.
+  if (creating) form.reset();
 }
+
+/**
+ * True while an Add-member save is in flight.
+ *
+ * Creating a member is not one write: the service applies the Member type (access, sheet, rooms,
+ * meetings) inside the same request and the onboarding email follows it, which the audit log puts
+ * at 25-90 seconds end to end. The popover closes only once that has succeeded, so for that whole
+ * time it used to sit there looking exactly as it did before the press -- read as "it never
+ * closes", and an open invitation to press again. Module state for the same reason
+ * `memberAutosaveTimers` is: it is about this browser's session with the form, not the roster.
+ */
+let addingMember = false;
 
 /**
  * Roster rows whose edit popover has been opened, and whose form is therefore built.
@@ -2608,7 +2640,15 @@ function renderMembers(props: AdminBotProps, members: AdminBotLabMember[]) {
             >
           </div>
           <div class="adminbot-form__actions">
-            <button class="btn btn--sm primary" type="submit">Add member</button>
+            <button class="btn btn--sm primary" type="submit" ?disabled=${addingMember}>
+              ${addingMember ? "Adding member…" : "Add member"}
+            </button>
+            ${addingMember
+              ? html`<small role="status"
+                  >Setting up access, rooms and onboarding. This can take up to a minute; the form
+                  closes when it is done.</small
+                >`
+              : nothing}
           </div>
         </form>
       </article>

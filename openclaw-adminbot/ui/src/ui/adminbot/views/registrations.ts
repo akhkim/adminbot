@@ -16,12 +16,12 @@ export type AdminBotRegistrationsProps = {
 };
 
 // Signup applicants submit a free-form profile; surface the fields the AdminBot
-// signup form collects, skipping blanks so a sparse request stays readable.
+// signup form collects, skipping blanks so a sparse request stays readable. Resident location is
+// the exception and is rendered apart from this list: see renderResidentLocation.
 const SIGNUP_FIELDS: Array<[string, string]> = [
   ["affiliation", "adminbotRegistrations.field.affiliation"],
   ["research_branch", "adminbotRegistrations.field.researchBranch"],
   ["research_topics", "adminbotRegistrations.field.researchTopics"],
-  ["location", "adminbotRegistrations.field.location"],
   ["timezone", "adminbotRegistrations.field.timezone"],
   ["personal_website", "adminbotRegistrations.field.website"],
   ["notes", "adminbotRegistrations.field.notes"],
@@ -80,6 +80,26 @@ function renderErrorState(props: AdminBotRegistrationsProps, error: Registration
   `;
 }
 
+/**
+ * Where the person lives, always shown and always first.
+ *
+ * The approver decides membership tier and which city's lunches and channels someone joins on
+ * this, so a missing answer has to be visible as missing. The field is optional on the signup form
+ * and absent from many roster records; skipping the row when blank, as the other fields do, left
+ * the approver unable to tell "not given" from "not shown here".
+ */
+function renderResidentLocation(location: string) {
+  return html`<div class="adminbot-registration__field">
+    <dt>${t("adminbotRegistrations.field.location")}</dt>
+    <dd>
+      ${location ||
+      html`<span class="adminbot-form__meta"
+        >${t("adminbotRegistrations.field.locationMissing")}</span
+      >`}
+    </dd>
+  </div>`;
+}
+
 function renderClaimDetails(registration: MemberRegistration) {
   const memberLabel =
     registration.member_name ?? registration.member_id ?? t("adminbotRegistrations.rosterMember");
@@ -90,6 +110,14 @@ function renderClaimDetails(registration: MemberRegistration) {
           ${t("adminbotRegistrations.field.memberId")}: ${registration.member_id}
         </div>`
       : nothing}
+    ${
+      // An older service does not send the field at all; say nothing rather than "Not provided".
+      registration.member_location === undefined
+        ? nothing
+        : html`<dl class="adminbot-registration__fields">
+            ${renderResidentLocation(registration.member_location.trim())}
+          </dl>`
+    }
   `;
 }
 
@@ -103,16 +131,15 @@ function renderSignupDetails(registration: MemberRegistration) {
     <div class="adminbot-registration__member">
       ${name || t("adminbotRegistrations.unnamedApplicant")}
     </div>
-    ${fields.length
-      ? html`<dl class="adminbot-registration__fields">
-          ${fields.map(
-            ([label, value]) => html`<div class="adminbot-registration__field">
-              <dt>${label}</dt>
-              <dd>${value}</dd>
-            </div>`,
-          )}
-        </dl>`
-      : nothing}
+    <dl class="adminbot-registration__fields">
+      ${renderResidentLocation(profileText(profile.location))}
+      ${fields.map(
+        ([label, value]) => html`<div class="adminbot-registration__field">
+          <dt>${label}</dt>
+          <dd>${value}</dd>
+        </div>`,
+      )}
+    </dl>
   `;
 }
 
