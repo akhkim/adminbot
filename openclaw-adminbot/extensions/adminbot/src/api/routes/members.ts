@@ -774,9 +774,7 @@ export const membersRoutes: readonly Route[] = [
             actor: principalActor(principal),
             dryRun: body.dry_run === true,
             force,
-            ...(ctx.slackPlaceholderUserIds
-              ? { placeholderIds: ctx.slackPlaceholderUserIds }
-              : {}),
+            ...(ctx.slackPlaceholderUserIds ? { placeholderIds: ctx.slackPlaceholderUserIds } : {}),
           }),
         );
       } catch (error) {
@@ -967,7 +965,11 @@ export async function saveLabMemberAsAdmin(
   const existing = ctx.store.getLabMember(memberId);
   // `meetings` is not a field on the record: it is the Meetings checkboxes, applied to the
   // calendar below, and must not be stored on the member.
-  const { meetings: meetingField, ...fields } = body;
+  // `silent` is not a field either: it asks for a Member Type change with no guide email, for an
+  // admin tidying tiers (a batch of downgrades) rather than re-onboarding somebody. Channels, the
+  // Monday meeting and the calendar still follow the new type.
+  const { meetings: meetingField, silent: silentField, ...fields } = body;
+  const silent = silentField === true;
   const input = fields as AdminBotLabMemberInput;
   const selectedMeetings = Array.isArray(meetingField)
     ? meetingField.filter((value): value is string => typeof value === "string")
@@ -1065,6 +1067,7 @@ export async function saveLabMemberAsAdmin(
       {
         ...memberOnboardingDeps(ctx, principal, approver),
         skipGroupMeeting: groupMeetingExplicit,
+        skipGuide: silent,
       },
       existing,
       saved.payload,

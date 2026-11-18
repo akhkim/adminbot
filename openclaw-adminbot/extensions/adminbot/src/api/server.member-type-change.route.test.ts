@@ -262,6 +262,21 @@ describe("PUT /lab/members/:id changing Member Type", () => {
     expect(mailed).toHaveLength(1);
   });
 
+  it("moves the member without the guide when the save is silent", async () => {
+    const { baseUrl, mock, mailed } = await startService();
+    const token = await adminToken(mock, baseUrl);
+
+    const body = (await (
+      await save(baseUrl, token, "cora", { member_type: "acquaintance", silent: true })
+    ).json()) as ChangeBody & { silent?: unknown };
+
+    expect(body.member_type).toBe("acquaintance");
+    expect(body.member_type_change?.steps.some((step) => step.step === "guide")).toBe(false);
+    expect(mailed).toEqual([]);
+    // The flag steers this one save; it is not stored on the record.
+    expect(body.silent).toBeUndefined();
+  });
+
   it("sends every template's guide on the admin's save, not only the standard ones", async () => {
     const { baseUrl, mock, mailed } = await startService();
     const token = await adminToken(mock, baseUrl);
