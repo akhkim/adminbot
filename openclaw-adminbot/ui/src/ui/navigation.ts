@@ -608,7 +608,7 @@ export function iconForTab(tab: Tab): IconName {
     case "adminbotMailingList":
       return "send";
     case "adminbotMembers":
-      return "folder";
+      return "users";
     case "adminbotTalkLeaderboard":
       return "mic";
     case "adminbotTimeAvailability":
