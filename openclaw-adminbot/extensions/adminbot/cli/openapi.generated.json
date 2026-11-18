@@ -13310,6 +13310,212 @@
         }
       }
     },
+    "/lab/scheduled-member-changes": {
+      "get": {
+        "operationId": "get-lab-scheduled-member-changes",
+        "summary": "GET /lab/scheduled-member-changes",
+        "tags": [
+          "lab"
+        ],
+        "x-source": "src/api/routes/scheduled-member-changes.ts",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Successful service result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminBotScheduledMemberChange"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "post-lab-scheduled-member-changes",
+        "summary": "POST /lab/scheduled-member-changes",
+        "tags": [
+          "lab"
+        ],
+        "x-source": "src/api/routes/scheduled-member-changes.ts",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": true,
+                "x-schema-coverage": "inferred from property access or downstream casts; semantic validation remains server-side"
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful service result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminBotScheduledMemberChange"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/lab/scheduled-member-changes/{scheduled_member_changes_id}": {
+      "delete": {
+        "operationId": "delete-lab-scheduled-member-changes-by-scheduled-member-changes-id",
+        "summary": "DELETE /lab/scheduled-member-changes/{scheduled_member_changes_id}",
+        "tags": [
+          "lab"
+        ],
+        "x-source": "src/api/routes/scheduled-member-changes.ts",
+        "parameters": [
+          {
+            "name": "scheduled_member_changes_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Successful service result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminBotScheduledMemberChange"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/lab/scheduled-member-changes/run": {
+      "post": {
+        "operationId": "post-lab-scheduled-member-changes-run",
+        "summary": "POST /lab/scheduled-member-changes/run",
+        "tags": [
+          "lab"
+        ],
+        "x-source": "src/api/routes/scheduled-member-changes.ts",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "done": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/SweepEntry"
+                      }
+                    },
+                    "failed": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/SweepEntry"
+                      }
+                    },
+                    "held": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/SweepEntry"
+                      }
+                    }
+                  },
+                  "required": [
+                    "done",
+                    "failed",
+                    "held"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/local-chat": {
       "get": {
         "operationId": "get-local-chat",
@@ -33741,6 +33947,10 @@
               "logistics_request.signed_document_sent",
               "logistics_request.files_cleared",
               "rec_letter_freeze.recorded",
+              "scheduled_member_change.created",
+              "scheduled_member_change.done",
+              "scheduled_member_change.cancelled",
+              "scheduled_member_change.failed",
               "rec_letter_freeze.deleted",
               "rec_letter_attestation.recorded",
               "rec_letter_attestation.deleted",
@@ -38224,6 +38434,85 @@
           "label",
           "lane",
           "ready"
+        ],
+        "additionalProperties": true
+      },
+      "AdminBotScheduledMemberChange": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "member_id": {
+            "type": "string"
+          },
+          "member_type": {
+            "type": "string"
+          },
+          "due_on": {
+            "type": "string"
+          },
+          "silent": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "failed",
+              "done",
+              "cancelled"
+            ]
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "settled_at": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "member_id",
+          "member_type",
+          "due_on",
+          "silent",
+          "status",
+          "created_by",
+          "created_at"
+        ],
+        "additionalProperties": true
+      },
+      "SweepEntry": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "member_id": {
+            "type": "string"
+          },
+          "member_type": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "member_id",
+          "member_type",
+          "detail"
         ],
         "additionalProperties": true
       },
