@@ -500,7 +500,13 @@ function renderMeetingsTable(meetings: LogisticsMeeting[] | undefined) {
 function renderDetailBody(request: LogisticsRequest) {
   if (request.kind === "document_signature") {
     return html`
-      ${renderDetailField(t("logistics.requests.documents"), renderFileList(request.documents))}
+      ${renderDetailField(
+        t("logistics.requests.documents"),
+        // Asked for through the signature form: the document is a link, and nothing was uploaded.
+        request.document_url && !request.documents?.length
+          ? renderLinkValue(request.document_url)
+          : renderFileList(request.documents),
+      )}
       ${renderDetailField(
         t("logistics.supporting.description"),
         renderTextValue(request.description),

@@ -153,6 +153,28 @@ describe("professorDigestItems", () => {
       waiting_since: at(-9 * DAY),
     });
     expect(items.find((entry) => entry.source === "rec_letter")?.deadline_at).toBeDefined();
+    // A signature asked for by upload names no day; one from the signature form does.
+    expect(items.find((entry) => entry.source === "signature")?.deadline_at).toBeUndefined();
+    const fromForm = professorDigestItems(
+      {
+        papers: [],
+        requests: [
+          request({
+            document_url: "https://drive.google.com/file/d/synthetic/view",
+            signature_deadline: "2027-03-11",
+          }),
+        ],
+        missingInfo: [],
+        pending: [],
+      } as unknown as Parameters<typeof professorDigestItems>[0],
+      NOW,
+      config,
+    );
+    expect(fromForm[0]).toMatchObject({
+      source: "signature",
+      key: "signature:r1:2027-03-12T11:59:00.000Z",
+      deadline_at: "2027-03-12T11:59:00.000Z",
+    });
     expect(items[0]?.title).toBe("Camera-ready: Causal Probing");
   });
 });

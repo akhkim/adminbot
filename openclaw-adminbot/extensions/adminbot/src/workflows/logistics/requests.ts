@@ -333,6 +333,14 @@ export function requestDeadlineDetails(
       }
     }
   }
+  if (input.kind === "document_signature") {
+    // The day the member typed on the signature form, due at the end of it like a letter deadline.
+    const date = (input.signature_deadline ?? "").trim();
+    const at = deadlineInstant(date);
+    if (at) {
+      deadlines.push({ at, date, time: "23:59", timezone: "AoE" });
+    }
+  }
   if (input.kind === "book_meeting") {
     for (const meeting of input.meetings ?? []) {
       const at = meetingInstant(meeting);
@@ -418,6 +426,8 @@ export function normalizeLogisticsRequestInput(
     return {
       kind: "document_signature",
       documents: rows(input.documents, parseAttachment),
+      ...optionalKey("document_url", input.document_url, 500),
+      ...optionalKey("signature_deadline", input.signature_deadline, 10),
       ...optionalKey("description", input.description),
       attachments: rows(input.attachments, parseAttachment),
     };
@@ -465,8 +475,17 @@ export function validateLogisticsRequest(input: AdminBotLogisticsRequestInput): 
   if (total > MAX_REQUEST_BYTES) {
     return `the files on this request total more than ${Math.floor(MAX_REQUEST_BYTES / (1024 * 1024))}MB`;
   }
-  if (input.kind === "document_signature" && !(input.documents ?? []).length) {
-    return "a signature request needs at least one document to sign";
+  if (input.kind === "document_signature") {
+    // A link counts as the document: the signature form asks for one and has no upload question.
+    if (!(input.documents ?? []).length && !input.document_url) {
+      return "a signature request needs at least one document to sign";
+    }
+    if (input.document_url && !/^https:\/\/\S+$/u.test(input.document_url)) {
+      return "the document link must be an https:// address";
+    }
+    if (input.signature_deadline && !deadlineInstant(input.signature_deadline)) {
+      return `not a calendar date: ${input.signature_deadline}`;
+    }
   }
   if (input.kind === "recommendation_letters") {
     if (!(input.schools ?? []).length) {

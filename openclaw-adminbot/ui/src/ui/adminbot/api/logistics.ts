@@ -71,6 +71,9 @@ export type LogisticsMeeting = {
 export type LogisticsRequestInput = {
   kind: LogisticsRequestKind;
   documents?: LogisticsAttachment[];
+  /** Set on a request that came through the signature form: the document as a link, and its day. */
+  document_url?: string;
+  signature_deadline?: string;
   description?: string;
   attachments?: LogisticsAttachment[];
   schools?: LogisticsSchool[];
@@ -220,6 +223,8 @@ export type SignatureFormAnswer = {
   submitted: boolean;
   sign_in_required?: boolean;
   prefill_url?: string;
+  /** The signature request AdminBot keeps for this submission: what the queue and digest track. */
+  request_id?: string;
 };
 
 /**

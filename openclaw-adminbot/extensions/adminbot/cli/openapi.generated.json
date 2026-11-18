@@ -14758,6 +14758,12 @@
                       "$ref": "#/components/schemas/AdminBotLogisticsAttachment"
                     }
                   },
+                  "document_url": {
+                    "type": "string"
+                  },
+                  "signature_deadline": {
+                    "type": "string"
+                  },
                   "description": {
                     "type": "string"
                   },
@@ -15024,6 +15030,12 @@
                     "items": {
                       "$ref": "#/components/schemas/AdminBotLogisticsAttachment"
                     }
+                  },
+                  "document_url": {
+                    "type": "string"
+                  },
+                  "signature_deadline": {
+                    "type": "string"
                   },
                   "description": {
                     "type": "string"
@@ -15483,16 +15495,42 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "submitted": {
-                      "type": "boolean"
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "request_id": {
+                          "type": "string"
+                        },
+                        "tracking_error": {},
+                        "submitted": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "request_id",
+                        "submitted"
+                      ],
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "tracking_error": {
+                          "type": "string"
+                        },
+                        "request_id": {},
+                        "submitted": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "tracking_error",
+                        "submitted"
+                      ],
+                      "additionalProperties": true
                     }
-                  },
-                  "required": [
-                    "submitted"
-                  ],
-                  "additionalProperties": true
+                  ]
                 }
               }
             }
@@ -39665,6 +39703,12 @@
               "$ref": "#/components/schemas/AdminBotLogisticsAttachment"
             }
           },
+          "document_url": {
+            "type": "string"
+          },
+          "signature_deadline": {
+            "type": "string"
+          },
           "description": {
             "type": "string"
           },
@@ -39911,6 +39955,12 @@
             "items": {
               "$ref": "#/components/schemas/AdminBotLogisticsAttachment"
             }
+          },
+          "document_url": {
+            "type": "string"
+          },
+          "signature_deadline": {
+            "type": "string"
           },
           "description": {
             "type": "string"
