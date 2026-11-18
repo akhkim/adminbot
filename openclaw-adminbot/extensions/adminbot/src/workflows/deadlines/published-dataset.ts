@@ -132,11 +132,13 @@ function publishedDeadlineVenue(records_: PublishedDeadlineRecord[]): Record<str
   const aoe = new Date(instant - 12 * 60 * 60 * 1000).toISOString().replace("T", " ").slice(0, 19);
   const entryType = latest.deadline.entryType;
   const family = latest.deadline.parentConference;
-  const archival =
+  const inferredArchival =
     (entryType === "main_conference" ||
       entryType === "arr_commitment" ||
       entryType === "arr_direct_submission") &&
     !nonArchivalConferenceFamilies.has((family ?? "").toLowerCase());
+  const archivalStatus =
+    validated.value.archivalStatus ?? (inferredArchival ? "archival" : "unknown");
   const parentGroup =
     [family, latest.deadline.parentYear].filter(Boolean).join(" ") || latest.deadline.name;
   const group =
@@ -163,9 +165,9 @@ function publishedDeadlineVenue(records_: PublishedDeadlineRecord[]): Record<str
     venue_group: group,
     ...(family ? { venue_family: family } : {}),
     entry_type: entryType,
-    archival_status: archival ? "archival" : "unknown",
+    archival_status: archivalStatus,
     venue_priority: "standard",
-    archival,
+    archival: archivalStatus === "archival",
     stale: false,
     milestone:
       latest.deadline.stage?.milestone ??

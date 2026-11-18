@@ -330,11 +330,12 @@ describe("public deadline proposals", () => {
             submitter_contact: { name: "  Taylor Visitor  ", email: " taylor@example.org " },
           }),
         });
-      const response = await submit();
+      const requested = { ...input(), archivalStatus: "archival" as const };
+      const response = await submit(requested);
       expect(response.status).toBe(202);
       expect(response.headers.get("cache-control")).toBe("no-store");
       await expect(response.json()).resolves.toEqual({ status: "received" });
-      await expect((await submit()).json()).resolves.toEqual({ status: "received" });
+      await expect((await submit(requested)).json()).resolves.toEqual({ status: "received" });
       const queue = mock.service.listDeadlineProposals();
       if (!queue.ok) {
         throw new Error("missing queue");
@@ -343,6 +344,7 @@ describe("public deadline proposals", () => {
       const proposal = queue.payload.proposals[0]!;
       expect(proposal).toMatchObject({
         status: "pending",
+        deadline: { archivalStatus: "archival" },
         submitter_name: "Taylor Visitor",
         submitter_email: "taylor@example.org",
       });
@@ -380,7 +382,11 @@ describe("public deadline proposals", () => {
         {
           method: "POST",
           headers: { ...headers, Authorization: `Bearer ${adminToken}` },
-          body: JSON.stringify({ ...input(), name: "Reviewed Visitor Workshop" }),
+          body: JSON.stringify({
+            ...input(),
+            name: "Reviewed Visitor Workshop",
+            archivalStatus: "non_archival",
+          }),
         },
       );
       expect(revisionResponse.status).toBe(200);
@@ -388,6 +394,7 @@ describe("public deadline proposals", () => {
       expect(revision).toMatchObject({
         submitter_name: "Taylor Visitor",
         submitter_email: "taylor@example.org",
+        deadline: { archivalStatus: "non_archival" },
       });
       const publish = (hash: string) =>
         fetch(`${baseUrl}/deadline-proposals/${proposal.id}/publish`, {
@@ -398,7 +405,15 @@ describe("public deadline proposals", () => {
       expect((await publish(proposal.payload_hash)).status).toBe(409);
       expect((await publish(revision.payload_hash)).status).toBe(200);
       const published = await (await fetch(`${baseUrl}/deadlines`)).text();
-      expect(published).toContain("Reviewed Visitor Workshop");
+      expect(JSON.parse(published).items).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            name: "Reviewed Visitor Workshop",
+            archival_status: "non_archival",
+            archival: false,
+          }),
+        ]),
+      );
       expect(published).not.toContain("visitor:deadline:");
       expect(published).not.toContain(proposal.payload_hash);
       expect(published).not.toContain("taylor@example.org");

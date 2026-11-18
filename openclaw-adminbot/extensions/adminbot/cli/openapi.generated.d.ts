@@ -6317,6 +6317,8 @@ export interface components {
         | "workshop"
         | "arr_direct_submission"
         | "arr_commitment";
+      /** @enum {string} */
+      archivalStatus?: "archival" | "non_archival";
       deadlineDate: string;
       deadlineTime: string;
       timezone: string;
@@ -10519,7 +10521,7 @@ export interface components {
       parent_conference: string;
       conference_location: string;
       /** @enum {string} */
-      archival_status: "archival" | "unknown" | "non_archival" | "mixed";
+      archival_status: "archival" | "non_archival" | "unknown" | "mixed";
       /** @enum {string} */
       cross_submission_status: "unclear" | "prohibited" | "allowed";
       cross_submission_evidence: string;
