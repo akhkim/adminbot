@@ -721,7 +721,7 @@ export const en: TranslationMap = {
     adminbotReimbursements: "Reimbursement Form Prep",
     adminbotSettings: "Settings",
     adminbotMembers: "Lab Members",
-    adminbotLabProjects: "Lab Projects",
+    adminbotLabProjects: "All Projects",
     adminbotArrReviewers: "ARR Eligible Reviewers",
     adminbotTalkLeaderboard: "Talk Leaderboard",
     adminbotProfileOverview: "Profile Completeness",
