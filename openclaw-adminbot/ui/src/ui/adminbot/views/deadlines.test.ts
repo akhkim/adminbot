@@ -685,10 +685,13 @@ describe("renderDeadlines", () => {
     for (const [name, value] of Object.entries(proposalInput())) {
       (form.elements.namedItem(name) as HTMLInputElement).value = value;
     }
+    const publicationType = form.querySelector<HTMLSelectElement>('select[name="archivalStatus"]')!;
+    expect(publicationType.value).toBe("archival");
+    publicationType.value = "non_archival";
     form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     await settle(container);
     expect(submitPublic).toHaveBeenCalledWith(
-      expect.objectContaining({ name: "Example Workshop" }),
+      expect.objectContaining({ name: "Example Workshop", archivalStatus: "non_archival" }),
       expect.any(String),
       { name: "", email: "" },
     );
@@ -731,7 +734,11 @@ describe("renderDeadlines", () => {
     form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     await settle(container);
     expect(submit).toHaveBeenCalledWith(
-      expect.objectContaining({ deadlineDate: "2026-11-20", deadlineTime: "23:59" }),
+      expect.objectContaining({
+        deadlineDate: "2026-11-20",
+        deadlineTime: "23:59",
+        archivalStatus: "archival",
+      }),
       expect.any(String),
       undefined,
     );

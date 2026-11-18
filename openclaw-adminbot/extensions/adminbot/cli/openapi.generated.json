@@ -35918,6 +35918,13 @@
               "arr_commitment"
             ]
           },
+          "archivalStatus": {
+            "type": "string",
+            "enum": [
+              "archival",
+              "non_archival"
+            ]
+          },
           "deadlineDate": {
             "type": "string"
           },
@@ -49010,8 +49017,8 @@
             "type": "string",
             "enum": [
               "archival",
-              "unknown",
               "non_archival",
+              "unknown",
               "mixed"
             ]
           },

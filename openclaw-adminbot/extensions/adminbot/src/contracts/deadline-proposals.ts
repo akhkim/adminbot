@@ -19,6 +19,7 @@ export type DeadlineProposalInput = {
   parentConference: string;
   parentYear: string;
   entryType: DeadlineProposalEntryType;
+  archivalStatus?: "archival" | "non_archival";
   deadlineDate: string;
   deadlineTime: string;
   timezone: string;
@@ -164,6 +165,13 @@ export function validateDeadlineProposalInput(
     note: input.note.trim(),
   };
   const errors: Partial<Record<keyof DeadlineProposalInput, string>> = {};
+  if (input.archivalStatus !== undefined) {
+    if (input.archivalStatus === "archival" || input.archivalStatus === "non_archival") {
+      value.archivalStatus = input.archivalStatus;
+    } else {
+      errors.archivalStatus = "Choose a publication type.";
+    }
+  }
   if (input.stage !== undefined) {
     const stage = validateProposalStage(input.stage);
     if (stage) {

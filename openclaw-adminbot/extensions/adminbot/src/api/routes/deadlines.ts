@@ -279,6 +279,9 @@ export function deadlineProposalInput(body: Record<string, unknown>): DeadlinePr
     parentConference: asString(body.parentConference),
     parentYear: asString(body.parentYear),
     entryType: asString(body.entryType) as DeadlineProposalInput["entryType"],
+    ...(body.archivalStatus !== undefined
+      ? { archivalStatus: body.archivalStatus as DeadlineProposalInput["archivalStatus"] }
+      : {}),
     deadlineDate: asString(body.deadlineDate),
     deadlineTime: asString(body.deadlineTime),
     timezone: asString(body.timezone),

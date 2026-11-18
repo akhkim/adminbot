@@ -1508,6 +1508,10 @@ class AdminbotDeadlinesView extends LitElement {
       openReviewUrl: String(data.get("openReviewUrl") ?? ""),
       note: String(data.get("note") ?? ""),
     };
+    const archivalStatus = data.get("archivalStatus");
+    if (archivalStatus === "archival" || archivalStatus === "non_archival") {
+      input.archivalStatus = archivalStatus;
+    }
     const editing = this.proposals.find((p) => p.id === this.editingProposalId);
     if (editing?.deadline.stage) {
       input.stage = editing.deadline.stage;
@@ -1828,6 +1832,26 @@ class AdminbotDeadlinesView extends LitElement {
               )}
             </select>
           </label>
+          ${!target && (!editing || editing.deadline.archivalStatus !== undefined)
+            ? html`<label>
+                <span>Publication type</span>
+                <select name="archivalStatus">
+                  <option
+                    value="archival"
+                    ?selected=${editing?.deadline.archivalStatus !== "non_archival"}
+                  >
+                    Archival
+                  </option>
+                  <option
+                    value="non_archival"
+                    ?selected=${editing?.deadline.archivalStatus === "non_archival"}
+                  >
+                    Non-archival
+                  </option>
+                </select>
+                ${this.renderProposalFieldError("archivalStatus")}
+              </label>`
+            : nothing}
           <label ?hidden=${Boolean(target)}>
             <span>Parent conference <small>optional</small></span>
             ${renderDeadlineParentConferenceSelect({
@@ -2004,6 +2028,9 @@ class AdminbotDeadlinesView extends LitElement {
           </div>
           <p>
             ${ENTRY_TYPE_LABELS[deadline.entryType]}
+            ${deadline.archivalStatus
+              ? ` · ${deadline.archivalStatus === "archival" ? "Archival" : "Non-archival"}`
+              : ""}
             ${deadline.parentConference
               ? ` · ${deadline.parentConference}${deadline.parentYear ? ` ${deadline.parentYear}` : ""}`
               : ""}
