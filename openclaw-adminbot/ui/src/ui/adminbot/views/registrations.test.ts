@@ -112,6 +112,34 @@ describe("renderAdminBotRegistrations", () => {
     expect(fields).toContain("Timezone America/New_York");
   });
 
+  it("always shows resident location first, and says so when it was not given", async () => {
+    const fieldsOf = (registration: MemberRegistration) => {
+      const container = document.createElement("div");
+      render(renderAdminBotRegistrations(baseProps({ registrations: [registration] })), container);
+      return Array.from(container.querySelectorAll(".adminbot-registration__field")).map((field) =>
+        field.textContent?.replace(/\s+/gu, " ").trim(),
+      );
+    };
+
+    // A signup that answered, and one that left the optional field empty.
+    expect(
+      fieldsOf({
+        ...signupRegistration,
+        profile: { ...signupRegistration.profile, location: "Toronto, Canada" },
+      })[0],
+    ).toBe("Resident location Toronto, Canada");
+    expect(fieldsOf(signupRegistration)[0]).toBe("Resident location Not provided");
+    // A claim shows what the roster record holds.
+    expect(fieldsOf({ ...claimRegistration, member_location: "Zurich, Switzerland" })).toEqual([
+      "Resident location Zurich, Switzerland",
+    ]);
+    expect(fieldsOf({ ...claimRegistration, member_location: "" })).toEqual([
+      "Resident location Not provided",
+    ]);
+    // An older service sends no field: nothing is claimed about the record either way.
+    expect(fieldsOf(claimRegistration)).toEqual([]);
+  });
+
   it("routes approve and reject to the right registration id", async () => {
     const container = document.createElement("div");
     const decisions: Array<[string, string]> = [];

@@ -33897,6 +33897,9 @@
           "member_name": {
             "type": "string"
           },
+          "member_location": {
+            "type": "string"
+          },
           "profile": {
             "type": "object",
             "additionalProperties": {}

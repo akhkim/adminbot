@@ -281,6 +281,8 @@ export type MemberRegistration = {
   created_at: string;
   member_id?: string;
   member_name?: string;
+  /** Claims only: the roster record's resident location. Absent from an older service. */
+  member_location?: string;
   profile?: Record<string, unknown>;
   /** False when the viewer may read the queue but only the PI may decide it. */
   can_decide?: boolean;

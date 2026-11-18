@@ -1319,9 +1319,12 @@ def published_deadlines(connection):
 
 
 def normalized_join_date(value):
-    value = str(value or '').strip()
+    # "Sept" is how people write it and not a month strptime knows.
+    value = re.sub(r'(?i)\bsept\b', 'Sep', str(value or '').strip())
+    # A two-digit number beside a month name is the year: "25-Sep" is the sheet's own rendering of
+    # the "Sep-25" most rows carry, in a column that only ever held months.
     for pattern, precision in (('%Y-%m-%d', 'day'), ('%Y-%m', 'month'),
-                               ('%b-%y', 'month'), ('%B %Y', 'month'),
+                               ('%b-%y', 'month'), ('%y-%b', 'month'), ('%B %Y', 'month'),
                                ('%b %Y', 'month'), ('%Y', 'year')):
         try:
             date = datetime.datetime.strptime(value, pattern).date()
@@ -1341,10 +1344,24 @@ def normalized_join_date(value):
     return ''
 
 
+def people_inactive(record):
+    status = str(record.get('status') or '').casefold()
+    types = {token.strip() for token in str(record.get('member_type', '')).replace('_', '-').split(',')}
+    return status in ('inactive', 'alumni', 'removed') or 'alumni' in types
+
+
 def people_sort_key(record):
+    """Joined month first, then active before inactive within it.
+
+    A row with no readable join date has nothing to be placed by, and 104 of 249 were in that
+    state: they used to close the tab in name order, which read as the sort giving up. They still
+    come last -- a guess is not written into anybody's Joined cell -- but in the order their
+    records were created, which is the nearest thing to a join date the database holds for them.
+    """
     value = normalized_join_date(record.get('join_date') or record.get('joined_month'))
     # Preserve source precision; this padding is used only for chronological sorting.
-    return (0 if value else 1, value + {4: '-00-00', 7: '-00'}.get(len(value), ''),
+    when = value + {4: '-00-00', 7: '-00'}.get(len(value), '') if value else str(record.get('created_at') or '')
+    return (0 if value else 1, when[:7], people_inactive(record), when,
             str(record.get('name', '')).casefold(), record['id'])
 
 
@@ -1356,7 +1373,7 @@ def people_review_fields(record):
         active = 'Recorded yes' if any(str(c).lstrip('#').casefold() == 'jinesis-active' for c in channels) else 'Recorded no'
     status = str(record.get('status') or '').casefold()
     return {'slack_active': active, 'membership_review':
-            'Review inactive' if status in ('inactive', 'alumni', 'removed') or 'alumni' in {token.strip() for token in str(record.get('member_type', '')).replace('_', '-').split(',')} else
+            'Review inactive' if people_inactive(record) else
             'Status unknown' if not status else 'Recorded ' + status}
 
 

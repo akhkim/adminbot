@@ -444,6 +444,44 @@ describe("AdminBotAuthService claim/login flow", () => {
     );
   });
 
+  it("tells the approver where a claimed roster member lives, and says when the record has none", async () => {
+    const { store, auth } = setup();
+    for (const [id, location] of [
+      ["m-zurich", " Zurich, Switzerland "],
+      ["m-unknown", undefined],
+    ] as const) {
+      store.saveLabMember(member(id, `${id}@example.invalid`, location ? { location } : {}));
+      store.saveAccountRegistration({
+        id: `claim-${id}`,
+        kind: "claim",
+        member_id: id,
+        email: `${id}@example.invalid`,
+        password_scrypt: "synthetic",
+        status: "pending",
+        created_at: "2026-01-01T00:00:00.000Z",
+      });
+    }
+    await auth.signup({
+      email: "new@example.com",
+      password: "correcthorse",
+      profile: { name: "New Person", location: "Toronto, Canada" },
+    });
+
+    const pending = await auth.listRegistrations("pending");
+    const located = Object.fromEntries(
+      pending.map((entry) => [entry.member_id ?? entry.kind, entry.member_location]),
+    );
+    // "" rather than absent: the approver view reads absent as an older service and stays silent.
+    expect(located).toEqual({
+      "m-zurich": "Zurich, Switzerland",
+      "m-unknown": "",
+      signup: undefined,
+    });
+    expect(pending.find((entry) => entry.kind === "signup")?.profile).toMatchObject({
+      location: "Toronto, Canada",
+    });
+  });
+
   it("does not mint two members when the same signup is approved concurrently", async () => {
     const { store, auth } = setup();
     await auth.signup({

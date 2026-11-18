@@ -26,6 +26,30 @@ function note(notes: string | undefined, key: string): string {
   return found?.slice(found.indexOf(":") + 1).trim() ?? "";
 }
 
+const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+
+/**
+ * A joined month as a number that orders by time, or null when it does not name one.
+ *
+ * The field is free text, and the roster holds every way a month has been typed into a sheet:
+ * "2026-01", "2025-01-01", "Jan-25", "25-Sep", "June 2025", "Sept 2024", a bare "2025". Compared
+ * as strings those fall into separate runs -- digits first, then names by letter -- which is why
+ * the end of the list read as alphabetical. A two-digit number beside a month name is the year:
+ * this is a month field, and "26-Jun" was written by the same hands as "Jun-26".
+ */
+export function joinedMonthOrder(value: string | undefined): number | null {
+  const text = (value ?? "").trim().toLowerCase();
+  const iso = /^(\d{4})(?:-(\d{1,2}))?(?:-\d{1,2})?$/.exec(text);
+  const named = /^([a-z]{3,})\.?[\s,-]+(\d{4}|\d{2})$/.exec(text);
+  const reversed = /^(\d{4}|\d{2})[\s,-]+([a-z]{3,})\.?$/.exec(text);
+  const year = Number(iso?.[1] ?? named?.[2] ?? reversed?.[1]);
+  const month = iso
+    ? Number(iso[2] ?? 1)
+    : MONTHS.indexOf((named?.[1] ?? reversed?.[2] ?? "").slice(0, 3)) + 1;
+  if (!Number.isInteger(year) || month < 1 || month > 12) return null;
+  return (year < 100 ? 2000 + year : year) * 12 + month;
+}
+
 export function memberRosterPage(
   members: readonly AdminBotLabMember[],
   papers: readonly AdminBotPaperRecord[],
@@ -139,9 +163,21 @@ export function memberRosterPage(
         );
       }),
     )
+    .map((entry) => ({
+      ...entry,
+      joined: joinedMonthOrder(entry.row.joined_month) ?? Infinity,
+      // Only for rows with no readable joined month: when the record itself was created.
+      added: (entry.row.created_at ?? "").slice(0, 7),
+      inactive: ["alumni", "inactive", "removed"].includes(entry.facets.status[0] ?? "") ? 1 : 0,
+    }))
+    // Earliest joiner first; within a month, active members before the rest. A month nobody can
+    // read, or none at all, goes last rather than being guessed into the middle -- in the order
+    // those records were created, the same rule the PeopleList sheet export uses.
     .toSorted(
       (a, b) =>
-        (a.row.joined_month || "9999").localeCompare(b.row.joined_month || "9999") ||
+        (a.joined === b.joined ? 0 : a.joined < b.joined ? -1 : 1) ||
+        (a.joined === Infinity ? a.added.localeCompare(b.added) : 0) ||
+        a.inactive - b.inactive ||
         a.row.id.localeCompare(b.row.id),
     );
   const offset = Math.min(

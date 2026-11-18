@@ -5675,6 +5675,7 @@ export interface components {
       created_at: string;
       member_id?: string;
       member_name?: string;
+      member_location?: string;
       profile?: {
         [key: string]: unknown;
       };
