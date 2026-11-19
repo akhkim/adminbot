@@ -277,6 +277,19 @@ describe("PUT /lab/members/:id changing Member Type", () => {
     expect(body.silent).toBeUndefined();
   });
 
+  it("sends the alumni welcome even when the save is silent", async () => {
+    const { baseUrl, mock, mailed } = await startService();
+    const token = await adminToken(mock, baseUrl);
+
+    const body = (await (
+      await save(baseUrl, token, "cora", { member_type: "alumni", silent: true })
+    ).json()) as ChangeBody;
+
+    expect(body.member_type).toBe("alumni");
+    expect(body.member_type_change?.steps.some((step) => step.step === "guide")).toBe(true);
+    expect(mailed).toEqual([{ email: "cora@lab.test", template: "alumni" }]);
+  });
+
   it("sends every template's guide on the admin's save, not only the standard ones", async () => {
     const { baseUrl, mock, mailed } = await startService();
     const token = await adminToken(mock, baseUrl);

@@ -205,7 +205,7 @@ describe("scheduled member changes", () => {
 
     const created = await schedule(baseUrl, token, {
       member_id: "cora",
-      member_type: "alumni",
+      member_type: "acquaintance",
       after_days: 0,
       reason: "agreed in the engagement thread",
       notify: false,
@@ -214,7 +214,7 @@ describe("scheduled member changes", () => {
     const change = (await created.json()) as AdminBotScheduledMemberChange;
     expect(change).toMatchObject({
       member_id: "cora",
-      member_type: "alumni",
+      member_type: "acquaintance",
       status: "pending",
       silent: true,
       created_by: "admin",
@@ -227,13 +227,13 @@ describe("scheduled member changes", () => {
     expect(first.failed).toEqual([]);
     expect(first.held).toEqual([]);
     expect(first.done.map((entry) => entry.id)).toEqual([change.id]);
-    expect(await memberType(baseUrl, token, "cora")).toBe("alumni");
+    expect(await memberType(baseUrl, token, "cora")).toBe("acquaintance");
     // The external steps were approved by the admin who scheduled, not by the service token.
     expect(executed.length).toBeGreaterThan(0);
     for (const proposal of executed) {
       expect(proposal.approvals.map((approval) => approval.approver_id)).toEqual(["admin"]);
     }
-    // Moving into alumni is the one change that mails a guide; scheduled changes do not unless asked.
+    // Scheduled changes send no guide unless asked -- except a move into alumni (below).
     expect(mailed).toEqual([]);
 
     const settled = (await list(baseUrl, token, "done"))[0];
@@ -245,6 +245,21 @@ describe("scheduled member changes", () => {
     const ran = executed.length;
     expect(await sweep(baseUrl)).toEqual({ done: [], failed: [], held: [] });
     expect(executed.length).toBe(ran);
+  });
+
+  it("still sends the alumni welcome when a silent scheduled change moves somebody into alumni", async () => {
+    const { baseUrl, mock, mailed } = await startService();
+    const token = await adminToken(mock, baseUrl);
+    const created = await schedule(baseUrl, token, {
+      member_id: "cora",
+      member_type: "alumni",
+      after_days: 0,
+      notify: false,
+    });
+    expect(((await created.json()) as AdminBotScheduledMemberChange).silent).toBe(true);
+    expect((await sweep(baseUrl)).done).toHaveLength(1);
+    expect(await memberType(baseUrl, token, "cora")).toBe("alumni");
+    expect(mailed).toEqual([{ email: "cora@lab.test", template: "alumni" }]);
   });
 
   it("sends the guide when the admin turned silent off", async () => {

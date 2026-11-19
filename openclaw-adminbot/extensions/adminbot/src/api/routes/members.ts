@@ -14,6 +14,7 @@ import {
   type AdminBotMemberRequestStatus,
   adminBotMemberRequestStatuses,
 } from "../../contracts/member-requests.js";
+import { ADMINBOT_ALUMNI_TEMPLATE_ID } from "../../contracts/paper-cycle.js";
 import { memberAttends } from "../../workflows/calendar/standing-meetings.js";
 import type { AdminBotMemberPrincipal } from "../../workflows/identity/auth.js";
 import type { AdminBotWriteOrigin } from "../../workflows/members/adoption.js";
@@ -28,6 +29,7 @@ import {
 import { profileOverviewWireRow } from "../../workflows/members/profile-overview-row.js";
 import { sameMemberType } from "../../workflows/members/roster-sync.js";
 import { isTravelHistorySubject } from "../../workflows/members/travel-history.js";
+import { templateForMemberType } from "../../workflows/onboarding/member-type-template.js";
 import { newMemberIdentity } from "../member-create.js";
 import { describeMemberSheetReadFailure } from "../member-sheet-config.js";
 import {
@@ -977,7 +979,7 @@ export async function saveLabMemberAsAdmin(
   // calendar below, and must not be stored on the member.
   // `silent` is not a field either: it asks for a Member Type change with no guide email, for an
   // admin tidying tiers (a batch of downgrades) rather than re-onboarding somebody. Channels, the
-  // Monday meeting and the calendar still follow the new type.
+  // Monday meeting and the calendar still follow the new type. A move into alumni mails anyway.
   const { meetings: meetingField, silent: silentField, ...fields } = body;
   const silent = silentField === true;
   const input = fields as AdminBotLabMemberInput;
@@ -1073,11 +1075,17 @@ export async function saveLabMemberAsAdmin(
       { skipGroupMeeting: groupMeetingExplicit },
     );
   } else if (typeChanged) {
+    // Silence never covers the alumni welcome. Leaving the lab is the one change the lab always
+    // wants the person told about: it is how they learn to keep their profile current and join the
+    // alumni channel. A bulk tidy that moved six people to alumni on 2026-11-18 sent none of them
+    // anything, which is the failure this exists to prevent. Every other tier still honors it.
+    const nextGuide = templateForMemberType(saved.payload.member_type);
+    const movesIntoAlumni = nextGuide.ok && nextGuide.templateId === ADMINBOT_ALUMNI_TEMPLATE_ID;
     response.member_type_change = await applyMemberTypeChange(
       {
         ...memberOnboardingDeps(ctx, principal, approver),
         skipGroupMeeting: groupMeetingExplicit,
-        skipGuide: silent,
+        skipGuide: silent && !movesIntoAlumni,
       },
       existing,
       saved.payload,
