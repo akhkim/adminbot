@@ -15,6 +15,10 @@ from pathlib import Path
 spec = importlib.util.spec_from_file_location('exporter', Path(__file__).with_name('adminbot-sheet-export.py'))
 exporter = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(exporter)
+letters_spec = importlib.util.spec_from_file_location('letters', Path(__file__).with_name('adminbot-letter-export.py'))
+letters = importlib.util.module_from_spec(letters_spec)
+letters_spec.loader.exec_module(letters)
+LETTERS_SHEET_ID = 730514001
 
 URGENCY_COLOURS = {'⛔': {'red': .96, 'green': .73, 'blue': .73}, '🔴': {'red': .99, 'green': .87, 'blue': .87}, '🟠': {'red': 1, 'green': .92, 'blue': .82},
                    '🟡': {'red': 1, 'green': .97, 'blue': .80}, '🟢': {'red': .89, 'green': .96, 'blue': .89}}
@@ -35,7 +39,7 @@ PAPER_DROPDOWNS = ('Stage', 'Conference')
 ATTENTION_STATUSES = ('Needs PI review', 'Blocked: link access', 'Other')
 
 
-PEOPLE_WIDTHS = {'name': 190, 'search': 220, 'research_topics': 260, 'elevator_pitch': 260, 'projects': 220,
+PEOPLE_WIDTHS = {'name': 190, 'recommendation_letter_window': 260, 'search': 220, 'research_topics': 260, 'elevator_pitch': 260, 'projects': 220,
                  'papers_authored': 300, 'affiliation': 200, 'availability_notes': 240, 'time_off': 200,
                  'email': 210, 'calendar_email': 210, 'correspondence_email': 210, 'location': 180, 'role': 160}
 # Header colour per PeopleList section, so the eye finds Contact or Links without reading every header.
@@ -415,6 +419,38 @@ def editor_requests(sheets, writer, wanted):
     return requests, sorted(set(locked))
 
 
+def letter_tab_requests(sheets, sheet_id, writer, editors, neighbours=()):
+    """Create the letters tab with whole-tab protection on first run; afterwards insist it is unchanged.
+
+    The tab sits right after the People and Papers tabs (`neighbours`, by sheet id) and is moved back there if dragged.
+    """
+    sheet = next((s for s in sheets if s['properties']['title'] == letters.TITLE), None)
+    place = max((s['properties'].get('index', 0) for s in sheets if s['properties']['sheetId'] in neighbours), default=None)
+    if sheet is None:
+        if any(s['properties']['sheetId'] == sheet_id for s in sheets):
+            raise ValueError('Letters tab id taken by another tab')
+        where = {} if place is None else {'index': place + 1}
+        return [{'addSheet': {'properties': {'sheetId': sheet_id, 'title': letters.TITLE, **where,
+                    'gridProperties': {'rowCount': 200, 'columnCount': letters.WIDTH}, 'tabColorStyle': {
+                    'rgbColor': {'red': .18, 'green': .29, 'blue': .40}}}}},
+                {'addProtectedRange': {'protectedRange': {'range': {'sheetId': sheet_id},
+                    'description': 'Written by AdminBot every 6 hours; edits here are overwritten',
+                    'editors': {'users': sorted(editors)}}}}], {'rowCount': 200, 'columnCount': letters.WIDTH}
+    if sheet['properties']['sheetId'] != sheet_id:
+        raise ValueError('Letters tab identity changed')
+    if not any(p['range'] == {'sheetId': sheet_id} and not p.get('warningOnly', False)
+               and writer in {e.lower() for e in p.get('editors', {}).get('users', [])}
+               and {e.lower() for e in p.get('editors', {}).get('users', [])} <= editors
+               and not p.get('editors', {}).get('groups') and not p.get('editors', {}).get('domainUsersCanEdit')
+               for p in sheet.get('protectedRanges', [])):
+        raise ValueError('Letters tab protection missing or changed')
+    # Sheets reads a move's index against the order before the move, so "after the neighbour" is place + 1 either way.
+    if place is not None and sheet['properties'].get('index', 0) != place + 1:
+        return [{'updateSheetProperties': {'properties': {'sheetId': sheet_id, 'index': place + 1}, 'fields': 'index'}}], \
+            sheet['properties']['gridProperties']
+    return [], sheet['properties']['gridProperties']
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--database', required=True)
@@ -529,14 +565,39 @@ def main():
         if actual != values:
             raise RuntimeError('Export readback did not match database snapshot')
         counts.append(len(values) - 1)
+    # The letters tab is its own batch: a problem there is reported but never undoes the tabs above.
+    letter_status = {'failed': True}
+    try:
+        sid = config.get('letters_sheet_id', LETTERS_SHEET_ID)
+        setup, grid = letter_tab_requests(metadata['sheets'], sid, writer, allowed_editors,
+                                          {config['people_sheet_id'], config['papers_sheet_id']})
+        with sqlite3.connect(Path(args.database).resolve().as_uri() + '?mode=ro', uri=True, timeout=15) as connection:
+            connection.execute('PRAGMA query_only=ON')
+            sheet = letters.letter_sheet(connection, timestamp, config.get('letter_follows', {}))
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json') as body:
+            json.dump({'requests': setup + letters.sheet_requests(sid, grid, sheet)}, body)
+            body.flush()
+            gog(['api', 'call', 'sheets', 'v4', 'sheets.spreadsheets.batchUpdate', '--params',
+                 json.dumps({'spreadsheetId': spreadsheet}), '--body', '@' + body.name, '--allow-write', '--force'])
+        end = chr(64 + letters.WIDTH)
+        actual = gog(['--readonly', 'sheets', 'get', spreadsheet,
+                      f"'{letters.TITLE}'!A1:{end}{len(sheet['values']) + 1}"]).get('values', [])
+        actual = [row + [''] * (letters.WIDTH - len(row)) for row in actual]
+        actual += [[''] * letters.WIDTH] * (len(sheet['values']) - len(actual))
+        if actual != sheet['values']:
+            raise RuntimeError('Letters readback did not match database snapshot')
+        letter_status = {'failed': False, **sheet['counts']}
+    except Exception as error:
+        letter_status['error'] = type(error).__name__
+        print(timestamp, 'FAIL letter export:', type(error).__name__, flush=True)
     write_link_problems(Path(args.database).with_name(LINK_PROBLEMS_FILE), batch['linkProblems'], timestamp)
     status = Path(args.status)
     temporary = status.with_suffix('.tmp')
     temporary.write_text(json.dumps({'last_success_utc': timestamp,
         'member_rows': counts[0], 'paper_rows': counts[1], 'spreadsheet_id': spreadsheet,
-        'pi_review_counts': batch['statusCounts'], 'editor_sync': editor_sync}))
+        'pi_review_counts': batch['statusCounts'], 'editor_sync': editor_sync, 'letters': letter_status}))
     temporary.replace(status)
-    print(timestamp, 'PASS database export:', counts[0], 'people,', counts[1], 'papers', flush=True)
+    print(timestamp, 'PASS database export:', counts[0], 'people,', counts[1], 'papers,', letter_status.get('open_letters', 'no'), 'letters', flush=True)
 
 
 if __name__ == '__main__':
