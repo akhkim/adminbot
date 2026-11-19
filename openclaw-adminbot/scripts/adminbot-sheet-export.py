@@ -1606,6 +1606,8 @@ def snapshot(connection, timestamp, people_values=None, full_people=False, link_
         now = parse_time(timestamp) or datetime.datetime.now(datetime.timezone.utc)
         paper_links = None
         link_problems, status_counts = {}, Counter()
+        # PaperList rows of accepted papers, for the acceptances tab (adminbot-acceptance-export.py).
+        accepted = []
         for table, tab, fields in (
             ('adminbot_lab_members', 'PeopleList', ordered_people_columns(PEOPLE)),
             ('adminbot_papers', 'PaperList', PAPERS),
@@ -1623,6 +1625,9 @@ def snapshot(connection, timestamp, people_values=None, full_people=False, link_
                     if row['_link_problems']:
                         link_problems[record['id']] = row['_link_problems']
                     status_counts[status_kind(row['PI review'])] += 1
+                    if row['Accepted']:
+                        accepted.append({k: row[k] for k in ('Paper', 'Conference', 'Track', 'Year', 'Accepted',
+                                                             'Authors', 'Review link', PAPER_ID)})
                     rows.append(row)
                 else:
                     rows.append([cell(record.get(field)) for field in fields])
@@ -1647,7 +1652,7 @@ def snapshot(connection, timestamp, people_values=None, full_people=False, link_
     # RAW is mandatory: a name/title beginning with '=' must remain text, not a formula.
     return {'valueInputOption': 'RAW', 'data': data, 'paperLinks': paper_links,
             'statusCounts': {value: status_counts[value] for value in PI_REVIEW_VALUES if status_counts[value]},
-            'linkProblems': link_problems}
+            'linkProblems': link_problems, 'accepted': accepted}
 
 
 def main():
@@ -1668,7 +1673,7 @@ def main():
         if args.people_export and args.full_people:
             parser.error('--people-export and --full-people are mutually exclusive')
         payload = snapshot(connection, datetime.datetime.now(datetime.timezone.utc).isoformat(), people_values, args.full_people)
-        for key in ('paperLinks', 'statusCounts', 'linkProblems'):
+        for key in ('paperLinks', 'statusCounts', 'linkProblems', 'accepted'):
             payload.pop(key)
     # Keep freeze requests separate from the values API payload.
     if args.people_sheet_id is not None or args.papers_sheet_id is not None:

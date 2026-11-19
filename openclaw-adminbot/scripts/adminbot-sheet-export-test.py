@@ -905,3 +905,66 @@ students = lambda s: list(dict.fromkeys(row[0] for row in s['values'][1:]))  # o
 assert students(letters.letter_sheet(lc, '2026-10-29T12:00:00Z')) == ['Ann', 'Bea']
 assert students(letters.letter_sheet(lc, '2026-10-29T12:00:00Z', {'ann': 'bea'})) == ['Bea', 'Ann']
 print('PASS: rec-letter follow order is read from the private destination config')
+
+# Peer-reviewed acceptances tab: built from the same snapshot as PaperList, newest year first, one conference together.
+acceptances = refresh.acceptances
+ac = sqlite3.connect(':memory:')
+ac.executescript('CREATE TABLE adminbot_lab_members (id TEXT, payload_json TEXT); CREATE TABLE adminbot_papers (id TEXT, payload_json TEXT);')
+accepted_papers = [
+    {'id': 'a1', 'title': 'Zeta main', 'authors': ['Ada', 'Grace'], 'venue_decision': 'accept', 'accepted_venue': 'EMNLP',
+     'accepted_year': 2026, 'artifacts': {'arxiv_url': 'https://arxiv.org/abs/2601.00001', 'google_drive_pdf_url': 'https://drive.google.com/file/d/x/view'}},
+    {'id': 'a2', 'title': 'Alpha findings', 'authors': ['Ada'], 'venue_decision': 'accept', 'accepted_venue': 'EMNLP',
+     'accepted_year': 2026, 'artifacts': {'publication_track': 'findings', 'google_drive_pdf_url': 'https://drive.google.com/file/d/y/view'}},
+    {'id': 'a3', 'title': 'Beta demo', 'venue_decision': 'accept', 'accepted_venue': 'EMNLP 2026 System Demonstrations', 'accepted_year': 2026},
+    {'id': 'a4', 'title': 'Gamma workshop', 'venue_decision': 'accept', 'accepted_venue': 'REALM workshop @EMNLP 2026', 'accepted_year': 2026},
+    {'id': 'a5', 'title': 'Old ACL', 'venue_decision': 'accept', 'accepted_venue': 'ACL', 'accepted_year': 2025,
+     'artifacts': {'arxiv_url': 'https://arxiv.org/abs/2501.00001?token=leak'}},
+    {'id': 'a6', 'title': '=HYPERLINK("x")', 'venue_decision': 'accept', 'accepted_venue': 'IASEAI 2026', 'accepted_year': 2026},
+    {'id': 'a7', 'title': 'Aardvark ICLR', 'venue_decision': 'accept', 'accepted_venue': 'ICLR', 'accepted_year': 2026},
+    {'id': 'n1', 'title': 'Not accepted', 'venue': 'ICLR 2027', 'venue_decision': 'pending'},
+    {'id': 'n2', 'title': 'Rejected', 'venue': 'ACL 2026', 'venue_decision': 'reject'},
+]
+for p in accepted_papers:
+    ac.execute('INSERT INTO adminbot_papers VALUES (?,?)', (p['id'], json.dumps(p)))
+ac.commit()
+snap = exporter.snapshot(ac, NOW.isoformat())
+assert {r[exporter.PAPER_ID] for r in snap['accepted']} == {'a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7'}
+tab = acceptances.acceptance_sheet(snap['accepted'])
+assert tab['values'][0] == ['year', 'paper title', 'conference', 'authors', 'paper_link']
+assert [row[:3] for row in tab['values'][1:]] == [
+    ['2026', 'Zeta main', 'EMNLP'], ['2026', 'Alpha findings', 'Findings of EMNLP'],
+    ['2026', 'Beta demo', 'EMNLP System Demonstrations'], ['2026', 'Gamma workshop', 'REALM workshop @EMNLP'],
+    ['2026', '=HYPERLINK("x")', 'IASEAI'], ['2026', 'Aardvark ICLR', 'ICLR'], ['2025', 'Old ACL', 'ACL']], tab['values']
+# A new year+conference starts a group (top border); EMNLP's four tracks are one group.
+assert tab['firsts'] == [1, 5, 6, 7], tab['firsts']
+# arXiv before the Drive PDF; an unsafe link is dropped, never exported.
+assert tab['values'][1][3:] == ['Ada, Grace', 'https://arxiv.org/abs/2601.00001']
+assert tab['values'][2][4] == 'https://drive.google.com/file/d/y/view' and tab['values'][7][4] == ''
+assert tab['counts'] == {'papers': 7, 'latest_year': '2026', 'without_link': 5}
+reqs = acceptances.sheet_requests(42, {'rowCount': 1000, 'columnCount': 26}, tab)
+cells = next(r['updateCells'] for r in reqs if 'updateCells' in r)
+assert cells['rows'][5]['values'][1]['userEnteredValue'] == {'stringValue': '=HYPERLINK("x")'}  # stays text
+assert cells['rows'][1]['values'][4]['userEnteredFormat']['textFormat']['link'] == {'uri': 'https://arxiv.org/abs/2601.00001'}
+assert 'borders' in cells['rows'][5]['values'][0]['userEnteredFormat'] and 'borders' not in cells['rows'][2]['values'][0]['userEnteredFormat']
+assert acceptances.sheet_requests(42, {}, acceptances.acceptance_sheet([]))  # an empty list still writes the header
+# Adoption: an unprotected tab with only its header (or nothing) is taken over; typed rows stop the export.
+assert acceptances.adoptable([]) and acceptances.adoptable([['year', 'paper title', 'conference', 'authors', 'paper_link']])
+assert not acceptances.adoptable([['year', 'paper title', 'conference', 'authors', 'paper_link'], ['2026', 'Typed by a person']])
+assert not acceptances.adoptable([['Title', 'Venue']])
+unprotected = {'properties': {'title': acceptances.TITLE, 'sheetId': 7, 'gridProperties': {'rowCount': 1000}}}
+setup, grid, title, adopting = refresh.acceptance_tab_requests([unprotected], 7, 'bot@x.com', {'bot@x.com', 'pi@x.com'})
+assert adopting and title == acceptances.TITLE and grid == {'rowCount': 1000}
+assert setup[0]['addProtectedRange']['protectedRange']['editors']['users'] == ['bot@x.com', 'pi@x.com']
+renamed = dict(unprotected, properties=dict(unprotected['properties'], title='Acceptances'),
+               protectedRanges=[{'range': {'sheetId': 7}, 'editors': {'users': ['bot@x.com']}}])
+assert refresh.acceptance_tab_requests([renamed], 7, 'bot@x.com', {'bot@x.com'})[:4:2] == ([], 'Acceptances')
+for bad in ([{'range': {'sheetId': 7}, 'editors': {'users': ['bot@x.com', 'stranger@x.com']}}],
+            [{'range': {'sheetId': 7}, 'warningOnly': True}]):
+    try:
+        refresh.acceptance_tab_requests([dict(unprotected, protectedRanges=bad)], 7, 'bot@x.com', {'bot@x.com'})
+        raise AssertionError('changed protection accepted')
+    except ValueError:
+        pass
+created = refresh.acceptance_tab_requests([], 7, 'bot@x.com', {'bot@x.com'})[0]
+assert created[0]['addSheet']['properties']['title'] == acceptances.TITLE and 'addProtectedRange' in created[1]
+print('PASS: acceptances tab from the PaperList snapshot, newest year first, conference grouped, safe links, adopted then protected')
