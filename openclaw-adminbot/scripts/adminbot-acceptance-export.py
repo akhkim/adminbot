@@ -27,8 +27,12 @@ LINK_ORDER = ('arXiv', 'PDF')
 
 
 def venue_name(accepted):
-    """'NeurIPS 2025 Workshop on X · Poster' -> 'NeurIPS Workshop on X': the venue, without year or presentation."""
+    """'NeurIPS 2025 Workshop on X · Poster' -> 'NeurIPS Workshop on X': the venue, without year or presentation.
+
+    'ARR Commitment' goes too: it is how the paper reached the workshop, not part of the workshop's name.
+    """
     name = str(accepted or '').split(exporter.LINK_SEPARATOR)[0]
+    name = re.sub(r'\bARR\s+Commitment\b', ' ', name, flags=re.IGNORECASE)
     return ' '.join(re.sub(r'\b20\d{2}\b', ' ', name).split())
 
 

@@ -967,4 +967,7 @@ for bad in ([{'range': {'sheetId': 7}, 'editors': {'users': ['bot@x.com', 'stran
         pass
 created = refresh.acceptance_tab_requests([], 7, 'bot@x.com', {'bot@x.com'})[0]
 assert created[0]['addSheet']['properties']['title'] == acceptances.TITLE and 'addProtectedRange' in created[1]
+assert acceptances.venue_name('EMNLP 2026 Workshop NLP4PI ARR Commitment · Poster') == 'EMNLP Workshop NLP4PI'
+assert acceptances.conference_cell({'Conference': 'EMNLP', 'Track': 'Workshop',
+                                    'Accepted': 'EMNLP 2026 Workshop WiNLP ARR commitment'}) == 'EMNLP Workshop WiNLP'
 print('PASS: acceptances tab from the PaperList snapshot, newest year first, conference grouped, safe links, adopted then protected')
