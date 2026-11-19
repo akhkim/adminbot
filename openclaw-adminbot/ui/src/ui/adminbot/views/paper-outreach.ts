@@ -25,8 +25,10 @@ import type {
 // the outlets, saved on the paper, and reused by every draft that asks for one -- so finishing a
 // draft is filling in a box here, not editing the same placeholder in three copied emails.
 //
-// Under the outlets sits the acceptance tab of the lab's spreadsheet. People keep that tab, so the
-// write is two presses: compare first, and add only the rows the comparison named.
+// Under the outlets sits the acceptance tab of the lab's spreadsheet. On Aurora the six-hourly sheet
+// export rewrites that tab whole (scripts/adminbot-acceptance-export.py), so the server is not
+// connected to it and the page links to the tab. Where a deployment connects the server instead,
+// people keep the tab and the write is two presses: compare first, then add only the rows it named.
 
 export type PaperOutreachProps = {
   data: PaperOutreach | null;
@@ -195,6 +197,10 @@ function renderSummaries(data: PaperOutreach, props: PaperOutreachProps): Templa
   `;
 }
 
+// The tab the sheet export writes: the lab spreadsheet, gid of "Peer-Reviewed PaperAcceptance".
+export const ACCEPTANCE_TAB_URL =
+  "https://docs.google.com/spreadsheets/d/1ZqdaRzev6fFHxGbaAn_NDAPgv-Wi-hklHrT5jB68m68/edit?gid=1274660812#gid=1274660812";
+
 function renderSheet(props: PaperOutreachProps, data: PaperOutreach): TemplateResult {
   const rows = data.acceptance_rows;
   const check = props.sheet;
@@ -223,6 +229,15 @@ function renderSheet(props: PaperOutreachProps, data: PaperOutreach): TemplateRe
         </p>`
       : nothing}
     <div class="adminbot-outreach__actions">
+      <a
+        class="btn btn--sm"
+        href=${ACCEPTANCE_TAB_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        data-testid="outreach-sheet-open"
+      >
+        ${t("mailingList.outreach.sheet.open")}
+      </a>
       <button
         class="btn btn--sm"
         type="button"

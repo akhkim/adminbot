@@ -1969,7 +1969,8 @@ export const en: TranslationMap = {
         title: "Acceptance sheet",
         sub: "The acceptance tab of the lab spreadsheet. AdminBot only adds rows the tab does not hold; it never changes what is there.",
         unconfigured:
-          "The acceptance tab is not connected, so the rows can be copied and pasted in by hand.",
+          "AdminBot rewrites the Peer-Reviewed PaperAcceptance tab from PaperList every six hours: newest year first, grouped by conference, each paper with its link. Edits on the tab are overwritten, so correct a paper here in AdminBot.",
+        open: "Open the acceptance tab",
         rows: "{count} accepted papers in our records",
         copy: "Copy rows",
         check: "Check the sheet",
