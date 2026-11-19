@@ -346,6 +346,14 @@ function resolveLogisticsMode(): LogisticsMode {
   return new URLSearchParams(window.location.search).get("view") === "requests" ? "view" : "make";
 }
 
+// `?view=posters` opens Conference Papers on the poster print batches: the printer's handoff
+// message and the reminders link there.
+function resolvePapersTab(): ConferencePapersTab {
+  return new URLSearchParams(window.location.search).get("view") === "posters"
+    ? "posters"
+    : "conference";
+}
+
 export class OpenClawApp extends LitElement {
   readonly i18nController = new I18nController(this);
   clientInstanceId = generateUUID();
@@ -912,7 +920,7 @@ export class OpenClawApp extends LitElement {
   @state() adminBotVenuePapers: AdminBotVenuePapersState = createEmptyVenuePapersState();
   @state() adminBotLabPapers: AdminBotLabPapersState = createEmptyLabPapersState();
   /** Which half of Find Interesting Papers is open. */
-  @state() adminBotPapersTab: ConferencePapersTab = "conference";
+  @state() adminBotPapersTab: ConferencePapersTab = resolvePapersTab();
   @state() adminBotWorkshopNudges: WorkshopNudgeReviewState = createEmptyWorkshopNudgeReviewState();
   @state() adminBotVenueIndexJob: AdminBotCvDigestJobState = { status: "idle" };
   @state() adminBotChannelNamingJob: AdminBotCvDigestJobState = { status: "idle" };

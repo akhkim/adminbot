@@ -16,8 +16,11 @@ import { formatRelativeTimestamp } from "../../format.ts";
 import type { AdminBotVenuePaperHit, AdminBotVenuePapersState } from "../controllers/admin.ts";
 import { renderLabPapers, type LabPapersProps } from "./lab-papers.ts";
 
-/** Which half of the page is showing: other people's papers, or ours. */
-export type ConferencePapersTab = "conference" | "lab";
+/**
+ * Which part of the page is showing: other people's papers, ours, or the print run for our
+ * posters (the per-city batches; see views/poster-print.ts).
+ */
+export type ConferencePapersTab = "conference" | "lab" | "posters";
 
 export type ConferencePapersProps = {
   state: AdminBotVenuePapersState;
@@ -37,30 +40,42 @@ export type ConferencePapersProps = {
   lab?: LabPapersProps;
   tab?: ConferencePapersTab;
   onTabChange?: (tab: ConferencePapersTab) => void;
+  /**
+   * The poster print batches, present only with a member session: the element fetches them itself
+   * and the service decides what each viewer sees in them.
+   */
+  posters?: { baseUrl: string; sessionToken: string };
 };
 
 export function renderConferencePapers(props: ConferencePapersProps) {
   const { state } = props;
   const canSearch = Boolean(state.venueId) && state.interests.trim().length > 0;
-  const tab = props.lab ? (props.tab ?? "conference") : "conference";
+  const requested = props.tab ?? "conference";
+  const tab: ConferencePapersTab =
+    (requested === "lab" && props.lab) || (requested === "posters" && props.posters)
+      ? requested
+      : "conference";
   return html`
     <section class="adminbot-shell conference-papers" data-testid="adminbot-conference-papers">
       ${renderTabs(props, tab)}
       ${tab === "lab" && props.lab
         ? renderLabPapers(props.lab)
-        : renderConferenceTab(props, canSearch)}
+        : tab === "posters" && props.posters
+          ? renderPosters(props.posters)
+          : renderConferenceTab(props, canSearch)}
     </section>
   `;
 }
 
 /** The two halves, named for whose papers they are. Absent when there is only one of them. */
 function renderTabs(props: ConferencePapersProps, tab: ConferencePapersTab) {
-  if (!props.lab) {
+  if (!props.lab && !props.posters) {
     return nothing;
   }
   const entries: ReadonlyArray<readonly [ConferencePapersTab, string]> = [
     ["conference", "At a conference"],
-    ["lab", "Ours"],
+    ...(props.lab ? ([["lab", "Ours"]] as const) : []),
+    ...(props.posters ? ([["posters", "Poster printing"]] as const) : []),
   ];
   return html`
     <div
@@ -84,6 +99,15 @@ function renderTabs(props: ConferencePapersProps, tab: ConferencePapersTab) {
       )}
     </div>
   `;
+}
+
+/** The element module loads on first open, so the conference search pays nothing for it. */
+function renderPosters(posters: { baseUrl: string; sessionToken: string }) {
+  void import("./poster-print.ts");
+  return html`<adminbot-poster-print-batches
+    .baseUrl=${posters.baseUrl}
+    .sessionToken=${posters.sessionToken}
+  ></adminbot-poster-print-batches>`;
 }
 
 function renderConferenceTab(props: ConferencePapersProps, canSearch: boolean) {

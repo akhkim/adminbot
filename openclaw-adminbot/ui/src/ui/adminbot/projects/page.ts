@@ -12,6 +12,7 @@
 // venue decision on Venue and the drafts and conference rows on Social.
 import { html, nothing, type TemplateResult } from "lit";
 import { renderSkeleton } from "../../loading/skeleton.ts";
+import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 import type { AdminBotPaperRecord } from "../controllers/admin.ts";
 import { isPaperCompleted } from "../paper-completion.ts";
 import { openPreRegistrationDialog } from "../pre-registration.ts";
@@ -334,6 +335,24 @@ function renderProjectTab(
 
 // ---------------------------------------------------------------- lane tabs
 
+/**
+ * Below the Talk checklist, whose Poster rows it answers: does this poster go in the lab's print
+ * run. The element asks the service and draws nothing for a paper that owes no poster, so it is
+ * mounted on every Talk tab and the module loads with the first one.
+ */
+function renderPosterPrint(state: PageState, paper: AdminBotPaperRecord) {
+  const session = loadStoredMemberSession();
+  if (!session) {
+    return nothing;
+  }
+  void import("../views/poster-print.ts");
+  return html`<adminbot-poster-print-request
+    .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
+    .sessionToken=${session.sessionToken}
+    .paperId=${paper.id}
+  ></adminbot-poster-print-request>`;
+}
+
 function renderLaneTab(
   state: PageState,
   props: PaperWorkspaceProps,
@@ -349,7 +368,9 @@ function renderLaneTab(
         </section>`
       : lane.branch === "social"
         ? renderCycle(state, paper, props)
-        : nothing;
+        : lane.branch === "talk"
+          ? renderPosterPrint(state, paper)
+          : nothing;
   return html`<p class="project__legend">${lane.legend}.</p>
     ${cycle
       ? renderPaperSlots({

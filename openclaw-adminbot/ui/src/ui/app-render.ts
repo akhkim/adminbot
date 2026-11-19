@@ -3752,6 +3752,17 @@ export function renderApp(state: AppViewState) {
                 onTabChange: (tab) => {
                   state.adminBotPapersTab = tab;
                 },
+                ...(() => {
+                  const session = loadStoredMemberSession();
+                  return session
+                    ? {
+                        posters: {
+                          baseUrl: resolveAdminBotBaseUrl(state.settings),
+                          sessionToken: session.sessionToken,
+                        },
+                      }
+                    : {};
+                })(),
                 // Signed-in only: the route behind this returns the lab's own papers. A visitor
                 // gets the conference half with no tab bar at all -- see ConferencePapersProps.
                 lab: {

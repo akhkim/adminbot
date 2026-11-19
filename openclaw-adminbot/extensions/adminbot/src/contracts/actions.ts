@@ -2762,6 +2762,11 @@ export type AdminBotAuditEvent = {
     // A paper record brought in line with the PI's OpenReview submissions, field by field.
     | "paper.openreview_synced"
     | "paper_slot.updated"
+    // Poster print batches (contracts/poster-printing.ts): an author's answer, an admin's batch
+    // settings, and the printer marking a batch printed.
+    | "poster_print.request_saved"
+    | "poster_print.batch_saved"
+    | "poster_print.printed"
     | "paper_slot.waived"
     | "paper_slots.nudged"
     | "paperflow_stages.nudged"

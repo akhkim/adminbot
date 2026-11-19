@@ -1,0 +1,210 @@
+/* Poster printing: the question on a paper's Talk tab, and the per-city print lists under
+   Conference Papers. Rows on the page ground, hairlines between sections, no boxed cards
+   (ui/DESIGN.md). */
+
+adminbot-poster-print-request,
+adminbot-poster-print-batches {
+  display: block;
+  min-width: 0;
+}
+
+.poster-print__choices {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.poster-print__legend {
+  padding: 0;
+  margin-bottom: var(--space-1);
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+.poster-print__choice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+}
+
+.poster-print__spec {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: end;
+  min-width: 0;
+}
+
+.poster-print__field {
+  display: grid;
+  gap: var(--space-1);
+  flex: 1 1 160px;
+  min-width: 0;
+  max-width: 260px;
+}
+
+.poster-print__field > span {
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+.poster-print__field--narrow {
+  flex: 0 1 96px;
+}
+
+.poster-print__field--wide {
+  flex-basis: 100%;
+  max-width: 520px;
+}
+
+.poster-print__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+/* ---------------------------------------------------------------- the batches view */
+
+.poster-batches {
+  display: grid;
+  gap: var(--space-6);
+  min-width: 0;
+}
+
+.poster-batches__intro,
+.poster-batches__empty,
+.poster-batches__notice {
+  margin: 0;
+  max-width: 68ch;
+  color: var(--muted);
+}
+
+.poster-batches__notice[role="alert"] {
+  color: var(--danger);
+}
+
+.poster-batch {
+  display: grid;
+  gap: var(--space-2);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+  min-width: 0;
+}
+
+.poster-batch__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.poster-batch__head h3 {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: var(--control-ui-text-sm);
+}
+
+.poster-batch__meta {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  overflow-wrap: anywhere;
+}
+
+/* Status in type and colour only, never a filled pill. */
+.poster-batch__status {
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+.poster-batch__status--collecting {
+  color: var(--accent);
+}
+.poster-batch__status--due {
+  color: var(--warn);
+}
+.poster-batch__status--sent {
+  color: var(--ok);
+}
+
+.poster-batch__rows {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.poster-row {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+  justify-content: space-between;
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--border);
+  min-width: 0;
+}
+
+.poster-row:hover {
+  background: var(--bg-hover);
+}
+
+.poster-row__main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.poster-row__title {
+  color: var(--text-strong);
+  overflow-wrap: anywhere;
+}
+
+.poster-row__details {
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  overflow-wrap: anywhere;
+}
+
+.poster-row__state {
+  flex: none;
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+}
+.poster-row__state--unanswered,
+.poster-row__state--missing_file {
+  color: var(--warn);
+}
+.poster-row__state--ready {
+  color: var(--ok);
+}
+
+.poster-batch__settled > summary,
+.poster-batch__settings > summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+.poster-batch__settings[open] > summary {
+  margin-bottom: var(--space-3);
+}
+
+.poster-batch__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+@media (max-width: 640px) {
+  .poster-row {
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+  .poster-print__field {
+    max-width: none;
+  }
+}

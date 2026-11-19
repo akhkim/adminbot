@@ -301,6 +301,7 @@ import type { AdminBotReimbursementFunder } from "../contracts/reimbursement-rul
 import type { ScheduledMemberChangeStore } from "../contracts/scheduled-member-changes.js";
 import { paperTargetsVenue } from "../contracts/venue-targets.js";
 import type { createCollaboratorChatRequestStore } from "../persistence/collaborator-chat-requests.js";
+import type { AdminBotPosterPrintStore } from "../persistence/poster-printing.js";
 import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
 import type { CalendarEventsReader } from "../workflows/calendar/events.js";
 import { resolveLabCalendar } from "../workflows/calendar/lab-calendar.js";
@@ -630,6 +631,8 @@ import { LabSharingService } from "./service.lab-sharing.js";
 import { LabTravelService } from "./service.lab-travel.js";
 import { inviteLocalLunches } from "./service.local-lunches.js";
 import { type IntroRunResult, MeetupService } from "./service.meetups.js";
+import { PosterPrintingService } from "./service.poster-printing.js";
+import { travelConferenceSites } from "../workflows/members/lab-travel.js";
 import {
   paperImpactSlotWrite,
   piApprovalImpactDenial,
@@ -712,6 +715,7 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
     after?: DiscoveryPosition,
   ): DiscoveredHelpRequest[];
   collaboratorChatRequestStore?(): ReturnType<typeof createCollaboratorChatRequestStore>;
+  posterPrintStore?(): AdminBotPosterPrintStore;
   saveProposal(proposal: AdminBotStoredProposal): void;
   getProposal(actionId: string): AdminBotStoredProposal | undefined;
   updateProposal(proposal: AdminBotStoredProposal): void;
@@ -9748,6 +9752,20 @@ export class AdminBotService {
   }
 
   /** The member Events tab and the intros behind it. */
+  /** Poster print batches per conference site (kernel/service.poster-printing.ts). */
+  posterPrinting() {
+    return new PosterPrintingService({
+      store: this.store,
+      createProposal: (proposal) => this.createProposal(proposal),
+      removePending: (id, request) => this.removePending(id, request),
+      setPaperSlot: (params) => this.setPaperSlot(params),
+      recordAudit: (event) => this.recordAudit(event),
+      ownsPaper: (memberId, paper) => this.memberOwnsPaperId(memberId, paper),
+      sites: () => travelConferenceSites(this.deadlineReadModel(DEADLINE_VENUES), "0000-01-01"),
+      now: () => this.options.now?.() ?? new Date(),
+    });
+  }
+
   meetups() {
     return new MeetupService(
       this.store,

@@ -273,6 +273,16 @@
       "timeoutSeconds": 900
     },
     {
+      "name": "adminbot-poster-print",
+      "description": "Daily: file poster print reminders and each conference's print list for approval",
+      "cron": "25 9 * * *",
+      "argv": [
+        "bash",
+        "scripts/adminbot-poster-print-cron.sh"
+      ],
+      "timeoutSeconds": 300
+    },
+    {
       "name": "adminbot-mandatory-fields",
       "description": "Chase profiles and term timelines that are still blank",
       "cron": "20 9 * * 1-5",

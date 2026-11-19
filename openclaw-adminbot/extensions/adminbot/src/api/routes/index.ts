@@ -23,6 +23,7 @@ import { openapiRoutes } from "./openapi.js";
 import { paperAdminRoutes } from "./paper-admin.js";
 import { paperMentorRoutes } from "./papermentor.js";
 import { papersRoutes } from "./papers.js";
+import { posterPrintingRoutes } from "./poster-printing.js";
 import { profileRoutes } from "./profile.js";
 import { reimbursementsRoutes } from "./reimbursements.js";
 import { reviewsRoutes } from "./reviews.js";
@@ -57,6 +58,7 @@ export const AUTHENTICATED_ROUTES: readonly Route[] = [
   ...scheduledMemberChangeRoutes,
   ...membersRoutes,
   ...meetingsRoutes,
+  ...posterPrintingRoutes,
   ...papersRoutes,
   ...nudgesRoutes,
   ...logisticsRoutes,

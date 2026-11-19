@@ -103,6 +103,7 @@ import {
 } from "../workflows/onboarding/onboarding-storage.js";
 import { parseTalkMaterialsConfig } from "../workflows/papers/talk-materials.js";
 import { createCollaboratorChatRequestStore } from "./collaborator-chat-requests.js";
+import { createPosterPrintStore } from "./poster-printing.js";
 import {
   adminBotEmailReviewFromRow,
   adminBotResolvedEmailReviewFromRow,
@@ -304,6 +305,9 @@ export function sqliteServiceOptions({
 export class AdminBotSqliteStore implements AdminBotServiceStore {
   collaboratorChatRequestStore() {
     return createCollaboratorChatRequestStore(this.db);
+  }
+  posterPrintStore() {
+    return createPosterPrintStore(this.db);
   }
 
   memberDraftStore() {
