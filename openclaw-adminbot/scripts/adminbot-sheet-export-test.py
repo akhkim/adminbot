@@ -946,6 +946,19 @@ cells = next(r['updateCells'] for r in reqs if 'updateCells' in r)
 assert cells['rows'][5]['values'][1]['userEnteredValue'] == {'stringValue': '=HYPERLINK("x")'}  # stays text
 assert cells['rows'][1]['values'][4]['userEnteredFormat']['textFormat']['link'] == {'uri': 'https://arxiv.org/abs/2601.00001'}
 assert 'borders' in cells['rows'][5]['values'][0]['userEnteredFormat'] and 'borders' not in cells['rows'][2]['values'][0]['userEnteredFormat']
+# A new year gets the heavy rule, a new conference within a year the light one.
+assert tab['year_firsts'] == [1, 7], tab['year_firsts']
+assert cells['rows'][7]['values'][0]['userEnteredFormat']['borders']['top']['style'] == 'SOLID_MEDIUM'
+assert cells['rows'][5]['values'][0]['userEnteredFormat']['borders']['top']['style'] == 'SOLID'
+assert cells['rows'][1]['values'][0]['userEnteredFormat']['horizontalAlignment'] == 'CENTER'
+# Authors are one clean line; rows grow to fit long author lists instead of clipping them.
+assert acceptances.authors_cell(['\nAda  Lovelace', 'Grace', '']) == 'Ada Lovelace, Grace'
+assert acceptances.wrapped_lines('short', 420, 6.4) == 1 and acceptances.wrapped_lines('word ' * 100, 420, 6.4) >= 7
+many = ['2026', 'T', 'EMNLP', ', '.join(f'Author Number{i}' for i in range(30)), '']
+assert acceptances.row_height(many) > 100 and acceptances.row_height(['2026', 'T', 'X', 'Ada', '']) == 42
+heights = [(r['updateDimensionProperties']['range']['startIndex'], r['updateDimensionProperties']['range']['endIndex'])
+           for r in reqs if r.get('updateDimensionProperties', {}).get('range', {}).get('dimension') == 'ROWS']
+assert heights[0] == (0, 1) and heights[1][0] == 1 and heights[-1][1] == len(tab['values'])
 assert acceptances.sheet_requests(42, {}, acceptances.acceptance_sheet([]))  # an empty list still writes the header
 # Adoption: an unprotected tab with only its header (or nothing) is taken over; typed rows stop the export.
 assert acceptances.adoptable([]) and acceptances.adoptable([['year', 'paper title', 'conference', 'authors', 'paper_link']])

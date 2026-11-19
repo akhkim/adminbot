@@ -166,9 +166,13 @@ filled, so the year, conference and track are exactly the ones PaperList shows, 
 (`scripts/adminbot-acceptance-export.py`, fed by `snapshot()['accepted']`).
 
 - **Order:** newest year first (papers with no year last); within a year by conference, then main, Findings,
-  demos, workshops, then title. A line marks where each year + conference starts.
+  demos, workshops, then title.
+- **Look:** a heavy navy rule where each year starts and a light rule between conferences within a year; years
+  centred, year and title bold. Each row is sized to its wrapped text (estimated from the column widths, since
+  Sheets does not auto-fit rows written by the API), so long author lists are never clipped. Authors are one line,
+  names separated by commas.
 - **Conference cell:** `EMNLP`, `Findings of EMNLP`, `EMNLP System Demonstrations`; a workshop or a venue with no
-  standard conference name is written as recorded, without its year (`REALM workshop @EMNLP`). A workshop at a
+  standard conference name is written as recorded, without its year or an `ARR Commitment` suffix (`REALM workshop @EMNLP`). A workshop at a
   named conference sorts with that conference.
 - **paper_link:** the arXiv link, else the Drive PDF, after the same safe-link check as PaperList; blank when
   neither is recorded. Every cell is written as text.

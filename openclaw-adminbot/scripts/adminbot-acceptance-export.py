@@ -48,12 +48,18 @@ def conference_cell(row):
     return named
 
 
+def authors_cell(authors):
+    """'Ada, Grace': one line, each name's stray newlines and spaces collapsed."""
+    names = authors if isinstance(authors, list) else str(authors or '').split(',')
+    return ', '.join(n for n in (' '.join(str(a).split()) for a in names) if n)
+
+
 def accepted_entry(row):
     """One accepted PaperList row as this tab's fields."""
     links = {label.removesuffix(' 🔒'): url for label, url in row['Review link']}
     return {'id': row[exporter.PAPER_ID], 'year': str(row['Year'] or ''), 'title': ' '.join(str(row['Paper']).split()),
             'conference': row['Conference'], 'track': row['Track'], 'cell': conference_cell(row),
-            'authors': exporter.cell(row['Authors']),
+            'authors': authors_cell(row['Authors']),
             'link': next((exporter.safe_link(links[k]) for k in LINK_ORDER if exporter.safe_link(links.get(k))), '')}
 
 
@@ -76,7 +82,7 @@ def acceptance_sheet(accepted):
     `accepted` is the snapshot's 'accepted' list: the PaperList rows of accepted papers, as paper_row built them.
     """
     entries = sorted((accepted_entry(row) for row in accepted), key=sort_key)
-    values, firsts, links, previous = [list(COLUMNS)], [], {}, None
+    values, firsts, year_firsts, links, previous = [list(COLUMNS)], [], [], {}, None
     for entry in entries:
         r = len(values)
         values.append([entry['year'], entry['title'], entry['cell'], entry['authors'], entry['link']])
@@ -84,11 +90,13 @@ def acceptance_sheet(accepted):
             links[(r, COLUMNS.index('paper_link'))] = entry['link']
         if group_of(entry) != previous:
             firsts.append(r)
+            if previous is None or previous[0] != entry['year']:
+                year_firsts.append(r)
             previous = group_of(entry)
     if any(len(str(v)) > 50000 for row in values for v in row):
         raise ValueError('Oversized acceptance cell')
     years = sorted({e['year'] for e in entries if e['year'].isdigit()}, reverse=True)
-    return {'values': values, 'firsts': firsts, 'links': links,
+    return {'values': values, 'firsts': firsts, 'year_firsts': year_firsts, 'links': links,
             'counts': {'papers': len(entries), 'latest_year': years[0] if years else '',
                        'without_link': sum(1 for e in entries if not e['link'])}}
 
@@ -105,12 +113,36 @@ def rgb(r, g, b):
     return {'red': r, 'green': g, 'blue': b}
 
 
-INK, LINK, NAVY = rgb(.15, .19, .24), rgb(.12, .34, .67), rgb(.18, .29, .40)
+INK, LINK, NAVY, RULE = rgb(.15, .19, .24), rgb(.12, .34, .67), rgb(.18, .29, .40), rgb(.80, .84, .89)
+# Row heights: Sheets has no auto-fit for wrapped rows written by the API, so estimate the wrapped line
+# count per cell. Erring tall leaves a little air; erring short hides the last authors.
+LINE_PX, PAD_PX, MIN_ROW_PX, CHAR_PX, BOLD_CHAR_PX = 16, 12, 42, 6.4, 7.0
+
+
+def wrapped_lines(text, width_px, char_px):
+    """Lines `text` takes when word-wrapped into a column `width_px` wide."""
+    per_line, lines, used = max(1, int((width_px - 10) / char_px)), 1, 0
+    for word in str(text).split():
+        need = len(word) if used == 0 else used + 1 + len(word)
+        if need <= per_line:
+            used = need
+        else:
+            lines += 1 + (len(word) - 1) // per_line
+            used = (len(word) - 1) % per_line + 1
+    return lines
+
+
+def row_height(row):
+    """Pixels for one data row: the tallest wrapped cell, never under MIN_ROW_PX. The link column clips."""
+    lines = max(wrapped_lines(value, COLUMN_WIDTHS[c], BOLD_CHAR_PX if COLUMNS[c] in ('year', 'paper title') else CHAR_PX)
+                for c, value in enumerate(row) if COLUMNS[c] != 'paper_link')
+    return max(MIN_ROW_PX, PAD_PX + LINE_PX * lines)
 
 
 def sheet_requests(sheet_id, grid, sheet):
     """One atomic batch: wipe the tab, write every cell with its format, then sizes. Styled like the letters tab."""
     values, firsts, links = sheet['values'], set(sheet['firsts']), sheet['links']
+    year_firsts = set(sheet.get('year_firsts', ()))
     whole = {'sheetId': sheet_id}
     requests = [
         {'unmergeCells': {'range': whole}},
@@ -135,12 +167,17 @@ def sheet_requests(sheet_id, grid, sheet):
             else:
                 if COLUMNS[c] in ('year', 'paper title'):
                     text['bold'] = True
+                if COLUMNS[c] == 'year':
+                    fmt['horizontalAlignment'] = 'CENTER'
                 if COLUMNS[c] == 'paper_link':
                     fmt['wrapStrategy'] = 'CLIP'
                 if (r, c) in links:
                     text.update(underline=True, foregroundColor=LINK, link={'uri': links[(r, c)]})
-                if r in firsts and r > 1:
-                    fmt['borders'] = {'top': {'style': 'SOLID', 'colorStyle': {'rgbColor': NAVY}}}
+                # A heavy navy rule where a new year starts, a light one between conferences within a year.
+                if r in year_firsts and r > 1:
+                    fmt['borders'] = {'top': {'style': 'SOLID_MEDIUM', 'colorStyle': {'rgbColor': NAVY}}}
+                elif r in firsts and r > 1:
+                    fmt['borders'] = {'top': {'style': 'SOLID', 'colorStyle': {'rgbColor': RULE}}}
             cells.append(cell)
         rows.append({'values': cells})
     requests.append({'updateCells': {'range': {'sheetId': sheet_id, 'startRowIndex': 0, 'endRowIndex': len(values),
@@ -148,8 +185,16 @@ def sheet_requests(sheet_id, grid, sheet):
         'fields': 'userEnteredValue,userEnteredFormat,dataValidation,note'}})
     requests.append({'updateDimensionProperties': {'range': {'sheetId': sheet_id, 'dimension': 'ROWS',
         'startIndex': 0, 'endIndex': 1}, 'properties': {'pixelSize': 32}, 'fields': 'pixelSize'}})
-    requests.append({'updateDimensionProperties': {'range': {'sheetId': sheet_id, 'dimension': 'ROWS',
-        'startIndex': 1, 'endIndex': max(len(values), 2)}, 'properties': {'pixelSize': 42}, 'fields': 'pixelSize'}})
+    # Consecutive rows of one height go in one request, so a long list stays a short batch.
+    r = 1
+    while r < max(len(values), 2):
+        height = row_height(values[r]) if r < len(values) else MIN_ROW_PX
+        end = r + 1
+        while end < len(values) and row_height(values[end]) == height:
+            end += 1
+        requests.append({'updateDimensionProperties': {'range': {'sheetId': sheet_id, 'dimension': 'ROWS',
+            'startIndex': r, 'endIndex': end}, 'properties': {'pixelSize': height}, 'fields': 'pixelSize'}})
+        r = end
     for c, width in enumerate(COLUMN_WIDTHS):
         requests.append({'updateDimensionProperties': {'range': {'sheetId': sheet_id, 'dimension': 'COLUMNS',
             'startIndex': c, 'endIndex': c + 1}, 'properties': {'pixelSize': width}, 'fields': 'pixelSize'}})
