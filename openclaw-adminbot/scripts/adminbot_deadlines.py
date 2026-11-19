@@ -54,10 +54,11 @@ SECONDARY_ARCHIVAL_FAMILIES = ("EACL", "AACL", "AISTATS", "COLING")
 WORKSHOP_FAMILIES = ("ACL", "EMNLP", "NAACL", "EACL", "NeurIPS", "ICML", "ICLR", "COLM")
 NON_ARCHIVAL_FAMILIES = ("IASEAI",)
 
-# Tracks known to be the archival part of an archival venue. Anything else under
-# the same family -- a workshop, a findings-style companion, a rebuttal -- is not
+# Tracks known to be the archival part of an archival venue. An ARR cycle's direct
+# submission goes to the main conferences, so it counts too. Anything else under the
+# same family -- a workshop, a findings-style companion, a rebuttal -- is not
 # classified from family membership alone.
-ARCHIVAL_TRACKS = ("main", "demo")
+ARCHIVAL_TRACKS = ("main", "demo", "cycle")
 
 ALL_FAMILIES = tuple(dict.fromkeys(
     ARR_FAMILIES
@@ -107,7 +108,7 @@ def archival_status_of(family: str, track: str) -> str:
     The default view of the board shows publication actions only, so a main conference that
     fell through to "unknown" because nobody had listed its family was simply missing from it.
     A main program publishing proceedings is the rule and IASEAI is the exception, so the
-    exception is what gets written down. Workshops, cycles and rebuttals still need evidence.
+    exception is what gets written down. Workshops and rebuttals still need evidence.
     """
     if family in NON_ARCHIVAL_FAMILIES:
         return NON_ARCHIVAL

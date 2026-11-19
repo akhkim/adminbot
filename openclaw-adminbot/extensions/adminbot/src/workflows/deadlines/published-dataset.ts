@@ -132,11 +132,17 @@ function publishedDeadlineVenue(records_: PublishedDeadlineRecord[]): Record<str
   const aoe = new Date(instant - 12 * 60 * 60 * 1000).toISOString().replace("T", " ").slice(0, 19);
   const entryType = latest.deadline.entryType;
   const family = latest.deadline.parentConference;
+  // A submitter's explicit choice wins; records from before the question was asked keep the
+  // inference, so the published dataset does not change for them.
+  const chosen = records.findLast((record) => record.deadline.archival !== undefined)?.deadline
+    .archival;
   const archival =
-    (entryType === "main_conference" ||
+    chosen ??
+    ((entryType === "main_conference" ||
+      entryType === "demo_track" ||
       entryType === "arr_commitment" ||
       entryType === "arr_direct_submission") &&
-    !nonArchivalConferenceFamilies.has((family ?? "").toLowerCase());
+      !nonArchivalConferenceFamilies.has((family ?? "").toLowerCase()));
   const parentGroup =
     [family, latest.deadline.parentYear].filter(Boolean).join(" ") || latest.deadline.name;
   const group =
@@ -163,7 +169,7 @@ function publishedDeadlineVenue(records_: PublishedDeadlineRecord[]): Record<str
     venue_group: group,
     ...(family ? { venue_family: family } : {}),
     entry_type: entryType,
-    archival_status: archival ? "archival" : "unknown",
+    archival_status: archival ? "archival" : chosen === false ? "non_archival" : "unknown",
     venue_priority: "standard",
     archival,
     stale: false,

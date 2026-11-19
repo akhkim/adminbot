@@ -6380,6 +6380,7 @@ export interface components {
       cfpUrl: string;
       openReviewUrl: string;
       note: string;
+      archival?: boolean;
     } & {
       [key: string]: unknown;
     };
@@ -10603,7 +10604,7 @@ export interface components {
       parent_conference: string;
       conference_location: string;
       /** @enum {string} */
-      archival_status: "archival" | "unknown" | "non_archival" | "mixed";
+      archival_status: "archival" | "non_archival" | "unknown" | "mixed";
       /** @enum {string} */
       cross_submission_status: "unclear" | "prohibited" | "allowed";
       cross_submission_evidence: string;

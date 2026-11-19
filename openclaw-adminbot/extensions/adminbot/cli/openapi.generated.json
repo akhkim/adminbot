@@ -36186,6 +36186,9 @@
           },
           "note": {
             "type": "string"
+          },
+          "archival": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -49349,8 +49352,8 @@
             "type": "string",
             "enum": [
               "archival",
-              "unknown",
               "non_archival",
+              "unknown",
               "mixed"
             ]
           },

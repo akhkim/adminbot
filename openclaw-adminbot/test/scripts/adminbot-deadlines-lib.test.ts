@@ -298,7 +298,7 @@ describe("venue classification", () => {
       secondary: ["demo_track", "archival", "secondary"],
       workshop: ["workshop", "unknown", "standard"],
       unlisted_main: "archival",
-      cycle: "unknown",
+      cycle: "archival",
       explicit_non_archival: "non_archival",
     });
   });
