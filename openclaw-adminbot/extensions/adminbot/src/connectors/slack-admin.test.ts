@@ -618,3 +618,69 @@ describe("classifySlackInviteFailure", () => {
     );
   });
 });
+
+describe("slack.outreach_ready", () => {
+  const reply = (body: Record<string, unknown>) => ({
+    ok: true,
+    status: 200,
+    statusText: "OK",
+    text: async () => JSON.stringify(body),
+  });
+  const executorWith = (fetchImpl: ReturnType<typeof vi.fn>) =>
+    createAdminBotSlackAdminExecutor({
+      env: { SLACK_BOT_TOKEN: "xoxb-test" } as NodeJS.ProcessEnv,
+      fetchImpl: fetchImpl as unknown as SlackAdminFetch,
+    });
+
+  it("posts a new message to the admin channel, never an edit", async () => {
+    const fetchImpl = vi.fn().mockResolvedValueOnce(reply({ ok: true, ts: "1758841200.000100" }));
+    const result = await executorWith(fetchImpl).execute(
+      proposal("slack.outreach_ready", {
+        channel_id: "C0ADMINS1",
+        // A stale ts must not turn the note into an edit of some other message.
+        update_ts: "1700000000.000100",
+        message: "Outreach ready",
+      }),
+    );
+    expect(result).toEqual({
+      handled: true,
+      artifacts: { slack_channel: "C0ADMINS1", slack_ts: "1758841200.000100" },
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(fetchImpl.mock.calls[0][0]).toBe("https://slack.com/api/chat.postMessage");
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body)).toMatchObject({
+      channel: "C0ADMINS1",
+      text: "Outreach ready",
+    });
+  });
+
+  it("DMs the one person it names", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(reply({ ok: true, channel: { id: "DPROF" } }))
+      .mockResolvedValueOnce(reply({ ok: true }));
+    const result = await executorWith(fetchImpl).execute(
+      proposal("slack.outreach_ready", { user_ids: ["UPROF"], message: "Outreach ready" }),
+    );
+    expect(result).toEqual({ handled: true });
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body)).toEqual({ users: "UPROF" });
+    expect(JSON.parse(fetchImpl.mock.calls[1][1].body)).toMatchObject({
+      channel: "DPROF",
+      text: "Outreach ready",
+    });
+  });
+
+  it.each([
+    ["two people", { user_ids: ["UPROF", "UADMIN"] }],
+    ["a channel id among the users", { user_ids: ["C0ADMINS1"] }],
+    ["no recipient", {}],
+  ])("refuses a payload with %s", async (_label, recipient) => {
+    const fetchImpl = vi.fn();
+    await expect(
+      executorWith(fetchImpl).execute(
+        proposal("slack.outreach_ready", { ...recipient, message: "Outreach ready" }),
+      ),
+    ).rejects.toThrow();
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});

@@ -16,15 +16,21 @@
 //   paper's findings, mailed to a newsletter under the lab's name, is not this module's to invent.
 // - Sending. The route decides who may send and audits it; see api/routes/paper-admin.ts.
 import {
-  adminBotIsCoauthorMajorType,
-  adminBotIsFullMemberType,
+  adminBotIsDirectCollaborator,
   adminBotPaperSteps,
   type AdminBotLabMember,
   type AdminBotPaperPresentationType,
   type AdminBotPaperRecord,
 } from "../../contracts/actions.js";
 import { isSamePerson } from "../../contracts/person-names.js";
-import { acceptedVenueOf, venueKey } from "./publication-list.js";
+import { acceptedVenueOf, paperVenueKey, venueKey } from "./publication-list.js";
+import {
+  compareVenuesWithinYear,
+  type NormalizedVenue,
+  normalizeVenue,
+  sameVenueTrack,
+  sheetConference,
+} from "./venue-normalize.js";
 
 /**
  * The guidebook's moments, in the order they come: once the submission deadline has passed, on
@@ -354,7 +360,7 @@ export function parseOutreachConfig(raw: string | undefined): OutreachConfig {
 }
 
 type RosterMember = Pick<AdminBotLabMember, "id" | "name" | "member_type"> &
-  Partial<Pick<AdminBotLabMember, "email" | "correspondence_email">>;
+  Partial<Pick<AdminBotLabMember, "email" | "correspondence_email" | "status">>;
 
 /** Where a paper sent to a venue stands there. */
 export type OutreachSubmissionStatus = "under_review" | "accepted" | "rejected" | "withdrawn";
@@ -456,12 +462,16 @@ function describePaperAt(
       (id): id is string => Boolean(id),
     ),
   );
+  // The lab lists announce papers by the lab's own people: the head professor, a full member or a
+  // major coauthor, read from the roster's Member Type. Being on the roster is not enough -- it
+  // also holds minor coauthors, visiting professors and alumni -- and someone who has left does not
+  // make a paper the lab's, the rule everywhere else that reads the column.
+  const coreMembers = context.roster.filter((member) => adminBotIsDirectCollaborator(member));
   const hasLabMember =
     piIndex >= 0 ||
-    [...memberIds].some((id) => {
-      const type = byId.get(id)?.member_type;
-      return adminBotIsFullMemberType(type) || adminBotIsCoauthorMajorType(type);
-    });
+    [...memberIds].some((id) => coreMembers.some((member) => member.id === id)) ||
+    // A recorded link is a fact; an exact printed name is the fallback for authors never linked.
+    authors.some((author) => coreMembers.some((member) => isSamePerson(author, member.name)));
   // arXiv once it is up; until then the Drive PDF, which every submitted paper is meant to have,
   // so an acceptance can go out before camera-ready.
   const arxiv = paper.artifacts?.arxiv_url?.trim();
@@ -929,8 +939,9 @@ export function composeOutreach(params: {
     seniorAuthors: params.config.senior_authors,
   };
   const accepted = params.papers
+    .filter((paper) => acceptedVenueOf(paper) && paperVenueKey(paper) === wanted)
     .map((paper) => describeOutreachPaper(paper, context))
-    .filter((paper): paper is OutreachPaper => Boolean(paper && venueKey(paper.venue) === wanted))
+    .filter((paper): paper is OutreachPaper => Boolean(paper))
     // Stable within a rank, so papers keep the order the records list them in.
     .toSorted((left, right) => prominence(left) - prominence(right));
 
@@ -940,7 +951,7 @@ export function composeOutreach(params: {
   let unsubmitted = 0;
   for (const paper of params.papers) {
     const venue = acceptedVenueOf(paper) ?? paper.venue?.trim();
-    if (!venue || venueKey(venue) !== wanted) {
+    if (!venue || paperVenueKey(paper) !== wanted) {
       continue;
     }
     const status = submissionStatusOf(paper);
@@ -1089,39 +1100,42 @@ export type AcceptanceRow = {
   paper_link: string;
 };
 
-const YEAR_IN_VENUE = /\b(20\d{2})\b/u;
+const SHEET_YEAR = /^\s*(20\d{2})\s*$/u;
 
 /**
- * One row per accepted paper, newest year first.
+ * One row per accepted paper, newest year first, one conference's rows together within a year.
  *
  * The year is the recorded acceptance year, else the one the venue label carries, else blank:
  * the record's creation date says when somebody typed the paper in, not when it was accepted.
+ * The conference is the normalised one (`venue-normalize.ts`), so `EMNLP ARR Commitment` files as
+ * `EMNLP` and a demo paper as `EMNLP System Demonstrations`, whatever the record says.
  */
 export function acceptanceRows(papers: readonly AdminBotPaperRecord[]): AcceptanceRow[] {
-  const rows: AcceptanceRow[] = [];
+  const rows: Array<AcceptanceRow & { venue: NormalizedVenue }> = [];
   for (const paper of papers) {
-    const venue = acceptedVenueOf(paper);
+    const venue = normalizeVenue(acceptedVenueOf(paper), paper.accepted_year);
     if (!venue) {
       continue;
     }
-    const year = paper.accepted_year ? String(paper.accepted_year) : YEAR_IN_VENUE.exec(venue)?.[1];
     rows.push({
       paper_id: paper.id,
-      year: year ?? "",
+      year: venue.year,
       title: paper.title.trim(),
-      // The year has its own column, so the conference reads "NeurIPS", not "NeurIPS 2026".
-      conference: venue.replace(YEAR_IN_VENUE, "").replace(/\s+/gu, " ").trim(),
+      conference: sheetConference(venue),
       authors: (paper.authors ?? []).join(", "),
       paper_link:
         paper.artifacts?.arxiv_url?.trim() || paper.artifacts?.google_drive_pdf_url?.trim() || "",
+      venue,
     });
   }
-  return rows.toSorted(
-    (left, right) =>
-      right.year.localeCompare(left.year) ||
-      left.conference.localeCompare(right.conference) ||
-      left.title.localeCompare(right.title),
-  );
+  return rows
+    .toSorted(
+      (left, right) =>
+        right.year.localeCompare(left.year) ||
+        compareVenuesWithinYear(left.venue, right.venue) ||
+        left.title.localeCompare(right.title),
+    )
+    .map(({ venue: _venue, ...row }) => row);
 }
 
 export function acceptanceRowCells(row: AcceptanceRow): string[] {
@@ -1132,30 +1146,119 @@ function cellKey(value: string | undefined): string {
   return (value ?? "").normalize("NFKC").toLocaleLowerCase().replace(/\s+/gu, " ").trim();
 }
 
-/**
- * The rows the sheet does not have yet.
- *
- * A paper is the same row when its title, year and conference match, whatever a person has since
- * done to the authors or link cells: the tab is edited by hand, and re-adding a paper because
- * somebody fixed a name in it would undo their fix with a duplicate.
- *
- * Throws when the tab's first row is not the expected header. Appending five columns under some
- * other header would file years under whatever that tab's first column means.
- */
-export function missingAcceptanceRows(
-  rows: readonly AcceptanceRow[],
-  sheet: readonly (readonly string[])[],
-): AcceptanceRow[] {
+/** The conference a sheet row or a generated row names, as a venue, for comparing and ordering. */
+function rowVenue(year: string | undefined, conference: string | undefined): NormalizedVenue {
+  return (
+    normalizeVenue(conference, year) ?? { family: "", track: "main", year: (year ?? "").trim() }
+  );
+}
+
+function assertAcceptanceHeader(sheet: readonly (readonly string[])[]): void {
   const header = (sheet[0] ?? []).map(cellKey);
   if (ACCEPTANCE_SHEET_HEADER.some((name, index) => header[index] !== name)) {
     throw new Error(
       `the acceptance tab's first row must be: ${ACCEPTANCE_SHEET_HEADER.join(", ")}`,
     );
   }
-  const present = new Set(
-    sheet.slice(1).map((cells) => [cells[1], cells[0], cells[2]].map(cellKey).join("\u0000")),
-  );
-  return rows.filter(
-    (row) => !present.has([row.title, row.year, row.conference].map(cellKey).join("\u0000")),
-  );
+}
+
+/**
+ * The rows the sheet does not have yet.
+ *
+ * A paper is the same row when its title, year and conference match, whatever a person has since
+ * done to the authors or link cells: the tab is edited by hand, and re-adding a paper because
+ * somebody fixed a name in it would undo their fix with a duplicate. The conference is compared
+ * normalised and without its track, so a row typed as `EMNLP ARR Commitment`, or one a person
+ * moved to the demo track, is still the paper the records file as `EMNLP`.
+ *
+ * Throws when the tab's first row is not the expected header. Writing five columns under some
+ * other header would file years under whatever that tab's first column means.
+ */
+export function missingAcceptanceRows(
+  rows: readonly AcceptanceRow[],
+  sheet: readonly (readonly string[])[],
+): AcceptanceRow[] {
+  assertAcceptanceHeader(sheet);
+  const keyOf = (title: string | undefined, year: string | undefined, conference: string | undefined) =>
+    [cellKey(title), cellKey(year), rowVenue(year, conference).family.toLocaleLowerCase()].join(
+      "\u0000",
+    );
+  const present = new Set(sheet.slice(1).map((cells) => keyOf(cells[1], cells[0], cells[2])));
+  return rows.filter((row) => !present.has(keyOf(row.title, row.year, row.conference)));
+}
+
+/** Rows to put into the tab at one place: before the row now at `at` (0-based, header is 0). */
+export type AcceptanceInsert = { at: number; rows: AcceptanceRow[] };
+
+/**
+ * Where each missing row goes, so the tab stays newest year first with each conference together.
+ *
+ * Existing rows are never moved: each new row is placed against them as they stand.
+ *  1. After the last row of the same year, conference and track, when the tab has one. A person
+ *     who keeps a conference's papers in their own order keeps it; the new paper joins the end.
+ *  2. Otherwise before the first row that sorts after it (newer years first, then conference,
+ *     then main, Findings, demos, workshops) -- in a sorted tab, exactly where a sort would put it.
+ *  3. Otherwise after the last filled row.
+ * Rows that land in one place go in the order `acceptanceRows` sorts them. Rows a person left
+ * without a year cannot be ordered against and are passed over; a new row without a year goes
+ * last.
+ *
+ * Returned bottom of the tab first, so inserting them in that order never shifts a row a later
+ * insert still has to find.
+ */
+export function planAcceptanceInserts(
+  missing: readonly AcceptanceRow[],
+  sheet: readonly (readonly string[])[],
+): AcceptanceInsert[] {
+  assertAcceptanceHeader(sheet);
+  type Existing = { index: number; year: number; venue: NormalizedVenue };
+  const existing: Existing[] = [];
+  let lastFilled = 0;
+  sheet.forEach((cells, index) => {
+    if (index === 0) {
+      return;
+    }
+    if (cells.some((cell) => (cell ?? "").trim())) {
+      lastFilled = index;
+    }
+    const year = SHEET_YEAR.exec(cells[0] ?? "")?.[1];
+    if (year) {
+      existing.push({ index, year: Number(year), venue: rowVenue(year, cells[2]) });
+    }
+  });
+  const end = lastFilled + 1;
+
+  const byPosition = new Map<number, AcceptanceRow[]>();
+  for (const row of missing) {
+    const venue = rowVenue(row.year, row.conference);
+    const year = SHEET_YEAR.exec(row.year)?.[1];
+    let at = end;
+    if (year) {
+      const value = Number(year);
+      const group = existing.filter(
+        (entry) => entry.year === value && sameVenueTrack(entry.venue, venue),
+      );
+      const after = existing.find(
+        (entry) =>
+          entry.year < value ||
+          (entry.year === value && compareVenuesWithinYear(entry.venue, venue) > 0),
+      );
+      at = group.length > 0 ? group[group.length - 1]!.index + 1 : (after?.index ?? end);
+    }
+    byPosition.set(at, [...(byPosition.get(at) ?? []), row]);
+  }
+  return [...byPosition]
+    .map(([at, rows]) => ({ at, rows }))
+    .toSorted((left, right) => right.at - left.at);
+}
+
+/** The 1-based tab rows the new rows end up on once every insert has landed, top first. */
+export function insertedSheetRows(inserts: readonly { at: number; rows: readonly unknown[] }[]): number[] {
+  const placed: number[] = [];
+  let shift = 0;
+  for (const insert of inserts.toSorted((left, right) => left.at - right.at)) {
+    insert.rows.forEach((_, offset) => placed.push(insert.at + shift + offset + 1));
+    shift += insert.rows.length;
+  }
+  return placed;
 }

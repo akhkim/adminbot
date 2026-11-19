@@ -5535,6 +5535,7 @@ export interface components {
         | "paper_integrity.report"
         | "slack.conference_intro"
         | "poster_print.notify"
+        | "slack.outreach_ready"
         | "slack.collaborator_chat"
         | "paper_integrity.sheet_scores"
         | "slack.invite_to_channel"
@@ -5802,7 +5803,9 @@ export interface components {
         | "paper_outreach.sent"
         | "paper_outreach.failed"
         | "acceptance_sheet.rows_added"
-        | "acceptance_sheet.failed";
+        | "acceptance_sheet.failed"
+        | "outreach_ready.notified"
+        | "outreach_ready.skipped";
       timestamp: string;
       actor?: string;
       details?: {
@@ -9714,6 +9717,24 @@ export interface components {
     } & {
       [key: string]: unknown;
     };
+    OutreachReadyReport: {
+      notified: ({
+        venue: string;
+        papers: number;
+        /** @enum {string} */
+        target: "channel" | "head_professor";
+      } & {
+        [key: string]: unknown;
+      })[];
+      skipped: ({
+        venue: string;
+        reason: string;
+      } & {
+        [key: string]: unknown;
+      })[];
+    } & {
+      [key: string]: unknown;
+    };
     OpenReviewFieldChange: {
       field: string;
       from: unknown;
@@ -10094,6 +10115,7 @@ export interface components {
         | "paper_integrity.report"
         | "slack.conference_intro"
         | "poster_print.notify"
+        | "slack.outreach_ready"
         | "slack.collaborator_chat"
         | "paper_integrity.sheet_scores"
         | "slack.invite_to_channel"
@@ -10177,6 +10199,7 @@ export interface components {
         | "paper_integrity.report"
         | "slack.conference_intro"
         | "poster_print.notify"
+        | "slack.outreach_ready"
         | "slack.collaborator_chat"
         | "paper_integrity.sheet_scores"
         | "slack.invite_to_channel"
@@ -22639,7 +22662,8 @@ export interface operations {
                 | "professor_digest"
                 | "rec_letter_overdue"
                 | "email_review"
-                | "automation_health";
+                | "automation_health"
+                | "outreach_ready";
               label: string;
               description: string;
               route: string;
@@ -23310,6 +23334,7 @@ export interface operations {
               | "paper_integrity.report"
               | "slack.conference_intro"
               | "poster_print.notify"
+              | "slack.outreach_ready"
               | "slack.collaborator_chat"
               | "paper_integrity.sheet_scores"
               | "slack.invite_to_channel"
@@ -26904,6 +26929,7 @@ export interface operations {
         };
         content: {
           "application/json": {
+            outreach_ready?: components["schemas"]["OutreachReadyReport"];
             sources: string[];
             warnings: string[];
             dry_run: boolean;
@@ -26940,6 +26966,7 @@ export interface operations {
             } & {
               [key: string]: unknown;
             })[];
+            newly_accepted: string[];
           } & {
             [key: string]: unknown;
           };
@@ -28773,7 +28800,8 @@ export interface operations {
               | "professor_digest"
               | "rec_letter_overdue"
               | "email_review"
-              | "automation_health";
+              | "automation_health"
+              | "outreach_ready";
             dry_run: boolean;
             count: number;
             skipped: {
@@ -29055,6 +29083,7 @@ export interface operations {
             | "paper_integrity.report"
             | "slack.conference_intro"
             | "poster_print.notify"
+            | "slack.outreach_ready"
             | "slack.collaborator_chat"
             | "paper_integrity.sheet_scores"
             | "slack.invite_to_channel"

@@ -4880,7 +4880,7 @@ describe("research outreach", () => {
   async function labWithAcceptances(
     options: {
       sent?: Sent[];
-      sheet?: { rows: string[][]; appended: string[][][] };
+      sheet?: { rows: string[][]; appended: Array<Array<{ at: number; rows: string[][] }>> };
       runner?: (params: Sent) => Promise<void>;
     } = {},
   ) {
@@ -4903,9 +4903,12 @@ describe("research outreach", () => {
         ? {
             acceptanceSheet: {
               read: async () => [...sheet.rows],
-              append: async (rows: string[][]) => {
-                sheet.appended.push(rows);
-                sheet.rows.push(...rows);
+              // Applied as the Sheets API would: bottom of the tab first, rows pushed down.
+              insert: async (inserts: Array<{ at: number; rows: string[][] }>) => {
+                sheet.appended.push(inserts);
+                for (const insert of inserts) {
+                  sheet.rows.splice(insert.at, 0, ...insert.rows);
+                }
               },
             },
           }
@@ -5091,7 +5094,7 @@ describe("research outreach", () => {
   });
 
   it("keeps the shared service token out of sends and sheet writes", async () => {
-    const sheet = { rows: [HEADER], appended: [] as string[][][] };
+    const sheet = { rows: [HEADER], appended: [] as Array<Array<{ at: number; rows: string[][] }>> };
     const { baseUrl, sent } = await labWithAcceptances({ sheet });
     for (const [path, body] of [
       ["/papers/outreach/send", { venue: "ICLR 2027", outlet: "vector" }],
@@ -5171,10 +5174,14 @@ describe("research outreach", () => {
     ).toHaveLength(1);
   });
 
-  it("checks the acceptance sheet without writing, then adds only what is missing", async () => {
+  it("checks the acceptance sheet without writing, then inserts only what is missing, in order", async () => {
     const sheet = {
-      rows: [HEADER, ["2027", "with the pi", "ICLR", "typed by hand", ""]],
-      appended: [] as string[][][],
+      rows: [
+        HEADER,
+        ["2027", "with the pi", "ICLR", "typed by hand", ""],
+        ["2025", "Older Paper", "EMNLP", "Someone", ""],
+      ],
+      appended: [] as Array<Array<{ at: number; rows: string[][] }>>,
     };
     const { baseUrl, token } = await labWithAcceptances({ sheet });
     const call = async (body?: Record<string, unknown>) => {
@@ -5198,17 +5205,21 @@ describe("research outreach", () => {
 
     const added = await call({ dry_run: false });
     expect(added.body.added).toBe(2);
-    expect(sheet.appended).toEqual([
-      [
-        ["2027", "With A Senior", "ICLR", "Ada, Grace Hopper", "https://arxiv.org/abs/2610.00002"],
-        ["2026", "Elsewhere", "ACL", "Root Admin", "https://arxiv.org/abs/2603.00003"],
-      ],
+    // One request, placed between the 2027 row and the 2025 one; the rows typed by hand are as
+    // they were.
+    expect(sheet.appended).toHaveLength(1);
+    expect(sheet.rows).toEqual([
+      HEADER,
+      ["2027", "with the pi", "ICLR", "typed by hand", ""],
+      ["2027", "With A Senior", "ICLR", "Ada, Grace Hopper", "https://arxiv.org/abs/2610.00002"],
+      ["2026", "Elsewhere", "ACL", "Root Admin", "https://arxiv.org/abs/2603.00003"],
+      ["2025", "Older Paper", "EMNLP", "Someone", ""],
     ]);
     expect(
       mockFor(baseUrl)
         .service.listAuditEvents()
         .filter((event) => event.type === "acceptance_sheet.rows_added")[0]?.details,
-    ).toMatchObject({ added: 2, papers: ["with-senior", "elsewhere"] });
+    ).toMatchObject({ added: 2, papers: ["with-senior", "elsewhere"], rows: [3, 4] });
 
     // Pressed twice, it adds nothing the second time.
     const again = await call({ dry_run: false });
@@ -5217,7 +5228,7 @@ describe("research outreach", () => {
   });
 
   it("will not append under a header that is not the acceptance header", async () => {
-    const sheet = { rows: [["name", "email"]], appended: [] as string[][][] };
+    const sheet = { rows: [["name", "email"]], appended: [] as Array<Array<{ at: number; rows: string[][] }>> };
     const { baseUrl, token } = await labWithAcceptances({ sheet });
     const res = await fetch(`${baseUrl}/papers/outreach/acceptance-sheet`, {
       method: "POST",

@@ -11,8 +11,10 @@ import {
   ACCEPTANCE_SHEET_HEADER,
   composeOutreach,
   EMPTY_OUTREACH_CONFIG,
+  insertedSheetRows,
   missingAcceptanceRows,
   OUTREACH_OUTLETS,
+  planAcceptanceInserts,
   OUTREACH_SUMMARY_PLACEHOLDER,
   parseOutreachConfig,
   type OutreachConfig,
@@ -163,8 +165,35 @@ describe("composeOutreach", () => {
     expect(draft("vector").paper_ids).toEqual(["pi"]);
     expect(draft("mpi_record").paper_ids).toEqual(["senior"]);
     expect(draft("ellis").paper_ids).toEqual(["pi", "senior"]);
-    // A minor co-author is on the roster but is not who "a paper from the lab" means.
-    expect(draft("social_managers").paper_ids).toEqual(["pi", "member"]);
+    // A minor co-author is on the roster but is not who "a paper from the lab" means. A full member
+    // counts by printed name too: the senior's paper lists Alan Turing without a link.
+    expect(draft("social_managers").paper_ids).toEqual(["pi", "senior", "member"]);
+  });
+
+  it("chooses the lab lists' papers by Member Type, not by being on the roster", () => {
+    const roster = [
+      ...ROSTER,
+      { id: "m_major", name: "Barbara Liskov", member_type: "coauthor-major" },
+      { id: "m_left", name: "John Backus", member_type: "alumni, full" },
+      { id: "m_prof", name: "Donald Knuth", member_type: "external-prof" },
+    ] as unknown as AdminBotLabMember[];
+    const plan = composeOutreach({
+      papers: [
+        // Never linked: the printed name is matched against the roster, exactly.
+        paper({ id: "major", authors: ["Barbara Liskov"] }),
+        paper({ id: "full", authors: ["Alan Turing", "Donald Knuth"] }),
+        paper({ id: "left", authors: ["John Backus"] }),
+        paper({ id: "prof", authors: ["Donald Knuth"] }),
+        paper({ id: "minor", authors: ["Edsger Dijkstra"] }),
+        paper({ id: "initial", authors: ["B. Liskov"] }),
+      ],
+      roster,
+      piMemberId: "m_pi",
+      venue: "NeurIPS 2026",
+      config: CONFIG,
+    });
+    const lab = plan.drafts.find((entry) => entry.key === "social_managers")!;
+    expect(lab.paper_ids).toEqual(["major", "full"]);
   });
 
   it("recognises the head professor by a recorded link when the printed name differs", () => {
@@ -573,5 +602,100 @@ describe("the acceptance sheet", () => {
     const rows = acceptanceRows([paper()]);
     expect(() => missingAcceptanceRows(rows, [["name", "email"]])).toThrow(/first row must be/u);
     expect(() => missingAcceptanceRows(rows, [])).toThrow(/first row must be/u);
+    expect(() => planAcceptanceInserts(rows, [["name", "email"]])).toThrow(/first row must be/u);
+  });
+
+  it("files a conference's spellings and tracks under one name", () => {
+    const rows = acceptanceRows([
+      paper({ id: "a", title: "Arr", accepted_venue: "EMNLP ARR Commitment", accepted_year: 2025 }),
+      paper({ id: "b", title: "Demo", accepted_venue: "EMNLP 2025 System Demonstration" }),
+      paper({ id: "c", title: "Cut", accepted_venue: "LREC-COLING 202", accepted_year: 2024 }),
+      paper({ id: "d", title: "Find", accepted_venue: "Findings of EMNLP 2025" }),
+    ]);
+    expect(rows.map((row) => [row.year, row.conference, row.title])).toEqual([
+      ["2025", "EMNLP", "Arr"],
+      ["2025", "Findings of EMNLP", "Find"],
+      ["2025", "EMNLP System Demonstrations", "Demo"],
+      ["2024", "LREC-COLING", "Cut"],
+    ]);
+  });
+
+  it("sees a hand-typed ARR commitment row as the paper the records file under the conference", () => {
+    const rows = acceptanceRows([paper({ title: "Kept", accepted_venue: "EMNLP 2025" })]);
+    const sheet = [[...ACCEPTANCE_SHEET_HEADER], ["2025", "Kept", "EMNLP ARR Commitment", "", ""]];
+    expect(missingAcceptanceRows(rows, sheet)).toEqual([]);
+  });
+});
+
+describe("where a new acceptance-sheet row goes", () => {
+  const header = [...ACCEPTANCE_SHEET_HEADER];
+  const row = (year: string, conference: string, title: string) => ({
+    paper_id: title,
+    year,
+    title,
+    conference,
+    authors: "",
+    paper_link: "",
+  });
+  const plan = (missing: ReturnType<typeof row>[], sheet: string[][]) =>
+    planAcceptanceInserts(missing, sheet).map((insert) => [
+      insert.at,
+      insert.rows.map((entry) => entry.title),
+    ]);
+
+  // A tab as the lab keeps it: newest year first, a conference's rows together.
+  const sheet = [
+    header,
+    ["2026", "N1", "NeurIPS", "", "", "=CV(A2)"],
+    ["2025", "E1", "EMNLP", "", ""],
+    ["2025", "E2", "EMNLP", "", ""],
+    ["2025", "F1", "Findings of EMNLP", "", ""],
+    ["2025", "I1", "ICLR", "", ""],
+    ["2023", "A1", "ACL", "", ""],
+  ];
+
+  it("joins the end of its own conference's rows in that year", () => {
+    expect(plan([row("2025", "EMNLP", "E3")], sheet)).toEqual([[4, ["E3"]]]);
+    // Track kept apart: a Findings paper goes after the Findings rows, not the main ones.
+    expect(plan([row("2025", "Findings of EMNLP", "F2")], sheet)).toEqual([[5, ["F2"]]]);
+  });
+
+  it("puts a conference the year lacks where a sort would", () => {
+    expect(plan([row("2025", "ACL", "A2")], sheet)).toEqual([[2, ["A2"]]]);
+    expect(plan([row("2025", "EMNLP System Demonstrations", "D1")], sheet)).toEqual([[5, ["D1"]]]);
+    expect(plan([row("2025", "TMLR", "T1")], sheet)).toEqual([[6, ["T1"]]]);
+  });
+
+  it("opens a year the tab does not have in its place among the years", () => {
+    expect(plan([row("2027", "ICLR", "New")], sheet)).toEqual([[1, ["New"]]]);
+    expect(plan([row("2024", "ICML", "Mid")], sheet)).toEqual([[6, ["Mid"]]]);
+    expect(plan([row("2021", "ICML", "Old")], sheet)).toEqual([[7, ["Old"]]]);
+  });
+
+  it("puts a row without a year after the last filled row, never into the trailing blanks", () => {
+    const withBlanks = [...sheet, ["", "", "", "", ""], ["", "", "", "", ""]];
+    expect(plan([row("", "TMLR", "Undated")], withBlanks)).toEqual([[7, ["Undated"]]]);
+  });
+
+  it("passes over hand-kept rows without a year rather than ordering against them", () => {
+    const messy = [header, ["2026", "N1", "NeurIPS"], ["tbd", "X", "ZZZ"], ["2024", "O", "ACL"]];
+    expect(plan([row("2025", "ICLR", "I")], messy)).toEqual([[3, ["I"]]]);
+  });
+
+  it("returns the inserts bottom first and reports the rows they end up on", () => {
+    const inserts = planAcceptanceInserts(
+      [row("2027", "ICLR", "Top"), row("2021", "ICML", "Bottom"), row("2025", "EMNLP", "Mid")],
+      sheet,
+    );
+    expect(inserts.map((insert) => insert.at)).toEqual([7, 4, 1]);
+    // Top lands on tab row 2; Mid was before row index 4, now pushed down one; Bottom by two.
+    expect(insertedSheetRows(inserts)).toEqual([2, 6, 10]);
+  });
+
+  it("keeps several new rows for one place in the order acceptanceRows gave them", () => {
+    const inserts = planAcceptanceInserts([row("2025", "EMNLP", "E3"), row("2025", "EMNLP", "E4")], sheet);
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]!.rows.map((entry) => entry.title)).toEqual(["E3", "E4"]);
+    expect(insertedSheetRows(inserts)).toEqual([5, 6]);
   });
 });
