@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Operator-approved six-hourly (Toronto time) database export to exactly two protected sheet tabs."""
+"""Operator-approved six-hourly (Toronto time) database export to the protected AdminBot tabs (people, papers, letters, acceptances)."""
 import argparse
 import datetime
 import importlib.util
@@ -19,6 +19,11 @@ letters_spec = importlib.util.spec_from_file_location('letters', Path(__file__).
 letters = importlib.util.module_from_spec(letters_spec)
 letters_spec.loader.exec_module(letters)
 LETTERS_SHEET_ID = 730514001
+acceptance_spec = importlib.util.spec_from_file_location('acceptances', Path(__file__).with_name('adminbot-acceptance-export.py'))
+acceptances = importlib.util.module_from_spec(acceptance_spec)
+acceptance_spec.loader.exec_module(acceptances)
+ACCEPTANCE_SHEET_ID = 1274660812
+PROTECTION_NOTE = 'Written by AdminBot every 6 hours; edits here are overwritten'
 
 URGENCY_COLOURS = {'⛔': {'red': .96, 'green': .73, 'blue': .73}, '🔴': {'red': .99, 'green': .87, 'blue': .87}, '🟠': {'red': 1, 'green': .92, 'blue': .82},
                    '🟡': {'red': 1, 'green': .97, 'blue': .80}, '🟢': {'red': .89, 'green': .96, 'blue': .89}}
@@ -434,7 +439,7 @@ def letter_tab_requests(sheets, sheet_id, writer, editors, neighbours=()):
                     'gridProperties': {'rowCount': 200, 'columnCount': letters.WIDTH}, 'tabColorStyle': {
                     'rgbColor': {'red': .18, 'green': .29, 'blue': .40}}}}},
                 {'addProtectedRange': {'protectedRange': {'range': {'sheetId': sheet_id},
-                    'description': 'Written by AdminBot every 6 hours; edits here are overwritten',
+                    'description': PROTECTION_NOTE,
                     'editors': {'users': sorted(editors)}}}}], {'rowCount': 200, 'columnCount': letters.WIDTH}
     if sheet['properties']['sheetId'] != sheet_id:
         raise ValueError('Letters tab identity changed')
@@ -449,6 +454,39 @@ def letter_tab_requests(sheets, sheet_id, writer, editors, neighbours=()):
         return [{'updateSheetProperties': {'properties': {'sheetId': sheet_id, 'index': place + 1}, 'fields': 'index'}}], \
             sheet['properties']['gridProperties']
     return [], sheet['properties']['gridProperties']
+
+
+def exported_protection(sheet, sheet_id, writer, editors):
+    """The whole-tab protection only the bot and approved editors can pass, as on PeopleList and PaperList."""
+    return any(p['range'] == {'sheetId': sheet_id} and not p.get('warningOnly', False)
+               and writer in {e.lower() for e in p.get('editors', {}).get('users', [])}
+               and {e.lower() for e in p.get('editors', {}).get('users', [])} <= editors
+               and not p.get('editors', {}).get('groups') and not p.get('editors', {}).get('domainUsersCanEdit')
+               for p in sheet.get('protectedRanges', []))
+
+
+def acceptance_tab_requests(sheets, sheet_id, writer, editors):
+    """(setup requests, grid, tab title, adopting) for the acceptances tab, found by sheet id so a rename is harmless.
+
+    The tab was made by people before AdminBot wrote it, so the first run adopts it: it adds the whole-tab
+    protection (the caller first checks the tab holds no typed rows). Missing, it is recreated at the end.
+    Once protected, a protection that changed stops this tab's export, as on the other exported tabs.
+    """
+    sheet = next((s for s in sheets if s['properties']['sheetId'] == sheet_id), None)
+    protect = {'addProtectedRange': {'protectedRange': {'range': {'sheetId': sheet_id}, 'description': PROTECTION_NOTE,
+                                                        'editors': {'users': sorted(editors)}}}}
+    if sheet is None:
+        if any(s['properties']['title'] == acceptances.TITLE for s in sheets):
+            raise ValueError('Acceptance tab title taken by another tab')
+        grid = {'rowCount': 200, 'columnCount': acceptances.WIDTH}
+        return [{'addSheet': {'properties': {'sheetId': sheet_id, 'title': acceptances.TITLE, 'gridProperties': grid}}},
+                protect], grid, acceptances.TITLE, False
+    grid, title = sheet['properties']['gridProperties'], sheet['properties']['title']
+    if exported_protection(sheet, sheet_id, writer, editors):
+        return [], grid, title, False
+    if any(p['range'] == {'sheetId': sheet_id} for p in sheet.get('protectedRanges', [])):
+        raise ValueError('Acceptance tab protection changed')
+    return [protect], grid, title, True
 
 
 def main():
@@ -590,14 +628,42 @@ def main():
     except Exception as error:
         letter_status['error'] = type(error).__name__
         print(timestamp, 'FAIL letter export:', type(error).__name__, flush=True)
+    # The acceptances tab is its own batch too, filled from the same snapshot as PaperList.
+    acceptance_status = {'failed': True}
+    try:
+        sid = config.get('acceptance_sheet_id', ACCEPTANCE_SHEET_ID)
+        setup, grid, title, adopting = acceptance_tab_requests(metadata['sheets'], sid, writer, allowed_editors)
+        quoted = "'" + title.replace("'", "''") + "'"
+        if adopting and not acceptances.adoptable(
+                gog(['--readonly', 'sheets', 'get', spreadsheet, quoted + '!A1:Z']).get('values', [])):
+            raise ValueError('Acceptance tab holds rows a person typed; not overwriting them')
+        sheet = acceptances.acceptance_sheet(batch['accepted'])
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json') as body:
+            json.dump({'requests': setup + acceptances.sheet_requests(sid, grid, sheet)}, body)
+            body.flush()
+            gog(['api', 'call', 'sheets', 'v4', 'sheets.spreadsheets.batchUpdate', '--params',
+                 json.dumps({'spreadsheetId': spreadsheet}), '--body', '@' + body.name, '--allow-write', '--force'])
+        end = chr(64 + acceptances.WIDTH)
+        actual = gog(['--readonly', 'sheets', 'get', spreadsheet,
+                      f"{quoted}!A1:{end}{len(sheet['values']) + 1}"]).get('values', [])
+        actual = [row + [''] * (acceptances.WIDTH - len(row)) for row in actual]
+        actual += [[''] * acceptances.WIDTH] * (len(sheet['values']) - len(actual))
+        if actual != sheet['values']:
+            raise RuntimeError('Acceptance readback did not match database snapshot')
+        acceptance_status = {'failed': False, 'adopted': adopting, **sheet['counts']}
+    except Exception as error:
+        acceptance_status['error'] = type(error).__name__
+        print(timestamp, 'FAIL acceptance export:', type(error).__name__, flush=True)
     write_link_problems(Path(args.database).with_name(LINK_PROBLEMS_FILE), batch['linkProblems'], timestamp)
     status = Path(args.status)
     temporary = status.with_suffix('.tmp')
     temporary.write_text(json.dumps({'last_success_utc': timestamp,
         'member_rows': counts[0], 'paper_rows': counts[1], 'spreadsheet_id': spreadsheet,
-        'pi_review_counts': batch['statusCounts'], 'editor_sync': editor_sync, 'letters': letter_status}))
+        'pi_review_counts': batch['statusCounts'], 'editor_sync': editor_sync, 'letters': letter_status,
+        'acceptances': acceptance_status}))
     temporary.replace(status)
-    print(timestamp, 'PASS database export:', counts[0], 'people,', counts[1], 'papers,', letter_status.get('open_letters', 'no'), 'letters', flush=True)
+    print(timestamp, 'PASS database export:', counts[0], 'people,', counts[1], 'papers,', letter_status.get('open_letters', 'no'), 'letters,',
+          acceptance_status.get('papers', 'no'), 'acceptances', flush=True)
 
 
 if __name__ == '__main__':

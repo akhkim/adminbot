@@ -11,6 +11,10 @@
  * Configured by ADMINBOT_ACCEPTANCE_SHEET_URL, the tab's URL out of the address bar. The gid in it
  * is required. A spreadsheet id alone would mean "the first tab", and the first tab of the lab's
  * spreadsheet is the member roster.
+ *
+ * The lab's own "Peer-Reviewed PaperAcceptance" tab is no longer kept by people: the six-hourly
+ * sheet export (scripts/adminbot-acceptance-export.py) rebuilds and protects it. Leave the variable
+ * unset for that tab; this insert path is for a tab people keep themselves.
  */
 import { readGogSheetRows, readGogSheetTabs } from "../connectors/gog.js";
 import { insertGogSheetRows, type SheetRowInsert } from "../connectors/gog-sheets.js";

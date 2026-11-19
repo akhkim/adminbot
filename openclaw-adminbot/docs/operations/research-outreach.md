@@ -126,10 +126,20 @@ service environment; do not commit them.
 
 ## The acceptance sheet
 
-The lab spreadsheet has an acceptance tab with the header
-`year | paper title | conference | authors | paper_link`. Unlike the PaperList and PeopleList tabs,
-which the [daily export](/operations/daily-sheet-export) rewrites whole, people keep this one. So
-AdminBot only reads it and inserts new rows; it never moves or rewrites one already there:
+The lab spreadsheet's `Peer-Reviewed PaperAcceptance` tab (header
+`year | paper title | conference | authors | paper_link`) is written by the six-hourly
+[sheet export](/operations/daily-sheet-export), like
+PaperList and PeopleList: one row per accepted paper, newest year first, each conference's rows
+together, rebuilt whole from the database every run and protected against hand edits. A paper appears
+there by being recorded as accepted (or accepted on OpenReview); there is nothing to add by hand.
+
+For that tab, leave `ADMINBOT_ACCEPTANCE_SHEET_URL` unset: the insert path below would write rows the
+next export overwrites anyway. The insert path is for a tab people keep themselves.
+
+### Inserting into a person-kept tab
+
+With `ADMINBOT_ACCEPTANCE_SHEET_URL` pointing at a tab people keep, AdminBot only reads it and inserts
+new rows; it never moves or rewrites one already there:
 
 1. **Check the sheet** reads the tab and names the accepted papers it does not hold. A paper
    counts as present when its title, year and conference match a row, ignoring case and

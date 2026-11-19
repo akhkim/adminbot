@@ -157,5 +157,30 @@ An optional `letter_follows` object in the private destination config (`{"follow
 lower case) keeps one student's rows right below another's. Names stay in that on-host file, never in this
 public repository.
 
+## Peer-Reviewed PaperAcceptance tab (November 19, 2026)
+
+The refresh also owns the `Peer-Reviewed PaperAcceptance` tab (sheet ID `1274660812`; a different id can be
+set as `acceptance_sheet_id` in the destination config). It keeps the lab's header,
+`year | paper title | conference | authors | paper_link`, and lists every paper whose PaperList `Accepted` cell is
+filled, so the year, conference and track are exactly the ones PaperList shows, OpenReview decisions included
+(`scripts/adminbot-acceptance-export.py`, fed by `snapshot()['accepted']`).
+
+- **Order:** newest year first (papers with no year last); within a year by conference, then main, Findings,
+  demos, workshops, then title. A line marks where each year + conference starts.
+- **Conference cell:** `EMNLP`, `Findings of EMNLP`, `EMNLP System Demonstrations`; a workshop or a venue with no
+  standard conference name is written as recorded, without its year (`REALM workshop @EMNLP`). A workshop at a
+  named conference sorts with that conference.
+- **paper_link:** the arXiv link, else the Drive PDF, after the same safe-link check as PaperList; blank when
+  neither is recorded. Every cell is written as text.
+
+It is its own batch, like the letters tab: a failure is logged as `FAIL acceptance export` and recorded under
+`acceptances` in the status file without undoing the other tabs. The tab was made by people first, so the first
+run adopts it: it adds the whole-tab protection, but only when the tab holds nothing beyond the header; typed rows
+stop this tab's export rather than being overwritten. Afterwards a changed protection stops it, as on the other
+tabs. The tab is found by sheet id, so renaming it is harmless.
+
+Leave `ADMINBOT_ACCEPTANCE_SHEET_URL` unset in the service environment: the Mailing list tab's "Add rows" would
+otherwise insert rows into a tab this export rewrites. **Copy rows** still works without it.
+
 The PI's OpenReview notification e-mails are not read by the export (see the OpenReview results job); the
 Aurora-only notifications reader was dropped when the installed copies were brought back to `main`.
