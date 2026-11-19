@@ -26,7 +26,32 @@ export type DeadlineProposalInput = {
   cfpUrl: string;
   openReviewUrl: string;
   note: string;
+  /** Whether the venue publishes proceedings. Omitted on records made before this was asked. */
+  archival?: boolean;
 };
+
+/**
+ * A new venue counts as archival unless the submitter opts out. The form sends a new venue as a
+ * stage "add" with no `venueId`; a stage that names a venue adds to one that already has a status,
+ * and a rebuttal window has none, so those get nothing.
+ */
+export function defaultDeadlineArchival(input: DeadlineProposalInput): boolean | undefined {
+  return input.stage?.venueId || input.entryType === "rebuttal" ? undefined : true;
+}
+
+/**
+ * Reads the archival choice off a request body. HTML forms and some clients send "true"/"false";
+ * anything else is passed on as-is so the validator rejects it rather than silently defaulting.
+ */
+export function readDeadlineArchival(raw: unknown): { archival?: boolean } {
+  if (raw === undefined || raw === null || raw === "") {
+    return {};
+  }
+  if (raw === "true" || raw === "false") {
+    return { archival: raw === "true" };
+  }
+  return { archival: raw as boolean };
+}
 
 export type DeadlineSubmitterContact = { name?: string; email?: string };
 
@@ -164,6 +189,13 @@ export function validateDeadlineProposalInput(
     note: input.note.trim(),
   };
   const errors: Partial<Record<keyof DeadlineProposalInput, string>> = {};
+  if (input.archival !== undefined) {
+    if (typeof input.archival === "boolean") {
+      value.archival = input.archival;
+    } else {
+      errors.archival = "Archival must be true or false.";
+    }
+  }
   if (input.stage !== undefined) {
     const stage = validateProposalStage(input.stage);
     if (stage) {

@@ -2,7 +2,10 @@
 //
 // Cut from server.ts's handleAuthenticatedRoute. Each route states its audience with a guard
 // decorator from guards.ts; the order below is the order the old if-chain tried them in.
-import type { DeadlineProposalInput } from "../../contracts/deadline-proposals.js";
+import {
+  readDeadlineArchival,
+  type DeadlineProposalInput,
+} from "../../contracts/deadline-proposals.js";
 import {
   type AdminBotOpportunityInput,
   isAdminBotOpportunityCategory,
@@ -286,6 +289,7 @@ export function deadlineProposalInput(body: Record<string, unknown>): DeadlinePr
     cfpUrl: asString(body.cfpUrl),
     openReviewUrl: asString(body.openReviewUrl),
     note: asString(body.note),
+    ...readDeadlineArchival(body.archival),
   };
 }
 

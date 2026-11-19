@@ -2,9 +2,10 @@
 // the queue or publish. The existing service owns validation, persistence and exact-hash approval.
 import { createHash, randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type {
-  DeadlineProposalInput,
-  DeadlineSubmitterContact,
+import {
+  readDeadlineArchival,
+  type DeadlineProposalInput,
+  type DeadlineSubmitterContact,
 } from "../contracts/deadline-proposals.js";
 import type { AdminBotService } from "../kernel/service.js";
 import { asString, readJson, readRecord, sendJson, PayloadTooLargeError } from "./server.http.js";
@@ -96,6 +97,7 @@ export async function handlePublicDeadlineProposal(
     cfpUrl: asString(body.cfpUrl),
     openReviewUrl: asString(body.openReviewUrl),
     note: asString(body.note),
+    ...readDeadlineArchival(body.archival),
   };
   // A reserved opaque actor keeps the existing durable idempotency ledger and revision history.
   // It is not a member account or a credential, and gives no access to any authenticated route.
