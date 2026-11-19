@@ -36,12 +36,12 @@ export const posterPrintingRoutes: readonly Route[] = [
       );
     }),
   ),
-  // The daily sweep's door: files reminders and print lists as proposals. Service-callable so the
-  // cron can reach it; it chooses nothing, the sweep recomputes everything from state.
+  // The daily sweep's door: sends the reminders and print lists that are due. Service-callable so
+  // the cron can reach it; it chooses nothing, the sweep recomputes everything from state.
   post(
     "/poster-printing/scheduled-run",
-    privilegedOnly(({ res, ctx }) => {
-      sendServiceResult(res, ctx.service.posterPrinting().sweep());
+    privilegedOnly(async ({ res, ctx }) => {
+      sendServiceResult(res, await ctx.service.posterPrinting().sweep());
     }),
   ),
   // Settings for one site, or the lab defaults under the key "default". An admin's own session.

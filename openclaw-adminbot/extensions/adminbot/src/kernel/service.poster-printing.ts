@@ -2,13 +2,16 @@
 //
 // The batch itself is derived in workflows/papers/poster-printing.ts; this module reads the records
 // it needs, writes the two things people decide (an author's answer, an admin's batch settings),
-// and files Slack DMs. Every DM is a `slack.send_message` proposal, T3, so an admin approves each
-// reminder and each print list before anything reaches Slack -- the same gate as any other message
-// AdminBot sends in somebody's name. The sweep only files and withdraws; it never executes.
+// and sends Slack DMs. Every DM is a `poster_print.notify` action, auto-approved (see its policy in
+// service.ts), so it still goes propose -> policy -> execute -> audit and shows in the action log,
+// but nobody has to approve a reminder before its deadline passes. Each one is sent at most once:
+// the idempotency key names the stage (reminders) or the exact list (handoffs).
 import {
   adminBotIsAlumniMember,
   type AdminBotActionProposal,
   type AdminBotAuditEvent,
+  type AdminBotExecutionRequest,
+  type AdminBotExecutionResult,
   type AdminBotLabMember,
   type AdminBotPaperRecord,
   type AdminBotStoredProposal,
@@ -47,6 +50,10 @@ export type PosterPrintHost = {
   store: AdminBotServiceStore;
   createProposal(proposal: AdminBotActionProposal): AdminBotServiceResponse<AdminBotStoredProposal>;
   removePending(id: string, request: { note: string }): unknown;
+  execute(
+    actionId: string,
+    request: AdminBotExecutionRequest,
+  ): Promise<AdminBotServiceResponse<AdminBotExecutionResult>>;
   setPaperSlot(params: {
     paperId: string;
     slot: string;
@@ -65,15 +72,18 @@ export type PosterPrintHost = {
 export type PosterPrintViewer = { memberId: string; admin: boolean };
 
 export type PosterPrintSweepResult = {
-  reminders_filed: number;
-  handoffs_filed: number;
+  reminders_sent: number;
+  handoffs_sent: number;
+  /** Filed but not delivered (the Slack send failed); the next run retries the same message. */
+  failed: number;
+  /** Undelivered messages from an earlier run that no longer apply. */
   withdrawn: number;
   skipped_unreachable: number;
 };
 
 const MAX_COPIES = 5;
 const MAX_TEXT = 500;
-const SEND = "slack.send_message" as const;
+const SEND = "poster_print.notify" as const;
 
 const ok = <T>(payload: T): AdminBotServiceResponse<T> => ({ ok: true, status: 200, payload });
 const fail = (status: number, message: string): AdminBotServiceResponse<never> => ({
@@ -497,18 +507,20 @@ export class PosterPrintingService {
   }
 
   /**
-   * The daily run. Files the reminders due today and the print list for every batch at its
-   * deadline, and withdraws any of its own pending proposals that no longer apply (the author
-   * answered, the stage moved on, the list changed). An admin approves what remains.
+   * The daily run. Sends the reminders due today and the print list for every batch at its
+   * deadline, each one straight away. A message is settled once it was delivered (or an admin
+   * removed it from the log); one that failed to send is retried next run, or withdrawn if the
+   * author has answered since or the list changed.
    */
-  sweep(): AdminBotServiceResponse<PosterPrintSweepResult> {
+  async sweep(): Promise<AdminBotServiceResponse<PosterPrintSweepResult>> {
     const store = this.records;
     if (!store) {
       return fail(501, "poster printing is not available on this store");
     }
     const result: PosterPrintSweepResult = {
-      reminders_filed: 0,
-      handoffs_filed: 0,
+      reminders_sent: 0,
+      handoffs_sent: 0,
+      failed: 0,
       withdrawn: 0,
       skipped_unreachable: 0,
     };
@@ -516,45 +528,67 @@ export class PosterPrintingService {
     const history = this.host.store.listProposalsByType(SEND);
     const latest = (key: string) => history.findLast((proposal) => proposal.idempotency_key === key);
     const wanted = new Set<string>();
+    const undelivered = (proposal: AdminBotStoredProposal) =>
+      proposal.status === "pending" || proposal.status === "approved";
 
-    const file = (params: {
+    /** True when this run delivered it; false when it was already settled or the send failed. */
+    const send = async (params: {
       member: AdminBotLabMember & { slack_user_id: string };
       text: string;
       key: string;
       summary: string;
       rationale: string;
-    }): boolean => {
+    }): Promise<boolean> => {
       wanted.add(params.key);
       const previous = latest(params.key);
-      if (previous && previous.status !== "pending") {
-        // Delivered, or an admin said no; either way this one is settled.
+      if (previous && !undelivered(previous)) {
         return false;
       }
       const target = `user:${params.member.slack_user_id}`;
       const payload = { tool: "message", action: "send", channel: "slack", target, message: params.text };
-      if (previous && JSON.stringify(previous.proposed_payload) === JSON.stringify(payload)) {
-        return false;
-      }
-      if (previous) {
+      let actionId =
+        previous && JSON.stringify(previous.proposed_payload) === JSON.stringify(payload)
+          ? previous.id
+          : undefined;
+      if (previous && !actionId) {
         this.host.removePending(previous.id, { note: "Poster print message text changed." });
       }
-      const created = this.host.createProposal({
-        type: SEND,
-        risk_tier: "T3",
-        summary: params.summary,
-        target: {
-          service: "slack",
-          channel: "slack",
-          target,
-          recipientName: memberName(params.member),
-          recipientMemberId: params.member.id,
-        },
-        proposed_payload: payload,
-        rationale: params.rationale,
-        undo_plan: "A Slack DM cannot be unsent by AdminBot; send a follow-up correction in Slack.",
-        idempotency_key: params.key,
-      });
-      return created.ok;
+      if (!actionId) {
+        const created = this.host.createProposal({
+          type: SEND,
+          risk_tier: "T1",
+          summary: params.summary,
+          target: {
+            service: "slack",
+            channel: "slack",
+            target,
+            recipientName: memberName(params.member),
+            recipientMemberId: params.member.id,
+          },
+          proposed_payload: payload,
+          rationale: params.rationale,
+          undo_plan: "A Slack DM cannot be unsent by AdminBot; send a follow-up correction in Slack.",
+          idempotency_key: params.key,
+        });
+        if (!created.ok) {
+          result.failed += 1;
+          return false;
+        }
+        actionId = created.payload.id;
+      }
+      try {
+        const executed = await this.host.execute(actionId, {
+          dry_run: false,
+          idempotency_key: params.key,
+        });
+        if (executed.ok && executed.payload.status === "executed") {
+          return true;
+        }
+      } catch {
+        // Recorded by execute's own audit; the proposal stays approved and the next run retries.
+      }
+      result.failed += 1;
+      return false;
     };
 
     for (const reminder of duePosterPrintReminders(views, paperPageUrl)) {
@@ -567,7 +601,7 @@ export class PosterPrintingService {
         views.flatMap((view) => view.papers).find((paper) => paper.paper_id === reminder.paper_id)
           ?.title ?? reminder.paper_id;
       if (
-        file({
+        await send({
           member,
           text: reminder.text,
           key: reminder.idempotency_key,
@@ -575,7 +609,7 @@ export class PosterPrintingService {
           rationale: `The poster print deadline is ${reminder.deadline_on}; this paper has not answered or has no poster file linked.`,
         })
       ) {
-        result.reminders_filed += 1;
+        result.reminders_sent += 1;
       }
     }
 
@@ -590,7 +624,7 @@ export class PosterPrintingService {
         continue;
       }
       if (
-        file({
+        await send({
           member: printer,
           text: handoff.text,
           key: handoff.idempotency_key,
@@ -598,15 +632,15 @@ export class PosterPrintingService {
           rationale: `The ${view.label} poster deadline (${view.deadline_on}) has arrived.`,
         })
       ) {
-        result.handoffs_filed += 1;
+        result.handoffs_sent += 1;
       }
     }
 
-    // Anything of ours still waiting that today's run did not ask for is out of date.
+    // An earlier failed send that today's run did not ask for again is out of date.
     for (const proposal of history) {
       const key = proposal.idempotency_key;
       if (
-        proposal.status === "pending" &&
+        undelivered(proposal) &&
         key &&
         (key.startsWith(POSTER_PRINT_REMINDER_KEY_PREFIX) ||
           key.startsWith(POSTER_PRINT_HANDOFF_KEY_PREFIX)) &&

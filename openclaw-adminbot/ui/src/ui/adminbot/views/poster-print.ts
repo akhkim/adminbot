@@ -631,8 +631,8 @@ export class PosterPrintBatches extends LitElement {
     return html`<section class="poster-batches" data-testid="poster-print-batches">
       <p class="poster-batches__intro">
         One print run per conference city. First authors answer on their paper's Talk tab; AdminBot
-        reminds the ones who have not, and hands the printer this list on the deadline. Every Slack
-        message waits for an admin in Pending actions.
+        reminds the ones who have not in Slack, and DMs the printer this list on the deadline. Both
+        go out on their own and show in the action log.
       </p>
       ${this.failed
         ? html`<p class="poster-batches__notice" role="alert">${this.failed}</p>`

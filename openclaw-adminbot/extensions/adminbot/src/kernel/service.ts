@@ -1568,6 +1568,13 @@ const DEFAULT_ACTION_POLICIES = {
   // composed from their stored themes and the deadline dataset -- and each member is introduced at
   // most once per conference. T1 for the mechanical reason: resolvePolicy only honors auto below T2.
   "slack.conference_intro": autoPolicy("T1"),
+  // Auto-approved: a print reminder that sat in Pending actions would land after the deadline it
+  // is about, and a print list that waited would reach the printer too late to print. Nothing comes
+  // from a caller -- the recipients are lab authors of an accepted paper and the batch's printer on
+  // the roster, the text is composed from the batch -- and each message goes at most once per
+  // stage (reminders) or per distinct list (handoffs). T1 for the mechanical reason: resolvePolicy
+  // only honors auto_allowed below T2.
+  "poster_print.notify": autoPolicy("T1"),
   // Auto-approved on the same reasoning, and narrower than sheet.update_cells (T2): the connector
   // refuses anything but single cells in the one score column, so it can fill that column and
   // nothing else. The sheet id comes from the environment and the values from stored scores.
@@ -9751,13 +9758,13 @@ export class AdminBotService {
     };
   }
 
-  /** The member Events tab and the intros behind it. */
   /** Poster print batches per conference site (kernel/service.poster-printing.ts). */
   posterPrinting() {
     return new PosterPrintingService({
       store: this.store,
       createProposal: (proposal) => this.createProposal(proposal),
       removePending: (id, request) => this.removePending(id, request),
+      execute: (actionId, request) => this.execute(actionId, request),
       setPaperSlot: (params) => this.setPaperSlot(params),
       recordAudit: (event) => this.recordAudit(event),
       ownsPaper: (memberId, paper) => this.memberOwnsPaperId(memberId, paper),
@@ -9766,6 +9773,7 @@ export class AdminBotService {
     });
   }
 
+  /** The member Events tab and the intros behind it. */
   meetups() {
     return new MeetupService(
       this.store,

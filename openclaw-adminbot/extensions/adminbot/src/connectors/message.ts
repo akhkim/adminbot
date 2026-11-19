@@ -37,7 +37,9 @@ function buildOpenClawMessageArgs(
   prefix: string[],
 ): string[] | undefined {
   const isSlackOnlyType =
-    proposal.type === "slack.send_message" || proposal.type === "paper_publish.nudge_author";
+    proposal.type === "slack.send_message" ||
+    proposal.type === "paper_publish.nudge_author" ||
+    proposal.type === "poster_print.notify";
   if (!isSlackOnlyType && proposal.type !== "member_nudge.send") {
     return undefined;
   }

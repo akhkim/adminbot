@@ -52,6 +52,25 @@ describe("createAdminBotMessageExecutor", () => {
     ]);
   });
 
+  it("sends poster print reminders and print lists as a Slack DM", async () => {
+    const run = vi.fn(async () => {});
+    const executor = createAdminBotMessageExecutor({ run });
+    await expect(
+      executor.execute(
+        proposal("poster_print.notify", {
+          tool: "message",
+          action: "send",
+          channel: "slack",
+          target: "user:URAHUL",
+          message: "3 posters to print for Paris.",
+        }),
+      ),
+    ).resolves.toEqual({ handled: true });
+    expect(run).toHaveBeenCalledWith(
+      expect.arrayContaining(["--target", "user:URAHUL", "--message", "3 posters to print for Paris."]),
+    );
+  });
+
   it("maps Slack-channel member nudges to the OpenClaw message send CLI", async () => {
     const run = vi.fn(async () => {});
     const executor = createAdminBotMessageExecutor({ commandArgsPrefix: ["openclaw.mjs"], run });

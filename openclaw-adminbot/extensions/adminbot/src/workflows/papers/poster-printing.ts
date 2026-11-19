@@ -2,9 +2,9 @@
 // hand. See contracts/poster-printing.ts for why the unit is the conference.
 //
 // Everything here is pure: the service hands in the records and the clock, and the reminder and
-// handoff proposals it files carry payloads computed here. Determinism matters for the same reason
-// it does in conference-intros.ts -- the payload hash is bound to approval, so a message whose text
-// shifted between the proposal and its replay would read as tampering.
+// handoff actions it sends carry payloads computed here. Determinism matters because a send that
+// failed is retried on the next run under the same proposal, and only an identical payload can be:
+// text that shifted overnight would mean withdrawing it and filing a new one every morning.
 import type { AdminBotPaperRecord } from "../../contracts/actions.js";
 import {
   ADMINBOT_POSTER_PRINT_DEFAULT_LEAD_DAYS,
@@ -336,7 +336,7 @@ export function duePosterPrintReminders(
 }
 
 /**
- * "Wednesday 25 November". A calendar date rather than "in 6 days": the text is the approved
+ * "Wednesday 25 November". A calendar date rather than "in 6 days": the text is the action's
  * payload, and one that changed every morning would have to be withdrawn and re-filed daily.
  */
 export function posterPrintDayText(day: string): string {

@@ -1,6 +1,6 @@
 // Poster print batches at the service boundary: who sees and changes what, that an author's answer
-// lands on the paper's checklist, and that the daily sweep files each message once and withdraws
-// the ones that stopped applying.
+// lands on the paper's checklist, and that the daily sweep sends each message once, on its own,
+// retries one whose send failed and drops it when it stopped applying.
 import { describe, expect, it, vi } from "vitest";
 import { AdminBotMemoryStore, AdminBotService } from "./service.js";
 
@@ -77,11 +77,12 @@ function lab(start = "2026-11-20T09:00:00Z") {
       "cy",
     ),
   );
-  const pending = () =>
+  const sent = () =>
     store
-      .listProposalsByType("slack.send_message")
-      .filter((proposal) => proposal.status === "pending");
-  return { service, store, clock, posters, admin, pending, execute };
+      .listProposalsByType("poster_print.notify")
+      .filter((proposal) => proposal.status === "executed");
+  const recipients = () => sent().map((proposal) => proposal.target?.recipientMemberId).toSorted();
+  return { service, store, clock, posters, admin, sent, recipients, execute };
 }
 
 describe("who sees what", () => {
@@ -221,27 +222,64 @@ describe("batch settings", () => {
 });
 
 describe("the daily sweep", () => {
-  it("files one reminder per unanswered paper, once, and withdraws it when the author answers", () => {
-    const { posters, pending } = lab();
-    expect(unwrap(posters().sweep())).toEqual({
-      reminders_filed: 2,
-      handoffs_filed: 0,
+  it("sends one reminder per unanswered paper without an approval, once per stage", async () => {
+    const { store, posters, clock, recipients, execute } = lab();
+    expect(unwrap(await posters().sweep())).toEqual({
+      reminders_sent: 2,
+      handoffs_sent: 0,
+      failed: 0,
       withdrawn: 0,
       skipped_unreachable: 0,
     });
-    expect(pending().map((proposal) => proposal.target?.recipientMemberId).toSorted()).toEqual([
-      "ada",
-      "bob",
+    expect(recipients()).toEqual(["ada", "bob"]);
+    expect(execute).toHaveBeenCalledTimes(2);
+    expect(execute.mock.calls.map(([proposal]) => (proposal as { type: string }).type)).toEqual([
+      "poster_print.notify",
+      "poster_print.notify",
     ]);
-    expect(unwrap(posters().sweep())).toMatchObject({ reminders_filed: 0, withdrawn: 0 });
-    expect(pending()).toHaveLength(2);
+    expect(
+      store.listAuditEvents().filter((event) => event.type === "proposal.auto_approved"),
+    ).toHaveLength(2);
 
+    // A rerun the same day sends nothing new.
+    expect(unwrap(await posters().sweep())).toMatchObject({ reminders_sent: 0, failed: 0 });
+    expect(execute).toHaveBeenCalledTimes(2);
+
+    // Ada answers; the two-day reminder goes to Bob alone.
     unwrap(posters().setRequest("ada-paper", { choice: "self_print" }, { memberId: "ada", admin: false }));
-    expect(unwrap(posters().sweep())).toMatchObject({ reminders_filed: 0, withdrawn: 1 });
-    expect(pending().map((proposal) => proposal.target?.recipientMemberId)).toEqual(["bob"]);
+    clock.now = new Date("2026-11-23T09:00:00Z");
+    expect(unwrap(await posters().sweep())).toMatchObject({ reminders_sent: 1 });
+    expect(recipients()).toEqual(["ada", "bob", "bob"]);
   });
 
-  it("skips an author AdminBot cannot DM rather than messaging someone else", () => {
+  it("retries a send that failed under the same action, and drops it once the author answers", async () => {
+    const { store, posters, recipients, execute } = lab();
+    execute.mockRejectedValueOnce(new Error("slack is down"));
+    expect(unwrap(await posters().sweep())).toMatchObject({ reminders_sent: 1, failed: 1 });
+    const stuck = store
+      .listProposalsByType("poster_print.notify")
+      .find((proposal) => proposal.status !== "executed")!;
+    expect(stuck.status).toBe("approved");
+
+    expect(unwrap(await posters().sweep())).toMatchObject({ reminders_sent: 1, failed: 0 });
+    expect(recipients()).toEqual(["ada", "bob"]);
+    expect(store.listProposalsByType("poster_print.notify")).toHaveLength(2);
+
+    // A failed send whose author answers in the meantime is withdrawn, not retried.
+    const { store: other, posters: otherPosters, execute: otherExecute } = lab();
+    otherExecute.mockRejectedValue(new Error("slack is down"));
+    expect(unwrap(await otherPosters().sweep())).toMatchObject({ reminders_sent: 0, failed: 2 });
+    unwrap(otherPosters().setRequest("ada-paper", { choice: "no_poster" }, { memberId: "ada", admin: false }));
+    expect(unwrap(await otherPosters().sweep())).toMatchObject({ withdrawn: 1, failed: 1 });
+    expect(
+      other
+        .listProposalsByType("poster_print.notify")
+        .filter((proposal) => proposal.status === "rejected")
+        .map((proposal) => proposal.target?.recipientMemberId),
+    ).toEqual(["ada"]);
+  });
+
+  it("skips an author AdminBot cannot DM rather than messaging someone else", async () => {
     const { service, posters } = lab();
     unwrap(
       service.upsertPaper({
@@ -256,11 +294,11 @@ describe("the daily sweep", () => {
         accepted_year: 2026,
       } as never),
     );
-    expect(unwrap(posters().sweep())).toMatchObject({ reminders_filed: 2, skipped_unreachable: 1 });
+    expect(unwrap(await posters().sweep())).toMatchObject({ reminders_sent: 2, skipped_unreachable: 1 });
   });
 
-  it("hands the printer the list on the deadline, marks the batch sent once delivered, and lets them mark it printed", async () => {
-    const { service, posters, pending, clock, admin } = lab();
+  it("sends the printer the list on the deadline, marks the batch sent, and lets them mark it printed", async () => {
+    const { service, posters, sent, clock, admin, execute } = lab();
     const ada = { memberId: "ada", admin: false };
     unwrap(posters().setRequest("ada-paper", { choice: "lab_print", site_key: PARIS }, ada));
     unwrap(
@@ -273,15 +311,15 @@ describe("the daily sweep", () => {
       }),
     );
     clock.now = new Date("2026-11-25T09:00:00Z");
-    expect(unwrap(posters().sweep())).toMatchObject({ handoffs_filed: 1 });
-    const handoff = pending().find((proposal) => proposal.target?.recipientMemberId === "rahul")!;
+    expect(unwrap(await posters().sweep())).toMatchObject({ handoffs_sent: 1 });
+    const handoff = sent().find((proposal) => proposal.target?.recipientMemberId === "rahul")!;
+    expect(handoff.proposed_payload).toMatchObject({ target: "user:URAHUL" });
     expect(String((handoff.proposed_payload as { message: string }).message)).toContain("Paper ada-paper");
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ id: handoff.id }));
 
-    unwrap(service.approve(handoff.id, { payload_hash: handoff.payload_hash, approver_id: "cy", approver_role: "admin" }));
-    unwrap(await service.execute(handoff.id, { dry_run: false }));
     const paris = unwrap(posters().overview(admin)).batches.find((view) => view.conference_key === PARIS)!;
     expect(paris.status).toBe("sent");
-    expect(unwrap(posters().sweep())).toMatchObject({ handoffs_filed: 0 });
+    expect(unwrap(await posters().sweep())).toMatchObject({ handoffs_sent: 0 });
 
     expect(posters().markPrinted(PARIS, { memberId: "bob", admin: false })).toMatchObject({
       ok: false,
