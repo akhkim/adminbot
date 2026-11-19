@@ -62,6 +62,14 @@ export const papersRoutes: readonly Route[] = [
       { status: 403, message: "member session required" },
     ),
   ),
+  get(
+    /^\/my\/projects\/([^/]+)\/weekly-updates$/u,
+    memberOnly(({ res, ctx, principal, params }) => {
+      const paperId = decodeURIComponent(params[1]!);
+      const updates = ctx.store.listPaperWeeklyUpdates({ paperId, memberId: principal.member.id });
+      sendJson(res, 200, { updates });
+    }),
+  ),
   // Every member's projects, so admins only, and checked here rather than by hiding the tab.
   get(
     "/lab/projects",

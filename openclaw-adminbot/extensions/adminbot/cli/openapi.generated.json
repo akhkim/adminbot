@@ -415,19 +415,23 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "allowed": {
-                      "type": "boolean"
-                    },
                     "tokens": {
                       "type": "array",
                       "items": {
                         "$ref": "#/components/schemas/AdminBotApiTokenView"
                       }
+                    },
+                    "token_role": {
+                      "type": "string",
+                      "const": "power_user"
+                    },
+                    "allowed": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
-                    "allowed",
-                    "tokens"
+                    "tokens",
+                    "allowed"
                   ],
                   "additionalProperties": true
                 }
@@ -980,6 +984,7 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "token_role": {},
                   "name": {},
                   "expires_in_days": {}
                 },
@@ -2120,7 +2125,58 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AdminBotAuthSessionView"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/AdminBotAuthSessionView"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "token_role": {
+                          "type": "string",
+                          "const": "power_user"
+                        },
+                        "member": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "name"
+                          ],
+                          "additionalProperties": true
+                        },
+                        "expires_at": {
+                          "type": "string"
+                        },
+                        "operations": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "get-auth-session",
+                              "get-my-projects",
+                              "get-my-projects-by-projects-id-weekly-updates",
+                              "post-auth-logout"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "token_role",
+                        "member",
+                        "expires_at",
+                        "operations"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
             }
@@ -11706,10 +11762,10 @@
                       "items": {
                         "type": "object",
                         "properties": {
-                          "name": {
+                          "id": {
                             "type": "string"
                           },
-                          "id": {
+                          "name": {
                             "type": "string"
                           },
                           "hours_per_week": {
@@ -11729,8 +11785,8 @@
                           }
                         },
                         "required": [
-                          "name",
-                          "id"
+                          "id",
+                          "name"
                         ],
                         "additionalProperties": true
                       }
@@ -12461,13 +12517,10 @@
                           "joined_month": {
                             "type": "string"
                           },
-                          "name": {
-                            "type": "string"
-                          },
-                          "email": {
-                            "type": "string"
-                          },
                           "id": {
+                            "type": "string"
+                          },
+                          "name": {
                             "type": "string"
                           },
                           "preferred_name": {
@@ -12501,6 +12554,9 @@
                             "type": "boolean"
                           },
                           "slack_stop_at": {
+                            "type": "string"
+                          },
+                          "email": {
                             "type": "string"
                           },
                           "calendar_email": {
@@ -12542,6 +12598,13 @@
                               "external_prof",
                               "benefit_partner",
                               "benefit_direct_relative"
+                            ]
+                          },
+                          "cli_role": {
+                            "type": "string",
+                            "enum": [
+                              "power_user",
+                              "default"
                             ]
                           },
                           "access_overrides": {
@@ -12909,8 +12972,8 @@
                           "projects",
                           "location",
                           "joined_month",
-                          "name",
                           "id",
+                          "name",
                           "privilege_level",
                           "access",
                           "created_at",
@@ -19397,6 +19460,64 @@
                   },
                   "required": [
                     "projects"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/my/projects/{projects_id}/weekly-updates": {
+      "get": {
+        "operationId": "get-my-projects-by-projects-id-weekly-updates",
+        "summary": "GET /my/projects/{projects_id}/weekly-updates",
+        "tags": [
+          "my"
+        ],
+        "x-source": "src/api/routes/papers.ts",
+        "parameters": [
+          {
+            "name": "projects_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "updates": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AdminBotPaperWeeklyUpdate"
+                      }
+                    }
+                  },
+                  "required": [
+                    "updates"
                   ],
                   "additionalProperties": true
                 }
@@ -26195,6 +26316,9 @@
                       "items": {
                         "type": "object",
                         "properties": {
+                          "id": {
+                            "type": "string"
+                          },
                           "reason": {
                             "type": "string",
                             "enum": [
@@ -26203,16 +26327,13 @@
                               "not_accepted"
                             ]
                           },
-                          "id": {
-                            "type": "string"
-                          },
                           "title": {
                             "type": "string"
                           }
                         },
                         "required": [
-                          "reason",
                           "id",
+                          "reason",
                           "title"
                         ],
                         "additionalProperties": true
@@ -34071,6 +34192,10 @@
           "hint": {
             "type": "string"
           },
+          "token_role": {
+            "type": "string",
+            "const": "power_user"
+          },
           "created_at": {
             "type": "string"
           },
@@ -34225,13 +34350,10 @@
       "AdminBotLabMember": {
         "type": "object",
         "properties": {
-          "name": {
-            "type": "string"
-          },
-          "email": {
-            "type": "string"
-          },
           "id": {
+            "type": "string"
+          },
+          "name": {
             "type": "string"
           },
           "preferred_name": {
@@ -34265,6 +34387,9 @@
             "type": "boolean"
           },
           "slack_stop_at": {
+            "type": "string"
+          },
+          "email": {
             "type": "string"
           },
           "calendar_email": {
@@ -34306,6 +34431,13 @@
               "external_prof",
               "benefit_partner",
               "benefit_direct_relative"
+            ]
+          },
+          "cli_role": {
+            "type": "string",
+            "enum": [
+              "power_user",
+              "default"
             ]
           },
           "access_overrides": {
@@ -34681,8 +34813,8 @@
           }
         },
         "required": [
-          "name",
           "id",
+          "name",
           "privilege_level",
           "access",
           "created_at",
@@ -35335,10 +35467,10 @@
       "AdminBotBadgeDefinition": {
         "type": "object",
         "properties": {
-          "name": {
+          "id": {
             "type": "string"
           },
-          "id": {
+          "name": {
             "type": "string"
           },
           "category": {
@@ -35367,8 +35499,8 @@
           }
         },
         "required": [
-          "name",
           "id",
+          "name",
           "category",
           "description",
           "family_key",
@@ -36940,13 +37072,10 @@
       "AdminBotLabMemberView": {
         "type": "object",
         "properties": {
-          "name": {
-            "type": "string"
-          },
-          "email": {
-            "type": "string"
-          },
           "id": {
+            "type": "string"
+          },
+          "name": {
             "type": "string"
           },
           "preferred_name": {
@@ -36980,6 +37109,9 @@
             "type": "boolean"
           },
           "slack_stop_at": {
+            "type": "string"
+          },
+          "email": {
             "type": "string"
           },
           "calendar_email": {
@@ -37021,6 +37153,13 @@
               "external_prof",
               "benefit_partner",
               "benefit_direct_relative"
+            ]
+          },
+          "cli_role": {
+            "type": "string",
+            "enum": [
+              "power_user",
+              "default"
             ]
           },
           "access_overrides": {
@@ -37402,8 +37541,8 @@
           }
         },
         "required": [
-          "name",
           "id",
+          "name",
           "privilege_level",
           "access",
           "created_at",
@@ -37414,12 +37553,6 @@
       "AdminBotLabMemberSummary": {
         "type": "object",
         "properties": {
-          "name": {
-            "type": "string"
-          },
-          "email": {
-            "type": "string"
-          },
           "privilege_level": {
             "type": "string",
             "enum": [
@@ -37430,6 +37563,9 @@
             ]
           },
           "id": {
+            "type": "string"
+          },
+          "name": {
             "type": "string"
           },
           "preferred_name": {
@@ -37463,6 +37599,9 @@
             "type": "boolean"
           },
           "slack_stop_at": {
+            "type": "string"
+          },
+          "email": {
             "type": "string"
           },
           "calendar_email": {
@@ -37504,6 +37643,13 @@
               "external_prof",
               "benefit_partner",
               "benefit_direct_relative"
+            ]
+          },
+          "cli_role": {
+            "type": "string",
+            "enum": [
+              "power_user",
+              "default"
             ]
           },
           "access_overrides": {
@@ -37883,9 +38029,9 @@
           }
         },
         "required": [
-          "name",
           "privilege_level",
           "id",
+          "name",
           "created_at",
           "updated_at"
         ],
@@ -39590,9 +39736,6 @@
       "AdminBotLogisticsListRow": {
         "type": "object",
         "properties": {
-          "member_id": {
-            "type": "string"
-          },
           "id": {
             "type": "string"
           },
@@ -39605,6 +39748,9 @@
               "submitted",
               "in_progress"
             ]
+          },
+          "member_id": {
+            "type": "string"
           },
           "kind": {
             "type": "string",
@@ -39679,9 +39825,9 @@
           }
         },
         "required": [
-          "member_id",
           "id",
           "status",
+          "member_id",
           "kind",
           "updated_at",
           "member_name",
@@ -41824,6 +41970,13 @@
               "benefit_direct_relative"
             ]
           },
+          "cli_role": {
+            "type": "string",
+            "enum": [
+              "power_user",
+              "default"
+            ]
+          },
           "access_overrides": {
             "type": "array",
             "items": {
@@ -43134,6 +43287,38 @@
         ],
         "additionalProperties": true
       },
+      "AdminBotPaperWeeklyUpdate": {
+        "type": "object",
+        "properties": {
+          "paper_id": {
+            "type": "string"
+          },
+          "member_id": {
+            "type": "string"
+          },
+          "week_start": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "paper_id",
+          "member_id",
+          "week_start",
+          "body",
+          "created_at",
+          "updated_at"
+        ],
+        "additionalProperties": true
+      },
       "AdminBotNotificationFeedItem": {
         "type": "object",
         "properties": {
@@ -44240,10 +44425,10 @@
       "OpportunityWire": {
         "type": "object",
         "properties": {
-          "name": {
+          "id": {
             "type": "string"
           },
-          "id": {
+          "name": {
             "type": "string"
           },
           "status": {
@@ -44323,8 +44508,8 @@
           }
         },
         "required": [
-          "name",
           "id",
+          "name",
           "status",
           "category",
           "deadline_aoe"
@@ -45601,38 +45786,6 @@
         ],
         "additionalProperties": true
       },
-      "AdminBotPaperWeeklyUpdate": {
-        "type": "object",
-        "properties": {
-          "paper_id": {
-            "type": "string"
-          },
-          "member_id": {
-            "type": "string"
-          },
-          "week_start": {
-            "type": "string"
-          },
-          "body": {
-            "type": "string"
-          },
-          "created_at": {
-            "type": "string"
-          },
-          "updated_at": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "paper_id",
-          "member_id",
-          "week_start",
-          "body",
-          "created_at",
-          "updated_at"
-        ],
-        "additionalProperties": true
-      },
       "AdminBotTalkMaterialsView": {
         "type": "object",
         "properties": {
@@ -45752,10 +45905,10 @@
           "name": {
             "type": "string"
           },
-          "member_id": {
+          "avatar_url": {
             "type": "string"
           },
-          "avatar_url": {
+          "member_id": {
             "type": "string"
           },
           "attending": {

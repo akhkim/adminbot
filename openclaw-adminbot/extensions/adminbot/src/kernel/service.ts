@@ -1059,6 +1059,7 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   savePaperWeeklyUpdate(update: AdminBotPaperWeeklyUpdate): void;
   listPaperWeeklyUpdates(params?: {
     paperId?: string;
+    memberId?: string;
     weekStart?: string;
   }): AdminBotPaperWeeklyUpdate[];
   /** Upserts one member's verdict on one surface. Re-rating replaces; see contracts/feedback.ts. */
@@ -17870,6 +17871,7 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
 ] as const;
 
 const SELF_PROFILE_PRIVILEGED_FIELDS = [
+  "cli_role",
   "privilege_level",
   // Decide who the batch sweeps address, so they are not facts a member states about themselves.
   "test_onboard_batch",
@@ -18373,6 +18375,9 @@ function validateLabMember(
   // a TypeError out of the route as a 500 rather than answering 400.
   if (!member.name?.trim()) {
     return "member name is required";
+  }
+  if (member.cli_role !== undefined && member.cli_role !== "power_user" && member.cli_role !== "default") {
+    return "cli_role must be power_user or default";
   }
   if (member.status && !adminBotMemberStatuses.includes(member.status)) {
     return "member status is invalid";

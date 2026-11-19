@@ -154,7 +154,7 @@ export type AdminBotMemberPrincipal = {
    * not care; routes that must refuse a token (minting tokens, password or email changes,
    * impersonation) check this field. See docs/adminbot/api-tokens.md.
    */
-  apiToken?: { id: string; name: string };
+  apiToken?: { id: string; name: string; role?: "power_user" };
 };
 
 // `pending_approval` lets the login route render its distinct 403 body while every other

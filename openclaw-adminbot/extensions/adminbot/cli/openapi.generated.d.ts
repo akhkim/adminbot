@@ -3055,6 +3055,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/my/projects/{projects_id}/weekly-updates": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** GET /my/projects/{projects_id}/weekly-updates */
+    get: operations["get-my-projects-by-projects-id-weekly-updates"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/notifications": {
     parameters: {
       query?: never;
@@ -5708,6 +5725,8 @@ export interface components {
       id: string;
       name: string;
       hint: string;
+      /** @constant */
+      token_role?: "power_user";
       created_at: string;
       expires_at: string;
       created_ip?: string;
@@ -5762,9 +5781,8 @@ export interface components {
       [key: string]: unknown;
     };
     AdminBotLabMember: {
-      name: string;
-      email?: string;
       id: string;
+      name: string;
       preferred_name?: string;
       member_type?: string;
       test_onboard_batch?: number;
@@ -5778,6 +5796,7 @@ export interface components {
       };
       do_not_contact?: boolean;
       slack_stop_at?: string;
+      email?: string;
       calendar_email?: string;
       slack_user_id?: string;
       merch_requests?: string;
@@ -5800,6 +5819,8 @@ export interface components {
         | "external_prof"
         | "benefit_partner"
         | "benefit_direct_relative";
+      /** @enum {string} */
+      cli_role?: "power_user" | "default";
       access_overrides?: components["schemas"]["AdminBotAccessGrant"][];
       notes?: string;
       role?: string;
@@ -6118,8 +6139,8 @@ export interface components {
       [key: string]: unknown;
     };
     AdminBotBadgeDefinition: {
-      name: string;
       id: string;
+      name: string;
       category: string;
       description: string;
       criteria_url?: string;
@@ -6608,9 +6629,8 @@ export interface components {
       [key: string]: unknown;
     };
     AdminBotLabMemberView: {
-      name: string;
-      email?: string;
       id: string;
+      name: string;
       preferred_name?: string;
       member_type?: string;
       test_onboard_batch?: number;
@@ -6624,6 +6644,7 @@ export interface components {
       };
       do_not_contact?: boolean;
       slack_stop_at?: string;
+      email?: string;
       calendar_email?: string;
       slack_user_id?: string;
       merch_requests?: string;
@@ -6646,6 +6667,8 @@ export interface components {
         | "external_prof"
         | "benefit_partner"
         | "benefit_direct_relative";
+      /** @enum {string} */
+      cli_role?: "power_user" | "default";
       access_overrides?: components["schemas"]["AdminBotAccessGrant"][];
       notes?: string;
       role?: string;
@@ -6750,11 +6773,10 @@ export interface components {
       [key: string]: unknown;
     };
     AdminBotLabMemberSummary: {
-      name: string;
-      email?: string;
       /** @enum {string} */
       privilege_level: "member" | "admin" | "external_collaborator" | "trial";
       id: string;
+      name: string;
       preferred_name?: string;
       member_type?: string;
       test_onboard_batch?: number;
@@ -6768,6 +6790,7 @@ export interface components {
       };
       do_not_contact?: boolean;
       slack_stop_at?: string;
+      email?: string;
       calendar_email?: string;
       slack_user_id?: string;
       merch_requests?: string;
@@ -6790,6 +6813,8 @@ export interface components {
         | "external_prof"
         | "benefit_partner"
         | "benefit_direct_relative";
+      /** @enum {string} */
+      cli_role?: "power_user" | "default";
       access_overrides?: components["schemas"]["AdminBotAccessGrant"][];
       notes?: string;
       role?: string;
@@ -7423,10 +7448,10 @@ export interface components {
       [key: string]: unknown;
     };
     AdminBotLogisticsListRow: {
-      member_id: string;
       id: string;
       /** @enum {string} */
       status: "withdrawn" | "declined" | "completed" | "submitted" | "in_progress";
+      member_id: string;
       /** @enum {string} */
       kind: "document_signature" | "recommendation_letters" | "book_meeting";
       updated_at: string;
@@ -8129,6 +8154,8 @@ export interface components {
         | "external_prof"
         | "benefit_partner"
         | "benefit_direct_relative";
+      /** @enum {string} */
+      cli_role?: "power_user" | "default";
       access_overrides?: components["schemas"]["AdminBotAccessGrant"][];
       notes?: string;
       role?: string;
@@ -8552,6 +8579,16 @@ export interface components {
     } & {
       [key: string]: unknown;
     };
+    AdminBotPaperWeeklyUpdate: {
+      paper_id: string;
+      member_id: string;
+      week_start: string;
+      body: string;
+      created_at: string;
+      updated_at: string;
+    } & {
+      [key: string]: unknown;
+    };
     AdminBotNotificationFeedItem: {
       id: string;
       /** @enum {string} */
@@ -8914,8 +8951,8 @@ export interface components {
       [key: string]: unknown;
     };
     OpportunityWire: {
-      name: string;
       id: string;
+      name: string;
       /** @enum {string} */
       status: "pending" | "approved" | "rejected";
       /** @enum {string} */
@@ -9369,16 +9406,6 @@ export interface components {
     } & {
       [key: string]: unknown;
     };
-    AdminBotPaperWeeklyUpdate: {
-      paper_id: string;
-      member_id: string;
-      week_start: string;
-      body: string;
-      created_at: string;
-      updated_at: string;
-    } & {
-      [key: string]: unknown;
-    };
     AdminBotTalkMaterialsView: {
       topic_key?: string;
       topic_label?: string;
@@ -9419,8 +9446,8 @@ export interface components {
     };
     ConferenceRosterWirePerson: {
       name: string;
-      member_id?: string;
       avatar_url?: string;
+      member_id?: string;
       /** @enum {string} */
       attending: "unknown" | "yes" | "no";
       attendee_key: string;
@@ -10995,8 +11022,10 @@ export interface operations {
         };
         content: {
           "application/json": {
-            allowed: boolean;
             tokens: components["schemas"]["AdminBotApiTokenView"][];
+            /** @constant */
+            token_role?: "power_user";
+            allowed: boolean;
           } & {
             [key: string]: unknown;
           };
@@ -11412,6 +11441,7 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          token_role?: unknown;
           name?: unknown;
           expires_in_days?: unknown;
         } & {
@@ -12168,7 +12198,27 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["AdminBotAuthSessionView"];
+          "application/json":
+            | components["schemas"]["AdminBotAuthSessionView"]
+            | ({
+                /** @constant */
+                token_role: "power_user";
+                member: {
+                  id: string;
+                  name: string;
+                } & {
+                  [key: string]: unknown;
+                };
+                expires_at: string;
+                operations: (
+                  | "get-auth-session"
+                  | "get-my-projects"
+                  | "get-my-projects-by-projects-id-weekly-updates"
+                  | "post-auth-logout"
+                )[];
+              } & {
+                [key: string]: unknown;
+              });
         };
       };
       /** @description Server response */
@@ -17675,8 +17725,8 @@ export interface operations {
         content: {
           "application/json": {
             members: ({
-              name: string;
               id: string;
+              name: string;
               hours_per_week?: number;
               availability?: components["schemas"]["AdminBotAvailabilityRow"][];
               time_off?: components["schemas"]["AdminBotTimeOffRow"][];
@@ -18126,9 +18176,8 @@ export interface operations {
               projects: string[];
               location: string;
               joined_month: string;
-              name: string;
-              email?: string;
               id: string;
+              name: string;
               preferred_name?: string;
               member_type?: string;
               test_onboard_batch?: number;
@@ -18142,6 +18191,7 @@ export interface operations {
               };
               do_not_contact?: boolean;
               slack_stop_at?: string;
+              email?: string;
               calendar_email?: string;
               slack_user_id?: string;
               merch_requests?: string;
@@ -18164,6 +18214,8 @@ export interface operations {
                 | "external_prof"
                 | "benefit_partner"
                 | "benefit_direct_relative";
+              /** @enum {string} */
+              cli_role?: "power_user" | "default";
               access_overrides?: components["schemas"]["AdminBotAccessGrant"][];
               notes?: string;
               role?: string;
@@ -22125,6 +22177,43 @@ export interface operations {
         content: {
           "application/json": {
             projects: components["schemas"]["AdminBotMyProjectSummary"][];
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "get-my-projects-by-projects-id-weekly-updates": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projects_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            updates: components["schemas"]["AdminBotPaperWeeklyUpdate"][];
           } & {
             [key: string]: unknown;
           };
@@ -26141,9 +26230,9 @@ export interface operations {
         content: {
           "application/json": {
             excluded: ({
+              id: string;
               /** @enum {string} */
               reason: "no_date" | "out_of_range" | "not_accepted";
-              id: string;
               title: string;
             } & {
               [key: string]: unknown;

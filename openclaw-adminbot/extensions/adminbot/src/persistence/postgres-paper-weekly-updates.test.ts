@@ -49,6 +49,7 @@ describe.skipIf(!url)("PostgreSQL paper weekly updates", () => {
       for (const filter of [
         undefined,
         { paperId: "paper-a" },
+        { paperId: "paper-a", memberId: "member-a" },
         { weekStart: "2026-09-21" },
         { paperId: "paper-a", weekStart: "2026-09-14" },
       ]) {

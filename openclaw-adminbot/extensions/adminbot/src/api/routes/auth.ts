@@ -27,6 +27,7 @@ import { memberOnboardingDeps } from "./onboarding.js";
 import { deviceClock, remoteIp } from "./origin.js";
 import {
   sendAuthResult,
+  powerUserOperations,
   requestIsSecure,
   clearSessionCookie,
   resolvePrincipal,
@@ -103,7 +104,15 @@ export async function handleAuthRoute(
       sendJson(res, 401, { error: { message: "authentication required" } });
       return;
     }
-    sendJson(res, 200, ctx.auth.sessionView(principal));
+    const view = principal.apiToken?.role === "power_user"
+      ? {
+          token_role: "power_user" as const,
+          member: { id: principal.member.id, name: principal.member.name },
+          expires_at: principal.session.expires_at,
+          operations: powerUserOperations.map((op) => op.id),
+        }
+      : ctx.auth.sessionView(principal);
+    sendJson(res, 200, view);
     return;
   }
   // Open and close a "view as" session. Both are member-authenticated rather than

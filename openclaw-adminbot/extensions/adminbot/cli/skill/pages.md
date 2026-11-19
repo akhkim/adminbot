@@ -339,6 +339,7 @@ Website: `/my-work` · Who: member
 
 | Operation ID                                       | Route                                             |
 | -------------------------------------------------- | ------------------------------------------------- |
+| `get-my-projects-by-projects-id-weekly-updates`    | GET `/my/projects/{projects_id}/weekly-updates`   |
 | `get-my-projects`                                  | GET `/my/projects`                                |
 | `get-papers-by-papers-id-slots`                    | GET `/papers/{papers_id}/slots`                   |
 | `get-papers-by-papers-id-weekly-updates`           | GET `/papers/{papers_id}/weekly-updates`          |

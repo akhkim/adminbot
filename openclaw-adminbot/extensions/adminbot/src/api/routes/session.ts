@@ -5,8 +5,11 @@
 
 import { timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { AdminBotAuthResponse } from "../../workflows/identity/auth.js";
-import { isApiTokenShaped } from "../../workflows/identity/api-token-format.js";
+import { isApiTokenShaped, isPowerUserToken } from "../../workflows/identity/api-token-format.js";
+import type {
+  AdminBotAuthResponse,
+  AdminBotMemberPrincipal,
+} from "../../workflows/identity/auth.js";
 import { sendJson } from "../server.http.js";
 import type { AdminBotRouteContext, AdminBotPrincipal } from "./context.js";
 import { deviceClock, remoteIp } from "./origin.js";
@@ -83,6 +86,45 @@ export function sendAuthResult<T>(
   sendJson(res, result.status, body);
 }
 
+// Resolve a bearer once, including when an /auth handler asks for it again.
+const tokenPrincipals = new WeakMap<IncomingMessage, AdminBotMemberPrincipal>();
+
+export const powerUserOperations = [
+  { id: "get-auth-session", method: "GET", path: /^\/auth\/session$/u },
+  { id: "get-my-projects", method: "GET", path: /^\/my\/projects$/u },
+  {
+    id: "get-my-projects-by-projects-id-weekly-updates",
+    method: "GET",
+    path: /^\/my\/projects\/[^/]+\/weekly-updates$/u,
+  },
+  { id: "post-auth-logout", method: "POST", path: /^\/auth\/logout$/u },
+] as const;
+
+/** Apply the pilot boundary before public, auth, and normal dispatch, including future routes. */
+export async function authorizePersonalTokenRequest(
+  req: IncomingMessage,
+  res: ServerResponse,
+  ctx: AdminBotRouteContext,
+  url: URL,
+): Promise<boolean> {
+  const bearer = bearerToken(req);
+  if (!bearer || !isPowerUserToken(bearer)) return true;
+  const principal = await resolvePrincipal(req, ctx);
+  if (principal?.kind !== "member" || principal.apiToken?.role !== "power_user") {
+    sendJson(res, 401, { error: { message: "API token expired, revoked or ineligible" } });
+    return false;
+  }
+  if (
+    !url.search &&
+    powerUserOperations.some((op) => op.method === req.method && op.path.test(url.pathname))
+  )
+    return true;
+  sendJson(res, 403, {
+    error: { message: "Outside power_user access. Run adminbot whoami for allowed operations." },
+  });
+  return false;
+}
+
 export async function resolvePrincipal(
   req: IncomingMessage,
   ctx: AdminBotRouteContext,
@@ -98,8 +140,12 @@ export async function resolvePrincipal(
     // revoked or expired one is simply unauthenticated. Bearer only, so a token cannot ride along
     // in a cookie or a link.
     if (isApiTokenShaped(bearer)) {
+      const cached = tokenPrincipals.get(req);
+      if (cached) return cached;
       const resolved = await ctx.apiTokens.resolve(bearer, remoteIp(req, ctx.trustProxyHeaders));
       if (resolved.ok) {
+        if (resolved.principal.apiToken?.role === "power_user")
+          tokenPrincipals.set(req, resolved.principal);
         return resolved.principal;
       }
       if (resolved.status === 429) {

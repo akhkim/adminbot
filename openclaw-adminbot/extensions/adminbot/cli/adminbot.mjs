@@ -40,7 +40,8 @@ adminbot <command> --help                     Show generated parameters and flag
 adminbot skill install                        Install the agent skill for Claude Code and Codex
 
 Sign-in (one click in the browser, like gh and Modal):
-  adminbot login                              Approve once; the token lasts until revoked or unused 90 days
+  adminbot login                              Approve access in your browser
+  adminbot login --power-user                 Request only the restricted pilot credential
   adminbot login --no-browser                 Print the link instead of opening it (agents, SSH)
   adminbot login --insecure-storage           Keep the token in the credentials file, not the Keychain
   adminbot whoami                             Who you are signed in as (also: auth status)
@@ -48,6 +49,8 @@ Sign-in (one click in the browser, like gh and Modal):
   adminbot logout                             Revoke this machine's token
 
 Examples:
+  adminbot my projects
+  adminbot my notes PAPER_ID
   adminbot papers list
   adminbot work update PAPER_ID --note "Finished experiments"
   adminbot tasks update PAPER_ID fixes_merged --done
@@ -162,7 +165,7 @@ function findCommand(argv) {
 }
 
 const LOGIN_USAGE =
-  "Usage: adminbot login [--name NAME] [--days 1-365] [--no-browser] [--insecure-storage] [--url ORIGIN] [--timeout MS]";
+  "Usage: adminbot login [--power-user] [--name NAME] [--days 1-365] [--no-browser] [--insecure-storage] [--url ORIGIN] [--timeout MS]";
 // gh-style shortcuts: `adminbot login` is `adminbot auth login`, and so on.
 const TOP_LEVEL = { login: "login", logout: "logout", whoami: "whoami" };
 
@@ -182,6 +185,10 @@ function deviceLoginArgs(argv) {
   const options = { browser: true, insecureStorage: false };
   for (let index = 0; index < args.length; index++) {
     const [flag, inline] = args[index].split(/[=](.*)/su);
+    if (flag === "--power-user" && inline === undefined) {
+      options.powerUser = true;
+      continue;
+    }
     if (flag === "--no-browser" && inline === undefined) {
       options.browser = false;
       continue;
@@ -372,6 +379,7 @@ export async function run(
         credentials,
         name: browserLogin.name,
         days: browserLogin.days,
+        powerUser: browserLogin.powerUser,
         browser: browserLogin.browser,
         timeout: requestTimeout(browserLogin.timeout),
         env: browserLogin.insecureStorage ? { ...env, ADMINBOT_KEYCHAIN: "0" } : env,

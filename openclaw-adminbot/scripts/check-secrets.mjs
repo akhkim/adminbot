@@ -16,7 +16,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const CANDIDATE = /abt_[A-Za-z0-9_-]{43}_[0-9a-f]{8}/gu;
+const CANDIDATE = /abt_(?:p1_)?[A-Za-z0-9_-]{43}_[0-9a-f]{8}/gu;
 const MAX_BYTES = 2 * 1024 * 1024;
 
 const CRC_TABLE = (() => {

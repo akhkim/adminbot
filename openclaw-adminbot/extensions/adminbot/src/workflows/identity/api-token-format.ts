@@ -47,8 +47,13 @@ export function crc32Hex(text: string): string {
   return ((crc ^ 0xffffffff) >>> 0).toString(16).padStart(8, "0");
 }
 
-export function mintApiTokenSecret(): string {
-  const body = `${API_TOKEN_PREFIX}${randomBytes(SECRET_BYTES).toString("base64url")}`;
+// The longer format keeps an older server from interpreting a pilot token as a wildcard on rollback.
+export function isPowerUserToken(value: string): boolean {
+  return /^abt_p1_[A-Za-z0-9_-]{43}_[0-9a-f]{8}$/u.test(value);
+}
+
+export function mintApiTokenSecret(powerUser = false): string {
+  const body = `${API_TOKEN_PREFIX}${powerUser ? "p1_" : ""}${randomBytes(SECRET_BYTES).toString("base64url")}`;
   return `${body}_${crc32Hex(body)}`;
 }
 
@@ -62,7 +67,7 @@ export function newApiTokenId(): string {
  * a string that merely starts with `abt_`.
  */
 export function isApiTokenShaped(value: string): boolean {
-  const match = /^abt_([A-Za-z0-9_-]{43})_([0-9a-f]{8})$/u.exec(value);
+  const match = /^abt_(?:p1_)?([A-Za-z0-9_-]{43})_([0-9a-f]{8})$/u.exec(value);
   return Boolean(match) && crc32Hex(value.slice(0, -9)) === match![2];
 }
 

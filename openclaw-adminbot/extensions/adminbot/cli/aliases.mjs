@@ -8,6 +8,8 @@ export const aliases = {
   "auth tokens list": { operation: "get-auth-api-tokens" },
   "auth tokens revoke": { operation: "delete-auth-api-tokens-by-api-tokens-id" },
   "auth tokens revoke-all": { operation: "post-auth-api-tokens-revoke-all" },
+  "my projects": { operation: "get-my-projects" },
+  "my notes": { operation: "get-my-projects-by-projects-id-weekly-updates" },
   "work list": { operation: "get-papers-slot-overview" },
   "work update": {
     operation: "post-papers-by-papers-id-weekly-updates",

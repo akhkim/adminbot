@@ -592,6 +592,18 @@ await test("browser login keeps polling through a server error", async (t) => {
   assert.equal(result.api_token.id, approved.api_token.id);
 });
 
+await test("pilot login stops before browser approval on an older server", async () => {
+  const result = await invoke(["login", "--power-user", "--no-browser"], {
+    fetchImpl: async (request) => {
+      assert.equal((await request.json()).token_role, "power_user");
+      return new Response(JSON.stringify({ device_code: "sample", user_code: "BCDF-GHJK" }));
+    },
+  });
+  assert.equal(result.code, 3);
+  assert.match(result.err, /does not support restricted CLI sign-in/u);
+  assert.doesNotMatch(result.err, /BCDF-GHJK/u);
+});
+
 await test("browser login refuses unknown flags and redacts tokens from errors", async () => {
   const bad = await invoke(["auth", "login", "--password", FAKE_TOKEN]);
   assert.equal(bad.code, 2);

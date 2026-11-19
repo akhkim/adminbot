@@ -35,6 +35,7 @@ export async function handleApiTokenRoute(
     sendAuthResult(
       res,
       await ctx.apiTokens.startDeviceLogin({
+        token_role: body.token_role,
         name: body.name,
         expires_in_days: body.expires_in_days,
         ...(ip ? { remoteIp: ip } : {}),
@@ -73,6 +74,7 @@ async function handleMemberRoute(
   if (req.method === "GET" && url.pathname === "/auth/api-tokens") {
     sendJson(res, 200, {
       allowed: ctx.apiTokens.allowedFor(principal),
+      ...(principal.member.cli_role === "power_user" ? { token_role: "power_user" as const } : {}),
       tokens: await ctx.apiTokens.list(principal),
     });
     return;
