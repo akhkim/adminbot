@@ -1,5 +1,6 @@
 import { css, html, LitElement, nothing } from "lit";
 import { property, state } from "lit/decorators.js";
+import { adminBotFeedbackCommentMax } from "../../../../../extensions/adminbot/src/contracts/feedback.ts";
 import { submitFeedback } from "../api/workspace.ts";
 import { loadStoredMemberSession } from "../auth/session.ts";
 
@@ -118,7 +119,11 @@ export class CliPilotNotice extends LitElement {
             </select>
           </label>
           <label
-            >Comment (optional)<textarea name="comment" rows="3" maxlength="2000"></textarea>
+            >Comment (optional)<textarea
+              name="comment"
+              rows="3"
+              maxlength=${adminBotFeedbackCommentMax}
+            ></textarea>
           </label>
           <button type="submit" ?disabled=${this.saving}>
             ${this.saving ? "Saving…" : "Send feedback"}

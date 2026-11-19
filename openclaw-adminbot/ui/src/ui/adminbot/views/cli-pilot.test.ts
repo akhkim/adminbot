@@ -21,6 +21,7 @@ it("reports success only after AdminBot saves the CLI rating, and retains a fail
   await notice.updateComplete;
   const root = notice.shadowRoot!;
   expect(root.querySelector("a")?.href).toContain("adminbot-cli-pilot-v2");
+  expect(root.querySelector("textarea")!.maxLength).toBe(280);
   root.querySelector("select")!.value = "4";
   root.querySelector("textarea")!.value = "A sample report";
   root.querySelector("form")!.requestSubmit();
