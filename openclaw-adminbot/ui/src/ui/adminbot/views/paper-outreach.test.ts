@@ -242,10 +242,13 @@ describe("renderPaperOutreach", () => {
     expect(find(container, "outreach-sheet-add")).toBeNull();
   });
 
-  it("offers only a copy when the sheet is not connected", () => {
+  it("points to the exported tab when the server does not write the sheet", () => {
     const container = draw({ data: outreach({ acceptance_sheet_configured: false }) });
     expect(find(container, "outreach-sheet-check")).toBeNull();
-    expect(container.textContent).toContain("not connected");
+    expect(container.textContent).toContain("every six hours");
+    expect(find(container, "outreach-sheet-open")?.getAttribute("href")).toContain(
+      "gid=1274660812",
+    );
   });
 
   it("still shows the acceptance rows when no venue is chosen", () => {
