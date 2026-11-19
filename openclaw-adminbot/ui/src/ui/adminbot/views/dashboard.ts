@@ -15,6 +15,8 @@
 // is presentation. The deadline board itself is the same public renderer used by the dedicated
 // route: signed-in members should not get a smaller or stale copy of a public tool.
 import { html, nothing } from "lit";
+import { keyed } from "lit/directives/keyed.js";
+import "./cli-pilot.ts";
 import { t } from "../../../i18n/index.ts";
 import type { AppViewState } from "../../app-view-state.ts";
 import { icons } from "../../icons.ts";
@@ -732,11 +734,21 @@ function renderBroadcast(state: AppViewState) {
 }
 
 export function renderDashboard(state: AppViewState, role: AccessRole, onRetry?: () => void) {
+  const ownProfile = findOwnMember(state);
+  const cliPilot =
+    role !== "anonymous" && !state.memberImpersonatedBy && ownProfile?.cli_role === "power_user"
+      ? keyed(
+          ownProfile.id,
+          html`<adminbot-cli-pilot
+            .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
+          ></adminbot-cli-pilot>`,
+        )
+      : nothing;
   if (role !== "anonymous" && state.adminBotData?.loadedAt === null) {
-    const ownProfile = findOwnMember(state);
     const profileItem = ownProfile ? mandatoryFieldsItem(state) : null;
     return html`<div class="dashboard">
-      ${renderBroadcast(state)} ${ownProfile ? renderNudgeWarning(state, role) : nothing}
+      ${cliPilot} ${renderBroadcast(state)}
+      ${ownProfile ? renderNudgeWarning(state, role) : nothing}
       <section class="dashboard__attention" aria-live="polite">
         ${state.adminBotError
           ? html`<div class="callout danger" role="alert" data-testid="dashboard-load-error">
@@ -761,8 +773,8 @@ export function renderDashboard(state: AppViewState, role: AccessRole, onRetry?:
   }
   return html`
     <div class="dashboard">
-      ${renderOfflineBanner(state)} ${renderBroadcast(state)} ${renderNudgeWarning(state, role)}
-      ${renderAttention(state, role)}
+      ${renderOfflineBanner(state)} ${cliPilot} ${renderBroadcast(state)}
+      ${renderNudgeWarning(state, role)} ${renderAttention(state, role)}
       <section class="dashboard__summaries">
         <div class="dashboard__grid">
           ${renderWorkSummary(state)}

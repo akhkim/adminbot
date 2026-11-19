@@ -191,6 +191,7 @@ export type MemberMapVisibility = "auto" | "stated" | "hidden";
 export const MEMBER_MAP_VISIBILITIES: readonly MemberMapVisibility[] = ["auto", "stated", "hidden"];
 
 export type LabMember = {
+  cli_role?: "default" | "power_user";
   id?: string;
   name?: string | null;
   // Governance-owned directory address, required to be @cs.toronto.edu for core members.
