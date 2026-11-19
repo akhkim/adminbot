@@ -24,6 +24,7 @@ up to 30 days. Other agents can read this Markdown directly.
 | Record a weekly note | `adminbot work update PAPER_ID --note "Revised the evaluation"` |
 | Check or complete a checklist item | `adminbot tasks list PAPER_ID`, then `adminbot tasks update PAPER_ID SLOT --done` |
 | Change an authored project’s stage | `adminbot papers progress PAPER_ID --step overleaf_writing` |
+| Arrange printing for an authored project | `adminbot call get-papers-by-papers-id-poster-print PAPER_ID`, then inspect `adminbot call put-papers-by-papers-id-poster-print --help` |
 | Check their role, available operations and expiry | `adminbot permissions` |
 | Find input fields for a permitted operation | `adminbot call OPERATION_ID --help` |
 | Fetch their logistics requests or profile | `adminbot call get-logistics-requests` or `adminbot call get-lab-members-self` |

@@ -154,6 +154,19 @@ describe("personal API tokens over HTTP", () => {
       const isAdmin = id === "admin-a";
       expect(view.body.member.privilege_level).toBe(isAdmin ? "admin" : "member");
       expect(view.body.operations.includes("get-settings")).toBe(isAdmin);
+      expect(view.body.operations).toEqual(
+        expect.arrayContaining([
+          "get-poster-printing",
+          "get-papers-by-papers-id-poster-print",
+          "put-papers-by-papers-id-poster-print",
+          "post-poster-printing-by-poster-printing-id-printed",
+        ]),
+      );
+      expect(view.body.operations.includes("post-poster-printing-scheduled-run")).toBe(isAdmin);
+      expect(view.body.operations.includes("put-poster-printing-by-poster-printing-id")).toBe(
+        isAdmin,
+      );
+      expect((await call(baseUrl, "GET", "/poster-printing", { bearer })).status).toBe(200);
       expect(view.body.operations).not.toContain("post-auth-device-token");
       for (const [paper, owner] of [
         ["mine", id],
