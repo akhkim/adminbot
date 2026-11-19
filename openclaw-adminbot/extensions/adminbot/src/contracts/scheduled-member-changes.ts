@@ -31,6 +31,7 @@ export type AdminBotScheduledMemberChange = {
   /**
    * No guide email when the change is made. On unless the admin turns it off: a mail that goes out
    * from a cron job a week later, with nobody watching, should be something somebody asked for.
+   * A move into alumni is the exception and always sends the alumni welcome (routes/members.ts).
    */
   silent: boolean;
   /** Admin-only context: why, and where it was agreed. */
