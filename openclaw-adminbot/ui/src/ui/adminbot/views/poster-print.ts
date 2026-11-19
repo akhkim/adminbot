@@ -12,6 +12,7 @@
 import "../../../styles/poster-print.css";
 import { html, LitElement, nothing, type PropertyValues } from "lit";
 import { property, state } from "lit/decorators.js";
+import { live } from "lit/directives/live.js";
 import {
   ADMINBOT_POSTER_PRINT_DEFAULTS_KEY,
   adminBotPosterOrientations,
@@ -804,7 +805,7 @@ export class PosterPrintBatches extends LitElement {
             <input
               class="input"
               type="date"
-              .value=${draft.deadline_on}
+              .value=${live(draft.deadline_on)}
               ?disabled=${this.busy}
               @input=${(event: Event) =>
                 this.patchDraft(key, { deadline_on: (event.target as HTMLInputElement).value })}
