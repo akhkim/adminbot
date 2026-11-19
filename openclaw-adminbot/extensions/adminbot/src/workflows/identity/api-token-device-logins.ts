@@ -33,6 +33,7 @@ export type DeviceLogin = {
   status: DeviceLoginStatus;
   /** Who approved it. Set with status "approved". */
   member_id?: string;
+  power_user?: boolean;
   last_polled_ms?: number;
 };
 

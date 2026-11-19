@@ -12,7 +12,7 @@ export type AdminBotApiToken = {
   name: string;
   /** Last four characters of the secret, so two tokens in a list can be told apart. */
   hint: string;
-  /** Always ["*"] today: a token acts as its owner. Stored so narrower scopes need no migration. */
+  /** Exactly one scope: "*" for a browser-equivalent token or "power_user" for the restricted pilot. */
   scopes: string[];
   created_at: string;
   expires_at: string;

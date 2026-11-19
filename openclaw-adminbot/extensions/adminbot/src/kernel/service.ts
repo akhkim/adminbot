@@ -1059,6 +1059,7 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   savePaperWeeklyUpdate(update: AdminBotPaperWeeklyUpdate): void;
   listPaperWeeklyUpdates(params?: {
     paperId?: string;
+    memberId?: string;
     weekStart?: string;
   }): AdminBotPaperWeeklyUpdate[];
   /** Upserts one member's verdict on one surface. Re-rating replaces; see contracts/feedback.ts. */
@@ -6118,6 +6119,9 @@ export class AdminBotService {
     if (!member) {
       return serviceError(404, "member not found");
     }
+    if (member.privilege_level !== "admin" && !this.memberOwnsPaper(member, paper)) {
+      return serviceError(403, "Members can only update projects they authored");
+    }
     const body = params.body.trim().slice(0, adminBotWeeklyUpdateBodyMax);
     if (!body) {
       return serviceError(400, "a weekly update needs something in it");
@@ -7324,7 +7328,14 @@ export class AdminBotService {
     );
   }
 
-  private memberOwnsPaper(member: AdminBotLabMember, paper: AdminBotPaperRecord): boolean {
+  listOwnedPapers(member: AdminBotLabMember): AdminBotPaperRecord[] {
+    const counts = rosterNameCounts(this.store.listLabMembers());
+    return this.store
+      .listPapers()
+      .filter((paper) => memberOwnsPaper(member, paper, (name) => counts.get(name) ?? 0));
+  }
+
+  memberOwnsPaper(member: AdminBotLabMember, paper: AdminBotPaperRecord): boolean {
     return memberOwnsPaper(
       member,
       paper,
@@ -7580,7 +7591,7 @@ export class AdminBotService {
    */
   listPaperSlots(
     paperId: string,
-    viewer?: { memberId?: string; isAdmin?: boolean },
+    viewer?: { memberId?: string; isAdmin?: boolean; personalEntriesOnly?: boolean },
   ): AdminBotServiceResponse<{
     paper: AdminBotPaperRecord;
     slots: AdminBotPaperSlotRecord[];
@@ -7632,12 +7643,17 @@ export class AdminBotService {
         drafts,
         consents: drafts.flatMap((draft) => this.store.listSocialConsents(draft.id)),
         attendees,
-        reimbursements,
+        reimbursements: viewer?.personalEntriesOnly
+          ? reimbursements.filter((r) => r.member_id === viewer.memberId)
+          : reimbursements,
         paperflow_stages: this.paperflowStageViews(paper, stored),
         // Carried on the same read as the rest of the cycle: the card opens once and the weekly
         // log is part of what "this paper right now" means, so a second fetch would only add a
         // second thing that can be stale.
-        weekly_updates: this.store.listPaperWeeklyUpdates({ paperId }),
+        weekly_updates: this.store.listPaperWeeklyUpdates({
+          paperId,
+          ...(viewer?.personalEntriesOnly ? { memberId: viewer.memberId } : {}),
+        }),
         cycle_closed: isCycleClosed({
           paper,
           slots: stored,
@@ -10055,20 +10071,27 @@ export class AdminBotService {
    * computation the nudge pass runs, returned instead of sent. Keeping them on one code path is
    * what makes the button's count honest -- it says what pressing it would actually chase.
    */
-  listPaperSlotOverview(nowIso?: string): AdminBotServiceResponse<{
+  listPaperSlotOverview(
+    nowIso?: string,
+    viewer?: AdminBotLabMember,
+  ): AdminBotServiceResponse<{
     papers: AdminBotPaperSlotOverviewRow[];
   }> {
     return this.withRosterSnapshot(() =>
-      this.withPaperTables(() => this.sweepListPaperSlotOverview(nowIso)),
+      this.withPaperTables(() => this.sweepListPaperSlotOverview(nowIso, viewer)),
     );
   }
 
-  private sweepListPaperSlotOverview(nowIso?: string): AdminBotServiceResponse<{
+  private sweepListPaperSlotOverview(
+    nowIso?: string,
+    viewer?: AdminBotLabMember,
+  ): AdminBotServiceResponse<{
     papers: AdminBotPaperSlotOverviewRow[];
   }> {
     const now = nowIso ? new Date(nowIso) : new Date();
     const ledger = this.nudgeLedgerIndex();
-    const papers = this.store.listPapers().map((paper) => {
+    const visible = viewer ? this.listOwnedPapers(viewer) : this.store.listPapers();
+    const papers = visible.map((paper) => {
       const stored = this.paperRows().listPaperSlots(paper.id);
       const drafts = this.paperRows().listSocialDrafts(paper.id);
       // Merged, so the header's `unknown` count is the number of authors still owing an answer
@@ -17870,6 +17893,7 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
 ] as const;
 
 const SELF_PROFILE_PRIVILEGED_FIELDS = [
+  "cli_role",
   "privilege_level",
   // Decide who the batch sweeps address, so they are not facts a member states about themselves.
   "test_onboard_batch",
@@ -18373,6 +18397,13 @@ function validateLabMember(
   // a TypeError out of the route as a 500 rather than answering 400.
   if (!member.name?.trim()) {
     return "member name is required";
+  }
+  if (
+    member.cli_role !== undefined &&
+    member.cli_role !== "power_user" &&
+    member.cli_role !== "default"
+  ) {
+    return "cli_role must be power_user or default";
   }
   if (member.status && !adminBotMemberStatuses.includes(member.status)) {
     return "member status is invalid";

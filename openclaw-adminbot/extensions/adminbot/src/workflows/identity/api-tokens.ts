@@ -4,7 +4,11 @@
 // Separate from AdminBotAuthService, which owns passwords and browser sessions: the two share the
 // store and the principal shape, and nothing else.
 import { randomUUID } from "node:crypto";
-import type { AdminBotAuditEvent, AdminBotPrivilegeLevel } from "../../contracts/actions.js";
+import {
+  adminBotIsAlumniMember,
+  type AdminBotAuditEvent,
+  type AdminBotPrivilegeLevel,
+} from "../../contracts/actions.js";
 import type { AdminBotApiToken } from "../../contracts/api-tokens.js";
 import {
   DEVICE_LOGIN_POLL_SECONDS,
@@ -29,6 +33,7 @@ import {
   cleanApiTokenName,
   hashApiToken,
   isApiTokenShaped,
+  isPowerUserToken,
   mintApiTokenSecret,
   newApiTokenId,
 } from "./api-token-format.js";
@@ -95,6 +100,7 @@ export type AdminBotApiTokenView = {
   id: string;
   name: string;
   hint: string;
+  token_role?: "power_user";
   created_at: string;
   expires_at: string;
   created_ip?: string;
@@ -114,6 +120,7 @@ export type AdminBotApiTokenResolution =
   | { ok: false; status: 429; retry_after_seconds: number };
 
 export type AdminBotDeviceLoginStart = {
+  token_role?: "power_user";
   device_code: string;
   user_code: string;
   verification_uri: string;
@@ -134,6 +141,7 @@ export type AdminBotDeviceLoginPoll =
 export class AdminBotApiTokenService {
   private readonly store: AdminBotApiTokenStore;
   private readonly levels: Set<AdminBotPrivilegeLevel>;
+  private readonly powerUserLimiter = new ApiTokenRateLimiter(30);
   private readonly geolocateIp?: AdminBotApiTokenServiceOptions["geolocateIp"];
   private readonly onApiTokenNewIp?: AdminBotApiTokenServiceOptions["onApiTokenNewIp"];
   private readonly controlUiUrl: string;
@@ -160,7 +168,17 @@ export class AdminBotApiTokenService {
 
   /** Whether this member could hold a token at all; the UI uses it to show or hide the section. */
   allowedFor(principal: AdminBotMemberPrincipal): boolean {
-    return apiTokensAllowed(principal.member, this.levels);
+    return principal.member.cli_role === "power_user"
+      ? this.isPowerUser(principal.member)
+      : apiTokensAllowed(principal.member, this.levels);
+  }
+
+  private isPowerUser(member: AdminBotMemberPrincipal["member"]): boolean {
+    return (
+      member.cli_role === "power_user" &&
+      !adminBotIsAlumniMember(member) &&
+      (member.privilege_level === "member" || member.privilege_level === "admin")
+    );
   }
 
   // ---- Resolving a request ------------------------------------------------------------------
@@ -193,10 +211,19 @@ export class AdminBotApiTokenService {
       return { ok: false, status: 401 };
     }
     const member = await this.store.getLabMember(token.member_id);
-    if (!member || !apiTokensAllowed(member, this.levels)) {
+    const powerUser = token.scopes.length === 1 && token.scopes[0] === "power_user";
+    const wildcard = token.scopes.length === 1 && token.scopes[0] === "*";
+    if (
+      !member ||
+      powerUser !== isPowerUserToken(raw) ||
+      !(powerUser ? this.isPowerUser(member) : wildcard && apiTokensAllowed(member, this.levels))
+    ) {
       return { ok: false, status: 401 };
     }
-    const wait = this.rateLimiter.take(token.id, now.getTime());
+    // Every machine belonging to a pilot shares one budget.
+    const wait = powerUser
+      ? this.powerUserLimiter.take(member.id, now.getTime())
+      : this.rateLimiter.take(token.id, now.getTime());
     if (wait > 0) {
       return { ok: false, status: 429, retry_after_seconds: wait };
     }
@@ -213,7 +240,11 @@ export class AdminBotApiTokenService {
           expires_at: token.expires_at,
           last_seen_at: nowIso,
         },
-        apiToken: { id: token.id, name: token.name },
+        apiToken: {
+          id: token.id,
+          name: token.name,
+          ...(powerUser ? { role: "power_user" as const } : {}),
+        },
       },
     };
   }
@@ -307,7 +338,7 @@ export class AdminBotApiTokenService {
     if (!name) {
       return fail(400, "a token needs a name, e.g. the machine or agent that will use it");
     }
-    const { secret, token } = await this.mint(principal.member.id, name, input.expires_in_days, {
+    const { secret, token } = await this.mint(principal.member, name, input.expires_in_days, {
       ...(input.remoteIp ? { ip: input.remoteIp } : {}),
       via: principal.apiToken ? "api_token" : "profile",
     });
@@ -361,12 +392,16 @@ export class AdminBotApiTokenService {
   /** Anonymous: the CLI has no credential yet. Rate-limited per address. */
   async startDeviceLogin(input: {
     name: unknown;
+    token_role?: unknown;
     expires_in_days?: unknown;
     remoteIp?: string;
   }): Promise<AdminBotAuthResponse<AdminBotDeviceLoginStart>> {
     const name = cleanApiTokenName(input.name);
     if (!name) {
       return fail(400, "a token needs a name, e.g. the machine or agent that will use it");
+    }
+    if (input.token_role !== undefined && input.token_role !== "power_user") {
+      return fail(400, "unknown CLI token role");
     }
     const ipKey = `device-start:${input.remoteIp ?? "unknown"}`;
     const nowMs = this.now().getTime();
@@ -386,6 +421,7 @@ export class AdminBotApiTokenService {
     const days = clampApiTokenDays(input.expires_in_days);
     const login = (code: string): DeviceLogin => ({
       device_code_hash: hashDeviceCode(deviceCode),
+      power_user: input.token_role === "power_user",
       user_code: code,
       name,
       ...(days ? { expires_in_days: days } : {}),
@@ -412,6 +448,7 @@ export class AdminBotApiTokenService {
       status: 200,
       payload: {
         device_code: deviceCode,
+        ...(input.token_role === "power_user" ? { token_role: "power_user" as const } : {}),
         user_code: shown,
         verification_uri: base,
         verification_uri_complete: `${base}?${new URLSearchParams({ cliLogin: shown })}`,
@@ -429,6 +466,8 @@ export class AdminBotApiTokenService {
     AdminBotAuthResponse<{
       user_code: string;
       name: string;
+      token_role?: "power_user";
+      web_role?: "admin" | "member";
       /** Absent: no fixed expiry. */
       expires_in_days?: number;
       requested_ip?: string;
@@ -445,13 +484,28 @@ export class AdminBotApiTokenService {
       return found;
     }
     const login = found.payload;
+    if (this.isPowerUser(principal.member)) login.power_user = true;
+    if (login.power_user && !this.isPowerUser(principal.member)) {
+      return fail(403, "this account is not enrolled in the CLI pilot");
+    }
     return {
       ok: true,
       status: 200,
       payload: {
         user_code: formatUserCode(login.user_code),
         name: login.name,
-        ...(login.expires_in_days ? { expires_in_days: login.expires_in_days } : {}),
+        ...(this.isPowerUser(principal.member)
+          ? {
+              token_role: "power_user" as const,
+              web_role:
+                principal.member.privilege_level === "admin"
+                  ? ("admin" as const)
+                  : ("member" as const),
+              expires_in_days: Math.min(login.expires_in_days ?? 30, 30),
+            }
+          : login.expires_in_days
+            ? { expires_in_days: login.expires_in_days }
+            : {}),
         ...(login.requested_ip ? { requested_ip: login.requested_ip } : {}),
         created_at: login.created_at,
         expires_at: login.expires_at,
@@ -475,8 +529,12 @@ export class AdminBotApiTokenService {
     if (!found.ok) {
       return found;
     }
+    if (found.payload.power_user && !this.isPowerUser(principal.member)) {
+      return fail(403, "this account is not enrolled in the CLI pilot");
+    }
     found.payload.status = "approved";
     found.payload.member_id = principal.member.id;
+    found.payload.power_user = this.isPowerUser(principal.member);
     return { ok: true, status: 200, payload: { approved: true } };
   }
 
@@ -533,10 +591,15 @@ export class AdminBotApiTokenService {
     this.deviceLogins.remove(hash);
     const member = login.member_id ? await this.store.getLabMember(login.member_id) : undefined;
     // Demoted or removed between approving and collecting: the approval no longer stands.
-    if (!member || !apiTokensAllowed(member, this.levels)) {
+    if (
+      !member ||
+      (login.power_user || member.cli_role === "power_user"
+        ? !this.isPowerUser(member)
+        : !apiTokensAllowed(member, this.levels))
+    ) {
       return ok({ status: "access_denied" });
     }
-    const { secret, token } = await this.mint(member.id, login.name, login.expires_in_days, {
+    const { secret, token } = await this.mint(member, login.name, login.expires_in_days, {
       ...(login.requested_ip ? { ip: login.requested_ip } : {}),
       via: "cli_login",
     });
@@ -557,7 +620,7 @@ export class AdminBotApiTokenService {
     if (principal.impersonator) {
       return fail(403, "stop viewing as this member before creating tokens");
     }
-    if (!apiTokensAllowed(principal.member, this.levels)) {
+    if (principal.apiToken?.role === "power_user" || !this.allowedFor(principal)) {
       return fail(403, "API tokens are not available for your account");
     }
     return undefined;
@@ -578,21 +641,24 @@ export class AdminBotApiTokenService {
   }
 
   private async mint(
-    memberId: string,
+    member: AdminBotMemberPrincipal["member"],
     name: string,
     days: unknown,
     origin: { ip?: string; via: "profile" | "api_token" | "cli_login" },
   ): Promise<{ secret: string; token: AdminBotApiToken }> {
-    const secret = mintApiTokenSecret();
     const created = this.now();
-    const fixedDays = clampApiTokenDays(days);
+    const memberId = member.id;
+    const powerUser = this.isPowerUser(member);
+    const secret = mintApiTokenSecret(powerUser);
+    const requestedDays = clampApiTokenDays(days);
+    const fixedDays = powerUser ? Math.min(requestedDays ?? 30, 30) : requestedDays;
     const token: AdminBotApiToken = {
       id: newApiTokenId(),
       token_hash: hashApiToken(secret),
       member_id: memberId,
       name,
       hint: apiTokenHint(secret),
-      scopes: ["*"],
+      scopes: [powerUser ? "power_user" : "*"],
       created_at: created.toISOString(),
       expires_at: fixedDays
         ? new Date(created.getTime() + fixedDays * 24 * 60 * 60 * 1000).toISOString()
@@ -606,6 +672,7 @@ export class AdminBotApiTokenService {
       name,
       expires_at: token.expires_at,
       via: origin.via,
+      scopes: token.scopes,
       ...(origin.ip ? { ip: origin.ip } : {}),
     });
     return { secret, token };
@@ -661,6 +728,7 @@ function toView(token: AdminBotApiToken, currentId?: string): AdminBotApiTokenVi
     id: token.id,
     name: token.name,
     hint: token.hint,
+    ...(token.scopes[0] === "power_user" ? { token_role: "power_user" as const } : {}),
     created_at: token.created_at,
     expires_at: token.expires_at,
     ...(token.created_ip ? { created_ip: token.created_ip } : {}),

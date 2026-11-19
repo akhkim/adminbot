@@ -121,6 +121,8 @@ it("approves a CLI login with one click and reports back", async () => {
           user_code: "BCDF-GHJK",
           name: "adminbot CLI on laptop",
           expires_in_days: 30,
+          token_role: "power_user",
+          web_role: "admin",
           requested_ip: "203.0.113.7",
           expires_at: "2026-10-27T00:10:00Z",
         }
@@ -132,6 +134,7 @@ it("approves a CLI login with one click and reports back", async () => {
   const root = element.shadowRoot!;
   await vi.waitFor(() => expect(root.textContent).toContain("adminbot CLI on laptop"));
   expect(root.textContent).toContain("203.0.113.7");
+  expect(root.textContent).toContain("CLI access with your admin permissions");
 
   expect(root.querySelector('[name="password"]')).toBeNull();
   const done = vi.fn();

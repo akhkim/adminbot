@@ -98,7 +98,7 @@ import { memberEnrollmentContext } from "./routes/onboarding.js";
 import { DEFAULT_ALLOWED_ORIGINS, applyCors, parseOrigins, remoteIp } from "./routes/origin.js";
 import { createOpenReviewCitationWatch, createIclrIntegrityWatch } from "./routes/reviews.js";
 import { dispatchRoute } from "./routes/router.js";
-import { ApiTokenRateLimitedError, resolvePrincipal } from "./routes/session.js";
+import { ApiTokenRateLimitedError, authorizePersonalTokenRequest, resolvePrincipal } from "./routes/session.js";
 import { PayloadTooLargeError, sendJson } from "./server.http.js";
 import { executeMemberEnrollment } from "./server.member-onboarding.js";
 import {
@@ -776,6 +776,8 @@ async function routeRequest(req: IncomingMessage, res: ServerResponse, ctx: Admi
     res.end();
     return;
   }
+
+  if (!(await authorizePersonalTokenRequest(req, res, ctx, url))) return;
 
   // Login-free pages, the deadline feed and photos (./server.public.ts).
   if (servePublicRoute(req, res, url, ctx)) {

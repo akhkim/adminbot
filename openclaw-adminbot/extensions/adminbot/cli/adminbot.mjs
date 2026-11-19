@@ -32,6 +32,7 @@ for (const [words, alias] of Object.entries(aliases)) {
 }
 const help = `AdminBot CLI — commands derived from OpenAPI (${Object.keys(operations).length} operations)
 
+adminbot permissions                         Show your role, scope and commands (pilot login)
 adminbot operations                          List API operations and generated commands
 adminbot schema [OPERATION_ID]                Show OpenAPI, or one operation's contract
 adminbot call OPERATION_ID [flags]            Call any documented operation
@@ -40,7 +41,8 @@ adminbot <command> --help                     Show generated parameters and flag
 adminbot skill install                        Install the agent skill for Claude Code and Codex
 
 Sign-in (one click in the browser, like gh and Modal):
-  adminbot login                              Approve once; the token lasts until revoked or unused 90 days
+  adminbot login                              Approve access in your browser
+  adminbot login --power-user                 Request an enrolled pilot credential
   adminbot login --no-browser                 Print the link instead of opening it (agents, SSH)
   adminbot login --insecure-storage           Keep the token in the credentials file, not the Keychain
   adminbot whoami                             Who you are signed in as (also: auth status)
@@ -48,6 +50,8 @@ Sign-in (one click in the browser, like gh and Modal):
   adminbot logout                             Revoke this machine's token
 
 Examples:
+  adminbot my projects
+  adminbot my notes PAPER_ID
   adminbot papers list
   adminbot work update PAPER_ID --note "Finished experiments"
   adminbot tasks update PAPER_ID fixes_merged --done
@@ -100,7 +104,9 @@ function operationHelp(operation, alias) {
       ([flag, field]) =>
         `  --${flag}  ${field.location}.${field.field}${field.required ? " (required)" : ""}${field.schema.enum ? `: ${field.schema.enum.join(", ")}` : ""}`,
     )
-    .join("\n")}\nUse --file PATH or --set FIELD=VALUE for nested fields.\n`;
+    .join(
+      "\n",
+    )}\n${operation.requestBody?.content["application/zip"] ? "Supply the ZIP archive with --file PATH. Use --consent send-draft-to-model-provider only after the author consents." : "Use --file PATH or --set FIELD=VALUE for nested fields."}\n`;
 }
 function unknownOperation(name) {
   const suggestions = suggest(name, Object.keys(operations));
@@ -162,7 +168,7 @@ function findCommand(argv) {
 }
 
 const LOGIN_USAGE =
-  "Usage: adminbot login [--name NAME] [--days 1-365] [--no-browser] [--insecure-storage] [--url ORIGIN] [--timeout MS]";
+  "Usage: adminbot login [--power-user] [--name NAME] [--days 1-365] [--no-browser] [--insecure-storage] [--url ORIGIN] [--timeout MS]";
 // gh-style shortcuts: `adminbot login` is `adminbot auth login`, and so on.
 const TOP_LEVEL = { login: "login", logout: "logout", whoami: "whoami" };
 
@@ -182,6 +188,10 @@ function deviceLoginArgs(argv) {
   const options = { browser: true, insecureStorage: false };
   for (let index = 0; index < args.length; index++) {
     const [flag, inline] = args[index].split(/[=](.*)/su);
+    if (flag === "--power-user" && inline === undefined) {
+      options.powerUser = true;
+      continue;
+    }
     if (flag === "--no-browser" && inline === undefined) {
       options.browser = false;
       continue;
@@ -372,6 +382,7 @@ export async function run(
         credentials,
         name: browserLogin.name,
         days: browserLogin.days,
+        powerUser: browserLogin.powerUser,
         browser: browserLogin.browser,
         timeout: requestTimeout(browserLogin.timeout),
         env: browserLogin.insecureStorage ? { ...env, ADMINBOT_KEYCHAIN: "0" } : env,
@@ -415,7 +426,15 @@ export async function run(
     const baseUrl = serviceOrigin(values.url ?? env.ADMINBOT_URL ?? document.servers[0].url);
     const timeout = requestTimeout(values.timeout);
     let body = parsed.body;
-    if (values.file) {
+    if (operation.requestBody?.content["application/zip"]) {
+      if (!values.file || values.file === "-")
+        throw new ApiError("INPUT_REQUIRED", "Pass the ZIP file with --file PATH");
+      try {
+        body = await readFile(values.file);
+      } catch {
+        throw new ApiError("INVALID_INPUT", "Unable to read the ZIP file supplied with --file");
+      }
+    } else if (values.file) {
       try {
         body = JSON.parse(
           values.file === "-" ? await stdinText(stdin) : await readFile(values.file, "utf8"),
@@ -493,6 +512,24 @@ export async function run(
       timeout,
       fetchImpl,
     });
+    if (argv[0] === "permissions") {
+      if (!Array.isArray(result?.operations)) {
+        throw new ApiError(
+          "PILOT_LOGIN_REQUIRED",
+          "To inspect pilot permissions, run adminbot login --power-user first.",
+        );
+      }
+      result = {
+        ...result,
+        operations: result.operations.map((id) => ({
+          id,
+          command: `adminbot call ${id}`,
+          ...(operations[id]
+            ? { method: operations[id].method.toUpperCase(), path: operations[id].path }
+            : {}),
+        })),
+      };
+    }
     if (login) {
       if (typeof result?.session_token !== "string" || typeof result?.expires_at !== "string") {
         throw new ApiError(

@@ -4120,6 +4120,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
   listPaperWeeklyUpdates(params?: {
     paperId?: string;
+    memberId?: string;
     weekStart?: string;
   }): AdminBotPaperWeeklyUpdate[] {
     const clauses: string[] = [];
@@ -4127,6 +4128,10 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     if (params?.paperId) {
       clauses.push("paper_id = ?");
       values.push(params.paperId);
+    }
+    if (params?.memberId !== undefined) {
+      clauses.push("member_id = ?");
+      values.push(params.memberId);
     }
     if (params?.weekStart) {
       clauses.push("week_start = ?");

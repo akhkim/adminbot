@@ -34,6 +34,7 @@ export class AdminBotPostgresPaperWeeklyUpdates {
 
   async listPaperWeeklyUpdates(params?: {
     paperId?: string;
+    memberId?: string;
     weekStart?: string;
   }): Promise<AdminBotPaperWeeklyUpdate[]> {
     const clauses: string[] = [];
@@ -41,6 +42,10 @@ export class AdminBotPostgresPaperWeeklyUpdates {
     if (params?.paperId) {
       values.push(params.paperId);
       clauses.push(`paper_id = $${values.length}`);
+    }
+    if (params?.memberId !== undefined) {
+      values.push(params.memberId);
+      clauses.push(`member_id = $${values.length}`);
     }
     if (params?.weekStart) {
       values.push(params.weekStart);

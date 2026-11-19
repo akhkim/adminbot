@@ -2,6 +2,7 @@
 // browser handshake behind `adminbot login`. The policy itself is tested in
 // workflows/identity/api-tokens.test.ts; this file checks the routes hand it the right caller.
 import { afterEach, describe, expect, it } from "vitest";
+import { withCompleteProfile } from "../contracts/profile-completion.test-helpers.js";
 import { hashPassword } from "../workflows/identity/auth.js";
 import { createAdminBotMockService } from "./server.js";
 
@@ -93,6 +94,192 @@ async function mint(baseUrl: string, session: string, name = "agent"): Promise<s
 }
 
 describe("personal API tokens over HTTP", () => {
+  it.each(["plain-c", "admin-a"])(
+    "uses the current website role and project ownership for %s",
+    async (id) => {
+      const { baseUrl, mock } = await start();
+      const admin = await signIn(baseUrl, "admin-a");
+      const session = await signIn(baseUrl, id);
+      mock.store.saveLabMember(withCompleteProfile(mock.store.getLabMember(id)!));
+      const setRole = (bearer: string, cli_role: string) =>
+        call(baseUrl, "PUT", `/lab/members/${id}`, { bearer, body: { cli_role } });
+      if (id === "plain-c") {
+        expect((await setRole(session, "power_user")).status).toBe(400);
+      }
+      const prerequest = await call(baseUrl, "POST", "/auth/device/start", {
+        body: { name: "explicit pilot", token_role: "power_user" },
+      });
+      expect(
+        (
+          await call(baseUrl, "POST", "/auth/device/approve", {
+            bearer: admin,
+            body: { user_code: prerequest.body.user_code },
+          })
+        ).status,
+      ).toBe(403);
+      expect((await setRole(admin, "power_user")).status).toBe(200);
+      expect(mock.store.getLabMember(id)?.privilege_level).toBe(
+        id === "admin-a" ? "admin" : "member",
+      );
+      const started = await call(baseUrl, "POST", "/auth/device/start", {
+        body: { name: "pilot", token_role: "power_user" },
+      });
+      expect(started.body.token_role).toBe("power_user");
+      const { user_code, device_code } = started.body;
+      expect(
+        (
+          await call(baseUrl, "POST", "/auth/device/approve", {
+            bearer: session,
+            body: { user_code },
+          })
+        ).status,
+      ).toBe(200);
+      const polled = await call(baseUrl, "POST", "/auth/device/poll", { body: { device_code } });
+      const bearer = polled.body.token;
+      expect(polled.body.api_token.token_role).toBe("power_user");
+      expect(bearer).toMatch(/^abt_p1_/u);
+      expect(Date.parse(polled.body.api_token.expires_at) - Date.now()).toBeLessThanOrEqual(
+        30 * 86400000,
+      );
+      const view = await call(baseUrl, "GET", "/auth/session", { bearer });
+      expect(view.body).toMatchObject({
+        token_role: "power_user",
+        member: { id },
+        operations: expect.arrayContaining([
+          "get-my-projects",
+          "patch-papers-by-papers-id-progress",
+          "put-lab-members-by-members-id",
+        ]),
+      });
+      const isAdmin = id === "admin-a";
+      expect(view.body.member.privilege_level).toBe(isAdmin ? "admin" : "member");
+      expect(view.body.operations.includes("get-settings")).toBe(isAdmin);
+      expect(view.body.operations).not.toContain("post-auth-device-token");
+      for (const [paper, owner] of [
+        ["mine", id],
+        ["theirs", "other"],
+      ]) {
+        expect(
+          mock.service.upsertPaper({
+            id: paper,
+            title: paper,
+            authors: ["first-author", owner],
+            current_step: "overleaf_writing",
+          }).ok,
+        ).toBe(true);
+      }
+      const projects = await call(baseUrl, "GET", "/my/projects", { bearer });
+      expect(projects.body.projects.map((p: { paper_id: string }) => p.paper_id)).toEqual(["mine"]);
+      for (const member_id of [id, "other"]) {
+        mock.store.savePaperWeeklyUpdate({
+          member_id,
+          paper_id: "mine",
+          week_start: "2026-10-05",
+          body: member_id,
+          created_at: "2026-10-05",
+          updated_at: "2026-10-05",
+        });
+      }
+      const history = await call(baseUrl, "GET", "/my/projects/mine/weekly-updates", { bearer });
+      expect(history.body.updates.map((u: { member_id: string }) => u.member_id)).toEqual([id]);
+      expect(
+        (await call(baseUrl, "GET", "/my/projects/theirs/weekly-updates", { bearer })).body.updates,
+      ).toEqual([]);
+      expect((await call(baseUrl, "GET", "/settings", { bearer })).status).toBe(
+        isAdmin ? 200 : 403,
+      );
+      const update = (paper: string) =>
+        call(baseUrl, "PATCH", `/papers/${paper}/progress`, {
+          bearer,
+          body: { current_step: "overleaf_writing" },
+        });
+      expect((await update("mine")).status).toBe(200);
+      expect((await update("theirs")).status).toBe(isAdmin ? 200 : 404);
+      expect(
+        (
+          await call(baseUrl, "POST", "/papers/mine/weekly-updates", {
+            bearer,
+            body: { body: "Draft revised" },
+          })
+        ).status,
+      ).toBe(200);
+      expect((await call(baseUrl, "GET", "/lab/projects", { bearer })).status).toBe(
+        isAdmin ? 200 : 403,
+      );
+      const checklist = await call(baseUrl, "GET", "/papers/mine/slots", { bearer });
+      expect(checklist.status).toBe(200);
+      expect(
+        checklist.body.weekly_updates.some((u: { member_id: string }) => u.member_id === "other"),
+      ).toBe(isAdmin);
+      const created = await call(baseUrl, "PUT", "/papers/new-project", {
+        bearer,
+        body: { title: "New project", authors: [id] },
+      });
+      expect([200, 201]).toContain(created.status);
+      expect((await call(baseUrl, "DELETE", "/papers/new-project", { bearer })).status).toBe(200);
+      if (!isAdmin) {
+        expect(
+          (await call(baseUrl, "GET", "/papers/slot-overview", { bearer })).body.papers.map(
+            (p: { paper_id: string }) => p.paper_id,
+          ),
+        ).toEqual(["mine"]);
+        expect(
+          (await call(baseUrl, "GET", "/papers?scope=all", { bearer })).body.papers.map(
+            (p: { id: string }) => p.id,
+          ),
+        ).toEqual(["mine"]);
+        expect((await call(baseUrl, "GET", "/papers/pi-review", { bearer })).status).toBe(403);
+        expect(
+          (await call(baseUrl, "PUT", "/papers/theirs", { bearer, body: { authors: [id] } }))
+            .status,
+        ).toBe(403);
+        expect(
+          (
+            await call(baseUrl, "POST", "/papers/theirs/weekly-updates", {
+              bearer,
+              body: { body: "other project" },
+            })
+          ).status,
+        ).toBe(404);
+        expect(
+          (
+            await call(baseUrl, "PUT", "/lab/members/admin-a", {
+              bearer,
+              body: { interests: "updated" },
+            })
+          ).status,
+        ).toBe(403);
+        expect(
+          (
+            await call(baseUrl, "PUT", "/lab/members/plain-c", {
+              bearer,
+              body: { correspondence_email: "synthetic@example.invalid" },
+            })
+          ).status,
+        ).toBe(403);
+      }
+      for (const path of [
+        "/auth/api-tokens",
+        "/auth/device/approve",
+        "/auth/device-token",
+        "/auth/pair-device",
+      ]) {
+        expect((await call(baseUrl, "POST", path, { bearer })).status, path).toBe(403);
+      }
+      const second = await mint(baseUrl, session);
+      expect((await call(baseUrl, "POST", "/auth/logout", { bearer: second })).status).toBe(200);
+      expect((await call(baseUrl, "GET", "/auth/session", { bearer: second })).status).toBe(401);
+      if (isAdmin) {
+        const member = mock.store.getLabMember(id)!;
+        mock.store.saveLabMember({ ...member, privilege_level: "member" });
+        expect((await call(baseUrl, "GET", "/settings", { bearer })).status).toBe(403);
+        mock.store.saveLabMember(member);
+      }
+      expect((await setRole(admin, "default")).status).toBe(200);
+      expect((await call(baseUrl, "GET", "/auth/session", { bearer })).status).toBe(401);
+    },
+  );
+
   it("authenticates as the owner by bearer only", async () => {
     const { baseUrl } = await start();
     const token = await mint(baseUrl, await signIn(baseUrl, "admin-a"));

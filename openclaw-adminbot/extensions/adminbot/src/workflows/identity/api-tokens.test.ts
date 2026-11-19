@@ -2,7 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 import type { AdminBotLabMember } from "../../contracts/actions.js";
 import { AdminBotMemoryStore } from "../../kernel/service.js";
 import { runWithApiToken } from "./api-token-context.js";
-import { API_TOKEN_NO_EXPIRY, ApiTokenRateLimiter, isApiTokenShaped } from "./api-token-format.js";
+import {
+  API_TOKEN_NO_EXPIRY,
+  ApiTokenRateLimiter,
+  hashApiToken,
+  isApiTokenShaped,
+} from "./api-token-format.js";
 import { AdminBotApiTokenService } from "./api-tokens.js";
 import { hashPassword, type AdminBotMemberPrincipal } from "./auth.js";
 
@@ -220,6 +225,24 @@ describe("AdminBotApiTokenService: creating and resolving", () => {
     expect(await tokens.resolve(token, undefined)).toEqual({ ok: false, status: 401 });
     store.saveLabMember(member("admin-a"));
     expect((await tokens.resolve(token, undefined)).ok).toBe(true);
+  });
+
+  it("shares the pilot budget across tokens and rejects a scope change", async () => {
+    const { tokens, store, principal, clock } = setup();
+    store.saveLabMember(member("plain-c", { cli_role: "power_user", privilege_level: "member" }));
+    const first = await mint(tokens, principal("plain-c"));
+    const second = await mint(tokens, principal("plain-c"));
+    for (let i = 0; i < 30; i++) expect((await tokens.resolve(first, undefined)).ok).toBe(true);
+    expect(await tokens.resolve(second, undefined)).toMatchObject({
+      status: 429,
+      retry_after_seconds: 60,
+    });
+    clock.advance(60000);
+    expect((await tokens.resolve(second, undefined)).ok).toBe(true);
+    const row = store.getApiTokenByHash(hashApiToken(first))!;
+    vi.spyOn(store, "getApiTokenByHash").mockReturnValue({ ...row, scopes: ["*"] });
+    store.saveLabMember(member("plain-c", { cli_role: "power_user" }));
+    expect((await tokens.resolve(first, undefined)).ok).toBe(false);
   });
 
   it("rate-limits per token", async () => {

@@ -1600,6 +1600,8 @@ export type AdminBotLabMemberInput = {
   // Only meaningful while `privilege_level` is "external_collaborator"; governance-owned like
   // `privilege_level`, so a member self-edit can never set it.
   collaborator_subgroup?: AdminBotExternalCollaboratorSubgroup;
+  /** Admin-managed CLI pilot enrollment, independent of the website privilege level. */
+  cli_role?: "power_user" | "default";
   access_overrides?: AdminBotAccessGrant[];
   notes?: string;
   role?: string;

@@ -436,6 +436,9 @@ export function buildOpenApi(root = extensionRoot) {
       content: { "application/json": { schema: { type: "object", properties: { error: {} } } } },
     };
     const hasBody = !["GET", "HEAD", "DELETE"].includes(route.method) && nodes.some(isRead);
+    const readsZip = nodes.some(
+      (node) => ts.isCallExpression(node) && node.expression.getText() === "readZip",
+    );
     const protectedAuth = nodes.some(
       (node) =>
         ts.isCallExpression(node) &&
@@ -449,11 +452,13 @@ export function buildOpenApi(root = extensionRoot) {
       tags: [route.path.split("/")[1] || "service"],
       "x-source": relative(root, route.source.fileName),
       ...(parameters.length ? { parameters } : {}),
-      ...(hasBody
+      ...(hasBody || readsZip
         ? {
             requestBody: {
               required: true,
-              content: { "application/json": { schema: bodySchema(nodes) } },
+              content: readsZip
+                ? { "application/zip": { schema: { type: "string", format: "binary" } } }
+                : { "application/json": { schema: bodySchema(nodes) } },
             },
           }
         : {}),

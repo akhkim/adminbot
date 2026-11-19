@@ -7,10 +7,39 @@ description: Use when the user asks to do anything in AdminBot (admin.safe.eu) �
 
 ## Overview
 
-The `adminbot` CLI calls every route the website uses (generated from the server's route
-table), signed in as the user with a personal API token. Same rights as the user on the
-website, same server checks. **Do what the user asks without making them approve each
-step; stop only for the risky actions listed below.**
+Run `adminbot whoami` to identify the caller and token role. The packaged catalog
+describes the service. The server decides which operations this credential can use.
+
+## Power-user pilot
+
+For pilot setup use `adminbot login --power-user --no-browser`. Show the user the link
+and code. They approve in their own browser. Check for `token_role: "power_user"` in
+`adminbot whoami`. If the role is missing, stop before reading data. The login lasts
+up to 30 days. Other agents can read this Markdown directly.
+
+| User wants | Command |
+| --- | --- |
+| Their active projects, deadlines and open checklist items | `adminbot my projects` |
+| Their own weekly notes for one project | `adminbot my notes PAPER_ID` |
+| Record a weekly note | `adminbot work update PAPER_ID --note "Revised the evaluation"` |
+| Check or complete a checklist item | `adminbot tasks list PAPER_ID`, then `adminbot tasks update PAPER_ID SLOT --done` |
+| Change an authored project’s stage | `adminbot papers progress PAPER_ID --step overleaf_writing` |
+| Check their role, available operations and expiry | `adminbot permissions` |
+| Find input fields for a permitted operation | `adminbot call OPERATION_ID --help` |
+| Fetch their logistics requests or profile | `adminbot call get-logistics-requests` or `adminbot call get-lab-members-self` |
+| To revoke this machine's pilot token | `adminbot logout` |
+
+Use a paper ID from their project list. A 403 ends that request. Do not switch to a
+password, browser session, admin token or database. All machines share 30 requests
+per minute per person. On 429 wait the reported retry interval. Manage tokens in
+**My Profile → API tokens**. Read `member.privilege_level` in the permissions response. An enrolled admin keeps
+their admin role. A member can create projects and edit ones they own or coauthor.
+Use the returned operation IDs to discover the member directory, opportunities, meetings,
+Lab Sharing, events, travel and requests. The server checks each target record and field.
+For a PaperMentor upload, obtain the author's consent to the model provider before using
+`--file paper.zip --consent send-draft-to-model-provider` with `post-papermentor-reviews`.
+Use `--output PATH` for binary downloads. PI approvals and account-security actions
+retain their own checks. The page index includes operations for every web role.
 
 ## Setup
 
@@ -32,8 +61,7 @@ command only if `retryable` is true (wait `details.retry_after_seconds` if given
   `ADMINBOT_TOKEN` in the environment.
 - Never print, copy or echo the token. Don't run `adminbot auth token` into a transcript.
   Don't ask for, type or pipe the user's password.
-- API tokens are for admins by default; a non-admin's approval is refused. Tell them to use
-  the website.
+- An unenrolled member can use the website. Pilot enrollment is managed by an admin.
 
 ## Finding the operation
 
@@ -115,8 +143,7 @@ ID) it affects, only before these:
 
 ## Things the token cannot do (tell the user to use the website)
 
-Change the password or email, or impersonate. Everything else the user can do on the
-website, the token can do, including creating tokens and approving another CLI login.
+Change the password or email, or impersonate. Within the existing admin token policy, the token can perform other website actions, including creating tokens and approving another CLI login.
 
 ## Common mistakes
 

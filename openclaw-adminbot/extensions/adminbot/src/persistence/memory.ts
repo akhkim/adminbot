@@ -2007,12 +2007,14 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
 
   listPaperWeeklyUpdates(params?: {
     paperId?: string;
+    memberId?: string;
     weekStart?: string;
   }): AdminBotPaperWeeklyUpdate[] {
     return [...this.paperWeeklyUpdates.values()]
       .filter(
         (update) =>
           (!params?.paperId || update.paper_id === params.paperId) &&
+          (params?.memberId === undefined || update.member_id === params.memberId) &&
           (!params?.weekStart || update.week_start === params.weekStart),
       )
       .toSorted(

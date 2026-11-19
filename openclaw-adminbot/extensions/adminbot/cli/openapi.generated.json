@@ -415,19 +415,23 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "allowed": {
-                      "type": "boolean"
-                    },
                     "tokens": {
                       "type": "array",
                       "items": {
                         "$ref": "#/components/schemas/AdminBotApiTokenView"
                       }
+                    },
+                    "token_role": {
+                      "type": "string",
+                      "const": "power_user"
+                    },
+                    "allowed": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
-                    "allowed",
-                    "tokens"
+                    "tokens",
+                    "allowed"
                   ],
                   "additionalProperties": true
                 }
@@ -980,6 +984,7 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "token_role": {},
                   "name": {},
                   "expires_in_days": {}
                 },
@@ -2120,7 +2125,83 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AdminBotAuthSessionView"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/AdminBotAuthSessionView"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "token_role": {
+                          "type": "string",
+                          "const": "power_user"
+                        },
+                        "member": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "privilege_level": {
+                              "type": "string",
+                              "enum": [
+                                "member",
+                                "admin",
+                                "external_collaborator",
+                                "trial"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "name",
+                            "privilege_level"
+                          ],
+                          "additionalProperties": true
+                        },
+                        "expires_at": {
+                          "type": "string"
+                        },
+                        "scope": {
+                          "type": "string"
+                        },
+                        "limits": {
+                          "type": "object",
+                          "properties": {
+                            "requests_per_minute_per_member": {
+                              "type": "number"
+                            },
+                            "maximum_token_days": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "requests_per_minute_per_member",
+                            "maximum_token_days"
+                          ],
+                          "additionalProperties": true
+                        },
+                        "operations": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": [
+                        "token_role",
+                        "member",
+                        "expires_at",
+                        "scope",
+                        "limits",
+                        "operations"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
             }
@@ -11706,10 +11787,10 @@
                       "items": {
                         "type": "object",
                         "properties": {
-                          "name": {
+                          "id": {
                             "type": "string"
                           },
-                          "id": {
+                          "name": {
                             "type": "string"
                           },
                           "hours_per_week": {
@@ -11729,8 +11810,8 @@
                           }
                         },
                         "required": [
-                          "name",
-                          "id"
+                          "id",
+                          "name"
                         ],
                         "additionalProperties": true
                       }
@@ -12461,13 +12542,10 @@
                           "joined_month": {
                             "type": "string"
                           },
-                          "name": {
-                            "type": "string"
-                          },
-                          "email": {
-                            "type": "string"
-                          },
                           "id": {
+                            "type": "string"
+                          },
+                          "name": {
                             "type": "string"
                           },
                           "preferred_name": {
@@ -12501,6 +12579,9 @@
                             "type": "boolean"
                           },
                           "slack_stop_at": {
+                            "type": "string"
+                          },
+                          "email": {
                             "type": "string"
                           },
                           "calendar_email": {
@@ -12542,6 +12623,13 @@
                               "external_prof",
                               "benefit_partner",
                               "benefit_direct_relative"
+                            ]
+                          },
+                          "cli_role": {
+                            "type": "string",
+                            "enum": [
+                              "power_user",
+                              "default"
                             ]
                           },
                           "access_overrides": {
@@ -12909,8 +12997,8 @@
                           "projects",
                           "location",
                           "joined_month",
-                          "name",
                           "id",
+                          "name",
                           "privilege_level",
                           "access",
                           "created_at",
@@ -19577,6 +19665,64 @@
         }
       }
     },
+    "/my/projects/{projects_id}/weekly-updates": {
+      "get": {
+        "operationId": "get-my-projects-by-projects-id-weekly-updates",
+        "summary": "GET /my/projects/{projects_id}/weekly-updates",
+        "tags": [
+          "my"
+        ],
+        "x-source": "src/api/routes/papers.ts",
+        "parameters": [
+          {
+            "name": "projects_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "updates": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AdminBotPaperWeeklyUpdate"
+                      }
+                    }
+                  },
+                  "required": [
+                    "updates"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/notifications": {
       "get": {
         "operationId": "get-notifications",
@@ -23289,6 +23435,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/zip": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
         "responses": {
           "202": {
             "description": "Success",
@@ -25326,6 +25483,28 @@
           }
         ],
         "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "updates": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AdminBotPaperWeeklyUpdate"
+                      }
+                    }
+                  },
+                  "required": [
+                    "updates"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
           "2XX": {
             "description": "Successful service result",
             "content": {
@@ -26128,15 +26307,15 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "paper_id": {
+                    "type": "string"
+                  },
                   "announcement": {},
                   "credits": {},
                   "pdf_base64": {
                     "type": "string"
                   },
                   "abstract": {
-                    "type": "string"
-                  },
-                  "paper_id": {
                     "type": "string"
                   },
                   "url": {
@@ -26202,6 +26381,62 @@
             }
           },
           "401": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "404": {
             "description": "Server response",
             "content": {
               "application/json": {
@@ -26353,6 +26588,9 @@
                       "items": {
                         "type": "object",
                         "properties": {
+                          "id": {
+                            "type": "string"
+                          },
                           "reason": {
                             "type": "string",
                             "enum": [
@@ -26361,16 +26599,13 @@
                               "not_accepted"
                             ]
                           },
-                          "id": {
-                            "type": "string"
-                          },
                           "title": {
                             "type": "string"
                           }
                         },
                         "required": [
-                          "reason",
                           "id",
+                          "reason",
                           "title"
                         ],
                         "additionalProperties": true
@@ -28469,6 +28704,45 @@
         ],
         "x-source": "src/api/routes/papers.ts",
         "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "papers": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "venue": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "title",
+                          "venue"
+                        ],
+                        "additionalProperties": true
+                      }
+                    }
+                  },
+                  "required": [
+                    "papers"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
           "2XX": {
             "description": "Successful service result",
             "content": {
@@ -29213,15 +29487,15 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "paper_id": {
+                    "type": "string"
+                  },
                   "announcement": {},
                   "credits": {},
                   "pdf_base64": {
                     "type": "string"
                   },
                   "abstract": {
-                    "type": "string"
-                  },
-                  "paper_id": {
                     "type": "string"
                   },
                   "url": {
@@ -29287,6 +29561,62 @@
             }
           },
           "401": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "404": {
             "description": "Server response",
             "content": {
               "application/json": {
@@ -34229,6 +34559,10 @@
           "hint": {
             "type": "string"
           },
+          "token_role": {
+            "type": "string",
+            "const": "power_user"
+          },
           "created_at": {
             "type": "string"
           },
@@ -34383,13 +34717,10 @@
       "AdminBotLabMember": {
         "type": "object",
         "properties": {
-          "name": {
-            "type": "string"
-          },
-          "email": {
-            "type": "string"
-          },
           "id": {
+            "type": "string"
+          },
+          "name": {
             "type": "string"
           },
           "preferred_name": {
@@ -34423,6 +34754,9 @@
             "type": "boolean"
           },
           "slack_stop_at": {
+            "type": "string"
+          },
+          "email": {
             "type": "string"
           },
           "calendar_email": {
@@ -34464,6 +34798,13 @@
               "external_prof",
               "benefit_partner",
               "benefit_direct_relative"
+            ]
+          },
+          "cli_role": {
+            "type": "string",
+            "enum": [
+              "power_user",
+              "default"
             ]
           },
           "access_overrides": {
@@ -34839,8 +35180,8 @@
           }
         },
         "required": [
-          "name",
           "id",
+          "name",
           "privilege_level",
           "access",
           "created_at",
@@ -35493,10 +35834,10 @@
       "AdminBotBadgeDefinition": {
         "type": "object",
         "properties": {
-          "name": {
+          "id": {
             "type": "string"
           },
-          "id": {
+          "name": {
             "type": "string"
           },
           "category": {
@@ -35525,8 +35866,8 @@
           }
         },
         "required": [
-          "name",
           "id",
+          "name",
           "category",
           "description",
           "family_key",
@@ -37098,13 +37439,10 @@
       "AdminBotLabMemberView": {
         "type": "object",
         "properties": {
-          "name": {
-            "type": "string"
-          },
-          "email": {
-            "type": "string"
-          },
           "id": {
+            "type": "string"
+          },
+          "name": {
             "type": "string"
           },
           "preferred_name": {
@@ -37138,6 +37476,9 @@
             "type": "boolean"
           },
           "slack_stop_at": {
+            "type": "string"
+          },
+          "email": {
             "type": "string"
           },
           "calendar_email": {
@@ -37179,6 +37520,13 @@
               "external_prof",
               "benefit_partner",
               "benefit_direct_relative"
+            ]
+          },
+          "cli_role": {
+            "type": "string",
+            "enum": [
+              "power_user",
+              "default"
             ]
           },
           "access_overrides": {
@@ -37560,8 +37908,8 @@
           }
         },
         "required": [
-          "name",
           "id",
+          "name",
           "privilege_level",
           "access",
           "created_at",
@@ -37572,12 +37920,6 @@
       "AdminBotLabMemberSummary": {
         "type": "object",
         "properties": {
-          "name": {
-            "type": "string"
-          },
-          "email": {
-            "type": "string"
-          },
           "privilege_level": {
             "type": "string",
             "enum": [
@@ -37588,6 +37930,9 @@
             ]
           },
           "id": {
+            "type": "string"
+          },
+          "name": {
             "type": "string"
           },
           "preferred_name": {
@@ -37621,6 +37966,9 @@
             "type": "boolean"
           },
           "slack_stop_at": {
+            "type": "string"
+          },
+          "email": {
             "type": "string"
           },
           "calendar_email": {
@@ -37662,6 +38010,13 @@
               "external_prof",
               "benefit_partner",
               "benefit_direct_relative"
+            ]
+          },
+          "cli_role": {
+            "type": "string",
+            "enum": [
+              "power_user",
+              "default"
             ]
           },
           "access_overrides": {
@@ -38041,9 +38396,9 @@
           }
         },
         "required": [
-          "name",
           "privilege_level",
           "id",
+          "name",
           "created_at",
           "updated_at"
         ],
@@ -39775,9 +40130,6 @@
       "AdminBotLogisticsListRow": {
         "type": "object",
         "properties": {
-          "member_id": {
-            "type": "string"
-          },
           "id": {
             "type": "string"
           },
@@ -39790,6 +40142,9 @@
               "submitted",
               "in_progress"
             ]
+          },
+          "member_id": {
+            "type": "string"
           },
           "kind": {
             "type": "string",
@@ -39864,9 +40219,9 @@
           }
         },
         "required": [
-          "member_id",
           "id",
           "status",
+          "member_id",
           "kind",
           "updated_at",
           "member_name",
@@ -42009,6 +42364,13 @@
               "benefit_direct_relative"
             ]
           },
+          "cli_role": {
+            "type": "string",
+            "enum": [
+              "power_user",
+              "default"
+            ]
+          },
           "access_overrides": {
             "type": "array",
             "items": {
@@ -43319,6 +43681,38 @@
         ],
         "additionalProperties": true
       },
+      "AdminBotPaperWeeklyUpdate": {
+        "type": "object",
+        "properties": {
+          "paper_id": {
+            "type": "string"
+          },
+          "member_id": {
+            "type": "string"
+          },
+          "week_start": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "paper_id",
+          "member_id",
+          "week_start",
+          "body",
+          "created_at",
+          "updated_at"
+        ],
+        "additionalProperties": true
+      },
       "AdminBotNotificationFeedItem": {
         "type": "object",
         "properties": {
@@ -44425,10 +44819,10 @@
       "OpportunityWire": {
         "type": "object",
         "properties": {
-          "name": {
+          "id": {
             "type": "string"
           },
-          "id": {
+          "name": {
             "type": "string"
           },
           "status": {
@@ -44508,8 +44902,8 @@
           }
         },
         "required": [
-          "name",
           "id",
+          "name",
           "status",
           "category",
           "deadline_aoe"
@@ -45786,38 +46180,6 @@
         ],
         "additionalProperties": true
       },
-      "AdminBotPaperWeeklyUpdate": {
-        "type": "object",
-        "properties": {
-          "paper_id": {
-            "type": "string"
-          },
-          "member_id": {
-            "type": "string"
-          },
-          "week_start": {
-            "type": "string"
-          },
-          "body": {
-            "type": "string"
-          },
-          "created_at": {
-            "type": "string"
-          },
-          "updated_at": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "paper_id",
-          "member_id",
-          "week_start",
-          "body",
-          "created_at",
-          "updated_at"
-        ],
-        "additionalProperties": true
-      },
       "AdminBotTalkMaterialsView": {
         "type": "object",
         "properties": {
@@ -45937,10 +46299,10 @@
           "name": {
             "type": "string"
           },
-          "member_id": {
+          "avatar_url": {
             "type": "string"
           },
-          "avatar_url": {
+          "member_id": {
             "type": "string"
           },
           "attending": {

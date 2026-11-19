@@ -45,6 +45,7 @@ export async function deviceLogin({
   credentials,
   name,
   days,
+  powerUser,
   browser,
   timeout,
   env,
@@ -54,10 +55,20 @@ export async function deviceLogin({
 }) {
   const call = (operationId, body) =>
     callOperation(operationId, { baseUrl, body, timeout, fetchImpl });
+  if (powerUser && env.ADMINBOT_TOKEN) {
+    throw new ApiError(
+      "INVALID_ARGUMENTS",
+      "Unset ADMINBOT_TOKEN so the pilot login is the credential this CLI will use",
+    );
+  }
   const started = await call("post-auth-device-start", {
     name: name ?? `adminbot CLI on ${hostname().split(".")[0] || "this computer"}`,
+    ...(powerUser ? { token_role: "power_user" } : {}),
     ...(days === undefined ? {} : { expires_in_days: days }),
   });
+  if (powerUser && started?.token_role !== "power_user") {
+    throw new ApiError("ACCESS_DENIED", "This server does not support restricted CLI sign-in", 403);
+  }
   const { device_code, user_code, verification_uri, verification_uri_complete } = started ?? {};
   if (typeof device_code !== "string" || typeof user_code !== "string") {
     throw new ApiError(
@@ -98,7 +109,7 @@ export async function deviceLogin({
       case "access_denied":
         throw new ApiError(
           "ACCESS_DENIED",
-          "The sign-in was denied in the browser (Deny was clicked, or the account may not hold API tokens: admins only). Nothing was saved",
+          "The sign-in was denied in the browser (Deny was clicked, or the account is ineligible for CLI access). Nothing was saved",
           403,
           { hint: "adminbot login" },
         );
@@ -115,6 +126,13 @@ export async function deviceLogin({
           throw new ApiError(
             "INVALID_RESPONSE",
             "The approved sign-in carried no token; the server may be older than this CLI",
+          );
+        }
+        if (powerUser && apiToken.token_role !== "power_user") {
+          throw new ApiError(
+            "ACCESS_DENIED",
+            "Server returned a credential outside the requested pilot role",
+            403,
           );
         }
         const storage = await saveApiToken(credentials, baseUrl, token, apiToken, env);

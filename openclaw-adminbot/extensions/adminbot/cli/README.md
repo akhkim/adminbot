@@ -5,6 +5,46 @@ packaged OpenAPI document. There is no handwritten endpoint or input-schema tabl
 A small alias file provides readable work/task commands; aliases contain only
 operation IDs and alternate flag names.
 
+## Power-user pilot
+
+Install with Node 22.19 or newer, then approve the matching code in your own browser.
+
+```sh
+npm install --global https://github.com/akhkim/adminbot/releases/download/adminbot-cli-pilot-v1/adminbot-cli-0.1.0.tgz
+adminbot skill install
+adminbot login --power-user
+adminbot permissions
+adminbot my projects
+```
+
+The permissions response gives your website role, token expiry, request limit and commands.
+Members can create projects and edit those they own or coauthor. Admins keep their existing
+admin permissions. The API still checks the target record, fields, approver and workflow state.
+
+| Task | Command |
+| --- | --- |
+| Find the project ID | `adminbot my projects` |
+| Inspect its checklist | `adminbot tasks list PAPER_ID` |
+| Write your weekly note | `adminbot work update PAPER_ID --note "Finished the ablation runs"` |
+| Mark a checklist item complete | `adminbot tasks update PAPER_ID fixes_merged --done` |
+| Change the stage | `adminbot papers progress PAPER_ID --step overleaf_writing` |
+| List your logistics requests | `adminbot call get-logistics-requests` |
+| Inspect your profile | `adminbot call get-lab-members-self` |
+| Look up any permitted operation's inputs | `adminbot call OPERATION_ID --help` |
+
+The same login works for member-visible collaboration, meetings, travel, deadlines,
+opportunities and PaperMentor. Use `adminbot permissions` for the live list and
+`adminbot schema OPERATION_ID` for its API contract. Pilot tokens expire within 30 days.
+Use My Profile to manage tokens, or `adminbot logout` to revoke this machine's credential.
+
+**Give this to an agent**
+
+> Install the AdminBot CLI from this guide, run `adminbot skill install` and sign me in
+> with `adminbot login --power-user --no-browser`. Show me the approval link and code.
+> Once I approve, run `adminbot permissions` and list my projects.
+
+The packaged `skill/SKILL.md` works as plain Markdown for other clients.
+
 ## Install and use
 
 Requires Node 22.19+. From `openclaw-adminbot/`:
@@ -41,7 +81,7 @@ don't show. It replaces only an earlier copy of itself. Run it again after updat
 
 `skill/pages.md` is generated with the contract (`pnpm adminbot:api:generate`), and
 `adminbot:api:check` fails when it is stale or a route has no page in `skill/pages.mjs`.
-API tokens are for admins by default, so the skill is only useful to admins.
+The pilot section of the skill uses the allowed operations returned by the service.
 
 ## Authenticate
 
@@ -60,7 +100,7 @@ adminbot logout                   # revokes this machine's token
 `adminbot login` signs this machine in with a personal API token, following the OAuth device
 flow (RFC 8628) that `gh`, `modal` and `gcloud` use. The CLI prints a URL and a code. You open
 the URL in a browser where you are already signed in to AdminBot, check that the code matches,
-and click **Approve**. No password is asked for. The token lasts until you revoke it or it goes
+and click **Approve**. No password is asked for. A wildcard token lasts until you revoke it or it goes
 unused for 90 days.
 
 Options:
@@ -71,7 +111,7 @@ Options:
 - `--insecure-storage`: skips the Keychain.
 - `--url ORIGIN`
 
-Personal API tokens are available to admins.
+Admins and enrolled power users can approve personal tokens.
 
 On macOS the token is stored in the login Keychain, under service `adminbot` with the service
 origin as the account. `~/.config/adminbot/credentials.json` then holds only the origin, token
@@ -85,7 +125,7 @@ with mode `0600`:
 `ADMINBOT_CREDENTIALS_FILE` moves the file. A saved credential is bound to the exact service
 origin and port.
 
-A token acts as you. It may create more tokens and approve a CLI sign-in. It cannot change your
+A wildcard token acts as you. It may create more tokens and approve a CLI sign-in. It cannot change your
 password or email, or impersonate anyone. It is revoked when it goes 90 days unused, when your
 password changes, or on the date set by `--days`. Every action it takes is recorded in the audit
 log with the token's name. See `docs/adminbot/api-tokens.md`.

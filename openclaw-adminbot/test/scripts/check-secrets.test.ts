@@ -20,7 +20,9 @@ describe("check-secrets", () => {
 
   it("flags a minted token and ignores fixtures with a wrong checksum", () => {
     const token = mintApiTokenSecret();
+    const restricted = mintApiTokenSecret(true);
     expect(findApiTokens(`ADMINBOT_TOKEN=${token}`)).toEqual([token]);
+    expect(findApiTokens(restricted)).toEqual([restricted]);
     expect(findApiTokens(`abt_${"A".repeat(43)}_0badc0de`)).toEqual([]);
     expect(findApiTokens("abt_[redacted] abt_short")).toEqual([]);
   });

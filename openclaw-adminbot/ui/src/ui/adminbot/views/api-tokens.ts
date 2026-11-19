@@ -25,6 +25,8 @@ export type ApiTokenRow = {
 };
 
 type PendingCliLogin = {
+  web_role?: "admin" | "member";
+  token_role?: "power_user";
   user_code: string;
   name: string;
   /** Absent: no fixed expiry, the token lives until it sits unused for 90 days. */
@@ -147,6 +149,7 @@ const shared = css`
 /** The API tokens section of My Profile. Renders nothing for members who may not hold one. */
 export class ApiTokensSection extends LitElement {
   @state() private allowed = false;
+  @state() private powerUser = false;
   @state() private tokens: ApiTokenRow[] = [];
   @state() private busy = false;
   @state() private error = "";
@@ -166,11 +169,13 @@ export class ApiTokensSection extends LitElement {
 
   private async load() {
     try {
-      const result = await tokenRequest<{ allowed: boolean; tokens: ApiTokenRow[] }>(
-        "/auth/api-tokens",
-        "GET",
-      );
+      const result = await tokenRequest<{
+        allowed: boolean;
+        token_role?: "power_user";
+        tokens: ApiTokenRow[];
+      }>("/auth/api-tokens", "GET");
       this.allowed = result.allowed;
+      this.powerUser = result.token_role === "power_user";
       this.tokens = result.tokens;
     } catch {
       // An older service without these routes, or a signed-out page: show nothing.
@@ -284,10 +289,12 @@ export class ApiTokensSection extends LitElement {
     return html`<section aria-labelledby="api-tokens-title" data-testid="api-tokens">
       <h3 id="api-tokens-title">API tokens</h3>
       <p>
-        Tokens let the AdminBot CLI and your AI agents act as you. Sign a terminal in with
+        Sign a terminal in with
         <code>adminbot auth login</code>, or create a token here for an agent's
-        <code>ADMINBOT_TOKEN</code>. Tokens last until you revoke them or leave them unused for 90
-        days. A token cannot change your password or email, or impersonate anyone.
+        <code>ADMINBOT_TOKEN</code>.
+        ${this.powerUser
+          ? "Pilot tokens use your current web permissions, including admin permissions if you have them, for up to 30 days."
+          : "Tokens act as you and expire after 90 days of inactivity. You can revoke them here."}
       </p>
       ${this.issued
         ? html`<div class="issued" data-testid="api-token-issued">
@@ -351,10 +358,16 @@ export class ApiTokensSection extends LitElement {
             <label
               >Expires after
               <select name="days">
-                <option value="0" selected>When unused for 90 days</option>
+                <option value=${this.powerUser ? "30" : "0"} selected>
+                  ${this.powerUser ? "After 30 days" : "When unused for 90 days"}
+                </option>
                 <option value="7">After 7 days</option>
-                <option value="30">After 30 days</option>
-                <option value="365">After a year</option>
+                ${this.powerUser
+                  ? nothing
+                  : html`
+                      <option value="30">After 30 days</option>
+                      <option value="365">After a year</option>
+                    `}
               </select></label
             >
             <div class="row">
@@ -460,7 +473,14 @@ export class CliLoginApproval extends LitElement {
       <h3 id="cli-login-title">Sign in the AdminBot CLI?</h3>
       ${this.pending
         ? html`<p>
-              <strong>${this.pending.name}</strong> is asking for an API token that acts as you
+              <strong>${this.pending.name}</strong> is asking for
+              ${this.pending.token_role === "power_user"
+                ? this.pending.web_role === "admin"
+                  ? "CLI access with your admin permissions"
+                  : this.pending.web_role === "member"
+                    ? "CLI access to create and edit your projects and manage your own member work"
+                    : "CLI access with your current web permissions"
+                : "an API token that acts as you"}
               ${this.pending.expires_in_days
                 ? `for ${this.pending.expires_in_days} days`
                 : "until you revoke it or leave it unused for 90 days"}${this.pending.requested_ip
