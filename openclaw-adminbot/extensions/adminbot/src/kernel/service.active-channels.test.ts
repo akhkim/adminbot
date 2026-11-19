@@ -12,6 +12,7 @@ function lab() {
     ["UMAJOR", "coauthor-major"],
     ["UMINOR", "coauthor-minor"],
     ["UOWN", "own-pace-advisee"],
+    ["UACQ", "acquaintance"],
     ["UBLANK", ""],
   ]) {
     const result = service.upsertLabMember({
@@ -30,7 +31,7 @@ function lab() {
   const read = vi.fn(async () => [
     {
       channel: "jinesis-active",
-      userIds: ["UFULL", "UALUM", "UMAJOR", "UMINOR", "UOWN", "UBLANK", "UUNKNOWN"],
+      userIds: ["UFULL", "UALUM", "UMAJOR", "UMINOR", "UOWN", "UACQ", "UBLANK", "UUNKNOWN"],
     },
     { channel: "random-active", userIds: ["UFULL", "UUNKNOWN"] },
   ]);
@@ -38,11 +39,11 @@ function lab() {
 }
 
 describe("daily active-channel policy", () => {
-  it("removes roster-matched ineligible accounts with audited T3 approvals, preserving eligible alumni", async () => {
+  it("removes roster-matched ineligible accounts with audited T3 approvals, keeping alumni and own-pace advisees", async () => {
     const { store, service, execute, read } = lab();
     const result = await service.syncActiveChannels(read);
     expect(result.failed).toEqual([]);
-    expect(result.removed.map((p) => p.user_id)).toEqual(["UMINOR", "UOWN"]);
+    expect(result.removed.map((p) => p.user_id)).toEqual(["UMINOR", "UACQ"]);
     expect(execute).toHaveBeenCalledTimes(2);
     for (const proposal of store.listProposalsByType("slack.remove_from_channel")) {
       expect(proposal).toMatchObject({
@@ -169,7 +170,7 @@ describe("daily active-channel policy", () => {
         ).toHaveLength(2),
       );
       for (const [cycle, date] of ["2030-01-06", "2030-01-13"].entries()) {
-        update("own-pace-advisee", staleCache);
+        update("coauthor-minor", staleCache);
         await enforceActiveChannels(
           service,
           store,

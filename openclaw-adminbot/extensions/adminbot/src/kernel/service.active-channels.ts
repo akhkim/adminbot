@@ -14,9 +14,19 @@ export type ActiveChannelReview = {
   reason: "no_roster_row" | "blank_member_type";
 };
 
+/**
+ * Who belongs in the active channels: full members (alumni included), major coauthors and
+ * own-pace advisees, as the collaborator matrix's `active_channels` row says. The daily sweep, the
+ * lab-calendar sync and the re-invite on promotion all read this one rule, so it must not be
+ * narrower than the matrix or the sweep would take people out that the policy lets in.
+ */
 export function isActiveChannelEligible(member: AdminBotLabMember): boolean {
   const access = memberTypeAccessProfile(member);
-  return access.subgroup_source === "full_member" || access.subgroup === "coauthor_major";
+  return (
+    access.subgroup_source === "full_member" ||
+    access.subgroup === "coauthor_major" ||
+    access.subgroup === "own_pace_advisee"
+  );
 }
 
 /**
@@ -114,7 +124,7 @@ export async function enforceActiveChannels(
         ? { ok: true as const, payload: previous }
         : service.createProposal({
             type: "slack.remove_from_channel",
-            summary: `Remove ${userId} from #${channel}: not full or coauthor-major`,
+            summary: `Remove ${userId} from #${channel}: not full, coauthor-major or own-pace advisee`,
             target: { service: "slack", channel: "slack", target: channel },
             proposed_payload: { channel, user_id: userId },
             idempotency_key: key,
@@ -129,7 +139,7 @@ export async function enforceActiveChannels(
         payload_hash: proposed.payload.payload_hash,
         approver_role: "admin",
         approver_id: "system:daily-active-channel-policy",
-        note: "Standing policy: only full and coauthor-major accounts remain in active channels, including alumni. Accounts with no roster row or a blank Member Type are reported, not removed.",
+        note: "Standing policy: only full, coauthor-major and own-pace-advisee accounts remain in active channels, including alumni. Accounts with no roster row or a blank Member Type are reported, not removed.",
       });
       const result = approved.ok
         ? await service.execute(proposed.payload.id, { dry_run: false, idempotency_key: key })
