@@ -13416,6 +13416,85 @@
           }
         ],
         "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "notice": {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string"
+                        },
+                        "at": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "status",
+                        "at"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "member_id": {
+                      "type": "string"
+                    },
+                    "member_type": {
+                      "type": "string"
+                    },
+                    "due_on": {
+                      "type": "string"
+                    },
+                    "silent": {
+                      "type": "boolean"
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "pending",
+                        "failed",
+                        "done",
+                        "cancelled"
+                      ]
+                    },
+                    "created_by": {
+                      "type": "string"
+                    },
+                    "created_at": {
+                      "type": "string"
+                    },
+                    "settled_at": {
+                      "type": "string"
+                    },
+                    "outcome": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "notice",
+                    "id",
+                    "member_id",
+                    "member_type",
+                    "due_on",
+                    "silent",
+                    "status",
+                    "created_by",
+                    "created_at"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
           "2XX": {
             "description": "Successful service result",
             "content": {
@@ -13471,6 +13550,85 @@
           }
         },
         "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "notice": {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string"
+                        },
+                        "at": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "status",
+                        "at"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "member_id": {
+                      "type": "string"
+                    },
+                    "member_type": {
+                      "type": "string"
+                    },
+                    "due_on": {
+                      "type": "string"
+                    },
+                    "silent": {
+                      "type": "boolean"
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "pending",
+                        "failed",
+                        "done",
+                        "cancelled"
+                      ]
+                    },
+                    "created_by": {
+                      "type": "string"
+                    },
+                    "created_at": {
+                      "type": "string"
+                    },
+                    "settled_at": {
+                      "type": "string"
+                    },
+                    "outcome": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "notice",
+                    "id",
+                    "member_id",
+                    "member_type",
+                    "due_on",
+                    "silent",
+                    "status",
+                    "created_by",
+                    "created_at"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
           "2XX": {
             "description": "Successful service result",
             "content": {
@@ -38854,6 +39012,9 @@
           "reason": {
             "type": "string"
           },
+          "notice": {
+            "$ref": "#/components/schemas/AdminBotScheduledMemberChangeNotice"
+          },
           "status": {
             "type": "string",
             "enum": [
@@ -38885,6 +39046,30 @@
           "status",
           "created_by",
           "created_at"
+        ],
+        "additionalProperties": true
+      },
+      "AdminBotScheduledMemberChangeNotice": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "failed",
+              "sent"
+            ]
+          },
+          "at": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "at"
         ],
         "additionalProperties": true
       },
