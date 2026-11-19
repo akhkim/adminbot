@@ -271,7 +271,7 @@ def deadline_name(d):
     return d['name'] + (f' ({label})' if label and label.lower() != 'paper submission' else '')
 
 
-PEOPLE_COLUMNS = tuple('''id join_date join_date_basis membership_review member_type
+PEOPLE_COLUMNS = tuple('''id active_member join_date join_date_basis membership_review member_type
 test_onboard_batch receives_nudges email calendar_email slack_user_id merch_requests
 next_position personal_circumstances slack_messages_7d slack_activity_checked_at
 privilege_level collaborator_subgroup access_overrides notes role status research_branch
@@ -307,7 +307,7 @@ twitter_followers recommendation_letter_window search'''.split())
 PEOPLE_SECTIONS = (
     ('Contact', ('name', 'calendar_email', 'whatsapp', 'email', 'correspondence_email',
                  'timezone', 'current_city')),
-    ('Lab', ('status', 'member_type', 'role', 'collaborator_subgroup', 'privilege_level', 'join_date',
+    ('Lab', ('active_member', 'status', 'member_type', 'role', 'collaborator_subgroup', 'privilege_level', 'join_date',
              'affiliation', 'at_uoft', 'hours_per_week', 'membership_review', 'receives_nudges',
              'compute_access', 'calendar_group', 'next_position', 'graduated_month')),
     ('Research', ('research_branch', 'research_topics', 'elevator_pitch', 'projects', 'papers_authored_count',
@@ -327,7 +327,7 @@ PEOPLE_LABELS = {
     'name': 'Name', 'calendar_email': 'Calendar email', 'whatsapp': 'WhatsApp',
     'email': 'Email', 'correspondence_email': 'Correspondence email',
     'timezone': 'Time zone', 'current_city': 'City', 'member_type': 'Membership', 'collaborator_subgroup': 'Subgroup',
-    'privilege_level': 'Access level', 'join_date': 'Joined', 'at_uoft': 'At UofT', 'hours_per_week': 'Hours / week',
+    'privilege_level': 'Access level', 'active_member': 'Active (1/0)', 'join_date': 'Joined', 'at_uoft': 'At UofT', 'hours_per_week': 'Hours / week',
     'receives_nudges': 'Gets nudges', 'compute_access': 'Compute',
     'calendar_group': 'Calendar group', 'graduated_month': 'Graduated', 'research_topics': 'Research topics',
     'papers_authored_count': 'Papers', 'papers_authored': 'Paper titles', 'arr_reviewer_qualified': 'ARR reviewer',
@@ -1350,18 +1350,29 @@ def people_inactive(record):
     return status in ('inactive', 'alumni', 'removed') or 'alumni' in types
 
 
-def people_sort_key(record):
-    """Joined month first, then active before inactive within it.
+# Member Type tokens that hold the active channels; mirrors ACTIVE_CHANNEL_TOKENS in
+# extensions/adminbot/src/workflows/members/active-channel-audit.ts.
+ACTIVE_MEMBER_TOKENS = ('full', 'own-pace-advisee', 'coauthor-major')
 
-    A row with no readable join date has nothing to be placed by, and 104 of 249 were in that
-    state: they used to close the tab in name order, which read as the sort giving up. They still
-    come last -- a guess is not written into anybody's Joined cell -- but in the order their
-    records were created, which is the nearest thing to a join date the database holds for them.
+
+def people_active(record):
+    """1 for an active member, else 0: a Member Type holding the active channels, not inactive."""
+    types = {token.strip().casefold() for token in str(record.get('member_type', '')).replace('_', '-').split(',')}
+    return int(bool(types & set(ACTIVE_MEMBER_TOKENS)) and not people_inactive(record))
+
+
+def people_sort_key(record):
+    """Active members first, then joined month, earliest (most senior) first.
+
+    The tab is read top-down to recommend people for positions: the active pool comes first, and
+    within it the senior members. A row with no readable join date ends its group -- a guess is
+    not written into anybody's Joined cell -- in the order its record was created, the nearest
+    thing to a join date the database holds, never in name order.
     """
     value = normalized_join_date(record.get('join_date') or record.get('joined_month'))
     # Preserve source precision; this padding is used only for chronological sorting.
     when = value + {4: '-00-00', 7: '-00'}.get(len(value), '') if value else str(record.get('created_at') or '')
-    return (0 if value else 1, when[:7], people_inactive(record), when,
+    return (-people_active(record), 0 if value else 1, when,
             str(record.get('name', '')).casefold(), record['id'])
 
 
@@ -1372,7 +1383,7 @@ def people_review_fields(record):
     if record.get('slack_user_id') and isinstance(channels, list) and all(isinstance(c, str) for c in channels):
         active = 'Recorded yes' if any(str(c).lstrip('#').casefold() == 'jinesis-active' for c in channels) else 'Recorded no'
     status = str(record.get('status') or '').casefold()
-    return {'slack_active': active, 'membership_review':
+    return {'slack_active': active, 'active_member': people_active(record), 'membership_review':
             'Review inactive' if people_inactive(record) else
             'Status unknown' if not status else 'Recorded ' + status}
 

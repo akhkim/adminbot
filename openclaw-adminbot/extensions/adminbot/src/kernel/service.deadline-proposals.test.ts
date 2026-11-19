@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { DeadlineProposalInput } from "../contracts/deadline-proposals.js";
+import {
+  defaultDeadlineArchival,
+  readDeadlineArchival,
+  type DeadlineProposalInput,
+} from "../contracts/deadline-proposals.js";
 import { stageSnapshot } from "../contracts/deadline-proposals.stage.js";
 import { AdminBotMemoryStore } from "../persistence/memory.js";
 import { AdminBotService } from "./service.js";
@@ -658,5 +662,67 @@ describe("stage-specific proposals", () => {
       ),
     ).toMatchObject({ ok: true });
     expect((service.deadlineReadModel([])[0] as any).schedule).toHaveLength(2);
+  });
+});
+
+describe("archival by default", () => {
+  async function publish(overrides: Partial<DeadlineProposalInput>, key: string) {
+    const store = new AdminBotMemoryStore();
+    const service = new AdminBotService(store);
+    unwrap(
+      service.upsertLabMember({ id: "member-1", name: "Test Member", privilege_level: "member" }),
+    );
+    const view = unwrap(
+      await service.submitMemberDeadlineProposal(input(overrides), "member-1", key),
+    );
+    const row = service
+      .deadlineReadModel([])
+      .find((entry) => (entry as Record<string, unknown>).id === view.deadline_id);
+    return { service, view, row: row as Record<string, unknown> };
+  }
+
+  it("treats an omitted choice on a new venue as archival", async () => {
+    // A workshop would otherwise be inferred as "unknown", so this shows the default applied.
+    const { view, row } = await publish(
+      { stage: { operation: "add", milestone: "submission", label: "Submission" } },
+      "omitted",
+    );
+    expect(view.revisions.at(-1)?.deadline.archival).toBe(true);
+    expect(row).toMatchObject({ archival: true, archival_status: "archival" });
+  });
+
+  it("keeps an explicit non-archival choice, also through a revision that omits it", async () => {
+    const { service, view, row } = await publish(
+      { archival: false, entryType: "main_conference" },
+      "opt-out",
+    );
+    expect(view.revisions.at(-1)?.deadline.archival).toBe(false);
+    expect(row).toMatchObject({ archival: false, archival_status: "non_archival" });
+
+    const revised = unwrap(
+      service.reviseDeadlineProposal(
+        view.id,
+        input({ entryType: "main_conference", deadlineDate: "2026-09-21" }),
+        "member-1",
+      ),
+    );
+    expect(revised.revisions.at(-1)?.deadline.archival).toBe(false);
+  });
+
+  it("rejects a non-boolean choice and leaves stage proposals without one", () => {
+    const service = new AdminBotService(new AdminBotMemoryStore());
+    const bad = service.submitDeadlineProposal(
+      input({ archival: "yes" as unknown as boolean }),
+      "member-1",
+      "bad",
+    );
+    expect(bad).toMatchObject({ ok: false, status: 400 });
+    expect(defaultDeadlineArchival(input({ entryType: "rebuttal" }))).toBeUndefined();
+    const add = { operation: "add", milestone: "submission", label: "Submission" } as const;
+    // The website sends a brand-new venue as a stage add without a venue id.
+    expect(defaultDeadlineArchival(input({ stage: add }))).toBe(true);
+    expect(defaultDeadlineArchival(input({ stage: { ...add, venueId: "v" } }))).toBeUndefined();
+    expect(readDeadlineArchival("false")).toEqual({ archival: false });
+    expect(readDeadlineArchival(undefined)).toEqual({});
   });
 });

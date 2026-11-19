@@ -3,11 +3,16 @@
 // An admin agrees a grace period ("a week, then acquaintance") and records it here instead of in
 // their head. The daily sweep makes the change with the same save the Edit member form makes, so
 // channels, the Monday meeting and the calendar follow the new type exactly as they would by hand.
-import type { AdminBotAuthSession } from "../../contracts/actions.js";
+import type { AdminBotAuthSession, AdminBotLabMember } from "../../contracts/actions.js";
 import type { AdminBotScheduledMemberChange } from "../../contracts/scheduled-member-changes.js";
 import type { AdminBotMemberPrincipal } from "../../workflows/identity/auth.js";
 import { sameMemberType } from "../../workflows/members/roster-sync.js";
 import { readJsonOrEmpty, sendJson, sendServiceResult } from "../server.http.js";
+import {
+  composeScheduledChangeNotice,
+  SCHEDULED_CHANGE_NOTICE_TITLE,
+  scheduledChangeRemovesActiveAccess,
+} from "../server.scheduled-change-notice.js";
 import type { AdminBotRouteContext } from "./context.js";
 import { adminSessionOnly, principalActor, privilegedOnly } from "./guards.js";
 import { saveLabMemberAsAdmin } from "./members.js";
@@ -43,6 +48,48 @@ function schedulerPrincipal(
   return { kind: "member", member: admin, session };
 }
 
+/**
+ * The member's heads-up, sent once at scheduling. Never retried: a send that timed out may have
+ * landed, and a second formal notice is worse than a `failed` row an admin can see and follow up.
+ */
+async function sendScheduledChangeNotice(
+  ctx: AdminBotRouteContext,
+  change: AdminBotScheduledMemberChange,
+  member: AdminBotLabMember,
+  actor: string,
+): Promise<void> {
+  const changes = ctx.service.scheduledMemberChanges();
+  try {
+    const sent = await ctx.service.sendMemberNudge(
+      {
+        channel: "slack",
+        recipient_member_ids: [member.id],
+        title: SCHEDULED_CHANGE_NOTICE_TITLE,
+        kind: "nudge",
+        message: composeScheduledChangeNotice(member, change, change.created_at.slice(0, 10)),
+      },
+      actor,
+    );
+    const deliveries = sent.ok ? (sent.payload.deliveries ?? []) : [];
+    const delivered = deliveries.some((delivery) => delivery.outcome === "executed");
+    changes.recordNotice(change.id, {
+      status: delivered ? "sent" : "failed",
+      at: new Date().toISOString(),
+      detail: sent.ok
+        ? deliveries.map((d) => d.reason ?? d.action_id).join(", ") ||
+          sent.payload.skipped.map((skip) => skip.reason).join(", ") ||
+          "nothing was sent"
+        : sent.error.message,
+    });
+  } catch (error) {
+    changes.recordNotice(change.id, {
+      status: "failed",
+      at: new Date().toISOString(),
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 function stepSummary(body: unknown): string {
   const steps = (
     body as { member_type_change?: { steps?: Array<{ step: string; status: string }> } } | null
@@ -64,7 +111,32 @@ export const scheduledMemberChangeRoutes: readonly Route[] = [
         sendServiceResult(res, changes.list(url.searchParams.get("status") ?? undefined));
         return;
       }
-      sendServiceResult(res, changes.create(await readJsonOrEmpty(req), principalActor(principal)));
+      const body = await readJsonOrEmpty(req);
+      const actor = principalActor(principal);
+      const created = changes.create(body, actor);
+      if (!created.ok) {
+        sendServiceResult(res, created);
+        return;
+      }
+      const wantsNotice = (body as { notify?: unknown } | null)?.notify !== false;
+      const member = ctx.store.getLabMember(created.payload.member_id);
+      if (
+        !wantsNotice ||
+        !member ||
+        !scheduledChangeRemovesActiveAccess(member, created.payload.member_type)
+      ) {
+        sendServiceResult(res, created);
+        return;
+      }
+      // Answer first, then send: a Slack delivery can take most of a minute, and the admin who
+      // scheduled should not wait on it (nor see a timeout that reads like the schedule failed).
+      // The record says how it went.
+      changes.recordNotice(created.payload.id, { status: "pending", at: new Date().toISOString() });
+      sendJson(res, 201, {
+        ...created.payload,
+        notice: { status: "pending", at: new Date().toISOString() },
+      });
+      void sendScheduledChangeNotice(ctx, created.payload, member, actor);
     }),
   ),
   // Called by the cron job (scripts/adminbot-scheduled-member-changes-cron.sh, daily).

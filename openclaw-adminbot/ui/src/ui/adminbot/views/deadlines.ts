@@ -211,9 +211,10 @@ export function mergeArrSubmissionDuplicates(
     if (bucket.length < 2) {
       continue;
     }
-    // A named venue beats a bare cycle. `archival_status` is the tell: the cycle cannot know
-    // whether the eventual venue archives, so it is recorded as unknown.
-    const survivor = bucket.find((entry) => entry.venue.archival_status !== "unknown") ?? bucket[0];
+    // A named venue beats a bare cycle, whose group is the cycle itself ("ARR October 2026").
+    // Both are archival now, so the archival status can no longer tell them apart.
+    const survivor =
+      bucket.find((entry) => !/^ARR\b/u.test(entry.venue.venue_group.trim())) ?? bucket[0];
     if (!survivor) {
       continue;
     }
@@ -1509,6 +1510,11 @@ class AdminbotDeadlinesView extends LitElement {
       note: String(data.get("note") ?? ""),
     };
     const editing = this.proposals.find((p) => p.id === this.editingProposalId);
+    // Only a brand-new venue shows the archival box; corrections and added stages keep the
+    // venue's existing status, so they send nothing.
+    if (!this.correctionTarget && !this.proposalVenue && !editing?.deadline.stage?.venueId) {
+      input.archival = data.get("archival") === "on";
+    }
     if (editing?.deadline.stage) {
       input.stage = editing.deadline.stage;
     } else if (this.correctionTarget && this.correctionStage) {
@@ -1932,6 +1938,21 @@ class AdminbotDeadlinesView extends LitElement {
               aria-invalid=${String(Boolean(this.proposalErrors.openReviewUrl))}
             />
             ${this.renderProposalFieldError("openReviewUrl")}
+          </label>
+          <label
+            class="deadline-proposal__wide deadline-proposal__check"
+            ?hidden=${Boolean(target)}
+          >
+            <input
+              name="archival"
+              type="checkbox"
+              data-testid="deadline-proposal-archival"
+              .checked=${value?.archival ?? true}
+            />
+            <span
+              >Archival (publishes proceedings)
+              <small>Untick for a non-archival workshop or venue.</small></span
+            >
           </label>
           <label class="deadline-proposal__wide">
             <span>Note for the administrator <small>optional</small></span>

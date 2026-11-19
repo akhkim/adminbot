@@ -22,6 +22,7 @@
 // offer a shape the service will refuse.
 import { html, nothing, type TemplateResult } from "lit";
 import { live } from "lit/directives/live.js";
+import { OVERLEAF_COM_HOST } from "../../../../../extensions/adminbot/src/contracts/overleaf.js";
 import { adminBotOpenReviewForumId } from "../../../../../extensions/adminbot/src/contracts/paper-artifact-links.js";
 import {
   isPaperImpactSlot,
@@ -455,6 +456,26 @@ function renderTalkMaterials(props: PaperSlotsProps, slot: AdminBotPaperSlot) {
   </p>`;
 }
 
+/**
+ * Who should own the Overleaf project. Free Overleaf Pro only comes with an ETH address, so a
+ * project owned by a coauthor elsewhere loses Pro features (history, collaborator limit) for
+ * everyone; the fix is to hand ownership to someone in the lab who has it. Shown once, under the
+ * Overleaf group, next to the links the steps end with.
+ */
+function renderOverleafOwnership(props: PaperSlotsProps, slot: AdminBotPaperSlot) {
+  if (slot !== "overleaf_share") {
+    return nothing;
+  }
+  return html`<p
+    class="paper-slot__note"
+    data-testid=${`paper-slot-overleaf-owner-${props.paperId}`}
+  >
+    On ${OVERLEAF_COM_HOST}, free Overleaf Pro only comes with an ETH email. Copy the edit and view
+    links, transfer ownership of the project to Felix Hu (fhu), Samuel Simko or Zhijing Jin, then
+    save both links here. Leonhard Waibl also has Pro through his university.
+  </p>`;
+}
+
 function renderSlot(props: PaperSlotsProps, slot: AdminBotPaperSlot) {
   const definition = adminBotPaperSlotRegistry[slot];
   const row = rowFor(props.slots, slot);
@@ -505,6 +526,7 @@ function renderSlot(props: PaperSlotsProps, slot: AdminBotPaperSlot) {
         ? html`<span class="paper-slot__sublabel">${definition.label}</span>`
         : nothing}
       ${renderInput(props, slot, definition, row)} ${renderTalkMaterials(props, slot)}
+      ${renderOverleafOwnership(props, slot)}
       <!-- "unblocks submission", the accepted host and path, and "Waiting on X" all used to sit
            here in small grey type under every field. Multiplied across the card it read as a
            dependency graph rather than a form, and it repeated what the card says by other means:

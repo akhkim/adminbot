@@ -154,6 +154,7 @@ import { resolveAdminBotControlUiUrl } from "../contracts/control-ui.js";
 import { adminBotIsPersonalCorrespondenceEmail } from "../contracts/correspondence-email.js";
 import {
   deadlineProposalDuplicateKey,
+  defaultDeadlineArchival,
   isDeadlinePublicationPayload,
   validateDeadlineProposalInput,
   validateDeadlineSubmitterContact,
@@ -2656,6 +2657,14 @@ export class AdminBotService {
     if (!validation.ok) {
       return serviceError(400, firstDeadlineValidationError(validation.errors));
     }
+    // New venues are archival unless the submitter unticked it; an explicit false is kept. A
+    // correction of an existing venue has no checkbox and must not overwrite its status.
+    const archivalDefault = targetDeadlineId
+      ? undefined
+      : defaultDeadlineArchival(validation.value);
+    if (validation.value.archival === undefined && archivalDefault !== undefined) {
+      validation.value.archival = archivalDefault;
+    }
     const contact = validateDeadlineSubmitterContact(submitterContact);
     if (!contact.ok) {
       return serviceError(400, contact.error);
@@ -2762,6 +2771,10 @@ export class AdminBotService {
     }
     if (JSON.stringify(validation.value.stage) !== JSON.stringify(currentPayload.deadline.stage)) {
       return serviceError(409, "A revision cannot change which stage the proposal targets.");
+    }
+    // A client that does not send the field keeps the choice made at submission.
+    if (validation.value.archival === undefined && currentPayload.deadline.archival !== undefined) {
+      validation.value.archival = currentPayload.deadline.archival;
     }
     const duplicateIds = this.findDeadlineDuplicates(
       validation.value,

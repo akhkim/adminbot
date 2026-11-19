@@ -6470,6 +6470,7 @@ export interface components {
       cfpUrl: string;
       openReviewUrl: string;
       note: string;
+      archival?: boolean;
     } & {
       [key: string]: unknown;
     };
@@ -7176,12 +7177,21 @@ export interface components {
       due_on: string;
       silent: boolean;
       reason?: string;
+      notice?: components["schemas"]["AdminBotScheduledMemberChangeNotice"];
       /** @enum {string} */
       status: "pending" | "failed" | "done" | "cancelled";
       created_by: string;
       created_at: string;
       settled_at?: string;
       outcome?: string;
+    } & {
+      [key: string]: unknown;
+    };
+    AdminBotScheduledMemberChangeNotice: {
+      /** @enum {string} */
+      status: "pending" | "failed" | "sent";
+      at: string;
+      detail?: string;
     } & {
       [key: string]: unknown;
     };
@@ -10821,7 +10831,7 @@ export interface components {
       parent_conference: string;
       conference_location: string;
       /** @enum {string} */
-      archival_status: "archival" | "unknown" | "non_archival" | "mixed";
+      archival_status: "archival" | "non_archival" | "unknown" | "mixed";
       /** @enum {string} */
       cross_submission_status: "unclear" | "prohibited" | "allowed";
       cross_submission_evidence: string;
@@ -18727,6 +18737,36 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
+      /** @description Success */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            notice: {
+              status: string;
+              at: string;
+            } & {
+              [key: string]: unknown;
+            };
+            id: string;
+            member_id: string;
+            member_type: string;
+            due_on: string;
+            silent: boolean;
+            reason?: string;
+            /** @enum {string} */
+            status: "pending" | "failed" | "done" | "cancelled";
+            created_by: string;
+            created_at: string;
+            settled_at?: string;
+            outcome?: string;
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
       /** @description Successful service result */
       "2XX": {
         headers: {
@@ -18766,6 +18806,36 @@ export interface operations {
       };
     };
     responses: {
+      /** @description Success */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            notice: {
+              status: string;
+              at: string;
+            } & {
+              [key: string]: unknown;
+            };
+            id: string;
+            member_id: string;
+            member_type: string;
+            due_on: string;
+            silent: boolean;
+            reason?: string;
+            /** @enum {string} */
+            status: "pending" | "failed" | "done" | "cancelled";
+            created_by: string;
+            created_at: string;
+            settled_at?: string;
+            outcome?: string;
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
       /** @description Successful service result */
       "2XX": {
         headers: {

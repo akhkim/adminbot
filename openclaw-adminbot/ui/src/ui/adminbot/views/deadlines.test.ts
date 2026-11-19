@@ -667,6 +667,35 @@ describe("renderDeadlines", () => {
     expect(container.querySelector('[data-testid="deadline-proposal-form-panel"]')).not.toBeNull();
   });
 
+  it.each([
+    [true, true],
+    [false, false],
+  ])("sends a new venue as archival unless unticked (ticked: %s)", async (ticked, expected) => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const store = new TestProposalStore();
+    const submitPublic = vi.spyOn(store, "submitPublic");
+    render(renderDeadlines({ role: "anonymous", proposalStore: store }), container);
+    await settle(container);
+    buttonNamed(container, "Propose a new deadline").click();
+    await settle(container);
+    const form = container.querySelector<HTMLFormElement>(".deadline-proposal__form")!;
+    const box = form.querySelector<HTMLInputElement>('[data-testid="deadline-proposal-archival"]')!;
+    // Archival is the default; the submitter opts out.
+    expect(box.checked).toBe(true);
+    for (const [name, value] of Object.entries(proposalInput())) {
+      (form.elements.namedItem(name) as HTMLInputElement).value = value;
+    }
+    box.checked = ticked;
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await settle(container);
+    expect(submitPublic).toHaveBeenCalledWith(
+      expect.objectContaining({ archival: expected }),
+      expect.any(String),
+      expect.anything(),
+    );
+  });
+
   it("lets a visitor submit without exposing proposal history", async () => {
     const container = document.createElement("div");
     document.body.append(container);

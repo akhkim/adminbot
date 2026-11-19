@@ -8,6 +8,7 @@ import {
   adminBotScheduledMemberChangeMaxDays,
   adminBotScheduledMemberChangeStatuses,
   type AdminBotScheduledMemberChange,
+  type AdminBotScheduledMemberChangeNotice,
   type AdminBotScheduledMemberChangeStatus,
 } from "../contracts/scheduled-member-changes.js";
 import { sameMemberType } from "../workflows/members/roster-sync.js";
@@ -186,6 +187,18 @@ export class ScheduledMemberChangeService {
     return this.store
       .listScheduledMemberChanges("pending")
       .filter((change) => change.due_on <= today);
+  }
+
+  /**
+   * Writes down how the member's heads-up went. Re-reads the record first: the send is slow and
+   * runs after the response, so a sweep or a cancel may have settled the change meanwhile, and
+   * writing back the copy taken at scheduling time would undo that.
+   */
+  recordNotice(changeId: string, notice: AdminBotScheduledMemberChangeNotice): void {
+    const current = this.store.listScheduledMemberChanges().find((entry) => entry.id === changeId);
+    if (current) {
+      this.store.saveScheduledMemberChange({ ...current, notice });
+    }
   }
 
   /** Takes a change out of `pending` and says why. The audit row is the sweep's receipt. */

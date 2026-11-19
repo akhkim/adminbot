@@ -82,7 +82,7 @@ is final.
 ## Linking side effect
 
 Linking `slack_user_id` on an existing member runs the existing after-write hook, which invites an
-eligible member (full or coauthor-major) to the active channels. That is existing policy for any
+eligible member (full, coauthor-major or own-pace advisee) to the active channels. That is existing policy for any
 link, not something new in this sync. Records created here start at `external_collaborator`,
 which is not eligible.
 
