@@ -833,3 +833,75 @@ assert values[1][values[0].index('recommendation_letter_window')] == 'No matchin
 missing = exporter.full_people_values(sqlite3.connect(':memory:'), [member], [], '2026-10-28T12:00:00Z')
 assert missing[1][missing[0].index('recommendation_letter_window')] == 'Unknown — requests unavailable'
 print('PASS: letter window calendar boundaries, future requests, unknown versus absent, settled states, privacy and read-only export')
+
+letters_spec = importlib.util.spec_from_file_location('letters', Path(__file__).with_name('adminbot-letter-export.py'))
+letters = importlib.util.module_from_spec(letters_spec)
+letters_spec.loader.exec_module(letters)
+lc = sqlite3.connect(':memory:')
+lc.execute('CREATE TABLE adminbot_logistics_requests(id TEXT, member_id TEXT, submitted_at TEXT, updated_at TEXT, payload_json TEXT)')
+def letter_request(rid, name, schools, status='submitted', kind='recommendation_letters', **extra):
+    lc.execute('INSERT INTO adminbot_logistics_requests VALUES (?,?,?,?,?)', (rid, 'm-' + rid, '', '', json.dumps(
+        {'id': rid, 'kind': kind, 'status': status, 'member_name': name, 'schools': schools, **extra})))
+letter_request('late', 'Bea', [{'school': 'Far U', 'letter_deadline': '2026-12-15', 'deadline_timezone': 'AoE', 'letter_status': 'requested'}])
+letter_request('soon', 'Ann', [
+    {'school': 'Uni A', 'program': 'PhD', 'letter_deadline': '2026-11-01', 'letter_deadline_time': '17:00',
+     'deadline_timezone': 'Europe/Zurich', 'letter_status': 'requested', 'program_link': 'https://a.example/phd?token=x'},
+    {'school': 'Uni B', 'application_deadline': '2026-11-20', 'letter_status': 'Submitted', 'notes': '=HYPERLINK("x")'},
+    {'school': 'Uni C', 'letter_deadline': '2026-11-10', 'deadline_timezone': 'Mars/Base', 'program_link': 'https://c.example'},
+    {'school': 'MATS', 'program': 'Winter', 'letter_deadline': '2026-10-30'}],
+    cv_overleaf_url='https://www.overleaf.com/project/abc', drive_folder_url='http://insecure.example',
+    facts=[{'project': 'Proj X', 'contribution': 'Led the evals'}])
+letter_request('mats', 'Max', [{'school': 'MATS', 'letter_deadline': '2026-11-02'}])
+letter_request('gone', 'Wes', [{'school': 'Uni W', 'letter_deadline': '2026-11-02'}], status='withdrawn')
+letter_request('meet', 'Mia', [{'school': 'Uni M', 'letter_deadline': '2026-11-02'}], kind='book_meeting')
+sheet = letters.letter_sheet(lc, '2026-10-29T12:00:00Z')
+V, C = sheet['values'], letters.COLUMNS
+col = lambda row, name: row[C.index(name)]
+assert V[0] == list(C) and all(len(row) == letters.WIDTH for row in V)
+assert [r[0] for r in V[1:]] == ['Ann', 'Ann', 'Ann', 'Bea']  # MATS-only, withdrawn, other kinds dropped; earliest student first
+assert [col(r, 'School · program') for r in V[1:4]] == ['Uni A · PhD', 'Uni C', 'Uni B']  # open by date, done last; MATS row gone
+assert sheet['firsts'] == [1, 4] and sheet['done'] == [3]
+assert col(V[1], 'Letter due') == 'Sun 1 Nov, 17:00 Europe/Zurich' and col(V[1], 'Left') == '🟠 3 d left'
+assert col(V[1], 'Program') == '' and (1, C.index('Program')) not in sheet['links']  # token-bearing link never exported
+assert col(V[2], 'Check') == 'Unknown time zone "Mars/Base": AoE assumed\nLetter status not set'
+assert col(V[3], 'Left') == '✅ Done' and col(V[3], 'What the program looks for') == '=HYPERLINK("x")'
+assert col(V[3], 'Check') == 'No letter date: application date used\nTime zone not set: AoE assumed'
+assert col(V[1], 'CV') == 'Open' and col(V[1], 'Drive') == '⚠ none' and sheet['links'][(1, C.index('CV'))].startswith('https://www.overleaf')
+assert col(V[1], 'What to highlight') == '• Proj X: Led the evals' and col(V[2], 'What to highlight') == ''
+assert col(V[4], 'What to highlight') == '⚠ No facts yet: ask the student'
+assert sheet['counts'] == {'students': 2, 'open_letters': 3, 'due_7_days': 1}
+assert letters.countdown(letters.exporter.parse_time('2026-10-28T00:00:00Z'), False, letters.exporter.parse_time('2026-10-29T12:00:00Z')) == '⛔ 1 d overdue'
+reqs = letters.sheet_requests(77, {'rowCount': 10, 'columnCount': 20}, sheet)
+cells = next(r['updateCells'] for r in reqs if 'updateCells' in r)
+assert [[c['userEnteredValue']['stringValue'] for c in row['values']] for row in cells['rows']] == V  # RAW strings only
+assert not any(c.get('dataValidation') for row in cells['rows'] for c in row['values'])
+assert reqs[-1]['updateDimensionProperties']['range']['startIndex'] == letters.WIDTH  # old wider layout's columns hidden
+setup, _ = refresh.letter_tab_requests([], 5, 'bot@x.com', {'bot@x.com', 'pi@x.com'})
+assert setup[1]['addProtectedRange']['protectedRange']['editors']['users'] == ['bot@x.com', 'pi@x.com']
+tab = {'properties': {'title': letters.TITLE, 'sheetId': 5, 'gridProperties': {}}, 'protectedRanges': [
+    {'range': {'sheetId': 5}, 'editors': {'users': ['bot@x.com', 'stranger@x.com']}}]}
+try:
+    refresh.letter_tab_requests([tab], 5, 'bot@x.com', {'bot@x.com', 'pi@x.com'})
+    raise AssertionError('unapproved editor accepted')
+except ValueError:
+    pass
+ok = {'range': {'sheetId': 5}, 'editors': {'users': ['bot@x.com']}}
+tabs = [{'properties': {'title': 'People', 'sheetId': 1, 'index': 0}}, {'properties': {'title': 'Other', 'sheetId': 9, 'index': 1}},
+        {'properties': {'title': 'Papers', 'sheetId': 2, 'index': 2}},
+        {'properties': {'title': letters.TITLE, 'sheetId': 5, 'index': 4, 'gridProperties': {}}, 'protectedRanges': [ok]}]
+move, _ = refresh.letter_tab_requests(tabs, 5, 'bot@x.com', {'bot@x.com'}, {1, 2})
+assert move == [{'updateSheetProperties': {'properties': {'sheetId': 5, 'index': 3}, 'fields': 'index'}}]  # right after Papers
+tabs[3]['properties']['index'] = 3
+assert refresh.letter_tab_requests(tabs, 5, 'bot@x.com', {'bot@x.com'}, {1, 2})[0] == []
+assert refresh.letter_tab_requests(tabs[:3], 5, 'bot@x.com', {'bot@x.com'}, {1, 2})[0][0]['addSheet']['properties']['index'] == 3
+jacob = letters.student_block({'id': 'j', 'member_name': 'J', 'schools': [{'school': 'Fellows', 'application_deadline': '2026-08-28',
+    'letter_status': 'requested'}]}, letters.exporter.parse_time('2026-10-29T12:00:00Z'))
+assert jacob is None  # application closed with no letter date: dropped
+print('PASS: rec-letter list grouped by student, earliest deadline first, MATS/withdrawn excluded, safe links, protected tab')
+
+# Follow order comes from the private config, never the public code: Ann's letters sit right below Bea's on request.
+assert letters.FOLLOWS == {}
+students = lambda s: list(dict.fromkeys(row[0] for row in s['values'][1:]))  # one entry per student block
+assert students(letters.letter_sheet(lc, '2026-10-29T12:00:00Z')) == ['Ann', 'Bea']
+assert students(letters.letter_sheet(lc, '2026-10-29T12:00:00Z', {'ann': 'bea'})) == ['Bea', 'Ann']
+print('PASS: rec-letter follow order is read from the private destination config')

@@ -144,3 +144,18 @@ application details, letter text, attachments or inferred intent. It does not de
 or send reminders. Unrecorded future plans remain unknown. A published column requires the
 reviewed exporter to be installed and the existing authorized refresh job to succeed; a PR is
 not proof the live sheet changed.
+
+## Rec letters tab (November 19, 2026)
+
+The refresh also writes a third protected tab, `Rec letters` (sheet ID `730514001`), right after PeopleList
+and PaperList: one row per open recommendation letter, grouped by student, earliest letter deadline first
+(`scripts/adminbot-letter-export.py`). It is its own batch, so a failure there is logged and recorded in the
+status file without undoing the other two tabs. The tab was first built directly on Aurora and is now in the
+repository; the installed copies match `main`.
+
+An optional `letter_follows` object in the private destination config (`{"follower name": "leader name"}`,
+lower case) keeps one student's rows right below another's. Names stay in that on-host file, never in this
+public repository.
+
+The PI's OpenReview notification e-mails are not read by the export (see the OpenReview results job); the
+Aurora-only notifications reader was dropped when the installed copies were brought back to `main`.
