@@ -3843,6 +3843,24 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/papers/{papers_id}/poster-print": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** GET /papers/{papers_id}/poster-print */
+    get: operations["get-papers-by-papers-id-poster-print"];
+    /** PUT /papers/{papers_id}/poster-print */
+    put: operations["put-papers-by-papers-id-poster-print"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/papers/{papers_id}/progress": {
     parameters: {
       query?: never;
@@ -4621,6 +4639,74 @@ export interface paths {
     put?: never;
     /** POST /papers/x-draft */
     post: operations["post-papers-x-draft"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/poster-printing": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** GET /poster-printing */
+    get: operations["get-poster-printing"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/poster-printing/{poster_printing_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /** PUT /poster-printing/{poster_printing_id} */
+    put: operations["put-poster-printing-by-poster-printing-id"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/poster-printing/{poster_printing_id}/printed": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** POST /poster-printing/{poster_printing_id}/printed */
+    post: operations["post-poster-printing-by-poster-printing-id-printed"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/poster-printing/scheduled-run": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** POST /poster-printing/scheduled-run */
+    post: operations["post-poster-printing-scheduled-run"];
     delete?: never;
     options?: never;
     head?: never;
@@ -5448,6 +5534,7 @@ export interface components {
         | "paper_integrity.alert"
         | "paper_integrity.report"
         | "slack.conference_intro"
+        | "poster_print.notify"
         | "slack.collaborator_chat"
         | "paper_integrity.sheet_scores"
         | "slack.invite_to_channel"
@@ -5553,6 +5640,9 @@ export interface components {
         | "paper.upserted"
         | "paper.openreview_synced"
         | "paper_slot.updated"
+        | "poster_print.request_saved"
+        | "poster_print.batch_saved"
+        | "poster_print.printed"
         | "paper_slot.waived"
         | "paper_slots.nudged"
         | "paperflow_stages.nudged"
@@ -9269,6 +9359,48 @@ export interface components {
     } & {
       [key: string]: unknown;
     };
+    AdminBotPosterPrintPaperOptions: {
+      paper_id: string;
+      conference_key: string;
+      conference_label: string;
+      sites: ({
+        key: string;
+        label: string;
+        starts?: string;
+      } & {
+        [key: string]: unknown;
+      })[];
+      site_key?: string;
+      request?: components["schemas"]["AdminBotPosterPrintRequestRecord"];
+      /** @enum {string} */
+      state: "self_print" | "no_poster" | "unanswered" | "missing_file" | "ready";
+      deadline_on?: string;
+      printer_name?: string;
+      print_location?: string;
+      notes?: string;
+      /** @enum {string} */
+      status?: "sent" | "no_deadline" | "collecting" | "due";
+    } & {
+      [key: string]: unknown;
+    };
+    AdminBotPosterPrintRequestRecord: {
+      conference_key: string;
+      paper_id: string;
+      /** @enum {string} */
+      choice: "lab_print" | "self_print" | "no_poster";
+      site_key?: string;
+      /** @enum {string} */
+      size?: "A0" | "A1" | "custom";
+      custom_size?: string;
+      /** @enum {string} */
+      orientation?: "portrait" | "landscape";
+      copies?: number;
+      notes?: string;
+      updated_at: string;
+      updated_by?: string;
+    } & {
+      [key: string]: unknown;
+    };
     AdminBotPaperReimbursementRecord: {
       paper_id: string;
       member_id: string;
@@ -9814,6 +9946,90 @@ export interface components {
     } & {
       [key: string]: unknown;
     };
+    AdminBotPosterPrintOverview: {
+      batches: components["schemas"]["AdminBotPosterPrintBatchView"][];
+      settings?: components["schemas"]["AdminBotPosterPrintBatchRecord"][];
+      printer_candidates?: ({
+        member_id: string;
+        name: string;
+      } & {
+        [key: string]: unknown;
+      })[];
+      can_manage: boolean;
+      printable: string[];
+    } & {
+      [key: string]: unknown;
+    };
+    AdminBotPosterPrintBatchView: {
+      conference_key: string;
+      group_key: string;
+      multi_site: boolean;
+      label: string;
+      conference_starts?: string;
+      conference_location?: string;
+      deadline_on?: string;
+      /** @enum {string} */
+      deadline_source: "none" | "set" | "lead_days";
+      days_left?: number;
+      printer?: {
+        member_id: string;
+        name: string;
+      } & {
+        [key: string]: unknown;
+      };
+      print_location?: string;
+      notes?: string;
+      /** @enum {string} */
+      status: "sent" | "no_deadline" | "collecting" | "due";
+      sent_at?: string;
+      papers: components["schemas"]["AdminBotPosterPrintPaper"][];
+      counts: {
+        [key: string]: unknown;
+      };
+    } & {
+      [key: string]: unknown;
+    };
+    AdminBotPosterPrintPaper: {
+      paper_id: string;
+      title: string;
+      presentation_type?: string;
+      first_author?: {
+        member_id: string;
+        name: string;
+      } & {
+        [key: string]: unknown;
+      };
+      poster_url?: string;
+      request?: components["schemas"]["AdminBotPosterPrintRequestRecord"];
+      /** @enum {string} */
+      state: "self_print" | "no_poster" | "unanswered" | "missing_file" | "ready";
+      /** @enum {string} */
+      site_source: "unknown" | "request" | "trip" | "single";
+      first_author_going: boolean;
+    } & {
+      [key: string]: unknown;
+    };
+    AdminBotPosterPrintBatchRecord: {
+      conference_key: string;
+      printer_member_id?: string;
+      print_location?: string;
+      deadline_on?: string;
+      lead_days?: number;
+      notes?: string;
+      updated_at: string;
+      updated_by?: string;
+    } & {
+      [key: string]: unknown;
+    };
+    PosterPrintSweepResult: {
+      reminders_sent: number;
+      handoffs_sent: number;
+      failed: number;
+      withdrawn: number;
+      skipped_unreachable: number;
+    } & {
+      [key: string]: unknown;
+    };
     AdminBotPrivacyTaskResult: {
       /** @enum {string} */
       route: "local" | "remote" | "hybrid";
@@ -9877,6 +10093,7 @@ export interface components {
         | "paper_integrity.alert"
         | "paper_integrity.report"
         | "slack.conference_intro"
+        | "poster_print.notify"
         | "slack.collaborator_chat"
         | "paper_integrity.sheet_scores"
         | "slack.invite_to_channel"
@@ -9959,6 +10176,7 @@ export interface components {
         | "paper_integrity.alert"
         | "paper_integrity.report"
         | "slack.conference_intro"
+        | "poster_print.notify"
         | "slack.collaborator_chat"
         | "paper_integrity.sheet_scores"
         | "slack.invite_to_channel"
@@ -23091,6 +23309,7 @@ export interface operations {
               | "paper_integrity.alert"
               | "paper_integrity.report"
               | "slack.conference_intro"
+              | "poster_print.notify"
               | "slack.collaborator_chat"
               | "paper_integrity.sheet_scores"
               | "slack.invite_to_channel"
@@ -25232,6 +25451,86 @@ export interface operations {
           } & {
             [key: string]: unknown;
           };
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "get-papers-by-papers-id-poster-print": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        papers_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful service result */
+      "2XX": {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": null | components["schemas"]["AdminBotPosterPrintPaperOptions"];
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "put-papers-by-papers-id-poster-print": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        papers_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          choice?: unknown;
+          site_key?: unknown;
+          size?: unknown;
+          custom_size?: unknown;
+          orientation?: unknown;
+          copies?: unknown;
+          notes?: unknown;
+        } & {
+          [key: string]: unknown;
+        };
+      };
+    };
+    responses: {
+      /** @description Successful service result */
+      "2XX": {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": null | components["schemas"]["AdminBotPosterPrintPaperOptions"];
         };
       };
       /** @description Authentication, authorization, validation, policy, or connector error */
@@ -28141,6 +28440,156 @@ export interface operations {
       };
     };
   };
+  "get-poster-printing": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful service result */
+      "2XX": {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AdminBotPosterPrintOverview"];
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "put-poster-printing-by-poster-printing-id": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        poster_printing_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          printer_member_id?: unknown;
+          print_location?: unknown;
+          deadline_on?: unknown;
+          lead_days?: unknown;
+          notes?: unknown;
+        } & {
+          [key: string]: unknown;
+        };
+      };
+    };
+    responses: {
+      /** @description Successful service result */
+      "2XX": {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AdminBotPosterPrintBatchRecord"];
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "post-poster-printing-by-poster-printing-id-printed": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        poster_printing_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          [key: string]: unknown;
+        };
+      };
+    };
+    responses: {
+      /** @description Successful service result */
+      "2XX": {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            printed: string[];
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "post-poster-printing-scheduled-run": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful service result */
+      "2XX": {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["PosterPrintSweepResult"];
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
   "post-privacy-tasks": {
     parameters: {
       query?: never;
@@ -28605,6 +29054,7 @@ export interface operations {
             | "paper_integrity.alert"
             | "paper_integrity.report"
             | "slack.conference_intro"
+            | "poster_print.notify"
             | "slack.collaborator_chat"
             | "paper_integrity.sheet_scores"
             | "slack.invite_to_channel"

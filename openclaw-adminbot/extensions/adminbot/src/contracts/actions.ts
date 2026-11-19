@@ -144,6 +144,11 @@ export const adminBotActionTypes = [
   // nobody overlaps), with the dates, location and event page. Its own type so "who did AdminBot
   // introduce to whom, and when" is one row per introduction in the audit log.
   "slack.conference_intro",
+  // A Slack DM about printing a conference poster: an author's reminder to answer the print
+  // question or link the file, or the printer's list of everything due for one conference site.
+  // Its own type rather than slack.send_message because it is auto-approved, and so that "what did
+  // the printer receive, and when" is answerable from the audit log on its own rows.
+  "poster_print.notify",
   "slack.collaborator_chat",
   // Writes each ICLR submission's AI-text score into one column of the lab's paper sheet
   // (ADMINBOT_ICLR_INTEGRITY_SHEET_ID). Its own type, rather than sheet.update_cells, because it is
@@ -2764,6 +2769,11 @@ export type AdminBotAuditEvent = {
     // A paper record brought in line with the PI's OpenReview submissions, field by field.
     | "paper.openreview_synced"
     | "paper_slot.updated"
+    // Poster print batches (contracts/poster-printing.ts): an author's answer, an admin's batch
+    // settings, and the printer marking a batch printed.
+    | "poster_print.request_saved"
+    | "poster_print.batch_saved"
+    | "poster_print.printed"
     | "paper_slot.waived"
     | "paper_slots.nudged"
     | "paperflow_stages.nudged"

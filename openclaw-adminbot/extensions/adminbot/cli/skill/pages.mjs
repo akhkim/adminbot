@@ -81,6 +81,7 @@ const PAGES = [
     /^\/(papers|openreview|lab-papers|cv)/u,
   ],
   ["Conference papers", "/conference-papers", "anyone", /^\/(venue-papers|conferences)/u],
+  ["Poster printing (Conference papers)", "/conference-papers", "admin", /^\/poster-printing/u],
   // The PDF Reference Checker is part of the PaperMentor page.
   [
     "PaperMentor (review a zip, check references)",

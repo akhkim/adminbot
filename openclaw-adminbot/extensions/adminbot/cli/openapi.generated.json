@@ -20986,6 +20986,7 @@
                         "paper_integrity.alert",
                         "paper_integrity.report",
                         "slack.conference_intro",
+                        "poster_print.notify",
                         "slack.collaborator_chat",
                         "paper_integrity.sheet_scores",
                         "slack.invite_to_channel",
@@ -24734,6 +24735,131 @@
                     "error"
                   ],
                   "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/papers/{papers_id}/poster-print": {
+      "get": {
+        "operationId": "get-papers-by-papers-id-poster-print",
+        "summary": "GET /papers/{papers_id}/poster-print",
+        "tags": [
+          "papers"
+        ],
+        "x-source": "src/api/routes/poster-printing.ts",
+        "parameters": [
+          {
+            "name": "papers_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Successful service result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AdminBotPosterPrintPaperOptions"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "put-papers-by-papers-id-poster-print",
+        "summary": "PUT /papers/{papers_id}/poster-print",
+        "tags": [
+          "papers"
+        ],
+        "x-source": "src/api/routes/poster-printing.ts",
+        "parameters": [
+          {
+            "name": "papers_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "choice": {},
+                  "site_key": {},
+                  "size": {},
+                  "custom_size": {},
+                  "orientation": {},
+                  "copies": {},
+                  "notes": {}
+                },
+                "additionalProperties": true,
+                "x-schema-coverage": "inferred from property access or downstream casts; semantic validation remains server-side"
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful service result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AdminBotPosterPrintPaperOptions"
+                    }
+                  ]
                 }
               }
             }
@@ -29724,6 +29850,212 @@
         }
       }
     },
+    "/poster-printing": {
+      "get": {
+        "operationId": "get-poster-printing",
+        "summary": "GET /poster-printing",
+        "tags": [
+          "poster-printing"
+        ],
+        "x-source": "src/api/routes/poster-printing.ts",
+        "responses": {
+          "2XX": {
+            "description": "Successful service result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminBotPosterPrintOverview"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/poster-printing/{poster_printing_id}": {
+      "put": {
+        "operationId": "put-poster-printing-by-poster-printing-id",
+        "summary": "PUT /poster-printing/{poster_printing_id}",
+        "tags": [
+          "poster-printing"
+        ],
+        "x-source": "src/api/routes/poster-printing.ts",
+        "parameters": [
+          {
+            "name": "poster_printing_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "printer_member_id": {},
+                  "print_location": {},
+                  "deadline_on": {},
+                  "lead_days": {},
+                  "notes": {}
+                },
+                "additionalProperties": true,
+                "x-schema-coverage": "inferred from property access or downstream casts; semantic validation remains server-side"
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful service result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminBotPosterPrintBatchRecord"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/poster-printing/{poster_printing_id}/printed": {
+      "post": {
+        "operationId": "post-poster-printing-by-poster-printing-id-printed",
+        "summary": "POST /poster-printing/{poster_printing_id}/printed",
+        "tags": [
+          "poster-printing"
+        ],
+        "x-source": "src/api/routes/poster-printing.ts",
+        "parameters": [
+          {
+            "name": "poster_printing_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": true,
+                "x-schema-coverage": "inferred from property access or downstream casts; semantic validation remains server-side"
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful service result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "printed": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "printed"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/poster-printing/scheduled-run": {
+      "post": {
+        "operationId": "post-poster-printing-scheduled-run",
+        "summary": "POST /poster-printing/scheduled-run",
+        "tags": [
+          "poster-printing"
+        ],
+        "x-source": "src/api/routes/poster-printing.ts",
+        "responses": {
+          "2XX": {
+            "description": "Successful service result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PosterPrintSweepResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/privacy/tasks": {
       "post": {
         "operationId": "post-privacy-tasks",
@@ -30419,6 +30751,7 @@
                       "paper_integrity.alert",
                       "paper_integrity.report",
                       "slack.conference_intro",
+                      "poster_print.notify",
                       "slack.collaborator_chat",
                       "paper_integrity.sheet_scores",
                       "slack.invite_to_channel",
@@ -34150,6 +34483,7 @@
               "paper_integrity.alert",
               "paper_integrity.report",
               "slack.conference_intro",
+              "poster_print.notify",
               "slack.collaborator_chat",
               "paper_integrity.sheet_scores",
               "slack.invite_to_channel",
@@ -34367,6 +34701,9 @@
               "paper.upserted",
               "paper.openreview_synced",
               "paper_slot.updated",
+              "poster_print.request_saved",
+              "poster_print.batch_saved",
+              "poster_print.printed",
               "paper_slot.waived",
               "paper_slots.nudged",
               "paperflow_stages.nudged",
@@ -45763,6 +46100,146 @@
         ],
         "additionalProperties": true
       },
+      "AdminBotPosterPrintPaperOptions": {
+        "type": "object",
+        "properties": {
+          "paper_id": {
+            "type": "string"
+          },
+          "conference_key": {
+            "type": "string"
+          },
+          "conference_label": {
+            "type": "string"
+          },
+          "sites": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "starts": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "key",
+                "label"
+              ],
+              "additionalProperties": true
+            }
+          },
+          "site_key": {
+            "type": "string"
+          },
+          "request": {
+            "$ref": "#/components/schemas/AdminBotPosterPrintRequestRecord"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "self_print",
+              "no_poster",
+              "unanswered",
+              "missing_file",
+              "ready"
+            ]
+          },
+          "deadline_on": {
+            "type": "string"
+          },
+          "printer_name": {
+            "type": "string"
+          },
+          "print_location": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "sent",
+              "no_deadline",
+              "collecting",
+              "due"
+            ]
+          }
+        },
+        "required": [
+          "paper_id",
+          "conference_key",
+          "conference_label",
+          "sites",
+          "state"
+        ],
+        "additionalProperties": true
+      },
+      "AdminBotPosterPrintRequestRecord": {
+        "type": "object",
+        "properties": {
+          "conference_key": {
+            "type": "string"
+          },
+          "paper_id": {
+            "type": "string"
+          },
+          "choice": {
+            "type": "string",
+            "enum": [
+              "lab_print",
+              "self_print",
+              "no_poster"
+            ]
+          },
+          "site_key": {
+            "type": "string"
+          },
+          "size": {
+            "type": "string",
+            "enum": [
+              "A0",
+              "A1",
+              "custom"
+            ]
+          },
+          "custom_size": {
+            "type": "string"
+          },
+          "orientation": {
+            "type": "string",
+            "enum": [
+              "portrait",
+              "landscape"
+            ]
+          },
+          "copies": {
+            "type": "number"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          },
+          "updated_by": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "conference_key",
+          "paper_id",
+          "choice",
+          "updated_at"
+        ],
+        "additionalProperties": true
+      },
       "AdminBotPaperReimbursementRecord": {
         "type": "object",
         "properties": {
@@ -47394,6 +47871,277 @@
         ],
         "additionalProperties": true
       },
+      "AdminBotPosterPrintOverview": {
+        "type": "object",
+        "properties": {
+          "batches": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminBotPosterPrintBatchView"
+            }
+          },
+          "settings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminBotPosterPrintBatchRecord"
+            }
+          },
+          "printer_candidates": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "member_id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "member_id",
+                "name"
+              ],
+              "additionalProperties": true
+            }
+          },
+          "can_manage": {
+            "type": "boolean"
+          },
+          "printable": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "batches",
+          "can_manage",
+          "printable"
+        ],
+        "additionalProperties": true
+      },
+      "AdminBotPosterPrintBatchView": {
+        "type": "object",
+        "properties": {
+          "conference_key": {
+            "type": "string"
+          },
+          "group_key": {
+            "type": "string"
+          },
+          "multi_site": {
+            "type": "boolean"
+          },
+          "label": {
+            "type": "string"
+          },
+          "conference_starts": {
+            "type": "string"
+          },
+          "conference_location": {
+            "type": "string"
+          },
+          "deadline_on": {
+            "type": "string"
+          },
+          "deadline_source": {
+            "type": "string",
+            "enum": [
+              "none",
+              "set",
+              "lead_days"
+            ]
+          },
+          "days_left": {
+            "type": "number"
+          },
+          "printer": {
+            "type": "object",
+            "properties": {
+              "member_id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "member_id",
+              "name"
+            ],
+            "additionalProperties": true
+          },
+          "print_location": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "sent",
+              "no_deadline",
+              "collecting",
+              "due"
+            ]
+          },
+          "sent_at": {
+            "type": "string"
+          },
+          "papers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminBotPosterPrintPaper"
+            }
+          },
+          "counts": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "conference_key",
+          "group_key",
+          "multi_site",
+          "label",
+          "deadline_source",
+          "status",
+          "papers",
+          "counts"
+        ],
+        "additionalProperties": true
+      },
+      "AdminBotPosterPrintPaper": {
+        "type": "object",
+        "properties": {
+          "paper_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "presentation_type": {
+            "type": "string"
+          },
+          "first_author": {
+            "type": "object",
+            "properties": {
+              "member_id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "member_id",
+              "name"
+            ],
+            "additionalProperties": true
+          },
+          "poster_url": {
+            "type": "string"
+          },
+          "request": {
+            "$ref": "#/components/schemas/AdminBotPosterPrintRequestRecord"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "self_print",
+              "no_poster",
+              "unanswered",
+              "missing_file",
+              "ready"
+            ]
+          },
+          "site_source": {
+            "type": "string",
+            "enum": [
+              "unknown",
+              "request",
+              "trip",
+              "single"
+            ]
+          },
+          "first_author_going": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "paper_id",
+          "title",
+          "state",
+          "site_source",
+          "first_author_going"
+        ],
+        "additionalProperties": true
+      },
+      "AdminBotPosterPrintBatchRecord": {
+        "type": "object",
+        "properties": {
+          "conference_key": {
+            "type": "string"
+          },
+          "printer_member_id": {
+            "type": "string"
+          },
+          "print_location": {
+            "type": "string"
+          },
+          "deadline_on": {
+            "type": "string"
+          },
+          "lead_days": {
+            "type": "number"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          },
+          "updated_by": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "conference_key",
+          "updated_at"
+        ],
+        "additionalProperties": true
+      },
+      "PosterPrintSweepResult": {
+        "type": "object",
+        "properties": {
+          "reminders_sent": {
+            "type": "number"
+          },
+          "handoffs_sent": {
+            "type": "number"
+          },
+          "failed": {
+            "type": "number"
+          },
+          "withdrawn": {
+            "type": "number"
+          },
+          "skipped_unreachable": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "reminders_sent",
+          "handoffs_sent",
+          "failed",
+          "withdrawn",
+          "skipped_unreachable"
+        ],
+        "additionalProperties": true
+      },
       "AdminBotPrivacyTaskResult": {
         "type": "object",
         "properties": {
@@ -47504,6 +48252,7 @@
               "paper_integrity.alert",
               "paper_integrity.report",
               "slack.conference_intro",
+              "poster_print.notify",
               "slack.collaborator_chat",
               "paper_integrity.sheet_scores",
               "slack.invite_to_channel",
@@ -47642,6 +48391,7 @@
               "paper_integrity.alert",
               "paper_integrity.report",
               "slack.conference_intro",
+              "poster_print.notify",
               "slack.collaborator_chat",
               "paper_integrity.sheet_scores",
               "slack.invite_to_channel",

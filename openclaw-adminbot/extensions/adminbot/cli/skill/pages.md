@@ -381,6 +381,7 @@ Website: `/papers, /announcements, /grant-report, /professor, /arr-eligible-revi
 | `get-openreview-status`                                                   | GET `/openreview/status`                                                  |
 | `get-openreview-suggest-reviewers`                                        | GET `/openreview/suggest-reviewers`                                       |
 | `get-papers-by-papers-id-internal-peer-review`                            | GET `/papers/{papers_id}/internal-peer-review`                            |
+| `get-papers-by-papers-id-poster-print`                                    | GET `/papers/{papers_id}/poster-print`                                    |
 | `get-papers-by-papers-id-recent-edits`                                    | GET `/papers/{papers_id}/recent-edits`                                    |
 | `get-papers-by-papers-id`                                                 | GET `/papers/{papers_id}`                                                 |
 | `get-papers-conference-rosters`                                           | GET `/papers/conference-rosters`                                          |
@@ -425,6 +426,7 @@ Website: `/papers, /announcements, /grant-report, /professor, /arr-eligible-revi
 | `post-papers-x-draft`                                                     | POST `/papers/x-draft`                                                    |
 | `put-papers-by-papers-id-attendees`                                       | PUT `/papers/{papers_id}/attendees`                                       |
 | `put-papers-by-papers-id-internal-peer-review`                            | PUT `/papers/{papers_id}/internal-peer-review`                            |
+| `put-papers-by-papers-id-poster-print`                                    | PUT `/papers/{papers_id}/poster-print`                                    |
 | `put-papers-by-papers-id-reimbursements-by-reimbursements-id`             | PUT `/papers/{papers_id}/reimbursements/{reimbursements_id}`              |
 | `put-papers-by-papers-id`                                                 | PUT `/papers/{papers_id}`                                                 |
 
@@ -440,6 +442,17 @@ Website: `/conference-papers` · Who: anyone
 | `post-venue-papers-index`                   | POST `/venue-papers/index`                  |
 | `post-venue-papers-search`                  | POST `/venue-papers/search`                 |
 | `put-conferences-by-conferences-id-trip`    | PUT `/conferences/{conferences_id}/trip`    |
+
+## Poster printing (Conference papers)
+
+Website: `/conference-papers` · Who: admin
+
+| Operation ID                                         | Route                                                |
+| ---------------------------------------------------- | ---------------------------------------------------- |
+| `get-poster-printing`                                | GET `/poster-printing`                               |
+| `post-poster-printing-by-poster-printing-id-printed` | POST `/poster-printing/{poster_printing_id}/printed` |
+| `post-poster-printing-scheduled-run`                 | POST `/poster-printing/scheduled-run`                |
+| `put-poster-printing-by-poster-printing-id`          | PUT `/poster-printing/{poster_printing_id}`          |
 
 ## PaperMentor (review a zip, check references)
 

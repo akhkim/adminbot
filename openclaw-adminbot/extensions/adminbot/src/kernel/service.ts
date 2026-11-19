@@ -302,6 +302,7 @@ import type { AdminBotReimbursementFunder } from "../contracts/reimbursement-rul
 import type { ScheduledMemberChangeStore } from "../contracts/scheduled-member-changes.js";
 import { paperTargetsVenue } from "../contracts/venue-targets.js";
 import type { createCollaboratorChatRequestStore } from "../persistence/collaborator-chat-requests.js";
+import type { AdminBotPosterPrintStore } from "../persistence/poster-printing.js";
 import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
 import type { CalendarEventsReader } from "../workflows/calendar/events.js";
 import { resolveLabCalendar } from "../workflows/calendar/lab-calendar.js";
@@ -631,6 +632,8 @@ import { LabSharingService } from "./service.lab-sharing.js";
 import { LabTravelService } from "./service.lab-travel.js";
 import { inviteLocalLunches } from "./service.local-lunches.js";
 import { type IntroRunResult, MeetupService } from "./service.meetups.js";
+import { PosterPrintingService } from "./service.poster-printing.js";
+import { travelConferenceSites } from "../workflows/members/lab-travel.js";
 import {
   paperImpactSlotWrite,
   piApprovalImpactDenial,
@@ -713,6 +716,7 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
     after?: DiscoveryPosition,
   ): DiscoveredHelpRequest[];
   collaboratorChatRequestStore?(): ReturnType<typeof createCollaboratorChatRequestStore>;
+  posterPrintStore?(): AdminBotPosterPrintStore;
   saveProposal(proposal: AdminBotStoredProposal): void;
   getProposal(actionId: string): AdminBotStoredProposal | undefined;
   updateProposal(proposal: AdminBotStoredProposal): void;
@@ -1566,6 +1570,13 @@ const DEFAULT_ACTION_POLICIES = {
   // composed from their stored themes and the deadline dataset -- and each member is introduced at
   // most once per conference. T1 for the mechanical reason: resolvePolicy only honors auto below T2.
   "slack.conference_intro": autoPolicy("T1"),
+  // Auto-approved: a print reminder that sat in Pending actions would land after the deadline it
+  // is about, and a print list that waited would reach the printer too late to print. Nothing comes
+  // from a caller -- the recipients are lab authors of an accepted paper and the batch's printer on
+  // the roster, the text is composed from the batch -- and each message goes at most once per
+  // stage (reminders) or per distinct list (handoffs). T1 for the mechanical reason: resolvePolicy
+  // only honors auto_allowed below T2.
+  "poster_print.notify": autoPolicy("T1"),
   // Auto-approved on the same reasoning, and narrower than sheet.update_cells (T2): the connector
   // refuses anything but single cells in the one score column, so it can fill that column and
   // nothing else. The sheet id comes from the environment and the values from stored scores.
@@ -9774,6 +9785,21 @@ export class AdminBotService {
         reply: slackStopReply(params.command, stopped),
       },
     };
+  }
+
+  /** Poster print batches per conference site (kernel/service.poster-printing.ts). */
+  posterPrinting() {
+    return new PosterPrintingService({
+      store: this.store,
+      createProposal: (proposal) => this.createProposal(proposal),
+      removePending: (id, request) => this.removePending(id, request),
+      execute: (actionId, request) => this.execute(actionId, request),
+      setPaperSlot: (params) => this.setPaperSlot(params),
+      recordAudit: (event) => this.recordAudit(event),
+      ownsPaper: (memberId, paper) => this.memberOwnsPaperId(memberId, paper),
+      sites: () => travelConferenceSites(this.deadlineReadModel(DEADLINE_VENUES), "0000-01-01"),
+      now: () => this.options.now?.() ?? new Date(),
+    });
   }
 
   /** The member Events tab and the intros behind it. */

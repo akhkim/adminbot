@@ -100,6 +100,7 @@ import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery
 import { withApiTokenAttribution } from "../workflows/identity/api-token-context.js";
 import { meetingSeriesKey, meetsDurationFloor } from "../workflows/meetings/records.js";
 import { createCollaboratorChatRequestStore } from "./collaborator-chat-requests.js";
+import { createPosterPrintStore } from "./poster-printing.js";
 import { discoverMemoryHelpRequests } from "./lab-sharing-discovery-memory.js";
 
 /** Addresses are matched case-insensitively, as they are in the SQLite store. */
@@ -205,6 +206,10 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   private readonly collaboratorChats = createCollaboratorChatRequestStore();
   collaboratorChatRequestStore() {
     return this.collaboratorChats;
+  }
+  private readonly posterPrints = createPosterPrintStore();
+  posterPrintStore() {
+    return this.posterPrints;
   }
   private readonly referenceScans = new Map<string, ReferenceScan>();
   getReferenceScan(submissionId: string, pdfHash: string): ReferenceScan | undefined {
