@@ -948,3 +948,23 @@ describe("the slides field's mega deck note", () => {
     expect(note(container)).toBeNull();
   });
 });
+
+describe("the Overleaf ownership note", () => {
+  const note = (container: HTMLElement) =>
+    container.querySelector<HTMLElement>('[data-testid="paper-slot-overleaf-owner-p1"]');
+
+  it("sits under the Overleaf links and names who can own the project", async () => {
+    const { container } = await draw([row({ slot: "overleaf_share" })]);
+    const text = note(container)?.textContent?.replace(/\s+/gu, " ") ?? "";
+    expect(text).toContain("ETH email");
+    expect(text).toContain("Felix Hu (fhu), Samuel Simko or Zhijing Jin");
+    expect(text).toContain("Leonhard Waibl");
+  });
+
+  it("is drawn once, not under every field", async () => {
+    const { container } = await draw([row({ slot: "overleaf_share" }), row({ slot: "slides" })]);
+    expect(container.querySelectorAll('[data-testid^="paper-slot-overleaf-owner-"]')).toHaveLength(
+      1,
+    );
+  });
+});
