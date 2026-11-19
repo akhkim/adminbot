@@ -123,20 +123,22 @@ for invalid in [[], [['name']], [['id', 'id']], [['id'], ['p', 'extra']]]:
         raise AssertionError('Invalid export accepted')
 print('PASS: full export preservation, sparse rows, header validation, exact tab names')
 
-# PeopleList order: joined month, then active before inactive; undated rows last, by record age.
+# PeopleList order: active members first, then joined month (earliest first); undated rows end
+# their group by record age, never by name.
 assert [exporter.normalized_join_date(v) for v in ('Jan-25', '25-Sep', 'Sept 2024', 'June 2025', '2025', '206-09', '')] == \
     ['2025-01', '2025-09', '2024-09', '2025-06', '2025', '', '']
 people = [
-    {'id': 'f', 'name': 'Zed', 'created_at': '2026-07-02'},
+    {'id': 'f', 'name': 'Zed', 'created_at': '2026-07-02', 'member_type': 'full'},
     {'id': 'e', 'name': 'Amy', 'created_at': '2026-09-01'},
-    {'id': 'g', 'name': 'Bo', 'created_at': '2026-07-20', 'status': 'alumni'},
-    {'id': 'd', 'name': 'Ann', 'joined_month': '2026-01'},
+    {'id': 'g', 'name': 'Bo', 'created_at': '2026-07-20', 'member_type': 'full', 'status': 'alumni'},
+    {'id': 'd', 'name': 'Ann', 'joined_month': '2026-01', 'member_type': 'coauthor-major'},
     {'id': 'c', 'name': 'Al', 'joined_month': 'Jan-25', 'member_type': 'full, alumni'},
-    {'id': 'b', 'name': 'Cy', 'joined_month': '2025-01', 'status': 'active'},
-    {'id': 'a', 'name': 'Di', 'joined_month': 'Sept 2024'},
+    {'id': 'b', 'name': 'Cy', 'joined_month': '2025-01', 'member_type': 'acquaintance'},
+    {'id': 'a', 'name': 'Di', 'joined_month': 'Sept 2024', 'member_type': 'full'},
 ]
-assert [r['id'] for r in sorted(people, key=exporter.people_sort_key)] == list('abcdfge')
-print('PASS: PeopleList sorts by joined month then active, undated rows by record age')
+assert [exporter.people_active(r) for r in people] == [1, 0, 0, 1, 0, 0, 1]
+assert [r['id'] for r in sorted(people, key=exporter.people_sort_key)] == list('adfcbge')
+print('PASS: PeopleList sorts active first, then joined month, undated rows by record age')
 
 # Direct database export must include new members and aggregate only explicit IDs.
 c.execute('INSERT INTO adminbot_lab_members VALUES (?,?)', ('new', json.dumps({
