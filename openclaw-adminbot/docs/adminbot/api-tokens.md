@@ -78,7 +78,7 @@ and again on every request, so demoting a member stops their tokens at once.
 The CLI role is an admin-managed field on an individual member record. A member or admin
 can be enrolled. Alumni, trial members and external collaborators cannot use pilot tokens.
 A fresh browser login mints a scoped token when the account is enrolled. Existing admin
-tokens keep their original scope. Use an explicit pilot login for an admin testing the role.
+tokens keep their original scope. An enrolled administrator’s pilot token uses their current admin role.
 
 With an authenticated administrator account, verify the member ID, then run:
 
@@ -90,13 +90,23 @@ Read the member record back. To withdraw enrollment, set `cli_role=default` on t
 record. The next request with a pilot token checks the current role. Revoke the owner's
 pilot tokens in My Profile before re-enrolling if old credentials must stay retired.
 
-| Operation | Pilot result |
-| --- | --- |
-| `GET /auth/session` | Own ID, name, expiry, role and allowed operations |
-| `GET /my/projects` | Own active project summaries, dates and open checklist items |
-| `GET /my/projects/{id}/weekly-updates` | Only entries authored by the signed-in member on that paper |
-| `POST /auth/logout` | Revoke the credential making the request |
-| Other methods, routes or query parameters | Denied at ingress, including roster, credentials, gateway pairing, token minting and lab-wide reads |
+Run `adminbot permissions` after signing in. It returns the actual website role,
+expiry, budget and every operation admitted to the corresponding handler. Each entry
+includes a CLI command, HTTP method and path. The handler checks the target record
+and any workflow-specific conditions.
+
+| Area | Full member enrolled in the pilot | Enrolled administrator |
+| --- | --- | --- |
+| Projects | Create a project. Edit, progress or delete an authored project. Complete its checklist and write a personal weekly note. | Can manage the lab’s projects using the existing admin rules. |
+| Profile and roster | Edit own profile and schedule. Browse the member directory and qualifying reviewers. File a member request. | Existing roster management and enrollment rights. |
+| Shared work | Member views of Lab Sharing, meetings, events, opportunities and deadlines. Manage own submissions, interests, drafts and RSVPs. | Existing admin views, settings and decision rules. |
+| Requests and tools | Manage own logistics requests, use reimbursements, upload a consenting author's PaperMentor draft, retrieve own results. | Existing operational permissions. Owner-only actions and paid-work quotas still apply. |
+| Authentication | Approve tokens in the browser and revoke the current token with `adminbot logout`. | Same token and device-management boundary. PI-specific actions still require the designated person. |
+
+Project authorship is decided against the stored project before an update. Suggested
+projects expose discovery metadata. A member token cannot retrieve another member's
+private notes or reimbursements via an embedded project checklist. Private Drive PDFs for
+draft generation must be attached by the member. The token provides no database or shell login.
 
 Pilot tokens use the longer `abt_p1_` format, a single stored `power_user` scope,
 a maximum fixed lifetime of 30 days, and 30 requests per minute shared across the
@@ -105,7 +115,7 @@ the longer format as a wildcard token after rollback. Keep the deployment's exis
 `ADMINBOT_API_TOKEN_LEVELS` setting for legacy tokens. Broadening that setting enables
 browser-equivalent tokens for an entire website privilege level.
 
-Maintain the allowlist in `src/api/routes/session.ts`, the route isolation tests and the
+Maintain the member method/path table in `src/api/routes/pilot-access.ts`, the route isolation tests and the
 packaged agent skill together. Regenerate the API contract after route changes.
 The standard CLI and generated SDK expose the full catalog. The server enforces the
 scope for every client, and the token grants no database or shell credential.

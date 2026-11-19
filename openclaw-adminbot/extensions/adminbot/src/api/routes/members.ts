@@ -411,6 +411,16 @@ export const membersRoutes: readonly Route[] = [
     const { service } = ctx;
     const memberId = decodeURIComponent(params[1]);
     const body = readRecord(await readJson(req));
+    if (
+      principal.kind === "member" &&
+      principal.apiToken?.role === "power_user" &&
+      ["email", "correspondence_email"].some((key) => Object.hasOwn(body, key))
+    ) {
+      sendJson(res, 403, {
+        error: { message: "Use your browser to update account email addresses" },
+      });
+      return;
+    }
     // Only a genuine admin *member* session (the Control UI's own Bearer) gets the full governance
     // write that can set privilege_level/status/email/access_overrides. The shared service principal
     // drives every agent tool call regardless of which member is chatting, so it does not get that

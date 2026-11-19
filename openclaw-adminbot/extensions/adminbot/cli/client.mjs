@@ -329,7 +329,10 @@ export function validateInput(operation, { path = {}, query = {}, header = {}, b
       }
     }
   }
-  if (operation.requestBody) {
+  if (operation.requestBody?.content["application/zip"]) {
+    if (!(body instanceof Uint8Array))
+      throw new ApiError("INVALID_INPUT", "Supply a ZIP file with --file PATH");
+  } else if (operation.requestBody) {
     validate(requestSchema(operation), body ?? {}, "body");
   }
 }
@@ -363,8 +366,14 @@ export async function callOperation(
     result = await client[operation.method.toUpperCase()](operation.path, {
       params: { path, query },
       ...(operation.requestBody ? { body: body ?? {} } : {}),
+      ...(operation.requestBody?.content["application/zip"]
+        ? { bodySerializer: (bytes) => bytes }
+        : {}),
       headers: {
         ...header,
+        ...(operation.requestBody?.content["application/zip"]
+          ? { "Content-Type": "application/zip" }
+          : {}),
         Accept: "application/json",
         ...(token && operation.security?.length !== 0 ? { Authorization: `Bearer ${token}` } : {}),
       },

@@ -1,10 +1,9 @@
+import type { IncomingMessage, ServerResponse } from "node:http";
 // Sign-in, sign-up, sessions, impersonation, password changes, registration review, and device
 // pairing: every route under /auth/. These run before a principal is resolved for the request,
 // so each one establishes or checks identity itself.
 //
 // Cut from server.ts.
-
-import type { IncomingMessage, ServerResponse } from "node:http";
 import {
   adminBotRegistrationStatuses,
   type AdminBotRegistrationStatus,
@@ -25,9 +24,9 @@ import {
 } from "./guards.js";
 import { memberOnboardingDeps } from "./onboarding.js";
 import { deviceClock, remoteIp } from "./origin.js";
+import { pilotOperations } from "./pilot-access.js";
 import {
   sendAuthResult,
-  powerUserOperations,
   requestIsSecure,
   clearSessionCookie,
   resolvePrincipal,
@@ -104,14 +103,24 @@ export async function handleAuthRoute(
       sendJson(res, 401, { error: { message: "authentication required" } });
       return;
     }
-    const view = principal.apiToken?.role === "power_user"
-      ? {
-          token_role: "power_user" as const,
-          member: { id: principal.member.id, name: principal.member.name },
-          expires_at: principal.session.expires_at,
-          operations: powerUserOperations.map((op) => op.id),
-        }
-      : ctx.auth.sessionView(principal);
+    const view =
+      principal.apiToken?.role === "power_user"
+        ? {
+            token_role: "power_user" as const,
+            member: {
+              id: principal.member.id,
+              name: principal.member.name,
+              privilege_level: principal.member.privilege_level,
+            },
+            expires_at: principal.session.expires_at,
+            scope:
+              principal.member.privilege_level === "admin"
+                ? "Your admin account permissions apply. PI-only, personal and approval rules still apply."
+                : "Create projects and edit projects you own or coauthor. Manage your own profile, schedule, notes, drafts, requests and RSVPs. Shared boards and directory use their member views.",
+            limits: { requests_per_minute_per_member: 30, maximum_token_days: 30 },
+            operations: pilotOperations(principal.member.privilege_level === "admin"),
+          }
+        : ctx.auth.sessionView(principal);
     sendJson(res, 200, view);
     return;
   }

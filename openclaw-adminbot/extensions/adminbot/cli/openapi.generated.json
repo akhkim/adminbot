@@ -2144,27 +2144,50 @@
                             },
                             "name": {
                               "type": "string"
+                            },
+                            "privilege_level": {
+                              "type": "string",
+                              "enum": [
+                                "member",
+                                "admin",
+                                "external_collaborator",
+                                "trial"
+                              ]
                             }
                           },
                           "required": [
                             "id",
-                            "name"
+                            "name",
+                            "privilege_level"
                           ],
                           "additionalProperties": true
                         },
                         "expires_at": {
                           "type": "string"
                         },
+                        "scope": {
+                          "type": "string"
+                        },
+                        "limits": {
+                          "type": "object",
+                          "properties": {
+                            "requests_per_minute_per_member": {
+                              "type": "number"
+                            },
+                            "maximum_token_days": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "requests_per_minute_per_member",
+                            "maximum_token_days"
+                          ],
+                          "additionalProperties": true
+                        },
                         "operations": {
                           "type": "array",
                           "items": {
-                            "type": "string",
-                            "enum": [
-                              "get-auth-session",
-                              "get-my-projects",
-                              "get-my-projects-by-projects-id-weekly-updates",
-                              "post-auth-logout"
-                            ]
+                            "type": "string"
                           }
                         }
                       },
@@ -2172,6 +2195,8 @@
                         "token_role",
                         "member",
                         "expires_at",
+                        "scope",
+                        "limits",
                         "operations"
                       ],
                       "additionalProperties": true
@@ -23252,6 +23277,17 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/zip": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
         "responses": {
           "202": {
             "description": "Success",
@@ -25289,6 +25325,28 @@
           }
         ],
         "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "updates": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AdminBotPaperWeeklyUpdate"
+                      }
+                    }
+                  },
+                  "required": [
+                    "updates"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
           "2XX": {
             "description": "Successful service result",
             "content": {
@@ -26091,15 +26149,15 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "paper_id": {
+                    "type": "string"
+                  },
                   "announcement": {},
                   "credits": {},
                   "pdf_base64": {
                     "type": "string"
                   },
                   "abstract": {
-                    "type": "string"
-                  },
-                  "paper_id": {
                     "type": "string"
                   },
                   "url": {
@@ -26165,6 +26223,62 @@
             }
           },
           "401": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "404": {
             "description": "Server response",
             "content": {
               "application/json": {
@@ -28432,6 +28546,45 @@
         ],
         "x-source": "src/api/routes/papers.ts",
         "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "papers": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "venue": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "title",
+                          "venue"
+                        ],
+                        "additionalProperties": true
+                      }
+                    }
+                  },
+                  "required": [
+                    "papers"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
           "2XX": {
             "description": "Successful service result",
             "content": {
@@ -29176,15 +29329,15 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "paper_id": {
+                    "type": "string"
+                  },
                   "announcement": {},
                   "credits": {},
                   "pdf_base64": {
                     "type": "string"
                   },
                   "abstract": {
-                    "type": "string"
-                  },
-                  "paper_id": {
                     "type": "string"
                   },
                   "url": {
@@ -29250,6 +29403,62 @@
             }
           },
           "401": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Server response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "404": {
             "description": "Server response",
             "content": {
               "application/json": {

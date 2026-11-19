@@ -467,6 +467,7 @@ export class AdminBotApiTokenService {
       user_code: string;
       name: string;
       token_role?: "power_user";
+      web_role?: "admin" | "member";
       /** Absent: no fixed expiry. */
       expires_in_days?: number;
       requested_ip?: string;
@@ -496,6 +497,10 @@ export class AdminBotApiTokenService {
         ...(this.isPowerUser(principal.member)
           ? {
               token_role: "power_user" as const,
+              web_role:
+                principal.member.privilege_level === "admin"
+                  ? ("admin" as const)
+                  : ("member" as const),
               expires_in_days: Math.min(login.expires_in_days ?? 30, 30),
             }
           : login.expires_in_days

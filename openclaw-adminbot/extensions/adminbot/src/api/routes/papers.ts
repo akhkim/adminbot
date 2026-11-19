@@ -1,5 +1,4 @@
 import type { AdminBotPaperRecordInput } from "../../contracts/actions.js";
-import { paperInvolvesMember } from "../../contracts/paper-involvement.js";
 import type { AdminBotPaperSlotInput } from "../../contracts/paper-slots.js";
 import { resolvePaperPdfSource } from "../../workflows/papers/paper-pdf-source.js";
 import { paperForResponse } from "../../workflows/papers/paper-response.js";
@@ -82,7 +81,14 @@ export const papersRoutes: readonly Route[] = [
     memberOnly(
       ({ res, principal, ctx }) => {
         const { service } = ctx;
-        sendServiceResult(res, service.listPapersRelevantToMember(principal.member.id));
+        const result = service.listPapersRelevantToMember(principal.member.id);
+        if (result.ok && principal.apiToken?.role === "power_user" && !isPrivileged(principal)) {
+          sendJson(res, 200, {
+            papers: result.payload.papers.map(({ id, title, venue }) => ({ id, title, venue })),
+          });
+          return;
+        }
+        sendServiceResult(res, result);
       },
       { status: 400, message: "member principal required" },
     ),
@@ -92,7 +98,12 @@ export const papersRoutes: readonly Route[] = [
     // The viewer's own papers only (contracts/paper-involvement.ts): the Dashboard and Profile
     // draw nothing else, and for a lab with hundreds of papers the whole list was most of their
     // load. Same projection as the full list, so a row is identical whichever read brought it.
-    if (url.searchParams.get("scope") === "mine") {
+    if (
+      url.searchParams.get("scope") === "mine" ||
+      (principal.kind === "member" &&
+        principal.apiToken?.role === "power_user" &&
+        !isPrivileged(principal))
+    ) {
       if (principal.kind !== "member") {
         sendJson(res, 400, { error: { message: "member principal required" } });
         return;
@@ -111,10 +122,7 @@ export const papersRoutes: readonly Route[] = [
         res,
         200,
         {
-          papers: ctx.store
-            .listPapers()
-            .filter((paper) => paperInvolvesMember(paper, id, name))
-            .map(paperForResponse),
+          papers: ctx.service.listOwnedPapers(principal.member).map(paperForResponse),
         },
         { etag },
       );
@@ -167,7 +175,20 @@ export const papersRoutes: readonly Route[] = [
       );
     }),
   ),
-  get(/^\/papers\/([^/]+)\/weekly-updates$/u, ({ res, params, ctx }) => {
+  get(/^\/papers\/([^/]+)\/weekly-updates$/u, ({ res, params, ctx, principal }) => {
+    if (
+      principal.kind === "member" &&
+      principal.apiToken?.role === "power_user" &&
+      !isPrivileged(principal)
+    ) {
+      sendJson(res, 200, {
+        updates: ctx.store.listPaperWeeklyUpdates({
+          paperId: decodeURIComponent(params[1]),
+          memberId: principal.member.id,
+        }),
+      });
+      return;
+    }
     const { service } = ctx;
     sendServiceResult(res, service.listPaperWeeklyUpdates(decodeURIComponent(params[1])));
   }),
@@ -237,6 +258,10 @@ export const papersRoutes: readonly Route[] = [
     sendServiceResult(
       res,
       service.listPaperSlots(decodeURIComponent(params[1]), {
+        personalEntriesOnly:
+          principal.kind === "member" &&
+          principal.apiToken?.role === "power_user" &&
+          !isPrivileged(principal),
         ...(principal.kind === "member" ? { memberId: principal.member.id } : {}),
         isAdmin: isPrivileged(principal),
       }),
@@ -437,6 +462,17 @@ async function draftAnnouncement({ req, res, url, ctx, principal }: Parameters<R
   // A paper PDF can be attached here, so the default 1 MB JSON ceiling would refuse most real
   // papers once base64 has added its third.
   const body = readRecord(await readJson(req, LINKEDIN_DRAFT_BODY_LIMIT_BYTES));
+  if (
+    principal.kind === "member" &&
+    !isPrivileged(principal) &&
+    typeof body.paper_id === "string"
+  ) {
+    const paper = ctx.store.getPaper(body.paper_id);
+    if (!paper || !service.memberOwnsPaper(principal.member, paper)) {
+      sendJson(res, 404, { error: { message: "Project not found" } });
+      return;
+    }
+  }
   let announcement;
   let credits;
   if (isX) {
@@ -533,6 +569,19 @@ async function draftAnnouncement({ req, res, url, ctx, principal }: Parameters<R
       }
       if (typeof body.url !== "string") body.url = source.url;
     } else {
+      if (
+        principal.kind === "member" &&
+        principal.apiToken?.role === "power_user" &&
+        !isPrivileged(principal)
+      ) {
+        sendJson(res, 403, {
+          error: {
+            message:
+              "Attach the PDF you can access or paste its abstract. This credential cannot fetch private files as the lab Drive account.",
+          },
+        });
+        return;
+      }
       if (!ctx.readDrivePdfBase64) {
         sendJson(res, 503, {
           error: {

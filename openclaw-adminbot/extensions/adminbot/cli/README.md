@@ -7,27 +7,43 @@ operation IDs and alternate flag names.
 
 ## Power-user pilot
 
-With Node 22.19 or newer and the pilot tarball in your current directory, run:
+Install with Node 22.19 or newer, then approve the matching code in your own browser.
 
-```bash
-npm install --global ./adminbot-cli-0.1.0.tgz
+```sh
+npm install --global https://github.com/akhkim/adminbot/releases/download/adminbot-cli-pilot-v1/adminbot-cli-0.1.0.tgz
 adminbot skill install
 adminbot login --power-user
-adminbot whoami
+adminbot permissions
 adminbot my projects
 ```
 
-Approve the matching code in your browser. The identity response must show
-`token_role: "power_user"`. `adminbot my projects` includes your deadlines and open
-checklist items. Use `adminbot my notes PAPER_ID` for your entries on one paper.
-The server lists every permitted operation in the identity response. An older
-server cannot satisfy an explicit pilot login. A fresh login is required within
-30 days. `adminbot logout` revokes this machine's credential.
+The permissions response gives your website role, token expiry, request limit and commands.
+Members can create projects and edit those they own or coauthor. Admins keep their existing
+admin permissions. The API still checks the target record, fields, approver and workflow state.
 
-For Codex or Claude Code, ask: “Install the AdminBot CLI from the supplied tarball,
-install its skill, and sign me in with `--power-user --no-browser`. Show me the
-approval link and code. Confirm the token role before listing my projects.”
-Other agents can read the packaged `skill/SKILL.md` directly.
+| Task | Command |
+| --- | --- |
+| Find the project ID | `adminbot my projects` |
+| Inspect its checklist | `adminbot tasks list PAPER_ID` |
+| Write your weekly note | `adminbot work update PAPER_ID --note "Finished the ablation runs"` |
+| Mark a checklist item complete | `adminbot tasks update PAPER_ID fixes_merged --done` |
+| Change the stage | `adminbot papers progress PAPER_ID --step overleaf_writing` |
+| List your logistics requests | `adminbot call get-logistics-requests` |
+| Inspect your profile | `adminbot call get-lab-members-self` |
+| Look up any permitted operation's inputs | `adminbot call OPERATION_ID --help` |
+
+The same login works for member-visible collaboration, meetings, travel, deadlines,
+opportunities and PaperMentor. Use `adminbot permissions` for the live list and
+`adminbot schema OPERATION_ID` for its API contract. Pilot tokens expire within 30 days.
+Use My Profile to manage tokens, or `adminbot logout` to revoke this machine's credential.
+
+**Give this to an agent**
+
+> Install the AdminBot CLI from this guide, run `adminbot skill install` and sign me in
+> with `adminbot login --power-user --no-browser`. Show me the approval link and code.
+> Once I approve, run `adminbot permissions` and list my projects.
+
+The packaged `skill/SKILL.md` works as plain Markdown for other clients.
 
 ## Install and use
 

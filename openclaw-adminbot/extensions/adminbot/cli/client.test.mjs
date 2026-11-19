@@ -648,3 +648,38 @@ test("the skill's page index lists every operation", async () => {
     assert.ok(pages.includes(`\`${operationId}\``), operationId);
   }
 });
+
+await test("pilot permissions show commands and PaperMentor uploads the original ZIP bytes", async (t) => {
+  const env = { ADMINBOT_TOKEN: "synthetic", ADMINBOT_URL: "http://127.0.0.1:8765" };
+  const permissions = await invoke(["permissions"], {
+    env,
+    fetchImpl: async () =>
+      Response.json({ member: { privilege_level: "member" }, operations: ["get-my-projects"] }),
+  });
+  assert.equal(permissions.code, 0, permissions.err);
+  assert.equal(JSON.parse(permissions.out).operations[0].command, "adminbot call get-my-projects");
+  const folder = await mkdtemp(join(tmpdir(), "pilot-cli-"));
+  t.after(() => rm(folder, { recursive: true, force: true }));
+  const file = join(folder, "paper.zip");
+  const bytes = Buffer.from([80, 75, 3, 4, 0, 255]);
+  await writeFile(file, bytes);
+  const upload = await invoke(
+    [
+      "call",
+      "post-papermentor-reviews",
+      "--file",
+      file,
+      "--consent",
+      "send-draft-to-model-provider",
+    ],
+    {
+      env,
+      fetchImpl: async (request) => {
+        assert.equal(request.headers.get("content-type"), "application/zip");
+        assert.deepEqual(Buffer.from(await request.arrayBuffer()), bytes);
+        return Response.json({ accepted: true }, { status: 202 });
+      },
+    },
+  );
+  assert.equal(upload.code, 0, upload.err);
+});

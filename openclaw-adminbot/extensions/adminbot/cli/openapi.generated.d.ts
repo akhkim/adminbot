@@ -12206,16 +12206,20 @@ export interface operations {
                 member: {
                   id: string;
                   name: string;
+                  /** @enum {string} */
+                  privilege_level: "member" | "admin" | "external_collaborator" | "trial";
                 } & {
                   [key: string]: unknown;
                 };
                 expires_at: string;
-                operations: (
-                  | "get-auth-session"
-                  | "get-my-projects"
-                  | "get-my-projects-by-projects-id-weekly-updates"
-                  | "post-auth-logout"
-                )[];
+                scope: string;
+                limits: {
+                  requests_per_minute_per_member: number;
+                  maximum_token_days: number;
+                } & {
+                  [key: string]: unknown;
+                };
+                operations: string[];
               } & {
                 [key: string]: unknown;
               });
@@ -24428,7 +24432,11 @@ export interface operations {
       path?: never;
       cookie?: never;
     };
-    requestBody?: never;
+    requestBody: {
+      content: {
+        "application/zip": string;
+      };
+    };
     responses: {
       /** @description Success */
       202: {
@@ -25578,6 +25586,19 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            updates: components["schemas"]["AdminBotPaperWeeklyUpdate"][];
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
       /** @description Successful service result */
       "2XX": {
         headers: {
@@ -26094,11 +26115,11 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          paper_id?: string;
           announcement?: unknown;
           credits?: unknown;
           pdf_base64?: string;
           abstract?: string;
-          paper_id?: string;
           url?: string;
           venue?: string;
           note?: string;
@@ -26138,6 +26159,40 @@ export interface operations {
       };
       /** @description Server response */
       401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Server response */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Server response */
+      404: {
         headers: {
           [name: string]: unknown;
         };
@@ -27408,6 +27463,25 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            papers: ({
+              id: string;
+              title: string;
+              venue: string;
+            } & {
+              [key: string]: unknown;
+            })[];
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
       /** @description Successful service result */
       "2XX": {
         headers: {
@@ -27849,11 +27923,11 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          paper_id?: string;
           announcement?: unknown;
           credits?: unknown;
           pdf_base64?: string;
           abstract?: string;
-          paper_id?: string;
           url?: string;
           venue?: string;
           note?: string;
@@ -27893,6 +27967,40 @@ export interface operations {
       };
       /** @description Server response */
       401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Server response */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: {
+              message: string;
+            } & {
+              [key: string]: unknown;
+            };
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Server response */
+      404: {
         headers: {
           [name: string]: unknown;
         };

@@ -13,6 +13,7 @@ import type {
 import { sendJson } from "../server.http.js";
 import type { AdminBotRouteContext, AdminBotPrincipal } from "./context.js";
 import { deviceClock, remoteIp } from "./origin.js";
+import { pilotOperation } from "./pilot-access.js";
 
 export const SESSION_COOKIE = "adminbot_session";
 
@@ -89,17 +90,6 @@ export function sendAuthResult<T>(
 // Resolve a bearer once, including when an /auth handler asks for it again.
 const tokenPrincipals = new WeakMap<IncomingMessage, AdminBotMemberPrincipal>();
 
-export const powerUserOperations = [
-  { id: "get-auth-session", method: "GET", path: /^\/auth\/session$/u },
-  { id: "get-my-projects", method: "GET", path: /^\/my\/projects$/u },
-  {
-    id: "get-my-projects-by-projects-id-weekly-updates",
-    method: "GET",
-    path: /^\/my\/projects\/[^/]+\/weekly-updates$/u,
-  },
-  { id: "post-auth-logout", method: "POST", path: /^\/auth\/logout$/u },
-] as const;
-
 /** Apply the pilot boundary before public, auth, and normal dispatch, including future routes. */
 export async function authorizePersonalTokenRequest(
   req: IncomingMessage,
@@ -114,11 +104,22 @@ export async function authorizePersonalTokenRequest(
     sendJson(res, 401, { error: { message: "API token expired, revoked or ineligible" } });
     return false;
   }
-  if (
-    !url.search &&
-    powerUserOperations.some((op) => op.method === req.method && op.path.test(url.pathname))
-  )
+  const admin = principal.member.privilege_level === "admin";
+  const op = pilotOperation(url.pathname, req.method, admin);
+  if (op) {
+    if (!admin && op.path.startsWith("/papers/{papers_id}")) {
+      // PUT creates a new project or rechecks authorship against the stored row
+      // inside upsertOwnPaper. Every other operation requires an existing paper.
+      if (!(op.id === "put-papers-by-papers-id")) {
+        const paper = ctx.store.getPaper(decodeURIComponent(url.pathname.split("/")[2]!));
+        if (!paper || !ctx.service.memberOwnsPaper(principal.member, paper)) {
+          sendJson(res, 404, { error: { message: "Project not found" } });
+          return false;
+        }
+      }
+    }
     return true;
+  }
   sendJson(res, 403, {
     error: { message: "Outside power_user access. Run adminbot whoami for allowed operations." },
   });

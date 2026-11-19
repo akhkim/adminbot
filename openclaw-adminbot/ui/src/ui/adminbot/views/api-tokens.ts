@@ -25,6 +25,7 @@ export type ApiTokenRow = {
 };
 
 type PendingCliLogin = {
+  web_role?: "admin" | "member";
   token_role?: "power_user";
   user_code: string;
   name: string;
@@ -168,10 +169,11 @@ export class ApiTokensSection extends LitElement {
 
   private async load() {
     try {
-      const result = await tokenRequest<{ allowed: boolean; token_role?: "power_user"; tokens: ApiTokenRow[] }>(
-        "/auth/api-tokens",
-        "GET",
-      );
+      const result = await tokenRequest<{
+        allowed: boolean;
+        token_role?: "power_user";
+        tokens: ApiTokenRow[];
+      }>("/auth/api-tokens", "GET");
       this.allowed = result.allowed;
       this.powerUser = result.token_role === "power_user";
       this.tokens = result.tokens;
@@ -289,8 +291,9 @@ export class ApiTokensSection extends LitElement {
       <p>
         Sign a terminal in with
         <code>adminbot auth login</code>, or create a token here for an agent's
-        <code>ADMINBOT_TOKEN</code>. ${this.powerUser
-          ? "New power-user tokens can read your project summaries and your weekly notes for up to 30 days."
+        <code>ADMINBOT_TOKEN</code>.
+        ${this.powerUser
+          ? "Pilot tokens use your current web permissions, including admin permissions if you have them, for up to 30 days."
           : "Tokens act as you and expire after 90 days of inactivity. You can revoke them here."}
       </p>
       ${this.issued
@@ -359,10 +362,12 @@ export class ApiTokensSection extends LitElement {
                   ${this.powerUser ? "After 30 days" : "When unused for 90 days"}
                 </option>
                 <option value="7">After 7 days</option>
-                ${this.powerUser ? nothing : html`
-                  <option value="30">After 30 days</option>
-                  <option value="365">After a year</option>
-                `}
+                ${this.powerUser
+                  ? nothing
+                  : html`
+                      <option value="30">After 30 days</option>
+                      <option value="365">After a year</option>
+                    `}
               </select></label
             >
             <div class="row">
@@ -468,7 +473,14 @@ export class CliLoginApproval extends LitElement {
       <h3 id="cli-login-title">Sign in the AdminBot CLI?</h3>
       ${this.pending
         ? html`<p>
-              <strong>${this.pending.name}</strong> is asking for ${this.pending.token_role === "power_user" ? "read access to your project summaries and your weekly notes" : "an API token that acts as you"}
+              <strong>${this.pending.name}</strong> is asking for
+              ${this.pending.token_role === "power_user"
+                ? this.pending.web_role === "admin"
+                  ? "CLI access with your admin permissions"
+                  : this.pending.web_role === "member"
+                    ? "CLI access to create and edit your projects and manage your own member work"
+                    : "CLI access with your current web permissions"
+                : "an API token that acts as you"}
               ${this.pending.expires_in_days
                 ? `for ${this.pending.expires_in_days} days`
                 : "until you revoke it or leave it unused for 90 days"}${this.pending.requested_ip

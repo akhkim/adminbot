@@ -21,13 +21,25 @@ up to 30 days. Other agents can read this Markdown directly.
 | --- | --- |
 | Their active projects, deadlines and open checklist items | `adminbot my projects` |
 | Their own weekly notes for one project | `adminbot my notes PAPER_ID` |
-| The allowed operation IDs and expiry | `adminbot whoami` |
+| Record a weekly note | `adminbot work update PAPER_ID --note "Revised the evaluation"` |
+| Check or complete a checklist item | `adminbot tasks list PAPER_ID`, then `adminbot tasks update PAPER_ID SLOT --done` |
+| Change an authored project’s stage | `adminbot papers progress PAPER_ID --step overleaf_writing` |
+| Check their role, available operations and expiry | `adminbot permissions` |
+| Find input fields for a permitted operation | `adminbot call OPERATION_ID --help` |
+| Fetch their logistics requests or profile | `adminbot call get-logistics-requests` or `adminbot call get-lab-members-self` |
 | To revoke this machine's pilot token | `adminbot logout` |
 
 Use a paper ID from their project list. A 403 ends that request. Do not switch to a
 password, browser session, admin token or database. All machines share 30 requests
 per minute per person. On 429 wait the reported retry interval. Manage tokens in
-**My Profile → API tokens**. The remaining sections describe the broader admin CLI.
+**My Profile → API tokens**. Read `member.privilege_level` in the permissions response. An enrolled admin keeps
+their admin role. A member can create projects and edit ones they own or coauthor.
+Use the returned operation IDs to discover the member directory, opportunities, meetings,
+Lab Sharing, events, travel and requests. The server checks each target record and field.
+For a PaperMentor upload, obtain the author's consent to the model provider before using
+`--file paper.zip --consent send-draft-to-model-provider` with `post-papermentor-reviews`.
+Use `--output PATH` for binary downloads. PI approvals and account-security actions
+retain their own checks. The page index includes operations for every web role.
 
 ## Setup
 
