@@ -104,6 +104,7 @@ async function startService(options: { sheetRows?: string[][]; meeting?: string[
       privilege_level: "external_collaborator",
       collaborator_subgroup: "coauthor_major",
       member_type: "coauthor-major",
+      receives_nudges: true,
     },
   ] as AdminBotLabMemberInput[]) {
     const saved = mock.service.upsertLabMember(withCompleteProfile(seed));
@@ -207,6 +208,7 @@ describe("scheduled member changes", () => {
       member_type: "alumni",
       after_days: 0,
       reason: "agreed in the engagement thread",
+      notify: false,
     });
     expect(created.status).toBe(201);
     const change = (await created.json()) as AdminBotScheduledMemberChange;
@@ -253,9 +255,62 @@ describe("scheduled member changes", () => {
       member_type: "alumni",
       after_days: 0,
       silent: false,
+      notify: false,
     });
     expect((await sweep(baseUrl)).done).toHaveLength(1);
     expect(mailed.map((mail) => mail.email)).toEqual(["cora@lab.test"]);
+  });
+
+  it("sends the member a formal notice when the change takes them out of the active channels", async () => {
+    const { baseUrl, mock, executed } = await startService();
+    const token = await adminToken(mock, baseUrl);
+    const created = await schedule(baseUrl, token, {
+      member_id: "cora",
+      member_type: "acquaintance",
+      after_days: 7,
+    });
+    expect(created.status).toBe(201);
+    const change = (await created.json()) as AdminBotScheduledMemberChange;
+    // The schedule answers before the Slack send finishes.
+    expect(change.notice?.status).toBe("pending");
+    await vi.waitFor(async () => {
+      expect((await list(baseUrl, token))[0]?.notice).toMatchObject({ status: "sent" });
+    });
+    const nudges = executed.filter((proposal) => proposal.type === "member_nudge.send");
+    expect(nudges).toHaveLength(1);
+    const text = JSON.stringify(nudges[0]?.proposed_payload);
+    expect(text).toContain("Dear Cora,");
+    expect(text).toContain("*Acquaintance*");
+    expect(text).toContain("7 days before the change takes effect");
+    expect(text).toContain("#jinesis-active and #random-active");
+    // Only a heads-up: the type itself waits for its day.
+    expect(await memberType(baseUrl, token, "cora")).toBe("coauthor-major");
+    expect((await list(baseUrl, token))[0]?.status).toBe("pending");
+  });
+
+  it("sends no notice when asked not to, or when the change keeps their access", async () => {
+    const { baseUrl, mock, executed } = await startService();
+    const token = await adminToken(mock, baseUrl);
+    const quiet = await schedule(baseUrl, token, {
+      member_id: "cora",
+      member_type: "acquaintance",
+      after_days: 7,
+      notify: false,
+    });
+    expect(((await quiet.json()) as AdminBotScheduledMemberChange).notice).toBeUndefined();
+    const id = ((await list(baseUrl, token))[0] as AdminBotScheduledMemberChange).id;
+    await fetch(`${baseUrl}/lab/scheduled-member-changes/${id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const promotion = await schedule(baseUrl, token, {
+      member_id: "cora",
+      member_type: "full",
+      after_days: 7,
+    });
+    expect(promotion.status).toBe(201);
+    expect(((await promotion.json()) as AdminBotScheduledMemberChange).notice).toBeUndefined();
+    expect(executed.filter((proposal) => proposal.type === "member_nudge.send")).toEqual([]);
   });
 
   it("leaves a change alone until its day, and not at all once cancelled", async () => {
@@ -266,6 +321,7 @@ describe("scheduled member changes", () => {
         member_id: "cora",
         member_type: "acquaintance",
         after_days: 7,
+        notify: false,
       })
     ).json()) as AdminBotScheduledMemberChange;
     const due = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -341,6 +397,7 @@ describe("scheduled member changes", () => {
         member_id: "cora",
         member_type: "acquaintance",
         after_days: 0,
+        notify: false,
       })
     ).json()) as AdminBotScheduledMemberChange;
 
