@@ -28,6 +28,7 @@
  * Pure. The service does the reading and the sending.
  */
 import type { AdminBotPaperRecord } from "../../contracts/actions.js";
+import { normalizeVenue, venueGroupKey, venueGroupLabel } from "./venue-normalize.js";
 
 /** Where a publication's date came from, so a reader can judge how much to trust it. */
 export type PublicationDateSource =
@@ -141,7 +142,7 @@ export function withinRange(date: PublicationDate, fromIso: string, toIso: strin
  */
 export type VenueOption = {
   key: string;
-  /** The venue as the records spell it, in the commonest spelling if they disagree. */
+  /** The venue group's name: conference and year, `EMNLP 2026`, whatever track each paper had. */
   label: string;
   accepted: number;
   pending: number;
@@ -150,19 +151,26 @@ export type VenueOption = {
 /**
  * A venue string reduced to something two records can be compared on.
  *
- * The field is free text typed by authors, and the live roster holds `ICLR 2027`, `ACL 2026
- * (main)`, `EMNLP 2026 (demo)` and `NAACL 2027 (main)`. The parenthetical is the track, not the
- * venue: a digest of "what we got into EMNLP 2026" wants the demo paper in it, so the bracket is
- * dropped before comparing. Case and inner spacing go the same way, and everything else is left
- * alone -- normalising harder (stripping the year, mapping acronyms) would start merging venues
- * that are genuinely different, which is the failure nobody would spot in a sent email.
+ * The field is free text typed by authors or derived by the OpenReview sync, so one conference
+ * arrives as `EMNLP 2026`, `EMNLP 2026 (demo)`, `EMNLP ARR Commitment` and `EMNLP System
+ * Demonstrations`. The track is not the venue: a digest of "what we got into EMNLP 2026" wants the
+ * demo paper in it, so the key is the conference and year only (see `venue-normalize.ts`). A
+ * workshop keys on its own name, and two years of one conference never share a key.
+ *
+ * `year` is the record's own acceptance year, for the labels that carry none: the OpenReview sync
+ * stores `EMNLP` beside `accepted_year: 2025`, and without it every EMNLP would be one venue.
  */
-export function venueKey(raw: string | undefined): string {
-  return (raw ?? "")
-    .replace(/\([^)]*\)/gu, " ")
-    .replace(/\s+/gu, " ")
-    .trim()
-    .toLowerCase();
+export function venueKey(raw: string | undefined, year?: number | string): string {
+  return venueGroupKey(normalizeVenue(raw, year));
+}
+
+/**
+ * The key of the venue a paper is filed under: where it was accepted, with its acceptance year,
+ * else where it is aimed. Empty for a paper that names no venue.
+ */
+export function paperVenueKey(paper: AdminBotPaperRecord): string {
+  const accepted = acceptedVenueOf(paper);
+  return accepted ? venueKey(accepted, paper.accepted_year) : venueKey(paper.venue);
 }
 
 /**
@@ -190,17 +198,20 @@ export function acceptedVenueOf(paper: AdminBotPaperRecord): string | undefined 
  * a conference from 2019 that no board still carries.
  */
 export function collectVenues(papers: readonly AdminBotPaperRecord[]): VenueOption[] {
-  type Tally = { spellings: Map<string, number>; accepted: number; pending: number };
+  type Tally = { labels: Map<string, number>; accepted: number; pending: number };
   const byKey = new Map<string, Tally>();
   for (const paper of papers) {
     const accepted = acceptedVenueOf(paper);
-    const raw = accepted ?? paper.venue?.trim();
-    const key = venueKey(raw);
-    if (!key || !raw) {
+    const venue = accepted
+      ? normalizeVenue(accepted, paper.accepted_year)
+      : normalizeVenue(paper.venue);
+    const key = venueGroupKey(venue);
+    if (!key || !venue) {
       continue;
     }
-    const entry = byKey.get(key) ?? { spellings: new Map(), accepted: 0, pending: 0 };
-    entry.spellings.set(raw, (entry.spellings.get(raw) ?? 0) + 1);
+    const label = venueGroupLabel(venue);
+    const entry = byKey.get(key) ?? { labels: new Map(), accepted: 0, pending: 0 };
+    entry.labels.set(label, (entry.labels.get(label) ?? 0) + 1);
     if (accepted) {
       entry.accepted += 1;
     } else {
@@ -210,9 +221,9 @@ export function collectVenues(papers: readonly AdminBotPaperRecord[]): VenueOpti
   }
   const options: VenueOption[] = [];
   for (const [key, entry] of byKey) {
-    // The commonest spelling, ties broken alphabetically so the label does not depend on the
-    // order the papers happened to be read in.
-    const label = [...entry.spellings.entries()].toSorted(
+    // Labels in one group differ only in case (`NeurIPS` against `Neurips`). The commonest wins,
+    // ties broken alphabetically so the label does not depend on the order the papers were read.
+    const label = [...entry.labels.entries()].toSorted(
       (left, right) => right[1] - left[1] || left[0].localeCompare(right[0]),
     )[0]?.[0];
     if (label) {
@@ -266,7 +277,7 @@ export function selectPublications(params: {
     const date = publicationDateOf(paper);
     if (wantedVenue) {
       const accepted = acceptedVenueOf(paper);
-      if (accepted && venueKey(accepted) === wantedVenue) {
+      if (accepted && venueKey(accepted, paper.accepted_year) === wantedVenue) {
         included.push(publicationOf(paper, date));
         continue;
       }

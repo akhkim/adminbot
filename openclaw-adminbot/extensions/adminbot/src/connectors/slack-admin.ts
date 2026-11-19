@@ -119,6 +119,28 @@ export function createAdminBotSlackAdminExecutor(
         );
         return { handled: true };
       }
+      // The "outreach drafts are ready" note: one new message in the admin channel, or a DM to the
+      // one person the head-professor setting names. Never an edit -- each venue is its own news --
+      // and never a group: a note meant for the admins that reached three people is not the
+      // message that was approved.
+      if (proposal.type === "slack.outreach_ready") {
+        const token = resolveSlackBotToken(env);
+        const target = readChannelTarget(proposal);
+        if (target) {
+          const ts = await postOrUpdateChannelMessage(
+            token,
+            { channel_id: target.channel_id, message: target.message },
+            fetchImpl,
+          );
+          return { handled: true, artifacts: { slack_channel: target.channel_id, slack_ts: ts } };
+        }
+        const payload = readGroupDmPayload(proposal);
+        if (payload.user_ids.length !== 1 || !/^[UW][A-Z0-9]+$/u.test(payload.user_ids[0]!)) {
+          throw new Error("slack.outreach_ready requires one Slack user or a channel id");
+        }
+        await notifySlackOwner(token, payload.user_ids[0]!, payload.message, fetchImpl, proposal.id);
+        return { handled: true };
+      }
       // The hourly digest can instead live in a channel as one message, edited each hour.
       if (proposal.type === "paper_integrity.report" && readChannelTarget(proposal)) {
         const target = readChannelTarget(proposal)!;

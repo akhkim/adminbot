@@ -206,6 +206,12 @@ export const adminBotNudgeDomains = [
   // `profile_photo` keeps its original no-cooldown behaviour and stamps only so the listing can
   // show when it last went out.
   "profile_photo",
+  // Telling the admins that an OpenReview sync recorded acceptances at a venue and its outreach
+  // drafts are ready. Say-once, like `workshop_nudge`: an announcement about an event, so the
+  // ledger question is "have the admins heard about this venue" and the answer is permanent. The
+  // `subject_id` is the venue group key (`emnlp 2026`), which is what makes "once per venue" a
+  // lookup -- a second batch of acceptances at the same conference a week later stays quiet.
+  "outreach_ready",
 ] as const;
 
 /**

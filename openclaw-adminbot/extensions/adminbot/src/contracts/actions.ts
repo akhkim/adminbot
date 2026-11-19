@@ -149,6 +149,12 @@ export const adminBotActionTypes = [
   // Its own type rather than slack.send_message because it is auto-approved, and so that "what did
   // the printer receive, and when" is answerable from the audit log on its own rows.
   "poster_print.notify",
+  // One Slack message to the admins -- the head professor's DM, or the admin channel when one is
+  // configured -- saying that an OpenReview sync recorded acceptances at a venue and the outreach
+  // drafts for it are waiting on the Mailing List tab. Its own type so "when were the admins told a
+  // venue's outreach was ready" is one row per venue in the audit log, and because it only points
+  // at the drafts: nothing this type does reaches an outlet.
+  "slack.outreach_ready",
   "slack.collaborator_chat",
   // Writes each ICLR submission's AI-text score into one column of the lab's paper sheet
   // (ADMINBOT_ICLR_INTEGRITY_SHEET_ID). Its own type, rather than sheet.update_cells, because it is
@@ -3009,7 +3015,12 @@ export type AdminBotAuditEvent = {
     | "paper_outreach.sent"
     | "paper_outreach.failed"
     | "acceptance_sheet.rows_added"
-    | "acceptance_sheet.failed";
+    | "acceptance_sheet.failed"
+    // The admins told that a venue's acceptances are in and its outreach drafts are waiting, or the
+    // reason they could not be (no recipient configured, the Slack send refused). One row per
+    // venue: `details` carries the venue, the paper ids and where the note went.
+    | "outreach_ready.notified"
+    | "outreach_ready.skipped";
   timestamp: string;
   actor?: string;
   details?: Record<string, unknown>;

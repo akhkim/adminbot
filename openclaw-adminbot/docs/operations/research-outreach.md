@@ -4,7 +4,9 @@ A venue's papers have to be told several ways, at four moments: the record of wh
 then on acceptance each institute newsletter, the department's publication record and the lab's
 own lists, then the follow-ups at camera-ready, and the social-media managers before the meeting.
 Beside those sits the lab's own acceptance sheet. AdminBot drafts all of them from the paper records and an admin sends, copies or
-appends each one. Nothing here runs on a schedule and nothing leaves the lab without a press.
+appends each one. Nothing here runs on a schedule and nothing leaves the lab without a press. The
+one thing AdminBot says unprompted is a Slack note that a venue's drafts are ready (below), and
+that note sends no outreach itself.
 
 It lives on **Lab Overview > Mailing list**. Compose from a venue and press Preview: the digest
 appears as before, and under it **Research outreach** lists one folded row per outlet.
@@ -15,6 +17,14 @@ The papers recorded as accepted at the chosen venue (the same rule as the venue 
 recorded decision, not where a paper is aimed), the roster, and the head professor on file
 (`head_professor_member_id`). A paper with no decision recorded is not in any acceptance draft. If
 the lab has heard back, the decision belongs on the paper first.
+
+Venues are compared after normalising the free text, so one conference's papers appear together
+however each was typed: `EMNLP`, `EMNLP ARR Commitment`, `Findings of EMNLP`, `EMNLP 2025 System
+Demonstrations` and `EMNLP 2026 (demo)` are all EMNLP, with Findings and demos kept as tracks. The
+year is read from the label, else from the paper's `accepted_year`, so the `EMNLP` the OpenReview
+sync stores is EMNLP of that year, and a cell cut short to `LREC-COLING 202` is read with the
+paper's year. A workshop is its own venue. Normalising only affects reading: stored venues are not
+rewritten.
 
 The submissions record is the one exception: it lists every paper sent to the venue, with where
 each stands (under review, accepted, rejected, withdrawn). A paper aimed at the venue that has not
@@ -29,7 +39,7 @@ Routing follows the authors:
 | `pi`           | the head professor is an author           |
 | `senior`       | one of the configured `senior_authors` is |
 | `pi_or_senior` | either of the above                       |
-| `lab`          | any author is a lab member on the roster  |
+| `lab`          | any author is the lab's own (see below)   |
 
 | Outlet key         | Stage              | Channel | Default audience | Draft                                                     |
 | ------------------ | ------------------ | ------- | ---------------- | --------------------------------------------------------- |
@@ -48,6 +58,14 @@ Routing follows the authors:
 | `lab_blog`         | At camera-ready    | Outline | `lab`            | A blog-post skeleton per paper for the lab website        |
 | `cifar_insights`   | At camera-ready    | Form    | `lab`            | A pitch for a non-technical post                          |
 | `social_managers`  | Before the meeting | Email   | `lab`            | Post copy with links, for the institutes' social teams    |
+
+For `lab`, "the lab's own" means the head professor, or a roster member whose **Member Type** is
+full member or major coauthor. Being on the roster is not enough: minor coauthors, visiting
+professors and alumni are left out. An author counts when the paper links them to that member, or,
+for authors never linked, when the printed name matches the member's name exactly.
+
+Papers by the head professor or a configured senior author (for example the MPI collaborator in
+`senior_authors`) are the ones that reach the MPI outlets. The audience column above sets this.
 
 The multi-agent filter is a match on the title, so the row says to review the selection. An
 outlet's audience can be overridden in the configuration.
@@ -111,13 +129,34 @@ service environment; do not commit them.
 The lab spreadsheet has an acceptance tab with the header
 `year | paper title | conference | authors | paper_link`. Unlike the PaperList and PeopleList tabs,
 which the [daily export](/operations/daily-sheet-export) rewrites whole, people keep this one. So
-AdminBot only reads it and appends:
+AdminBot only reads it and inserts new rows; it never moves or rewrites one already there:
 
 1. **Check the sheet** reads the tab and names the accepted papers it does not hold. A paper
    counts as present when its title, year and conference match a row, ignoring case and
-   spacing, whatever has since been edited in the authors or link cells.
-2. **Add N missing rows** appends exactly those rows after the last one. The tab is read again at
-   write time, so a row somebody typed in between is not duplicated.
+   spacing (the conference compared after normalising, so `EMNLP ARR Commitment` in the tab is
+   EMNLP), whatever has since been edited in the authors or link cells.
+2. **Add N missing rows** puts each missing row where it belongs in a tab kept newest year first,
+   with one conference's rows together within a year:
+   - after the last row of the same year, conference and track, when the tab has one;
+   - otherwise before the first row that sorts after it (newer years first, then conference, then
+     main, Findings, demos, workshops);
+   - otherwise after the last filled row. That is also where a row with no year goes, and rows a
+     person left without a year are passed over.
+
+   The tab is read again at write time, so a row somebody typed in between is not duplicated. All
+   inserts go in one Sheets API `batchUpdate`, so either every row lands or none does.
+
+New rows take the formatting of the row above them. The five columns above are written as plain
+text, so a title beginning with `=` stays text. Columns to the right of them are the tab's own:
+
+- **Per-row formulas** (for example a column that builds a CV entry from A:E) are copied into each
+  new row from the neighbouring row, with relative references shifted onto the new row.
+- **`ARRAYFORMULA` and `={...}` columns** are left alone. They extend themselves, and copying the
+  formula that owns the array would break the whole column.
+- **Typed values** in those columns are left blank for a person to fill.
+
+The conference cell is written normalised, with the track kept (`Findings of EMNLP`,
+`EMNLP System Demonstrations`), because a CV formula needs to say "Findings".
 
 If the first row is not the expected header, nothing is written and the tab says so. Each write is
 audited as `acceptance_sheet.rows_added`; a failed read or write as `acceptance_sheet.failed`.
@@ -126,10 +165,35 @@ audited as `acceptance_sheet.rows_added`; a failed read or write as `acceptance_
 ADMINBOT_ACCEPTANCE_SHEET_URL=https://docs.google.com/spreadsheets/d/<spreadsheet-id>/edit?gid=<tab-gid>
 ```
 
-Paste the tab's URL from the address bar. The gid is required: a spreadsheet id alone would mean
+Paste the tab's URL from the address bar. The value belongs in the service environment, not the
+repository. The gid is required: a spreadsheet id alone would mean
 the first tab, which is the member roster. The service account needs edit access to the
 spreadsheet. Unset, **Copy rows** still puts the rows on the clipboard, tab-separated, for pasting
 by hand.
+
+## Acceptance note on Slack
+
+When the OpenReview sync records an acceptance that was not on
+the paper before, AdminBot tells the admins that the outreach drafts for that venue are ready. The
+note names the venue and lists every paper on file accepted there, not only the new ones, because
+the draft it points at lists them all. It also links the Mailing list tab, where the venue is picked
+from the list. It goes out once per venue: a later acceptance at the same venue does not repeat it.
+An acceptance an author typed in by hand is not news to anyone and sends nothing.
+
+The note is the typed action `slack.outreach_ready`: proposed, passed by its policy (T1, auto),
+executed and audited as `outreach_ready.notified`. It goes to the channel in
+`ADMINBOT_OUTREACH_READY_SLACK_CHANNEL` when that is set, and otherwise as a DM to the head
+professor's Slack id on the roster. With neither, nothing is sent; the venue is audited as
+`outreach_ready.skipped` with the reason and is left unmarked.
+
+```bash
+ADMINBOT_OUTREACH_READY_SLACK_CHANNEL=C0123456789   # optional; unset means a DM to the head professor
+```
+
+The note sends no outreach. Every draft still goes out only when an admin presses **Send** on the
+tab. A note that failed to send is reported in the sync response and audited, but it is not
+retried by the next sync, because the paper is no longer newly accepted then. Check the tab by hand
+for that venue.
 
 ## API and CLI
 
@@ -140,11 +204,15 @@ by hand.
 | `POST /papers/outreach/summary`          | `{paper_id, summary}`: saves one paper's sentence (max 400)   |
 | `POST /papers/outreach/acceptance-sheet` | `{dry_run}`: compares; appends only when `dry_run` is `false` |
 
-All four are admin-only and appear in the generated OpenAPI spec and CLI.
+All four are admin-only and appear in the generated OpenAPI spec and CLI. `POST
+/papers/openreview-sync/run` reports `newly_accepted` paper ids, and, when it was not a dry run,
+`outreach_ready` with the venues it notified or skipped.
 
 ## Not built yet
 
-- Detecting acceptances on OpenReview. Today the decision is recorded on the paper by a person.
+- Moving a paper's link from its Drive PDF to arXiv in drafts already sent. A draft uses the
+  arXiv link once the paper has one, and the Drive PDF until then. Nothing re-sends at
+  camera-ready.
 - Writing the one-sentence summaries, and the prose of the featured articles and blog posts.
   AdminBot outlines them; a person writes them.
 - Publishing a blog post to the lab website. The skeleton is copied into the site's repository

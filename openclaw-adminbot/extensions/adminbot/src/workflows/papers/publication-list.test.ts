@@ -264,11 +264,28 @@ describe("collectVenues", () => {
       paper({ id: "p3", venue: "iclr 2027", venue_decision: "accept" }),
       paper({ id: "p4", accepted_venue: "EMNLP 2026 (demo)" }),
     ]);
-    // Most accepted first, ties alphabetical, so the list does not depend on the read order.
+    // Most accepted first, ties alphabetical, so the list does not depend on the read order. The
+    // demo track is filed under its conference: the picker offers "EMNLP 2026", not a venue per track.
     expect(options.map((option) => [option.label, option.accepted, option.pending])).toEqual([
-      ["EMNLP 2026 (demo)", 1, 0],
+      ["EMNLP 2026", 1, 0],
       ["ICLR 2027", 1, 2],
     ]);
+  });
+
+  it("groups the spellings one conference reaches the records under", () => {
+    const options = collectVenues([
+      paper({ id: "p1", accepted_venue: "EMNLP", accepted_year: 2025 }),
+      paper({ id: "p2", accepted_venue: "EMNLP ARR Commitment", accepted_year: 2025 }),
+      paper({ id: "p3", accepted_venue: "EMNLP 2025 System Demonstrations" }),
+      paper({ id: "p4", accepted_venue: "Findings of EMNLP 2025" }),
+      paper({ id: "p5", accepted_venue: "LREC-COLING 202", accepted_year: 2024 }),
+    ]);
+    expect(options.map((option) => [option.label, option.accepted])).toEqual([
+      ["EMNLP 2025", 4],
+      ["LREC-COLING 2024", 1],
+    ]);
+    // The picker's key reads back to the same group.
+    expect(venueKey(options[0]!.label)).toBe(venueKey("EMNLP ARR Commitment", 2025));
   });
 });
 

@@ -19875,7 +19875,8 @@
                               "professor_digest",
                               "rec_letter_overdue",
                               "email_review",
-                              "automation_health"
+                              "automation_health",
+                              "outreach_ready"
                             ]
                           },
                           "label": {
@@ -20987,6 +20988,7 @@
                         "paper_integrity.report",
                         "slack.conference_intro",
                         "poster_print.notify",
+                        "slack.outreach_ready",
                         "slack.collaborator_chat",
                         "paper_integrity.sheet_scores",
                         "slack.invite_to_channel",
@@ -27163,6 +27165,9 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "outreach_ready": {
+                      "$ref": "#/components/schemas/OutreachReadyReport"
+                    },
                     "sources": {
                       "type": "array",
                       "items": {
@@ -27291,6 +27296,12 @@
                         ],
                         "additionalProperties": true
                       }
+                    },
+                    "newly_accepted": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
                     }
                   },
                   "required": [
@@ -27304,7 +27315,8 @@
                     "kept",
                     "unmatched_submissions",
                     "stages_closed",
-                    "updates"
+                    "updates",
+                    "newly_accepted"
                   ],
                   "additionalProperties": true
                 }
@@ -30321,7 +30333,8 @@
                         "professor_digest",
                         "rec_letter_overdue",
                         "email_review",
-                        "automation_health"
+                        "automation_health",
+                        "outreach_ready"
                       ]
                     },
                     "dry_run": {
@@ -30752,6 +30765,7 @@
                       "paper_integrity.report",
                       "slack.conference_intro",
                       "poster_print.notify",
+                      "slack.outreach_ready",
                       "slack.collaborator_chat",
                       "paper_integrity.sheet_scores",
                       "slack.invite_to_channel",
@@ -34484,6 +34498,7 @@
               "paper_integrity.report",
               "slack.conference_intro",
               "poster_print.notify",
+              "slack.outreach_ready",
               "slack.collaborator_chat",
               "paper_integrity.sheet_scores",
               "slack.invite_to_channel",
@@ -34863,7 +34878,9 @@
               "paper_outreach.sent",
               "paper_outreach.failed",
               "acceptance_sheet.rows_added",
-              "acceptance_sheet.failed"
+              "acceptance_sheet.failed",
+              "outreach_ready.notified",
+              "outreach_ready.skipped"
             ]
           },
           "timestamp": {
@@ -47179,6 +47196,62 @@
         ],
         "additionalProperties": true
       },
+      "OutreachReadyReport": {
+        "type": "object",
+        "properties": {
+          "notified": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "venue": {
+                  "type": "string"
+                },
+                "papers": {
+                  "type": "number"
+                },
+                "target": {
+                  "type": "string",
+                  "enum": [
+                    "channel",
+                    "head_professor"
+                  ]
+                }
+              },
+              "required": [
+                "venue",
+                "papers",
+                "target"
+              ],
+              "additionalProperties": true
+            }
+          },
+          "skipped": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "venue": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "venue",
+                "reason"
+              ],
+              "additionalProperties": true
+            }
+          }
+        },
+        "required": [
+          "notified",
+          "skipped"
+        ],
+        "additionalProperties": true
+      },
       "OpenReviewFieldChange": {
         "type": "object",
         "properties": {
@@ -48253,6 +48326,7 @@
               "paper_integrity.report",
               "slack.conference_intro",
               "poster_print.notify",
+              "slack.outreach_ready",
               "slack.collaborator_chat",
               "paper_integrity.sheet_scores",
               "slack.invite_to_channel",
@@ -48392,6 +48466,7 @@
               "paper_integrity.report",
               "slack.conference_intro",
               "poster_print.notify",
+              "slack.outreach_ready",
               "slack.collaborator_chat",
               "paper_integrity.sheet_scores",
               "slack.invite_to_channel",

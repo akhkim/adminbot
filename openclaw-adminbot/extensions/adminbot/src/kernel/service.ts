@@ -516,6 +516,11 @@ import {
 } from "../workflows/papers/paper-queue.js";
 import { duePaperNudges } from "../workflows/papers/paper-reminder-nudges.js";
 import {
+  buildOutreachReadyMessage,
+  outreachReadyVenues,
+  type OutreachReadyVenue,
+} from "../workflows/papers/outreach-ready.js";
+import {
   paperForResponse,
   withheldArtifactWriteError,
   withoutTimeline,
@@ -580,6 +585,7 @@ import {
   type Publication,
   type PublicationExclusion,
   type VenueOption,
+  acceptedVenueOf,
   collectVenues,
   renderPublicationDigest,
   venueKey,
@@ -1577,6 +1583,11 @@ const DEFAULT_ACTION_POLICIES = {
   // stage (reminders) or per distinct list (handoffs). T1 for the mechanical reason: resolvePolicy
   // only honors auto_allowed below T2.
   "poster_print.notify": autoPolicy("T1"),
+  // Auto-approved: a note that acceptances came in is only useful while they are news. Nothing
+  // comes from a caller -- the recipient is the head-professor setting or the configured admin
+  // channel, the text is composed from the stored papers -- and each venue is announced once. It
+  // sends no outreach itself; every draft it points at still goes out only when an admin sends it.
+  "slack.outreach_ready": autoPolicy("T1"),
   // Auto-approved on the same reasoning, and narrower than sheet.update_cells (T2): the connector
   // refuses anything but single cells in the one score column, so it can fill that column and
   // nothing else. The sheet id comes from the environment and the values from stored scores.
@@ -1926,6 +1937,18 @@ export type OpenReviewPaperSyncReport = {
    * before: upcoming author deadlines, reviews released, rejections, committee comments.
    */
   updates: Array<{ paper_id: string; line: string }>;
+  /**
+   * Papers this pass recorded as accepted that had no acceptance on file before (in a dry run,
+   * would record). What `notifyOutreachReady` announces; a paper whose author had already typed
+   * its acceptance in is not news and is not here.
+   */
+  newly_accepted: string[];
+};
+
+/** What `notifyOutreachReady` did, one entry per venue. */
+export type OutreachReadyReport = {
+  notified: Array<{ venue: string; papers: number; target: "channel" | "head_professor" }>;
+  skipped: Array<{ venue: string; reason: string }>;
 };
 
 export class AdminBotService {
@@ -8337,6 +8360,7 @@ export class AdminBotService {
       unmatched_submissions: 0,
       stages_closed: [],
       updates: [],
+      newly_accepted: [],
     };
     const matchedEvidence = new Set<OpenReviewEvidence>();
     const ledger = this.nudgeLedgerIndex();
@@ -8392,7 +8416,14 @@ export class AdminBotService {
           slots: slotNames,
         });
       }
+      // Read off the record before and after the patch, not off the plan's status: an acceptance
+      // the author had already typed in, now confirmed by OpenReview, is not a new one.
+      const newlyAccepted =
+        !acceptedVenueOf(paper) && Boolean(acceptedVenueOf({ ...paper, ...plan.patch }));
       if (options.dryRun) {
+        if (newlyAccepted) {
+          report.newly_accepted.push(paper.id);
+        }
         continue;
       }
       if (Object.keys(plan.patch).length) {
@@ -8408,6 +8439,9 @@ export class AdminBotService {
           });
           continue;
         }
+      }
+      if (newlyAccepted) {
+        report.newly_accepted.push(paper.id);
       }
       for (const write of plan.slotWrites) {
         const check = write.url
@@ -8483,6 +8517,127 @@ export class AdminBotService {
         .filter((key) => key && !matchedKeys.has(key)),
     ).size;
     return { ok: true, status: 200, payload: report };
+  }
+
+  /**
+   * Tell the admins, once per venue, that an OpenReview sync recorded acceptances there and the
+   * outreach drafts are ready on the Mailing List tab.
+   *
+   * `paperIds` is a sync report's `newly_accepted`; only venues those papers fall under are
+   * considered, so a first run on a deployment with years of accepted papers announces nothing old.
+   * Each venue goes through propose (`slack.outreach_ready`), its T1 auto policy and the executor,
+   * and is stamped in the say-once ledger only once Slack took it -- a send that failed is reported
+   * and audited, not stamped. The proposal's idempotency key is the venue too, so a retry after a
+   * crash between the send and the stamp replays the stored result rather than sending twice.
+   *
+   * Sends no outreach. The note links to the drafts; every one of them still goes out only when an
+   * admin sends it from the tab.
+   */
+  async notifyOutreachReady(options: {
+    paperIds: readonly string[];
+    /** A Slack channel id for the admins; without one the note is a DM to the head professor. */
+    channelId?: string;
+    nowIso?: string;
+  }): Promise<OutreachReadyReport> {
+    const nowIso = options.nowIso ?? new Date().toISOString();
+    const report: OutreachReadyReport = { notified: [], skipped: [] };
+    const ids = new Set(options.paperIds);
+    if (!ids.size) {
+      return report;
+    }
+    const ledger = this.nudgeLedgerIndex();
+    const venues = outreachReadyVenues(this.store.listPapers(), ids).filter(
+      (venue) => !this.hasNudgeBeenSaid(ledger, "outreach_ready", venue.key),
+    );
+    if (!venues.length) {
+      return report;
+    }
+    const channelId = options.channelId?.trim();
+    const headProfessorId = this.headProfessorMemberId();
+    const headProfessorSlack = headProfessorId
+      ? this.store.getLabMember(headProfessorId)?.slack_user_id?.trim()
+      : undefined;
+    const skip = (venue: OutreachReadyVenue, reason: string) => {
+      report.skipped.push({ venue: venue.label, reason });
+      this.recordAudit({
+        type: "outreach_ready.skipped",
+        actor: "openreview",
+        details: { venue: venue.label, paper_ids: venue.papers.map((paper) => paper.id), reason },
+      });
+    };
+    const target = channelId
+      ? { payload: { channel_id: channelId }, label: channelId }
+      : headProfessorSlack
+        ? { payload: { user_ids: [headProfessorSlack] }, label: headProfessorSlack }
+        : undefined;
+    const mailingListUrl = `${resolveAdminBotControlUiUrl()}/mailing-list`;
+    for (const venue of venues) {
+      if (!target) {
+        skip(
+          venue,
+          "no recipient: set ADMINBOT_OUTREACH_READY_SLACK_CHANNEL, or the head professor and their Slack id",
+        );
+        continue;
+      }
+      const idempotencyKey = `outreach-ready:${venue.key}`;
+      const proposal = this.createProposal({
+        type: "slack.outreach_ready",
+        summary: `Outreach drafts ready for ${venue.label}`,
+        target: { service: "slack", channel: "slack", target: target.label },
+        proposed_payload: {
+          channel: "slack",
+          ...target.payload,
+          message: buildOutreachReadyMessage(venue, mailingListUrl),
+          venue: venue.label,
+          paper_ids: venue.papers.map((paper) => paper.id),
+        },
+        rationale: `OpenReview recorded ${venue.newly_accepted} new acceptance${venue.newly_accepted === 1 ? "" : "s"} at ${venue.label}.`,
+        undo_plan: "A Slack message cannot be unsent by AdminBot; it only points at drafts, so nothing else to undo.",
+        idempotency_key: idempotencyKey,
+      });
+      if (!proposal.ok) {
+        skip(venue, proposal.error.message);
+        continue;
+      }
+      let executed: Awaited<ReturnType<AdminBotService["execute"]>>;
+      try {
+        executed = await this.execute(proposal.payload.id, {
+          dry_run: false,
+          idempotency_key: idempotencyKey,
+        });
+      } catch (error) {
+        skip(venue, error instanceof Error ? error.message : String(error));
+        continue;
+      }
+      if (!executed.ok || executed.payload.status !== "executed") {
+        skip(venue, executed.ok ? `execution ${executed.payload.status}` : executed.error.message);
+        continue;
+      }
+      // The ledger row names who heard it; a channel is nobody in particular, so it gets a marker.
+      this.markNudgeSaid(
+        "outreach_ready",
+        venue.key,
+        channelId ? "__admin_channel__" : (headProfessorId ?? ""),
+        nowIso,
+      );
+      this.recordAudit({
+        type: "outreach_ready.notified",
+        actor: "openreview",
+        action_id: proposal.payload.id,
+        details: {
+          venue: venue.label,
+          paper_ids: venue.papers.map((paper) => paper.id),
+          newly_accepted: venue.newly_accepted,
+          target: channelId ? "channel" : "head_professor",
+        },
+      });
+      report.notified.push({
+        venue: venue.label,
+        papers: venue.papers.length,
+        target: channelId ? "channel" : "head_professor",
+      });
+    }
+    return report;
   }
 
   /**

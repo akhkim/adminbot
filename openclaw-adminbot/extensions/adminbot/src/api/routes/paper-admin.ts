@@ -8,7 +8,9 @@ import { parsePaperMentorRunInput } from "../../contracts/papermentor.js";
 import { gatherOpenReviewPaperEvidence } from "../../workflows/papers/openreview-paper-sync-sources.js";
 import {
   acceptanceRowCells,
+  insertedSheetRows,
   missingAcceptanceRows,
+  planAcceptanceInserts,
 } from "../../workflows/papers/paper-outreach.js";
 import {
   asString,
@@ -247,10 +249,14 @@ export const paperAdminRoutes: readonly Route[] = [
       sendJson(res, status, { error: { message } });
     };
     let missing;
+    let inserts;
     try {
       // Read at the moment of writing, not taken from an earlier check: two admins pressing the
-      // button a minute apart must not both add the same rows.
-      missing = missingAcceptanceRows(outreach.payload.acceptance_rows, await sheet.read());
+      // button a minute apart must not both add the same rows, and the positions below are only
+      // right for the tab as it stands now.
+      const rows = await sheet.read();
+      missing = missingAcceptanceRows(outreach.payload.acceptance_rows, rows);
+      inserts = planAcceptanceInserts(missing, rows);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       fail(502, `could not read the acceptance sheet: ${message}`);
@@ -258,7 +264,9 @@ export const paperAdminRoutes: readonly Route[] = [
     }
     if (!dryRun && missing.length > 0) {
       try {
-        await sheet.append(missing.map(acceptanceRowCells));
+        await sheet.insert(
+          inserts.map((insert) => ({ at: insert.at, rows: insert.rows.map(acceptanceRowCells) })),
+        );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         fail(502, `could not add rows to the acceptance sheet: ${message}`, missing.length);
@@ -269,7 +277,11 @@ export const paperAdminRoutes: readonly Route[] = [
         timestamp: new Date().toISOString(),
         type: "acceptance_sheet.rows_added",
         actor: principalActor(principal),
-        details: { added: missing.length, papers: missing.map((row) => row.paper_id) },
+        details: {
+          added: missing.length,
+          papers: missing.map((row) => row.paper_id),
+          rows: insertedSheetRows(inserts),
+        },
       });
     }
     sendJson(res, 200, {
@@ -392,16 +404,28 @@ export const paperAdminRoutes: readonly Route[] = [
       const sources = await gatherOpenReviewPaperEvidence(ctx.openReviewPaperSources ?? {}, {
         ...(body.author_results !== undefined ? { author_results: body.author_results } : {}),
       });
-      const result = service.syncPapersFromOpenReview({
-        evidence: sources.evidence,
-        dryRun: body.dry_run !== false,
-      });
+      const dryRun = body.dry_run !== false;
+      const result = service.syncPapersFromOpenReview({ evidence: sources.evidence, dryRun });
+      // After a real pass only: the admins hear once per venue that its outreach drafts are ready.
+      // A failed note is reported here and audited; it never fails the sync that already wrote.
+      const outreachReady =
+        result.ok && !dryRun && result.payload.newly_accepted.length
+          ? await service.notifyOutreachReady({
+              paperIds: result.payload.newly_accepted,
+              channelId: process.env.ADMINBOT_OUTREACH_READY_SLACK_CHANNEL?.trim() || undefined,
+            })
+          : undefined;
       sendServiceResult(
         res,
         result.ok
           ? {
               ...result,
-              payload: { ...result.payload, sources: sources.read, warnings: sources.warnings },
+              payload: {
+                ...result.payload,
+                sources: sources.read,
+                warnings: sources.warnings,
+                ...(outreachReady ? { outreach_ready: outreachReady } : {}),
+              },
             }
           : result,
       );
