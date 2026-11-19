@@ -36,6 +36,22 @@ function attentionIds(container: HTMLElement): string[] {
 }
 
 describe("renderDashboard", () => {
+  it("shows the CLI notice to the enrolled owner, including while projects load", () => {
+    const state = createState({
+      memberId: "pilot",
+      settings: {},
+      adminBotData: {
+        ...createEmptyAdminBotDashboardData(),
+        members: [{ id: "pilot", cli_role: "power_user" }, { id: "other" }],
+      },
+    } as unknown as Partial<AppViewState>);
+    expect(renderPage(state, "member").querySelector("adminbot-cli-pilot")).not.toBeNull();
+    expect(
+      renderPage({ ...state, memberId: "other" }, "member").querySelector("adminbot-cli-pilot"),
+    ).toBeNull();
+    expect(renderPage(state, "anonymous").querySelector("adminbot-cli-pilot")).toBeNull();
+  });
+
   it("shows loading instead of empty work while the first read is pending", () => {
     const container = renderPage(
       createState({ adminBotData: createEmptyAdminBotDashboardData(), adminBotLoading: true }),
