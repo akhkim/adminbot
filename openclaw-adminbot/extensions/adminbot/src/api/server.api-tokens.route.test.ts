@@ -163,7 +163,7 @@ describe("personal API tokens over HTTP", () => {
           mock.service.upsertPaper({
             id: paper,
             title: paper,
-            authors: [owner],
+            authors: ["first-author", owner],
             current_step: "overleaf_writing",
           }).ok,
         ).toBe(true);
@@ -206,7 +206,17 @@ describe("personal API tokens over HTTP", () => {
       expect((await call(baseUrl, "GET", "/lab/projects", { bearer })).status).toBe(
         isAdmin ? 200 : 403,
       );
-      expect((await call(baseUrl, "GET", "/papers/mine/slots", { bearer })).status).toBe(200);
+      const checklist = await call(baseUrl, "GET", "/papers/mine/slots", { bearer });
+      expect(checklist.status).toBe(200);
+      expect(
+        checklist.body.weekly_updates.some((u: { member_id: string }) => u.member_id === "other"),
+      ).toBe(isAdmin);
+      const created = await call(baseUrl, "PUT", "/papers/new-project", {
+        bearer,
+        body: { title: "New project", authors: [id] },
+      });
+      expect([200, 201]).toContain(created.status);
+      expect((await call(baseUrl, "DELETE", "/papers/new-project", { bearer })).status).toBe(200);
       if (!isAdmin) {
         expect(
           (await call(baseUrl, "GET", "/papers/slot-overview", { bearer })).body.papers.map(
@@ -259,6 +269,12 @@ describe("personal API tokens over HTTP", () => {
       const second = await mint(baseUrl, session);
       expect((await call(baseUrl, "POST", "/auth/logout", { bearer: second })).status).toBe(200);
       expect((await call(baseUrl, "GET", "/auth/session", { bearer: second })).status).toBe(401);
+      if (isAdmin) {
+        const member = mock.store.getLabMember(id)!;
+        mock.store.saveLabMember({ ...member, privilege_level: "member" });
+        expect((await call(baseUrl, "GET", "/settings", { bearer })).status).toBe(403);
+        mock.store.saveLabMember(member);
+      }
       expect((await setRole(admin, "default")).status).toBe(200);
       expect((await call(baseUrl, "GET", "/auth/session", { bearer })).status).toBe(401);
     },

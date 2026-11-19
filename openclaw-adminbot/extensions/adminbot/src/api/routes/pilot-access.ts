@@ -118,7 +118,8 @@ type Operation = (typeof routes)[number]["operations"][number];
 
 function admits(op: Operation, admin: boolean): boolean {
   if (op.member) return true;
-  if (!admin) return false;
+  if (!admin || op.path.startsWith("/internal/") || op.path === "/lab/members/{members_id}/email")
+    return false;
   // Credential management and device pairing require interactive authentication.
   return !op.path.startsWith("/auth/") || op.path.startsWith("/auth/registrations");
 }
