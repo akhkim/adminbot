@@ -35,6 +35,12 @@ export type AdminBotScheduledMemberChange = {
   silent: boolean;
   /** Admin-only context: why, and where it was agreed. */
   reason?: string;
+  /**
+   * The heads-up AdminBot sent the member when the change was scheduled, for a change that takes
+   * them out of the active channels. Absent when no notice was due (the change keeps their access)
+   * or the admin asked for none (`notify: false`). `pending` while the Slack send is in flight.
+   */
+  notice?: AdminBotScheduledMemberChangeNotice;
   status: AdminBotScheduledMemberChangeStatus;
   /** The admin who scheduled it. The change is made in their name, so they must still be one. */
   created_by: string;
@@ -42,6 +48,13 @@ export type AdminBotScheduledMemberChange = {
   /** When it left `pending`, and what happened: the steps taken, or why it could not be made. */
   settled_at?: string;
   outcome?: string;
+};
+
+export type AdminBotScheduledMemberChangeNotice = {
+  status: "pending" | "sent" | "failed";
+  at: string;
+  /** Why it failed, or the nudge proposal that carried it. */
+  detail?: string;
 };
 
 /** The store's share: every change, or those in one status, soonest due first. */
