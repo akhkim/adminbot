@@ -40,17 +40,20 @@ const papers = [
 ] as AdminBotPaperRecord[];
 
 describe("memberRosterPage", () => {
-  it("sorts the whole roster before paging and keeps ties stable, unknown dates last", () => {
+  it("sorts the whole roster before paging, active members first, unknown dates last", () => {
     const members = [...roster, target, member("unknown")];
     const first = memberRosterPage(members, papers, { limit: 50, offset: 0, filters: {} });
     const second = memberRosterPage(members, papers, { limit: 50, offset: 50, filters: {} });
     expect(first.total).toBe(122);
-    expect(first.members[0]?.id).toBe("target");
-    expect(second.members[0]?.id).toBe("member-049");
+    // The alumni joined earliest but follows all 120 active members.
+    expect(first.members[0]?.id).toBe("member-000");
+    expect(second.members[0]?.id).toBe("member-050");
     expect(new Set([...first.members, ...second.members].map((m) => m.id)).size).toBe(100);
     expect(
-      memberRosterPage(members, papers, { limit: 50, offset: 100, filters: {} }).members.at(-1)?.id,
-    ).toBe("unknown");
+      memberRosterPage(members, papers, { limit: 50, offset: 100, filters: {} })
+        .members.slice(-2)
+        .map((m) => m.id),
+    ).toEqual(["target", "unknown"]);
     expect(members[0]?.id).toBe("member-000");
   });
   it("reads every way a joined month has been typed, and orders them by time", () => {
@@ -64,20 +67,21 @@ describe("memberRosterPage", () => {
     const members = [
       member("undated-new", { created_at: "2026-09-01" }),
       member("undated-old-alumni", { created_at: "2026-07-20", status: "alumni" }),
-      member("undated-old", { created_at: "2026-07-02" }),
-      member("y2026", { joined_month: "2026-01" }),
+      member("undated-old-full", { created_at: "2026-07-02", member_type: "full" }),
+      member("y2026-coauthor", { joined_month: "2026-01", member_type: "coauthor-major" }),
       member("jan25-alumni", { joined_month: "Jan-25", member_type: "full, alumni" }),
-      member("jan25-active", { joined_month: "2025-01", status: "active" }),
-      member("sept24", { joined_month: "Sept 2024" }),
+      member("jan25-acquaintance", { joined_month: "2025-01", member_type: "acquaintance" }),
+      member("sept24-full", { joined_month: "Sept 2024", member_type: "full" }),
     ];
+    // Active members first (earliest joiner first), then everybody else in the same order.
     expect(
       memberRosterPage(members, [], { limit: 50, offset: 0, filters: {} }).members.map((m) => m.id),
     ).toEqual([
-      "sept24",
-      "jan25-active",
+      "sept24-full",
+      "y2026-coauthor",
+      "undated-old-full",
+      "jan25-acquaintance",
       "jan25-alumni",
-      "y2026",
-      "undated-old",
       "undated-old-alumni",
       "undated-new",
     ]);

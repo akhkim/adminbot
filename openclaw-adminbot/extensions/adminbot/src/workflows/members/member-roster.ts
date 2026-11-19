@@ -12,6 +12,7 @@ import {
   type MemberRosterOptions,
   type MemberRosterQuery,
 } from "../../contracts/member-roster.js";
+import { holdsActiveChannels } from "./active-channel-audit.js";
 
 function strings(value: unknown): string[] {
   return (Array.isArray(value) ? value : typeof value === "string" ? [value] : [])
@@ -48,6 +49,19 @@ export function joinedMonthOrder(value: string | undefined): number | null {
     : MONTHS.indexOf((named?.[1] ?? reversed?.[2] ?? "").slice(0, 3)) + 1;
   if (!Number.isInteger(year) || month < 1 || month > 12) return null;
   return (year < 100 ? 2000 + year : year) * 12 + month;
+}
+
+/**
+ * Whether someone counts as an active member: their Member Type holds the active channels
+ * (`full`, `own-pace-advisee`, `coauthor-major` -- the same predicate the #jinesis-active sweep
+ * uses) and they are not alumni, inactive or removed. A yes/no, because that is how the list is
+ * read: the active pool first, everybody else after.
+ */
+export function memberRosterActive(member: AdminBotLabMember, status: string | undefined): boolean {
+  return (
+    holdsActiveChannels(member.member_type) &&
+    !["alumni", "inactive", "removed"].includes(status ?? "")
+  );
 }
 
 export function memberRosterPage(
@@ -168,16 +182,17 @@ export function memberRosterPage(
       joined: joinedMonthOrder(entry.row.joined_month) ?? Infinity,
       // Only for rows with no readable joined month: when the record itself was created.
       added: (entry.row.created_at ?? "").slice(0, 7),
-      inactive: ["alumni", "inactive", "removed"].includes(entry.facets.status[0] ?? "") ? 1 : 0,
+      inactive: memberRosterActive(entry.row, entry.facets.status[0]) ? 0 : 1,
     }))
-    // Earliest joiner first; within a month, active members before the rest. A month nobody can
-    // read, or none at all, goes last rather than being guessed into the middle -- in the order
-    // those records were created, the same rule the PeopleList sheet export uses.
+    // Active members first, then earliest joiner first: the list is read top-down to recommend
+    // people for positions, and the active ones lean on that most, senior ones ahead. A month
+    // nobody can read, or none at all, ends each group rather than being guessed into the middle,
+    // in the order those records were created -- the same rule the PeopleList sheet export uses.
     .toSorted(
       (a, b) =>
+        a.inactive - b.inactive ||
         (a.joined === b.joined ? 0 : a.joined < b.joined ? -1 : 1) ||
         (a.joined === Infinity ? a.added.localeCompare(b.added) : 0) ||
-        a.inactive - b.inactive ||
         a.row.id.localeCompare(b.row.id),
     );
   const offset = Math.min(
