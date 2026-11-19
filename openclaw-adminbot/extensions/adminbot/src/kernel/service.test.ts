@@ -5888,14 +5888,14 @@ describe("AdminBotService", () => {
     { member_type: "full", status: "alumni" as const, allowed: true },
     { member_type: "full, alumni", allowed: true },
     { member_type: "alumni, coauthor-major", allowed: true },
-    { member_type: "own-pace-advisee", allowed: false },
+    { member_type: "own-pace-advisee", allowed: true },
     { member_type: "coauthor-minor", allowed: false },
     { member_type: "alumni", allowed: false },
-    { collaborator_subgroup: "own_pace_advisee" as const, allowed: false },
+    { collaborator_subgroup: "own_pace_advisee" as const, allowed: true },
     { collaborator_subgroup: "coauthor_major" as const, allowed: true },
     { allowed: false },
   ])(
-    "limits active-channel invitations to full and coauthor-major: %j",
+    "limits active-channel invitations to full, coauthor-major and own-pace advisees: %j",
     async ({ allowed, ...fields }) => {
       const execute = vi.fn(async (_proposal: AdminBotStoredProposal) => ({ handled: true }));
       const store = new AdminBotMemoryStore();

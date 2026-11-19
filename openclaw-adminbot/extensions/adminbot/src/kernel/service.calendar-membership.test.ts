@@ -186,7 +186,9 @@ describe("Sunday lab calendar membership", () => {
           approver_role: "admin",
         });
         const result = await service.execute(proposal.payload.id, { dry_run: false });
-        expect(result.ok).toBe(["full", "coauthor-major", "external-guest"].includes(member_type));
+        expect(result.ok).toBe(
+          ["full", "coauthor-major", "own-pace-advisee", "external-guest"].includes(member_type),
+        );
         expect(execute).toHaveBeenCalledTimes(result.ok ? 1 : 0);
       } finally {
         vi.unstubAllEnvs();
@@ -475,7 +477,7 @@ describe("subscription authorization", () => {
         approver_id: "test",
       });
       const result = await service.execute(proposed.payload.id, { dry_run: false });
-      expect(result.ok).toBe(["full", "coauthor-major"].includes(member_type));
+      expect(result.ok).toBe(["full", "coauthor-major", "own-pace-advisee"].includes(member_type));
       expect(execute).toHaveBeenCalledTimes(result.ok ? 1 : 0);
     },
   );

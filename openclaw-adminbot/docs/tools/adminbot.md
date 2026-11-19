@@ -2446,7 +2446,7 @@ accepts admin sessions; ordinary members cannot run it and callers cannot supply
 It reads the complete live membership of `jinesis-active` and `random-active`, including
 Slack Connect members from other organizations (`users.list` omits them, so each is looked up
 with `users.info`; a failed lookup aborts the read). Eligibility uses the same resolved member
-classification as active-channel invitations: full or coauthor-major. Alumni with one of these
+classification as active-channel invitations: full, coauthor-major or own-pace advisee. Alumni with one of these
 classifications remain eligible. Bots/app accounts are excluded. There is no separate exemption
 for human admins. The Slack pass leaves other channels untouched; the calendar pass is described
 below.
