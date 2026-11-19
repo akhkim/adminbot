@@ -10,7 +10,7 @@ operation IDs and alternate flag names.
 Install with Node 22.19 or newer, then approve the matching code in your own browser.
 
 ```sh
-npm install --global https://github.com/akhkim/adminbot/releases/download/adminbot-cli-pilot-v1/adminbot-cli-0.1.0.tgz
+npm install --global https://github.com/akhkim/adminbot/releases/download/adminbot-cli-pilot-v2/adminbot-cli-0.1.0.tgz
 adminbot skill install
 adminbot login --power-user
 adminbot permissions
@@ -28,6 +28,7 @@ admin permissions. The API still checks the target record, fields, approver and 
 | Write your weekly note | `adminbot work update PAPER_ID --note "Finished the ablation runs"` |
 | Mark a checklist item complete | `adminbot tasks update PAPER_ID fixes_merged --done` |
 | Change the stage | `adminbot papers progress PAPER_ID --step overleaf_writing` |
+| Read a project’s poster-print options | `adminbot call get-papers-by-papers-id-poster-print PAPER_ID` |
 | List your logistics requests | `adminbot call get-logistics-requests` |
 | Inspect your profile | `adminbot call get-lab-members-self` |
 | Look up any permitted operation's inputs | `adminbot call OPERATION_ID --help` |
