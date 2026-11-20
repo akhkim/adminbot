@@ -4,8 +4,9 @@ import { live } from "lit/directives/live.js";
 // Stays in the app document flow so the page owns one vertical scroll.
 import { t } from "../../../i18n/index.ts";
 import { icons } from "../../icons.ts";
-import type { UiSettings } from "../../storage.ts";
+import { renderSkeleton } from "../../loading/skeleton.ts";
 import "./deadlines.recommendation.ts";
+import type { UiSettings } from "../../storage.ts";
 import type { AccessRole } from "../access.ts";
 import { fetchConferenceRosters, type ConferenceRoster } from "../api/paper-admin.ts";
 import { resolveAdminBotBaseUrl, loadStoredMemberSession } from "../auth/session.ts";
@@ -87,6 +88,9 @@ import {
 } from "./deadlines.workshop-notifications.ts";
 
 const DEFAULT_DEADLINE_PROPOSAL_STORE = new AdminBotDeadlineProposalStore();
+// The last dataset each store answered with. A return visit paints it at once and refreshes
+// underneath, so only the very first visit waits on the network (and shows a skeleton meanwhile).
+const publishedVenuesByStore = new WeakMap<DeadlineProposalStore, DeadlineVenue[]>();
 
 export type DeadlineBoardEntry = {
   venue: DeadlineVenue;
@@ -1427,13 +1431,19 @@ class AdminbotDeadlinesView extends LitElement {
 
   private async loadPublishedDeadlines(): Promise<void> {
     this.datasetLoading = true;
+    const store = this.proposalStore;
+    const cached = publishedVenuesByStore.get(store);
+    if (!this.venues.length && cached) {
+      this.venues = cached;
+    }
     this.requestUpdate();
     try {
-      const venues = await this.proposalStore.listPublished();
+      const venues = await store.listPublished();
       if (!venues.length) {
         throw new Error("Empty deadline response");
       }
       this.venues = venues;
+      publishedVenuesByStore.set(store, venues);
       this.datasetFailure = "";
     } catch (error) {
       // The reason is carried, not swallowed. The board has no bundled copy to fall back on, so
@@ -3460,7 +3470,7 @@ class AdminbotDeadlinesView extends LitElement {
               >
                 Retry
               </button>`
-          : html`<p role="status">Loading live deadlines…</p>`}
+          : renderSkeleton({ count: 8, label: "Loading live deadlines…" })}
       </section>`;
     }
     const all = buildDeadlineBoardEntries(this.venues);

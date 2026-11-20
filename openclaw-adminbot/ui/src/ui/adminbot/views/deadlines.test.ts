@@ -1755,8 +1755,30 @@ it("starts with a loading state and no bundled records", async () => {
   vi.spyOn(store, "listPublished").mockImplementation(() => new Promise(() => {}));
   render(renderDeadlines({ proposalStore: store }), container);
   await settle(container);
-  expect(container.textContent).toContain("Loading live deadlines");
+  const skeleton = container.querySelector('[data-testid="skeleton"]');
+  expect(skeleton?.getAttribute("aria-label")).toBe("Loading live deadlines…");
   expect(container.textContent).not.toContain("ICLR 2027");
+});
+
+it("paints the last dataset at once on a return visit while it refreshes", async () => {
+  const store = new TestProposalStore();
+  vi.spyOn(store, "listPublished").mockResolvedValue([
+    { ...DEADLINE_VENUES[0], id: "cached-venue", name: "Cached workshop" },
+  ]);
+  const first = document.createElement("div");
+  document.body.append(first);
+  render(renderDeadlines({ proposalStore: store }), first);
+  await settle(first);
+  first.remove();
+
+  vi.spyOn(store, "listPublished").mockImplementation(() => new Promise(() => {}));
+  const second = document.createElement("div");
+  document.body.append(second);
+  render(renderDeadlines({ proposalStore: store }), second);
+  await settle(second);
+  expect(second.querySelector('[data-testid="skeleton"]')).toBeNull();
+  expect(second.textContent).toContain("Cached workshop");
+  vi.restoreAllMocks();
 });
 
 describe("add to my timeline", () => {

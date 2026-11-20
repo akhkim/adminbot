@@ -106,14 +106,15 @@ describe("opportunityRows", () => {
 });
 
 describe("renderOpportunities", () => {
-  it("renders a sub-tab per category plus All", async () => {
+  it("renders All plus a sub-tab per category that has entries", async () => {
     const container = await renderView();
     const labels = [...container.querySelectorAll(".opp-tab")].map(
       (tab) => (tab.textContent ?? "").trim().split(/\s+/u)[0],
     );
     expect(labels[0]).toBe("All");
     expect(labels).toContain("Rising");
-    expect(labels).toContain("Internships");
+    // The bundled data has no internships, so that tab is left out rather than shown at zero.
+    expect(labels).not.toContain("Internships");
   });
 
   it("shows the bundled Rising Stars programs with eligibility quoted", async () => {

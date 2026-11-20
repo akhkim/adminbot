@@ -10396,10 +10396,6 @@ details[open] > .ov-expandable-toggle::after {
   max-width: 520px;
 }
 
-.adminbot-time-availability__refresh {
-  justify-self: start;
-}
-
 .adminbot-time-availability__report {
   display: grid;
   gap: var(--space-4);
@@ -11247,8 +11243,8 @@ details[open] > .ov-expandable-toggle::after {
 /* ── Add commitment button + picker ────────────────────────────────────────── */
 
 .adminbot-time-availability__add-commitment {
-  width: 100%;
-  min-height: 44px;
+  justify-self: start;
+  width: auto;
 }
 
 .adminbot-time-availability__commitment-picker {
@@ -11438,8 +11434,7 @@ details[open] > .ov-expandable-toggle::after {
    `min(..., 100%)` lets one tile take a narrower aside whole (a 320px window, or 400% zoom)
    instead of holding 21rem and pushing the hint and buttons out of the page. */
 .adminbot-time-availability__deadlines .adminbot-time-availability__deadline-list {
-  grid-template-columns: repeat(auto-fill, minmax(min(21rem, 100%), 1fr));
-  gap: var(--space-2);
+  gap: 0;
 }
 
 /* Sits under the panel title, above the list: it explains what belongs in the list, so it has to
@@ -11466,21 +11461,25 @@ details[open] > .ov-expandable-toggle::after {
 /* Three stacked rows -- countdown and actions, the name, the date -- rather than placing each span
    into a two-column grid by hand. The old placement pinned the link and the remove button to the
    same cell, so they drew on top of each other. */
+/* Rows split by hairlines, not bordered tiles (ui/DESIGN.md: no boxed cards). */
 .adminbot-time-availability__deadline-list li {
   display: grid;
   gap: 0;
-  padding: 6px var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--bg);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.adminbot-time-availability__deadline-list li:last-child {
+  border-bottom: 0;
 }
 
 /* Countdown, name, actions on one line. The name takes the slack, so the countdown stays hard
    against the left edge where a column of them lines up and the actions stay hard against the
-   right. */
+   right. One line: the name wraps inside its own slot, so the link and Hide never drop to a line
+   of their own at phone width. */
 .adminbot-time-availability__deadline-top {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: baseline;
   gap: var(--space-2);
   /* The countdown is the only thing here on a read-only panel, and it is uppercase 11px text; at
@@ -11493,7 +11492,7 @@ details[open] > .ov-expandable-toggle::after {
 }
 
 .adminbot-time-availability__deadline-top .adminbot-time-availability__deadline-label {
-  flex: 1 1 auto;
+  flex: 1 1 0;
 }
 
 .adminbot-time-availability__deadline-top .adminbot-time-availability__deadline-actions {
@@ -11588,10 +11587,6 @@ details[open] > .ov-expandable-toggle::after {
   color: var(--muted);
 }
 
-.adminbot-time-availability__deadline-list li[data-own="true"] {
-  border-color: color-mix(in srgb, var(--deadline-urgency, var(--border)) 40%, var(--border));
-}
-
 /* Shrunk with the tile: at the shared button padding these two set the row height for every
    deadline, including the ones with no button at all next to them. */
 .adminbot-time-availability__deadline-actions .btn {
@@ -11601,6 +11596,20 @@ details[open] > .ov-expandable-toggle::after {
 
 .adminbot-time-availability__deadline-list li .btn {
   flex: 0 0 auto;
+}
+
+/* Hide / Remove is a per-row action: it shows on the row under the pointer or with focus inside it
+   (ui/DESIGN.md rule 14), and always on touch screens, which have no hover. */
+@media (hover: hover) {
+  .adminbot-time-availability__deadline-list li .btn {
+    opacity: 0;
+    transition: opacity var(--duration-fast, 120ms) ease;
+  }
+
+  .adminbot-time-availability__deadline-list li:hover .btn,
+  .adminbot-time-availability__deadline-list li:focus-within .btn {
+    opacity: 1;
+  }
 }
 
 .adminbot-time-availability__milestone-form {

@@ -410,12 +410,10 @@ export class ReferenceChecker extends LitElement {
       </label>
       <p class="hint">
         ${this.checker === "gptzero"
-          ? html`PDF only · Up to 20 MB. Submit uploads the full PDF to GPTZero and may incur a
-            charge. A GPTZero API key with bibliography access must be configured on the server.`
-          : html`PDF only · Up to 20 MB, 200 pages and 100 references. The PDF is read on the
-            AdminBot server. Submit sends extracted citations to Crossref, Semantic Scholar,
-            OpenAlex, DBLP and arXiv. No API key is needed.`}
-        AdminBot does not save the PDF or results. Every submission runs a new check.
+          ? html`PDF only · up to 20 MB. Submit uploads the full PDF to GPTZero, which may charge.`
+          : html`PDF only · up to 20 MB, 200 pages and 100 references. Citations are looked up on
+            Crossref, Semantic Scholar, OpenAlex, DBLP and arXiv.`}
+        Nothing is saved.
       </p>
       <button
         ?disabled=${!this.file || this.busy || !this.sessionToken}

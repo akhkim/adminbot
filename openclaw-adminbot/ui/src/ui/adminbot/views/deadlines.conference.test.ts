@@ -28,6 +28,9 @@ describe("conference deadline attendance", () => {
       schedule: [],
     } as unknown as DeadlineVenue;
     expect(conferenceRosterFor([venue], [{ ...roster, year: 2026 }, roster])).toBe(roster);
+    // A served deadline row with no schedule must not throw: it would blank the whole board.
+    const { schedule: _schedule, ...flatRow } = venue;
+    expect(conferenceRosterFor([flatRow as DeadlineVenue], [roster])).toBe(roster);
     expect(conferenceRosterFor([{ ...venue, name: "ICLR 2028" }], [roster])).toBeUndefined();
     expect(
       conferenceRosterFor([{ ...venue, venue_family: "ACL", name: "ACL 2027" }], [roster]),

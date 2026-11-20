@@ -245,7 +245,6 @@ export type AdminBotTimeAvailabilityProps = {
   onLoadCollaborators?: () => void;
   loading: boolean;
   error: string | null;
-  onRefresh?: () => void;
   selectedMemberId: string;
   onMemberChange: (memberId: string) => void;
   onMemberHighlight?: (memberId: string) => void; // admin picker: read before the pick lands
@@ -1663,11 +1662,6 @@ function renderBigDeadlines(
           `,
         )}
       </ul>
-      ${mine.length
-        ? nothing
-        : html`<p class="adminbot-time-availability__empty-note">
-            ${t("adminbotTimeAvailability.milestones.empty")}
-          </p>`}
       ${editable ? renderAddDeadline(props, milestones, now, dismissed) : nothing}
     </aside>
   `;
@@ -2054,16 +2048,6 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
                 ${t("adminbotTimeAvailability.ownScheduleOnly")}
               </p>`}
         ${renderRangeSwitch(props)}
-        ${props.onRefresh
-          ? html`<button
-              class="btn btn--sm adminbot-time-availability__refresh"
-              type="button"
-              ?disabled=${props.loading}
-              @click=${props.onRefresh}
-            >
-              ${props.loading ? "Refreshing…" : "Refresh schedules"}
-            </button>`
-          : nothing}
       </div>
       ${editable && !props.activeCommitmentType
         ? html`<button

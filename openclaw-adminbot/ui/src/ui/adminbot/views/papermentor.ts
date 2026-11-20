@@ -514,12 +514,7 @@ export class PaperMentorView extends LitElement {
         ${this.busy ? "Uploading…" : "Run PaperMentor"}
       </button>
       ${this.notice ? html`<p role="status">${this.notice}</p>` : nothing}
-      <p class="hint">
-        You get the zip back with each comment as a <code>%PAPERMENTOR:</code> line above the text
-        it is about, ready to upload to Overleaf as a new project (New Project → Upload Project),
-        plus the PDF with every comment highlighted and a report. Only you can see your reviews, and
-        they are deleted after two weeks.
-      </p>
+      <p class="hint">Only you see your reviews. They are deleted after two weeks.</p>
     </section>`;
   }
 
@@ -574,22 +569,20 @@ export class PaperMentorView extends LitElement {
       ? this.error
         ? nothing
         : html`<p role="status">Loading…</p>`
-      : html`${overview.enabled
-            ? this.renderForm(overview)
-            : html`<section>
-                <p>PaperMentor is not set up on this AdminBot host yet. Ask an admin.</p>
-              </section>`}
-          <section aria-live="polite">
-            <h3>Your reviews</h3>
+      : html`${overview.enabled ? this.renderForm(overview) : nothing}
+          <!-- Shown only once there is a review: an empty "Your reviews" heading says nothing
+               (ui/DESIGN.md rule 10). The live region is kept so a finished review is announced. -->
+          <section aria-live="polite" ?hidden=${!overview.reviews.length}>
             ${overview.reviews.length
-              ? overview.reviews.map((review) => this.renderReview(review))
-              : html`<p class="hint">No reviews yet.</p>`}
+              ? html`<h3>Your reviews</h3>
+                  ${overview.reviews.map((review) => this.renderReview(review))}`
+              : nothing}
           </section>
-          <h3 class="pdf-only">Only have a PDF? Check its references</h3>
-          <p class="hint">
-            For a paper without its LaTeX source -- a camera-ready, or a submission you are
-            reviewing. Nothing is kept.
-          </p>
+          <h3 class="pdf-only">
+            ${overview.enabled
+              ? "Only have a PDF? Check its references"
+              : "Check a PDF's references"}
+          </h3>
           <adminbot-reference-checker
             .baseUrl=${this.baseUrl}
             .sessionToken=${this.sessionToken}

@@ -228,20 +228,11 @@ describe("renderAdminBotTimeAvailability", () => {
     expect(load).toHaveBeenCalledOnce();
   });
 
-  it("offers a manual schedule refresh and disables it while loading", () => {
-    const onRefresh = vi.fn();
-    renderView({ onRefresh })
-      .querySelector<HTMLButtonElement>(".adminbot-time-availability__refresh")
-      ?.click();
-    expect(onRefresh).toHaveBeenCalledOnce();
-    const loadingView = renderView({ onRefresh, loading: true });
+  it("has no manual Refresh button; schedules reload on return instead", () => {
+    const view = renderView();
     expect(
-      loadingView.querySelector<HTMLButtonElement>(".adminbot-time-availability__refresh")
-        ?.disabled,
-    ).toBe(true);
-    expect(
-      loadingView.querySelector("[data-testid=time-availability-jinesis-table]"),
-    ).not.toBeNull();
+      [...view.querySelectorAll("button")].some((b) => /refresh/i.test(b.textContent ?? "")),
+    ).toBe(false);
   });
 
   // Editing is self-only: the service routes a member session to its own record, so showing the

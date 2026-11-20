@@ -560,7 +560,6 @@ function renderFileForm(props: AdminBotMeetingsProps) {
   return html`
     <details class="card adminbot-card adminbot-card--wide adminbot-fold meetings__file">
       <summary>${t("adminbotMeetings.fileManually")}</summary>
-      <p class="card-sub">${t("adminbotMeetings.fileManuallyHint")}</p>
       <form class="adminbot-form" @submit=${submit}>
         <label class="adminbot-form__field"
           ><span>${t("adminbotMeetings.topic")}</span> <input name="topic" required
@@ -615,7 +614,6 @@ function renderNudgePanel(nudge: NonNullable<AdminBotMeetingsProps["nudge"]>) {
       }}
     >
       <summary>${t("adminbotMeetings.nudge.title")}</summary>
-      <p class="card-sub">${t("adminbotMeetings.nudge.sub")}</p>
       ${nudge.error ? html`<p class="callout danger" role="alert">${nudge.error}</p>` : nothing}
       ${nudge.busy && !preview
         ? renderSkeleton({
@@ -701,23 +699,18 @@ const MEETING_SHARE_CHANNEL = "#jinesis-share";
 
 function renderArchiveLinks() {
   return html`
-    <aside class="meetings__archive" data-testid="meetings-archive">
-      <h3 class="card-title">${t("adminbotMeetings.archive.title")}</h3>
-      <p class="card-sub">
-        ${t("adminbotMeetings.archive.sub", { channel: MEETING_SHARE_CHANNEL })}
-      </p>
+    <p class="meetings__archive" data-testid="meetings-archive">
       ${MEETING_PLAYLIST_URL
         ? html`<a
-            class="btn btn--sm"
-            href=${MEETING_PLAYLIST_URL}
-            target=${EXTERNAL_LINK_TARGET}
-            rel=${buildExternalLinkRel()}
-            data-testid="meetings-playlist-link"
-          >
-            ${t("adminbotMeetings.archive.playlist")}
-          </a>`
-        : nothing}
-    </aside>
+              href=${MEETING_PLAYLIST_URL}
+              target=${EXTERNAL_LINK_TARGET}
+              rel=${buildExternalLinkRel()}
+              data-testid="meetings-playlist-link"
+              >${t("adminbotMeetings.archive.playlist")}</a
+            >
+            · `
+        : nothing}${MEETING_SHARE_CHANNEL}
+    </p>
   `;
 }
 
@@ -725,8 +718,6 @@ export function renderAdminBotMeetings(props: AdminBotMeetingsProps) {
   return html`
     <section class="meetings">
       ${props.error ? html`<p class="callout danger" role="alert">${props.error}</p>` : nothing}
-      ${props.viewerIsAdmin && props.nudge ? renderNudgePanel(props.nudge) : nothing}
-      ${props.viewerIsAdmin ? renderFileForm(props) : nothing}
       ${props.loading && props.series.length === 0
         ? renderSkeleton({ label: t("adminbotMeetings.loading") })
         : nothing}
@@ -738,8 +729,11 @@ export function renderAdminBotMeetings(props: AdminBotMeetingsProps) {
         (series) => series.key,
         (series, index) => renderSeries(props, series, index),
       )}
-      <!-- Where older meetings live: a pointer for after the list, not a card ahead of it. -->
+      <!-- Where older meetings live: one link line after the list, not a card ahead of it. -->
       ${renderArchiveLinks()}
+      <!-- Admin tools are rare paths: closed folds after the list, never ahead of it. -->
+      ${props.viewerIsAdmin && props.nudge ? renderNudgePanel(props.nudge) : nothing}
+      ${props.viewerIsAdmin ? renderFileForm(props) : nothing}
     </section>
   `;
 }
