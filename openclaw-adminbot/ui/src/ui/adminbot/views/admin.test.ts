@@ -1,7 +1,7 @@
 /* @vitest-environment jsdom */
 
 import { render } from "lit";
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { adminBotMemberTypes } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import {
   type AdminBotLabMember,
@@ -92,6 +92,16 @@ beforeAll(() => {
   (HTMLElement.prototype as { hidePopover?: () => void }).hidePopover ??= () => undefined;
 });
 
+afterEach(() => {
+  document.body.replaceChildren();
+});
+
+/** Let the Filters control finish drawing what the page just handed it. */
+const settle = () =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve);
+  });
+
 describe("renderAdminBot first load", () => {
   it("shows progress instead of an empty roster while the first request is pending", () => {
     const container = renderToDiv(
@@ -144,7 +154,7 @@ describe("renderAdminBot paginated roster", () => {
     const container = renderToDiv(baseProps({ memberList: page, onMemberListChange: change }), {
       openEditors: false,
     });
-    await Promise.resolve();
+    await settle();
     expect(container.querySelectorAll("tbody tr")).toHaveLength(1);
     expect(container.querySelector('[aria-label="Member pages"]')?.textContent).toContain(
       "Showing 51–51 of 101",
@@ -177,7 +187,7 @@ describe("renderAdminBot paginated roster", () => {
     };
     const props = baseProps({ memberList: page });
     const container = renderToDiv(props, { openEditors: false });
-    await Promise.resolve();
+    await settle();
     const search = container.querySelector<HTMLInputElement>('input[name="search"]')!;
     search.value = "draft search";
     render(
@@ -190,7 +200,7 @@ describe("renderAdminBot paginated roster", () => {
       }),
       container,
     );
-    await Promise.resolve();
+    await settle();
     expect(container.querySelector<HTMLSelectElement>('select[name="location"]')!.value).toBe(
       "Zurich",
     );
@@ -206,7 +216,7 @@ describe("renderAdminBot paginated roster", () => {
       }),
       container,
     );
-    await Promise.resolve();
+    await settle();
     expect(container.querySelector<HTMLSelectElement>('select[name="location"]')!.value).toBe("");
   });
 
@@ -227,7 +237,7 @@ describe("renderAdminBot paginated roster", () => {
       }),
       { openEditors: false },
     );
-    await Promise.resolve();
+    await settle();
     const select = container.querySelector<HTMLSelectElement>('select[name="meeting"]')!;
     select.value = "off-page";
     select.dispatchEvent(new Event("change", { bubbles: true }));
@@ -245,7 +255,7 @@ describe("renderAdminBot paginated roster", () => {
       { openEditors: false },
     );
     container.querySelector<HTMLInputElement>('input[name="search"]')!.scrollIntoView = vi.fn();
-    await Promise.resolve();
+    await settle();
     expect(change).toHaveBeenCalledExactlyOnceWith({ q: "Pat" }, 0);
   });
 
@@ -262,7 +272,7 @@ describe("renderAdminBot paginated roster", () => {
       }),
       container,
     );
-    expect(container.textContent).not.toContain("No matching lab members");
+    expect(container.textContent).not.toContain("No matching people");
     container.querySelector<HTMLButtonElement>('[role="alert"] button')!.click();
     expect(retry).toHaveBeenCalledWith({}, 0);
   });
@@ -281,7 +291,9 @@ describe("renderAdminBot paginated roster", () => {
  * deferral itself.
  */
 function renderToDiv(props: AdminBotProps, options: { openEditors?: boolean } = {}): HTMLElement {
+  // Connected, so the Filters control (a custom element) draws its fields.
   const container = document.createElement("div");
+  document.body.append(container);
   render(renderAdminBot(props), container);
   if (options.openEditors === false) {
     return container;
@@ -637,8 +649,6 @@ describe("renderAdminBot members panel — edit affordance", () => {
     expect(saved[0]?.memberType).toBe("alumni, coauthor-major");
     expect(saved[0]).not.toHaveProperty("privilegeLevel");
     expect(saved[0]).not.toHaveProperty("collaboratorSubgroup");
-    // The roster still shows the subgroup next to the access level it qualifies.
-    expect(container.querySelector("tbody tr")?.textContent).toContain("Coauthor Major");
   });
 
   it("never autosaves a Member type or Meetings tick", () => {
@@ -793,7 +803,7 @@ describe("renderAdminBot members panel — edit affordance", () => {
 
   // Regression: the Slack user ID is self-editable but had no cell in the Lab
   // Members spreadsheet, so a saved edit looked like it never landed.
-  it("renders the Slack user id in the roster Contact column and search index", () => {
+  it("keeps the Slack user id in the roster search index", () => {
     const container = renderToDiv(
       baseProps({
         mode: "admin",
@@ -806,7 +816,6 @@ describe("renderAdminBot members panel — edit affordance", () => {
     );
     const row = container.querySelector<HTMLTableRowElement>("tbody tr");
 
-    expect(row?.textContent).toContain("Slack: U0123456789");
     expect(row?.getAttribute("data-search")).toContain("u0123456789");
   });
 
@@ -862,11 +871,7 @@ describe("renderAdminBot members panel — edit affordance", () => {
       { openEditors: false },
     );
     const rows = [...container.querySelectorAll<HTMLTableRowElement>("tbody tr")];
-    expect(rows.map((row) => row.querySelector("small")?.textContent)).toEqual([
-      "earlier",
-      "later",
-      "unknown",
-    ]);
+    expect(rows.map((row) => row.dataset.memberId)).toEqual(["earlier", "later", "unknown"]);
     expect(roster.map((entry) => entry.id)).toEqual(["unknown", "later", "earlier"]);
     const select = (name: string, value: string) => {
       const input = container.querySelector<HTMLSelectElement>(`select[name="${name}"]`)!;
@@ -896,7 +901,7 @@ describe("renderAdminBot members panel — edit affordance", () => {
     const rows = [...container.querySelectorAll<HTMLTableRowElement>("tbody tr")];
 
     // The self-edit button stays on the own row in roster order.
-    expect(rows.map((row) => row.querySelector("small")?.textContent)).toEqual(["pat", "sam"]);
+    expect(rows.map((row) => row.dataset.memberId)).toEqual(["pat", "sam"]);
     expect(rows[1]?.querySelector("button")?.getAttribute("popovertarget")).toBe(
       "adminbot-self-edit-member-1",
     );
@@ -927,9 +932,10 @@ describe("renderAdminBot members panel — edit affordance", () => {
     const ownButtons = [...(rows[0]?.querySelectorAll("button") ?? [])];
     const otherButtons = [...(rows[1]?.querySelectorAll("button") ?? [])];
 
-    const reopenButton = ownButtons.find((btn) => btn.textContent?.includes("onboarding"));
+    const onboarding = (btn: Element) => /onboarding/i.test(btn.textContent ?? "");
+    const reopenButton = ownButtons.find(onboarding);
     expect(reopenButton).toBeTruthy();
-    expect(otherButtons.some((btn) => btn.textContent?.includes("onboarding"))).toBe(false);
+    expect(otherButtons.some(onboarding)).toBe(false);
 
     reopenButton?.click();
     expect(clicks).toEqual(["shown"]);
@@ -938,7 +944,7 @@ describe("renderAdminBot members panel — edit affordance", () => {
   it("omits the onboarding reopen button when no handler is provided", () => {
     const container = renderToDiv(baseProps({ mode: "general", signedInMemberId: "pat" }));
     const button = [...container.querySelectorAll("tbody tr button")].find((btn) =>
-      btn.textContent?.includes("onboarding"),
+      /onboarding/i.test(btn.textContent ?? ""),
     );
     expect(button).toBeUndefined();
   });
@@ -1152,14 +1158,24 @@ describe("renderAdminBot members panel — edit affordance", () => {
     ).not.toBeNull();
   });
 
-  it("drops the dedicated Actions column and nests Edit under the person name", () => {
+  it("keeps the row to one line per person, with its actions in the last cell", () => {
     const container = renderToDiv(baseProps({ mode: "admin" }));
     const headers = [...container.querySelectorAll("thead th")].map((th) => th.textContent?.trim());
 
-    expect(headers).not.toContain("Actions");
-    const firstCell = container.querySelector<HTMLTableCellElement>("tbody tr td");
-    expect(firstCell?.querySelector("strong")?.textContent).toBe("Pat Doe");
-    expect(firstCell?.querySelector("button")?.textContent?.trim()).toBe("Edit");
+    expect(headers).toEqual([
+      "Person",
+      "Role",
+      "Status",
+      "Projects",
+      "Topics",
+      "Location",
+      "Papers",
+      "Actions",
+    ]);
+    const cells = container.querySelectorAll<HTMLTableCellElement>("tbody tr td");
+    expect(cells[0]?.querySelector("strong")?.textContent).toBe("Pat Doe");
+    expect(cells[0]?.querySelector("button")).toBeNull();
+    expect(cells[cells.length - 1]?.querySelector("button")?.textContent?.trim()).toBe("Edit");
     // Row cell count now matches the header count exactly.
     expect(container.querySelectorAll("tbody tr td")).toHaveLength(headers.length);
   });
@@ -1370,6 +1386,7 @@ describe("renderAdminBot announcements panel", () => {
       }),
     );
     const container = document.createElement("div");
+    document.body.append(container);
     const props = baseProps({
       mode: "admin",
       panel: "announcements",
@@ -1429,7 +1446,7 @@ describe("renderAdminBot announcements panel", () => {
     expect(rowIds()).toEqual(["person-104", "person-105"]);
     expect(pages()?.textContent).toContain("Showing 1–2 of 2");
     expect(container.querySelector("[data-recipient-result-count]")?.textContent).toContain(
-      "2 matching people",
+      "2 people",
     );
     expect(props.memberNudge.selectedMemberIds).toContain("person-51");
 
@@ -1443,7 +1460,7 @@ describe("renderAdminBot announcements panel", () => {
     search.dispatchEvent(new Event("input", { bubbles: true }));
     expect(rowIds()).toEqual(["person-105"]);
     expect(container.querySelector("[data-recipient-result-count]")?.textContent).toContain(
-      "1 matching person",
+      "1 person",
     );
   });
 

@@ -25,6 +25,10 @@ export class InterviewInvite extends LitElement {
   @state() private first = "";
   @state() private second = "";
   private searchRevision = 0;
+  /** Load the interviewer choices. The page calls this when it opens the invite. */
+  load() {
+    void this.search();
+  }
   private async search() {
     const session = loadStoredMemberSession();
     if (!session) {
@@ -66,40 +70,11 @@ export class InterviewInvite extends LitElement {
   static styles = css`
     :host {
       display: block;
-      margin-bottom: var(--space-4);
     }
-    /* A plain fold: no fill or box, so the summary starts on the page's left edge. The hairline
-       is what separates it from the section below. */
-    details {
-      border-bottom: 1px solid var(--border);
-    }
-    details[open] {
-      padding-bottom: var(--space-4);
-    }
-    summary {
-      display: flex;
-      align-items: center;
-      min-height: 44px;
+    h2 {
+      margin: 0;
+      font-size: var(--control-ui-text-md);
       font-weight: 600;
-      cursor: pointer;
-      list-style: none;
-    }
-    summary::-webkit-details-marker {
-      display: none;
-    }
-    /* The same chevron as the light DOM's .adminbot-fold, so every fold in the app reads alike. */
-    summary::after {
-      content: "";
-      width: 7px;
-      height: 7px;
-      margin-left: auto;
-      border-right: 2px solid var(--muted);
-      border-bottom: 2px solid var(--muted);
-      transform: rotate(45deg);
-      transition: transform 0.15s ease;
-    }
-    details[open] > summary::after {
-      transform: rotate(225deg);
     }
     form,
     label {
@@ -255,14 +230,7 @@ export class InterviewInvite extends LitElement {
       (member) =>
         member.slack_user_id && ["member", "admin"].includes(member.privilege_level || ""),
     );
-    return html`<details
-      @toggle=${(event: Event) => {
-        if ((event.currentTarget as HTMLDetailsElement).open) {
-          void this.search();
-        }
-      }}
-    >
-      <summary>Invite an interviewee</summary>
+    return html`<h2>Invite an interviewee</h2>
       <form
         @submit=${(event: SubmitEvent) => this.submit(event)}
         @input=${() => {
@@ -271,10 +239,6 @@ export class InterviewInvite extends LitElement {
           this.draftRevision++;
         }}
       >
-        <p>
-          Enter the candidate and task, then choose two interviewers. An admin approves the email
-          and private Slack invitation in Pending Actions.
-        </p>
         <div class="pair">
           <label
             >Candidate name *<input
@@ -344,18 +308,13 @@ export class InterviewInvite extends LitElement {
                   ${(this.preview.cc || []).join(", ")}
                 </p>
                 <pre>${this.preview.body}</pre>
-                <p>
-                  The private Slack channel is created after approval for the candidate, the two
-                  interviewers, and AdminBot.
-                </p>
               </section>
               <button class="primary" type="submit" value="queue" ?disabled=${this.busy}>
                 Submit for admin approval
               </button>`
           : nothing}
         ${this.notice ? html`<div role="status">${this.notice}</div>` : nothing}
-      </form>
-    </details>`;
+      </form>`;
   }
 }
 

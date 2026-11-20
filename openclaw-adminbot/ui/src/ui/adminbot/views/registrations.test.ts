@@ -207,7 +207,7 @@ describe("renderAdminBotRegistrations", () => {
     render(renderAdminBotRegistrations(baseProps({ error: "forbidden" })), container);
     await Promise.resolve();
 
-    expect(container.querySelector(".card-sub")?.textContent?.trim()).toBe(
+    expect(container.querySelector(".adminbot-registrations__status")?.textContent?.trim()).toBe(
       "Only admins and core members can review member requests.",
     );
     expect(container.querySelector("button")).toBeNull();

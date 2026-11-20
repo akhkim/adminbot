@@ -900,14 +900,15 @@ export async function loadAdminBotMemberList(
   host: AdminBotHost,
   filters = host.adminBotMemberList?.filters ?? {},
   offset = host.adminBotMemberList?.offset ?? 0,
+  /** A background reload: keep the rows on screen and the controls enabled until the answer. */
+  quiet = false,
 ): Promise<void> {
+  const previous = host.adminBotMemberList ?? createEmptyAdminBotMemberList();
   const pending = {
-    ...(host.adminBotMemberList ?? createEmptyAdminBotMemberList()),
+    ...previous,
     filters,
     offset,
-    rows: [],
-    loading: true,
-    error: null,
+    ...(quiet ? {} : { rows: [], loading: true, error: null }),
   };
   host.adminBotMemberList = pending;
   const session = loadStoredMemberSession();
