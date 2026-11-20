@@ -139,6 +139,8 @@ export type AdminBotRouteContext = {
   /** The DCS roster sheet a role change files a row on. Absent: the step reports it unconfigured. */
   dcsRoster?: DcsRosterSheetSource;
   callSheet?: CallSheetSource;
+  /** The Membership grid and call-queue preview, kept between page views. */
+  sheetPageReads?: import("../sheet-page-reads.js").SheetPageReads;
   /** Resolved switch: does a submitted meeting request propose its own call-sheet row? */
   autoQueueMeetingRequests: boolean;
   labCalendar: import("../../workflows/calendar/lab-calendar.js").AdminBotLabCalendar;

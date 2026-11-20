@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { createCalendarEventsReader, parseCalendarEvents } from "./events.js";
+import {
+  createCachedCalendarEventsReader,
+  createCalendarEventsReader,
+  parseCalendarEvents,
+} from "./events.js";
 
 const TIMED = {
   id: "evt-1",
@@ -151,5 +155,75 @@ describe("createCalendarEventsReader", () => {
     expect(args[args.indexOf("list") + 1]).toBe("lab@jinesis.ai");
     expect(args[args.indexOf("--max") + 1]).toBe("5");
     expect(args[args.indexOf("--query") + 1]).toBe("retreat");
+  });
+});
+
+describe("createCachedCalendarEventsReader", () => {
+  function counted() {
+    let clock = 0;
+    const calls: Array<Record<string, unknown>> = [];
+    const cached = createCachedCalendarEventsReader(
+      async (params) => {
+        calls.push(params);
+        return [{ id: `evt-${calls.length}`, summary: "Lab meeting", start: "2026-08-18" }];
+      },
+      { now: () => clock },
+    );
+    return {
+      cached,
+      calls,
+      advance: (ms: number) => {
+        clock += ms;
+      },
+    };
+  }
+
+  it("answers a repeat of the same parameters from the kept read", async () => {
+    const { cached, calls, advance } = counted();
+    const first = await cached.read({ calendarId: "lab", max: 250 });
+    advance(59_000);
+    expect(await cached.read({ calendarId: "lab", max: 250 })).toEqual(first);
+    expect(calls).toHaveLength(1);
+  });
+
+  it("keeps each parameter set apart", async () => {
+    const { cached, calls } = counted();
+    await cached.read({ calendarId: "lab", max: 250 });
+    await cached.read({ calendarId: "lab", max: 50 });
+    await cached.read({ calendarId: "other", max: 250 });
+    expect(calls).toHaveLength(3);
+  });
+
+  it("serves a stale read while it refreshes, and waits once that is too old", async () => {
+    const { cached, calls, advance } = counted();
+    await cached.read({ calendarId: "lab" });
+    advance(2 * 60_000);
+    expect((await cached.read({ calendarId: "lab" }))[0]?.id).toBe("evt-1");
+    expect(calls).toHaveLength(2);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    advance(10 * 60_000);
+    expect((await cached.read({ calendarId: "lab" }))[0]?.id).toBe("evt-3");
+  });
+
+  it("asks Google again after invalidate", async () => {
+    const { cached, calls } = counted();
+    await cached.read({ calendarId: "lab" });
+    await cached.read({ calendarId: "other" });
+    cached.invalidate();
+    expect((await cached.read({ calendarId: "lab" }))[0]?.id).toBe("evt-3");
+    expect(calls).toHaveLength(3);
+  });
+
+  it("does not keep a failed read", async () => {
+    let fail = true;
+    const cached = createCachedCalendarEventsReader(async () => {
+      if (fail) {
+        throw new Error("keyring locked");
+      }
+      return [];
+    });
+    await expect(cached.read({})).rejects.toThrow("keyring locked");
+    fail = false;
+    await expect(cached.read({})).resolves.toEqual([]);
   });
 });

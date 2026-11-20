@@ -43,7 +43,10 @@ import { createAdminBotPrivacyBroker } from "../privacy/broker.js";
 import { createLocalChat } from "../privacy/local-chat.js";
 import { createAdminBotSensitiveInfoDocument } from "../privacy/sensitive-info-doc.js";
 import { createEventDraftRunner } from "../workflows/calendar/event-draft.js";
-import { createCalendarEventsReader } from "../workflows/calendar/events.js";
+import {
+  createCachedCalendarEventsReader,
+  createCalendarEventsReader,
+} from "../workflows/calendar/events.js";
 import { resolveLabCalendar } from "../workflows/calendar/lab-calendar.js";
 import { DEADLINE_VENUES } from "../workflows/deadlines/generated/dataset.js";
 import { readDeadlineDataset } from "../workflows/deadlines/runtime-dataset.js";
@@ -110,6 +113,7 @@ import {
   handlePublicDeadlineProposal,
 } from "./server.public-deadline-proposals.js";
 import { servePublicRoute } from "./server.public.js";
+import { createSheetPageReads } from "./sheet-page-reads.js";
 
 // Long enough that a deploy's restart has settled before CVs start downloading.
 const CV_SWEEP_FIRST_CHECK_MS = 2 * 60 * 1000;
@@ -189,14 +193,36 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     ...serviceOptions(options),
     ...(reverseGeocoder ? { reverseGeocoder } : {}),
   };
+  // The reader shells out to `gog`, so it is built unconditionally but only ever runs when the
+  // Calendar tab asks. It is cached because the Calendar tab and the meetings page read it on every
+  // load; it is built here, before the service, because the executor below is what forgets it.
+  // The two spreadsheet page views. Dropped after every executed proposal below: each sheet write
+  // is one, so an approval from Pending Actions shows on the next view as a direct save does.
+  const sheetPageReads = createSheetPageReads();
+  const calendarEvents = createCachedCalendarEventsReader(
+    options.calendarEventsReader ?? createCalendarEventsReader(),
+  );
   const wiredOptions: AdminBotServiceOptions = {
     ...baseOptions,
     // The arm is installed whether or not a connector was injected: `onboarding.send_guide` is
     // executed in-process by the sender, not by the CLI connector, so a deployment with no
     // executor at all still executes this one.
     executor: {
-      execute: (proposal) =>
-        referenceScans.executor(withOnboarding(baseOptions.executor)).execute(proposal),
+      async execute(proposal) {
+        try {
+          return await referenceScans
+            .executor(withOnboarding(baseOptions.executor))
+            .execute(proposal);
+        } finally {
+          // Every calendar write, from whichever route or sweep proposed it, is executed here, so
+          // this is the one place a kept calendar read can be dropped for all of them. A failed
+          // execute is included: Google may have accepted the change before the CLI gave up.
+          if (proposal.type.startsWith("calendar.")) {
+            calendarEvents.invalidate();
+          }
+          sheetPageReads.invalidate();
+        }
+      },
     },
   };
   if (options.databasePath) {
@@ -513,6 +539,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     ...(options.openReviewResultsPath ? { snapshotPath: options.openReviewResultsPath } : {}),
   };
   const ctx: AdminBotRouteContext = {
+    sheetPageReads,
     openReviewPaperSources,
     notificationDrafts: createNotificationDraftHandler(
       options.notificationDraftScriptPath,
@@ -601,9 +628,8 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     ...(options.fetchSlackChannelNames
       ? { fetchSlackChannelNames: options.fetchSlackChannelNames }
       : {}),
-    // The reader shells out to `gog`, so it is built unconditionally but only ever runs when the
-    // Calendar tab asks. The drafter defaults to the same broker `adminbot_reason` uses.
-    readCalendarEvents: options.calendarEventsReader ?? createCalendarEventsReader(),
+    // The cached reader built above. The drafter defaults to the same broker `adminbot_reason` uses.
+    readCalendarEvents: calendarEvents.read,
     labCalendar: resolveLabCalendar(),
     inviteToLabCalendar: calendarInviteRunner,
     draftCalendarEvent:
@@ -688,7 +714,15 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
   cvSweepFirstCheck?.unref();
   const server = createServer(async (req, res) => {
     try {
-      await routeRequest(req, res, ctx);
+      try {
+        await routeRequest(req, res, ctx);
+      } finally {
+        // A write that failed part-way may still have reached the sheet.
+        sheetPageReads.noteRequest(
+          req.method,
+          new URL(req.url ?? "/", "http://localhost").pathname,
+        );
+      }
     } catch (error) {
       if (error instanceof PayloadTooLargeError) {
         sendJson(res, 413, { error: { message: error.message } });

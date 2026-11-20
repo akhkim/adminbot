@@ -7,6 +7,10 @@ import type { AdminBotLabMember } from "../contracts/actions.js";
 import { buildInitialOnboarding } from "../workflows/onboarding/onboarding.js";
 import { AdminBotSqliteStore } from "./sqlite.js";
 
+// The store batches a turn's reads in one transaction, so another process's write shows from the
+// next turn of the event loop.
+const nextTurn = () => new Promise<void>((resolve) => setImmediate(resolve));
+
 const dirs: string[] = [];
 
 afterEach(() => {
@@ -68,7 +72,7 @@ describe("lab member reads", () => {
     expect(store.listLabMembers().map((entry) => entry.id)).toEqual(["b"]);
   });
 
-  it("sees a write made by another process", () => {
+  it("sees a write made by another process", async () => {
     const { file, store } = openStore();
     store.saveLabMember(member("a", "Ada"));
     expect(store.getLabMember("a")?.name).toBe("Ada");
@@ -78,6 +82,7 @@ describe("lab member reads", () => {
       .prepare("UPDATE adminbot_lab_members SET payload_json = ? WHERE id = ?")
       .run(JSON.stringify(member("a", "Ada (renamed elsewhere)")), "a");
     other.close();
+    await nextTurn();
 
     expect(store.getLabMember("a")?.name).toBe("Ada (renamed elsewhere)");
   });
@@ -204,7 +209,7 @@ describe("stored onboarding", () => {
 });
 
 describe("lab member version", () => {
-  it("moves on this connection's writes and on another connection's commits, not on reads", () => {
+  it("moves on this connection's writes and on another connection's commits, not on reads", async () => {
     const { file, store } = openStore();
     store.saveLabMember(member("a", "Ada"));
     const first = store.labMemberVersion();
@@ -220,6 +225,7 @@ describe("lab member version", () => {
       .prepare("UPDATE adminbot_lab_members SET payload_json = ? WHERE id = 'a'")
       .run(JSON.stringify(member("a", "Ada Lovelace")));
     other.close();
+    await nextTurn();
     expect(store.labMemberVersion()).not.toBe(second);
   });
 });

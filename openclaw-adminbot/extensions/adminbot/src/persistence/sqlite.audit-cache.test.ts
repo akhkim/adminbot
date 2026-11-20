@@ -6,6 +6,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { AdminBotAuditEvent } from "../contracts/actions.js";
 import { AdminBotSqliteStore } from "./sqlite.js";
 
+// The store batches a turn's reads in one transaction, so another process's write shows from the
+// next turn of the event loop.
+const nextTurn = () => new Promise<void>((resolve) => setImmediate(resolve));
+
 const dirs: string[] = [];
 
 afterEach(() => {
@@ -56,7 +60,7 @@ describe("audit reads", () => {
     expect(store.listAuditEvents().map((entry) => entry.actor)).toEqual(["test"]);
   });
 
-  it("sees events written by another process", () => {
+  it("sees events written by another process", async () => {
     const { file, store } = openStore();
     store.recordAudit(event("a", "2026-10-01T00:00:00.000Z"));
     expect(ids(store.listAuditEvents())).toEqual(["a"]);
@@ -69,6 +73,7 @@ describe("audit reads", () => {
       )
       .run(outside.id, outside.type, outside.timestamp, JSON.stringify(outside));
     other.close();
+    await nextTurn();
 
     expect(ids(store.listAuditEvents())).toEqual(["a", "z"]);
   });

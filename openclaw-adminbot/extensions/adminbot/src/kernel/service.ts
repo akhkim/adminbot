@@ -469,7 +469,13 @@ import {
   paperConferenceKey,
   type ConferenceAttendanceView,
 } from "../workflows/papers/conference-attendance.js";
-import { buildLabProjects, type AdminBotLabProject } from "../workflows/papers/lab-projects.js";
+import type { RowVersionedTable } from "../persistence/sqlite.row-versions.js";
+import { ReadModelMemo } from "./read-model-memo.js";
+import {
+  buildLabProjects,
+  labProjectStatus,
+  type AdminBotLabProject,
+} from "../workflows/papers/lab-projects.js";
 import {
   isProjectActive,
   summarizeProject,
@@ -878,6 +884,11 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   deletePaper(paperId: string): boolean;
   /** Changes on every paper write (api/version-etag.ts); without it /papers hashes its body. */
   paperVersion?(): string;
+  /**
+   * Database-kept change counters of the named tables (persistence/sqlite.row-versions.ts). A
+   * store without it gets no read-model cache and builds every read, which is correct, only slower.
+   */
+  rowVersion?(tables: readonly RowVersionedTable[]): string;
   savePaperSlot(record: AdminBotPaperSlotRecord): void;
   /** One paper's slots, or every paper's when the id is omitted. */
   listPaperSlots(paperId?: string): AdminBotPaperSlotRecord[];
@@ -1954,6 +1965,29 @@ export type OutreachReadyReport = {
   skipped: Array<{ venue: string; reason: string }>;
 };
 
+/** Every stored table the Lab Projects list reads. Adding a source means adding it here. */
+const LAB_PROJECT_TABLES = [
+  "adminbot_papers",
+  "adminbot_paper_slots",
+  "adminbot_paper_social_drafts",
+  "adminbot_paper_weekly_updates",
+  "adminbot_help_requests",
+  "adminbot_lab_members",
+] as const satisfies readonly RowVersionedTable[];
+
+// The dataset loader hands back the same array until its file changes, so the array itself is the
+// version: each distinct one gets a number, and a replaced file reads as a new one.
+const identityTokens = new WeakMap<object, number>();
+let nextIdentityToken = 0;
+function identityToken(value: object): number {
+  let token = identityTokens.get(value);
+  if (token === undefined) {
+    token = nextIdentityToken++;
+    identityTokens.set(value, token);
+  }
+  return token;
+}
+
 export class AdminBotService {
   constructor(
     private readonly store: AdminBotServiceStore = new AdminBotMemoryStore(),
@@ -2132,6 +2166,9 @@ export class AdminBotService {
 
   // Invite payloads do not change once proposed, and a sweep asks about the same few hundred
   // failures once per invite it considers; remembered so that is a map read, not a query.
+  /** Heavy multi-table GET bodies, kept until a source table changes (kernel/read-model-memo.ts). */
+  private readonly readModels = new ReadModelMemo();
+
   private readonly failedInviteProposals = new Map<string, AdminBotStoredProposal | undefined>();
   // The checks whose newest recorded OpenReview login was refused; read from the audit trail on
   // first use, then kept here so each sweep does not rescan it. See recordOpenReviewLogin.
@@ -2919,6 +2956,29 @@ export class AdminBotService {
    * Warned once rather than per call: the cause is a file, and this runs once per member at boot.
    */
   deadlineReadModel(generated: readonly unknown[]): unknown[] {
+    const dataset = this.deadlineDatasetOrSnapshot(generated);
+    // Every member view, the travel tab and the meetups page read this, often several times a
+    // request, and each build walked every paper. It is rebuilt when a paper or published deadline
+    // changes, the dataset file is replaced, or the hour turns (camera-ready rows drop out once
+    // their date has passed). The result is shared: callers must not edit it.
+    const rows = this.store.rowVersion?.(["adminbot_papers", "adminbot_published_deadlines"]);
+    return this.readModels.get(
+      "deadline-read-model",
+      rows === undefined
+        ? undefined
+        : `${rows}|${identityToken(dataset)}|${Math.floor(Date.now() / 3_600_000)}`,
+      () =>
+        // Venues only the lab's accepted papers know about (OpenReview's camera-ready form) are
+        // added after the published corrections, so a curated or approved date always wins.
+        withPaperCameraReadyDeadlines(
+          mergePublishedDeadlines(dataset, this.store.listPublishedDeadlines()),
+          this.store.listPapers(),
+          new Date(),
+        ),
+    );
+  }
+
+  private deadlineDatasetOrSnapshot(generated: readonly unknown[]): readonly unknown[] {
     let dataset = generated;
     try {
       dataset = this.options.deadlineDataset?.() ?? generated;
@@ -2930,13 +2990,7 @@ export class AdminBotService {
         );
       }
     }
-    // Venues only the lab's accepted papers know about (OpenReview's camera-ready form) are added
-    // after the published corrections, so a curated or approved date always wins over them.
-    return withPaperCameraReadyDeadlines(
-      mergePublishedDeadlines(dataset, this.store.listPublishedDeadlines()),
-      this.store.listPapers(),
-      new Date(),
-    );
+    return dataset;
   }
 
   /** Set once `deadlineDataset` has thrown, so the warning above is not repeated per member. */
@@ -7372,20 +7426,27 @@ export class AdminBotService {
   }
 
   listOwnedPapers(member: AdminBotLabMember): AdminBotPaperRecord[] {
-    const counts = rosterNameCounts(this.store.listLabMembers());
+    const counts = this.rosterNameCounts();
     return this.store
       .listPapers()
       .filter((paper) => memberOwnsPaper(member, paper, (name) => counts.get(name) ?? 0));
   }
 
   memberOwnsPaper(member: AdminBotLabMember, paper: AdminBotPaperRecord): boolean {
-    return memberOwnsPaper(
-      member,
-      paper,
-      (name) =>
-        this.store
-          .listLabMembers()
-          .filter((entry) => entry.name.trim().toLocaleLowerCase() === name).length,
+    const counts = this.rosterNameCounts();
+    return memberOwnsPaper(member, paper, (name) => counts.get(name) ?? 0);
+  }
+
+  /**
+   * How many roster members carry each folded name. Ownership asks this once per paper, and a
+   * page asks about every paper, so filtering the roster each time was papers x members; it is
+   * counted once and kept until the roster changes.
+   */
+  private rosterNameCounts(): Map<string, number> {
+    return this.readModels.get(
+      "roster-name-counts",
+      this.store.rowVersion?.(["adminbot_lab_members"]),
+      () => rosterNameCounts(this.store.listLabMembers()),
     );
   }
 
@@ -7452,17 +7513,48 @@ export class AdminBotService {
    * carry no credentials, off-roster emails or prose (workflows/papers/lab-projects.ts).
    */
   listLabProjects(nowIso?: string): AdminBotServiceResponse<{ projects: AdminBotLabProject[] }> {
-    const projects = buildLabProjects({
-      papers: this.store.listPapers(),
-      roster: this.store.listLabMembers(),
-      slots: (paperId) => this.store.listPaperSlots(paperId),
-      drafts: (paperId) => this.store.listSocialDrafts(paperId),
-      weeklyUpdates: this.store.listPaperWeeklyUpdates(),
-      helpRequests: this.store.listHelpRequests(),
-      now: nowIso ? new Date(nowIso) : new Date(),
-    });
-    return { ok: true, status: 200, payload: { projects } };
+    const now = nowIso ? new Date(nowIso) : new Date();
+    const { projects, papers } = this.readModels.get("lab-projects", this.labProjectsVersion(), () =>
+      this.buildLabProjectsModel(now),
+    );
+    // Status is the only field that moves with the clock (a quiet project turns dormant), so the
+    // cached rows are re-dated here, and a row is copied only when its status actually changed.
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        projects: projects.map((project) => {
+          const paper = papers.get(project.paper_id);
+          const status = paper ? labProjectStatus(paper, now) : project.status;
+          return status === project.status ? project : { ...project, status };
+        }),
+      },
+    };
   }
+
+  /** What the Lab Projects list is built from; undefined when the store keeps no counters. */
+  labProjectsVersion(): string | undefined {
+    return this.store.rowVersion?.(LAB_PROJECT_TABLES);
+  }
+
+  private buildLabProjectsModel(now: Date) {
+    const papers = this.store.listPapers();
+    // One read per table instead of two queries per paper: on the live lab that was over a
+    // thousand synchronous SQLite reads per request, on NFS, blocking every other request.
+    const projects = this.withPaperTables(() =>
+      buildLabProjects({
+        papers,
+        roster: this.store.listLabMembers(),
+        slots: (paperId) => this.paperRows().listPaperSlots(paperId),
+        drafts: (paperId) => this.paperRows().listSocialDrafts(paperId),
+        weeklyUpdates: this.store.listPaperWeeklyUpdates(),
+        helpRequests: this.store.listHelpRequests(),
+        now,
+      }),
+    );
+    return { projects, papers: new Map(papers.map((paper) => [paper.id, paper])) };
+  }
+
 
   // Case-insensitive relevance match of a member's research focus against paper metadata.
   listPapersRelevantToMember(

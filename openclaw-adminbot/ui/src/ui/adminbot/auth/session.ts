@@ -6,7 +6,7 @@
 // through the existing sessionStorage-scoped token plumbing via applySettings.
 import { getSafeLocalStorage } from "../../../local-storage.ts";
 import { trackPageActivity } from "../../loading/page-activity.ts";
-import type { UiSettings } from "../../storage.ts";
+import { loadSettings, type UiSettings } from "../../storage.ts";
 import { normalizeOptionalString } from "../../string-coerce.ts";
 import { memberAuthHeaders } from "../api/device-clock.ts";
 import type { MemberFinancialSupportNeed } from "../api/members.ts";
@@ -325,7 +325,12 @@ export type AuthResult<T> =
   | { ok: false; kind: AuthErrorKind; retryAfterSeconds?: number; message?: string };
 
 export function resolveAdminBotBaseUrl(settings?: Pick<UiSettings, "adminBotUrl"> | null): string {
-  const override = normalizeOptionalString(settings?.adminBotUrl);
+  // Called with no argument, read the saved settings. Without this a page that forgot to pass them
+  // ignored the user's AdminBot URL and called `https://<this host>:8443`, which on the hosted UI is
+  // a port nothing listens on: the request hung for over a minute and the page never filled.
+  const override = normalizeOptionalString(
+    (settings === undefined ? loadSettings() : settings)?.adminBotUrl,
+  );
   if (override) {
     return override.replace(/\/+$/, "");
   }

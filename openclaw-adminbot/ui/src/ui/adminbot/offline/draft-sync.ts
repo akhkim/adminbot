@@ -529,14 +529,20 @@ if (typeof window !== "undefined") {
 // The timer exists for two jobs: pushing edits that have not reached the server yet, and pulling
 // what another device saved. A hidden tab still pushes, but stops pulling three drafts every ten
 // seconds for a page nobody is looking at; showing the tab again pulls at once.
+// Pulls run at most once a minute: three drafts every ten seconds was a steady stream of requests
+// on every page, each taking a slot the page's own reads were waiting on. Pending pushes still go
+// out on every tick, and focus, visibility and reconnect still pull at once.
+const DRAFT_PULL_INTERVAL_MS = 60_000;
+let lastDraftPollPullAt = 0;
 function pollDraftSync() {
-  if (
-    document.hidden &&
-    ![...working.values()].some(
-      (entry) => entry.row.scope === activeScope && (entry.row.dirty || entry.status === "error"),
-    )
-  ) {
+  const pending = [...working.values()].some(
+    (entry) => entry.row.scope === activeScope && (entry.row.dirty || entry.status === "error"),
+  );
+  if (!pending && (document.hidden || Date.now() - lastDraftPollPullAt < DRAFT_PULL_INTERVAL_MS)) {
     return;
+  }
+  if (!pending) {
+    lastDraftPollPullAt = Date.now();
   }
   retryDraftSync();
 }

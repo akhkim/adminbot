@@ -11,6 +11,7 @@
 import { execFile as execFileCallback } from "node:child_process";
 import { promisify } from "node:util";
 import { resolveGogExecutable } from "../../connectors/gog.js";
+import { createCachedRead, type CachedRead } from "../../kernel/cached-read.js";
 
 const execFile = promisify(execFileCallback);
 const EVENTS_TIMEOUT_MS = 45_000;
@@ -19,6 +20,13 @@ const DEFAULT_MAX_EVENTS = 50;
 // Two months forward covers "the conference block after this one" without pulling a year of
 // recurring standups into a picker.
 const DEFAULT_WINDOW_DAYS = 60;
+// How long a calendar read is handed back without asking Google again, and how long past that it
+// may still be served while a fresh one runs behind it. See createCachedCalendarEventsReader.
+const EVENTS_FRESH_MS = 60_000;
+const EVENTS_STALE_MS = 5 * 60_000;
+// The parameter sets kept at once. The Calendar tab and the meetings page ask with a handful of
+// fixed shapes; a caller paging through arbitrary ranges must not grow the map without bound.
+const EVENTS_MAX_KEYS = 32;
 
 export type AdminBotCalendarEvent = {
   id: string;
@@ -225,5 +233,63 @@ export function createCalendarEventsReader(
       args.push("--query", params.query);
     }
     return parseCalendarEvents(await run(args));
+  };
+}
+
+export type CachedCalendarEventsReader = {
+  read: CalendarEventsReader;
+  /** Forget every kept read, so the next one asks Google. Call it after a calendar write. */
+  invalidate(): void;
+};
+
+/**
+ * `read` with each parameter set's answer kept for a minute and served for a few more while a
+ * fresh one is fetched behind it.
+ *
+ * Every read is a `gog` process and a Google round trip, which is seconds on the live host and
+ * was being paid by every load of the Calendar tab and the meetings page. The key is the
+ * parameters as the caller passed them, before `from`/`to` default to "now": keyed on the
+ * resolved window, a caller that leaves them out would never hit, and the minutes a kept default
+ * window lags behind the clock do not matter to a two-month listing. Writes made from here go
+ * through the executor, which calls `invalidate()` after every `calendar.*` action; a change made
+ * in Google directly shows up once the kept answer goes stale.
+ */
+export function createCachedCalendarEventsReader(
+  read: CalendarEventsReader,
+  options: { now?: () => number } = {},
+): CachedCalendarEventsReader {
+  const reads = new Map<string, CachedRead<AdminBotCalendarEvent[]>>();
+  return {
+    read(params) {
+      const key = JSON.stringify([
+        params.calendarId ?? null,
+        params.from ?? null,
+        params.to ?? null,
+        params.max ?? null,
+        params.query ?? null,
+      ]);
+      let cached = reads.get(key);
+      if (!cached) {
+        if (reads.size >= EVENTS_MAX_KEYS) {
+          // Insertion order, so this drops the parameter set that was first asked for.
+          reads.delete(reads.keys().next().value!);
+        }
+        cached = createCachedRead(() => read(params), {
+          freshMs: EVENTS_FRESH_MS,
+          staleMs: EVENTS_STALE_MS,
+          ...(options.now ? { now: options.now } : {}),
+        });
+        reads.set(key, cached);
+      }
+      return cached.read();
+    },
+    invalidate() {
+      // Each entry's own invalidate as well as the clear, so a read already under way when the
+      // write landed cannot put its pre-write answer back.
+      for (const cached of reads.values()) {
+        cached.invalidate();
+      }
+      reads.clear();
+    },
   };
 }

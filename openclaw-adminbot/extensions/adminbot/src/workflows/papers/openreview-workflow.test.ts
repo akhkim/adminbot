@@ -437,17 +437,92 @@ describe("loadForms", () => {
     expect(counts()).toEqual({ discovers: 1, peak: 3 });
   });
 
-  it("gives a second caller the load already under way, then loads afresh next time", async () => {
+  it("gives a second caller the load already under way", async () => {
     const { workflow, drain, counts } = slowBridge();
     const first = workflow.loadForms();
     const second = workflow.loadForms();
     await drain();
     expect(await second).toEqual(await first);
     expect(counts().discovers).toBe(1);
+  });
 
-    const later = workflow.loadForms();
-    await drain();
-    expect(await later).toHaveLength(venues.length);
-    expect(counts().discovers).toBe(2);
+  /** A bridge that answers at once, on a clock the test moves. */
+  function instantBridge(options: { venues?: string[] } = {}) {
+    let clock = DEADLINE;
+    let discovers = 0;
+    const store = new AdminBotMemoryStore();
+    const workflow = createAdminBotOpenReviewWorkflow({
+      scriptPath: "/unused",
+      service: new AdminBotService(store),
+      store,
+      now: () => clock,
+      run: async (args) => {
+        if (args[0] === "discover") {
+          discovers += 1;
+          return {
+            ok: true,
+            venues: (options.venues ?? ["A.cc/2026"]).map((venue_id) => ({
+              venue_id,
+              role: "ac",
+            })),
+          };
+        }
+        return { ok: true, venue_id: args[2] };
+      },
+    });
+    return {
+      workflow,
+      discovers: () => discovers,
+      advance: (ms: number) => {
+        clock += ms;
+      },
+    };
+  }
+
+  it("keeps the forms for a minute, then serves them while a fresh walk runs behind", async () => {
+    const bridge = instantBridge();
+    await bridge.workflow.loadForms();
+    bridge.advance(59_000);
+    await bridge.workflow.loadForms();
+    expect(bridge.discovers()).toBe(1);
+
+    // Stale but servable: answered from the kept list, with one refresh started behind it.
+    bridge.advance(2_000);
+    expect(await bridge.workflow.loadForms()).toHaveLength(1);
+    expect(bridge.discovers()).toBe(2);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // Past the stale window the caller waits for a new walk.
+    bridge.advance(12 * 60_000);
+    await bridge.workflow.loadForms();
+    expect(bridge.discovers()).toBe(3);
+  });
+
+  it("does not keep an empty list", async () => {
+    const bridge = instantBridge({ venues: [] });
+    await bridge.workflow.loadForms();
+    await bridge.workflow.loadForms();
+    expect(bridge.discovers()).toBe(2);
+  });
+
+  it("walks again after an assignment is applied", async () => {
+    const bridge = instantBridge();
+    await bridge.workflow.loadForms();
+    await bridge.workflow.applyAssignment({
+      venueId: "A.cc/2026",
+      submission: "1",
+      reviewer: "~Someone1",
+    });
+    await bridge.workflow.loadForms();
+    expect(bridge.discovers()).toBe(2);
+  });
+
+  it("walks again after a reviewing cycle has run", async () => {
+    const bridge = instantBridge();
+    await bridge.workflow.loadForms();
+    await bridge.workflow.runCycle({ dryRun: true });
+    const discoversBefore = bridge.discovers();
+    await bridge.workflow.loadForms();
+    expect(bridge.discovers()).toBe(discoversBefore + 1);
   });
 });

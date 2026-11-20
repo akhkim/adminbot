@@ -5,10 +5,20 @@ import type { LabHelpRequest } from "../contracts/lab-sharing.js";
 
 export type DiscoveredHelpRequest = LabHelpRequest & { title: string; owner_name: string };
 
-/** Reads only open requests; member authentication belongs to the service entry point. */
-export function discoverHelpRequests(db: DatabaseSync, query: LabSharingDiscoveryQuery, after?: DiscoveryPosition): DiscoveredHelpRequest[] {
+// Connections that already have the function. Registering it again on every search replaced it
+// each time, which also throws away every statement SQLite had prepared against it.
+const registered = new WeakSet<DatabaseSync>();
+
+function registerDiscoveryLower(db: DatabaseSync): void {
+  if (registered.has(db)) return;
   // SQLite's built-in lower() only folds ASCII; match the browser's Unicode normalization.
   db.function("adminbot_discovery_lower", {deterministic: true}, (value) => String(value ?? "").toLowerCase());
+  registered.add(db);
+}
+
+/** Reads only open requests; member authentication belongs to the service entry point. */
+export function discoverHelpRequests(db: DatabaseSync, query: LabSharingDiscoveryQuery, after?: DiscoveryPosition): DiscoveredHelpRequest[] {
+  registerDiscoveryLower(db);
   const filters = ["status = 'open'"];
   const values: (string | number)[] = [];
   if (query.maxHours !== null) { filters.push("hours <= ?"); values.push(query.maxHours); }

@@ -124,14 +124,16 @@ describe("GET /lab/members/roster", () => {
     const admin = await token(true);
     const privatePage = await (await get("?location=Zurich", admin)).json();
     expect(privatePage.members[0].personal_circumstances).toBe("Private test note");
+    // The failure comes first: a successful calendar read is kept for a minute, so a failure
+    // asked for after one would be answered from the kept read instead. A failed one is not kept.
+    reader.mockRejectedValueOnce(new Error("offline"));
+    const failed = await get(`?meeting=${resolveGroupMeetingEventId()}`, admin);
+    expect(failed.status).toBe(500); // sendJson maps connector 502s for the Cloudflare tunnel.
+    expect((await failed.json()).error.message).toContain("offline");
     const response = await get(`?meeting=${resolveGroupMeetingEventId()}`, admin);
     expect(response.status).toBe(200);
     expect((await response.json()).members.map((m: { id: string }) => m.id)).toEqual([
       "person-104",
     ]);
-    reader.mockRejectedValueOnce(new Error("offline"));
-    const failed = await get(`?meeting=${resolveGroupMeetingEventId()}`, admin);
-    expect(failed.status).toBe(500); // sendJson maps connector 502s for the Cloudflare tunnel.
-    expect((await failed.json()).error.message).toContain("offline");
   });
 });

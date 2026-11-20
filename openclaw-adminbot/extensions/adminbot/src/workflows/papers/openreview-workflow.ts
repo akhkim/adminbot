@@ -39,6 +39,9 @@ const BRIDGE_MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
 const DEFAULT_MAX_SENDS_PER_RUN = 50;
 // How many venues' forms are fetched at once. See loadForms.
 const LOAD_FORM_CONCURRENCY = 3;
+// How long loadForms keeps an answer, and how long past that it may serve it while refreshing.
+const LOAD_FORMS_FRESH_MS = 60_000;
+const LOAD_FORMS_STALE_MS = 10 * 60_000;
 
 type BridgeResult = Record<string, unknown>;
 
@@ -125,17 +128,24 @@ export function createAdminBotOpenReviewWorkflow(
     );
     return forms.filter((form) => form.ok === true);
   };
-  // Nothing is kept between calls -- a form can change on OpenReview at any moment -- but a second
-  // caller that arrives while the first is still loading waits for that answer instead of
-  // starting the whole walk again.
-  const formsRead = createCachedRead(loadFormsOnce, { freshMs: 0, keep: () => false });
+  // The walk takes ~20s, far too long to pay on every page load, so an answer is handed back for a
+  // minute and, for up to ten more, served while a fresh walk runs behind it. A form can change on
+  // OpenReview at any moment, but the changes this page has to show at once are the ones made from
+  // here, and runCycle and applyAssignment drop the kept answer after they write. An empty list is
+  // not kept: it is more often a failed login or discover than a profile with no venues.
+  const formsRead = createCachedRead(loadFormsOnce, {
+    freshMs: LOAD_FORMS_FRESH_MS,
+    staleMs: LOAD_FORMS_STALE_MS,
+    keep: (forms) => forms.length > 0,
+    now,
+  });
   const maxSends = options.maxSendsPerRun ?? DEFAULT_MAX_SENDS_PER_RUN;
 
   async function statusFor(venueId: string, role: AdminBotOpenReviewRole): Promise<BridgeResult> {
     return run(["status", "--venue", venueId, "--role", role]);
   }
 
-  return {
+  const workflow: AdminBotOpenReviewWorkflow = {
     async runCycle({ dryRun = false } = {}) {
       const ranAt = new Date(now()).toISOString();
       const result: AdminBotOpenReviewRunResult = {
@@ -336,7 +346,26 @@ export function createAdminBotOpenReviewWorkflow(
       if (remove) {
         args.push("--remove");
       }
-      return run(args);
+      try {
+        return await run(args);
+      } finally {
+        // Even a failed assign may have landed on OpenReview before the bridge gave up.
+        formsRead.invalidate();
+      }
+    },
+  };
+
+  // A run records milestones and may post to OpenReview, so the next loadForms asks again --
+  // whether the run finished, stopped at the send cap, or threw part-way through.
+  const runCycleOnce = workflow.runCycle;
+  return {
+    ...workflow,
+    async runCycle(runOptions) {
+      try {
+        return await runCycleOnce(runOptions);
+      } finally {
+        formsRead.invalidate();
+      }
     },
   };
 }

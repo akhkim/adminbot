@@ -100,9 +100,13 @@ export const logisticsRoutes: readonly Route[] = [
           ? ((await readJsonOrEmpty(req)) as { request_ids?: string[] }).request_ids
           : undefined;
       const options = requestIds?.length ? { request_ids: requestIds } : {};
+      const source = ctx.callSheet;
+      const preview = () => previewCallSheetPush(service, source, options);
       const callResult =
         req.method === "GET"
-          ? await previewCallSheetPush(service, ctx.callSheet, options)
+          ? await (ctx.sheetPageReads && !requestIds?.length
+              ? ctx.sheetPageReads.callSheet(preview, (value) => !("error" in value))
+              : preview())
           : await proposeCallSheetPush(service, ctx.callSheet, principalActor(principal), options);
       if ("error" in callResult) {
         sendJson(res, callResult.error.status, { error: { message: callResult.error.message } });

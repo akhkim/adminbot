@@ -29,6 +29,8 @@ type PageRead = {
 
 export const ADMINBOT_PAGE_READS: readonly PageRead[] = [
   { tab: "adminbotLabProjects", path: () => "/lab/projects", asks: "visit" },
+  // The first, unfiltered page, exactly as loadAdminBotMemberList builds its path.
+  { tab: "adminbotMembers", path: () => "/lab/members/roster?limit=50&offset=0", asks: "visit" },
   {
     tab: "adminbotTalkLeaderboard",
     path: () => `/cv/talk-leaderboard?year=${new Date().getFullYear()}`,
