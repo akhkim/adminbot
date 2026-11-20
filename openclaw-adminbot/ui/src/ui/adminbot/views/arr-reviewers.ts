@@ -38,17 +38,17 @@ export function renderArrReviewers(props: {
   const reviewers = props.members
     .filter((member) => member.arr_reviewer_qualified === true)
     .toSorted((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
-  return html` <section class="card">
-    <div class="row" style="justify-content: space-between; gap: var(--space-4); flex-wrap: wrap;">
-      <p class="card-sub" style="margin: 0;">
-        Qualification and review capacity are self-reported in My Profile.
-      </p>
-      <button class="btn btn--sm" ?disabled=${props.loading} @click=${props.onRefresh}>
-        Refresh
-      </button>
-    </div>
+  return html` <section>
+    <p class="card-sub" style="margin: 0;">
+      Qualification and review capacity are self-reported in My Profile.
+    </p>
     ${props.error
-      ? html`<p class="callout danger" role="alert">${props.error}</p>`
+      ? html`<p class="callout danger" role="alert">
+          ${props.error}
+          <button class="btn btn--sm" ?disabled=${props.loading} @click=${props.onRefresh}>
+            Try again
+          </button>
+        </p>`
       : props.loading && reviewers.length === 0
         ? renderSkeleton({ count: 5, label: "Loading reviewers…", testId: "arr-reviewers-loading" })
         : reviewers.length === 0

@@ -47,15 +47,16 @@ it("lists only confirmed reviewers, sorted by name, preserving zero and missing 
 it("shows empty, loading and error states and supports refresh", () => {
   expect(mount().textContent).toContain("No users have confirmed");
   const loading = mount({ loading: true });
-  expect(loading.querySelector("button")!.disabled).toBe(true);
   expect(
     loading.querySelector('[data-testid="arr-reviewers-loading"]')?.getAttribute("aria-label"),
   ).toContain("Loading reviewers");
-  expect(mount({ error: "Roster unavailable" }).querySelector('[role="alert"]')!.textContent).toBe(
-    "Roster unavailable",
-  );
+  expect(
+    mount({ error: "Roster unavailable" }).querySelector('[role="alert"]')!.textContent,
+  ).toContain("Roster unavailable");
+  // No routine Refresh button (ui/DESIGN.md rule 12); a retry appears only after a failed load.
+  expect(mount().querySelector("button")).toBeNull();
   const onRefresh = vi.fn();
-  mount({ onRefresh }).querySelector("button")!.click();
+  mount({ error: "Roster unavailable", onRefresh }).querySelector("button")!.click();
   expect(onRefresh).toHaveBeenCalledOnce();
 });
 

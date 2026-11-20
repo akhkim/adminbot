@@ -56,7 +56,7 @@ it("loads and refreshes reviewers for a gateway-only admin and displays loading/
     };
   });
   const refresh = [...container.querySelectorAll("button")].find(
-    (button) => button.textContent?.trim() === "Refresh",
+    (button) => button.textContent?.trim() === "Try again",
   );
   expect(refresh).toBeTruthy();
   refresh!.click();
