@@ -98,7 +98,7 @@ describe("the card list", () => {
     (state.adminBotData as { papersLoadedAt?: number }).papersLoadedAt = 1;
     const { container } = drawOverview({ state });
     expect(container.querySelector('[data-testid="my-work-empty"]')?.textContent).toContain(
-      "No papers on file",
+      "No papers yet",
     );
   });
 
@@ -497,6 +497,12 @@ describe("hiding a paper from your own list", () => {
   it("offers the search-and-hide panel over the reader's own papers", () => {
     const { container } = drawOverview({ papers: twoPapers() });
     expect(container.querySelector("adminbot-paper-visibility")).not.toBeNull();
+  });
+
+  it("leaves out the hide control and the sync footnote when there are no papers", () => {
+    const { container } = drawOverview({ papers: [] });
+    expect(container.querySelector("adminbot-paper-visibility")).toBeNull();
+    expect(container.querySelector(".my-work__notice")).toBeNull();
   });
 });
 

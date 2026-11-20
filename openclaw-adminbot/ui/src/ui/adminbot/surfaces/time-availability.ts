@@ -25,10 +25,27 @@ const lazyTimeAvailability = createLazyView(
   { tabs: ["adminbotTimeAvailability"] },
 );
 
+// No Refresh button (ui/DESIGN.md rule 12): coming back to the tab reads the schedules again, so an
+// admin who left it open on someone's schedule sees edits made in the meantime. Installed once; the
+// host state object lives as long as the page.
+let reloadOnReturn: (() => void) | null = null;
+
 export function renderTimeAvailabilitySurface(state: AppViewState, scope: AdminBotSurfaceScope) {
   const { accessRole, adminBotMode, needsPapersForTab, requestHostUpdate, rosterPendingForTab } =
     scope;
   const showing = state.tab === "adminbotTimeAvailability" && !rosterPendingForTab;
+  if (showing && !reloadOnReturn && typeof document !== "undefined") {
+    reloadOnReturn = () => {
+      if (
+        document.visibilityState === "visible" &&
+        state.tab === "adminbotTimeAvailability" &&
+        !state.adminBotLoading
+      ) {
+        void loadAdminBot(state, adminBotMode, needsPapersForTab);
+      }
+    };
+    document.addEventListener("visibilitychange", reloadOnReturn);
+  }
   const selectedMemberId = state.adminBotTimeAvailabilityMemberId || (state.memberId ?? "");
   // The roster row is a list cell; an admin looking at somebody else reads their whole schedule.
   // Your own row is already whole, and a member never reads anyone else's through this view.
@@ -57,8 +74,6 @@ export function renderTimeAvailabilitySurface(state: AppViewState, scope: AdminB
           members: withMemberDetails(state, state.adminBotData.members ?? []),
           loading: state.adminBotLoading,
           error: state.adminBotError,
-          // The reload also drops the schedules read for one member, so they are read again.
-          onRefresh: () => void loadAdminBot(state, adminBotMode, needsPapersForTab),
           // Self is editable; separately authorized collaborator snapshots remain read-only.
           selectedMemberId,
           // A highlighted row in the picker is read ahead, so picking it paints the schedule.

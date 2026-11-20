@@ -187,8 +187,21 @@ export class LabProjectsView extends LitElement {
     }
   }
 
+  // No Refresh button: the list reloads quietly when the tab comes back into view.
+  private readonly onVisible = () => {
+    if (document.visibilityState === "visible" && this.sessionToken && !this.loading) {
+      void this.load();
+    }
+  };
+
+  override connectedCallback() {
+    super.connectedCallback();
+    document.addEventListener("visibilitychange", this.onVisible);
+  }
+
   override disconnectedCallback() {
     this.request += 1;
+    document.removeEventListener("visibilitychange", this.onVisible);
     super.disconnectedCallback();
   }
 
@@ -335,17 +348,13 @@ export class LabProjectsView extends LitElement {
               </option>`,
           )}
         </select>
-        <button type="button" @click=${() => void this.load()} ?disabled=${this.loading}>
-          ${this.loading ? "Loading…" : "Refresh"}
-        </button>
       </div>
       ${this.error ? html`<p class="error" role="alert">${this.error}</p>` : nothing}
       ${this.projects
         ? html`<p class="hint" data-testid="lab-projects-count">
               ${shown.length === all.length
-                ? `${all.length} projects, most recently updated first.`
-                : `${shown.length} of ${all.length} projects.`}
-              Open one for its full page.
+                ? `${all.length} projects`
+                : `${shown.length} of ${all.length} projects`}
             </p>
             ${shown.length
               ? html`<ul>

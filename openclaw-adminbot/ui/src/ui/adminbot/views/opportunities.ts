@@ -557,6 +557,10 @@ class AdminbotOpportunitiesView extends LitElement {
       <div class="opp-tabs" role="tablist">
         ${tabs.map((tab) => {
           const count = categoryCount(tab, entries);
+          // An empty category is not a place to go: no "0" tab (ui/DESIGN.md rule 10).
+          if (count === 0 && tab !== "all" && this.filter !== tab) {
+            return nothing;
+          }
           const label = tab === "all" ? "All" : OPPORTUNITY_CATEGORY_LABELS[tab];
           const selected = this.filter === tab;
           return html`
@@ -617,21 +621,6 @@ class AdminbotOpportunitiesView extends LitElement {
           ${item.org ? html`<div class="opp-org">${item.org}</div>` : nothing}
           ${item.eligibility ? html`<div class="opp-elig">${item.eligibility}</div>` : nothing}
           ${item.note ? html`<div class="opp-note">${item.note}</div>` : nothing}
-          <!-- Not offered on an entry still awaiting review: a letter is a real ask of a
-               professor, and it should rest on a program the lab has vetted. -->
-          ${this.signedIn && this.requestLetter && !pending
-            ? html`<div class="opp-letter">
-                <button
-                  class="opp-form-btn"
-                  type="button"
-                  data-testid="opp-request-letter"
-                  title="Start a recommendation letter request with this program filled in"
-                  @click=${() => this.requestLetter?.(item)}
-                >
-                  Request a letter
-                </button>
-              </div>`
-            : nothing}
         </div>
         <!-- Where it came from, when nobody submitted it. A candidate a sweep filed is a claim
              about somebody else's page, so the reviewer gets the line it was read out of and a
@@ -685,6 +674,19 @@ class AdminbotOpportunitiesView extends LitElement {
                 </button>
               </div>
             </div>`
+          : nothing}
+        <!-- Not offered on an entry still awaiting review: a letter is a real ask of a
+             professor, and it should rest on a program the lab has vetted. Shown on hover or
+             focus, not as a button repeated down the list (ui/DESIGN.md rule 14). -->
+        ${this.signedIn && this.requestLetter && !pending
+          ? html`<button
+              class="opp-letter"
+              type="button"
+              data-testid="opp-request-letter"
+              @click=${() => this.requestLetter?.(item)}
+            >
+              Request a letter
+            </button>`
           : nothing}
         ${mine
           ? html`<div class="opp-actions">
@@ -778,16 +780,21 @@ class AdminbotOpportunitiesView extends LitElement {
           display: flex;
           flex-direction: column;
         }
-        /* A row of the list, not a card (ui/DESIGN.md): the urgency stripe stays on the left edge,
-           and a hairline separates rows in place of a filled, bordered box. */
+        /* A row of the list, not a card (ui/DESIGN.md): a hairline between rows, no side padding,
+           and the hover ground as the only affordance. Urgency colours the relative date only. */
         .opp-row {
           display: grid;
-          grid-template-columns: 160px 1fr auto;
+          grid-template-columns: 160px 1fr auto auto;
           gap: var(--space-3);
-          padding: var(--space-3) 0 var(--space-3) var(--space-3);
+          padding: var(--space-3) 0;
           border-bottom: 1px solid var(--border);
-          box-shadow: inset 3px 0 0 var(--u);
           align-items: start;
+        }
+        .opp-row:hover {
+          background: var(--bg-hover);
+        }
+        .opp-row > .opp-proposal {
+          grid-column: 2 / -1;
         }
         .opp-row:last-child {
           border-bottom: 0;
@@ -834,7 +841,30 @@ class AdminbotOpportunitiesView extends LitElement {
           margin-top: 4px;
         }
         .opp-letter {
-          margin-top: 8px;
+          font: inherit;
+          font-size: 12.5px;
+          white-space: nowrap;
+          color: var(--accent);
+          background: none;
+          border: 0;
+          padding: 2px 0;
+          cursor: pointer;
+          opacity: 0;
+          transition: opacity 0.12s;
+        }
+        .opp-letter:hover {
+          text-decoration: underline;
+        }
+        .opp-row:hover .opp-letter,
+        .opp-row:focus-within .opp-letter {
+          opacity: 1;
+        }
+        /* No hover on a touch screen: the link stays, quiet, under the entry. */
+        @media (hover: none) {
+          .opp-letter {
+            opacity: 1;
+            justify-self: start;
+          }
         }
         .opp-notice {
           margin: 0 0 12px;
