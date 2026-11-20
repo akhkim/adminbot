@@ -185,23 +185,102 @@ describe("createAdminBotSlackAdminExecutor", () => {
     expect(String(fetchImpl.mock.calls[0]?.[0])).toContain("conversations.list");
   });
 
-  // name_taken is success. It is what lets the sweep say "there should be a channel called this"
-  // every run without first asking Slack what exists.
-  it("treats an existing project channel as created", async () => {
-    const fetchImpl = vi.fn().mockResolvedValue({
+  // name_taken is success only when an open public channel holds the name. It is what lets the
+  // sweep say "there should be a channel called this" every run.
+  describe("slack.create_channel when the name is taken", () => {
+    const okJson = (body: unknown) => ({
       ok: true,
       status: 200,
       statusText: "OK",
-      text: async () => '{"ok":false,"error":"name_taken"}',
+      text: async () => JSON.stringify(body),
     });
-    const executor = createAdminBotSlackAdminExecutor({
-      env: { SLACK_BOT_TOKEN: "xoxb-test" } as NodeJS.ProcessEnv,
-      fetchImpl,
+    const taken = okJson({ ok: false, error: "name_taken" });
+    const listing = (channel: Record<string, unknown>) =>
+      okJson({ ok: true, channels: [{ id: "C0CAIS", name: "proj-cais", ...channel }] });
+
+    it("treats an open public project channel as created", async () => {
+      const fetchImpl = vi.fn().mockResolvedValueOnce(taken).mockResolvedValueOnce(listing({}));
+      const executor = createAdminBotSlackAdminExecutor({
+        env: { SLACK_BOT_TOKEN: "xoxb-test" } as NodeJS.ProcessEnv,
+        fetchImpl,
+      });
+
+      await expect(
+        executor.execute(proposal("slack.create_channel", { name: "proj-cais" })),
+      ).resolves.toEqual({ handled: true });
+      const [listUrl] = fetchImpl.mock.calls[1] as [string];
+      expect(listUrl).toContain("exclude_archived=false");
+      expect(listUrl).toContain("private_channel");
     });
 
-    await expect(
-      executor.execute(proposal("slack.create_channel", { name: "proj-cais" })),
-    ).resolves.toEqual({ handled: true });
+    // The bug this fixes: an archived #proj-cais made create "succeed" every run while every
+    // invite into it failed as missing.
+    it("reopens an archived channel with the admin user token", async () => {
+      const fetchImpl = vi
+        .fn()
+        .mockResolvedValueOnce(taken)
+        .mockResolvedValueOnce(listing({ is_archived: true }))
+        .mockResolvedValueOnce(okJson({ ok: true }));
+      const executor = createAdminBotSlackAdminExecutor({
+        env: { SLACK_BOT_TOKEN: "xoxb-test", SLACK_USER_TOKEN: "xoxp-test" } as NodeJS.ProcessEnv,
+        fetchImpl,
+      });
+
+      await expect(
+        executor.execute(proposal("slack.create_channel", { name: "proj-cais" })),
+      ).resolves.toEqual({ handled: true });
+      const [url, init] = fetchImpl.mock.calls[2] as [string, RequestInit];
+      expect(url).toBe("https://slack.com/api/conversations.unarchive");
+      expect((init.headers as Record<string, string>).Authorization).toBe("Bearer xoxp-test");
+      expect(JSON.parse(String(init.body))).toEqual({ channel: "C0CAIS" });
+    });
+
+    it("says an archived channel needs a person when there is no user token", async () => {
+      const fetchImpl = vi
+        .fn()
+        .mockResolvedValueOnce(taken)
+        .mockResolvedValueOnce(listing({ is_archived: true }));
+      const executor = createAdminBotSlackAdminExecutor({
+        env: { SLACK_BOT_TOKEN: "xoxb-test" } as NodeJS.ProcessEnv,
+        fetchImpl,
+      });
+
+      await expect(
+        executor.execute(proposal("slack.create_channel", { name: "proj-cais" })),
+      ).rejects.toThrow(/#proj-cais is archived/u);
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+    });
+
+    it("never makes a private channel public", async () => {
+      const fetchImpl = vi
+        .fn()
+        .mockResolvedValueOnce(taken)
+        .mockResolvedValueOnce(listing({ is_private: true }));
+      const executor = createAdminBotSlackAdminExecutor({
+        env: { SLACK_BOT_TOKEN: "xoxb-test", SLACK_USER_TOKEN: "xoxp-test" } as NodeJS.ProcessEnv,
+        fetchImpl,
+      });
+
+      await expect(
+        executor.execute(proposal("slack.create_channel", { name: "proj-cais" })),
+      ).rejects.toThrow(/#proj-cais is private/u);
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+    });
+
+    it("names a channel the bot cannot see instead of claiming success", async () => {
+      const fetchImpl = vi
+        .fn()
+        .mockResolvedValueOnce(taken)
+        .mockResolvedValueOnce(okJson({ ok: true, channels: [] }));
+      const executor = createAdminBotSlackAdminExecutor({
+        env: { SLACK_BOT_TOKEN: "xoxb-test" } as NodeJS.ProcessEnv,
+        fetchImpl,
+      });
+
+      await expect(
+        executor.execute(proposal("slack.create_channel", { name: "proj-cais" })),
+      ).rejects.toThrow(/cannot see/u);
+    });
   });
 
   // The whole safety story for auto-approving creation: the action cannot open a room that is not
