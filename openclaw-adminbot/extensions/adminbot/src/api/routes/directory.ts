@@ -379,6 +379,21 @@ export const directoryRoutes: readonly Route[] = [
       );
     }),
   ),
+  post(
+    "/slack/channels/open",
+    privilegedOnly(async ({ req, res, principal, ctx }) => {
+      const body = readRecord(await readJson(req));
+      const result = await ctx.service.openProjectChannel(
+        asString(body.name),
+        principalActor(principal),
+      );
+      if (result.ok) {
+        // A channel was just made or reopened, so the kept names are out of date.
+        forgetSlackChannelNames();
+      }
+      sendServiceResult(res, result);
+    }),
+  ),
   get("/slack/channels", async ({ res, ctx, principal }) => {
     // Names only -- no ids, no membership, no topics. The one caller is the project form asking
     // "is there already a channel called this", and a route that returned the workspace's shape

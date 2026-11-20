@@ -226,6 +226,7 @@ Website: `/settings` · Who: admin
 | `post-ops-errors-by-errors-id-resolve`      | POST `/ops/errors/{errors_id}/resolve`      |
 | `post-slack-channel-naming-events`          | POST `/slack/channel-naming/events`         |
 | `post-slack-channel-naming-sweep-run`       | POST `/slack/channel-naming/sweep/run`      |
+| `post-slack-channels-open`                  | POST `/slack/channels/open`                 |
 | `post-ui-errors`                            | POST `/ui/errors`                           |
 | `post-ui-tab-visits`                        | POST `/ui/tab-visits`                       |
 | `put-settings`                              | PUT `/settings`                             |

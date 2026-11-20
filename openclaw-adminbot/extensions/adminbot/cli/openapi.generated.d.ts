@@ -5074,6 +5074,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/slack/channels/open": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** POST /slack/channels/open */
+    post: operations["post-slack-channels-open"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/slides/working-groups/apply": {
     parameters: {
       query?: never;
@@ -5680,6 +5697,7 @@ export interface components {
         | "roster_sync.completed"
         | "slack_roster_sync.completed"
         | "project_channels.swept"
+        | "project_channel.opened"
         | "topic_channels.swept"
         | "themed_meeting_invites.swept"
         | "research_theme_invites.swept"
@@ -30142,6 +30160,50 @@ export interface operations {
             } & {
               [key: string]: unknown;
             };
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "post-slack-channels-open": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          name?: string;
+        } & {
+          [key: string]: unknown;
+        };
+      };
+    };
+    responses: {
+      /** @description Successful service result */
+      "2XX": {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            channel: string;
+            proposal_id: string;
           } & {
             [key: string]: unknown;
           };

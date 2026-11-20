@@ -2884,6 +2884,7 @@ export type AdminBotAuditEvent = {
     // One pass of the Slack users.list roster sync: counts, refusal reason, dry-run flag.
     | "slack_roster_sync.completed"
     | "project_channels.swept"
+    | "project_channel.opened"
     | "topic_channels.swept"
     | "themed_meeting_invites.swept"
     // The same calendar, reached from the other direction: `themed_meeting_invites` fills a theme

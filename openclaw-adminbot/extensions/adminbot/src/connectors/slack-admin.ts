@@ -65,7 +65,7 @@ export function createAdminBotSlackAdminExecutor(
       if (proposal.type === "slack.create_channel") {
         const payload = readCreatePayload(proposal);
         const token = resolveSlackBotToken(env);
-        await createSlackChannel(token, payload.name, fetchImpl);
+        await createSlackChannel(token, payload.name, fetchImpl, env.SLACK_USER_TOKEN?.trim());
         return { handled: true };
       }
       if (proposal.type === "slack.remove_from_channel") {
@@ -413,15 +413,19 @@ function readCreatePayload(proposal: AdminBotStoredProposal): { name: string } {
 /**
  * Opens one project channel, or accepts that it is already open.
  *
- * `name_taken` is success, not failure, and that is what lets this run without first asking Slack
- * what exists: the sweep says "there should be a channel called this" every time it runs, and Slack
- * decides whether that means creating one. It is the same idempotence `already_in_channel` gives
- * the invite, and it is why no channel directory is needed to make project channels work.
+ * `name_taken` is the cheap path: the sweep says "there should be a channel called this" every run
+ * and Slack decides whether that means creating one. But `name_taken` only says the *name* is used,
+ * not that an open public channel holds it. An archived or private channel holds the name too, and
+ * treating that as success is how #proj-cais was "created" every run and then reported missing by
+ * the invite a second later. So a taken name is checked once against the workspace: an open public
+ * channel is success, an archived one is reopened with the admin user token, and anything else is
+ * refused with the reason, so the alert names the fix instead of looping.
  */
 async function createSlackChannel(
   token: string,
   name: string,
   fetchImpl: SlackAdminFetch,
+  userToken?: string,
 ): Promise<void> {
   const response = await fetchImpl("https://slack.com/api/conversations.create", {
     method: "POST",
@@ -433,11 +437,105 @@ async function createSlackChannel(
   });
   const payload = parseSlackJson<SlackRenameResponse>(await response.text());
   if (payload?.error === "name_taken") {
+    await settleTakenChannelName(token, name, fetchImpl, userToken);
     return;
   }
   if (!response.ok || !payload?.ok) {
     const detail = payload?.error?.trim() || response.statusText || "unknown error";
     throw new Error(`Slack channel create failed ${response.status}: ${detail}`);
+  }
+}
+
+type SlackChannelState = { id?: string; name?: string; is_archived?: boolean; is_private?: boolean };
+
+/** Every channel the bot can see, archived and private ones included, for one name lookup. */
+async function findChannelInAnyState(
+  token: string,
+  name: string,
+  fetchImpl: SlackAdminFetch,
+): Promise<SlackChannelState | undefined> {
+  let cursor: string | undefined;
+  do {
+    const params = new URLSearchParams({
+      types: "public_channel,private_channel",
+      exclude_archived: "false",
+      limit: "1000",
+      ...(cursor ? { cursor } : {}),
+    });
+    const response = await fetchImpl(`https://slack.com/api/conversations.list?${params}`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const payload = parseSlackJson<
+      SlackConversationsListResponse & { channels?: SlackChannelState[] }
+    >(await response.text());
+    if (!response.ok || !payload?.ok) {
+      const detail = payload?.error?.trim() || response.statusText || "unknown error";
+      throw new Error(`Slack channel lookup failed ${response.status}: ${detail}`);
+    }
+    const match = (payload.channels ?? []).find((channel) => channel.name === name);
+    if (match) {
+      return match;
+    }
+    cursor = payload.response_metadata?.next_cursor?.trim() || undefined;
+  } while (cursor);
+  return undefined;
+}
+
+/**
+ * Why a project channel name is taken, and the one repair the bot may make itself.
+ *
+ * Reopening an archived public channel is the repair, because it is what an admin would do by hand
+ * and it keeps the channel's history. It runs on the user token: a bot cannot unarchive a channel
+ * it is not in, and an archived channel cannot be joined. A private channel is never made public
+ * here -- that exposes its history to the workspace and is a person's decision.
+ */
+async function settleTakenChannelName(
+  token: string,
+  name: string,
+  fetchImpl: SlackAdminFetch,
+  userToken: string | undefined,
+): Promise<void> {
+  const channel = await findChannelInAnyState(token, name, fetchImpl);
+  if (!channel?.id) {
+    throw new Error(
+      `Slack has no open channel named #${name}: the name is taken by a channel the bot cannot ` +
+        "see (most likely private). Make it public, rename it, or pin its channel id in config.",
+    );
+  }
+  if (channel.is_private) {
+    throw new Error(
+      `Slack has no open channel named #${name}: #${name} is private. Make it public in Slack, ` +
+        "or pin its channel id in config.",
+    );
+  }
+  if (!channel.is_archived) {
+    return;
+  }
+  if (!userToken) {
+    throw new Error(
+      `Slack has no open channel named #${name}: #${name} is archived, and SLACK_USER_TOKEN is ` +
+        "not set, so the bot cannot reopen it. Unarchive it in Slack.",
+    );
+  }
+  const response = await fetchImpl("https://slack.com/api/conversations.unarchive", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${userToken}`,
+      "Content-Type": "application/json; charset=utf-8",
+    },
+    body: JSON.stringify({ channel: channel.id }),
+  });
+  const payload = parseSlackJson<SlackRenameResponse>(await response.text());
+  if (payload?.error === "not_archived") {
+    return;
+  }
+  if (!response.ok || !payload?.ok) {
+    const detail = payload?.error?.trim() || response.statusText || "unknown error";
+    throw new Error(
+      `Slack has no open channel named #${name}: #${name} is archived and reopening it failed ` +
+        `(${detail}). Unarchive it in Slack.`,
+    );
   }
 }
 
