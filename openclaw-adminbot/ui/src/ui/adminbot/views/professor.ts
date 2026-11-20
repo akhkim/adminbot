@@ -537,15 +537,6 @@ export function adoptionColumns(
 function section(params: {
   id: string;
   title: string;
-  /**
-   * One line saying what this queue is *for*.
-   *
-   * Three of these sections are "a list of papers with your name against them", and the titles
-   * alone did not say which question each was asking -- approve the finished thing, read the
-   * unfinished thing, or go and ask somebody for something. Which one you are looking at decides
-   * whether you open it now, so it is worth a line rather than left to be inferred from the rows.
-   */
-  blurb?: string;
   count: number | null;
   tab: Tab;
   linkLabel: string;
@@ -560,11 +551,10 @@ function section(params: {
     >
       <div class="professor__head">
         <div class="card-title">${params.title}</div>
-        <span class="professor__count ab-num" data-empty=${params.count === 0 ? "true" : "false"}
-          >${params.count ?? "—"}</span
-        >
+        ${params.count === 0
+          ? nothing
+          : html`<span class="professor__count ab-num">${params.count ?? "—"}</span>`}
       </div>
-      ${params.blurb ? html`<p class="professor__blurb">${params.blurb}</p>` : nothing}
       ${params.body}
       <button
         class="btn btn--sm btn--ghost professor__open"
@@ -822,9 +812,7 @@ function letterBody(
   searching = false,
 ) {
   if (!due.length) {
-    return searching
-      ? nothing
-      : html`<p class="professor__empty">${t("professor.letters.empty")}</p>`;
+    return nothing;
   }
   // One switch for the whole section rather than one per bucket: the cap is taken across the queue
   // before grouping, so "the rest of it" is a fact about the queue and not about "Next 30 days".
@@ -978,33 +966,35 @@ function adoptionBody(
   return html`<details class="professor__fold" data-testid="professor-fold-adoption">
     <summary>${t("professor.adoption.show")}</summary>
     <div class="professor__columns">
-      ${adoptionColumns(profiles, props.adoptionCounts).map(
-        (column) => html`<div
-          class="professor__column"
-          data-testid=${`professor-adoption-${column.id}`}
-          data-empty=${column.total === 0 ? "true" : "false"}
-        >
-          <div class="professor__column-head">
-            <span>${column.label}</span>
-            <span class="ab-num">${column.total}</span>
-          </div>
-          ${rows({
-            id: `adoption-${column.id}`,
-            total: column.total,
-            items: column.rows.map((row) =>
-              rowButton({
-                action: t("professor.adoption.open"),
-                onOpen: () => props.onOpen("adminbotProfileOverview"),
-                body: html`<strong>${row.name}</strong>
-                  <span class="muted">${column.detail(row)}</span>`,
-              }),
-            ),
-            empty: t("professor.adoption.empty"),
-            expanded: props.expanded,
-            onToggleExpand: props.onToggleExpand,
-          })}
-        </div>`,
-      )}
+      ${adoptionColumns(profiles, props.adoptionCounts)
+        .filter((column) => column.total > 0)
+        .map(
+          (column) => html`<div
+            class="professor__column"
+            data-testid=${`professor-adoption-${column.id}`}
+            data-empty=${column.total === 0 ? "true" : "false"}
+          >
+            <div class="professor__column-head">
+              <span>${column.label}</span>
+              <span class="ab-num">${column.total}</span>
+            </div>
+            ${rows({
+              id: `adoption-${column.id}`,
+              total: column.total,
+              items: column.rows.map((row) =>
+                rowButton({
+                  action: t("professor.adoption.open"),
+                  onOpen: () => props.onOpen("adminbotProfileOverview"),
+                  body: html`<strong>${row.name}</strong>
+                    <span class="muted">${column.detail(row)}</span>`,
+                }),
+              ),
+              empty: "",
+              expanded: props.expanded,
+              onToggleExpand: props.onToggleExpand,
+            })}
+          </div>`,
+        )}
     </div>
   </details>`;
 }
@@ -1069,8 +1059,6 @@ function broadcastBox(props: ProfessorViewProps) {
           >${liveBroadcast ? t("professor.broadcast.edit") : t("professor.broadcast.write")}</span
         >
       </summary>
-
-      <p class="professor__empty">${t("professor.broadcast.hint")}</p>
 
       <textarea
         class="professor__broadcast-box"
@@ -1311,6 +1299,10 @@ function paperActionButton(
  */
 function summaryStrip(sections: ReadonlyArray<{ id: string; count: number | null }>) {
   const waiting = sections.filter((entry) => entry.count);
+  // One queue needs no table of contents: its own heading is right below.
+  if (waiting.length < 2) {
+    return nothing;
+  }
   const jump = (event: Event, id: string) => {
     (event.currentTarget as HTMLElement)
       .closest(".professor")
@@ -1322,19 +1314,17 @@ function summaryStrip(sections: ReadonlyArray<{ id: string; count: number | null
     data-testid="professor-summary"
     aria-label=${t("professor.summary.label")}
   >
-    ${waiting.length
-      ? waiting.map(
-          (entry) => html`<button
-            type="button"
-            class="professor__jump"
-            data-testid=${`professor-jump-${entry.id}`}
-            @click=${(event: Event) => jump(event, entry.id)}
-          >
-            <span class="ab-num">${entry.count}</span>
-            ${t(`professor.summary.${entry.id}`)}
-          </button>`,
-        )
-      : html`<span class="muted">${t("professor.summary.clear")}</span>`}
+    ${waiting.map(
+      (entry) => html`<button
+        type="button"
+        class="professor__jump"
+        data-testid=${`professor-jump-${entry.id}`}
+        @click=${(event: Event) => jump(event, entry.id)}
+      >
+        <span class="ab-num">${entry.count}</span>
+        ${t(`professor.summary.${entry.id}`)}
+      </button>`,
+    )}
   </nav>`;
 }
 
@@ -1364,7 +1354,9 @@ export function renderProfessorView(props: ProfessorViewProps) {
     id: string;
     count: number | null;
     settled: boolean;
-    /** Fixed at the foot of the page, in this order, whatever is in it. */
+    /** Drawn at all: something waiting, still loading, or a folded history worth reopening. */
+    visible: boolean;
+    /** Fixed at the foot of the page, in this order. */
     pinned?: number;
     body: unknown;
   }> = [
@@ -1372,10 +1364,14 @@ export function renderProfessorView(props: ProfessorViewProps) {
       id: "pi-review",
       count: props.piReviewLoading || props.piReviewError ? null : props.piReview.length,
       settled: !props.piReviewLoading && !props.piReviewError && props.piReview.length === 0,
+      visible:
+        props.piReviewLoading ||
+        Boolean(props.piReviewError) ||
+        props.piReview.length > 0 ||
+        (props.piReviewHistory ?? []).length > 0,
       body: section({
         id: "pi-review",
         title: t("professor.piReview.title"),
-        blurb: t("professor.piReview.blurb"),
         count: props.piReviewLoading || props.piReviewError ? null : props.piReview.length,
         // The paper card is where the yes is given, so that is where this points.
         tab: "adminbotPapers",
@@ -1516,7 +1512,7 @@ export function renderProfessorView(props: ProfessorViewProps) {
                     ${paperActionButton(row, props, paperBusyId)}`,
                   }),
                 ),
-                empty: searchingPapers ? "" : t("professor.piReview.empty"),
+                empty: "",
                 onToggleExpand: props.onToggleExpand,
               })}
               ${piReviewHistoryList(props.piReviewHistory ?? [], paperQuery, props)}`,
@@ -1526,6 +1522,7 @@ export function renderProfessorView(props: ProfessorViewProps) {
       id: "escalated",
       count: escalatedNudgeTotal(props.escalated),
       settled: props.escalated.length === 0,
+      visible: props.escalated.length > 0,
       // Pinned last whether or not it has anything in it. Everything above is a queue she works
       // through on her own; this one is the lab asking her to go and chase a person, which is the
       // slowest and least frequent thing on the page and should not sit between two reading lists.
@@ -1533,7 +1530,6 @@ export function renderProfessorView(props: ProfessorViewProps) {
       body: section({
         id: "escalated",
         title: t("professor.escalated.title"),
-        blurb: t("professor.escalated.blurb"),
         count: escalatedNudgeTotal(props.escalated),
         // Announcements is where she writes to somebody, which is the whole point of an
         // escalation: the automatic chasing is finished and it now wants a person.
@@ -1558,7 +1554,7 @@ export function renderProfessorView(props: ProfessorViewProps) {
                   : nothing}`,
             }),
           ),
-          empty: t("professor.escalated.empty"),
+          empty: "",
           expanded: props.expanded,
           onToggleExpand: props.onToggleExpand,
         }),
@@ -1573,6 +1569,11 @@ export function renderProfessorView(props: ProfessorViewProps) {
         letters.length === 0 &&
         lettersDone.length === 0 &&
         lettersIn.length === 0,
+      visible:
+        props.requestsLoading ||
+        letters.length > 0 ||
+        lettersDone.length > 0 ||
+        lettersIn.length > 0,
       body: section({
         id: "letters",
         title: t("professor.letters.title"),
@@ -1616,10 +1617,10 @@ export function renderProfessorView(props: ProfessorViewProps) {
       id: "drafts",
       count: drafts.length,
       settled: drafts.length === 0,
+      visible: drafts.length > 0,
       body: section({
         id: "drafts",
         title: t("professor.drafts.title"),
-        blurb: t("professor.drafts.blurb"),
         count: drafts.length,
         tab: "adminbotPapers",
         linkLabel: t("professor.drafts.open"),
@@ -1638,7 +1639,7 @@ export function renderProfessorView(props: ProfessorViewProps) {
                   : nothing}`,
             }),
           ),
-          empty: t("professor.drafts.empty"),
+          empty: "",
           expanded: props.expanded,
           onToggleExpand: props.onToggleExpand,
         }),
@@ -1648,6 +1649,7 @@ export function renderProfessorView(props: ProfessorViewProps) {
       id: "adoption",
       count: toRemind,
       settled: toRemind === 0,
+      visible: toRemind > 0,
       // Pinned to the foot of the page and folded: who has not filled in a profile is worth a
       // glance once in a while, not the first screen of every visit. Below even the escalations:
       // those want a word from her, this only wants a reminder sent by somebody.
@@ -1668,13 +1670,21 @@ export function renderProfessorView(props: ProfessorViewProps) {
   // page is read top down, and nothing outstanding should not cost the first screen. A pinned
   // section sits below both -- its place on the page is fixed, so it is not somewhere different
   // depending on how her week is going.
-  const sorted = sections.toSorted(
-    (left, right) =>
-      (left.pinned ?? 0) - (right.pinned ?? 0) || Number(left.settled) - Number(right.settled),
-  );
+  // A queue with nothing in it is not drawn at all (ui/DESIGN.md rule 10).
+  const sorted = sections
+    .filter((entry) => entry.visible)
+    .toSorted(
+      (left, right) =>
+        (left.pinned ?? 0) - (right.pinned ?? 0) || Number(left.settled) - Number(right.settled),
+    );
   return html`
     <div class="professor">
-      ${broadcastBox(props)} ${summaryStrip(sorted)} ${sorted.map((entry) => entry.body)}
+      ${broadcastBox(props)}
+      ${sorted.length
+        ? html`${summaryStrip(sorted)} ${sorted.map((entry) => entry.body)}`
+        : html`<p class="professor__clear" data-testid="professor-clear">
+            ${t("professor.summary.clear")}
+          </p>`}
     </div>
   `;
 }

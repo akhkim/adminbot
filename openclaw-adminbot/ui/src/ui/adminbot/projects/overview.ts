@@ -212,7 +212,7 @@ function renderCards(
           : others.length === 0
             ? // A member who has never filed a paper, or was never added to one, lands here: say
               // where papers come from rather than only that there are none.
-              "No papers on file for you yet. Add one with Add a project, or ask the paper's lead to list you as an author and it appears here."
+              "No papers yet. Add a project, or ask the paper's lead to list you as an author."
             : "No active projects right now. Your other papers are below."}
       </p>`
     : html`<div class="projects__cards">
@@ -304,12 +304,14 @@ export function renderProjectsOverview(state: OverviewState, props: PaperWorkspa
     <header class="projects__head">
       ${renderModeSwitch(mode, visible.length, rerender)} ${renderAddButton(state, props)}
       ${renderListSearch(visible.length, rerender)}
-      <adminbot-paper-visibility
-        class="projects__hide"
-        .papers=${visible}
-        .memberId=${props.memberId}
-        @visibility-changed=${rerender}
-      ></adminbot-paper-visibility>
+      ${visible.length
+        ? html`<adminbot-paper-visibility
+            class="projects__hide"
+            .papers=${visible}
+            .memberId=${props.memberId}
+            @visibility-changed=${rerender}
+          ></adminbot-paper-visibility>`
+        : nothing}
     </header>
     ${state.myWorkProjectDraft !== null ? renderAddForm(state, props) : nothing}
     ${renderDecisionBanners(visible, props, members)} ${renderBlockerBoard(state, visible)}
@@ -340,6 +342,5 @@ export function renderProjectsOverview(state: OverviewState, props: PaperWorkspa
           </button>
         </p>`
       : nothing}
-    <p class="my-work__notice">${t("myWork.items.syncNotice")}</p>
   </section>`;
 }

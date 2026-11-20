@@ -65,6 +65,7 @@ import {
 } from "../controllers/reimbursements.ts";
 import { saveAdminBotSettings } from "../controllers/workspace.ts";
 import { openPaperForViewer } from "../projects/open-paper.ts";
+import { ensureQuietPoll } from "../quiet-poll.ts";
 import { renderArrReviewerFilter } from "../views/arr-reviewers.ts";
 import type { AdminBotSurfaceScope } from "./scope.ts";
 
@@ -102,6 +103,22 @@ export function renderAdminPanelsSurface(state: AppViewState, scope: AdminBotSur
     requestHostUpdate,
     rosterPendingForTab,
   } = scope;
+  // Lab Members and Nudges have no Refresh button: reload quietly while they are on screen.
+  if (adminBotPanel === "members" || adminBotPanel === "announcements") {
+    const tab = state.tab;
+    ensureQuietPoll(
+      () => state.tab === tab,
+      async () => {
+        await Promise.all([
+          loadAdminBot(state, adminBotMode, needsPapersForTab, true),
+          adminBotPanel === "members" && state.adminBotMemberList
+            ? loadAdminBotMemberList(state, undefined, undefined, true)
+            : undefined,
+        ]);
+        requestHostUpdate?.();
+      },
+    );
+  }
   return adminBotPanel && !rosterPendingForTab
     ? renderLazyView(lazyAdmin, (m) =>
         m.renderAdminBot({

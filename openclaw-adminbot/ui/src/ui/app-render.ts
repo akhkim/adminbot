@@ -119,6 +119,7 @@ import { needsLabPapers, papersMissingFor } from "./adminbot/papers-required.ts"
 import { navigateToProject, ownPapers } from "./adminbot/projects/model.ts";
 import { renderProjectsNav, type ProjectsNavState } from "./adminbot/projects/nav.ts";
 import { openPaperForViewer } from "./adminbot/projects/open-paper.ts";
+import { ensureQuietPoll } from "./adminbot/quiet-poll.ts";
 import { needsLabRoster } from "./adminbot/roster-required.ts";
 import {
   adminPanelsHoldMembersFilter,
@@ -3547,8 +3548,13 @@ export function renderApp(state: AppViewState) {
           : nothing}
         ${membersArrFilter ? nothing : renderAdminPanelsSurface(state, adminBotSurfaces)}
         ${state.tab === "adminbotRegistrations" && adminBotMode === "admin"
-          ? renderLazyView(lazyAdminBotRegistrations, (m) =>
-              m.renderAdminBotRegistrations({
+          ? renderLazyView(lazyAdminBotRegistrations, (m) => {
+              // No Refresh button: new requests arrive on a quiet poll while the page is open.
+              ensureQuietPoll(
+                () => state.tab === "adminbotRegistrations",
+                () => loadAdminBotRegistrations(state, true),
+              );
+              return m.renderAdminBotRegistrations({
                 registrations: state.registrations,
                 loading: state.registrationsLoading,
                 error: state.registrationsError,
@@ -3557,12 +3563,29 @@ export function renderApp(state: AppViewState) {
                 onDecide: (registrationId, decision) =>
                   void decideAdminBotRegistration(state, registrationId, decision),
                 onRefresh: () => void loadAdminBotRegistrations(state),
-              }),
-            )
+              });
+            })
           : nothing}
         ${state.tab === "adminbotBadges" && adminBotMode === "admin" && !rosterPendingForTab
-          ? renderLazyView(lazyAdminBotBadges, (m) =>
-              m.renderAdminBotBadges({
+          ? renderLazyView(lazyAdminBotBadges, (m) => {
+              // No Refresh button: reload quietly while the page is open and no editor is up.
+              ensureQuietPoll(
+                () =>
+                  state.tab === "adminbotBadges" &&
+                  !state.adminBotBadgeEditId &&
+                  !state.adminBotBadgeAssignRowId,
+                async () => {
+                  state.adminBotBadgeDefinitionsLoadedAt = null;
+                  state.adminBotBadgeNominationsLoadedAt = null;
+                  state.adminBotBadgeSuggestionsLoadedAt = null;
+                  await Promise.all([
+                    loadBadgeDefinitions(state),
+                    loadAdminBadgeNominations(state),
+                    loadBadgeSuggestions(state),
+                  ]);
+                },
+              );
+              return m.renderAdminBotBadges({
                 definitions: state.adminBotBadgeDefinitions,
                 definitionsLoading: state.adminBotBadgeDefinitionsLoading,
                 definitionsError: state.adminBotBadgeDefinitionsError,
@@ -3608,8 +3631,8 @@ export function renderApp(state: AppViewState) {
                 suggestionBusy: state.badgeSuggestionBusy,
                 onDecideSuggestion: (suggestionId, decision) =>
                   void decideBadgeSuggestion(state, suggestionId, decision),
-              }),
-            )
+              });
+            })
           : nothing}
         ${state.tab === "adminbotOnboarding" && adminBotMode === "admin"
           ? renderLazyView(lazyAdminBotOnboarding, (m) => m.renderAdminBotOnboarding(state))

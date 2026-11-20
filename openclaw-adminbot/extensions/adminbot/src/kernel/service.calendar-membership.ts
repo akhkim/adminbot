@@ -22,11 +22,32 @@ function calendarEmails(members: readonly AdminBotLabMember[]) {
   );
 }
 
+/**
+ * An admin's standing grant of the lab calendar to one member the type rule leaves out, typically
+ * an alumnus who should keep coming to the Monday meeting:
+ * `access_overrides: [{ service: "calendar", access: "view", scope: "group_meeting" }]`.
+ *
+ * Stored on the record rather than passed per invite, because the weekly sync would otherwise take
+ * the invite back on its next pass. `access_overrides` is governance-owned (updateOwnProfile and
+ * the service principal cannot write it), so only an admin's save can set it. An `access` of
+ * "none" is an admin saying no, and does not count.
+ */
+export function hasLabCalendarAccessOverride(member: AdminBotLabMember): boolean {
+  return (member.access_overrides ?? []).some(
+    (grant) => grant.service === "calendar" && grant.access !== "none",
+  );
+}
+
+/** Who the lab calendar and its restricted Monday series treat as a lab member. */
+function isLabCalendarEligible(member: AdminBotLabMember): boolean {
+  return isActiveChannelEligible(member) || hasLabCalendarAccessOverride(member);
+}
+
 export function ineligibleCalendarEmails(members: readonly AdminBotLabMember[]) {
-  const eligible = calendarEmails(members.filter(isActiveChannelEligible));
+  const eligible = calendarEmails(members.filter(isLabCalendarEligible));
   // Preserve ambiguous addresses shared with an eligible member, and external guests.
   return new Set(
-    [...calendarEmails(members.filter((member) => !isActiveChannelEligible(member)))].filter(
+    [...calendarEmails(members.filter((member) => !isLabCalendarEligible(member)))].filter(
       (email) => !eligible.has(email),
     ),
   );
@@ -161,7 +182,7 @@ export async function syncCalendarMembership(
   // cannot open, or a Calendar email changed since, is repaired instead of counted as done.
   const granted: Array<{ member_id: string; email: string; proposal_id: string }> = [];
   const needsGmail: Array<{ member_id: string; name: string }> = [];
-  for (const member of store.listLabMembers().filter(isActiveChannelEligible)) {
+  for (const member of store.listLabMembers().filter(isLabCalendarEligible)) {
     const email = adminBotCalendarShareEmail(member);
     if (!email) {
       needsGmail.push({ member_id: member.id, name: member.name });
@@ -254,7 +275,7 @@ export function calendarMembershipWriteError(
   if (
     proposal.type === "calendar.grant_lab_calendar" &&
     (typeof payload.email !== "string" ||
-      !calendarEmails(members.filter(isActiveChannelEligible)).has(
+      !calendarEmails(members.filter(isLabCalendarEligible)).has(
         payload.email.trim().toLowerCase(),
       ) ||
       ineligible.has(payload.email.trim().toLowerCase()))

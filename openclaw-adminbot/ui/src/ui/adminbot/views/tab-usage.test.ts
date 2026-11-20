@@ -138,12 +138,9 @@ describe("renderAdminBotTabUsage", () => {
     expect(container.querySelector(".tab-usage__table")).toBeNull();
   });
 
-  it("refuses to export a window with nothing in it", () => {
+  it("offers no export for a window with nothing in it", () => {
     const empty = draw({ report: report({ visits: 0, tabs: [] }) });
-    expect(
-      empty.container.querySelector<HTMLButtonElement>('[data-testid="tab-usage-export"]')
-        ?.disabled,
-    ).toBe(true);
+    expect(empty.container.querySelector('[data-testid="tab-usage-export"]')).toBeNull();
 
     const full = draw();
     const button = full.container.querySelector<HTMLButtonElement>(
@@ -170,10 +167,14 @@ describe("renderAdminBotTabUsage", () => {
     expect(container.querySelector(".tab-usage__table")).not.toBeNull();
   });
 
-  it("says what the numbers cannot say", () => {
-    // The caveat is part of the page on purpose: every clause is a way to over-read the table.
+  it("says what the numbers cannot say on the export, not in a footnote", () => {
+    // Every clause is a way to over-read the table; it rides on the export as a tooltip.
     const { container } = draw();
-    const caveat = container.querySelector(".tab-usage__caveat")?.textContent ?? "";
+    expect(container.querySelector(".tab-usage__caveat")).toBeNull();
+    expect(container.querySelector(".tab-usage__blurb")).toBeNull();
+    expect(container.querySelector('[data-testid="tab-usage-refresh"]')).toBeNull();
+    const caveat =
+      container.querySelector('[data-testid="tab-usage-export"]')?.getAttribute("title") ?? "";
     expect(caveat).toContain("30 minutes");
     expect(caveat).toContain("one tab switch");
   });

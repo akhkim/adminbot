@@ -2,7 +2,7 @@
 //
 // Cut from server.ts's handleAuthenticatedRoute. Each route states its audience with a guard
 // decorator from guards.ts; the order below is the order the old if-chain tried them in.
-import type { AdminBotMemberNudgeRequest } from "../../contracts/actions.js";
+import type { AdminBotAdminNudgeSendRequest } from "../../contracts/actions.js";
 import { resolveProfessorDigestConfig } from "../../workflows/nudges/professor-digest.js";
 import { readJson, readRecord, sendServiceResult } from "../server.http.js";
 import { pageOf, readPageQuery } from "../server.paging.js";
@@ -86,14 +86,25 @@ export const nudgesRoutes: readonly Route[] = [
     "/nudges/send",
     adminSessionOnly(async ({ req, res, principal, ctx }) => {
       const { service } = ctx;
-      const body = (await readJson(req)) as AdminBotMemberNudgeRequest;
+      const body = (await readJson(req)) as AdminBotAdminNudgeSendRequest;
       // `important` is dropped rather than honored. It is the flag that puts the head professor in a
       // group DM five days later, and the reason that escalation can auto-execute is that nothing
       // but a server-computed sweep can raise it -- see escalateStaleNudges. This is the one nudge
       // route whose text and recipients come from a browser, so letting it set the flag would make
       // "AdminBot escalated this" mean "an admin typed something and waited".
-      const { important: _ignored, ...request } = body;
-      sendServiceResult(res, await service.sendMemberNudge(request, principalActor(principal)));
+      //
+      // `admin_override` is the opposite case: it is honored *because* only this route can set it.
+      // An admin naming an alumnus (or somebody off the nudge list) and pressing send is a
+      // deliberate act, which is what those skips exist to tell apart from a sweep.
+      const { important: _ignored, admin_override: adminOverride, ...request } = body;
+      sendServiceResult(
+        res,
+        await service.sendMemberNudge(
+          request,
+          principalActor(principal),
+          adminOverride === true ? { allowAlumni: true, ignoreNudgeList: true } : {},
+        ),
+      );
     }),
   ),
   post(

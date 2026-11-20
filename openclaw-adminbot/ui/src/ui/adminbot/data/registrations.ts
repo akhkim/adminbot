@@ -56,7 +56,11 @@ function decisionErrorText(kind: AuthErrorKind): string {
   return t("adminbotRegistrations.error.decisionFailed");
 }
 
-export async function loadAdminBotRegistrations(host: AdminBotRegistrationsHost): Promise<void> {
+/** `quiet` is the background poll: it leaves the list on screen instead of showing the loader. */
+export async function loadAdminBotRegistrations(
+  host: AdminBotRegistrationsHost,
+  quiet = false,
+): Promise<void> {
   const stored = loadStoredMemberSession();
   if (!stored) {
     host.registrations = [];
@@ -64,14 +68,20 @@ export async function loadAdminBotRegistrations(host: AdminBotRegistrationsHost)
     host.registrationsLoading = false;
     return;
   }
-  host.registrationsLoading = true;
-  host.registrationsError = null;
+  if (!quiet) {
+    host.registrationsLoading = true;
+    host.registrationsError = null;
+  }
   try {
     const result = await fetchPendingRegistrations(
       stored.sessionToken,
       resolveAdminBotBaseUrl(host.settings),
     );
     if (!result.ok) {
+      // A failed background read keeps what is on screen; the next tick tries again.
+      if (quiet) {
+        return;
+      }
       host.registrations = [];
       host.registrationsError = loadErrorFor(result.kind);
       return;

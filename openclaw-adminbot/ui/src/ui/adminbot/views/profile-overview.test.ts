@@ -210,6 +210,25 @@ describe("profile overview", () => {
     expect(container.querySelector(".profile-overview__percent")?.textContent).toBe("83%");
   });
 
+  it("names the first three blanks and folds the rest", () => {
+    const { container } = draw({
+      members: [
+        member({
+          missing_fields: ["cv_url", "linkedin_urn", "github", "twitter", "affiliation"],
+          filled_field_count: 7,
+        }),
+      ],
+    });
+    const lists = container.querySelectorAll(".profile-overview__missing");
+    expect(lists[0]?.querySelectorAll("li")).toHaveLength(3);
+    const more = container.querySelector<HTMLDetailsElement>(
+      '[data-testid="profile-overview-missing-more"]',
+    );
+    expect(more?.open).toBe(false);
+    expect(more?.querySelector("summary")?.textContent).toContain("+2 more");
+    expect(more?.querySelectorAll("li")).toHaveLength(2);
+  });
+
   it("says a finished profile is finished instead of leaving the cell blank", () => {
     const { container } = draw({ members: [member()] });
     expect(container.querySelector(".profile-overview__done")?.textContent).toContain("Complete");
@@ -398,6 +417,20 @@ describe("adoption", () => {
     const { container } = draw({ members: [member()], adoption: null });
     expect(container.querySelector("[data-testid='profile-overview-adoption']")).toBeNull();
   });
+
+  it("leaves out a figure at zero, and the whole row when every figure is zero", () => {
+    const some = draw({
+      members: [member()],
+      adoption: { members: 4, profile_rate: 0, project_rate: 0.5, signed_in_ever: 0 },
+    }).container.querySelector<HTMLElement>("[data-testid='profile-overview-adoption']");
+    expect(some?.children).toHaveLength(1);
+    expect(some?.textContent).toContain("50%");
+    const none = draw({
+      members: [member()],
+      adoption: { members: 4, profile_rate: 0, project_rate: 0, signed_in_ever: 0, active_ever: 0 },
+    }).container;
+    expect(none.querySelector("[data-testid='profile-overview-adoption']")).toBeNull();
+  });
 });
 
 describe("profile overview filters", () => {
@@ -563,5 +596,34 @@ describe("nudge list seeding", () => {
       more: { remaining: 0, loading: false, onLoadMore: () => {} },
     });
     expect(container.querySelector('[data-testid="profile-overview-more"]')).toBeNull();
+  });
+});
+
+describe("filters", () => {
+  it("keeps only the search box in view and the rest behind Filters", () => {
+    const { container } = draw({ members: [member()], filter: { gap: "any" } });
+    expect(container.querySelector(".card-sub")).toBeNull();
+    const fold = container.querySelector<HTMLDetailsElement>(
+      '[data-testid="profile-overview-filters"]',
+    );
+    expect(fold?.open).toBe(false);
+    expect(fold?.querySelector('[data-testid="profile-overview-filter-gap"]')).not.toBeNull();
+    expect(fold?.querySelector('[data-testid="profile-overview-search"]')).toBeNull();
+    expect(container.querySelector('[data-testid="profile-overview-filters-chips"]')).toBeNull();
+  });
+
+  it("shows each set filter as a chip that clears it", () => {
+    const drawn = draw({
+      members: [member()],
+      filter: { gap: "timeline", membership: "full" },
+    });
+    const chips = [
+      ...drawn.container.querySelectorAll<HTMLButtonElement>(
+        '[data-testid="profile-overview-filters-chips"] button',
+      ),
+    ];
+    expect(chips).toHaveLength(2);
+    chips[0].click();
+    expect(drawn.filters[0]).toMatchObject({ gap: "any", membership: "full" });
   });
 });

@@ -492,7 +492,7 @@ export const en: TranslationMap = {
     // The strip at the top of My Desk: one jump link per queue with something in it.
     summary: {
       label: "Waiting on you",
-      clear: "Nothing is waiting on you.",
+      clear: "Nothing waiting on you.",
       "pi-review": "Papers",
       escalated: "Missing info",
       letters: "Rec letters",
@@ -550,7 +550,7 @@ export const en: TranslationMap = {
     escalated: {
       // Not a paper queue: what is missing here is information, and the only thing left to try is
       // her asking the person directly.
-      title: "Missing information — needs a word from you",
+      title: "Missing information",
       blurb:
         "AdminBot asked these people repeatedly and got nothing back. It has stopped asking; a message from you is what is left.",
       items: "{count} things outstanding",
@@ -597,14 +597,14 @@ export const en: TranslationMap = {
     drafts: {
       // The other paper queue, and the one nothing is blocked on. Named for the reading rather
       // than for Overleaf, which is only where the draft happens to live.
-      title: "Read and comment while they are still writing",
+      title: "Drafts to read",
       blurb:
         "Drafts still being written, on Overleaf. Nobody is blocked on you here — this is the window where your comments can still change the paper.",
       empty: "No drafts are waiting to be read.",
       open: "Open Active Papers",
     },
     adoption: {
-      title: "Adoption Rate: Who to remind to use AdminBot?",
+      title: "Members to remind",
       column: {
         profile: "Profile completion",
         timeline: "Timeline",
@@ -1576,7 +1576,7 @@ export const en: TranslationMap = {
     archive: {
       title: "Where recordings live",
       sub: "This tab lists the meetings AdminBot has a summary for. The videos themselves are posted in {channel}, and collected in an unlisted YouTube playlist.",
-      playlist: "Open the recordings playlist",
+      playlist: "All recordings on YouTube",
     },
     actionItems: "Action items",
     addAttendee: "Add",
@@ -1707,7 +1707,7 @@ export const en: TranslationMap = {
     },
     milestones: {
       title: "Big deadlines",
-      hint: "The four nearest archival conference deadlines, plus your own. Yours are private — nobody else sees them.",
+      hint: "Your own deadlines are private to you.",
       formHint: "Add your thesis deadlines here too, not just conference ones.",
       date: "Date",
       time: "Time (optional)",
@@ -1915,6 +1915,7 @@ export const en: TranslationMap = {
       "We date a paper from its arXiv id, or from its accepted year. A paper with neither has no date we can place in a range, so it is not in the email.",
     showEmail: "Show the email as it will be sent",
     send: "Send to {email}",
+    sendNeedsAddress: "Add an address to send",
     sending: "Sending…",
     sent: "Sent {count} publications to {email}.",
     source: {
@@ -2184,6 +2185,7 @@ export const en: TranslationMap = {
     timeline: "Timeline entries",
     lastReminded: "Last reminded",
     allFilled: "Complete",
+    missingMore: "+{count} more",
     neverReminded: "Never",
     adoption: {
       column: "Filled in by them",

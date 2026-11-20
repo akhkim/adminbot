@@ -245,7 +245,11 @@ describe("renderPaperOutreach", () => {
   it("points to the exported tab when the server does not write the sheet", () => {
     const container = draw({ data: outreach({ acceptance_sheet_configured: false }) });
     expect(find(container, "outreach-sheet-check")).toBeNull();
-    expect(container.textContent).toContain("every six hours");
+    // The explanation rides on the link's tooltip, not as a paragraph (ui/DESIGN.md rule 3).
+    expect(container.textContent).not.toContain("every six hours");
+    expect(find(container, "outreach-sheet-open")?.getAttribute("title")).toContain(
+      "every six hours",
+    );
     expect(find(container, "outreach-sheet-open")?.getAttribute("href")).toContain(
       "gid=1274660812",
     );
@@ -257,6 +261,16 @@ describe("renderPaperOutreach", () => {
     });
     expect(find(container, "outreach-sheet-rows")?.textContent).toContain("Judging the Judges");
     expect(container.querySelector('[data-testid^="outreach-outlet-"]')).toBeNull();
+    expect(container.textContent).not.toContain("Compose from a venue");
+  });
+
+  it("hides the row list and Copy rows when there are no accepted papers", () => {
+    const container = draw({
+      data: outreach({ venue: undefined, drafts: [], papers: [], acceptance_rows: [] }),
+    });
+    expect(find(container, "outreach-sheet-rows")).toBeNull();
+    expect(container.textContent).not.toContain("Copy rows");
+    expect(find(container, "outreach-sheet-open")).not.toBeNull();
   });
 });
 

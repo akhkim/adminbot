@@ -912,6 +912,71 @@ describe("AdminBot mock service", () => {
     });
   });
 
+  it("lets an admin set a personal correspondence email on another member", async () => {
+    const { baseUrl } = await startService();
+    await seedMember(baseUrl, "email-admin", {
+      name: "Email Admin",
+      email: "email-admin@cs.toronto.edu",
+      privilege_level: "admin",
+    });
+    await seedMember(baseUrl, "email-alum", {
+      name: "Email Alum",
+      email: "email-alum@cs.toronto.edu",
+      correspondence_email: "alum@institute.example",
+      privilege_level: "member",
+    });
+    await approveClaim(baseUrl, "email-admin", "email-admin@cs.toronto.edu");
+    const token = await loginToken(baseUrl, "email-admin@cs.toronto.edu");
+    const saved = await fetch(`${baseUrl}/lab/members/email-alum`, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ correspondence_email: "email.alum@gmail.com" }),
+    });
+    expect(saved.status).toBe(200);
+    await expect(saved.json()).resolves.toMatchObject({
+      correspondence_email: "email.alum@gmail.com",
+    });
+    // The override is the admin's save, not the service: a sweep or importer write is refused.
+    const swept = mockFor(baseUrl).service.upsertLabMember({
+      id: "email-alum",
+      name: "Email Alum",
+      correspondence_email: "email.alum2@gmail.com",
+    });
+    expect(swept.ok).toBe(false);
+  });
+
+  it("lets only an admin grant a member the lab calendar override", async () => {
+    const { baseUrl } = await startService();
+    await seedMember(baseUrl, "cal-admin", {
+      name: "Cal Admin",
+      email: "cal-admin@cs.toronto.edu",
+      privilege_level: "admin",
+    });
+    await approveClaim(baseUrl, "cal-admin", "cal-admin@cs.toronto.edu");
+    const adminSession = await loginToken(baseUrl, "cal-admin@cs.toronto.edu");
+    await seedMember(baseUrl, "cal-alum", {
+      name: "Cal Alum",
+      email: "cal-alum@cs.toronto.edu",
+      member_type: "alumni",
+      privilege_level: "member",
+    });
+    await approveClaim(baseUrl, "cal-alum", "cal-alum@cs.toronto.edu");
+    const memberSession = await loginToken(baseUrl, "cal-alum@cs.toronto.edu");
+    const grant = [{ service: "calendar", access: "view", scope: "group_meeting" }];
+    const put = (token: string) =>
+      fetch(`${baseUrl}/lab/members/cal-alum`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ access_overrides: grant }),
+      });
+    const self = await put(memberSession);
+    expect(self.status).toBeGreaterThanOrEqual(400);
+    expect(mockFor(baseUrl).store.getLabMember("cal-alum")?.access_overrides).toBeUndefined();
+    const admin = await put(adminSession);
+    expect(admin.status).toBe(200);
+    expect(mockFor(baseUrl).store.getLabMember("cal-alum")?.access_overrides).toEqual(grant);
+  });
+
   it("guards member self-profile edits", async () => {
     const { baseUrl } = await startService();
     await seedMember(baseUrl, "self", {
@@ -1769,6 +1834,36 @@ describe("AdminBot service-principal privilege scoping", () => {
     expect(body.created[0]?.status).toBe("executed");
     expect(body.created[0]?.approval_requirement.requires_approval).toBe(false);
     expect(body.skipped).toEqual([]);
+  });
+
+  it("reaches an alumnus from /nudges/send only when the admin sets admin_override", async () => {
+    const executor = { execute: async () => ({ handled: true }) };
+    const { baseUrl } = await startService({ executor });
+    const token = await adminToken(baseUrl, "boss", "boss@cs.toronto.edu");
+    seedMember(baseUrl, "alum", {
+      name: "Alum",
+      slack_user_id: "U1",
+      member_type: "alumni",
+      receives_nudges: false,
+    });
+    const send = (extra: Record<string, unknown>) =>
+      fetch(`${baseUrl}/nudges/send`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          channel: "slack",
+          recipient_member_ids: ["alum"],
+          message: "A note from the lab.",
+          ...extra,
+        }),
+      }).then((res) => res.json() as Promise<{ created: unknown[]; skipped: unknown[] }>);
+    await expect(send({})).resolves.toMatchObject({
+      created: [],
+      skipped: [{ member_id: "alum", reason: "member is alumni" }],
+    });
+    const overridden = await send({ admin_override: true });
+    expect(overridden.created).toHaveLength(1);
+    expect(overridden.skipped).toEqual([]);
   });
 
   // What a member writes about their health or family is written for one reader, but /lab/members

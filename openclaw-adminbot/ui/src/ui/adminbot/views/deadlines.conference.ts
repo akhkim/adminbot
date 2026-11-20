@@ -8,7 +8,7 @@ export function conferenceRosterFor(
   rosters: readonly ConferenceRoster[],
 ) {
   for (const venue of venues) {
-    const event = venue.schedule.find((item) => item.milestone === "conference");
+    const event = (venue.schedule ?? []).find((item) => item.milestone === "conference");
     const year = Number(
       (event?.starts ?? event?.date ?? venue.name.match(/\b20\d{2}\b/u)?.[0] ?? "").slice(0, 4),
     );
