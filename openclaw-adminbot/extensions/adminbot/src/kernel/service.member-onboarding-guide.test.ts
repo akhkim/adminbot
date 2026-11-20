@@ -68,6 +68,18 @@ describe("onboarding a member added from the roster", () => {
     expect(unwrap(queue(service)).template_id).toBe("alumni");
   });
 
+  // An alumnus loses the university mailbox they log in with; the address the lab writes to is the
+  // correspondence one, the same resolver every other member-facing mail uses.
+  it("sends the guide to the correspondence address when one is set", () => {
+    const service = new AdminBotService();
+    add(service, { member_type: "alumni", correspondence_email: "grace@alumni.example" });
+    expect(unwrap(queue(service))).toMatchObject({
+      template_id: "alumni",
+      email: "grace@alumni.example",
+    });
+    expect(filed(service)[0]?.proposed_payload).toMatchObject({ email: "grace@alumni.example" });
+  });
+
   it("refuses a member with no address rather than filing a mail to nobody", () => {
     const service = new AdminBotService();
     add(service, { id: "noreach", email: "", member_type: "full" });

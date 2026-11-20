@@ -15,6 +15,12 @@ const EMPTY: RosterSyncPlan = {
 const ROSTER: Record<string, AdminBotLabMember> = {
   ada: { id: "ada", name: "Ada Lovelace", email: "ada@lab.co" } as AdminBotLabMember,
   noaddr: { id: "noaddr", name: "No Address" } as AdminBotLabMember,
+  alum: {
+    id: "alum",
+    name: "Al Umnus",
+    email: "al@student.uni.example",
+    correspondence_email: "Al@Alumni.example",
+  } as AdminBotLabMember,
 };
 
 function sweep(over: Partial<Parameters<typeof planOnboardingSweep>[0]> = {}) {
@@ -134,6 +140,11 @@ describe("who the weekly onboarding sweep mails", () => {
     });
     expect(out.create).toEqual([]);
     expect(out.skipped[0]?.reason).toContain("no email");
+  });
+
+  it("mails a type change to the correspondence address over the login one", () => {
+    const out = sweep({ appliedChanges: [{ member_id: "alum", to: "alumni" }] });
+    expect(out.mail[0]).toMatchObject({ member_id: "alum", email: "al@alumni.example" });
   });
 
   it("skips a type change for somebody with no address", () => {

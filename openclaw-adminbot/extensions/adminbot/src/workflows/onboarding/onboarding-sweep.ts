@@ -23,6 +23,7 @@
 // above will legitimately report the same person twice -- once live, once from the audit row the
 // sync wrote the next morning.
 import type { AdminBotLabMember } from "../../contracts/actions.js";
+import { adminBotOutreachEmail } from "../../contracts/member-outreach-email.js";
 import { subgroupForMemberType } from "../members/collaborator-subgroups.js";
 import type { RosterAddition, RosterSyncPlan } from "../members/roster-sync.js";
 import { templateForMemberType } from "./member-type-template.js";
@@ -189,7 +190,7 @@ export function planOnboardingSweep(params: {
       out.skipped.push({ name: member.name ?? change.member_id, reason: template.reason });
       continue;
     }
-    const email = (member.email ?? member.correspondence_email ?? "").trim().toLowerCase();
+    const email = adminBotOutreachEmail(member).toLowerCase();
     if (!email) {
       out.skipped.push({ name: member.name ?? change.member_id, reason: "no email on file" });
       continue;

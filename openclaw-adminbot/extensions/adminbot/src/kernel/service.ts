@@ -15854,10 +15854,11 @@ export class AdminBotService {
     if (!member) {
       return serviceError(404, `no member ${params.memberId}`);
     }
-    const email =
-      params.email?.trim() ||
-      (params.basicWelcome ? adminBotOutreachEmail(member) : member.email?.trim()) ||
-      "";
+    // The same resolver every other member-facing mail uses: the correspondence address the lab
+    // writes to (an alumnus's personal mailbox, say), else the login address. Sending the
+    // role-specific guide to the login address alone mailed alumni at a university box they had
+    // already lost, while the correspondence address an admin had set sat unused.
+    const email = params.email?.trim() || adminBotOutreachEmail(member) || "";
     if (!email) {
       return serviceError(
         422,
