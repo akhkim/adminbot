@@ -32,6 +32,9 @@ import {
   adminBotNudgeRosterDecision,
   adminBotLocationPermissions,
   adminBotReceivesNudges,
+  ADMINBOT_MAX_FINANCIAL_SUPPORT_ROWS,
+  ADMINBOT_MAX_FINANCIAL_SUPPORT_TEXT,
+  adminBotFinancialSupportCategories,
   isAdminBotFullMember,
   type AdminBotLocationPermission,
   type AdminBotMandatoryProfileField,
@@ -18057,6 +18060,8 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
   // Confidential on read (see adminBotConfidentialMemberFields); self-editable like any other
   // field a member writes about themselves.
   "personal_circumstances",
+  // The member's own expenses waiting to be claimed. Confidential on read, like personal_circumstances.
+  "financial_support_needs",
   "lesswrong_url",
   "other_socials",
   "notes",
@@ -19094,6 +19099,60 @@ function validateDeadlineClock(
 }
 
 /**
+ * Expenses a member plans to claim back. Rough by design -- the PI is estimating a budget, not
+ * approving a claim -- so only the category and a description are required; the amount, currency
+ * and the PI's words may follow once the member has them.
+ */
+function validateFinancialSupportNeeds(member: AdminBotLabMemberInput): string | undefined {
+  const rows = member.financial_support_needs;
+  if (rows === undefined) {
+    return undefined;
+  }
+  if (!Array.isArray(rows)) {
+    return "financial support needs must be a list";
+  }
+  if (rows.length > ADMINBOT_MAX_FINANCIAL_SUPPORT_ROWS) {
+    return `financial support needs cannot exceed ${ADMINBOT_MAX_FINANCIAL_SUPPORT_ROWS} rows`;
+  }
+  for (const row of rows) {
+    if (!row || typeof row !== "object") {
+      return "each financial support need must be an object";
+    }
+    if (!(adminBotFinancialSupportCategories as readonly unknown[]).includes(row.category)) {
+      return `financial support category must be one of: ${adminBotFinancialSupportCategories.join(", ")}`;
+    }
+    if (typeof row.description !== "string" || !row.description.trim()) {
+      return "financial support description is required";
+    }
+    for (const [key, label] of [
+      ["description", "description"],
+      ["pi_permission", "PI permission"],
+    ] as const) {
+      const value = row[key];
+      if (value === undefined) {
+        continue;
+      }
+      if (typeof value !== "string") {
+        return `financial support ${label} must be text`;
+      }
+      if (value.length > ADMINBOT_MAX_FINANCIAL_SUPPORT_TEXT) {
+        return `financial support ${label} cannot exceed ${ADMINBOT_MAX_FINANCIAL_SUPPORT_TEXT} characters`;
+      }
+    }
+    if (
+      row.amount !== undefined &&
+      (typeof row.amount !== "number" || !Number.isFinite(row.amount) || row.amount < 0)
+    ) {
+      return "financial support amount must be a number of zero or more";
+    }
+    if (row.currency !== undefined && row.currency !== "" && !/^[A-Z]{3}$/.test(row.currency)) {
+      return "financial support currency must be a three-letter code such as USD";
+    }
+  }
+  return undefined;
+}
+
+/**
  * Trips, validated like the other dated lists plus the two rules that are theirs alone.
  *
  * A city is required because a trip with no place is indistinguishable from time off, and the
@@ -19294,7 +19353,8 @@ function validateAvailability(
   return (
     validateMilestones(member, deadlines) ??
     validateTrips(member) ??
-    validateDismissedDeadlines(member)
+    validateDismissedDeadlines(member) ??
+    validateFinancialSupportNeeds(member)
   );
 }
 

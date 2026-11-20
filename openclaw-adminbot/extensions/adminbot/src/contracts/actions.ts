@@ -975,6 +975,10 @@ export const adminBotConfidentialMemberFields = [
   // Where a member's one-on-one notes live. Same reason: written for two people, and the roster
   // should not be the thing that tells the other 198 where to look.
   "one_on_one_folder_url",
+  // Expenses a member has paid and plans to claim back, with what the PI said when allowing them.
+  // Written for the PI's budget review, not for the roster: what somebody spends, and on what, is
+  // between them and whoever reimburses it.
+  "financial_support_needs",
 ] as const;
 
 /**
@@ -1349,6 +1353,29 @@ export type AdminBotTimeOffRow = {
  * `timezone` is optional and derived from the city by the form. It is stored rather than re-derived
  * on read so a member who corrects the guess keeps their correction.
  */
+/** What an unreimbursed expense was for: the categories the PI estimates the lab budget by. */
+export const adminBotFinancialSupportCategories = ["ai_subscription", "travel", "other"] as const;
+export type AdminBotFinancialSupportCategory = (typeof adminBotFinancialSupportCategories)[number];
+export const ADMINBOT_MAX_FINANCIAL_SUPPORT_ROWS = 20;
+export const ADMINBOT_MAX_FINANCIAL_SUPPORT_TEXT = 500;
+
+/**
+ * One expense a member has paid (or is paying) and plans to claim back, registered roughly so the
+ * PI can estimate spending by category before the claims arrive. Not a reimbursement request:
+ * nothing is filed or paid from this row, and the amount is the member's own estimate.
+ */
+export type AdminBotMemberFinancialSupportNeed = {
+  category: AdminBotFinancialSupportCategory;
+  /** Rough total so far, in `currency`. Absent when the member cannot put a number on it yet. */
+  amount?: number;
+  /** ISO 4217 code, e.g. "USD", "CAD". */
+  currency?: string;
+  /** What it is: "Claude Max for agent runs, Sep-Nov", "Flights to EMNLP". */
+  description: string;
+  /** What the PI said when allowing it, in the member's words or quoted from Slack. */
+  pi_permission?: string;
+};
+
 export type AdminBotMemberTrip = {
   start: string;
   end: string;
@@ -1907,6 +1934,12 @@ export type AdminBotLabMemberInput = {
   // Where the member is when that is not home, over a range. Self-editable like the lists above,
   // and read by anything that needs a member's local time on a given date.
   trips?: AdminBotMemberTrip[];
+  /**
+   * Expenses the member has not been reimbursed for yet but plans to claim (AI agent and
+   * subscription bills, travel, other). Self-editable; confidential on read
+   * (adminBotConfidentialMemberFields). See AdminBotMemberFinancialSupportNeed.
+   */
+  financial_support_needs?: AdminBotMemberFinancialSupportNeed[];
   /**
    * Conference deadlines from the bundled snapshot that this member has taken off their own panel.
    *

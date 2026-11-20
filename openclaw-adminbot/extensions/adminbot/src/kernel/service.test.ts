@@ -2572,6 +2572,81 @@ describe("AdminBotService", () => {
     }
   });
 
+  it("lets a member register unreimbursed expenses, validates them, and hides them from others", () => {
+    const service = new AdminBotService();
+    unwrap(
+      service.upsertLabMember({
+        id: "spend",
+        name: "Spend",
+        privilege_level: "member",
+      }),
+    );
+    const needs = [
+      {
+        category: "ai_subscription" as const,
+        amount: 200,
+        currency: "USD",
+        description: "Agent API credits",
+        pi_permission: "Yes, expense it",
+      },
+      // No amount yet: a rough registration may not have a number.
+      { category: "travel" as const, description: "Train to the workshop" },
+    ];
+    const saved = unwrap(service.updateOwnProfile("spend", { financial_support_needs: needs }));
+    expect(saved.financial_support_needs).toEqual(needs);
+    // [] clears the list.
+    expect(
+      unwrap(service.updateOwnProfile("spend", { financial_support_needs: [] }))
+        .financial_support_needs,
+    ).toEqual([]);
+
+    const row = { category: "other", description: "Books" };
+    for (const bad of [
+      "not-a-list",
+      [{ ...row, category: "food" }],
+      [{ ...row, description: "  " }],
+      [{ ...row, amount: -5 }],
+      [{ ...row, amount: "200" }],
+      [{ ...row, currency: "dollars" }],
+      [{ ...row, pi_permission: "x".repeat(501) }],
+      Array.from({ length: 21 }, () => row),
+    ]) {
+      expect(
+        service.updateOwnProfile("spend", {
+          financial_support_needs: bad,
+        } as never),
+      ).toMatchObject({
+        ok: false,
+        status: 400,
+      });
+    }
+
+    const record = {
+      id: "spend",
+      name: "Spend",
+      financial_support_needs: needs,
+    };
+    expect(
+      "financial_support_needs" in
+        redactConfidentialMemberFields(record, {
+          memberId: "bob",
+          isAdmin: false,
+        }),
+    ).toBe(false);
+    expect(
+      redactConfidentialMemberFields(record, {
+        memberId: "spend",
+        isAdmin: false,
+      }),
+    ).toEqual(record);
+    expect(
+      redactConfidentialMemberFields(record, {
+        memberId: "bob",
+        isAdmin: true,
+      }),
+    ).toEqual(record);
+  });
+
   // A deadline stated to the minute has to say on whose clock. The same digits read in Toronto and
   // Anywhere-on-Earth are seventeen hours apart, and a time stored without its zone cannot be
   // corrected later because nobody knows which one was meant -- so the pair is all-or-nothing.

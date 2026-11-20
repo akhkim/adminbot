@@ -46,12 +46,14 @@ ATTENTION_STATUSES = ('Needs PI review', 'Blocked: link access', 'Other')
 
 PEOPLE_WIDTHS = {'name': 190, 'recommendation_letter_window': 260, 'search': 220, 'research_topics': 260, 'elevator_pitch': 260, 'projects': 220,
                  'papers_authored': 300, 'affiliation': 200, 'availability_notes': 240, 'time_off': 200,
-                 'email': 210, 'calendar_email': 210, 'correspondence_email': 210, 'location': 180, 'role': 160}
+                 'email': 210, 'calendar_email': 210, 'correspondence_email': 210, 'location': 180, 'role': 160,
+                 'financial_support_needs': 360, 'financial_support_totals': 220}
 # Header colour per PeopleList section, so the eye finds Contact or Links without reading every header.
 PEOPLE_SECTION_COLOURS = {
     'Contact': {'red': .13, 'green': .37, 'blue': .45}, 'Lab': {'red': .18, 'green': .29, 'blue': .40},
     'Research': {'red': .35, 'green': .26, 'blue': .49}, 'Links & socials': {'red': .16, 'green': .42, 'blue': .30},
-    'Location & availability': {'red': .55, 'green': .35, 'blue': .13}, 'Search': {'red': .40, 'green': .45, 'blue': .51},
+    'Location & availability': {'red': .55, 'green': .35, 'blue': .13}, 'Funding': {'red': .50, 'green': .22, 'blue': .30},
+    'Search': {'red': .40, 'green': .45, 'blue': .51},
     exporter.PEOPLE_RECORDS_SECTION: {'red': .45, 'green': .49, 'blue': .54}}
 PEOPLE_EMAILS = ('email', 'calendar_email', 'correspondence_email')
 PEOPLE_URLS = ('personal_website', 'linkedin_url', 'twitter_url', 'github_url', 'scholar_url',

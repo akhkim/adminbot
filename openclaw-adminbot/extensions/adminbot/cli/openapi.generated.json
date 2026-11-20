@@ -12937,6 +12937,12 @@
                               "$ref": "#/components/schemas/AdminBotMemberTrip"
                             }
                           },
+                          "financial_support_needs": {
+                            "type": "array",
+                            "items": {
+                              "$ref": "#/components/schemas/AdminBotMemberFinancialSupportNeed"
+                            }
+                          },
                           "dismissed_deadlines": {
                             "type": "array",
                             "items": {
@@ -35484,6 +35490,12 @@
               "$ref": "#/components/schemas/AdminBotMemberTrip"
             }
           },
+          "financial_support_needs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminBotMemberFinancialSupportNeed"
+            }
+          },
           "dismissed_deadlines": {
             "type": "array",
             "items": {
@@ -35784,6 +35796,36 @@
           "start",
           "end",
           "city"
+        ],
+        "additionalProperties": true
+      },
+      "AdminBotMemberFinancialSupportNeed": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "enum": [
+              "other",
+              "travel",
+              "ai_subscription"
+            ]
+          },
+          "amount": {
+            "type": "number"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "pi_permission": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "category",
+          "description"
         ],
         "additionalProperties": true
       },
@@ -38206,6 +38248,12 @@
               "$ref": "#/components/schemas/AdminBotMemberTrip"
             }
           },
+          "financial_support_needs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminBotMemberFinancialSupportNeed"
+            }
+          },
           "dismissed_deadlines": {
             "type": "array",
             "items": {
@@ -38694,6 +38742,12 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/AdminBotMemberTrip"
+            }
+          },
+          "financial_support_needs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminBotMemberFinancialSupportNeed"
             }
           },
           "dismissed_deadlines": {
@@ -43046,6 +43100,12 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/AdminBotMemberTrip"
+            }
+          },
+          "financial_support_needs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminBotMemberFinancialSupportNeed"
             }
           },
           "dismissed_deadlines": {
