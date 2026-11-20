@@ -298,7 +298,8 @@ password_resets feedback_submitted active_sessions paper_slots_provided paper_sl
 papers_authored_count papers_authored papers_submitted_count papers_submitted
 audit_events_as_actor update_events_as_actor update_events_as_subject calendar_group acl_anthology_url
 arr_reviewer_qualified arr_review_capacity map_visibility location_permission linkedin_followers
-twitter_followers recommendation_letter_window search'''.split())
+twitter_followers recommendation_letter_window financial_support_needs
+financial_support_totals search'''.split())
 
 
 # PeopleList, left to right. Name is frozen first: it is what people scan and search for, on a phone
@@ -317,6 +318,7 @@ PEOPLE_SECTIONS = (
                          'linkedin_followers', 'twitter_followers')),
     ('Location & availability', ('location', 'map_visibility', 'availability', 'availability_notes', 'time_off',
                                  'trips', 'milestones', 'last_login_at', 'slack_messages_7d')),
+    ('Funding', ('financial_support_needs', 'financial_support_totals')),
     ('Search', ('search',)),
 )
 PEOPLE_PRIORITY = tuple(field for _, fields in PEOPLE_SECTIONS for field in fields)
@@ -336,6 +338,8 @@ PEOPLE_LABELS = {
     'acl_anthology_url': 'ACL Anthology', 'lesswrong_url': 'LessWrong', 'cv_url': 'CV',
     'linkedin_followers': 'LinkedIn followers', 'twitter_followers': 'X followers', 'last_login_at': 'Last login',
     'slack_messages_7d': 'Slack messages (7 days)', 'search': 'Search (all fields)', 'id': 'AdminBot ID',
+    'financial_support_needs': 'Subscription / financial support needs (unreimbursed)',
+    'financial_support_totals': 'Unreimbursed total by category',
     'slack_user_id': 'Slack user ID', 'dcs_username': 'DCS username', 'avatar_url': 'Avatar', 'intake_form_url': 'Intake form',
 }
 
@@ -1401,6 +1405,41 @@ def people_search_text(record, papers):
     return ' | '.join(terms)[:SEARCH_LIMIT]
 
 
+FINANCIAL_SUPPORT_LABELS = {'ai_subscription': 'AI agent / subscription', 'travel': 'Travel', 'other': 'Other'}
+
+
+def financial_support_cells(entries):
+    """One line per registered expense, and rough totals per category and currency.
+
+    Members register these on My Profile so the PI can estimate spending before claims arrive. An
+    entry with no amount still shows in the list but adds nothing to a total, and the totals cell
+    says how many were left out, so a blank amount is never read as zero.
+    """
+    if not isinstance(entries, list):
+        return {'financial_support_needs': '', 'financial_support_totals': ''}
+    lines, totals, unpriced = [], {}, 0
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        category = FINANCIAL_SUPPORT_LABELS.get(entry.get('category'), 'Other')
+        currency = str(entry.get('currency') or '').upper()
+        amount = entry.get('amount')
+        priced = isinstance(amount, (int, float)) and not isinstance(amount, bool)
+        money = f"{currency or '?'} {amount:g}" if priced else 'amount not given'
+        line = f"{category} · {money} · {' '.join(str(entry.get('description') or '').split())}"
+        permission = ' '.join(str(entry.get('pi_permission') or '').split())
+        lines.append(line + (f' · PI: "{permission}"' if permission else ' · PI permission not recorded'))
+        if priced:
+            key = (category, currency or '?')
+            totals[key] = totals.get(key, 0) + amount
+        else:
+            unpriced += 1
+    summary = [f'{category}: {currency} {total:g}' for (category, currency), total in sorted(totals.items())]
+    if unpriced:
+        summary.append(f"{unpriced} without an amount")
+    return {'financial_support_needs': '\n'.join(lines), 'financial_support_totals': '; '.join(summary)}
+
+
 def recommendation_letter_windows(connection, timestamp):
     """Only recorded requests qualify; no request on file is not a person's answer of no."""
     today = parse_time(timestamp).astimezone(TORONTO).date()
@@ -1481,6 +1520,7 @@ def full_people_values(connection, members, papers, timestamp):
         record.update(papers_authored=authored, papers_authored_count=len(authored),
                       papers_submitted=submitted, papers_submitted_count=len(submitted))
         record['search'] = people_search_text(record, [p for p in papers if p['id'] in authored])
+        record.update(financial_support_cells(record.get('financial_support_needs')))
 
     # Missing tables stay unknown; zero is only used when the table exists.
     for table, key, output in [

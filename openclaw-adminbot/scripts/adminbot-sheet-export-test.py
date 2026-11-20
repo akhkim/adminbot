@@ -984,3 +984,23 @@ assert acceptances.venue_name('EMNLP 2026 Workshop NLP4PI ARR Commitment · Post
 assert acceptances.conference_cell({'Conference': 'EMNLP', 'Track': 'Workshop',
                                     'Accepted': 'EMNLP 2026 Workshop WiNLP ARR commitment'}) == 'EMNLP Workshop WiNLP'
 print('PASS: acceptances tab from the PaperList snapshot, newest year first, conference grouped, safe links, adopted then protected')
+
+# Subscription / financial support needs: one line per expense, rough totals per category and
+# currency, a missing amount counted rather than read as zero. Synthetic entries only.
+needs = exporter.financial_support_cells([
+    {'category': 'ai_subscription', 'amount': 200, 'currency': 'USD', 'description': 'Agent API credits',
+     'pi_permission': 'Yes, expense it'},
+    {'category': 'ai_subscription', 'amount': 40.5, 'currency': 'usd', 'description': 'Chat plan'},
+    {'category': 'travel', 'currency': 'CAD', 'description': 'Train to workshop'},
+    'not a row',
+])
+assert needs['financial_support_needs'].split('\n') == [
+    'AI agent / subscription · USD 200 · Agent API credits · PI: "Yes, expense it"',
+    'AI agent / subscription · USD 40.5 · Chat plan · PI permission not recorded',
+    'Travel · amount not given · Train to workshop · PI permission not recorded',
+]
+assert needs['financial_support_totals'] == 'AI agent / subscription: USD 240.5; 1 without an amount'
+assert exporter.financial_support_cells(None) == {'financial_support_needs': '', 'financial_support_totals': ''}
+assert exporter.people_section('financial_support_needs') == 'Funding' in refresh.PEOPLE_SECTION_COLOURS
+assert 'financial_support_needs' not in exporter.PEOPLE_SEARCH_FIELDS
+print('PASS: financial support needs export as readable lines with per-category totals, kept out of search')

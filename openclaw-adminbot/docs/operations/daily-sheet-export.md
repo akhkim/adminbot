@@ -188,3 +188,22 @@ otherwise insert rows into a tab this export rewrites. **Copy rows** still works
 
 The PI's OpenReview notification e-mails are not read by the export (see the OpenReview results job); the
 Aurora-only notifications reader was dropped when the installed copies were brought back to `main`.
+
+## Subscription / financial support needs (November 20, 2026)
+
+Members can register, on My Profile, costs they have paid and not been reimbursed for yet but plan
+to claim: an AI agent or subscription, travel, or other. Each entry has a category, a rough amount
+and currency (both optional), a description, and what the PI said when allowing it. The section
+has its own Save button; it is not part of the autosaving profile form. The service stores the list
+as `financial_support_needs` on the member record and serves it only to the member and admins, like
+`personal_circumstances`. It is a registration for budgeting, not a reimbursement claim.
+
+PeopleList shows it in a **Funding** section with two columns:
+
+- `financial_support_needs`: one line per entry, for example
+  `AI agent / subscription · USD 200 · Agent API credits · PI: "Yes, expense it"`. An entry without
+  a recorded permission says `PI permission not recorded`.
+- `financial_support_totals`: rough totals per category and currency. Entries without an amount
+  are counted (`1 without an amount`) rather than read as zero. Currencies are never converted.
+
+Neither column feeds the `search` cell.

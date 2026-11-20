@@ -9,6 +9,7 @@ import { trackPageActivity } from "../../loading/page-activity.ts";
 import type { UiSettings } from "../../storage.ts";
 import { normalizeOptionalString } from "../../string-coerce.ts";
 import { memberAuthHeaders } from "../api/device-clock.ts";
+import type { MemberFinancialSupportNeed } from "../api/members.ts";
 import { parseApiJson, readApiJson } from "../data/api-json.ts";
 import type { AvailabilityRow, TimeOffRow } from "../data/availability.js";
 import { configureDraftSync } from "../offline/draft-sync.ts";
@@ -193,6 +194,8 @@ export const MEMBER_MAP_VISIBILITIES: readonly MemberMapVisibility[] = ["auto", 
 export type LabMember = {
   cli_role?: "default" | "power_user";
   id?: string;
+  // Unreimbursed expenses (views/financial-needs.ts). Served only to the member and lab admins.
+  financial_support_needs?: MemberFinancialSupportNeed[];
   name?: string | null;
   // Governance-owned directory address, required to be @cs.toronto.edu for core members.
   email?: string | null;

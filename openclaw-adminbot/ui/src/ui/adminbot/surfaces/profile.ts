@@ -6,6 +6,7 @@
 import { html, nothing } from "lit";
 import type { AppViewState } from "../../app-view-state.ts";
 import { createLazyView, notifyLazyViewHost, renderLazyView } from "../../lazy-view.ts";
+import type { MemberFinancialSupportNeed } from "../api/members.ts";
 import { loadAdminBotRoster } from "../controllers/admin.ts";
 import { saveAdminBotOwnProfile } from "../controllers/members.ts";
 import {
@@ -15,8 +16,10 @@ import {
 import { loadAdminBotRecentEdits } from "../controllers/recent-edits.ts";
 import { submitOwnBadgeNomination, submitOwnBadgeSuggestion } from "../data/badges.ts";
 import "../views/api-tokens.ts";
+import "../views/financial-needs.ts";
 import { renderLocationPrompt } from "../views/location-prompt.ts";
 import { renderOwnPreciseLocation } from "../views/precise-location.ts";
+import { findOwnMember } from "../views/profile-fields.ts";
 import { isProfileBlocked } from "../views/profile-gate.ts";
 import { renderMeetupToggleSurface } from "./events.ts";
 import type { AdminBotSurfaceScope } from "./scope.ts";
@@ -91,7 +94,28 @@ export function renderProfileSurface(state: AppViewState, scope: AdminBotSurface
           }),
         )}
         ${profileBlocked ? nothing : renderMeetupToggleSurface(state, scope)}
+        ${profileBlocked ? nothing : renderFinancialNeeds(state)}
         ${profileBlocked ? nothing : html`<adminbot-api-tokens></adminbot-api-tokens>`}
       `
     : nothing}`;
+}
+
+// Own section with its own Save (see views/financial-needs.ts). saveAdminBotOwnProfile reports a
+// refusal through adminBotNotice rather than throwing, so the element is told the outcome here and
+// keeps the member's unsaved rows when the save did not land.
+function renderFinancialNeeds(state: AppViewState) {
+  const member = findOwnMember(state);
+  const memberId = member?.id;
+  if (!member || !memberId) {
+    return nothing;
+  }
+  return html`<adminbot-financial-needs
+    .entries=${member.financial_support_needs}
+    .onSave=${async (entries: MemberFinancialSupportNeed[]) => {
+      await saveAdminBotOwnProfile(state, memberId, {
+        financial_support_needs: entries,
+      });
+      return state.adminBotNotice?.kind !== "error";
+    }}
+  ></adminbot-financial-needs>`;
 }

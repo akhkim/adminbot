@@ -15,9 +15,20 @@ import {
   type RecentUpdateRow,
 } from "../auth/session.ts";
 
+/** One expense waiting to be claimed back. Mirrors AdminBotMemberFinancialSupportNeed. */
+export type MemberFinancialSupportNeed = {
+  category: "ai_subscription" | "travel" | "other";
+  amount?: number;
+  currency?: string;
+  description: string;
+  pi_permission?: string;
+};
+
 // Whitelisted self-editable profile fields. privilege_level/status/email are
 // governance-owned and must never be sent from a member's own profile form.
 export type MemberProfileUpdate = {
+  // Sent whole by the "Subscription or financial support needs" section; [] clears it.
+  financial_support_needs?: MemberFinancialSupportNeed[];
   name?: string;
   calendar_email?: string;
   slack_user_id?: string;
