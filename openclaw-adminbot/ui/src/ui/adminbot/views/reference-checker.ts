@@ -138,9 +138,9 @@ export class ReferenceChecker extends LitElement {
   static override styles = [
     referenceFindingStyles,
     css`
+      /* Fills PaperMentor's column so both drop zones line up (PaperMentor caps the width). */
       :host {
         display: block;
-        max-width: 760px;
       }
       h2 {
         margin-top: 0;

@@ -4092,12 +4092,9 @@ function renderPanel(props: AdminBotProps) {
       }
       return html`
         <div class="card adminbot-card adminbot-card--wide">
-          <div class="card-title">Review queues</div>
-          <div class="card-sub">Decisions AdminBot deliberately leaves to an administrator.</div>
           <div class="adminbot-review-queues">
             <section class="adminbot-review-queues__actions">
               <h3>Pending actions</h3>
-              <p>Immutable proposals from AdminBot's action broker.</p>
               ${renderPendingActions(props)}
             </section>
             ${renderAdminBotEmailReview({
