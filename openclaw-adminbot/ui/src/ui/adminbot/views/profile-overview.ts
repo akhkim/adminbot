@@ -28,7 +28,8 @@ import type {
   MemberProfileOverviewRow,
 } from "../api/members.ts";
 import { renderLoadMore, type LoadMoreProps } from "../load-more.ts";
-import { renderMemberTypeFilter } from "../member-type-filter.ts";
+import { ADMINBOT_MEMBER_TYPE_FILTERS, renderMemberTypeFilter } from "../member-type-filter.ts";
+import { type FilterChip, renderFilterChips, renderFilterFold } from "./filter-fold.ts";
 
 /** Zero counts render as an em dash rather than "0", which reads as a measurement. */
 const countOrDash = (value: number) => (value > 0 ? String(value) : "—");
@@ -243,44 +244,69 @@ function renderActivityCell(row: MemberProfileOverviewRow) {
  */
 function renderAdoptionSummary(adoption: MemberAdoptionSummary) {
   const pct = (rate: number) => `${Math.round(rate * 100)}%`;
+  // A figure at zero says nothing the table does not already show, so it is left out; with every
+  // figure at zero the row goes too (ui/DESIGN.md rule 10).
+  const figures = [
+    adoption.profile_rate > 0
+      ? { value: pct(adoption.profile_rate), label: t("profileOverview.adoption.summaryProfile") }
+      : null,
+    adoption.project_rate > 0
+      ? { value: pct(adoption.project_rate), label: t("profileOverview.adoption.summaryProjects") }
+      : null,
+    adoption.signed_in_ever > 0
+      ? {
+          value: `${adoption.signed_in_ever}/${adoption.members}`,
+          label: t("profileOverview.adoption.summarySignedIn"),
+        }
+      : null,
+    adoption.active_ever
+      ? {
+          value: `${adoption.active_ever}/${adoption.members}`,
+          label: t("profileOverview.activity.summaryActive"),
+          testId: "profile-overview-active-ever",
+        }
+      : null,
+  ].filter((figure) => figure !== null);
+  if (figures.length === 0) {
+    return nothing;
+  }
   return html`
     <div class="profile-overview__adoption-summary" data-testid="profile-overview-adoption">
-      <div>
-        <span class="profile-overview__adoption-figure ab-num">${pct(adoption.profile_rate)}</span>
-        <span class="muted">${t("profileOverview.adoption.summaryProfile")}</span>
-      </div>
-      <div>
-        <span class="profile-overview__adoption-figure ab-num">${pct(adoption.project_rate)}</span>
-        <span class="muted">${t("profileOverview.adoption.summaryProjects")}</span>
-      </div>
-      <div>
-        <span class="profile-overview__adoption-figure ab-num"
-          >${adoption.signed_in_ever}/${adoption.members}</span
-        >
-        <span class="muted">${t("profileOverview.adoption.summarySignedIn")}</span>
-      </div>
-      ${adoption.active_ever === undefined
-        ? nothing
-        : html`<div>
-            <span
-              class="profile-overview__adoption-figure ab-num"
-              data-testid="profile-overview-active-ever"
-              >${adoption.active_ever}/${adoption.members}</span
-            >
-            <span class="muted">${t("profileOverview.activity.summaryActive")}</span>
-          </div>`}
+      ${figures.map(
+        (figure) => html`<div>
+          <span
+            class="profile-overview__adoption-figure ab-num"
+            data-testid=${figure.testId ?? nothing}
+            >${figure.value}</span
+          >
+          <span class="muted">${figure.label}</span>
+        </div>`,
+      )}
     </div>
   `;
 }
+
+/** Blanks named in the row before the rest fold away; a long list made every row twenty lines tall. */
+const MISSING_SHOWN = 3;
 
 function renderMissingCell(row: MemberProfileOverviewRow) {
   if (!row.missing_fields.length) {
     return html`<span class="profile-overview__done">${t("profileOverview.allFilled")}</span>`;
   }
+  const shown = row.missing_fields.slice(0, MISSING_SHOWN);
+  const rest = row.missing_fields.slice(MISSING_SHOWN);
   return html`
     <ul class="profile-overview__missing">
-      ${row.missing_fields.map((field) => html`<li>${fieldLabel(field)}</li>`)}
+      ${shown.map((field) => html`<li>${fieldLabel(field)}</li>`)}
     </ul>
+    ${rest.length
+      ? html`<details class="profile-overview__more" data-testid="profile-overview-missing-more">
+          <summary>${t("profileOverview.missingMore", { count: String(rest.length) })}</summary>
+          <ul class="profile-overview__missing">
+            ${rest.map((field) => html`<li>${fieldLabel(field)}</li>`)}
+          </ul>
+        </details>`
+      : nothing}
   `;
 }
 
@@ -357,18 +383,55 @@ const ACTIVITY_OPTIONS: Array<{ value: ProfileOverviewActivity; labelKey: string
   { value: "signedIn", labelKey: "profileOverview.filters.hasSignedIn" },
 ];
 
+/** Every filter set away from its default, as a chip that puts it back. */
+function profileFilterChips(props: AdminBotProfileOverviewProps): FilterChip[] {
+  const { filter, onFilterChange } = props;
+  const chips: FilterChip[] = [];
+  const named = (options: Array<{ value: string; labelKey: string }>, value: string) => {
+    const option = options.find((entry) => entry.value === value);
+    return option ? t(option.labelKey) : value;
+  };
+  if (filter.gap !== "any") {
+    chips.push({
+      label: named(GAP_OPTIONS, filter.gap),
+      onClear: () => onFilterChange({ ...filter, gap: "any" }),
+    });
+  }
+  if (filter.membership !== "everyone") {
+    chips.push({
+      label: named(MEMBERSHIP_OPTIONS, filter.membership),
+      onClear: () => onFilterChange({ ...filter, membership: "everyone" }),
+    });
+  }
+  if (filter.activity !== "any") {
+    chips.push({
+      label: named(ACTIVITY_OPTIONS, filter.activity),
+      onClear: () => onFilterChange({ ...filter, activity: "any" }),
+    });
+  }
+  for (const type of filter.memberTypes) {
+    chips.push({
+      label: ADMINBOT_MEMBER_TYPE_FILTERS.find((entry) => entry.value === type)?.label ?? type,
+      onClear: () =>
+        onFilterChange({
+          ...filter,
+          memberTypes: filter.memberTypes.filter((entry) => entry !== type),
+        }),
+    });
+  }
+  return chips;
+}
+
 export function renderAdminBotProfileOverview(props: AdminBotProfileOverviewProps) {
   const rows = filterOverviewRows(props.members, props.filter);
   const scope = remindScopeFor(props.members, props.filter);
   const outstanding = props.remindCount ?? scope.memberIds.length;
+  const chips = profileFilterChips(props);
   return html`
     <section class="adminbot-shell profile-overview" data-testid="adminbot-profile-overview">
       <div class="card adminbot-card adminbot-card--wide">
         <div class="profile-overview__heading">
-          <div>
-            <div class="card-title">${t("profileOverview.title")}</div>
-            <div class="card-sub">${t("profileOverview.sub")}</div>
-          </div>
+          <div class="card-title">${t("profileOverview.title")}</div>
           <div class="profile-overview__actions">
             <!-- Two filters rather than one checkbox. The two gaps are chased with different
                  sentences and usually on different days -- a profile sweep before a report, a
@@ -391,78 +454,88 @@ export function renderAdminBotProfileOverview(props: AdminBotProfileOverviewProp
                   })}
               />
             </label>
-            <label class="profile-overview__filter">
-              <span class="sr-only">${t("profileOverview.filters.gapLabel")}</span>
-              <select
-                class="target__select"
-                data-testid="profile-overview-filter-gap"
-                @change=${(event: Event) =>
-                  props.onFilterChange({
-                    ...props.filter,
-                    gap: (event.target as HTMLSelectElement).value as ProfileOverviewGap,
-                  })}
-              >
-                ${GAP_OPTIONS.map(
-                  (option) => html`
-                    <option value=${option.value} ?selected=${option.value === props.filter.gap}>
-                      ${t(option.labelKey)}
-                    </option>
-                  `,
-                )}
-              </select>
-            </label>
-            <label class="profile-overview__filter">
-              <span class="sr-only">${t("profileOverview.filters.membershipLabel")}</span>
-              <select
-                class="target__select"
-                data-testid="profile-overview-filter-membership"
-                @change=${(event: Event) =>
-                  props.onFilterChange({
-                    ...props.filter,
-                    membership: (event.target as HTMLSelectElement)
-                      .value as ProfileOverviewMembership,
-                  })}
-              >
-                ${MEMBERSHIP_OPTIONS.map(
-                  (option) => html`
-                    <option
-                      value=${option.value}
-                      ?selected=${option.value === props.filter.membership}
-                    >
-                      ${t(option.labelKey)}
-                    </option>
-                  `,
-                )}
-              </select>
-            </label>
-            <label class="profile-overview__filter">
-              <span class="sr-only">${t("profileOverview.filters.activityLabel")}</span>
-              <select
-                class="target__select"
-                data-testid="profile-overview-filter-activity"
-                @change=${(event: Event) =>
-                  props.onFilterChange({
-                    ...props.filter,
-                    activity: (event.target as HTMLSelectElement).value as ProfileOverviewActivity,
-                  })}
-              >
-                ${ACTIVITY_OPTIONS.map(
-                  (option) => html`
-                    <option
-                      value=${option.value}
-                      ?selected=${option.value === props.filter.activity}
-                    >
-                      ${t(option.labelKey)}
-                    </option>
-                  `,
-                )}
-              </select>
-            </label>
-            ${renderMemberTypeFilter({
-              selected: props.filter.memberTypes,
-              onChange: (memberTypes) => props.onFilterChange({ ...props.filter, memberTypes }),
-              testIdPrefix: "profile-overview",
-              label: t("profileOverview.filters.memberTypeLabel"),
+            ${renderFilterFold({
+              testId: "profile-overview-filters",
+              chips,
+              controls: html`
+                <label class="profile-overview__filter">
+                  <span class="sr-only">${t("profileOverview.filters.gapLabel")}</span>
+                  <select
+                    class="target__select"
+                    data-testid="profile-overview-filter-gap"
+                    @change=${(event: Event) =>
+                      props.onFilterChange({
+                        ...props.filter,
+                        gap: (event.target as HTMLSelectElement).value as ProfileOverviewGap,
+                      })}
+                  >
+                    ${GAP_OPTIONS.map(
+                      (option) => html`
+                        <option
+                          value=${option.value}
+                          ?selected=${option.value === props.filter.gap}
+                        >
+                          ${t(option.labelKey)}
+                        </option>
+                      `,
+                    )}
+                  </select>
+                </label>
+                <label class="profile-overview__filter">
+                  <span class="sr-only">${t("profileOverview.filters.membershipLabel")}</span>
+                  <select
+                    class="target__select"
+                    data-testid="profile-overview-filter-membership"
+                    @change=${(event: Event) =>
+                      props.onFilterChange({
+                        ...props.filter,
+                        membership: (event.target as HTMLSelectElement)
+                          .value as ProfileOverviewMembership,
+                      })}
+                  >
+                    ${MEMBERSHIP_OPTIONS.map(
+                      (option) => html`
+                        <option
+                          value=${option.value}
+                          ?selected=${option.value === props.filter.membership}
+                        >
+                          ${t(option.labelKey)}
+                        </option>
+                      `,
+                    )}
+                  </select>
+                </label>
+                <label class="profile-overview__filter">
+                  <span class="sr-only">${t("profileOverview.filters.activityLabel")}</span>
+                  <select
+                    class="target__select"
+                    data-testid="profile-overview-filter-activity"
+                    @change=${(event: Event) =>
+                      props.onFilterChange({
+                        ...props.filter,
+                        activity: (event.target as HTMLSelectElement)
+                          .value as ProfileOverviewActivity,
+                      })}
+                  >
+                    ${ACTIVITY_OPTIONS.map(
+                      (option) => html`
+                        <option
+                          value=${option.value}
+                          ?selected=${option.value === props.filter.activity}
+                        >
+                          ${t(option.labelKey)}
+                        </option>
+                      `,
+                    )}
+                  </select>
+                </label>
+                ${renderMemberTypeFilter({
+                  selected: props.filter.memberTypes,
+                  onChange: (memberTypes) => props.onFilterChange({ ...props.filter, memberTypes }),
+                  testIdPrefix: "profile-overview",
+                  label: t("profileOverview.filters.memberTypeLabel"),
+                })}
+              `,
             })}
             <button
               class="btn btn--sm"
@@ -492,7 +565,7 @@ export function renderAdminBotProfileOverview(props: AdminBotProfileOverviewProp
             </button>
           </div>
         </div>
-
+        ${renderFilterChips("profile-overview-filters", chips)}
         ${props.adoption ? renderAdoptionSummary(props.adoption) : nothing}
         ${props.notice
           ? html`<p class="profile-overview__notice" role="status">${props.notice}</p>`

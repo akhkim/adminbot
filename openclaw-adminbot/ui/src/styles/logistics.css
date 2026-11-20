@@ -1080,7 +1080,22 @@
   padding: 0 var(--space-2);
   color: var(--muted-strong);
   font-size: var(--control-ui-text-xs);
-  white-space: nowrap;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.profile-overview__more {
+  margin-top: var(--space-1);
+  font-size: var(--control-ui-text-xs);
+}
+
+.profile-overview__more > summary {
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.profile-overview__more[open] > summary {
+  margin-bottom: var(--space-1);
 }
 
 .profile-overview__timeline {
@@ -1295,29 +1310,28 @@
   gap: var(--space-1) var(--space-2);
 }
 
-/* The boards under the table. Closed on arrival, so the page opens as the list it is. */
+.paper-overview__none {
+  margin: var(--space-4) 0;
+  color: var(--muted);
+}
+
+/* The boards under the table: plain folds on a hairline, closed on arrival. */
 .paper-overview__board {
-  margin-top: var(--space-4);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border-top: 1px solid var(--border);
+}
+
+.paper-overview__board:last-of-type {
+  border-bottom: 1px solid var(--border);
 }
 
 .paper-overview__board-summary {
-  /* .adminbot-fold gives the row its height and chevron; this only insets it inside the border. */
-  padding: var(--space-1) var(--space-4);
   color: var(--muted-strong);
   font-weight: 600;
   cursor: pointer;
 }
 
-.paper-overview__board-summary:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-  border-radius: var(--radius-md);
-}
-
 .paper-overview__board-body {
-  padding: 0 var(--space-4) var(--space-4);
+  padding: 0 0 var(--space-4);
 }
 
 /* One paper's card, opened from the row that names it. Wide, because it is the same card My
@@ -1445,28 +1459,18 @@
   gap: var(--space-4);
 }
 
-/* The count is the whole point of the section, so it is the biggest thing in it -- and it goes
-   quiet at zero, because "nothing waiting" should not compete with the queues that have something
-   in them. */
+/* The count is the whole point of the section, so it is the biggest thing in it. A queue at zero
+   is not drawn at all. */
 .professor__count {
   font-size: var(--control-ui-text-2xl);
   font-weight: 650;
   color: var(--warn);
 }
 
-.professor__count[data-empty="true"] {
+/* The page's one line when every queue is empty. */
+.professor__clear {
+  margin: var(--space-5) 0 0;
   color: var(--muted);
-}
-
-/* The line under the title saying what this queue is for. Quieter than the rows it introduces --
-   it is read once, when you are learning the page, and skipped every time after that. Sits tight
-   under the heading so it reads as part of it rather than as the first item. */
-.professor__blurb {
-  margin: var(--space-1) 0 0;
-  color: var(--muted);
-  font-size: var(--control-ui-text-sm);
-  line-height: 1.45;
-  max-width: 68ch;
 }
 
 .professor__list {
@@ -1638,6 +1642,7 @@
 /* The page's first line: one jump per queue with something in it. Plain text links with the
    count leading, not chips -- it is a table of contents, not a row of buttons (ui/DESIGN.md). */
 .professor__summary {
+  padding-top: var(--space-4);
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -1675,20 +1680,25 @@
 }
 
 /* The broadcast, folded to one line: the live sentence and its end date, with the composer under
-   it. Carries the accent edge the dashboard banner does, so the box she types into and the strip
-   the lab reads are visibly the same object seen from both ends. */
+   it. A plain row on the page's left edge with a hairline under it, like every other section. */
 .professor__broadcast {
-  border-inline-start: 2px solid var(--accent, currentColor);
-  padding-inline-start: var(--space-4);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--border);
 }
 
 .professor__broadcast-bar {
   display: flex;
   align-items: baseline;
   gap: var(--space-3);
+  min-height: 28px;
   cursor: pointer;
   list-style: none;
   font-size: var(--control-ui-text-sm);
+}
+
+/* The broadcast already draws the line under itself. */
+.professor__broadcast + .professor__section {
+  border-top: 0;
 }
 
 .professor__broadcast-bar::-webkit-details-marker {
@@ -1890,6 +1900,7 @@
   align-items: center;
   gap: var(--space-1);
   margin-top: var(--space-3);
+  padding-inline: 0;
 }
 
 /* The setup checklist, folded into My Profile. Spaced off the card above it so a closed disclosure

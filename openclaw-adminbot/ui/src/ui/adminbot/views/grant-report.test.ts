@@ -375,4 +375,27 @@ describe("renderGrantReport", () => {
     expect(container.textContent).toContain("Lab output the technical agenda does not claim");
     expect(container.querySelectorAll(".gr-stat").length).toBe(4);
   });
+
+  it("keeps its sources behind one closed fold and draws no instruction paragraph", async () => {
+    const container = await renderView();
+    const sources = container.querySelector<HTMLDetailsElement>(
+      '[data-testid="grant-report-sources"]',
+    );
+    expect(sources?.open).toBe(false);
+    expect(container.querySelector(".gr-intro")).toBeNull();
+    expect(container.textContent).not.toContain("grant-report/papers.ts");
+  });
+
+  it("leaves a zero figure off the coverage panel", async () => {
+    const container = await renderView();
+    const view = container.querySelector("adminbot-grant-report-view") as HTMLElement & {
+      updateComplete: Promise<unknown>;
+    };
+    (container.querySelectorAll(".gr-panel-tab")[2] as HTMLButtonElement).click();
+    await view.updateComplete;
+    const values = [...container.querySelectorAll(".gr-stat-value")].map((node) =>
+      node.textContent?.trim(),
+    );
+    expect(values).not.toContain("0");
+  });
 });

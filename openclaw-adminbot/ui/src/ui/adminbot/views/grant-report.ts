@@ -193,10 +193,8 @@ class AdminbotGrantReportView extends LitElement {
     }
     return html`
       <div class="gr-banner">
-        <strong>${pending.length}</strong> of ${papers.length} papers are placed by keyword rule
-        rather than by a person. They carry a guess everywhere they appear, including in the
-        exported markdown &mdash; confirm them in
-        <code>ui/src/ui/adminbot/grant-report/papers.ts</code> before this goes to a funder.
+        <strong>${pending.length}</strong> of ${papers.length} papers are placed by keyword rule,
+        not by a person, and are marked as a guess in the export.
         <button class="gr-copy" @click=${() => this.select("coverage")}>Review them</button>
       </div>
     `;
@@ -207,7 +205,6 @@ class AdminbotGrantReportView extends LitElement {
     const byId = new Map(counts.map((row) => [row.area, row.count]));
     const shown = this.areaFilter ? papersForArea(papers, this.areaFilter) : papers;
     return html`
-      <p class="gr-intro">${TAXONOMY_FRAMING}</p>
       ${this.renderReviewBanner(papers)}
       <div class="gr-area-grid">
         ${SAFETY_AREAS.map((area) => {
@@ -221,7 +218,9 @@ class AdminbotGrantReportView extends LitElement {
             >
               <div class="gr-area-head">
                 <span class="gr-area-name">${area.name}</span>
-                <span class="gr-area-count">${byId.get(area.id) ?? 0}</span>
+                ${byId.get(area.id)
+                  ? html`<span class="gr-area-count">${byId.get(area.id)}</span>`
+                  : nothing}
               </div>
               <div class="gr-area-gloss">${area.gloss}</div>
               <div class="gr-area-tech">${area.techniques.join(" · ")}</div>
@@ -372,24 +371,20 @@ class AdminbotGrantReportView extends LitElement {
     );
     return html`
       <div class="gr-stats">
-        ${stats.map(
-          (stat) => html`
-            <div class="gr-stat">
-              <div class="gr-stat-value">${stat.value}</div>
-              <div class="gr-stat-label">${stat.label}</div>
-            </div>
-          `,
-        )}
+        ${stats
+          .filter((stat) => stat.value > 0)
+          .map(
+            (stat) => html`
+              <div class="gr-stat">
+                <div class="gr-stat-value">${stat.value}</div>
+                <div class="gr-stat-label">${stat.label}</div>
+              </div>
+            `,
+          )}
       </div>
       ${pending.length > 0
         ? html`
             <h4 class="gr-h4">Awaiting confirmation</h4>
-            <p class="gr-intro">
-              Papers the live store carries that no one has placed by hand. The keyword rules made a
-              guess where they could; everything here is unconfirmed, and it is marked as such in
-              the export too. Confirm a paper by giving it an entry in
-              <code>grant-report/papers.ts</code>.
-            </p>
             <div class="gr-papers">${pending.map((paper) => this.renderPaperRow(paper))}</div>
           `
         : nothing}
@@ -408,19 +403,15 @@ class AdminbotGrantReportView extends LitElement {
           `;
         })}
       </div>
-      <h4 class="gr-h4">Lab output the technical agenda does not claim</h4>
-      <p class="gr-intro">
-        Not a gap to close by force. These are real papers that this proposal does not ask money
-        for, and the honest report says so rather than stretching a section to cover them.
-      </p>
-      <div class="gr-papers">${unmapped.map((paper) => this.renderPaperRow(paper))}</div>
+      ${unmapped.length > 0
+        ? html`
+            <h4 class="gr-h4">Lab output the technical agenda does not claim</h4>
+            <div class="gr-papers">${unmapped.map((paper) => this.renderPaperRow(paper))}</div>
+          `
+        : nothing}
       ${unclassified.length > 0
         ? html`
             <h4 class="gr-h4">Outside the six-area taxonomy</h4>
-            <p class="gr-intro">
-              The review covers technical AGI safety only, so misuse, capability and applied-domain
-              work has no area by construction.
-            </p>
             <div class="gr-papers">${unclassified.map((paper) => this.renderPaperRow(paper))}</div>
           `
         : nothing}
@@ -434,12 +425,6 @@ class AdminbotGrantReportView extends LitElement {
         .grant-report-view {
           padding: 0 0 var(--space-6, 24px);
         }
-        .grant-report-view .gr-intro {
-          color: var(--muted, #9fb0cc);
-          font-size: 13px;
-          margin: 0 0 var(--space-4, 16px);
-          max-width: 76ch;
-        }
         .gr-prov {
           color: var(--muted, #66799a);
           font-size: 11.5px;
@@ -449,6 +434,15 @@ class AdminbotGrantReportView extends LitElement {
         }
         .gr-prov a {
           color: inherit;
+        }
+        .gr-about {
+          margin-bottom: var(--space-3, 12px);
+        }
+        .gr-about summary {
+          color: var(--muted, #9fb0cc);
+          font-size: 12.5px;
+          cursor: pointer;
+          margin-bottom: var(--space-2, 8px);
         }
         .gr-banner {
           display: flex;
@@ -530,28 +524,32 @@ class AdminbotGrantReportView extends LitElement {
         }
         .gr-area-grid {
           display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-          gap: var(--space-3, 12px);
+          grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+          column-gap: var(--space-6, 24px);
           margin-bottom: var(--space-5, 20px);
+          border-top: 1px solid var(--border, #26324a);
         }
         /* The area's color lives in its heading and its chips, not in a border down the side: six
            cards each wearing a colored edge reads as decoration, and the selected one then has no
            stronger state left to move to. Selection is what the border is for here. */
+        /* Rows on hairlines rather than six boxed cards: the selected area is underlined in its
+           own colour, which is the one state the row needs to show. */
         .gr-area {
+          min-width: 0;
           text-align: left;
-          padding: var(--space-3, 12px) var(--space-4, 16px);
-          border: 1px solid var(--border, #26324a);
-          border-radius: var(--radius-lg, 8px);
+          padding: var(--space-3, 12px) 0;
+          border: 0;
+          border-bottom: 1px solid var(--border, #26324a);
+          border-radius: 0;
           background: transparent;
           color: var(--text, #d7e2f4);
           cursor: pointer;
         }
-        .gr-area:hover {
-          border-color: var(--muted, #66799a);
+        .gr-area:hover .gr-area-name {
+          text-decoration: underline;
         }
         .gr-area.is-active {
-          border-color: color-mix(in srgb, var(--text) 75%, var(--c));
-          box-shadow: inset 0 0 0 1px var(--c);
+          box-shadow: inset 0 -2px 0 var(--c);
         }
         .gr-area-head {
           display: flex;
@@ -852,16 +850,23 @@ class AdminbotGrantReportView extends LitElement {
         }
       </style>
       <section class="grant-report-view">
-        <p class="gr-prov">
-          Papers are read live from the AdminBot store and unioned with the
-          <code>${SOURCE.sheet.tab}</code> tab of
-          <a href=${SOURCE.sheet.url} target="_blank" rel="noopener">${SOURCE.sheet.title}</a>
-          as of ${SOURCE.compiledOn}, so a paper on the sheet but not yet in AdminBot still counts.
-          Areas follow
-          <a href=${SOURCE.taxonomy.url} target="_blank" rel="noopener">${SOURCE.taxonomy.title}</a>
-          (${SOURCE.taxonomy.attribution}). Where a paper sits is a human judgment; anything the
-          rules guessed is labelled.
-        </p>
+        <!-- Where the numbers come from is what a funder asks second, not first: one fold, closed. -->
+        <details class="gr-about" data-testid="grant-report-sources">
+          <summary>Sources</summary>
+          <p class="gr-prov">${TAXONOMY_FRAMING}</p>
+          <p class="gr-prov">
+            Papers are read live from the AdminBot store and unioned with the
+            <code>${SOURCE.sheet.tab}</code> tab of
+            <a href=${SOURCE.sheet.url} target="_blank" rel="noopener">${SOURCE.sheet.title}</a>
+            as of ${SOURCE.compiledOn}, so a paper on the sheet but not yet in AdminBot still
+            counts. Areas follow
+            <a href=${SOURCE.taxonomy.url} target="_blank" rel="noopener"
+              >${SOURCE.taxonomy.title}</a
+            >
+            (${SOURCE.taxonomy.attribution}). Where a paper sits is a human judgment; anything the
+            rules guessed is labelled.
+          </p>
+        </details>
         <div class="gr-proposal-bar">
           <span class="gr-proposal-label">Reporting against</span>
           <div class="gr-seg" role="tablist" aria-label="Proposal">

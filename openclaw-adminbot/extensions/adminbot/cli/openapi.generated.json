@@ -20242,6 +20242,9 @@
                   },
                   "optional": {
                     "type": "boolean"
+                  },
+                  "admin_override": {
+                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -44225,7 +44228,7 @@
         ],
         "additionalProperties": true
       },
-      "AdminBotMemberNudgeRequest": {
+      "AdminBotAdminNudgeSendRequest": {
         "type": "object",
         "properties": {
           "channel": {
@@ -44271,6 +44274,9 @@
             "type": "boolean"
           },
           "optional": {
+            "type": "boolean"
+          },
+          "admin_override": {
             "type": "boolean"
           }
         },

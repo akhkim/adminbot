@@ -831,43 +831,35 @@
   margin-bottom: calc(-1 * var(--space-8));
 }
 
+/* Lab Overview's figures: one hairline row of "12 members  5 papers", zeros left out. */
 .adminbot-metrics {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--space-3);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-6);
+}
+
+.adminbot-metrics:has(.adminbot-metric) {
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border);
 }
 
 .adminbot-metric {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
   min-width: 0;
-  padding: var(--space-3) var(--space-4);
-  border: 0;
-  border-bottom: 1px solid var(--border);
-  border-radius: 0;
-  background: transparent;
+}
+
+.adminbot-metric__value {
+  color: var(--text-strong);
+  font-size: var(--control-ui-text-lg);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .adminbot-metric__label {
   color: var(--muted);
-  font-size: var(--control-ui-text-xs);
-  font-weight: 600;
-  letter-spacing: var(--tracking-tight);
-}
-
-.adminbot-metric__value {
-  margin-top: var(--space-2);
-  color: var(--text-strong);
-  font-size: var(--control-ui-text-2xl);
-  font-weight: 600;
-  letter-spacing: var(--tracking-tighter);
-  font-variant-numeric: tabular-nums;
-  line-height: 1.1;
-}
-
-.adminbot-metric__detail {
-  margin-top: var(--space-2);
-  color: var(--muted);
   font-size: var(--control-ui-text-sm);
-  line-height: 1.45;
 }
 
 .adminbot-grid {
@@ -12407,4 +12399,53 @@ select.input:focus {
 .recent-edits__empty {
   margin: 0;
   color: var(--muted);
+}
+
+/* Filters on demand (views/filter-fold.ts): a button that opens a small panel of controls, and
+   the set filters as removable chips under the heading. */
+.ab-filters {
+  position: relative;
+}
+
+.ab-filters__toggle {
+  list-style: none;
+  cursor: pointer;
+}
+
+.ab-filters__toggle::-webkit-details-marker {
+  display: none;
+}
+
+.ab-filters__panel {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-3);
+  width: max-content;
+  max-width: min(22rem, calc(100vw - 2 * var(--space-4)));
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--panel-strong, var(--bg));
+  box-shadow: var(--shadow-md, 0 8px 24px rgb(0 0 0 / 0.16));
+}
+
+.ab-filters__panel select,
+.ab-filters__panel .profile-overview__filter {
+  width: 100%;
+}
+
+.ab-filters__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.ab-filters__chip {
+  cursor: pointer;
 }
