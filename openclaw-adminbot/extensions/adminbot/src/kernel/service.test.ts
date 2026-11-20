@@ -3921,6 +3921,66 @@ describe("AdminBotService", () => {
       expect(result.skipped).toEqual([{ member_id: "gone", reason: "member is alumni" }]);
     });
 
+    // POST /nudges/send's admin_override: an admin naming an alumnus by hand reaches them, and the
+    // skip they bypass is still in force for everybody else (the sweeps never pass the option).
+    it("reaches an alumnus off the list only on an admin override", async () => {
+      const service = labWith({
+        id: "gone",
+        name: "Gone",
+        slack_user_id: "U1",
+        member_type: "alumni",
+        receives_nudges: false,
+      });
+      const send = (adminOverride?: boolean) =>
+        service.sendMemberNudge(
+          { channel: "slack", recipient_member_ids: ["gone"], message: "Ping." },
+          "admin-1",
+          adminOverride ? { allowAlumni: true, ignoreNudgeList: true } : {},
+        );
+      expect(unwrap(await send()).skipped).toEqual([
+        { member_id: "gone", reason: "member is alumni" },
+      ]);
+      const overridden = unwrap(await send(true));
+      expect(overridden.skipped).toEqual([]);
+      expect(overridden.created).toHaveLength(1);
+    });
+
+    it("keeps the head professor and an optional stop under an admin override", async () => {
+      const service = labWith({
+        id: "zhijing",
+        name: "Zhijing Jin",
+        slack_user_id: "U-ZJ",
+        receives_nudges: true,
+      });
+      unwrap(service.updateSettings({ head_professor_member_id: "zhijing" } as never));
+      const result = unwrap(
+        await service.sendMemberNudge(
+          { channel: "slack", recipient_member_ids: ["zhijing"], message: "Ping." },
+          "admin-1",
+          { allowAlumni: true, ignoreNudgeList: true },
+        ),
+      );
+      expect(result.skipped).toEqual([
+        { member_id: "zhijing", reason: "member is the head professor" },
+      ]);
+
+      const stopped = labWith({
+        id: "quiet",
+        name: "Quiet",
+        slack_user_id: "U2",
+        member_type: "alumni",
+        slack_stop_at: "2026-01-01T00:00:00.000Z",
+      });
+      const optional = unwrap(
+        await stopped.sendMemberNudge(
+          { channel: "slack", recipient_member_ids: ["quiet"], message: "Ping.", optional: true },
+          "admin-1",
+          { allowAlumni: true, ignoreNudgeList: true },
+        ),
+      );
+      expect(optional.skipped).toEqual([{ member_id: "quiet", reason: "member replied stop" }]);
+    });
+
     // The roster records having left in two fields and the imported rows use `member_type`. A
     // check that reads only `status` sees none of the 22 alumni who carry the type alone.
     it("refuses an alumnus recorded by status too", async () => {

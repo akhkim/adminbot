@@ -2552,6 +2552,18 @@ export type AdminBotMemberNudgeRequest = {
   optional?: boolean;
 };
 
+/**
+ * The body of POST /nudges/send: an admin's hand-written nudge.
+ *
+ * `admin_override` is an option of this route alone, not of AdminBotMemberNudgeRequest, so no sweep
+ * that builds a request can carry it. Set, it reaches named recipients the loop would otherwise
+ * skip as alumni or as off the nudge list. The head-professor skip and an optional nudge's "replied
+ * stop" still apply.
+ */
+export type AdminBotAdminNudgeSendRequest = AdminBotMemberNudgeRequest & {
+  admin_override?: boolean;
+};
+
 export type AdminBotMemberNudgeSkip = {
   member_id: string;
   reason: string;
