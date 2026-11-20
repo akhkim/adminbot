@@ -342,7 +342,7 @@ function draw(options: DrawOptions = {}): Drawn {
 
 function modeButtons(container: HTMLElement): HTMLButtonElement[] {
   const card = container.querySelector<HTMLElement>("[data-testid='logistics-admin']");
-  return [...(card?.querySelectorAll<HTMLButtonElement>(".logistics__template") ?? [])];
+  return [...(card?.querySelectorAll<HTMLButtonElement>(".logistics-modes__btn") ?? [])];
 }
 
 function drawLetters(options: Omit<DrawOptions, "template"> = {}): Drawn {
@@ -571,7 +571,8 @@ describe("the signature Google Form signpost", () => {
     const { container } = draw({ signatureEditing: false });
     const section = container.querySelector('[data-testid="logistics-signature-section"]');
     expect(section?.classList.contains("logistics-request__section")).toBe(true);
-    expect(section?.querySelector(".card-title")).not.toBeNull();
+    // The page title already says Signatures; a second heading over the only form repeated it.
+    expect(section?.querySelector(".card-title")).toBeNull();
     for (const testId of [
       "logistics-signature-drive-url",
       "logistics-signature-deadline",
@@ -1081,7 +1082,7 @@ describe("list of schools", () => {
     expect(actions.map((button) => button.textContent?.trim())).toEqual([
       "Discard",
       "Save",
-      "Submit",
+      "Send request",
     ]);
 
     actions[1].click();
@@ -1135,7 +1136,6 @@ describe("letter request links", () => {
     const card = section(container, "logistics-letters");
     const sections = [...card.querySelectorAll(":scope > .logistics-request__section")];
     expect(sections.map((entry) => entry.getAttribute("data-testid"))).toEqual([
-      "logistics-letters-guide",
       "logistics-schools",
       // What the member did comes before where the letter is written and stored: it is the part
       // only they can supply, and the two links are plumbing for it.
@@ -1166,9 +1166,8 @@ describe("letter request links", () => {
     // Opens beside the request rather than over it -- the member is part-way through this form.
     expect(link?.getAttribute("target")).toBe("_blank");
     expect(link?.getAttribute("rel")).toContain("noopener");
-    expect(drive.querySelector(".card-sub")?.textContent).toContain(
-      "paste that folder's link below",
-    );
+    // The link is the instruction; the paragraph that restated it is gone.
+    expect(drive.querySelector(".card-sub")?.textContent?.trim()).toBe("Template folder");
   });
 
   it("shows the links already saved and reports each box on its own", () => {
@@ -1238,11 +1237,10 @@ describe("request modes", () => {
     const { container } = draw({ role: "member" });
     const admin = container.querySelector<HTMLElement>("[data-testid='logistics-admin']");
     expect(modeButtons(container).map((button) => button.textContent?.trim())).toEqual([
-      "Make a Request",
-      "My Requests",
+      "New request",
+      "Your requests",
     ]);
-    // The admin badge is the one part that stays admin-only: it says whose queue you are reading.
-    expect(admin?.textContent).not.toContain("Admins only");
+    expect(admin?.textContent).not.toContain("All requests");
   });
 
   it("shows a member the requests they sent, and says they are theirs", () => {
@@ -1265,16 +1263,15 @@ describe("request modes", () => {
     const { container } = draw({ role: "admin" });
     const admin = container.querySelector<HTMLElement>("[data-testid='logistics-admin']");
     expect(modeButtons(container).map((button) => button.textContent?.trim())).toEqual([
-      "Make a Request",
-      "View Current Requests",
+      "New request",
+      "All requests",
     ]);
-    // Above the Templates card, since it decides what the rest of the page is.
+    // Above the form, since it decides what the rest of the page is.
     const shell = container.querySelector<HTMLElement>("[data-testid='adminbot-logistics']");
     expect(shell?.firstElementChild).toBe(admin);
-    expect(admin?.textContent).toContain("Admins only");
   });
 
-  it("stays on Make a Request until the list is asked for", () => {
+  it("stays on New request until the list is asked for", () => {
     const drawn = draw({ role: "admin" });
     expect(modeButtons(drawn.container)[0].getAttribute("aria-pressed")).toBe("true");
     expect(drawn.container.querySelector("[data-testid='logistics-request']")).not.toBeNull();
@@ -1643,8 +1640,8 @@ describe("correcting a request already sent", () => {
     const mandatory = container.querySelector(
       "[data-testid='logistics-meeting-mandatory']",
     )?.textContent;
-    expect(mandatory).toContain("doc prep link is mandatory");
-    expect(mandatory).toContain("open for anyone with the link");
+    expect(mandatory).toContain("needs a doc prep link");
+    expect(mandatory).toContain("opens for anyone with the link");
   });
 
   it("says nothing about correcting on a form holding a new request", () => {
@@ -1855,13 +1852,15 @@ describe("recommendation letter Guidebook guidance", () => {
         "[data-testid='logistics-letters-guide']",
       )!;
       expect(guide).not.toBeNull();
-      expect(guide.textContent).toContain("before submitting this request");
+      // Folded away by default: the checklist is for the first request, not every one after it.
+      expect(guide.tagName).toBe("DETAILS");
+      expect((guide as HTMLDetailsElement).open).toBe(false);
       expect(guide.textContent).toContain("grad_app_[yourname]");
       expect(guide.textContent).toContain("earliest deadline");
       expect(guide.textContent).toContain("Statement of Purpose");
       expect(guide.textContent).toContain("zjin.admin@cs.toronto.edu");
       const links = [...guide.querySelectorAll<HTMLAnchorElement>("a")];
-      expect(links.map((link) => link.href)).toEqual([
+      expect(links.map((link) => link.href).toSorted()).toEqual([
         "https://docs.google.com/document/d/1H9Bt4z9uvDtieujh8Wp9YXDeLDhkq7vsKYGUvPnktN8/edit?tab=t.0#heading=h.7kpgc8qat88o",
         "https://docs.google.com/document/d/1H9Bt4z9uvDtieujh8Wp9YXDeLDhkq7vsKYGUvPnktN8/edit?tab=t.0#heading=h.ypvr8psn5zdy",
       ]);

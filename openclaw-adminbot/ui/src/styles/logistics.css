@@ -1,31 +1,61 @@
-/* Logistics Requests — the template picker.
-   Card, title and button chrome all come from components.css; this only lays the three templates
-   out and gives them a size the page-level .btn does not. */
+/* Logistics Requests -- the toolbar line above the form: which list you are on, and whether the
+   draft saved. One quiet row, no card (DESIGN.md rules 1 and 17). */
 
-.logistics__templates {
+.logistics-toolbar {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-3);
-  margin-top: var(--space-4);
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  margin-bottom: var(--space-4);
 }
 
-/* Wide enough that the three labels sit on one line each, and equal so the row reads as a set of
-   peers rather than three buttons sized by how long their text happens to be. */
-.logistics__template {
-  flex: 0 1 auto;
-  min-height: var(--control-h-lg);
-  padding: 0 var(--space-4);
+/* The toolbar already opens the page, so the form under it starts at its first field rather than
+   stacking a card's top padding and a field's top margin on the shell gap. */
+.logistics-toolbar + .logistics-request {
+  padding-top: 0;
 }
 
-.logistics__template-icon {
+.logistics-toolbar + .logistics-request > .logistics-request__section:first-child > :first-child {
+  margin-top: 0;
+}
+
+/* A segmented control: two peers in one hairline track, the current one filled. */
+.logistics-modes {
   display: inline-flex;
-  color: var(--muted);
-  transition: color var(--duration-fast) var(--ease-out);
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full, 999px);
 }
 
-.logistics__template:hover .logistics__template-icon,
-.logistics__template.active .logistics__template-icon {
-  color: var(--accent);
+.logistics-modes__btn {
+  min-height: 32px;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-full, 999px);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--control-ui-text-sm);
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+.logistics-modes__btn:hover {
+  color: var(--text-strong);
+}
+
+.logistics-modes__btn.active {
+  background: var(--bg-hover, var(--secondary));
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+.logistics-modes__btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 /* The signature uploader sits in its own card under the templates. */
@@ -486,26 +516,16 @@
 /* Above the link rather than below it, and given a band of its own: it is a condition on the thing
    the button is about to open, so a member who reads only far enough to click has still read it. */
 .logistics-meeting__mandatory {
-  margin: var(--space-3) 0 0;
-  padding: var(--space-2) var(--space-3);
-  border-left: 3px solid var(--warn);
+  margin: 0 0 var(--space-3);
   font-size: var(--control-ui-text-sm);
 }
 
-/* The admin band above the templates, and the request list it opens. */
-
-.logistics-admin__heading {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-3);
+.logistics-meeting__sheet {
+  margin: var(--space-4) 0 0;
+  font-size: var(--control-ui-text-sm);
 }
 
-/* Says who this band is for. An admin sharing a screen with a member should be able to see at a
-   glance which parts of the page the member does not have. */
-.logistics-admin__heading .pill {
-  flex: none;
-}
+/* The request list the "requests" toggle opens. */
 
 .logistics-requests__scope {
   margin: var(--space-3) 0 0;
@@ -1909,20 +1929,41 @@
   margin-top: var(--space-5);
 }
 
+/* Draft status: muted text at the end of the toolbar, with its one action as a text link. */
 .logistics-sync {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
+  gap: var(--space-1) var(--space-3);
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
 }
 
 .logistics-sync > span {
   display: flex;
-  flex: 1 1 220px;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
+}
+
+.logistics-sync--conflict {
+  flex-basis: 100%;
+  color: var(--text);
+}
+
+.logistics-sync__link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.logistics-sync__link:hover {
+  color: var(--text-strong);
 }
 
 /* Tab Usage: which parts of AdminBot the lab opens.
@@ -2258,30 +2299,86 @@
   }
 }
 
-/* Light DOM lets the shared offline panel use the same controls as every request page. */
+/* Offline access: a pill in the page header that opens a small panel beneath it. Light DOM, so
+   the panel's buttons are the page's own. */
 adminbot-offline-access {
+  display: inline-block;
+  position: relative;
+}
+
+/* Pages without a header (chat, settings) draw it at the top of the content instead. */
+.content > adminbot-offline-access {
   display: block;
   margin-bottom: var(--space-3);
 }
 
-adminbot-offline-access details {
-  border-bottom: 1px solid var(--border);
-}
-
-adminbot-offline-access summary {
+.offline-access__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 28px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+  white-space: nowrap;
   cursor: pointer;
-  font-weight: 600;
+  list-style: none;
 }
 
-adminbot-offline-access p {
-  max-width: 75ch;
+.offline-access__pill::-webkit-details-marker {
+  display: none;
+}
+
+.offline-access__pill::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ok, var(--muted));
+}
+
+.offline-access--warn .offline-access__pill {
+  color: var(--text-strong);
+}
+
+.offline-access--warn .offline-access__pill::before {
+  background: var(--warn);
+}
+
+.offline-access__pill:hover {
+  color: var(--text-strong);
+}
+
+.offline-access__pill:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.offline-access__panel {
+  position: fixed;
+  z-index: 60;
+  width: min(22rem, calc(100vw - 2rem));
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 12px);
+  background: var(--bg-elevated, var(--bg));
+  box-shadow: var(--shadow-lg, 0 12px 32px rgb(0 0 0 / 0.18));
+  text-align: left;
+}
+
+.offline-access__panel p {
+  margin: 0 0 var(--space-2);
   line-height: 1.5;
   font-size: var(--control-ui-text-sm);
 }
 
-adminbot-offline-access .btn {
-  max-width: 100%;
-  white-space: normal;
+.offline-access__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
 }
 
 .paper-card-dialog--review {
@@ -2331,30 +2428,74 @@ adminbot-offline-access .btn {
   padding-top: var(--space-5);
 }
 
-/* The intro is a lead-in, not a step: smaller title, no rule under it. */
-.logistics-letters__intro > .card-title {
-  font-size: var(--control-ui-text-lg);
+/* Reference above the form, each folded to one line: eligibility, then the guide. */
+.logistics-fold {
+  margin: 0 0 var(--space-2);
 }
 
-.logistics-letters__intro > .card-sub {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-1) var(--space-3);
+.logistics-fold > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--muted-strong);
+  cursor: pointer;
+  font-size: var(--control-ui-text-sm);
+  list-style: none;
+  user-select: none;
 }
 
-.logistics-letters__intro .rec-eligibility {
+.logistics-fold > summary::-webkit-details-marker {
+  display: none;
+}
+
+.logistics-fold > summary::before {
+  content: "";
+  width: 0.4rem;
+  height: 0.4rem;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.logistics-fold[open] > summary::before {
+  transform: rotate(45deg);
+}
+
+.logistics-fold > summary:hover {
+  color: var(--text-strong);
+}
+
+.logistics-fold[open] {
+  margin-bottom: var(--space-4);
+}
+
+.logistics-fold > :not(summary) {
+  margin-top: var(--space-3);
+}
+
+.logistics-fold .rec-eligibility {
   margin-bottom: 0;
 }
 
-.logistics-letters__step > .card-title {
+.logistics-step__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-3);
+}
+
+.logistics-letters__step > .card-title,
+.logistics-step__head > .card-title {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   font-size: var(--control-ui-text-md);
 }
 
-.logistics-letters__step > .card-title::before {
+.logistics-letters__step > .card-title::before,
+.logistics-step__head > .card-title::before {
   counter-increment: letters-step;
   content: counter(letters-step);
   display: inline-grid;

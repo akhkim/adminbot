@@ -9930,7 +9930,7 @@ details[open] > .ov-expandable-toggle::after {
 }
 
 .adminbot-reimbursement-warning__lede {
-  margin: 0 0 var(--space-3);
+  margin: var(--space-2) 0 var(--space-3);
 }
 
 .adminbot-reimbursement-warning__list {
@@ -9950,9 +9950,6 @@ details[open] > .ov-expandable-toggle::after {
    rules run and which form comes out. */
 .adminbot-reimbursement-funder {
   margin-bottom: var(--space-4);
-  padding: var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
 }
 
 .adminbot-reimbursement-funder__options {
@@ -9993,19 +9990,16 @@ details[open] > .ov-expandable-toggle::after {
    failure would leave a reader unable to tell "cleared" from "never ran". */
 .adminbot-reimbursement-check {
   margin-bottom: var(--space-4);
-  padding: var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  padding: var(--space-1) 0 var(--space-1) var(--space-3);
+  border-left: 2px solid var(--border);
 }
 
 .adminbot-reimbursement-check--blocked {
-  border-color: color-mix(in srgb, var(--danger, #b42318) 45%, transparent);
-  background: color-mix(in srgb, var(--danger, #b42318) 6%, var(--bg));
+  border-left-color: var(--danger, #b42318);
 }
 
 .adminbot-reimbursement-check--ready {
-  border-color: color-mix(in srgb, var(--ok) 40%, transparent);
-  background: color-mix(in srgb, var(--ok) 7%, var(--bg));
+  border-left-color: var(--ok);
 }
 
 .adminbot-reimbursement-check__funder {
@@ -10081,9 +10075,7 @@ details[open] > .ov-expandable-toggle::after {
 
 .adminbot-reimbursement-sent {
   margin-top: var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--ok) 10%, var(--bg));
+  color: var(--ok);
   font-size: 0.9em;
 }
 
@@ -10092,6 +10084,12 @@ details[open] > .ov-expandable-toggle::after {
   grid-template-columns: minmax(320px, 0.9fr) minmax(420px, 1.1fr);
   gap: var(--space-5);
   min-height: 640px;
+}
+
+/* Before the assistant has anything to fill in, the preview column is not rendered at all. */
+.adminbot-reimbursement-workspace--single {
+  grid-template-columns: minmax(0, 46rem);
+  min-height: 0;
 }
 
 .adminbot-reimbursement-chat,
@@ -10142,6 +10140,16 @@ details[open] > .ov-expandable-toggle::after {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--bg);
+}
+
+/* The transcript reads as a column of bubbles on the page, not a boxed panel, and grows with the
+   conversation instead of reserving an empty well. */
+.adminbot-reimbursement-messages {
+  min-height: 0;
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
 }
 
 .adminbot-reimbursement-message,
@@ -10234,7 +10242,6 @@ details[open] > .ov-expandable-toggle::after {
   padding: var(--space-3);
   border: 1px dashed var(--border-strong);
   border-radius: var(--radius-md);
-  background: var(--bg);
   color: var(--text);
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
@@ -10266,16 +10273,14 @@ details[open] > .ov-expandable-toggle::after {
 .adminbot-reimbursement-fields {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-2);
+  column-gap: var(--space-5);
   margin: 0;
 }
 
 .adminbot-reimbursement-fields > div {
   min-width: 0;
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--bg);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border);
 }
 
 .adminbot-reimbursement-fields__wide {
@@ -10307,7 +10312,6 @@ details[open] > .ov-expandable-toggle::after {
   padding: 2px var(--space-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-full);
-  background: var(--bg-muted);
   color: var(--muted-strong);
   font-size: var(--control-ui-text-xs);
   line-height: 1.5;
@@ -10315,8 +10319,6 @@ details[open] > .ov-expandable-toggle::after {
 
 .adminbot-expense-table-wrap {
   overflow-x: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
 }
 
 .adminbot-expense-table {

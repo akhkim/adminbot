@@ -2675,6 +2675,11 @@ export function renderApp(state: AppViewState) {
   // member's own drafts. Doing it here rather than at connect time is what makes a sign-in that
   // happens after first paint restore anything at all.
   const logisticsScope = adminBotLogisticsScope(state);
+  const hasPageHeader = !(state.tab === "config" || isChat || state.tab === "adminbotDeadlines");
+  const offlineAccess = html`<adminbot-offline-access
+    .scope=${logisticsScope}
+    .always=${isLogisticsTab(state.tab)}
+  ></adminbot-offline-access>`;
   const draftSession = loadStoredMemberSession();
   configureDraftSync(
     logisticsScope,
@@ -3300,10 +3305,9 @@ export function renderApp(state: AppViewState) {
           ? "content--logs"
           : ""} ${state.tab === "adminbotDeadlines" ? "content--deadlines" : ""}"
       >
-        <adminbot-offline-access
-          .scope=${logisticsScope}
-          .always=${isLogisticsTab(state.tab)}
-        ></adminbot-offline-access>
+        <!-- Offline access is a status, so it sits in the page header's meta slot below; only the
+             pages without a header draw it here. -->
+        ${hasPageHeader ? nothing : offlineAccess}
         <!-- Settings only. The text is git and install plumbing -- "Update skipped:
              not-git-install. Not a git checkout. Run openclaw update from the CLI" -- and it was
              rendering above every page, including a member's own profile. Nobody but the admin who
@@ -3318,7 +3322,7 @@ export function renderApp(state: AppViewState) {
              the deploy script on the host, not by a member clicking a red bar above their own
              profile -- and it was the loudest element on every page for something none of its
              readers can act on. The dismissal cache went with it. -->
-        ${state.tab === "config" || isChat || state.tab === "adminbotDeadlines"
+        ${!hasPageHeader
           ? nothing
           : html`<section
               class=${chatHeaderHidden
@@ -3332,6 +3336,7 @@ export function renderApp(state: AppViewState) {
                 <div class="page-sub">${subtitleForTab(state.tab)}</div>
               </div>
               <div class="page-meta">
+                ${offlineAccess}
                 <!-- role="alert" because this appears after the page has rendered: a failure
                      that arrives silently is a failure a screen-reader user never hears. -->
                 ${headerError

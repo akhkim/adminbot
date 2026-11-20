@@ -2258,9 +2258,9 @@ export const en: TranslationMap = {
       badge: "Admins only",
       sub: "Make a request of your own, or read the ones the lab has been sent.",
       memberSub: "Make a request, or check where the ones you have sent stand.",
-      make: "Make a Request",
-      view: "View Current Requests",
-      viewMine: "My Requests",
+      make: "New request",
+      view: "All requests",
+      viewMine: "Your requests",
     },
     requests: {
       title: "Current Requests",
@@ -2485,14 +2485,14 @@ export const en: TranslationMap = {
       context: "Context of signing (optional)",
       contextPlaceholder:
         "Example: this is the visa letter for the Montreal workshop — the deadline is the 8th.",
-      send: "Send the signature request",
+      send: "Send request",
       sending: "Sending…",
       submitted: "Filed on the lab's signature form.",
       signInNeeded:
         "The lab's form only takes responses from a signed-in Google account, so this one needs your click. Your answers are already filled in: check them and press Submit.",
       openPrefilled: "Open the form with your answers filled in",
       notFiled: "The form did not take the request. Open the form yourself to file it.",
-      openForm: "Open the form yourself",
+      openForm: "Use the Google Form instead",
       dropTitle: "Drop documents here, or click to choose",
       dropHint: "PDF, Word, or a photo of the page.",
       remove: "Remove {name}",
@@ -2511,9 +2511,9 @@ export const en: TranslationMap = {
       clear: "Remove all",
     },
     lettersGuide: {
-      title: "Before requesting a recommendation letter",
+      title: "Before you request",
       sub: "Please follow the Guidebook's preparation steps before submitting this request.",
-      open: "Open the Guidebook: How to ask for Rec Letters",
+      open: "Open the Guidebook",
       folder:
         "Create grad_app_[yourname] with edit access for your letter writer, ideally also linked from your shared Zhijing-[yourname] folder.",
       schools:
@@ -2578,10 +2578,9 @@ export const en: TranslationMap = {
     meeting: {
       title: "Meetings to book",
       sub: "Ask for a call. Each row is checked and then added to the call queue for review.",
-      openSheet: "Open the call queue",
+      openSheet: "Call queue",
       // The one thing a member can leave blank and not find out until nobody schedules their call.
-      mandatory:
-        "The doc prep link is mandatory, and it has to open for anyone with the link — a row without one is not queued.",
+      mandatory: "Each call needs a doc prep link that opens for anyone with the link.",
       submitted: "Submitted",
       notSubmitted: "Not yet",
       purpose: "What the call is for",
@@ -2606,7 +2605,7 @@ export const en: TranslationMap = {
     },
     cvOverleaf: {
       title: "CV Overleaf Link (editable)",
-      sub: "Share the project so anyone with the link can edit — a letter writer often adds to it.",
+      sub: "Anyone with the link must be able to edit.",
       placeholder: "https://www.overleaf.com/project/…",
     },
     driveFolder: {
@@ -2619,7 +2618,7 @@ export const en: TranslationMap = {
       save: "Save",
       saving: "Saving…",
       savedAt: "Saved on this device at {time}",
-      submit: "Submit",
+      submit: "Send request",
       submitting: "Sending…",
       resend: "Send the correction",
       editing: "Correcting a request you already sent.",
