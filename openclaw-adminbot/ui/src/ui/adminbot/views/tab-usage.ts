@@ -101,41 +101,43 @@ function table(report: TabVisitReport) {
   const busiest = report.tabs[0]?.visits ?? 0;
   // Six columns do not fit a phone; the table scrolls sideways inside its card rather than pushing
   // the page wider than the screen, where the last columns were simply cut off.
-  return html`<div class="tab-usage__scroll"><table class="tab-usage__table">
-    <thead>
-      <tr>
-        <th scope="col">${t("tabUsage.column.tab")}</th>
-        <th scope="col" class="tab-usage__numeric">${t("tabUsage.column.visits")}</th>
-        <th scope="col" class="tab-usage__numeric">${t("tabUsage.column.members")}</th>
-        <th scope="col" class="tab-usage__numeric">${t("tabUsage.column.perDay")}</th>
-        <th scope="col" class="tab-usage__numeric">${t("tabUsage.column.dwell")}</th>
-        <th scope="col" class="tab-usage__numeric">${t("tabUsage.column.last")}</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${report.tabs.map(
-        (row) => html`<tr data-testid=${`tab-usage-row-${row.tab}`}>
-          <th scope="row" class="tab-usage__tab">
-            <span class="tab-usage__tab-name">${tabLabel(row.tab)}</span>
-            <!-- The bar is the column: a reader comparing eleven tabs is comparing shapes, and
+  return html`<div class="tab-usage__scroll">
+    <table class="tab-usage__table">
+      <thead>
+        <tr>
+          <th scope="col">${t("tabUsage.column.tab")}</th>
+          <th scope="col" class="tab-usage__numeric">${t("tabUsage.column.visits")}</th>
+          <th scope="col" class="tab-usage__numeric">${t("tabUsage.column.members")}</th>
+          <th scope="col" class="tab-usage__numeric">${t("tabUsage.column.perDay")}</th>
+          <th scope="col" class="tab-usage__numeric">${t("tabUsage.column.dwell")}</th>
+          <th scope="col" class="tab-usage__numeric">${t("tabUsage.column.last")}</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${report.tabs.map(
+          (row) => html`<tr data-testid=${`tab-usage-row-${row.tab}`}>
+            <th scope="row" class="tab-usage__tab">
+              <span class="tab-usage__tab-name">${tabLabel(row.tab)}</span>
+              <!-- The bar is the column: a reader comparing eleven tabs is comparing shapes, and
                  reads the exact count off the cell beside it only when one looks wrong. -->
-            <span
-              class="tab-usage__bar"
-              style=${`--share:${shareOfBusiest(row, busiest)}%`}
-              aria-hidden="true"
-            ></span>
-          </th>
-          <td class="tab-usage__numeric ab-num">${row.visits}</td>
-          <td class="tab-usage__numeric ab-num">${row.members}</td>
-          <td class="tab-usage__numeric ab-num">${row.visitsPerDay}</td>
-          <td class="tab-usage__numeric ab-num">
-            ${dwellLabel(row.dwellSecondsMedian, row.dwellSamples)}
-          </td>
-          <td class="tab-usage__numeric muted">${row.lastAt.slice(0, 10)}</td>
-        </tr>`,
-      )}
-    </tbody>
-  </table></div>`;
+              <span
+                class="tab-usage__bar"
+                style=${`--share:${shareOfBusiest(row, busiest)}%`}
+                aria-hidden="true"
+              ></span>
+            </th>
+            <td class="tab-usage__numeric ab-num">${row.visits}</td>
+            <td class="tab-usage__numeric ab-num">${row.members}</td>
+            <td class="tab-usage__numeric ab-num">${row.visitsPerDay}</td>
+            <td class="tab-usage__numeric ab-num">
+              ${dwellLabel(row.dwellSecondsMedian, row.dwellSamples)}
+            </td>
+            <td class="tab-usage__numeric muted">${row.lastAt.slice(0, 10)}</td>
+          </tr>`,
+        )}
+      </tbody>
+    </table>
+  </div>`;
 }
 
 export function renderAdminBotTabUsage(props: TabUsageViewProps) {
@@ -143,10 +145,7 @@ export function renderAdminBotTabUsage(props: TabUsageViewProps) {
   return html`
     <section class="card tab-usage" data-testid="tab-usage">
       <div class="tab-usage__head">
-        <div>
-          <div class="card-title">${t("tabUsage.title")}</div>
-          <p class="tab-usage__blurb">${t("tabUsage.blurb")}</p>
-        </div>
+        <div class="card-title">${t("tabUsage.title")}</div>
         ${windowPicker(props)}
       </div>
 
@@ -155,39 +154,29 @@ export function renderAdminBotTabUsage(props: TabUsageViewProps) {
             ${props.error}
           </p>`
         : nothing}
-      ${props.loading && !report
-        ? renderSkeleton({ label: t("tabUsage.loading") })
-        : nothing}
+      ${props.loading && !report ? renderSkeleton({ label: t("tabUsage.loading") }) : nothing}
       ${report && !report.tabs.length
         ? html`<p class="tab-usage__empty" data-testid="tab-usage-empty">${t("tabUsage.empty")}</p>`
         : nothing}
       ${report && report.tabs.length ? html`${totals(report)} ${table(report)}` : nothing}
 
-      <div class="tab-usage__actions">
-        <button
-          class="btn btn--sm btn--ghost"
-          type="button"
-          data-testid="tab-usage-refresh"
-          ?disabled=${props.loading}
-          @click=${props.onRefresh}
-        >
-          ${t("tabUsage.refresh")}
-        </button>
-        <button
-          class="btn btn--sm"
-          type="button"
-          data-testid="tab-usage-export"
-          ?disabled=${props.exporting || !report?.visits}
-          @click=${props.onExport}
-        >
-          <span aria-hidden="true">${icons.download}</span>
-          ${props.exporting ? t("tabUsage.exporting") : t("tabUsage.export")}
-        </button>
-      </div>
-
-      <!-- Said on the page rather than left to whoever reads the numbers later: every one of these
-           is a way to over-read this table, and the export is what a real analysis should use. -->
-      <p class="tab-usage__caveat">${t("tabUsage.caveat")}</p>
+      <!-- The export only shows once there is something in it. The caveat rides on it as a tooltip:
+           every clause is a way to over-read the table, and the export is what a real analysis uses. -->
+      ${report?.visits
+        ? html`<div class="tab-usage__actions">
+            <button
+              class="btn btn--sm"
+              type="button"
+              data-testid="tab-usage-export"
+              title=${t("tabUsage.caveat")}
+              ?disabled=${props.exporting}
+              @click=${props.onExport}
+            >
+              <span aria-hidden="true">${icons.download}</span>
+              ${props.exporting ? t("tabUsage.exporting") : t("tabUsage.export")}
+            </button>
+          </div>`
+        : nothing}
     </section>
   `;
 }

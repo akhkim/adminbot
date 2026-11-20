@@ -11781,11 +11781,10 @@ select.target__select optgroup {
 .profile-overview__adoption-summary {
   display: flex;
   flex-wrap: wrap;
-  gap: 24px;
-  margin: 12px 0 4px;
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  gap: var(--space-3) var(--space-6);
+  margin: var(--space-3) 0 var(--space-2);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border);
 }
 
 .profile-overview__adoption-summary > div {
@@ -11797,7 +11796,7 @@ select.target__select optgroup {
 }
 
 .profile-overview__adoption-figure {
-  font-size: 22px;
+  font-size: var(--control-ui-text-lg);
   font-weight: 600;
 }
 
