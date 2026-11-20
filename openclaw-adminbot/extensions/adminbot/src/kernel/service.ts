@@ -4080,7 +4080,13 @@ export class AdminBotService {
       if (correspondenceError) {
         return serviceError(400, correspondenceError);
       }
-      if (adminBotIsPersonalCorrespondenceEmail(member.correspondence_email)) {
+      // A nudge toward a durable address, not an invariant: an alumnus may have nothing else. So
+      // an admin setting it on purpose (origin.adminOverride) is let through; members and sweeps
+      // are still refused.
+      if (
+        !origin.adminOverride &&
+        adminBotIsPersonalCorrespondenceEmail(member.correspondence_email)
+      ) {
         return serviceError(
           400,
           "Use an institutional or company email for correspondence, rather than a personal email address.",
@@ -14865,6 +14871,13 @@ export class AdminBotService {
        * identical card.
        */
       dedupePortalNotification?: boolean;
+      /** Reach alumni among the named recipients. POST /nudges/send sets it from `admin_override`. */
+      allowAlumni?: boolean;
+      /**
+       * Reach named recipients who are off the nudge list. Set only by POST /nudges/send's
+       * `admin_override`, an admin's deliberate send; see the loop below.
+       */
+      ignoreNudgeList?: boolean;
     } = {},
   ): Promise<AdminBotServiceResponse<AdminBotMemberNudgeResult>> {
     const message = request.message.trim();
@@ -14912,7 +14925,15 @@ export class AdminBotService {
       // chased, and that has been a rule of this system rather than a per-person choice since long
       // before there was a list. The allowlist must not become a way to undo it by ticking a box --
       // an admin who wants to reach an alumnus has their address, and this is not that path.
-      if (adminBotIsAlumniMember(member)) {
+      //
+      // The exception is an admin override: POST /nudges/send with `admin_override`, from an admin
+      // who named these recipients by hand, sets `allowAlumni` and `ignoreNudgeList`, which skip
+      // this check and the nudge list below. Both exist so a *sweep* cannot reach somebody the lab
+      // has stopped chasing, and an admin choosing to write to them is not a sweep. It is per send,
+      // never stored, so nothing about the member changes and the next sweep skips them again. The
+      // head professor and a "stop" on an optional nudge are not covered: those are not the lab's
+      // call about the member.
+      if (adminBotIsAlumniMember(member) && options.allowAlumni !== true) {
         skipped.push({ member_id: memberId, reason: "member is alumni" });
         continue;
       }
@@ -14928,7 +14949,7 @@ export class AdminBotService {
         skipped.push({ member_id: memberId, reason: "member is the head professor" });
         continue;
       }
-      if (!adminBotReceivesNudges(member)) {
+      if (!adminBotReceivesNudges(member) && options.ignoreNudgeList !== true) {
         skipped.push({ member_id: memberId, reason: "member is not on the nudge list" });
         continue;
       }

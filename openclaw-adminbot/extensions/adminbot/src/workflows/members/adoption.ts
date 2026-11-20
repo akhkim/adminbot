@@ -247,8 +247,19 @@ export function adoptionSummary(
   };
 }
 
-/** The shape `upsertLabMember` takes to say who is writing. Absent means the importer. */
-export type AdminBotWriteOrigin = { source?: AdminBotFieldSource; actor?: string };
+/**
+ * The shape `upsertLabMember` takes to say who is writing. Absent means the importer.
+ *
+ * `adminOverride` is set only by an admin's own save of a roster record (saveLabMemberAsAdmin,
+ * reached from the members tab or an admin API token). It lets that deliberate write past the
+ * guards that exist to steer members and sweeps, such as the personal-correspondence-email refusal.
+ * Never derive it from `source: "admin"`: viewed-as edits and paper writes stamp that too.
+ */
+export type AdminBotWriteOrigin = {
+  source?: AdminBotFieldSource;
+  actor?: string;
+  adminOverride?: boolean;
+};
 
 /** Narrowing helper so a route can hand through a value it read off a request. */
 export function asFieldSource(value: unknown): AdminBotFieldSource | undefined {
