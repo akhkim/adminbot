@@ -139,6 +139,8 @@ export type AdminBotRouteContext = {
   /** The DCS roster sheet a role change files a row on. Absent: the step reports it unconfigured. */
   dcsRoster?: DcsRosterSheetSource;
   callSheet?: CallSheetSource;
+  /** The Membership grid and call-queue preview, kept between page views. */
+  sheetPageReads?: import("../sheet-page-reads.js").SheetPageReads;
   /** Resolved switch: does a submitted meeting request propose its own call-sheet row? */
   autoQueueMeetingRequests: boolean;
   labCalendar: import("../../workflows/calendar/lab-calendar.js").AdminBotLabCalendar;
@@ -471,6 +473,9 @@ export type AdminBotMockServiceOptions = {
   slackChannelNamingSweepIntervalMs?: number;
   // Hourly in the host: retries meetup intros held for quiet hours. Disabled when unset.
   meetupSweepIntervalMs?: number;
+  // How often the Membership grid and call queue re-read their sheet behind the page (the host
+  // sets it). Disabled when unset.
+  sheetViewWarmIntervalMs?: number;
   // How often the host checks whether the daily CV sweep is due (hourly in the host); the sweep
   // itself runs at most once per 24 hours. Disabled when unset.
   cvSweepCheckIntervalMs?: number;

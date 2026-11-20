@@ -73,7 +73,17 @@ export const papersRoutes: readonly Route[] = [
   get(
     "/lab/projects",
     privilegedOnly(({ res, ctx }) => {
-      sendServiceResult(res, ctx.service.listLabProjects());
+      // The body is the same for every admin, and moves only with its tables and the clock (status
+      // turns dormant by the day), so a revisit costs one counter read and a 304.
+      const version = ctx.service.labProjectsVersion();
+      const etag =
+        version === undefined
+          ? undefined
+          : versionEtag("lab-projects", [version, new Date().toISOString().slice(0, 10)]);
+      if (etag && sendNotModified(res, etag)) {
+        return;
+      }
+      sendServiceResult(res, ctx.service.listLabProjects(), { etag });
     }),
   ),
   get(

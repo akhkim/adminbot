@@ -35,6 +35,24 @@ squashed sync commits, never as merges.
   history. This overrides any default attribution the harness asks for.
 - **Never commit secrets.** `.env`, `client_secret*.json` and `state/` are ignored and stay ignored.
   Channel and provider credentials live in `~/.openclaw/credentials/`.
+- **Every page and sub-tab shows its UI within 1 second on the live deployment.** This is a
+  standing requirement for every patch and PR, including ones that only add a field. Check any
+  change to a GET route, a service read or a page loader against it:
+  - The page frame draws at once. A revisit draws what this session already loaded
+    (`peekAuthedRead`, kept per-session state) while the request revalidates it. Never blank
+    to a spinner.
+  - A page's first read is in `ui/src/ui/adminbot/auth/page-reads.ts`, so it starts on hover or click.
+  - A heavy server read is a read model, not a per-request rebuild:
+    - Build from one `withPaperTables` snapshot or batched queries, with no per-row lookups.
+    - Memoise it in `ReadModelMemo`, keyed on `store.rowVersion([...every table it reads])`
+      (`persistence/sqlite.row-versions.ts`). A new source table goes into `ROW_VERSIONED_TABLES`.
+    - Apply clock-dependent fields per request, after the memo.
+    - Answer an unchanged read with `versionEtag` / `sendNotModified` before building anything.
+  - SQLite calls are synchronous and block every other request. A query in a request path needs
+    an index it uses: check with `EXPLAIN QUERY PLAN`. Gmail, Calendar, OpenReview and other
+    external services sit behind a cached reader that the matching write invalidates.
+  - State in the PR what you measured: the route's time before and after, or why the change
+    cannot affect it.
 - **`extensions/adminbot` must not import core internals.** It goes through
   `openclaw/plugin-sdk/*`. Cross-plugin wiring (Slack Connect invites, core device pairing) belongs
   in the launcher, which is why `host/main.ts` takes them as injected deps.

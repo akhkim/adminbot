@@ -3556,6 +3556,38 @@ describe("the calendar routes", () => {
     });
   });
 
+  it("keeps a calendar read between page loads and reads again after a calendar write", async () => {
+    let reads = 0;
+    const { baseUrl } = await startService({
+      calendarEventsReader: async () => {
+        reads += 1;
+        return [{ id: `evt-${reads}`, summary: "Lab retreat", start: "2026-09-01T13:00:00-04:00" }];
+      },
+      executor: { execute: async () => ({ handled: true }) },
+    });
+    const headers = await adminSession(baseUrl);
+    const firstEventId = async () =>
+      ((await (await fetch(`${baseUrl}/calendar/events`, { headers })).json()) as {
+        events: Array<{ id: string }>;
+      }).events[0]?.id;
+
+    expect(await firstEventId()).toBe("evt-1");
+    expect(await firstEventId()).toBe("evt-1");
+    expect(reads).toBe(1);
+
+    const created = await fetch(`${baseUrl}/calendar/events`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        summary: "Reading group lunch",
+        start: "2026-08-18T13:00",
+        end: "2026-08-18T14:00",
+      }),
+    });
+    expect(created.status).toBe(200);
+    expect(await firstEventId()).toBe("evt-2");
+  });
+
   // Every calendar route, listed once and reused by the three refusal tests below, so a route added
   // later is either added here or visibly missing from all three.
   function calendarRoutes(headers: Record<string, string>): Array<[string, RequestInit]> {
@@ -4507,6 +4539,12 @@ describe("the member location timeline", () => {
     await memberToken(baseUrl, "ada", "Ada Attendee", "member", { location: "Toronto" });
     const member = await memberToken(baseUrl, "bo", "Bo Other");
     const admin = await memberToken(baseUrl, "root", "Root Admin", "admin");
+    // Read once before the sign-ins land: the drift list is memoized on the locations table's
+    // row version, so the writes below (straight to the store) must still show up.
+    const before = await fetch(`${baseUrl}/lab/location-drifts`, {
+      headers: { Authorization: `Bearer ${admin}` },
+    });
+    await expect(before.json()).resolves.toEqual({ drifts: [] });
     // Keep both observations within the rolling 90-day lookup window.
     observeLogin(baseUrl, "ada", "Germany", new Date(Date.now() - 7 * 86_400_000).toISOString());
     observeLogin(baseUrl, "ada", "Germany", new Date().toISOString());

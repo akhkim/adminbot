@@ -51,7 +51,7 @@ import { localTimezone } from "../data/timezones.ts";
 import { EMPTY_PAGED_LIST } from "../load-more.ts";
 import { EMPTY_TRIP_DRAFT } from "../views/time-availability.trip-editor.ts";
 import type { MilestoneDraft, TimeAvailabilityDraft } from "../views/time-availability.ts";
-import { forgetSessionReads } from "./read-cache.ts";
+import { currentWarmEpoch, forgetSessionReads } from "./read-cache.ts";
 // Control UI module orchestrates member auth against the app view state.
 //
 // Bridges the pure AdminBot API client (`adminbot-auth.ts`) into the running
@@ -71,6 +71,7 @@ import {
   loadStoredMemberSession,
   logoutMember,
   prefetchAuthedRead,
+  renewPrefetchesSince,
   markOnboardingChecklistAcknowledged,
   resolveAdminBotBaseUrl,
   saveStoredMemberSession,
@@ -1006,7 +1007,8 @@ export async function resumeMemberSession(
   const baseUrl = resolveAdminBotBaseUrl(host.settings);
   // Every signed-in page starts from the member's own profile. Ask for it beside the session
   // check instead of after it; if the session turns out to be dead the answer is never kept.
-  const profileRead = prefetchAuthedRead(baseUrl, "/lab/members/self", stored.sessionToken);
+  const sentAt = currentWarmEpoch();
+  prefetchAuthedRead(baseUrl, "/lab/members/self", stored.sessionToken);
   const result = await fetchMemberSession(stored.sessionToken, baseUrl);
   if (isCurrent?.() === false || loadStoredMemberSession()?.sessionToken !== stored.sessionToken) {
     return "no-session";
@@ -1017,8 +1019,9 @@ export async function resumeMemberSession(
       host.memberPrivilegeLevel !== (result.value.member?.privilege_level ?? null)
     ) {
       clearMemberScopedData(host);
-      // That reset also dropped the profile read sent beside this check; it is this session's.
-      profileRead.renew();
+      // That reset also dropped the reads sent beside this check with the same token: the
+      // profile above and the reads the URL's page started at boot. They are this session's.
+      renewPrefetchesSince(stored.sessionToken, sentAt);
     }
     saveStoredMemberSession({
       sessionToken: stored.sessionToken,
@@ -1175,10 +1178,10 @@ export async function loadMemberPrivilege(host: MemberAuthHost): Promise<void> {
     host.memberId = null;
     return;
   }
-  const result = await fetchMemberSession(
-    stored.sessionToken,
-    resolveAdminBotBaseUrl(host.settings),
-  );
+  const baseUrl = resolveAdminBotBaseUrl(host.settings);
+  // As on resume: the profile every signed-in page starts from goes out beside the check.
+  prefetchAuthedRead(baseUrl, "/lab/members/self", stored.sessionToken);
+  const result = await fetchMemberSession(stored.sessionToken, baseUrl);
   if (loadStoredMemberSession()?.sessionToken !== stored.sessionToken) {
     return;
   }

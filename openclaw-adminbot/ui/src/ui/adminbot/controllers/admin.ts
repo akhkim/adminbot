@@ -39,6 +39,7 @@ import {
   type MemberNudgeChannel,
   fetchMemberResource,
   loadStoredMemberSession,
+  peekAuthedRead,
   resolveAdminBotBaseUrl,
   pendingQueuedAdminBotWriteCount,
 } from "../auth/session.ts";
@@ -141,6 +142,9 @@ export type AdminBotLabMember = {
   // Self-attested checklist state (see extensions/adminbot/src/workflows/onboarding/onboarding.ts); the dashboard
   // only reads step id + status to preselect nudge recipients.
   onboarding?: { steps?: Array<{ id: string; status: string }> } | null;
+  // Only on /lab/members/roster rows: the member's linked papers, already matched on the server,
+  // so the Lab Members tab can draw paper tags without downloading every paper record.
+  roster_papers?: Array<{ title: string; conference: string }>;
   created_at: string;
   updated_at: string;
 };
@@ -904,14 +908,34 @@ export async function loadAdminBotMemberList(
   quiet = false,
 ): Promise<void> {
   const previous = host.adminBotMemberList ?? createEmptyAdminBotMemberList();
+  const session = loadStoredMemberSession();
+  const baseUrl = resolveAdminBotBaseUrl(host.settings);
+  const rosterPath = `/lab/members/roster?${new URLSearchParams({
+    limit: String(previous.limit),
+    offset: String(offset),
+    ...filters,
+  })}`;
+  // This page of the roster, as this session last saw it, is drawn while the request below
+  // revalidates it (an unchanged roster answers 304), so a revisit or a filter already tried
+  // never shows an empty table first.
+  const seen = session ? readRecord(peekAuthedRead(baseUrl, rosterPath, session.sessionToken)) : {};
+  const seenRows = Array.isArray(seen.members) && typeof seen.total === "number" && seen.options;
   const pending = {
     ...previous,
     filters,
     offset,
-    ...(quiet ? {} : { rows: [], loading: true, error: null }),
+    ...(quiet
+      ? {}
+      : seenRows
+        ? {
+            ...seen,
+            rows: readArray<AdminBotLabMember>(seen, "members"),
+            loading: true,
+            error: null,
+          }
+        : { rows: [], loading: true, error: null }),
   };
   host.adminBotMemberList = pending;
-  const session = loadStoredMemberSession();
   const isCurrent = () =>
     host.adminBotMemberList === pending &&
     loadStoredMemberSession()?.sessionToken === session?.sessionToken;
@@ -921,16 +945,7 @@ export async function loadAdminBotMemberList(
       total: host.adminBotData.members.length,
     };
     if (session) {
-      const params = new URLSearchParams({
-        limit: String(pending.limit),
-        offset: String(offset),
-        ...filters,
-      });
-      const result = await fetchMemberResource(
-        `/lab/members/roster?${params}`,
-        session.sessionToken,
-        resolveAdminBotBaseUrl(host.settings),
-      );
+      const result = await fetchMemberResource(rosterPath, session.sessionToken, baseUrl);
       if (!isCurrent()) return;
       if (!result.ok) {
         throw new Error(
@@ -961,10 +976,14 @@ export async function loadAdminBotMemberList(
     };
   } catch (error) {
     if (!isCurrent()) return;
+    const message = error instanceof Error ? error.message : String(error);
     host.adminBotMemberList = {
       ...pending,
+      // Rows drawn from the last visit stay only while the service is out of reach; a refusal or
+      // a broken answer must not leave an old roster looking current.
+      ...(message === ADMINBOT_SERVICE_UNREACHABLE_MESSAGE ? {} : { rows: [] }),
       loading: false,
-      error: error instanceof Error ? error.message : String(error),
+      error: message,
     };
   }
 }

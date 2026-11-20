@@ -11,6 +11,7 @@ import {
   fetchMemberRequests,
   editMemberRequest,
   loadStoredMemberSession,
+  peekAuthedRead,
   type MemberRequestInput,
   type MemberRequestView,
   rejectMemberRequest,
@@ -61,12 +62,22 @@ export async function loadAdminBotMemberRequests(host: AdminBotMemberRequestsHos
   if (!session) {
     return;
   }
-  const pending = { ...host.adminBotMemberRequests, loading: true, error: null };
+  const baseUrl = resolveAdminBotBaseUrl(host.settings);
+  // The requests as this session last saw them are drawn while the read below revalidates them
+  // (an unchanged list answers 304), so a revisit never waits on the tunnel to show the queue.
+  const seen = host.adminBotMemberRequests.loadedAt
+    ? undefined
+    : (peekAuthedRead(baseUrl, "/lab/members/requests", session.sessionToken) as
+        | { requests?: unknown }
+        | undefined);
+  const pending = {
+    ...host.adminBotMemberRequests,
+    ...(Array.isArray(seen?.requests) ? { requests: seen.requests as MemberRequestView[] } : {}),
+    loading: true,
+    error: null,
+  };
   host.adminBotMemberRequests = pending;
-  const result = await fetchMemberRequests(
-    session.sessionToken,
-    resolveAdminBotBaseUrl(host.settings),
-  );
+  const result = await fetchMemberRequests(session.sessionToken, baseUrl);
   if (
     host.adminBotMemberRequests !== pending ||
     loadStoredMemberSession()?.sessionToken !== session.sessionToken

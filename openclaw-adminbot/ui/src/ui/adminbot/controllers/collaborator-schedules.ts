@@ -2,6 +2,7 @@ import type { UiSettings } from "../../storage.ts";
 import {
   fetchMemberResource,
   loadStoredMemberSession,
+  peekAuthedRead,
   resolveAdminBotBaseUrl,
 } from "../auth/session.ts";
 import type { AdminBotLabMember } from "./admin.ts";
@@ -14,6 +15,8 @@ type CollaboratorScheduleHost = {
   adminBotCollaboratorSchedulesSession: string;
 };
 
+const COLLABORATOR_SCHEDULES_PATH = "/lab/members/collaborator-schedules";
+
 export async function loadCollaboratorSchedules(host: CollaboratorScheduleHost): Promise<void> {
   const session = loadStoredMemberSession();
   if (!session || host.adminBotCollaboratorSchedulesLoading) {
@@ -21,13 +24,22 @@ export async function loadCollaboratorSchedules(host: CollaboratorScheduleHost):
   }
   host.adminBotCollaboratorSchedulesLoading = true;
   host.adminBotCollaboratorSchedulesError = null;
-  host.adminBotCollaboratorSchedules = [];
+  const baseUrl = resolveAdminBotBaseUrl(host.settings);
+  // A second look draws what this session read last time, rather than an empty list for a round
+  // trip; the request below still goes out and replaces it. The kept copy belongs to this token
+  // alone, so another member signing in on this browser starts from nothing.
+  const seen = peekAuthedRead(baseUrl, COLLABORATOR_SCHEDULES_PATH, session.sessionToken) as {
+    members?: unknown;
+  } | null;
+  host.adminBotCollaboratorSchedules = Array.isArray(seen?.members)
+    ? (seen.members as AdminBotLabMember[])
+    : [];
   host.adminBotCollaboratorSchedulesSession = session.sessionToken;
   try {
     const result = await fetchMemberResource(
-      "/lab/members/collaborator-schedules",
+      COLLABORATOR_SCHEDULES_PATH,
       session.sessionToken,
-      resolveAdminBotBaseUrl(host.settings),
+      baseUrl,
     );
     if (loadStoredMemberSession()?.sessionToken !== session.sessionToken) {
       return;
@@ -44,6 +56,8 @@ export async function loadCollaboratorSchedules(host: CollaboratorScheduleHost):
     host.adminBotCollaboratorSchedules = value.members;
   } catch (error) {
     if (loadStoredMemberSession()?.sessionToken === session.sessionToken) {
+      // The kept list was drawn as a placeholder; a refusal means it may no longer be ours to see.
+      host.adminBotCollaboratorSchedules = [];
       host.adminBotCollaboratorSchedulesError = String(error);
     }
   } finally {

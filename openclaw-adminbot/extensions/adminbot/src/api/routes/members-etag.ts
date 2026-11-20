@@ -11,7 +11,9 @@ import type { AdminBotPrincipal } from "./context.js";
 import { MEMBER_SUMMARY_PROJECTION } from "./member-summary-row.js";
 import { principalRole, versionEtag } from "./version-etag.js";
 
-type MemberViewVersionedStore = AdminBotServiceStore & { labMemberViewVersion?(): string };
+type MemberViewVersionedStore = AdminBotServiceStore & {
+  labMemberViewVersion?(): string;
+};
 
 export function memberViewEtag(
   store: AdminBotServiceStore,
@@ -36,5 +38,44 @@ export function memberViewEtag(
     query.page?.limit,
     query.page?.offset,
     query.page?.q,
+  ]);
+}
+
+/**
+ * Bumped when the roster row's shape changes, so a 304 never revalidates a body of the old shape.
+ * roster.2: heavy record fields dropped and linked papers carried on each row.
+ */
+export const MEMBER_ROSTER_PROJECTION = "roster.2";
+
+/**
+ * Version ETag for one page of GET /lab/members/roster.
+ *
+ * The page reads the roster, badges (labMemberViewVersion) and the papers table (linked papers,
+ * the paper and conference facets), then is redacted for the viewer. A meeting filter reads the
+ * calendar, which has no version, so that query gets no tag and stays on the byte hash.
+ */
+export function memberRosterEtag(
+  store: AdminBotServiceStore,
+  principal: AdminBotPrincipal,
+  query: {
+    limit: number;
+    offset: number;
+    filters: Readonly<Record<string, string | undefined>>;
+  },
+): string | undefined {
+  const version = (store as MemberViewVersionedStore).labMemberViewVersion?.();
+  const papers = store.rowVersion?.(["adminbot_papers"]);
+  if (version === undefined || papers === undefined || query.filters.meeting) {
+    return undefined;
+  }
+  return versionEtag("lab-members.roster", [
+    version,
+    papers,
+    principalRole(principal),
+    principal.kind === "member" ? principal.member.id : null,
+    MEMBER_ROSTER_PROJECTION,
+    query.limit,
+    query.offset,
+    JSON.stringify(Object.entries(query.filters).toSorted(([a], [b]) => a.localeCompare(b))),
   ]);
 }

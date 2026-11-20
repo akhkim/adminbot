@@ -10,6 +10,9 @@ import type { AdminBotVenueIndexStatus, AdminBotVenuePaper } from "../contracts/
  */
 export class SqliteVenuePaperIndex {
   private readonly cache = new Map<string, readonly AdminBotVenuePaper[]>();
+  // The grouped count below reads every row of the index (hundreds of MB), which took ~26s on the
+  // production disk and is on the Conference Papers page's first read. Only `replace` changes it.
+  private statusCache: Omit<AdminBotVenueIndexStatus, "label">[] | undefined;
 
   constructor(private readonly db: DatabaseSync) {}
 
@@ -32,6 +35,7 @@ export class SqliteVenuePaperIndex {
       }
       this.db.exec("COMMIT");
       this.cache.delete(venueId);
+      this.statusCache = undefined;
     } catch (error) {
       this.db.exec("ROLLBACK");
       throw error;
@@ -52,12 +56,25 @@ export class SqliteVenuePaperIndex {
   }
 
   statuses(): Omit<AdminBotVenueIndexStatus, "label">[] {
+    if (this.statusCache) {
+      return this.statusCache.map((status) => ({ ...status }));
+    }
     const rows = this.db
       .prepare(
-        `SELECT venue_id, COUNT(*) AS paper_count,
-                MAX(indexed_at) AS indexed_at,
-                MAX(embedding_model) AS embedding_model
-         FROM adminbot_venue_papers GROUP BY venue_id`,
+        // Counted from the venue index alone, and the stamp read from one row per venue: `replace`
+        // writes every row of a venue with the same `indexed_at` and model, so one row is the
+        // venue's stamp. Grouping the table itself pulled each row's payload page off disk.
+        `SELECT counts.venue_id, counts.paper_count, stamp.indexed_at, stamp.embedding_model
+         FROM (
+           SELECT venue_id, COUNT(*) AS paper_count
+           FROM adminbot_venue_papers INDEXED BY adminbot_venue_papers_venue
+           GROUP BY venue_id
+         ) AS counts
+         JOIN adminbot_venue_papers AS stamp
+           ON stamp.rowid = (
+             SELECT rowid FROM adminbot_venue_papers
+             WHERE venue_id = counts.venue_id LIMIT 1
+           )`,
       )
       .all() as Array<{
       venue_id: string;
@@ -68,11 +85,12 @@ export class SqliteVenuePaperIndex {
     // Built without a conditional spread: MAX() over a grouped column is null only for an empty
     // group, which cannot happen here, and `undefined` reads the same as an absent key to every
     // caller. Matches how the route serialises the same record.
-    return rows.map((row) => ({
+    this.statusCache = rows.map((row) => ({
       venue_id: row.venue_id,
       paper_count: row.paper_count,
       indexed_at: row.indexed_at ?? undefined,
       embedding_model: row.embedding_model ?? undefined,
     }));
+    return this.statusCache.map((status) => ({ ...status }));
   }
 }

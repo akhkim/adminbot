@@ -153,6 +153,11 @@ import {
   saveReferenceScan,
 } from "./reference-scans.js";
 import { SqliteApiTokens } from "./sqlite.api-tokens.js";
+import {
+  installRowVersionTriggers,
+  readRowVersion,
+  type RowVersionedTable,
+} from "./sqlite.row-versions.js";
 import { SqliteAuditLog } from "./sqlite.audit.js";
 import { SqliteLabMemberCache } from "./sqlite.lab-members.js";
 import { listSqliteMeetingHeads, listSqliteMeetingsPage } from "./sqlite.meetings.js";
@@ -162,7 +167,10 @@ import {
   MEMBER_REFERENCE_COLUMNS,
   MEMBER_RENAME_HISTORY_TABLES,
 } from "./sqlite.member-columns.js";
-import { escalatedMemberNotificationsSql } from "./sqlite.member-notifications.js";
+import {
+  escalatedMemberNotificationsIndexSql,
+  escalatedMemberNotificationsSql,
+} from "./sqlite.member-notifications.js";
 import { SqliteMemberRetirements } from "./sqlite.member-retirements.js";
 import { migratePaperSlotColumns } from "./sqlite.paper-slot-migration.js";
 import { SqliteRecLetterAttestations } from "./sqlite.rec-letter-attestations.js";
@@ -178,6 +186,7 @@ import {
   migrateSocialDraftColumns,
   saveSqliteSocialDraft,
 } from "./sqlite.social-drafts.js";
+import { batchReadsPerTick } from "./sqlite.read-batch.js";
 import { cacheStatements } from "./sqlite.statement-cache.js";
 import { SqliteTableVersions } from "./sqlite.table-versions.js";
 import { SqliteVenuePaperIndex } from "./sqlite.venue-papers.js";
@@ -331,6 +340,8 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     ensureDatabaseDirectory(databasePath);
     const sqlite = requireNodeSqlite();
     this.db = new sqlite.DatabaseSync(databasePath);
+    // Before the statement cache, so the cache's own schema check joins the batch too.
+    batchReadsPerTick(this.db);
     cacheStatements(this.db);
     this.venueIndex = new SqliteVenuePaperIndex(this.db);
     this.members = new SqliteLabMemberCache(this.db);
@@ -1053,6 +1064,11 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     this.migrateSessionColumns();
     this.migrateBadgeNominationColumns();
     this.migrateLoginEventColumns();
+    // Last, so every versioned table (help requests included) exists before its triggers.
+    installRowVersionTriggers(this.db);
+    // The admin bell's escalated-nudge query reads this partial index instead of scanning every
+    // notification (sqlite.member-notifications.ts keeps its WHERE identical to the query's).
+    this.db.exec(escalatedMemberNotificationsIndexSql);
   }
 
   /**
@@ -1475,6 +1491,11 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
   paperVersion(): string {
     return this.versions.version("papers");
+  }
+
+  /** Trigger-kept change counters of the given tables, as one token (sqlite.row-versions.ts). */
+  rowVersion(tables: readonly RowVersionedTable[]): string {
+    return readRowVersion(this.db, tables);
   }
 
   meetingVersion(): string {
@@ -3022,12 +3043,22 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     return rows.map((row) => parseJson<AdminBotMemberLocationEntry>(row.payload_json));
   }
 
-  listMemberLocationsSince(since: string): AdminBotMemberLocationEntry[] {
-    const rows = this.db
-      .prepare(
-        "SELECT payload_json FROM adminbot_member_locations WHERE observed_at >= ? ORDER BY observed_at DESC",
-      )
-      .all(since) as Array<{ payload_json: string }>;
+  listMemberLocationsSince(since: string, source?: string): AdminBotMemberLocationEntry[] {
+    // `source` narrows in SQL so a caller that reads one source (the drift check reads sign-ins)
+    // does not parse every device and Slack reading in the window.
+    const rows = (
+      source
+        ? this.db
+            .prepare(
+              "SELECT payload_json FROM adminbot_member_locations WHERE observed_at >= ? AND source = ? ORDER BY observed_at DESC",
+            )
+            .all(since, source)
+        : this.db
+            .prepare(
+              "SELECT payload_json FROM adminbot_member_locations WHERE observed_at >= ? ORDER BY observed_at DESC",
+            )
+            .all(since)
+    ) as Array<{ payload_json: string }>;
     return rows.map((row) => parseJson<AdminBotMemberLocationEntry>(row.payload_json));
   }
 

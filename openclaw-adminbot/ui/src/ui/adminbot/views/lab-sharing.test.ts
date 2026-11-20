@@ -1,8 +1,9 @@
 /* @vitest-environment jsdom */
 
 import { render } from "lit";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AppViewState } from "../../app-view-state.ts";
+import { clearStoredMemberSession, saveStoredMemberSession } from "../auth/session.ts";
 import type { LabSharingSnapshot } from "../data/lab-sharing.ts";
 import { askProjectChoices, renderLabSharing, resetLabSharingSessionState } from "./lab-sharing.ts";
 
@@ -158,6 +159,27 @@ describe("renderLabSharing", () => {
         '[data-testid="lab-sharing-announcement-compose"] textarea',
       )?.value,
     ).toBe("");
+  });
+  // The chats panel is the only part drawn from the session's own base URL, and nothing else on
+  // the page reaches that branch: a missing import there used to throw for every admin.
+  it("draws the collaborator chats panel for a signed-in admin", () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(() => new Promise<Response>(() => {}));
+    saveStoredMemberSession({ sessionToken: "admin-token", expiresAt: "later" });
+    try {
+      const { container } = renderView({
+        memberPrivilegeLevel: "admin",
+        settings: { adminBotUrl: "http://127.0.0.1:8765" },
+      } as Partial<AppViewState>);
+      const chats = container.querySelector("adminbot-collaborator-chats") as
+        | (HTMLElement & { baseUrl?: string; sessionToken?: string })
+        | null;
+      expect(chats).not.toBeNull();
+      expect(chats?.sessionToken).toBe("admin-token");
+      expect(chats?.baseUrl).toBe("http://127.0.0.1:8765");
+    } finally {
+      clearStoredMemberSession();
+      vi.restoreAllMocks();
+    }
   });
   it("renders every panel on the page", () => {
     const { container } = renderView();

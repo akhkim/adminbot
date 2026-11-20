@@ -64,12 +64,72 @@ export function memberRosterActive(member: AdminBotLabMember, status: string | u
   );
 }
 
-export function memberRosterPage(
+/** One linked paper as the Lab Members row draws it: a tag and the conference it counts under. */
+export type MemberRosterPaper = { title: string; conference: string };
+
+/**
+ * Record fields the Lab Members table never draws, filters or searches on, dropped from each row.
+ *
+ * A page of 50 whole records ran to about 700 KB, most of it per-field provenance, CV snapshots,
+ * onboarding checklists, schedules, trips and Slack channel lists. The table, its edit forms and
+ * the global search read none of these; the one place that does (the self-edit card's schedule)
+ * reads the signed-in member's own full record instead.
+ */
+export const memberRosterOmittedFields = [
+  "field_provenance",
+  "cv_snapshot",
+  "slack_channels",
+  "onboarding",
+  "milestones",
+  "availability",
+  "time_off",
+  "trips",
+  "financial_support_needs",
+  "dismissed_deadlines",
+  "access",
+  "access_overrides",
+  "former_member_ids",
+  "alternate_emails",
+  "alternate_slack_user_ids",
+  "city_channels_invited",
+] as const;
+
+type MemberRosterEntry = {
+  row: AdminBotLabMember & { roster_papers?: MemberRosterPaper[] };
+  facets: MemberRosterOptions;
+  search: string;
+};
+
+/**
+ * Everything about the roster that does not depend on the query: each row with its linked papers,
+ * facets and search text, the whole-roster options, and the display order.
+ *
+ * Built from every member and every paper, so it is the expensive half. The service keeps it until
+ * the members or papers tables change, and each request only filters and slices it. Shared between
+ * requests: never edit what it holds.
+ */
+export type MemberRosterIndex = {
+  entries: readonly MemberRosterEntry[];
+  options: MemberRosterOptions;
+};
+
+function paperConference(paper: AdminBotPaperRecord): string {
+  const a = (paper.artifacts ?? {}) as Record<string, string | undefined>;
+  return (
+    (
+      a.conference ??
+      a.conference_name ??
+      a.venue ??
+      a.target_venue ??
+      (note(paper.notes, "Conference") || note(paper.notes, "Venue"))
+    ).trim() || "Unspecified"
+  );
+}
+
+export function buildMemberRosterIndex(
   members: readonly AdminBotLabMember[],
   papers: readonly AdminBotPaperRecord[],
-  query: MemberRosterQuery,
-  meetingMembers?: ReadonlySet<string>,
-) {
+): MemberRosterIndex {
   // Index author identities once, rather than scanning every paper for every member.
   const byAuthor = new Map<string, AdminBotPaperRecord[]>();
   for (const paper of papers) {
@@ -90,13 +150,6 @@ export function memberRosterPage(
     membership: [...adminBotMemberTypes],
   };
   const rows = members.map((member) => {
-    const row = {
-      ...member,
-      research_topics: strings(member.research_topics),
-      projects: strings(member.projects),
-      location: member.location?.trim() || note(member.notes, "Location"),
-      joined_month: member.joined_month?.trim() || note(member.notes, "Joined month"),
-    };
     const linked = [
       ...new Set(
         [member.id, member.name, member.email].flatMap(
@@ -104,22 +157,27 @@ export function memberRosterPage(
         ),
       ),
     ];
+    const rosterPapers = linked.map((p) => ({
+      title: p.title,
+      conference: paperConference(p),
+    }));
+    const row: MemberRosterEntry["row"] = {
+      ...member,
+      research_topics: strings(member.research_topics),
+      projects: strings(member.projects),
+      location: member.location?.trim() || note(member.notes, "Location"),
+      joined_month: member.joined_month?.trim() || note(member.notes, "Joined month"),
+      // The row's paper tags and count, so the table needs no lab-wide paper list of its own.
+      ...(rosterPapers.length ? { roster_papers: rosterPapers } : {}),
+    };
+    for (const field of memberRosterOmittedFields) {
+      delete (row as Record<string, unknown>)[field];
+    }
     const facets: MemberRosterOptions = {
       status: [adminBotIsAlumniMember(member) ? "alumni" : (member.status ?? "active")],
       project: row.projects ?? [],
-      paper: linked.map((p) => p.title),
-      conference: linked.map((p) => {
-        const a = (p.artifacts ?? {}) as Record<string, string | undefined>;
-        return (
-          (
-            a.conference ??
-            a.conference_name ??
-            a.venue ??
-            a.target_venue ??
-            (note(p.notes, "Conference") || note(p.notes, "Venue"))
-          ).trim() || "Unspecified"
-        );
-      }),
+      paper: rosterPapers.map((p) => p.title),
+      conference: rosterPapers.map((p) => p.conference),
       location: row.location ? [row.location] : [],
       career: parseAdminBotMemberRoles(member.role),
       membership: [
@@ -151,11 +209,42 @@ export function memberRosterPage(
     ]
       .join(" ")
       .toLocaleLowerCase();
-    return { row, facets, search };
+    const joined = joinedMonthOrder(row.joined_month) ?? Infinity;
+    return {
+      entry: { row, facets, search },
+      joined,
+      // Only for rows with no readable joined month: when the record itself was created.
+      added: (row.created_at ?? "").slice(0, 7),
+      inactive: memberRosterActive(row, facets.status[0]) ? 0 : 1,
+    };
   });
   for (const key of Object.keys(options) as (keyof MemberRosterOptions)[]) {
     options[key] = [...new Set(options[key])].toSorted();
   }
+  // Active members first, then earliest joiner first: the list is read top-down to recommend
+  // people for positions, and the active ones lean on that most, senior ones ahead. A month
+  // nobody can read, or none at all, ends each group rather than being guessed into the middle,
+  // in the order those records were created -- the same rule the PeopleList sheet export uses.
+  // Sorting here once keeps every filtered page in the same order, since filtering preserves it.
+  const entries = rows
+    .toSorted(
+      (a, b) =>
+        a.inactive - b.inactive ||
+        (a.joined === b.joined ? 0 : a.joined < b.joined ? -1 : 1) ||
+        (a.joined === Infinity ? a.added.localeCompare(b.added) : 0) ||
+        a.entry.row.id.localeCompare(b.entry.row.id),
+    )
+    .map(({ entry }) => entry);
+  return { entries, options };
+}
+
+/** The per-request half: apply the filters to a built index and cut out one page. */
+export function selectMemberRosterPage(
+  index: MemberRosterIndex,
+  query: MemberRosterQuery,
+  meetingMembers?: ReadonlySet<string>,
+) {
+  const { options } = index;
   const filters = { ...query.filters };
   // A deleted option resets that selection; options themselves never shrink with the current filter.
   for (const key of Object.keys(options) as (keyof MemberRosterOptions)[]) {
@@ -163,38 +252,20 @@ export function memberRosterPage(
       delete filters[key];
     }
   }
-  const matched = rows
-    .filter(({ row, facets, search }) =>
-      memberRosterFilterKeys.every((key) => {
-        const value = filters[key];
-        return (
-          !value ||
-          (key === "q"
-            ? search.includes(value.trim().toLocaleLowerCase())
-            : key === "meeting"
-              ? meetingMembers?.has(row.id)
-              : facets[key].includes(value))
-        );
-      }),
-    )
-    .map((entry) => ({
-      ...entry,
-      joined: joinedMonthOrder(entry.row.joined_month) ?? Infinity,
-      // Only for rows with no readable joined month: when the record itself was created.
-      added: (entry.row.created_at ?? "").slice(0, 7),
-      inactive: memberRosterActive(entry.row, entry.facets.status[0]) ? 0 : 1,
-    }))
-    // Active members first, then earliest joiner first: the list is read top-down to recommend
-    // people for positions, and the active ones lean on that most, senior ones ahead. A month
-    // nobody can read, or none at all, ends each group rather than being guessed into the middle,
-    // in the order those records were created -- the same rule the PeopleList sheet export uses.
-    .toSorted(
-      (a, b) =>
-        a.inactive - b.inactive ||
-        (a.joined === b.joined ? 0 : a.joined < b.joined ? -1 : 1) ||
-        (a.joined === Infinity ? a.added.localeCompare(b.added) : 0) ||
-        a.row.id.localeCompare(b.row.id),
-    );
+  const needle = filters.q?.trim().toLocaleLowerCase();
+  const matched = index.entries.filter(({ row, facets, search }) =>
+    memberRosterFilterKeys.every((key) => {
+      const value = filters[key];
+      return (
+        !value ||
+        (key === "q"
+          ? search.includes(needle ?? "")
+          : key === "meeting"
+            ? meetingMembers?.has(row.id)
+            : facets[key].includes(value))
+      );
+    }),
+  );
   const offset = Math.min(
     query.offset,
     Math.max(0, Math.ceil(matched.length / query.limit) - 1) * query.limit,
@@ -207,4 +278,13 @@ export function memberRosterPage(
     filters,
     options,
   };
+}
+
+export function memberRosterPage(
+  members: readonly AdminBotLabMember[],
+  papers: readonly AdminBotPaperRecord[],
+  query: MemberRosterQuery,
+  meetingMembers?: ReadonlySet<string>,
+) {
+  return selectMemberRosterPage(buildMemberRosterIndex(members, papers), query, meetingMembers);
 }

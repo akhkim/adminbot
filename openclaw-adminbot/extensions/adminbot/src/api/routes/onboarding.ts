@@ -173,7 +173,11 @@ export const onboardingRoutes: readonly Route[] = [
       }
       if (req.method === "GET") {
         try {
-          sendJson(res, 200, memberSheetWire(await readMemberSheet(ctx.memberSheet)));
+          const source = ctx.memberSheet;
+          const view = ctx.sheetPageReads
+            ? await ctx.sheetPageReads.memberSheet(() => readMemberSheet(source))
+            : await readMemberSheet(source);
+          sendJson(res, 200, memberSheetWire(view));
         } catch (error) {
           sendJson(res, 502, {
             error: { message: describeMemberSheetReadFailure(error, ctx.memberSheet) },

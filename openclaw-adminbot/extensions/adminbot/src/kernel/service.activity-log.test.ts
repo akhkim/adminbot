@@ -5,8 +5,12 @@
 // which is how a single bulk provisioning pass in 2026-08 left 145 members holding identical
 // timestamps and no way to tell a real sign-in from a script's. Every test below is about a case
 // where the latest-stamp answer and the log's answer differ.
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { paperSlotId, profileSlotId } from "../contracts/activity-log.js";
+import { AdminBotSqliteStore } from "../persistence/sqlite.js";
 import { AdminBotService } from "./service.js";
 
 function unwrap<T>(
@@ -284,5 +288,42 @@ describe("a paper's history", () => {
       ok: false,
       status: 404,
     });
+  });
+});
+
+// The feed names papers from a title map kept per papers-table version on SQLite; a rename must
+// still show on the next read rather than the title the map was built with.
+describe("lab-wide update feed on SQLite", () => {
+  it("shows a paper's new title after it is renamed", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "adminbot-activity-feed-"));
+    const store = new AdminBotSqliteStore(path.join(dir, "adminbot.sqlite"));
+    try {
+      const service = new AdminBotService(store);
+      unwrap(service.upsertLabMember({ id: "ada", name: "Ada Lovelace" } as never));
+      const paper = {
+        id: "cais",
+        title: "Causal abstraction",
+        authors: ["Ada Lovelace"],
+        current_step: "brainstorming_docs",
+      };
+      unwrap(service.upsertPaper(paper as never, { source: "member", actor: "ada" }));
+      const before = unwrap(service.listRecentUpdates()).updates.find(
+        (row) => row.paper_id === "cais",
+      );
+      expect(before?.paper_title).toBe("Causal abstraction");
+      unwrap(
+        service.upsertPaper({ ...paper, title: "Causal abstraction, revised" } as never, {
+          source: "member",
+          actor: "ada",
+        }),
+      );
+      const after = unwrap(service.listRecentUpdates()).updates.find(
+        (row) => row.paper_id === "cais",
+      );
+      expect(after?.paper_title).toBe("Causal abstraction, revised");
+    } finally {
+      store.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

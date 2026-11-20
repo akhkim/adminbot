@@ -2495,9 +2495,14 @@ export function renderApp(state: AppViewState) {
   const membersArrFilter = state.tab === "adminbotMembers" && state.adminBotMembersArrFilter;
   const needsRosterForTab =
     needsLabRoster(state.tab, adminBotMode, adminBotPanel) || membersArrFilter;
+  // With a member session Lab Members reads the paged roster, whose rows carry their own paper
+  // tags and whose filter options come from the server, so it skips the lab-wide paper list.
+  const membersReadsRosterPages = state.tab === "adminbotMembers" && hasMemberSession;
   const needsPapersForTab =
     !profileBlocked &&
-    (needsLabPapers(state.tab) || adminBotPanel === "papers" || (isChat && isAdminBotChat));
+    ((needsLabPapers(state.tab) && !membersReadsRosterPages) ||
+      adminBotPanel === "papers" ||
+      (isChat && isAdminBotChat));
   // Time Availability needs the roster to fill its member picker but renders its own view, so it
   // deliberately maps to no panel. It has to be named here instead: `adminBotPanel` doubles as the
   // render switch, and borrowing "members" to trigger the fetch drew the whole Lab Members panel

@@ -11,6 +11,11 @@ import {
   groupMeetingSeriesId,
   resolveGroupMeetingEventId,
 } from "../../contracts/group-meeting.js";
+import { type CachedRead, createCachedRead } from "../../kernel/cached-read.js";
+import type {
+  AdminBotCalendarEvent,
+  CalendarEventsReader,
+} from "../../workflows/calendar/events.js";
 import {
   type AdminBotStandingMeeting,
   standingMeetings,
@@ -331,20 +336,53 @@ export async function readGroupMeetingInvite(
     return [];
   }
   try {
-    // A fortnight forward: long enough to catch the next occurrence of a weekly series even when
-    // one week is cancelled, short enough that a recurring event does not expand into hundreds.
-    const from = new Date();
-    const to = new Date(from.getTime() + 14 * 86_400_000);
-    const events = await ctx.readCalendarEvents({
-      calendarId: ctx.labCalendar.id,
-      from: from.toISOString(),
-      to: to.toISOString(),
-      max: 50,
-    });
+    const events = await groupMeetingInviteEvents(ctx.readCalendarEvents, ctx.labCalendar.id);
     return groupMeetingInviteEmails(events, schedule);
   } catch {
     return [];
   }
+}
+
+// The invite list behind the attendance nudge, kept per calendar reader so each server (and each
+// test's mock reader) has its own. The guest list of a weekly meeting changes a few times a term,
+// so an answer up to a day old is served at once while a fresh read runs behind it: before this,
+// every preview waited on gog for about 1.5 s because the window below started at "now" and so
+// was a new cache key on every call.
+const INVITE_FRESH_MS = 60_000;
+const INVITE_STALE_MS = 24 * 3_600_000;
+const inviteReads = new WeakMap<CalendarEventsReader, Map<string, CachedRead<AdminBotCalendarEvent[]>>>();
+
+function groupMeetingInviteEvents(
+  readCalendarEvents: CalendarEventsReader,
+  calendarId: string,
+): Promise<AdminBotCalendarEvent[]> {
+  let byCalendar = inviteReads.get(readCalendarEvents);
+  if (!byCalendar) {
+    byCalendar = new Map();
+    inviteReads.set(readCalendarEvents, byCalendar);
+  }
+  let cached = byCalendar.get(calendarId);
+  if (!cached) {
+    cached = createCachedRead(
+      () => {
+        // A fortnight forward: long enough to catch the next occurrence of a weekly series even
+        // when one week is cancelled, short enough that a recurring event does not expand into
+        // hundreds. The window starts at midnight UTC so the shared calendar reader below sees
+        // the same parameters all day; the extra hours before now only repeat the same series.
+        const from = new Date(Math.floor(Date.now() / 86_400_000) * 86_400_000);
+        const to = new Date(from.getTime() + 15 * 86_400_000);
+        return readCalendarEvents({
+          calendarId,
+          from: from.toISOString(),
+          to: to.toISOString(),
+          max: 50,
+        });
+      },
+      { freshMs: INVITE_FRESH_MS, staleMs: INVITE_STALE_MS },
+    );
+    byCalendar.set(calendarId, cached);
+  }
+  return cached.read();
 }
 
 // An approval must name a real person, so the shared service principal (which every agent tool

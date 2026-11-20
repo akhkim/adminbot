@@ -70,7 +70,11 @@ export type AdminBotLabProjectSources = {
   now: Date;
 };
 
-function labProjectStatus(paper: AdminBotPaperRecord, now: Date): AdminBotLabProjectStatus {
+/**
+ * Exported because it is the one part of a row that moves with the clock: the service caches the
+ * rest of the list and re-derives this on each request (kernel/read-model-memo.ts).
+ */
+export function labProjectStatus(paper: AdminBotPaperRecord, now: Date): AdminBotLabProjectStatus {
   if (paper.venue_decision === "reject") {
     return "rejected";
   }
@@ -111,12 +115,36 @@ export function buildLabProjects(sources: AdminBotLabProjectSources): AdminBotLa
   const ownersByPaper = new Map<string, string[]>();
   for (const [memberId, paperIds] of paperIdsByOwner(roster, papers, rosterNameCounts(roster))) {
     for (const paperId of paperIds) {
-      ownersByPaper.set(paperId, [...(ownersByPaper.get(paperId) ?? []), memberId]);
+      const owners = ownersByPaper.get(paperId);
+      if (owners) {
+        owners.push(memberId);
+      } else {
+        ownersByPaper.set(paperId, [memberId]);
+      }
     }
   }
+  // Grouped once, so each paper reads its own rows instead of scanning every update and request.
+  // The old spread-and-copy per row was quadratic in a paper's update count, too.
   const updatesByPaper = new Map<string, AdminBotPaperWeeklyUpdate[]>();
   for (const update of sources.weeklyUpdates) {
-    updatesByPaper.set(update.paper_id, [...(updatesByPaper.get(update.paper_id) ?? []), update]);
+    const list = updatesByPaper.get(update.paper_id);
+    if (list) {
+      list.push(update);
+    } else {
+      updatesByPaper.set(update.paper_id, [update]);
+    }
+  }
+  const openRequestsByPaper = new Map<string, LabHelpRequest[]>();
+  for (const request of sources.helpRequests) {
+    if (request.status !== "open") {
+      continue;
+    }
+    const list = openRequestsByPaper.get(request.paper_id);
+    if (list) {
+      list.push(request);
+    } else {
+      openRequestsByPaper.set(request.paper_id, [request]);
+    }
   }
 
   return papers
@@ -146,9 +174,7 @@ export function buildLabProjects(sources: AdminBotLabProjectSources): AdminBotLa
       const topic = artifacts.topic?.trim();
       const tags = [
         ...new Set(
-          sources.helpRequests
-            .filter((request) => request.paper_id === paper.id && request.status === "open")
-            .flatMap((request) => request.tags.map((tag) => tag.trim()).filter(Boolean)),
+          (openRequestsByPaper.get(paper.id) ?? []).flatMap((request) => request.tags.map((tag) => tag.trim()).filter(Boolean)),
         ),
       ];
 
