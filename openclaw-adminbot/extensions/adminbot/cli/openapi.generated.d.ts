@@ -5995,6 +5995,7 @@ export interface components {
       location_permission?: "granted" | "denied" | "dismissed";
       location_permission_at?: string;
       last_seen_at?: string;
+      last_cli_at?: string;
       availability?: components["schemas"]["AdminBotAvailabilityRow"][];
       time_off?: components["schemas"]["AdminBotTimeOffRow"][];
       milestones?: components["schemas"]["AdminBotMemberMilestone"][];
@@ -6854,6 +6855,7 @@ export interface components {
       location_permission?: "granted" | "denied" | "dismissed";
       location_permission_at?: string;
       last_seen_at?: string;
+      last_cli_at?: string;
       availability?: components["schemas"]["AdminBotAvailabilityRow"][];
       time_off?: components["schemas"]["AdminBotTimeOffRow"][];
       milestones?: components["schemas"]["AdminBotMemberMilestone"][];
@@ -7001,6 +7003,7 @@ export interface components {
       location_permission?: "granted" | "denied" | "dismissed";
       location_permission_at?: string;
       last_seen_at?: string;
+      last_cli_at?: string;
       availability?: components["schemas"]["AdminBotAvailabilityRow"][];
       time_off?: components["schemas"]["AdminBotTimeOffRow"][];
       milestones?: components["schemas"]["AdminBotMemberMilestone"][];
@@ -8055,6 +8058,8 @@ export interface components {
       updated_at?: string;
       last_self_edit_at?: string;
       activity?: components["schemas"]["AdminBotMemberActivityCounts"];
+      last_cli_at?: string;
+      engagement?: components["schemas"]["AdminBotMemberEngagement"];
     } & {
       [key: string]: unknown;
     };
@@ -8072,6 +8077,16 @@ export interface components {
       profile_edits: number;
       paper_updates: number;
       last_active_at?: string;
+    } & {
+      [key: string]: unknown;
+    };
+    AdminBotMemberEngagement: {
+      last_active_at?: string;
+      /** @enum {string} */
+      last_channel?: "slack" | "web_login" | "web_seen" | "cli" | "self_edit";
+      channels: {
+        [key: string]: unknown;
+      };
     } & {
       [key: string]: unknown;
     };
@@ -8352,6 +8367,7 @@ export interface components {
       location_permission?: "granted" | "denied" | "dismissed";
       location_permission_at?: string;
       last_seen_at?: string;
+      last_cli_at?: string;
       availability?: components["schemas"]["AdminBotAvailabilityRow"][];
       time_off?: components["schemas"]["AdminBotTimeOffRow"][];
       milestones?: components["schemas"]["AdminBotMemberMilestone"][];
@@ -10372,6 +10388,9 @@ export interface components {
       applicant_last_reviewed_at?: string;
       meeting_minimum_minutes?: number;
       venue_sources?: components["schemas"]["AdminBotVenueSource"][];
+      engagement_policy?: {
+        [key: string]: unknown;
+      };
       updated_at: string;
     } & {
       [key: string]: unknown;
@@ -10407,6 +10426,9 @@ export interface components {
       applicant_last_reviewed_at?: string;
       meeting_minimum_minutes?: number;
       venue_sources?: components["schemas"]["AdminBotVenueSource"][];
+      engagement_policy?: {
+        [key: string]: unknown;
+      };
     } & {
       [key: string]: unknown;
     };
@@ -18561,6 +18583,7 @@ export interface operations {
               location_permission?: "granted" | "denied" | "dismissed";
               location_permission_at?: string;
               last_seen_at?: string;
+              last_cli_at?: string;
               availability?: components["schemas"]["AdminBotAvailabilityRow"][];
               time_off?: components["schemas"]["AdminBotTimeOffRow"][];
               milestones?: components["schemas"]["AdminBotMemberMilestone"][];
@@ -21336,7 +21359,22 @@ export interface operations {
               [key: string]: unknown;
             })[];
             dormant: string[];
+            dormant_escalated: ({
+              member_id: string;
+              notifications: number;
+            } & {
+              [key: string]: unknown;
+            })[];
             skipped: components["schemas"]["AdminBotMemberNudgeSkip"][];
+            flagged: ({
+              member_id: string;
+              address: string;
+              /** @enum {string} */
+              problem: "malformed" | "trailing_dot";
+            } & {
+              [key: string]: unknown;
+            })[];
+            unclassified: string[];
           } & {
             [key: string]: unknown;
           };
@@ -22670,6 +22708,7 @@ export interface operations {
                 | "alumni_slack_invite"
                 | "dormant_account"
                 | "onboarding_followup"
+                | "long_term_reminder"
                 | "workshop_nudge"
                 | "pi_review"
                 | "pi_review_ack"
@@ -28808,6 +28847,7 @@ export interface operations {
               | "alumni_slack_invite"
               | "dormant_account"
               | "onboarding_followup"
+              | "long_term_reminder"
               | "workshop_nudge"
               | "pi_review"
               | "pi_review_ack"
@@ -29930,6 +29970,9 @@ export interface operations {
           applicant_last_reviewed_at?: string;
           meeting_minimum_minutes?: number;
           venue_sources?: components["schemas"]["AdminBotVenueSource"][];
+          engagement_policy?: {
+            [key: string]: unknown;
+          };
         } & {
           [key: string]: unknown;
         };

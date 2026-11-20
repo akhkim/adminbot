@@ -6,10 +6,10 @@ import {
 } from "../../contracts/actions.js";
 import {
   businessDaysBetween,
-  dormantChaseDue,
   engagedSince,
   hasEverEngaged,
   isChaseableMember,
+  planEngagementReminder,
   planOnboardingFollowUp,
 } from "./onboarding-followup.js";
 
@@ -69,6 +69,15 @@ describe("engagement", () => {
     expect(hasEverEngaged({})).toBe(false);
     expect(hasEverEngaged({ lastLoginAt: MONDAY })).toBe(true);
     expect(hasEverEngaged({ lastSelfEditAt: MONDAY })).toBe(true);
+  });
+
+  it("counts the CLI and a day the web app saw them, not only a sign-in", () => {
+    // A member who authenticates with an API token never produces a login event; before
+    // last_cli_at they read as "never arrived" to every sweep.
+    expect(hasEverEngaged({ lastCliAt: MONDAY })).toBe(true);
+    expect(hasEverEngaged({ lastSeenAt: MONDAY })).toBe(true);
+    expect(engagedSince(MONDAY, { lastCliAt: "2026-03-03T00:00:00.000Z" })).toBe(true);
+    expect(engagedSince(MONDAY, { lastCliAt: "2025-01-01T00:00:00.000Z" })).toBe(false);
   });
 
   it("measures since the welcome, not ever", () => {
@@ -199,41 +208,86 @@ describe("the onboarding ladder", () => {
   });
 });
 
-describe("the dormant-account reminder", () => {
-  it("chases somebody who has never signed in, every three days", () => {
-    expect(dormantChaseDue({ laddered: false, now: at(MONDAY) })).toBe(true);
-    expect(
-      dormantChaseDue({
-        laddered: false,
-        lastNudgedAt: MONDAY,
-        now: at("2026-03-04T09:00:00.000Z"),
-      }),
-    ).toBe(false);
-    expect(
-      dormantChaseDue({
-        laddered: false,
-        lastNudgedAt: MONDAY,
-        now: at("2026-03-05T09:00:00.000Z"),
-      }),
-    ).toBe(true);
-  });
-
-  it("stops once they have signed in", () => {
-    expect(
-      dormantChaseDue({ laddered: false, lastLoginAt: MONDAY, now: at("2026-04-01T00:00:00Z") }),
-    ).toBe(false);
-  });
-
-  it("does not treat an admin's edit as the member arriving", () => {
-    // Deliberately different from the ladder: this reminder is about the account never having been
-    // opened, and somebody else filling in the record is not that.
-    expect(dormantChaseDue({ laddered: false, now: at(MONDAY) })).toBe(true);
-  });
+describe("the standing engagement reminder", () => {
+  const policy = {
+    enabled: true,
+    inactive_after_days: 14,
+    interval_days: 3,
+    max_reminders: 2,
+    escalate: true,
+  };
+  const plan = (fields: Partial<Parameters<typeof planEngagementReminder>[0]> = {}) =>
+    planEngagementReminder({ policy, sentCount: 0, now: at(MONDAY), laddered: false, ...fields });
+  const DAYS_AGO = (days: number) =>
+    new Date(at(MONDAY).getTime() - days * 86_400_000).toISOString();
 
   it("stands aside while the onboarding ladder owns the member", () => {
-    // Otherwise a newly welcomed member gets the ladder's reminder and this one in the same week,
-    // about the same thing.
-    expect(dormantChaseDue({ laddered: true, now: at(MONDAY) })).toBe(false);
+    // Otherwise a newly welcomed member gets the ladder's reminder and this one in the same week.
+    expect(plan({ laddered: true })).toEqual({ due: false, reason: "laddered" });
+  });
+
+  it("does nothing for a group the policy switches off", () => {
+    expect(plan({ policy: { ...policy, enabled: false } })).toEqual({
+      due: false,
+      reason: "disabled",
+    });
+  });
+
+  it("chases somebody who has never been seen anywhere", () => {
+    expect(plan()).toEqual({ due: true, step: "remind" });
+  });
+
+  it("leaves alone anybody seen inside the threshold, on any channel", () => {
+    expect(plan({ lastActiveAt: DAYS_AGO(13) })).toEqual({ due: false, reason: "active" });
+    expect(plan({ lastActiveAt: DAYS_AGO(14) })).toEqual({ due: true, step: "remind" });
+  });
+
+  it("waits the interval between reminders", () => {
+    const sent = { sentCount: 1, lastActiveAt: DAYS_AGO(30) };
+    expect(plan({ ...sent, lastNudgedAt: DAYS_AGO(2) })).toEqual({
+      due: false,
+      reason: "too_soon",
+    });
+    expect(plan({ ...sent, lastNudgedAt: DAYS_AGO(3) })).toEqual({ due: true, step: "remind" });
+  });
+
+  it("escalates once after the last reminder, then stops", () => {
+    const spent = { sentCount: 2, lastActiveAt: DAYS_AGO(30), lastNudgedAt: DAYS_AGO(3) };
+    expect(plan(spent)).toEqual({ due: true, step: "escalate" });
+    // The ledger counts the escalation too, so the next pass sees max + 1.
+    expect(plan({ ...spent, sentCount: 3 })).toEqual({ due: false, reason: "finished" });
+  });
+
+  it("stops without escalating for a group that never escalates", () => {
+    expect(
+      plan({
+        policy: { ...policy, escalate: false },
+        sentCount: 2,
+        lastActiveAt: DAYS_AGO(30),
+        lastNudgedAt: DAYS_AGO(3),
+      }),
+    ).toEqual({ due: false, reason: "finished" });
+  });
+
+  it("starts a fresh spell when the member came back after the last reminder", () => {
+    // Back on day 20 after a reminder on day 25-ago, quiet again since: a new spell, not the tail
+    // of an old one that would escalate them on their next month off.
+    expect(plan({ sentCount: 2, lastNudgedAt: DAYS_AGO(25), lastActiveAt: DAYS_AGO(20) })).toEqual({
+      due: true,
+      step: "remind",
+      reset: true,
+    });
+  });
+
+  it("holds rather than bursting when a count has no stamp behind it", () => {
+    expect(plan({ sentCount: 1, lastActiveAt: DAYS_AGO(30) })).toEqual({
+      due: false,
+      reason: "too_soon",
+    });
+  });
+
+  it("reads an unparseable sighting as no sighting", () => {
+    expect(plan({ lastActiveAt: "whenever" })).toEqual({ due: true, step: "remind" });
   });
 });
 

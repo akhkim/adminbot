@@ -1,3 +1,4 @@
+import type { AdminBotEngagementPolicyOverrides, AdminBotMemberEngagement } from "./engagement.js";
 import { adminBotOwnerOnlyMemberFields } from "./member-owner-fields.js";
 
 export const adminBotRiskTiers = ["T0", "T1", "T2", "T3", "T4"] as const;
@@ -863,6 +864,14 @@ export type AdminBotMemberProfileOverviewRow = {
    * say so rather than presenting a floor as a total.
    */
   activity: AdminBotMemberActivityCounts;
+  /** Last authenticated CLI/API-token request. Throttled, so it can trail the real use by minutes. */
+  last_cli_at?: string;
+  /**
+   * The one "is this person around" answer, over every channel (web, CLI, self-edit, Slack). The
+   * dormant sweep reads the same derivation, so the row and the reminder can never disagree about
+   * who has gone quiet.
+   */
+  engagement: AdminBotMemberEngagement;
 };
 
 export type AdminBotMemberActivityCounts = {
@@ -1927,6 +1936,13 @@ export type AdminBotLabMemberInput = {
    * member's map visibility, so the admin coverage panel can say when a stale entry was last here.
    */
   last_seen_at?: string;
+  /**
+   * The last time this member used AdminBot through one of their own API tokens (the CLI, a
+   * script). Stamped by api-tokens.ts `noteUse`, at most every ten minutes, so somebody who lives
+   * in the terminal and never opens the web app still reads as present to the dormant sweep.
+   * System-stamped; never self-editable.
+   */
+  last_cli_at?: string;
   availability?: AdminBotAvailabilityRow[];
   time_off?: AdminBotTimeOffRow[];
   // Dated milestones the member is planning back from. Self-editable like the two lists above.
@@ -2103,6 +2119,8 @@ export type AdminBotSettingsInput = {
   meeting_minimum_minutes?: number;
   /** See AdminBotSettings.venue_sources. */
   venue_sources?: AdminBotVenueSource[];
+  /** See AdminBotSettings.engagement_policy. `{}` goes back to the shipped defaults. */
+  engagement_policy?: AdminBotEngagementPolicyOverrides;
 };
 
 export type AdminBotSettings = {
@@ -2195,6 +2213,12 @@ export type AdminBotSettings = {
    * so an arbitrary id typed by a member would be a multi-minute job triggered by a typo.
    */
   venue_sources?: AdminBotVenueSource[];
+  /**
+   * The lab's changes to the per-group reminder policy, laid field by field over
+   * `adminBotDefaultEngagementPolicy` (contracts/engagement.ts). Only the differences are stored, so
+   * a default that improves in a later release reaches every group nobody has customized.
+   */
+  engagement_policy?: AdminBotEngagementPolicyOverrides;
   updated_at: string;
 };
 

@@ -162,6 +162,11 @@ export const adminBotNudgeDomains = [
   // from `dormant_account` because it is a bounded sequence with an end, not a standing reminder --
   // and while it is running it owns the member, so the two cannot both chase the same person.
   "onboarding_followup",
+  // One row per member, stamped by every long-term reminder (contracts/engagement.ts lists them):
+  // the dormant and alumni reminders, the onboarding chase, profile fields, weekly notes. Not a
+  // subject of its own but the shared clock across them -- each sweep keeps its own cadence on its
+  // own domain, and this row is what stops the five adding up to a message a day.
+  "long_term_reminder",
   // The workshop recommendations for one conference, sent in the fortnight before its first
   // workshop deadline. A say-once domain rather than a counting one: this is an announcement about
   // an event, not a request repeated until somebody answers, so the ledger question is "have we

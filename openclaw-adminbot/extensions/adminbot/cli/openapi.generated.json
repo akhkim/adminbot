@@ -12913,6 +12913,9 @@
                           "last_seen_at": {
                             "type": "string"
                           },
+                          "last_cli_at": {
+                            "type": "string"
+                          },
                           "availability": {
                             "type": "array",
                             "items": {
@@ -17526,10 +17529,62 @@
                         "type": "string"
                       }
                     },
+                    "dormant_escalated": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "member_id": {
+                            "type": "string"
+                          },
+                          "notifications": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "member_id",
+                          "notifications"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
                     "skipped": {
                       "type": "array",
                       "items": {
                         "$ref": "#/components/schemas/AdminBotMemberNudgeSkip"
+                      }
+                    },
+                    "flagged": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "member_id": {
+                            "type": "string"
+                          },
+                          "address": {
+                            "type": "string"
+                          },
+                          "problem": {
+                            "type": "string",
+                            "enum": [
+                              "malformed",
+                              "trailing_dot"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "member_id",
+                          "address",
+                          "problem"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "unclassified": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
                       }
                     }
                   },
@@ -17537,7 +17592,10 @@
                     "reminded",
                     "escalated",
                     "dormant",
-                    "skipped"
+                    "dormant_escalated",
+                    "skipped",
+                    "flagged",
+                    "unclassified"
                   ],
                   "additionalProperties": true
                 }
@@ -19874,6 +19932,7 @@
                               "alumni_slack_invite",
                               "dormant_account",
                               "onboarding_followup",
+                              "long_term_reminder",
                               "workshop_nudge",
                               "pi_review",
                               "pi_review_ack",
@@ -30332,6 +30391,7 @@
                         "alumni_slack_invite",
                         "dormant_account",
                         "onboarding_followup",
+                        "long_term_reminder",
                         "workshop_nudge",
                         "pi_review",
                         "pi_review_ack",
@@ -32148,6 +32208,10 @@
                     "items": {
                       "$ref": "#/components/schemas/AdminBotVenueSource"
                     }
+                  },
+                  "engagement_policy": {
+                    "type": "object",
+                    "additionalProperties": true
                   }
                 },
                 "additionalProperties": true
@@ -35466,6 +35530,9 @@
           "last_seen_at": {
             "type": "string"
           },
+          "last_cli_at": {
+            "type": "string"
+          },
           "availability": {
             "type": "array",
             "items": {
@@ -38224,6 +38291,9 @@
           "last_seen_at": {
             "type": "string"
           },
+          "last_cli_at": {
+            "type": "string"
+          },
           "availability": {
             "type": "array",
             "items": {
@@ -38718,6 +38788,9 @@
             "type": "string"
           },
           "last_seen_at": {
+            "type": "string"
+          },
+          "last_cli_at": {
             "type": "string"
           },
           "availability": {
@@ -42079,6 +42152,12 @@
           },
           "activity": {
             "$ref": "#/components/schemas/AdminBotMemberActivityCounts"
+          },
+          "last_cli_at": {
+            "type": "string"
+          },
+          "engagement": {
+            "$ref": "#/components/schemas/AdminBotMemberEngagement"
           }
         },
         "required": [
@@ -42135,6 +42214,32 @@
           "logins",
           "profile_edits",
           "paper_updates"
+        ],
+        "additionalProperties": true
+      },
+      "AdminBotMemberEngagement": {
+        "type": "object",
+        "properties": {
+          "last_active_at": {
+            "type": "string"
+          },
+          "last_channel": {
+            "type": "string",
+            "enum": [
+              "slack",
+              "web_login",
+              "web_seen",
+              "cli",
+              "self_edit"
+            ]
+          },
+          "channels": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "channels"
         ],
         "additionalProperties": true
       },
@@ -43076,6 +43181,9 @@
             "type": "string"
           },
           "last_seen_at": {
+            "type": "string"
+          },
+          "last_cli_at": {
             "type": "string"
           },
           "availability": {
@@ -49014,6 +49122,10 @@
               "$ref": "#/components/schemas/AdminBotVenueSource"
             }
           },
+          "engagement_policy": {
+            "type": "object",
+            "additionalProperties": true
+          },
           "updated_at": {
             "type": "string"
           }
@@ -49121,6 +49233,10 @@
             "items": {
               "$ref": "#/components/schemas/AdminBotVenueSource"
             }
+          },
+          "engagement_policy": {
+            "type": "object",
+            "additionalProperties": true
           }
         },
         "additionalProperties": true

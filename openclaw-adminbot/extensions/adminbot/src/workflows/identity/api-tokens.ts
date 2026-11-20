@@ -7,6 +7,7 @@ import { randomUUID } from "node:crypto";
 import {
   adminBotIsAlumniMember,
   type AdminBotAuditEvent,
+  type AdminBotLabMember,
   type AdminBotPrivilegeLevel,
 } from "../../contracts/actions.js";
 import type { AdminBotApiToken } from "../../contracts/api-tokens.js";
@@ -47,6 +48,10 @@ import type { AdminBotAuthResponse, AdminBotAuthStore, AdminBotMemberPrincipal }
 export const ADMINBOT_CLI_LOGIN_PATH = "/profile";
 
 const TOUCH_INTERVAL_MS = 5 * 60 * 1000;
+// Coarser than the token stamp: the member row is the roster's payload, so writing it on every
+// CLI burst would churn the row that every overview read parses. Ten minutes is far finer than
+// any reader needs (the dormant sweep thinks in days).
+const MEMBER_CLI_STAMP_INTERVAL_MS = 10 * 60 * 1000;
 const SEEN_IPS_MAX = 50;
 // Unknown user codes, per member: the browser session is already signed in, so this only slows
 // somebody guessing at codes from a session they have taken over.
@@ -64,6 +69,7 @@ export type AdminBotApiTokenStore = Pick<
   | "getApiTokenByHash"
   | "getLabMember"
   | "listApiTokensForMember"
+  | "patchLabMemberAuthFields"
   | "recordAudit"
   | "revokeApiToken"
   | "revokeApiTokensForMember"
@@ -228,6 +234,7 @@ export class AdminBotApiTokenService {
       return { ok: false, status: 429, retry_after_seconds: wait };
     }
     await this.noteUse(token, remoteIp, now);
+    await this.noteMemberCliUse(member, now);
     return {
       ok: true,
       principal: {
@@ -247,6 +254,24 @@ export class AdminBotApiTokenService {
         },
       },
     };
+  }
+
+  /**
+   * Stamp the member's `last_cli_at`, so terminal use counts as being here. The session path has
+   * `noteAccountUse` for this; a token request never reaches it, which is why a CLI-only member
+   * used to read as dormant forever. A failed write is swallowed: presence is a hint for the
+   * sweep, and a request must never fail because the hint could not be recorded.
+   */
+  private async noteMemberCliUse(member: AdminBotLabMember, now: Date): Promise<void> {
+    const last = member.last_cli_at ? Date.parse(member.last_cli_at) : Number.NaN;
+    if (Number.isFinite(last) && now.getTime() - last < MEMBER_CLI_STAMP_INTERVAL_MS) {
+      return;
+    }
+    try {
+      await this.store.patchLabMemberAuthFields(member.id, { last_cli_at: now.toISOString() });
+    } catch {
+      // See above: never fail the request over a presence stamp.
+    }
   }
 
   private async noteUse(token: AdminBotApiToken, ip: string | undefined, now: Date): Promise<void> {

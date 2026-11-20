@@ -559,6 +559,22 @@ export type MemberProfileOverviewRow = {
    * present-but-empty row means.
    */
   activity?: MemberActivityCounts;
+  /** Last authenticated CLI/API-token request. */
+  last_cli_at?: string;
+  /**
+   * The service's one "is this person around" answer over every channel, the CLI and Slack
+   * included -- the same derivation the dormant reminder sweep reads. Optional for the same
+   * rolling-deploy reason as `activity`.
+   */
+  engagement?: MemberEngagement;
+};
+
+export type MemberEngagementChannel = "web_login" | "web_seen" | "cli" | "self_edit" | "slack";
+
+export type MemberEngagement = {
+  last_active_at?: string;
+  last_channel?: MemberEngagementChannel;
+  channels: Partial<Record<MemberEngagementChannel, string>>;
 };
 
 export type MemberActivityCounts = {
