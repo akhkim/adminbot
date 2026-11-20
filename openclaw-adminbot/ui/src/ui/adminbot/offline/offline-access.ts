@@ -142,7 +142,9 @@ export class OfflineAccess extends LitElement {
           ${pending
             ? `${pending} draft${pending === 1 ? "" : "s"} awaiting sync or review.`
             : "No drafts waiting to sync."}
-          ${this.ready ? "" : "Open this page online once to prepare this device."}
+          ${this.ready
+            ? "Ready on this device."
+            : "Open this page online once to prepare this device."}
         </p>
         <p class="muted">
           Letter, meeting and signature edits save here and sync when you reconnect. Submitting

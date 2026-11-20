@@ -107,7 +107,7 @@ it("reopens the built website offline and syncs autosaved edits after reconnect"
     await page.evaluate(async () => {
       await navigator.serviceWorker.ready;
     });
-    await page.getByText("Offline access · Ready on this device", { exact: false }).waitFor();
+    await page.getByText("Offline access · ready", { exact: true }).waitFor();
     reachable = false;
     await context.setOffline(true);
     await field.fill("https://example.test/offline-draft");
