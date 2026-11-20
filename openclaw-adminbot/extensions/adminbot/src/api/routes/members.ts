@@ -49,7 +49,6 @@ import {
   type MemberTypeChangeStep,
   proposeDcsRosterRow,
 } from "../server.member-type-change.js";
-import { refuseApiToken } from "./api-tokens.js";
 import { refuseWhileImpersonating } from "./auth.js";
 import type { AdminBotRouteContext } from "./context.js";
 import {
@@ -313,13 +312,17 @@ export const membersRoutes: readonly Route[] = [
     );
   }),
   post(/^\/lab\/members\/([^/]+)\/email$/u, async ({ req, res, principal, ctx, params }) => {
-    // Admin session only, as for the id. And never an API token or a viewed-as session: this is
-    // the member's own /auth/email without their password, and it moves where their password reset
-    // goes, so it draws the line /auth/email draws.
+    // An admin member, in a browser session or with their own API token, never a viewed-as session.
+    // The service refuses the caller's own account and the head professor's, so this route only ever
+    // moves someone else's sign-in. A token used to be refused here on the ground that the login email
+    // is where password resets go; they now go to `correspondence_email`, which an admin token can
+    // already set (see the PUT below), so refusing the token here protected nothing and only pushed
+    // admins back to the browser for an ordinary roster fix. A token still may not change its own
+    // holder's email: that is /auth/email, which keeps refuseApiToken.
     if (!requireMemberPrivileged(res, principal) || principal.kind !== "member") {
       return;
     }
-    if (refuseWhileImpersonating(res, principal) || refuseApiToken(res, principal)) {
+    if (refuseWhileImpersonating(res, principal)) {
       return;
     }
     const body = readRecord(await readJson(req));
