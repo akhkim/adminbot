@@ -4539,6 +4539,12 @@ describe("the member location timeline", () => {
     await memberToken(baseUrl, "ada", "Ada Attendee", "member", { location: "Toronto" });
     const member = await memberToken(baseUrl, "bo", "Bo Other");
     const admin = await memberToken(baseUrl, "root", "Root Admin", "admin");
+    // Read once before the sign-ins land: the drift list is memoized on the locations table's
+    // row version, so the writes below (straight to the store) must still show up.
+    const before = await fetch(`${baseUrl}/lab/location-drifts`, {
+      headers: { Authorization: `Bearer ${admin}` },
+    });
+    await expect(before.json()).resolves.toEqual({ drifts: [] });
     // Keep both observations within the rolling 90-day lookup window.
     observeLogin(baseUrl, "ada", "Germany", new Date(Date.now() - 7 * 86_400_000).toISOString());
     observeLogin(baseUrl, "ada", "Germany", new Date().toISOString());

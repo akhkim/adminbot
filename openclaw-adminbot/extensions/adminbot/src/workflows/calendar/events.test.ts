@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  calendarMonthWindow,
   createCachedCalendarEventsReader,
   createCalendarEventsReader,
   parseCalendarEvents,
@@ -225,5 +226,79 @@ describe("createCachedCalendarEventsReader", () => {
     await expect(cached.read({})).rejects.toThrow("keyring locked");
     fail = false;
     await expect(cached.read({})).resolves.toEqual([]);
+  });
+
+  it("keeps seeded and recently asked reads warm, and re-reads them right after a write", async () => {
+    vi.useFakeTimers();
+    try {
+      const calls: Array<Record<string, unknown>> = [];
+      const cached = createCachedCalendarEventsReader(async (params) => {
+        calls.push(params);
+        return [];
+      });
+      const stop = cached.keepWarm(50_000, [{ calendarId: "lab", max: 250 }]);
+      expect(calls).toEqual([{ calendarId: "lab", max: 250 }]);
+      await vi.advanceTimersByTimeAsync(0);
+      // The page's own read is handed the warmed answer.
+      await cached.read({ calendarId: "lab", max: 250 });
+      expect(calls).toHaveLength(1);
+      await cached.read({ calendarId: "lab", from: "2026-11-20" });
+      expect(calls).toHaveLength(2);
+      await vi.advanceTimersByTimeAsync(50_000);
+      expect(calls).toHaveLength(4);
+      cached.invalidate();
+      expect(calls).toHaveLength(6);
+      // An hour on, only the seed is still read; the page's range was not asked for again.
+      await vi.advanceTimersByTimeAsync(60 * 60_000);
+      const before = calls.length;
+      await vi.advanceTimersByTimeAsync(50_000);
+      expect(calls.length - before).toBe(1);
+      stop();
+      await vi.advanceTimersByTimeAsync(500_000);
+      expect(calls.length - before).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("calendarMonthWindow", () => {
+  it("is the month in the lab's zone, as whole UTC days, the way the Calendar tab asks", () => {
+    expect(calendarMonthWindow("UTC", Date.parse("2026-11-20T12:00:00Z"))).toEqual({
+      from: "2026-11-01T00:00:00.000Z",
+      to: "2026-12-01T00:00:00.000Z",
+    });
+    expect(calendarMonthWindow("UTC", Date.parse("2026-12-31T23:00:00Z"))).toEqual({
+      from: "2026-12-01T00:00:00.000Z",
+      to: "2027-01-01T00:00:00.000Z",
+    });
+    // Still October in Toronto, though November in UTC.
+    expect(calendarMonthWindow("America/Toronto", Date.parse("2026-11-01T02:00:00Z")).from).toBe(
+      "2026-10-01T00:00:00.000Z",
+    );
+    expect(calendarMonthWindow("Not/AZone", Date.parse("2026-11-20T12:00:00Z")).from).toBe(
+      "2026-11-01T00:00:00.000Z",
+    );
+  });
+
+  it("lets seeds move with the clock, so a new month is warmed and the old one dropped", async () => {
+    vi.useFakeTimers();
+    try {
+      const calls: string[] = [];
+      const reader = createCachedCalendarEventsReader(async (params) => {
+        calls.push(params.from ?? "");
+        return [];
+      });
+      let month = "2026-11-01T00:00:00.000Z";
+      const stop = reader.keepWarm(50_000, () => [{ from: month, max: 250 }]);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(calls).toEqual(["2026-11-01T00:00:00.000Z"]);
+      month = "2026-12-01T00:00:00.000Z";
+      await vi.advanceTimersByTimeAsync(50_000);
+      expect(calls).toEqual(["2026-11-01T00:00:00.000Z", "2026-12-01T00:00:00.000Z"]);
+      stop();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

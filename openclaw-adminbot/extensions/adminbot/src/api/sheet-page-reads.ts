@@ -23,6 +23,16 @@ export type SheetPageReads = {
   invalidate(): void;
   /** Called after every request; drops both views after a write that can change them. */
   noteRequest(method: string | undefined, path: string): void;
+  /**
+   * Reads both views now and again every `intervalMs`, and again right after each invalidate, so
+   * the page is handed a kept view instead of waiting seconds on the sheet. Returns a stop.
+   */
+  keepWarm(loaders: SheetViewLoaders, intervalMs: number): () => void;
+};
+
+export type SheetViewLoaders = {
+  member?: () => Promise<unknown>;
+  call?: { load: () => Promise<unknown>; keep: (value: unknown) => boolean };
 };
 
 export function createSheetPageReads(options: { now?: () => number } = {}): SheetPageReads {
@@ -35,6 +45,7 @@ export function createSheetPageReads(options: { now?: () => number } = {}): Shee
     staleMs: SHEET_STALE_MS,
     ...(options.now ? { now: options.now } : {}),
   };
+  let warm: (() => void) | undefined;
   const reads: SheetPageReads = {
     memberSheet<T>(load: () => Promise<T>) {
       member ??= createCachedRead<unknown>(load, timing);
@@ -47,6 +58,7 @@ export function createSheetPageReads(options: { now?: () => number } = {}): Shee
     invalidate() {
       member?.invalidate();
       call?.invalidate();
+      warm?.();
     },
     noteRequest(method, path) {
       if (method === "GET" || method === "HEAD" || method === "OPTIONS") {
@@ -55,6 +67,28 @@ export function createSheetPageReads(options: { now?: () => number } = {}): Shee
       if (SHEET_WRITE_PREFIXES.some((prefix) => path === prefix || path.startsWith(`${prefix}/`))) {
         reads.invalidate();
       }
+    },
+    keepWarm(loaders, intervalMs) {
+      // Made here rather than on first view, so the first viewer after a restart is served too.
+      // A route's own loader is then never used; it reads the same sheet the same way.
+      if (loaders.member) {
+        member ??= createCachedRead<unknown>(loaders.member, timing);
+      }
+      if (loaders.call) {
+        call ??= createCachedRead<unknown>(loaders.call.load, { ...timing, keep: loaders.call.keep });
+      }
+      // A failed read is not kept and is retried on the next tick; the page then reads for itself.
+      warm = () => {
+        member?.refresh().catch(() => {});
+        call?.refresh().catch(() => {});
+      };
+      warm();
+      const timer = setInterval(warm, intervalMs);
+      timer.unref?.();
+      return () => {
+        clearInterval(timer);
+        warm = undefined;
+      };
     },
   };
   return reads;

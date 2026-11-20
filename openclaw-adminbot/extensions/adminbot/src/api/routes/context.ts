@@ -473,6 +473,9 @@ export type AdminBotMockServiceOptions = {
   slackChannelNamingSweepIntervalMs?: number;
   // Hourly in the host: retries meetup intros held for quiet hours. Disabled when unset.
   meetupSweepIntervalMs?: number;
+  // How often the Membership grid and call queue re-read their sheet behind the page (the host
+  // sets it). Disabled when unset.
+  sheetViewWarmIntervalMs?: number;
   // How often the host checks whether the daily CV sweep is due (hourly in the host); the sweep
   // itself runs at most once per 24 hours. Disabled when unset.
   cvSweepCheckIntervalMs?: number;

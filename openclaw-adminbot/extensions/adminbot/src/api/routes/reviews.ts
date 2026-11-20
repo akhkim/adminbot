@@ -13,14 +13,31 @@ import {
   createPdfReferenceChecker,
   extractPdfFullText,
 } from "../../connectors/reference-check.js";
+import { ReadModelMemo } from "../../kernel/read-model-memo.js";
 import { type AdminBotServiceStore, AdminBotService } from "../../kernel/service.js";
 import { IclrIntegrityWatch } from "../../workflows/papers/iclr-integrity-watch.js";
-import { summarizeOpenReviewCitationChecks } from "../../workflows/papers/openreview-citation-summary.js";
+import {
+  flaggedCitationFindings,
+  summarizeOpenReviewCitationChecks,
+} from "../../workflows/papers/openreview-citation-summary.js";
 import { OpenReviewCitationWatch } from "../../workflows/papers/openreview-citation-watch.js";
 import { readJson, readRecord, sendJson, sendServiceResult } from "../server.http.js";
 import type { AdminBotMockServiceOptions } from "./context.js";
 import { principalActor, privilegedOnly } from "./guards.js";
 import { get, post, route, type Route, startingWith } from "./router.js";
+import { sendNotModified, versionEtag } from "./version-etag.js";
+
+// The summary is rebuilt only when the checks table moves; one memo per store, so two test
+// servers in one process never share rows.
+const citationSummaryMemos = new WeakMap<object, ReadModelMemo>();
+function citationSummaryMemo(store: object): ReadModelMemo {
+  let memo = citationSummaryMemos.get(store);
+  if (!memo) {
+    memo = new ReadModelMemo();
+    citationSummaryMemos.set(store, memo);
+  }
+  return memo;
+}
 
 export const reviewsRoutes: readonly Route[] = [
   post("/reference-check/pdf", async ({ req, res, ctx, principal }) => {
@@ -39,17 +56,50 @@ export const reviewsRoutes: readonly Route[] = [
     privilegedOnly(({ res, url, ctx }) => {
       const watch = ctx.openReviewCitationWatch;
       const view = url.searchParams.get("view");
-      if (view !== null && view !== "summary") {
+      if (view !== null && view !== "summary" && view !== "findings") {
         sendJson(res, 400, { error: { message: "invalid citation check view" } });
         return;
       }
-      // The page asks for `view=summary`: one row per paper with only the references to look at.
+      // One paper's flagged references, read when somebody opens them on the page.
+      if (view === "findings") {
+        const submissionId = url.searchParams.get("submission_id")?.trim();
+        if (!submissionId) {
+          sendJson(res, 400, { error: { message: "submission_id is required" } });
+          return;
+        }
+        sendJson(res, 200, {
+          submission_id: submissionId,
+          findings: flaggedCitationFindings(ctx.store.listOpenReviewCitationChecks(submissionId)),
+        });
+        return;
+      }
+      const status = watch ? watch.status() : { running: false };
+      // The page asks for `view=summary`: one row per paper, counts only. The sweep's progress is
+      // in memory, not in the table, so it is part of the tag alongside the table's version.
+      if (view === "summary") {
+        const version = ctx.store.rowVersion?.(["adminbot_openreview_citation_checks"]);
+        const etag =
+          version === undefined
+            ? undefined
+            : versionEtag("citation-checks.summary", [
+                version,
+                Boolean(watch),
+                JSON.stringify(status),
+              ]);
+        if (etag && sendNotModified(res, etag)) {
+          return;
+        }
+        const checks = citationSummaryMemo(ctx.store).get("summary", version, () =>
+          summarizeOpenReviewCitationChecks(ctx.store.listOpenReviewCitationChecks()),
+        );
+        sendJson(res, 200, { enabled: Boolean(watch), ...status, checks }, { etag });
+        return;
+      }
       // The unqualified read keeps every reference of every checked version.
-      const checks = ctx.store.listOpenReviewCitationChecks();
       sendJson(res, 200, {
         enabled: Boolean(watch),
-        ...(watch ? watch.status() : { running: false }),
-        checks: view === "summary" ? summarizeOpenReviewCitationChecks(checks) : checks,
+        ...status,
+        checks: ctx.store.listOpenReviewCitationChecks(),
       });
     }),
   ),
@@ -163,7 +213,14 @@ export const reviewsRoutes: readonly Route[] = [
         return;
       }
       if (req.method === "GET" && url.pathname === "/openreview/load-forms") {
-        sendJson(res, 200, { forms: await workflow.loadForms() });
+        // A cold walk of every venue takes ~20 s. The page gets the last forms read at once, with
+        // `refreshing` set while the walk runs behind; `?wait=1` is for a caller (the CLI after a
+        // write) that would rather wait for the fresh answer.
+        if (url.searchParams.get("wait") === "1") {
+          sendJson(res, 200, { forms: await workflow.loadForms(), refreshing: false });
+          return;
+        }
+        sendJson(res, 200, await workflow.readForms());
         return;
       }
       if (req.method === "GET" && url.pathname === "/openreview/suggest-reviewers") {

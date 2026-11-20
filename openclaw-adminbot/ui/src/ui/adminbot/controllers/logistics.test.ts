@@ -217,6 +217,36 @@ describe("logistics controller", () => {
     expect(host.adminBotLogisticsRequestsLoading).toBe(false);
   });
 
+  it("draws the page last read for a tab straight away when the admin comes back to it", async () => {
+    saveStoredMemberSession({ sessionToken: "tok-tabs", expiresAt: "later" });
+    const host = createHost();
+    const meeting = { ...REQUEST, id: "logreq_meeting", kind: "meeting_request" as const };
+    const tagged = (body: unknown, etag: string) =>
+      new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "Content-Type": "application/json", ETag: etag },
+      });
+    const finishers: Array<(response: Response) => void> = [];
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(tagged({ requests: [REQUEST], total: 1 }, 'W/"letters"'))
+      .mockResolvedValueOnce(tagged({ requests: [meeting], total: 1 }, 'W/"meetings"'))
+      .mockImplementation(() => new Promise<Response>((resolve) => finishers.push(resolve)));
+    const letters = new URLSearchParams({ kind: "document_signature" });
+    await loadAdminBotLogisticsRequests(host, letters);
+    await loadAdminBotLogisticsRequests(host, new URLSearchParams({ kind: "meeting_request" }));
+    expect(host.adminBotLogisticsRequests).toEqual([meeting]);
+
+    // Back to the first tab: its rows are on screen before the revalidating request answers.
+    const back = loadAdminBotLogisticsRequests(host, letters);
+    expect(host.adminBotLogisticsRequests).toEqual([REQUEST]);
+    expect(host.adminBotLogisticsPage).toMatchObject({ query: "kind=document_signature" });
+    expect(host.adminBotLogisticsRequestsLoading).toBe(true);
+    await vi.waitFor(() => expect(finishers).toHaveLength(1));
+    finishers[0]!(tagged({ requests: [], total: 0 }, 'W/"letters-2"'));
+    await back;
+    expect(host.adminBotLogisticsRequests).toEqual([]);
+  });
+
   it("does not put an old session's queue back after sign-out", async () => {
     saveStoredMemberSession({ sessionToken: "old-token", expiresAt: "later" });
     const host = createHost();

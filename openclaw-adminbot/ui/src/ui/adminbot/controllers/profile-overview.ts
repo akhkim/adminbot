@@ -125,6 +125,17 @@ export async function loadAdminBotProfileOverview(
   host.adminBotProfileOverviewLoading = true;
   host.adminBotProfileOverviewError = null;
   host.adminBotPiReviewError = null;
+  // My Desk's two queues are asked at the same time as the desk read, not after it: one after
+  // another they cost three round trips through the tunnel before the page settled.
+  const queues =
+    view === "desk"
+      ? Promise.all([
+          fetchEscalatedNudges(wire.token, wire.baseUrl),
+          fetchPiReviewQueueAndHistory(wire.token, wire.baseUrl),
+        ])
+      : undefined;
+  // Not awaited when the desk read fails or goes stale; a rejection there must not go unhandled.
+  void queues?.catch(() => undefined);
   try {
     const result = await fetchMemberProfileOverview(wire.token, wire.baseUrl, query);
     if (!current()) {
@@ -146,23 +157,19 @@ export async function loadAdminBotProfileOverview(
       remindCount: result.value.remindCount,
       ...(view === "desk" ? { desk: result.value.desk } : {}),
     };
-    if (view !== "desk") {
+    if (!queues) {
       return;
     }
     // Loaded alongside rather than on its own: the escalation queue and the adoption columns are
     // read by the same person on the same page, and a second spinner for four rows is worse than
     // waiting for them together. A failure here does not blank the page it rides on -- the columns
     // are the reason someone opened it, so the queue simply stays empty.
-    const escalated = await fetchEscalatedNudges(wire.token, wire.baseUrl);
+    const [escalated, piReview] = await queues;
     if (!current()) {
       return;
     }
     host.adminBotEscalatedNudges = escalated.ok ? escalated.value : [];
     // An unavailable queue is unknown, not evidence that nobody is waiting.
-    const piReview = await fetchPiReviewQueueAndHistory(wire.token, wire.baseUrl);
-    if (!current()) {
-      return;
-    }
     host.adminBotPiReview = piReview.ok ? piReview.value.papers : [];
     host.adminBotPiReviewHistory = piReview.ok ? piReview.value.history : [];
     host.adminBotPiReviewError = piReview.ok ? null : failureText(piReview, wire.baseUrl);

@@ -27,6 +27,8 @@ const EVENTS_STALE_MS = 5 * 60_000;
 // The parameter sets kept at once. The Calendar tab and the meetings page ask with a handful of
 // fixed shapes; a caller paging through arbitrary ranges must not grow the map without bound.
 const EVENTS_MAX_KEYS = 32;
+// A parameter set asked for within this long is read again behind the page by keepWarm.
+const EVENTS_WARM_WINDOW_MS = 30 * 60_000;
 
 export type AdminBotCalendarEvent = {
   id: string;
@@ -236,10 +238,51 @@ export function createCalendarEventsReader(
   };
 }
 
+/**
+ * The window the Calendar tab asks for when it opens: the month `at` falls in, in `timezone`, as
+ * whole UTC days from the 1st to the next month's 1st. It must match the UI's monthWindow exactly,
+ * since the kept reads are keyed on these strings.
+ */
+export function calendarMonthWindow(
+  timezone: string,
+  at = Date.now(),
+): { from: string; to: string } {
+  let year: number;
+  let month: number;
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "numeric",
+    }).formatToParts(at);
+    year = Number(parts.find((part) => part.type === "year")?.value);
+    month = Number(parts.find((part) => part.type === "month")?.value);
+  } catch {
+    year = new Date(at).getUTCFullYear();
+    month = new Date(at).getUTCMonth() + 1;
+  }
+  const first = (y: number, m: number) =>
+    `${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}-01T00:00:00.000Z`;
+  return {
+    from: first(year, month),
+    to: month === 12 ? first(year + 1, 1) : first(year, month + 1),
+  };
+}
+
 export type CachedCalendarEventsReader = {
   read: CalendarEventsReader;
   /** Forget every kept read, so the next one asks Google. Call it after a calendar write. */
   invalidate(): void;
+  /**
+   * Reads `seeds` now, then every `intervalMs` reads again each parameter set asked for in the
+   * last half hour, and does the same right after each invalidate. The first viewer after a
+   * restart or a calendar write is then handed a kept answer instead of waiting on gog.
+   * Returns a stop.
+   */
+  keepWarm(
+    intervalMs: number,
+    seeds?: Parameters<CalendarEventsReader>[0][] | (() => Parameters<CalendarEventsReader>[0][]),
+  ): () => void;
 };
 
 /**
@@ -258,29 +301,43 @@ export function createCachedCalendarEventsReader(
   read: CalendarEventsReader,
   options: { now?: () => number } = {},
 ): CachedCalendarEventsReader {
+  const now = options.now ?? (() => Date.now());
   const reads = new Map<string, CachedRead<AdminBotCalendarEvent[]>>();
+  // What was asked for and when, kept across invalidate so keepWarm knows what to read again.
+  const asked = new Map<string, { params: Parameters<CalendarEventsReader>[0]; at: number }>();
+  let warm: (() => void) | undefined;
+  const keyOf = (params: Parameters<CalendarEventsReader>[0]) =>
+    JSON.stringify([
+      params.calendarId ?? null,
+      params.from ?? null,
+      params.to ?? null,
+      params.max ?? null,
+      params.query ?? null,
+    ]);
+  const entry = (params: Parameters<CalendarEventsReader>[0]) => {
+    const key = keyOf(params);
+    let cached = reads.get(key);
+    if (!cached) {
+      if (reads.size >= EVENTS_MAX_KEYS) {
+        // Insertion order, so this drops the parameter set that was first asked for.
+        reads.delete(reads.keys().next().value!);
+      }
+      cached = createCachedRead(() => read(params), {
+        freshMs: EVENTS_FRESH_MS,
+        staleMs: EVENTS_STALE_MS,
+        ...(options.now ? { now: options.now } : {}),
+      });
+      reads.set(key, cached);
+    }
+    return { key, cached };
+  };
   return {
     read(params) {
-      const key = JSON.stringify([
-        params.calendarId ?? null,
-        params.from ?? null,
-        params.to ?? null,
-        params.max ?? null,
-        params.query ?? null,
-      ]);
-      let cached = reads.get(key);
-      if (!cached) {
-        if (reads.size >= EVENTS_MAX_KEYS) {
-          // Insertion order, so this drops the parameter set that was first asked for.
-          reads.delete(reads.keys().next().value!);
-        }
-        cached = createCachedRead(() => read(params), {
-          freshMs: EVENTS_FRESH_MS,
-          staleMs: EVENTS_STALE_MS,
-          ...(options.now ? { now: options.now } : {}),
-        });
-        reads.set(key, cached);
+      const { key, cached } = entry(params);
+      if (asked.size >= EVENTS_MAX_KEYS && !asked.has(key)) {
+        asked.delete(asked.keys().next().value!);
       }
+      asked.set(key, { params, at: now() });
       return cached.read();
     },
     invalidate() {
@@ -290,6 +347,34 @@ export function createCachedCalendarEventsReader(
         cached.invalidate();
       }
       reads.clear();
+      warm?.();
+    },
+    keepWarm(intervalMs, seeds = []) {
+      warm = () => {
+        // Seeds are worked out on every tick, so one that names "this month" moves with the clock.
+        const due = new Map<string, Parameters<CalendarEventsReader>[0]>();
+        for (const params of typeof seeds === "function" ? seeds() : seeds) {
+          due.set(keyOf(params), params);
+        }
+        for (const [key, { params, at }] of asked) {
+          if (now() - at < EVENTS_WARM_WINDOW_MS) {
+            due.set(key, params);
+          }
+        }
+        for (const params of due.values()) {
+          // A failed read is not kept; the page then reads for itself, as before.
+          entry(params)
+            .cached.refresh()
+            .catch(() => {});
+        }
+      };
+      warm();
+      const timer = setInterval(warm, intervalMs);
+      timer.unref?.();
+      return () => {
+        clearInterval(timer);
+        warm = undefined;
+      };
     },
   };
 }

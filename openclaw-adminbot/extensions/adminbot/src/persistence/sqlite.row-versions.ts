@@ -21,6 +21,10 @@ export const ROW_VERSIONED_TABLES = [
   "adminbot_help_requests",
   "adminbot_lab_members",
   "adminbot_published_deadlines",
+  // Append-only, at most a row per member per source per day: the location-drift read model.
+  "adminbot_member_locations",
+  // A row per checked submission version, written by the sweep: the citation-check summary.
+  "adminbot_openreview_citation_checks",
 ] as const;
 
 export type RowVersionedTable = (typeof ROW_VERSIONED_TABLES)[number];

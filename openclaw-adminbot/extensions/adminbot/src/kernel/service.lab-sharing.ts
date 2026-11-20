@@ -23,6 +23,9 @@ export class LabSharingService {
   constructor(
     private store: AdminBotServiceStore,
     private ownsPaper: OwnsPaper,
+    // Every paper, from the service's version-keyed snapshot when it has one: a fresh listPapers()
+    // parses every paper's payload, and the tab's list read did that on each load.
+    private allPapers: () => readonly AdminBotPaperRecord[] = () => store.listPapers(),
   ) {}
   directorStatus() {
     return new LabSharingStatusService(this.store);
@@ -105,13 +108,14 @@ export class LabSharingService {
     if (!member) {
       return failure(403, "A member session is required.");
     }
-    const papers = this.store.listPapers();
-    const owns = (paper: AdminBotPaperRecord) => this.ownsPaper(member, paper);
-    const canManage = (paper: AdminBotPaperRecord) =>
-      member.privilege_level === "admin" || owns(paper);
+    const papers = this.allPapers();
     // Resolved once: ownership walks a paper's authors, and the lists below ask about the same
-    // papers repeatedly.
-    const ownedPaperIds = new Set(papers.filter(owns).map((paper) => paper.id));
+    // papers repeatedly, so every later question is a set lookup.
+    const ownedPaperIds = new Set(
+      papers.filter((paper) => this.ownsPaper(member, paper)).map((paper) => paper.id),
+    );
+    const canManage = (paper: AdminBotPaperRecord) =>
+      member.privilege_level === "admin" || ownedPaperIds.has(paper.id);
     // Looked up by id below, once per interest and request, instead of scanning every paper.
     const paperById = new Map(papers.map((paper) => [paper.id, paper]));
     // One read of every request, rather than one query per managed paper.

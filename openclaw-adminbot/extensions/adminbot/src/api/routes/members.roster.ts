@@ -4,8 +4,10 @@ import { memberRosterFilterKeys, type MemberRosterFilters } from "../../contract
 import { memberAttends } from "../../workflows/calendar/standing-meetings.js";
 import { sendJson } from "../server.http.js";
 import { readStandingMeetings } from "./meetings.js";
+import { memberRosterEtag } from "./members-etag.js";
 import { readListPage } from "./query-params.js";
 import { get } from "./router.js";
+import { sendNotModified } from "./version-etag.js";
 
 export const memberRosterRoute = get(
   "/lab/members/roster",
@@ -19,18 +21,30 @@ export const memberRosterRoute = get(
       }
     }
     if (page === "invalid" || Object.values(filters).some((value) => value.length > 500)) {
-      sendJson(res, 400, { error: { message: "invalid roster filters or pagination" } });
+      sendJson(res, 400, {
+        error: { message: "invalid roster filters or pagination" },
+      });
+      return;
+    }
+    // An unchanged page answers 304 before anything is read or built. A meeting filter never gets
+    // a tag (it reads the calendar), so the admin check below still runs for every such query.
+    const etag = memberRosterEtag(ctx.store, principal, { ...page, filters });
+    if (etag && sendNotModified(res, etag)) {
       return;
     }
     let meetingMembers: Set<string> | undefined;
     if (filters.meeting) {
       if (principal.kind !== "member" || principal.member.privilege_level !== "admin") {
-        sendJson(res, 403, { error: { message: "the meeting filter needs an admin session" } });
+        sendJson(res, 403, {
+          error: { message: "the meeting filter needs an admin session" },
+        });
         return;
       }
       const standing = await readStandingMeetings(ctx);
       if ("error" in standing) {
-        sendJson(res, standing.error.status, { error: { message: standing.error.message } });
+        sendJson(res, standing.error.status, {
+          error: { message: standing.error.message },
+        });
         return;
       }
       const meeting = standing.meetings.find((entry) => entry.id === filters.meeting);
@@ -46,15 +60,20 @@ export const memberRosterRoute = get(
       }
     }
     const result = ctx.service.listMemberRoster({ ...page, filters }, meetingMembers);
-    sendJson(res, 200, {
-      ...result,
-      members: result.members.map((member) =>
-        redactConfidentialMemberFields(member, {
-          ...(principal.kind === "member" ? { memberId: principal.member.id } : {}),
-          isAdmin: principal.kind === "member" && principal.member.privilege_level === "admin",
-          isMemberSession: principal.kind === "member",
-        }),
-      ),
-    });
+    sendJson(
+      res,
+      200,
+      {
+        ...result,
+        members: result.members.map((member) =>
+          redactConfidentialMemberFields(member, {
+            ...(principal.kind === "member" ? { memberId: principal.member.id } : {}),
+            isAdmin: principal.kind === "member" && principal.member.privilege_level === "admin",
+            isMemberSession: principal.kind === "member",
+          }),
+        ),
+      },
+      etag ? { etag } : {},
+    );
   },
 );

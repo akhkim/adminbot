@@ -42,6 +42,9 @@ const LOAD_FORM_CONCURRENCY = 3;
 // How long loadForms keeps an answer, and how long past that it may serve it while refreshing.
 const LOAD_FORMS_FRESH_MS = 60_000;
 const LOAD_FORMS_STALE_MS = 10 * 60_000;
+// How long GET /openreview/load-forms waits for a walk before answering with the last forms read.
+// A cold walk takes ~20 s, which no page may wait on.
+const LOAD_FORMS_WAIT_MS = 500;
 
 type BridgeResult = Record<string, unknown>;
 
@@ -85,9 +88,23 @@ export type AdminBotOpenReviewRunResult = {
   errors: Array<{ venue_id?: string; reason: string; error: string }>;
 };
 
+/** What GET /openreview/load-forms answers without waiting on a walk that is still running. */
+export type AdminBotOpenReviewFormsSnapshot = {
+  forms: BridgeResult[];
+  /** When the forms served were read from OpenReview; absent when nothing has been read yet. */
+  fetched_at?: string;
+  /** True when a fresh walk is still running behind this answer. */
+  refreshing: boolean;
+};
+
 export type AdminBotOpenReviewWorkflow = {
   runCycle(options?: { dryRun?: boolean }): Promise<AdminBotOpenReviewRunResult>;
   loadForms(): Promise<BridgeResult[]>;
+  /**
+   * The forms, or, when they are not ready within `waitMs`, the last ones read (of any age) with
+   * `refreshing: true` while the walk carries on behind. Never waits longer than `waitMs`.
+   */
+  readForms(options?: { waitMs?: number }): Promise<AdminBotOpenReviewFormsSnapshot>;
   suggestReviewers(venueId: string): Promise<
     Array<{
       submission_number: number;
@@ -113,7 +130,17 @@ export function createAdminBotOpenReviewWorkflow(
   // Every bridge call is its own process and its own OpenReview login, so one venue's form costs
   // seconds and a dozen in a row cost most of a minute. They are independent, so a few run side by
   // side; not all of them, because a burst of logins is what OpenReview rate-limits.
+  // The last non-empty walk, of any age. Kept past the cached read's stale window and past a
+  // write's invalidate, so a page that asks while a walk runs has something to draw at once.
+  let lastForms: { at: number; forms: BridgeResult[] } | undefined;
   const loadFormsOnce = async (): Promise<BridgeResult[]> => {
+    const forms = await walkForms();
+    if (forms.length > 0) {
+      lastForms = { at: now(), forms };
+    }
+    return forms;
+  };
+  const walkForms = async (): Promise<BridgeResult[]> => {
     const discovered = await run(["discover"]);
     if (discovered.ok !== true) {
       return [];
@@ -277,6 +304,34 @@ export function createAdminBotOpenReviewWorkflow(
 
     loadForms() {
       return formsRead.read();
+    },
+
+    async readForms({ waitMs = LOAD_FORMS_WAIT_MS } = {}) {
+      const reading = formsRead.read();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const late = Symbol("late");
+      const settled = await Promise.race([
+        reading,
+        new Promise<typeof late>((resolve) => {
+          timer = setTimeout(() => resolve(late), waitMs);
+        }),
+      ]).finally(() => clearTimeout(timer));
+      if (settled !== late) {
+        return {
+          forms: settled,
+          ...(settled.length > 0 && lastForms
+            ? { fetched_at: new Date(lastForms.at).toISOString() }
+            : {}),
+          refreshing: false,
+        };
+      }
+      // The walk goes on without this caller; a failure there is the next caller's to see.
+      reading.catch(() => {});
+      return {
+        forms: lastForms?.forms ?? [],
+        ...(lastForms ? { fetched_at: new Date(lastForms.at).toISOString() } : {}),
+        refreshing: true,
+      };
     },
 
     // The emergency-reviewer worklist: for every submission still missing a review, the

@@ -446,6 +446,37 @@ describe("loadForms", () => {
     expect(counts().discovers).toBe(1);
   });
 
+  it("answers at once with nothing while the first walk runs, then with what it found", async () => {
+    const { workflow, drain } = slowBridge();
+    const cold = await workflow.readForms({ waitMs: 0 });
+    expect(cold).toEqual({ forms: [], refreshing: true });
+    await drain();
+    const warm = await workflow.readForms({ waitMs: 0 });
+    expect(warm.refreshing).toBe(false);
+    expect(warm.forms).toHaveLength(5);
+    expect(typeof warm.fetched_at).toBe("string");
+  });
+
+  it("serves the last forms while a walk after a write runs behind", async () => {
+    const { workflow, drain, counts } = slowBridge();
+    const first = workflow.loadForms();
+    await drain();
+    await first;
+    // The assign call itself goes through the slow bridge, so it is answered by the drain.
+    const assigning = workflow.applyAssignment({
+      venueId: "A.cc/2026",
+      submission: "1",
+      reviewer: "~R1",
+    });
+    await drain();
+    await assigning;
+    const snapshot = await workflow.readForms({ waitMs: 0 });
+    expect(snapshot.refreshing).toBe(true);
+    expect(snapshot.forms).toHaveLength(5);
+    await drain();
+    expect(counts().discovers).toBe(2);
+  });
+
   /** A bridge that answers at once, on a clock the test moves. */
   function instantBridge(options: { venues?: string[] } = {}) {
     let clock = DEADLINE;

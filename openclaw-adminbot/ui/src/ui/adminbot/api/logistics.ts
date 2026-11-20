@@ -2,7 +2,12 @@
 //
 // Mirrors the service's api/routes/logistics.ts. Cut from auth/session.ts, which keeps the session
 // lifecycle and the request plumbing every zone shares.
-import { authedJson, type AuthResult, calendarFailure } from "../auth/session.ts";
+import {
+  authedJson,
+  type AuthResult,
+  calendarFailure,
+  peekAuthedRead,
+} from "../auth/session.ts";
 
 // ---------------------------------------------------------------------------
 // Logistics requests
@@ -140,32 +145,46 @@ export async function fetchLogisticsRequests(
   baseUrl: string,
   query?: URLSearchParams,
 ): Promise<AuthResult<LogisticsRequestsPage>> {
-  const search = query?.toString();
-  const result = await authedJson(
-    baseUrl,
-    search ? `/logistics/requests?${search}` : "/logistics/requests",
-    "GET",
-    sessionToken,
-  );
+  const result = await authedJson(baseUrl, logisticsRequestsPath(query), "GET", sessionToken);
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };
   }
   if (!result.response.ok) {
     return { ok: false, ...calendarFailure(result.response, result.body) };
   }
-  const body = result.body as {
+  return { ok: true, value: logisticsRequestsPage(result.body) };
+}
+
+/**
+ * The page this session last read for the same query, without asking. For drawing straight away
+ * on a tab switch or a second visit while fetchLogisticsRequests revalidates; undefined when this
+ * token has not read it.
+ */
+export function peekLogisticsRequests(
+  sessionToken: string,
+  baseUrl: string,
+  query?: URLSearchParams,
+): LogisticsRequestsPage | undefined {
+  const body = peekAuthedRead(baseUrl, logisticsRequestsPath(query), sessionToken);
+  return body && typeof body === "object" ? logisticsRequestsPage(body) : undefined;
+}
+
+function logisticsRequestsPath(query?: URLSearchParams): string {
+  const search = query?.toString();
+  return search ? `/logistics/requests?${search}` : "/logistics/requests";
+}
+
+function logisticsRequestsPage(raw: unknown): LogisticsRequestsPage {
+  const body = raw as {
     requests?: LogisticsRequest[];
     total?: number;
     next_cursor?: string;
   } | null;
   const requests = body?.requests ?? [];
   return {
-    ok: true,
-    value: {
-      requests,
-      total: body?.total ?? requests.length,
-      nextCursor: body?.next_cursor ?? null,
-    },
+    requests,
+    total: body?.total ?? requests.length,
+    nextCursor: body?.next_cursor ?? null,
   };
 }
 

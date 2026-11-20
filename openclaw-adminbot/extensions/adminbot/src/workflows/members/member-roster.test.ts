@@ -4,7 +4,12 @@ import {
   type AdminBotLabMember,
   type AdminBotPaperRecord,
 } from "../../contracts/actions.js";
-import { joinedMonthOrder, memberRosterPage } from "./member-roster.js";
+import {
+  buildMemberRosterIndex,
+  joinedMonthOrder,
+  memberRosterPage,
+  selectMemberRosterPage,
+} from "./member-roster.js";
 const member = (id: string, extra = {}): AdminBotLabMember => ({
   id,
   name: id,
@@ -142,5 +147,28 @@ describe("memberRosterPage", () => {
     });
     expect(result.members[0]?.notes).toBe(original.notes);
     expect(original.research_topics).toEqual([null, "AI", 42]);
+  });
+  it("builds the index once and pages it many times with lean rows", () => {
+    const heavy = member("heavy", {
+      email: "person@example.test",
+      field_provenance: { name: "sheet" },
+      onboarding: { steps: [] },
+      availability: "Mon 9-5",
+      time_off: [{ start: "2026-01-01" }],
+      merch_requests: "hoodie",
+    });
+    const index = buildMemberRosterIndex([...roster, heavy], papers);
+    const page = selectMemberRosterPage(index, { limit: 50, offset: 0, filters: { q: "study" } });
+    expect(page.members.map((m) => m.id)).toEqual(["heavy"]);
+    const row = page.members[0] as Record<string, unknown>;
+    expect(row.roster_papers).toEqual([{ title: "Study", conference: "ExampleConf" }]);
+    for (const field of ["field_provenance", "onboarding", "availability", "time_off"]) {
+      expect(row).not.toHaveProperty(field);
+    }
+    // Registry form fields stay, so the inline editor never saves them away.
+    expect(row.merch_requests).toBe("hoodie");
+    expect(
+      selectMemberRosterPage(index, { limit: 50, offset: 100, filters: {} }).members,
+    ).toHaveLength(21);
   });
 });

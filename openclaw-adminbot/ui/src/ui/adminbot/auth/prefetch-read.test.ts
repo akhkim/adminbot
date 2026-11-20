@@ -1,13 +1,14 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createStorageMock } from "../../../test-helpers/storage.ts";
-import { forgetSessionReads } from "./read-cache.ts";
+import { currentWarmEpoch, forgetSessionReads } from "./read-cache.ts";
 import {
   authedJson,
   clearStoredMemberSession,
   hasAuthedRead,
   peekAuthedRead,
   prefetchAuthedRead,
+  renewPrefetchesSince,
   saveStoredMemberSession,
 } from "./session.ts";
 
@@ -229,5 +230,53 @@ describe("peekAuthedRead", () => {
     );
     await authedJson(BASE, "/lab/projects", "GET", "tok");
     expect(peekAuthedRead(BASE, "/lab/projects", "tok")).toBeUndefined();
+  });
+});
+
+describe("renewPrefetchesSince", () => {
+  it("keeps a page read sent at boot through the session check's member-scoped reset", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(200, { projects: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+    const sentAt = currentWarmEpoch();
+    prefetchAuthedRead(BASE, "/lab/projects", "tok");
+    // The reset resume runs once the session check returns.
+    forgetSessionReads();
+    renewPrefetchesSince("tok", sentAt);
+    const result = await authedJson(BASE, "/lab/projects", "GET", "tok");
+    expect(await bodyOf(result)).toEqual({ projects: [] });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("also keeps one that already landed before the reset", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(200, { projects: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+    const sentAt = currentWarmEpoch();
+    prefetchAuthedRead(BASE, "/lab/projects", "tok");
+    await settle();
+    forgetSessionReads();
+    renewPrefetchesSince("tok", sentAt);
+    await authedJson(BASE, "/lab/projects", "GET", "tok");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves dropped a read sent with another token or before a write", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(200, { projects: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+    const sentAt = currentWarmEpoch();
+    prefetchAuthedRead(BASE, "/lab/projects", "other");
+    forgetSessionReads();
+    renewPrefetchesSince("tok", sentAt);
+    await authedJson(BASE, "/lab/projects", "GET", "other");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    fetchMock.mockClear();
+    // Sent before something moved the epoch (a write, a change of session): not this check's.
+    prefetchAuthedRead(BASE, "/badges", "tok");
+    forgetSessionReads();
+    const checkSentAt = currentWarmEpoch();
+    forgetSessionReads();
+    renewPrefetchesSince("tok", checkSentAt);
+    await authedJson(BASE, "/badges", "GET", "tok");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

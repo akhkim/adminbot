@@ -3043,12 +3043,22 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     return rows.map((row) => parseJson<AdminBotMemberLocationEntry>(row.payload_json));
   }
 
-  listMemberLocationsSince(since: string): AdminBotMemberLocationEntry[] {
-    const rows = this.db
-      .prepare(
-        "SELECT payload_json FROM adminbot_member_locations WHERE observed_at >= ? ORDER BY observed_at DESC",
-      )
-      .all(since) as Array<{ payload_json: string }>;
+  listMemberLocationsSince(since: string, source?: string): AdminBotMemberLocationEntry[] {
+    // `source` narrows in SQL so a caller that reads one source (the drift check reads sign-ins)
+    // does not parse every device and Slack reading in the window.
+    const rows = (
+      source
+        ? this.db
+            .prepare(
+              "SELECT payload_json FROM adminbot_member_locations WHERE observed_at >= ? AND source = ? ORDER BY observed_at DESC",
+            )
+            .all(since, source)
+        : this.db
+            .prepare(
+              "SELECT payload_json FROM adminbot_member_locations WHERE observed_at >= ? ORDER BY observed_at DESC",
+            )
+            .all(since)
+    ) as Array<{ payload_json: string }>;
     return rows.map((row) => parseJson<AdminBotMemberLocationEntry>(row.payload_json));
   }
 

@@ -60,4 +60,30 @@ describe("createSheetPageReads", () => {
     await Promise.resolve();
     expect(await reads.memberSheet(load)).toEqual({ version: 2 });
   });
+
+  it("keeps both views warm, so the first viewer after a restart does not wait", async () => {
+    vi.useFakeTimers();
+    try {
+      const reads = createSheetPageReads();
+      const member = vi.fn(async () => ({ rows: 3 }));
+      const call = vi.fn(async () => ({ queued: 1 }));
+      const stop = reads.keepWarm({ member, call: { load: call, keep: () => true } }, 50_000);
+      expect(member).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(0);
+      const routeLoad = vi.fn(async () => ({ rows: 0 }));
+      expect(await reads.memberSheet(routeLoad)).toEqual({ rows: 3 });
+      expect(routeLoad).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(50_000);
+      expect(member).toHaveBeenCalledTimes(2);
+      expect(call).toHaveBeenCalledTimes(2);
+      // A write drops the views and reads them again at once, not on the next viewer.
+      reads.invalidate();
+      expect(member).toHaveBeenCalledTimes(3);
+      stop();
+      await vi.advanceTimersByTimeAsync(200_000);
+      expect(member).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

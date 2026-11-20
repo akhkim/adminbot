@@ -1,6 +1,6 @@
 import { css, html, LitElement, nothing, type PropertyValues } from "lit";
 import { property, state } from "lit/decorators.js";
-import { memberAuthHeaders } from "../api/device-clock.ts";
+import { authedJson, peekAuthedRead } from "../auth/session.ts";
 
 type Finding = { citation: string; status: string; explanation: string };
 
@@ -12,10 +12,12 @@ type Check = {
   status: "completed" | "unreadable" | "failed";
   checked_at: string;
   attempts: number;
-  // The summary view sends only the flagged references, with the totals beside them. Both counts
-  // are absent from a service that predates the view, which sends every reference and version.
+  // The summary view sends counts only; the flagged references are read when a row is opened.
+  // A service that predates the counts sends the references inline instead.
   findings?: Finding[];
   finding_count?: number;
+  flagged_count?: number;
+  not_found_count?: number;
   version_count?: number;
   error?: string;
   notification_proposal_id?: string;
@@ -43,6 +45,8 @@ export class OpenReviewCitationChecks extends LitElement {
   @property() sessionToken = "";
   @state() private listing: Listing | null = null;
   @state() private error = "";
+  /** Flagged references per submission, read the first time its row is opened. */
+  @state() private opened = new Map<string, Finding[] | "loading" | "error">();
   private generation = 0;
 
   static override styles = css`
@@ -115,6 +119,7 @@ export class OpenReviewCitationChecks extends LitElement {
     if (changed.has("sessionToken") || changed.has("baseUrl")) {
       this.listing = null;
       this.error = "";
+      this.opened = new Map();
       void this.load();
     }
   }
@@ -124,29 +129,72 @@ export class OpenReviewCitationChecks extends LitElement {
     super.disconnectedCallback();
   }
 
+  private base() {
+    return this.baseUrl.replace(/\/$/u, "");
+  }
+
   private async load() {
     const generation = ++this.generation;
     if (!this.sessionToken) {
       return;
     }
+    const path = "/openreview/citation-checks?view=summary";
+    // A revisit draws what this session last read while the request revalidates it.
+    const seen = peekAuthedRead(this.base(), path, this.sessionToken) as Listing | undefined;
+    if (seen && Array.isArray(seen.checks)) {
+      this.listing = seen;
+    }
     try {
-      const response = await fetch(
-        `${this.baseUrl.replace(/\/$/u, "")}/openreview/citation-checks?view=summary`,
-        { headers: memberAuthHeaders(this.sessionToken) },
+      const result = await authedJson(this.base(), path, "GET", this.sessionToken);
+      if (generation !== this.generation) {
+        return;
+      }
+      if ("unreachable" in result) {
+        throw new Error();
+      }
+      if (result.response.status === 401 || result.response.status === 403) {
+        return;
+      }
+      if (!result.response.ok) {
+        throw new Error();
+      }
+      this.listing = result.body as Listing;
+    } catch {
+      if (generation === this.generation && !this.listing) {
+        this.error = "Automatic OpenReview checks could not be loaded.";
+      }
+    }
+  }
+
+  private async openFindings(submissionId: string) {
+    const held = this.opened.get(submissionId);
+    // A failed read is asked again the next time the row is opened.
+    if (held !== undefined && held !== "error") {
+      return;
+    }
+    const generation = this.generation;
+    const set = (value: Finding[] | "loading" | "error") => {
+      this.opened = new Map(this.opened).set(submissionId, value);
+    };
+    set("loading");
+    try {
+      const result = await authedJson(
+        this.base(),
+        `/openreview/citation-checks?view=findings&submission_id=${encodeURIComponent(submissionId)}`,
+        "GET",
+        this.sessionToken,
       );
       if (generation !== this.generation) {
         return;
       }
-      if (response.status === 401 || response.status === 403) {
-        return;
-      }
-      if (!response.ok) {
+      if ("unreachable" in result || !result.response.ok) {
         throw new Error();
       }
-      this.listing = (await response.json()) as Listing;
+      const findings = (result.body as { findings?: Finding[] }).findings;
+      set(Array.isArray(findings) ? findings : []);
     } catch {
       if (generation === this.generation) {
-        this.error = "Automatic OpenReview checks could not be loaded.";
+        set("error");
       }
     }
   }
@@ -200,15 +248,21 @@ export class OpenReviewCitationChecks extends LitElement {
   }
 
   private needsAttention(check: Check) {
-    return check.status !== "completed" || (check.findings ?? []).some(flagged);
+    return check.status !== "completed" || this.flaggedCount(check) > 0;
+  }
+
+  private flaggedCount(check: Check) {
+    return check.flagged_count ?? (check.findings ?? []).filter(flagged).length;
   }
 
   private renderCheck(check: Check, versionCount: number) {
-    const findings = check.findings ?? [];
-    const issues = findings.filter(flagged);
-    const referenceCount = check.finding_count ?? findings.length;
-    const notFound = issues.filter((finding) => finding.status === "not_found").length;
-    const tone = check.status !== "completed" ? "unchecked" : issues.length ? "flagged" : "clean";
+    const inline = check.findings?.filter(flagged);
+    const flaggedCount = this.flaggedCount(check);
+    const referenceCount = check.finding_count ?? check.findings?.length ?? 0;
+    const notFound =
+      check.not_found_count ??
+      (inline ?? []).filter((finding) => finding.status === "not_found").length;
+    const tone = check.status !== "completed" ? "unchecked" : flaggedCount ? "flagged" : "clean";
     return html`<article data-state=${tone}>
       <h3>
         <a
@@ -224,42 +278,58 @@ export class OpenReviewCitationChecks extends LitElement {
       </p>
       <p>
         ${check.status === "completed"
-          ? issues.length
-            ? `${notFound} not found · ${issues.length - notFound} to check · ${referenceCount} references`
+          ? flaggedCount
+            ? `${notFound} not found · ${flaggedCount - notFound} to check · ${referenceCount} references`
             : `All ${referenceCount} references matched a record.`
           : check.status === "unreadable"
             ? `Not fully checked: ${check.error ?? "the PDF could not be read."}${
-                issues.length
-                  ? ` ${issues.length} of the entries that were checked need review.`
+                flaggedCount
+                  ? ` ${flaggedCount} of the entries that were checked need review.`
                   : ""
               }`
             : `Check failed (attempt ${check.attempts}): ${check.error ?? "unknown error."}`}
         ${check.notification_proposal_id ? " An email is waiting in Pending Actions." : ""}
       </p>
-      ${issues.length
-        ? html`<details>
-            <summary>Show ${issues.length} flagged reference(s)</summary>
-            <ul>
-              ${issues.map(
-                (finding) => html`<li>
-                  <strong>${finding.status === "not_found" ? "Not found" : "Check details"}</strong>
-                  — ${finding.citation}
-                  <br /><span class="hint">${finding.explanation}</span>
-                  ${finding.status === "not_found"
-                    ? html`<br /><a
-                          href=${"https://scholar.google.com/scholar?q=" +
-                          encodeURIComponent(finding.citation)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          >Search Google Scholar</a
-                        >`
-                    : nothing}
-                </li>`,
-              )}
-            </ul>
+      ${flaggedCount
+        ? html`<details
+            @toggle=${(event: Event) => {
+              if ((event.currentTarget as HTMLDetailsElement).open && !inline) {
+                void this.openFindings(check.submission_id);
+              }
+            }}
+          >
+            <summary>Show ${flaggedCount} flagged reference(s)</summary>
+            ${this.renderFindings(inline ?? this.opened.get(check.submission_id))}
           </details>`
         : nothing}
     </article>`;
+  }
+
+  private renderFindings(findings: Finding[] | "loading" | "error" | undefined) {
+    if (findings === undefined || findings === "loading") {
+      return html`<p class="hint">Loading references…</p>`;
+    }
+    if (findings === "error") {
+      return html`<p role="alert">The flagged references could not be loaded.</p>`;
+    }
+    return html`<ul>
+      ${findings.map(
+        (finding) => html`<li>
+          <strong>${finding.status === "not_found" ? "Not found" : "Check details"}</strong>
+          — ${finding.citation}
+          <br /><span class="hint">${finding.explanation}</span>
+          ${finding.status === "not_found"
+            ? html`<br /><a
+                  href=${"https://scholar.google.com/scholar?q=" +
+                  encodeURIComponent(finding.citation)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  >Search Google Scholar</a
+                >`
+            : nothing}
+        </li>`,
+      )}
+    </ul>`;
   }
 }
 

@@ -19,6 +19,11 @@ export type CachedReadOptions<T> = {
 
 export type CachedRead<T> = {
   read(): Promise<T>;
+  /**
+   * Read again now, whatever the age of the kept answer, joining a read already under way. For a
+   * caller that keeps the answer warm behind the page, so no viewer is the one who waits.
+   */
+  refresh(): Promise<T>;
   /** Forget the kept answer, and do not keep the one a read already under way comes back with. */
   invalidate(): void;
 };
@@ -77,6 +82,7 @@ export function createCachedRead<T>(
       }
       return refresh();
     },
+    refresh,
     invalidate() {
       generation += 1;
       kept = undefined;

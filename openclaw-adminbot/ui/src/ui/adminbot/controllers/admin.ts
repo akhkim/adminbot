@@ -142,6 +142,9 @@ export type AdminBotLabMember = {
   // Self-attested checklist state (see extensions/adminbot/src/workflows/onboarding/onboarding.ts); the dashboard
   // only reads step id + status to preselect nudge recipients.
   onboarding?: { steps?: Array<{ id: string; status: string }> } | null;
+  // Only on /lab/members/roster rows: the member's linked papers, already matched on the server,
+  // so the Lab Members tab can draw paper tags without downloading every paper record.
+  roster_papers?: Array<{ title: string; conference: string }>;
   created_at: string;
   updated_at: string;
 };
@@ -924,7 +927,12 @@ export async function loadAdminBotMemberList(
     ...(quiet
       ? {}
       : seenRows
-        ? { ...seen, rows: readArray<AdminBotLabMember>(seen, "members"), loading: true, error: null }
+        ? {
+            ...seen,
+            rows: readArray<AdminBotLabMember>(seen, "members"),
+            loading: true,
+            error: null,
+          }
         : { rows: [], loading: true, error: null }),
   };
   host.adminBotMemberList = pending;

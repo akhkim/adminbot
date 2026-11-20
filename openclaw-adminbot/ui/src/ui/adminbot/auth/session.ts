@@ -5,6 +5,7 @@
 // localStorage; the gateway token it returns is a secret that must only flow
 // through the existing sessionStorage-scoped token plumbing via applySettings.
 import { getSafeLocalStorage } from "../../../local-storage.ts";
+import { forgetBootResponses, takeBootResponse } from "../../loading/boot-reads.ts";
 import { trackPageActivity } from "../../loading/page-activity.ts";
 import { loadSettings, type UiSettings } from "../../storage.ts";
 import { normalizeOptionalString } from "../../string-coerce.ts";
@@ -459,9 +460,11 @@ export function prefetchAuthedRead(
   token: string | null,
 ): { renew: () => void } {
   const url = `${baseUrl}${path}`;
-  let epoch = currentWarmEpoch();
+  const startEpoch = currentWarmEpoch();
+  let epoch = startEpoch;
   let kept: { value: AuthedJsonResult; at: number } | undefined;
   let settled = false;
+  let settledAt = 0;
   const pending = sharedRead(token, url, () => authedJsonOnce(baseUrl, path, "GET", token));
   void pending
     .then(
@@ -480,21 +483,64 @@ export function prefetchAuthedRead(
     )
     .finally(() => {
       settled = true;
+      settledAt = Date.now();
     });
-  return {
-    // For the one caller that clears the session's kept reads while this request is still the
-    // answer to its own question: resuming a session resets member-scoped data once the session
-    // check returns, and this read was sent beside that check with the same token. It stays
-    // joinable, and keeps its original age.
-    renew: () => {
-      epoch = currentWarmEpoch();
-      if (!settled) {
-        void sharedRead(token, url, () => pending).catch(() => undefined);
-      } else if (kept) {
-        keepWarmRead(token, url, kept.value, epoch, kept.at);
-      }
-    },
+  // For the one caller that clears the session's kept reads while this request is still the
+  // answer to its own question: resuming a session resets member-scoped data once the session
+  // check returns, and this read was sent beside that check with the same token. It stays
+  // joinable, and keeps its original age.
+  const renew = () => {
+    epoch = currentWarmEpoch();
+    if (!settled) {
+      void sharedRead(token, url, () => pending).catch(() => undefined);
+    } else if (kept) {
+      keepWarmRead(token, url, kept.value, epoch, kept.at);
+    }
   };
+  pruneSentPrefetches();
+  sentPrefetches.add({
+    token,
+    startEpoch,
+    renew,
+    expired: () => settled && Date.now() - settledAt > SENT_PREFETCH_KEEP_MS,
+  });
+  return { renew };
+}
+
+// Prefetches sent recently, so a session resume can keep the ones it would otherwise throw away.
+// A settled one is only worth keeping while its warm copy could still be taken.
+const SENT_PREFETCH_KEEP_MS = 15_000;
+const sentPrefetches = new Set<{
+  token: string | null;
+  startEpoch: number;
+  renew: () => void;
+  expired: () => boolean;
+}>();
+
+function pruneSentPrefetches(): void {
+  for (const entry of sentPrefetches) {
+    if (entry.expired()) {
+      sentPrefetches.delete(entry);
+    }
+  }
+}
+
+/**
+ * Keeps every prefetch sent with this token since `epoch` after a reset of member-scoped reads.
+ *
+ * On a cold load the page named in the URL starts its reads at boot, beside the session check.
+ * When the check returns, the member-scoped reset drops them, although they were sent with the
+ * same token and nothing was written in between (the epoch has not moved), so they are this
+ * session's answers. Without this the page asks for the same data again one round trip later.
+ * A read sent at an older epoch, or with another token, is left dropped.
+ */
+export function renewPrefetchesSince(token: string | null, epoch: number): void {
+  pruneSentPrefetches();
+  for (const entry of sentPrefetches) {
+    if (entry.token === token && entry.startEpoch === epoch) {
+      entry.renew();
+    }
+  }
 }
 
 /**
@@ -570,23 +616,27 @@ async function authedJsonOnce(
         }
       : undefined;
   };
+  // The HTML page may have sent this exact GET already, before this code arrived. It carried no
+  // If-None-Match, so it answers in full; everything below treats it like any other response.
+  const sentAtBoot = method === "GET" && !signal ? takeBootResponse(url, token) : undefined;
   let response: Response;
   try {
-    response = await fetch(url, {
-      method,
-      credentials: "omit",
-      ...(signal ? { signal } : {}),
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        ...(previous ? { "If-None-Match": previous.etag } : {}),
-        // Zone name and offset only; the server's daily IP check compares its city against them.
-        ...memberAuthHeaders(token),
-      },
-      // GET and DELETE carry no body; every other member-session call sends JSON. A DELETE with
-      // a JSON body is legal but pointless here, and some proxies drop it.
-      ...(method === "GET" || method === "DELETE" ? {} : { body: JSON.stringify(payload) }),
-    });
+    response = await (sentAtBoot ??
+      fetch(url, {
+        method,
+        credentials: "omit",
+        ...(signal ? { signal } : {}),
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          ...(previous ? { "If-None-Match": previous.etag } : {}),
+          // Zone name and offset only; the server's daily IP check compares its city against them.
+          ...memberAuthHeaders(token),
+        },
+        // GET and DELETE carry no body; every other member-session call sends JSON. A DELETE with
+        // a JSON body is legal but pointless here, and some proxies drop it.
+        ...(method === "GET" || method === "DELETE" ? {} : { body: JSON.stringify(payload) }),
+      }));
   } catch {
     return (method === "GET" ? await offlineCopy() : undefined) ?? { unreachable: true };
   }
@@ -1117,15 +1167,18 @@ export async function fetchMemberSession(
 ): Promise<AuthResult<MemberSessionInfo>> {
   let response: Response;
   try {
-    response = await fetch(`${baseUrl}/auth/session`, {
-      method: "GET",
-      signal: AbortSignal.timeout(5000),
-      credentials: "omit",
-      headers: {
-        Accept: "application/json",
-        ...memberAuthHeaders(token),
-      },
-    });
+    // A cold load's HTML page sends this check before the app's code arrives, with the same
+    // headers and timeout.
+    response = await (takeBootResponse(`${baseUrl}/auth/session`, token) ??
+      fetch(`${baseUrl}/auth/session`, {
+        method: "GET",
+        signal: AbortSignal.timeout(5000),
+        credentials: "omit",
+        headers: {
+          Accept: "application/json",
+          ...memberAuthHeaders(token),
+        },
+      }));
   } catch {
     const scope = await resolveOfflineScope(baseUrl, token);
     const stored = scope
@@ -1240,6 +1293,7 @@ export function saveStoredMemberSession(next: StoredMemberSession): void {
     // Sign-in, View-as and its end all arrive here with a new token; the kept reads belong to the
     // old one and would never be asked for again.
     forgetSessionReads();
+    forgetBootResponses();
   }
   if (
     previous?.sessionToken !== next.sessionToken ||
@@ -1272,6 +1326,7 @@ export function saveStoredMemberSession(next: StoredMemberSession): void {
 export function clearStoredMemberSession(): void {
   configureDraftSync("signed-out", null);
   forgetSessionReads();
+  forgetBootResponses();
   forgetOfflineReads();
   lastAuthedCall = undefined;
   viewAsToken = null;

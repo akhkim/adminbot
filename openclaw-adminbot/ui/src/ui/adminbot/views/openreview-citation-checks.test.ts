@@ -1,14 +1,29 @@
-import { afterEach, expect, it, vi } from "vitest";
-import { OpenReviewCitationChecks } from "./openreview-citation-checks.ts";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+
+const authedJson = vi.fn();
+const peekAuthedRead = vi.fn();
+vi.mock("../auth/session.ts", () => ({
+  authedJson: (...args: unknown[]) => authedJson(...args),
+  peekAuthedRead: (...args: unknown[]) => peekAuthedRead(...args),
+}));
+
+const { OpenReviewCitationChecks } = await import("./openreview-citation-checks.ts");
+
+beforeEach(() => {
+  authedJson.mockReset();
+  peekAuthedRead.mockReset();
+});
 
 afterEach(() => {
   document.body.replaceChildren();
-  vi.unstubAllGlobals();
 });
 
 async function mount(response: { ok: boolean; status: number; json?: () => Promise<unknown> }) {
-  const fetcher = vi.fn().mockResolvedValue(response);
-  vi.stubGlobal("fetch", fetcher);
+  const body = response.json ? await response.json() : {};
+  const fetcher = authedJson.mockResolvedValue({
+    response: { ok: response.ok, status: response.status },
+    body,
+  });
   const el = new OpenReviewCitationChecks();
   el.baseUrl = "http://localhost:8765/";
   el.sessionToken = "synthetic-admin";
@@ -60,14 +75,10 @@ it("shows each submission's latest version and its flagged references", async ()
     }),
   });
   expect(fetcher).toHaveBeenCalledWith(
-    "http://localhost:8765/openreview/citation-checks?view=summary",
-    {
-      // The token and the browser's clock, through the shared helper.
-      headers: expect.objectContaining({
-        Authorization: "Bearer synthetic-admin",
-        "X-AdminBot-Device-TZ-Offset": expect.any(String),
-      }),
-    },
+    "http://localhost:8765",
+    "/openreview/citation-checks?view=summary",
+    "GET",
+    "synthetic-admin",
   );
   const articles = [...el.shadowRoot!.querySelectorAll("article")];
   expect(articles.map((article) => article.dataset.state)).toEqual(["flagged", "clean"]);
@@ -120,4 +131,57 @@ it("says so when the deployment has not enabled automatic checks", async () => {
 it("renders nothing for a session the server refuses", async () => {
   const { el } = await mount({ ok: false, status: 403 });
   expect(el.shadowRoot!.querySelector("section")).toBeNull();
+});
+
+it("lists counts only and reads a paper's flagged references when its row is opened", async () => {
+  const { el, fetcher, text } = await mount({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      enabled: true,
+      running: false,
+      checks: [
+        {
+          ...check,
+          findings: undefined,
+          finding_count: 40,
+          flagged_count: 2,
+          not_found_count: 1,
+          version_count: 1,
+        },
+      ],
+    }),
+  });
+  expect(text()).toContain("1 not found · 1 to check · 40 references");
+  expect(text()).not.toContain("Synthetic B. Invented. 2031.");
+  fetcher.mockResolvedValueOnce({
+    response: { ok: true, status: 200 },
+    body: { submission_id: "paperAAAA", findings: [check.findings[1]] },
+  });
+  const details = el.shadowRoot!.querySelector("details")!;
+  details.open = true;
+  details.dispatchEvent(new Event("toggle"));
+  await vi.waitFor(() => expect(text()).toContain("Synthetic B. Invented. 2031."));
+  expect(fetcher).toHaveBeenLastCalledWith(
+    "http://localhost:8765",
+    "/openreview/citation-checks?view=findings&submission_id=paperAAAA",
+    "GET",
+    "synthetic-admin",
+  );
+});
+
+it("draws the last summary this session read before the request answers", async () => {
+  peekAuthedRead.mockReturnValue({
+    enabled: true,
+    running: false,
+    checks: [{ ...check, findings: [], finding_count: 3, version_count: 1 }],
+  });
+  authedJson.mockReturnValue(new Promise(() => undefined));
+  const el = new OpenReviewCitationChecks();
+  el.baseUrl = "http://localhost:8765/";
+  el.sessionToken = "synthetic-admin";
+  document.body.append(el);
+  await el.updateComplete;
+  await el.updateComplete;
+  expect(el.shadowRoot!.textContent).toContain("All 3 references matched");
 });
