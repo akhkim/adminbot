@@ -302,8 +302,8 @@ import type { AdminBotReimbursementFunder } from "../contracts/reimbursement-rul
 import type { ScheduledMemberChangeStore } from "../contracts/scheduled-member-changes.js";
 import { paperTargetsVenue } from "../contracts/venue-targets.js";
 import type { createCollaboratorChatRequestStore } from "../persistence/collaborator-chat-requests.js";
-import type { AdminBotPosterPrintStore } from "../persistence/poster-printing.js";
 import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
+import type { AdminBotPosterPrintStore } from "../persistence/poster-printing.js";
 import type { CalendarEventsReader } from "../workflows/calendar/events.js";
 import { resolveLabCalendar } from "../workflows/calendar/lab-calendar.js";
 import { memberAddresses } from "../workflows/calendar/standing-meetings.js";
@@ -369,6 +369,7 @@ import {
 import { hasCurrentOrUpcomingAvailability } from "../workflows/members/availability.js";
 import { validateBirthday } from "../workflows/members/birthday.js";
 import { collaboratorSubgroupAccess } from "../workflows/members/collaborator-subgroups.js";
+import { travelConferenceSites } from "../workflows/members/lab-travel.js";
 import {
   localEventAudience,
   remainingAttendees,
@@ -492,6 +493,11 @@ import {
   type OpenReviewUpdate,
 } from "../workflows/papers/openreview-updates.js";
 import {
+  buildOutreachReadyMessage,
+  outreachReadyVenues,
+  type OutreachReadyVenue,
+} from "../workflows/papers/outreach-ready.js";
+import {
   type AcceptanceRow,
   type OutreachConfig,
   type OutreachDraft,
@@ -515,11 +521,6 @@ import {
   rankPaperQueue,
 } from "../workflows/papers/paper-queue.js";
 import { duePaperNudges } from "../workflows/papers/paper-reminder-nudges.js";
-import {
-  buildOutreachReadyMessage,
-  outreachReadyVenues,
-  type OutreachReadyVenue,
-} from "../workflows/papers/outreach-ready.js";
 import {
   paperForResponse,
   withheldArtifactWriteError,
@@ -638,8 +639,6 @@ import { LabSharingService } from "./service.lab-sharing.js";
 import { LabTravelService } from "./service.lab-travel.js";
 import { inviteLocalLunches } from "./service.local-lunches.js";
 import { type IntroRunResult, MeetupService } from "./service.meetups.js";
-import { PosterPrintingService } from "./service.poster-printing.js";
-import { travelConferenceSites } from "../workflows/members/lab-travel.js";
 import {
   paperImpactSlotWrite,
   piApprovalImpactDenial,
@@ -647,6 +646,7 @@ import {
   piReviewSlotDenial,
   writePiReviewAck,
 } from "./service.pi-review.js";
+import { PosterPrintingService } from "./service.poster-printing.js";
 import {
   sweepProfessorDigest,
   type ProfessorDigestSweepResult,
@@ -8592,7 +8592,8 @@ export class AdminBotService {
           paper_ids: venue.papers.map((paper) => paper.id),
         },
         rationale: `OpenReview recorded ${venue.newly_accepted} new acceptance${venue.newly_accepted === 1 ? "" : "s"} at ${venue.label}.`,
-        undo_plan: "A Slack message cannot be unsent by AdminBot; it only points at drafts, so nothing else to undo.",
+        undo_plan:
+          "A Slack message cannot be unsent by AdminBot; it only points at drafts, so nothing else to undo.",
         idempotency_key: idempotencyKey,
       });
       if (!proposal.ok) {
@@ -18053,6 +18054,9 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
   // up until somebody places it.
   "merch_requests",
   "next_position",
+  // Confidential on read, like personal_circumstances below. The member is the one who knows what
+  // they have paid and what was agreed, so it is theirs to write.
+  "financial_support_needs",
   // Confidential on read (see adminBotConfidentialMemberFields); self-editable like any other
   // field a member writes about themselves.
   "personal_circumstances",

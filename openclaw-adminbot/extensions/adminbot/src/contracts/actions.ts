@@ -965,6 +965,9 @@ export const adminBotConfidentialMemberFields = [
   // for a roster their current collaborators read: "applying for PhDs in December" is a fact about
   // a job search, and a member should not have to weigh who else sees it before answering.
   "next_position",
+  // What the lab owes somebody, or what they need paid for. Amounts and reimbursement history are
+  // between the member and whoever settles them, not something the rest of the roster reads.
+  "financial_support_needs",
   // A personal phone number. It is on the record because the admins need to reach somebody on a
   // conference day, not so that the roster publishes it to everyone who opens devtools.
   "whatsapp",
@@ -1592,6 +1595,13 @@ export type AdminBotLabMemberInput = {
    * not a job title picked off a list.
    */
   next_position?: string;
+  /**
+   * Money the member is owed or needs: subscriptions they pay for lab work (an AI agent plan, say)
+   * and travel they have paid up front, each with a rough amount and what the PI agreed to. Free
+   * text, because the useful answer is "agent plan, ~$100/month since Sep, Zhijing said yes on
+   * Slack 2026-09-03", not a number in a box. Confidential: see adminBotConfidentialMemberFields.
+   */
+  financial_support_needs?: string;
   /**
    * Free text a member may share about health or family circumstances. Confidential: see
    * adminBotConfidentialMemberFields, which strips it for every reader but the member and admins.

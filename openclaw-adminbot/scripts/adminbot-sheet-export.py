@@ -273,7 +273,7 @@ def deadline_name(d):
 
 PEOPLE_COLUMNS = tuple('''id active_member join_date join_date_basis membership_review member_type
 test_onboard_batch receives_nudges email calendar_email slack_user_id merch_requests
-next_position personal_circumstances slack_messages_7d slack_activity_checked_at
+next_position financial_support_needs personal_circumstances slack_messages_7d slack_activity_checked_at
 privilege_level collaborator_subgroup access_overrides notes role status research_branch
 research_topics elevator_pitch projects hours_per_week location current_city
 city_channel_invited_at city_channels_invited affiliation timezone personal_website
@@ -309,7 +309,8 @@ PEOPLE_SECTIONS = (
                  'timezone', 'current_city')),
     ('Lab', ('active_member', 'status', 'member_type', 'role', 'collaborator_subgroup', 'privilege_level', 'join_date',
              'affiliation', 'at_uoft', 'hours_per_week', 'membership_review', 'receives_nudges',
-             'compute_access', 'calendar_group', 'next_position', 'graduated_month')),
+             'compute_access', 'calendar_group', 'next_position', 'financial_support_needs',
+             'graduated_month')),
     ('Research', ('research_branch', 'research_topics', 'elevator_pitch', 'projects', 'papers_authored_count',
                   'papers_authored', 'arr_reviewer_qualified', 'arr_review_capacity', 'recommendation_letter_window')),
     ('Links & socials', ('personal_website', 'linkedin_url', 'twitter_url', 'github_url', 'scholar_url',

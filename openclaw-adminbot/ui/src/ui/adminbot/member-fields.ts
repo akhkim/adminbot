@@ -318,6 +318,18 @@ const PROFILE_FIELD_DEFINITIONS: ProfileField[] = [
     group: "work",
   },
   {
+    // Costs the member has paid or needs covered and has not been reimbursed for yet: AI agent and
+    // other subscriptions, travel. A rough register rather than a claim -- reimbursement itself
+    // still goes through the reimbursement flow -- so the PI can see what is outstanding in one
+    // place. Optional, and confidential (adminBotConfidentialMemberFields).
+    key: "financial_support_needs",
+    labelKey: "profile.fields.financialSupportNeeds",
+    example:
+      "AI agent plan ~$100/month since Sep 2026 (Zhijing agreed on Slack, 3 Sep); EMNLP flights $640",
+    type: "paragraph",
+    group: "work",
+  },
+  {
     // Confidential, like next_position above: the service strips it from every /lab/members
     // reader but this member and admins (adminBotConfidentialMemberFields). Last row of the last
     // group, so it comes after every other answer -- it is the one field a person may want to

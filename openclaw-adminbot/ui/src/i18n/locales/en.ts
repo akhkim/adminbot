@@ -2952,6 +2952,7 @@ export const en: TranslationMap = {
       whatsapp: "WhatsApp",
       merchRequests: "Merch requests",
       nextPosition: "Next position you're looking for",
+      financialSupportNeeds: "Subscription or financial support needs",
       personalCircumstances: "Personal circumstances and/or medical conditions",
       birthday: "Birthday (month and day)",
       joinedMonth: "Joined month",
@@ -3001,6 +3002,8 @@ export const en: TranslationMap = {
       trigger: "What is {field}?",
       nextPosition:
         "What is the next position/thing in life you are looking for? And when is your ideal move? How can Zhijing help you?",
+      financialSupportNeeds:
+        "Costs you are paying for lab work that have not been reimbursed yet, or support you need: AI agent or other subscriptions, travel, anything else. For each, give a rough amount, since when, and what Zhijing agreed to (her wording and where she said it, if you have it). This is a rough register so nothing gets forgotten, not a reimbursement claim. Only you and lab admins can see it.",
       personalCircumstances:
         "Anything about your health or your family that would help Zhijing support you — a condition that affects how you work, a caring responsibility, a situation that may need flexibility. Entirely optional, and leaving it blank is never read as an answer. Only you and lab admins can see it: the lab roster that every member loads has this field stripped out of it.",
       linkedinUrn:

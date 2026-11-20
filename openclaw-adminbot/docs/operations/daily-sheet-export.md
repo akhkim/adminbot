@@ -188,3 +188,13 @@ otherwise insert rows into a tab this export rewrites. **Copy rows** still works
 
 The PI's OpenReview notification e-mails are not read by the export (see the OpenReview results job); the
 Aurora-only notifications reader was dropped when the installed copies were brought back to `main`.
+
+## Subscription or financial support needs (November 20, 2026)
+
+PeopleList gains `financial_support_needs`, in the Lab section right after `next_position`. It is
+the member's own free-text answer to the My Profile field "Subscription or financial support
+needs": costs they are paying for lab work that have not been reimbursed yet (AI agent and other
+subscriptions, travel), a rough amount, and what the PI agreed to. It is a register, not a
+reimbursement claim. In AdminBot it is confidential like `next_position` and
+`personal_circumstances` (only the member and admins read it), but the export carries it the same
+way it carries those two, so anyone who can open PeopleList can read it.

@@ -5894,6 +5894,7 @@ export interface components {
       slack_user_id?: string;
       merch_requests?: string;
       next_position?: string;
+      financial_support_needs?: string;
       personal_circumstances?: string;
       slack_messages_7d?: number;
       slack_activity_checked_at?: string;
@@ -6742,6 +6743,7 @@ export interface components {
       slack_user_id?: string;
       merch_requests?: string;
       next_position?: string;
+      financial_support_needs?: string;
       personal_circumstances?: string;
       slack_messages_7d?: number;
       slack_activity_checked_at?: string;
@@ -6888,6 +6890,7 @@ export interface components {
       slack_user_id?: string;
       merch_requests?: string;
       next_position?: string;
+      financial_support_needs?: string;
       personal_circumstances?: string;
       slack_messages_7d?: number;
       slack_activity_checked_at?: string;
@@ -8236,6 +8239,7 @@ export interface components {
       slack_user_id?: string;
       merch_requests?: string;
       next_position?: string;
+      financial_support_needs?: string;
       personal_circumstances?: string;
       slack_messages_7d?: number;
       slack_activity_checked_at?: string;
@@ -18450,6 +18454,7 @@ export interface operations {
               slack_user_id?: string;
               merch_requests?: string;
               next_position?: string;
+              financial_support_needs?: string;
               personal_circumstances?: string;
               slack_messages_7d?: number;
               slack_activity_checked_at?: string;

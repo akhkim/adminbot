@@ -12596,6 +12596,9 @@
                           "next_position": {
                             "type": "string"
                           },
+                          "financial_support_needs": {
+                            "type": "string"
+                          },
                           "personal_circumstances": {
                             "type": "string"
                           },
@@ -35125,6 +35128,9 @@
           "next_position": {
             "type": "string"
           },
+          "financial_support_needs": {
+            "type": "string"
+          },
           "personal_circumstances": {
             "type": "string"
           },
@@ -37847,6 +37853,9 @@
           "next_position": {
             "type": "string"
           },
+          "financial_support_needs": {
+            "type": "string"
+          },
           "personal_circumstances": {
             "type": "string"
           },
@@ -38335,6 +38344,9 @@
             "type": "string"
           },
           "next_position": {
+            "type": "string"
+          },
+          "financial_support_needs": {
             "type": "string"
           },
           "personal_circumstances": {
@@ -42678,6 +42690,9 @@
             "type": "string"
           },
           "next_position": {
+            "type": "string"
+          },
+          "financial_support_needs": {
             "type": "string"
           },
           "personal_circumstances": {
