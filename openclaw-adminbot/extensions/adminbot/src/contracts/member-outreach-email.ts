@@ -52,8 +52,19 @@ function firstAddress(value: string | undefined): string {
 export function adminBotOutreachEmail(member: AdminBotAddressableMember): string {
   return firstAddress(member.correspondence_email) || firstAddress(member.email);
 }
-
 type CalendarAddressable = AdminBotAddressableMember & { calendar_email?: string };
+
+/**
+ * Where the alumni check-in goes: the usual outreach address, else the Calendar email.
+ *
+ * Alumni only. A member who has left usually loses the departmental login, and the service refuses
+ * a personal address as `correspondence_email` -- so the Gmail they gave for the lab calendar is
+ * often the one mailbox on the record that still reaches them. For a current member the same
+ * fallback would route lab outreach to a calendar-only account, which is why it stays opt-in.
+ */
+export function adminBotAlumniOutreachEmail(member: CalendarAddressable): string {
+  return adminBotOutreachEmail(member) || firstAddress(member.calendar_email);
+}
 
 function addressesIn(value: string | undefined): string[] {
   return (value ?? "")

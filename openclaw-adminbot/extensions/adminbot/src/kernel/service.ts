@@ -224,6 +224,7 @@ import {
 import {
   adminBotCalendarEmail,
   adminBotCalendarShareEmail,
+  adminBotAlumniOutreachEmail,
   adminBotOutreachEmail,
 } from "../contracts/member-outreach-email.js";
 import { normalizeMemberProfileValues } from "../contracts/member-profile-values.js";
@@ -15089,7 +15090,12 @@ export class AdminBotService {
       // `email` is the departmental identity the account is keyed by; it is not necessarily a
       // mailbox anybody reads, and four members on the roster have no departmental address at all
       // while having had a correspondence address on file the whole time.
-      const outreachEmail = adminBotOutreachEmail(member);
+      // The alumni check-in (the only caller that sets allowAlumni) may fall back to the Calendar
+      // email; see adminBotAlumniOutreachEmail for why nobody else does.
+      const outreachEmail =
+        options.allowAlumni === true && adminBotIsAlumniMember(member)
+          ? adminBotAlumniOutreachEmail(member)
+          : adminBotOutreachEmail(member);
       const proposalInput =
         request.channel === "slack"
           ? member.slack_user_id
@@ -17528,7 +17534,10 @@ export class AdminBotService {
         continue;
       }
       if (reminderPolicy.channel === "email") {
-        const address = adminBotOutreachEmail(member);
+        const address =
+          audience === "alumni"
+            ? adminBotAlumniOutreachEmail(member)
+            : adminBotOutreachEmail(member);
         if (!address) {
           skipped.push({
             member_id: member.id,

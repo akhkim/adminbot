@@ -417,6 +417,27 @@ describe("the engagement policy", () => {
     expect(later.dormant_escalated).toEqual([]);
   });
 
+  it("reaches an alumnus whose only address left is the calendar Gmail", async () => {
+    const { service, store } = lab({
+      extra: { status: "alumni", email: undefined, calendar_email: "ada.personal@example.test" },
+    });
+    expect(unwrap(await run(service, ESCALATE_DUE)).dormant).toEqual(["ada"]);
+    const sent = store.listProposalsByType("member_nudge.send");
+    expect(sent.map((proposal) => proposal.proposed_payload.to)).toEqual([
+      "ada.personal@example.test",
+    ]);
+  });
+
+  it("does not mail a current member at their calendar address", async () => {
+    const { service, store } = lab({
+      memberType: "coauthor-minor",
+      extra: { email: undefined, calendar_email: "ada.personal@example.test" },
+    });
+    const result = unwrap(await run(service, after(60)));
+    expect(result.dormant).toEqual([]);
+    expect(store.listProposalsByType("member_nudge.send")).toEqual([]);
+  });
+
   it("puts a full member on the professor's desk once the reminders run out", async () => {
     const { service } = lab();
     unwrap(
