@@ -83,11 +83,31 @@ describe("renderMailingList", () => {
     expect(container_text(await draw())).toContain("arXiv");
   });
 
-  it("refuses to send without a recipient", async () => {
+  it("refuses to send without a recipient, and says what is missing", async () => {
     const send = await (
       await draw({ email: "" })
     ).querySelector<HTMLButtonElement>('[data-testid="mailing-list-send"]');
     expect(send?.disabled).toBe(true);
+    expect(send?.classList.contains("primary")).toBe(false);
+    expect(send?.textContent?.trim()).toBe("Add an address to send");
+  });
+
+  it("names the address on the send once there is one", async () => {
+    const send = (await draw()).querySelector<HTMLButtonElement>(
+      '[data-testid="mailing-list-send"]',
+    );
+    expect(send?.disabled).toBe(false);
+    expect(send?.textContent?.trim()).toBe("Send to funder@example.org");
+  });
+
+  it("offers no send for an empty digest and no instructions before a preview", async () => {
+    const empty = await draw({
+      preview: preview({ publications: [], undated_count: 0, excluded: [] }),
+    });
+    expect(empty.querySelector('[data-testid="mailing-list-send"]')).toBeNull();
+    const before = await draw({ preview: null });
+    expect(before.querySelector(".adminbot-empty")).toBeNull();
+    expect(container_text(before)).not.toContain("Every publication in our records");
   });
 
   it("refuses to send before anything has been previewed", async () => {

@@ -1487,7 +1487,7 @@ export const ko: TranslationMap = {
     archive: {
       title: "Where recordings live",
       sub: "This tab lists the meetings AdminBot has a summary for. The videos themselves are posted in {channel}, and collected in an unlisted YouTube playlist.",
-      playlist: "Open the recordings playlist",
+      playlist: "All recordings on YouTube",
     },
     actionItems: "Action items",
     addAttendee: "Add",
@@ -1615,7 +1615,7 @@ export const ko: TranslationMap = {
     },
     milestones: {
       title: "Big deadlines",
-      hint: "The four nearest archival conference deadlines, plus your own. Yours are private — nobody else sees them.",
+      hint: "Your own deadlines are private to you.",
       formHint: "Add your thesis deadlines here too, not just conference ones.",
       date: "Date",
       time: "Time (optional)",

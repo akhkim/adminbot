@@ -389,14 +389,16 @@ function paperConference(paper: AdminBotPaperRecord): string {
   return conference?.trim() || "Unspecified";
 }
 
-function renderMetric(label: string, value: string | number, detail?: string) {
-  return html`
-    <div class="adminbot-metric">
-      <div class="adminbot-metric__label">${label}</div>
-      <div class="adminbot-metric__value">${value}</div>
-      ${detail ? html`<div class="adminbot-metric__detail">${detail}</div>` : nothing}
-    </div>
-  `;
+// One figure in the Lab Overview's hairline row. A zero is left out rather than drawn: the row
+// names what is there, and an empty lab says nothing at all.
+function renderMetric(label: string, value: number) {
+  if (value <= 0) {
+    return nothing;
+  }
+  return html`<div class="adminbot-metric">
+    <span class="adminbot-metric__value ab-num">${value}</span>
+    <span class="adminbot-metric__label">${label}</span>
+  </div>`;
 }
 
 function getFormValue(formData: FormData, key: string): string {
@@ -2824,19 +2826,27 @@ function renderPapers(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
   if (props.mode === "general") {
     return html`${table} ${canAdd ? renderAddPaperCard(props, { governance: false }) : nothing}`;
   }
+  // A board with nothing in it is not drawn, and with no papers at all the table becomes one line.
+  // Add paper is the header button; its form is a popover, so it needs no fold of its own.
   return html`
-    ${board(`Active papers (${papers.length})`, table)}
+    ${papers.length
+      ? board(`Active papers (${papers.length})`, table)
+      : html`<p class="paper-overview__none" data-testid="paper-overview-none">
+          ${t("paperOverview.empty")}
+        </p>`}
     ${board(t("paperOverview.details.preRegistration"), renderPreRegistrationBoard(papers, props))}
     ${board(t("paperOverview.details.travel"), renderTravelBoard(props))}
     ${board(t("paperOverview.details.blockers"), renderBlockers(props, papers))}
     ${board(t("paperOverview.details.nextSteps"), renderNextSteps(props, papers))}
-    ${board(t("paperOverview.details.nudges"), renderNudges(props.data, more(props, "nudges")))}
+    ${props.data.nudges.length
+      ? board(t("paperOverview.details.nudges"), renderNudges(props.data, more(props, "nudges")))
+      : nothing}
     ${props.paperNudge
       ? board("Chase authors (whole lab)", renderPaperNudge(props.paperNudge), {
           open: props.paperNudge.nudgeBatches !== null,
         })
       : nothing}
-    ${board(t("paperOverview.details.add"), renderAddPaperCard(props, { governance: true }))}
+    ${renderAddPaperCard(props, { governance: true })}
   `;
 }
 
@@ -2988,12 +2998,6 @@ function renderTravelBoard(props: AdminBotProps) {
   const past = conferences.filter((conference) => isPastConference(conference, now));
   return html`
     <article class="travel-board" data-testid="travel-board">
-      <div class="card-title">Conference travel</div>
-      <div class="card-sub">
-        Everyone on an accepted paper, and whether they have said if they are going. Authors are
-        asked for this as part of the paper's nudges, so a question mark here is somebody who has
-        not answered yet.
-      </div>
       ${current.length === 0
         ? html`<p class="travel-board__empty" data-testid="travel-board-current-empty">
             Nothing accepted for this year yet.
@@ -3194,7 +3198,13 @@ function renderPreRegistrationBoard(papers: AdminBotPaperRecord[], props: AdminB
   // See openPreRegistrationVenues.
   const venues = openPreRegistrationVenues(papers);
 
-  if (venues.length === 0) {
+  // No live venue, or no paper aimed at one: the board has nothing to show, so it is not drawn.
+  const registered = papers.some((paper) =>
+    effectiveVenueTargets(paper).some((target) =>
+      venues.some((venue) => venueTargetMatches(target, venue.venue_id)),
+    ),
+  );
+  if (venues.length === 0 || !registered) {
     return nothing;
   }
 
@@ -3309,11 +3319,9 @@ function renderPreRegistrationBoard(papers: AdminBotPaperRecord[], props: AdminB
       ${rows.length === 0
         ? // An empty board and an empty *filter* are different answers, and saying the first when
           // the second is true reads as "the lab has registered nothing" to someone who has simply
-          // narrowed the view and forgotten.
+          // narrowed the view and forgotten. With nothing registered the board is not drawn.
           html`<p class="venue-table__empty" data-testid="prereg-empty">
-            ${minConfidence > 0 || missingEditOnly
-              ? "No pre-registered paper matches these filters."
-              : "Nobody has pre-registered for these yet."}
+            No pre-registered paper matches these filters.
           </p>`
         : html`
             <div class="venue-table__scroll">
@@ -3485,12 +3493,7 @@ function renderBlockers(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
     props.data.members.find((member) => member.id === props.signedInMemberId)?.name?.trim() ?? "";
 
   if (open.length === 0 && solved.length === 0) {
-    return html`
-      <article class="adminbot-editor-card">
-        <div class="card-title">Reported blockers</div>
-        <div class="adminbot-empty adminbot-empty--compact">Nothing reported.</div>
-      </article>
-    `;
+    return nothing;
   }
 
   const sort = props.blockerSort ?? "stage";
@@ -3597,9 +3600,7 @@ function renderNextSteps(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
     }));
 
   if (rows.length === 0) {
-    return html`<div class="adminbot-empty adminbot-empty--compact">
-      Nothing actionable across the pipeline.
-    </div>`;
+    return nothing;
   }
 
   return html`
@@ -4143,7 +4144,6 @@ function renderPanel(props: AdminBotProps) {
 }
 
 export function renderAdminBot(props: AdminBotProps) {
-  const loadedAt = props.data.loadedAt ? formatRelativeTimestamp(props.data.loadedAt) : "not yet";
   const firstLoadPending = props.loading && props.data.loadedAt === null;
   const firstLoadFailed = Boolean(props.error) && props.data.loadedAt === null;
   const general = props.mode === "general";
@@ -4188,15 +4188,6 @@ export function renderAdminBot(props: AdminBotProps) {
               Add paper
             </button>`
           : nothing}
-        ${
-          // Lab Members and Nudges stay current on their own (a quiet poll while the tab is open,
-          // and a reload after every action), so they have no Refresh button (DESIGN.md rule 12).
-          props.panel === "members" || props.panel === "announcements"
-            ? nothing
-            : html`<button class="btn btn--sm" ?disabled=${props.loading} @click=${props.onRefresh}>
-                ${props.loading ? "Refreshing..." : "Refresh"}
-              </button>`
-        }
       </div>
 
       ${props.notice
@@ -4216,19 +4207,11 @@ export function renderAdminBot(props: AdminBotProps) {
           </div>`
         : nothing}
       ${isLabOverview && !firstLoadPending && !firstLoadFailed
-        ? html`<div class="adminbot-metrics">
-            ${general
-              ? nothing
-              : renderMetric("Pending", adminQueueTotal(props.data, "proposals"), "approval queue")}
-            ${renderMetric(
-              "Members",
-              props.data.members.length,
-              general ? "read-only roster" : "editable roster",
-            )}
-            ${renderMetric("Papers", props.data.papers.length, "publication pipeline")}
-            ${general
-              ? renderMetric("Updated", loadedAt, "read-only view")
-              : renderMetric("Nudges", adminQueueTotal(props.data, "nudges"), `loaded ${loadedAt}`)}
+        ? html`<div class="adminbot-metrics" data-testid="adminbot-metrics">
+            ${general ? nothing : renderMetric("pending", adminQueueTotal(props.data, "proposals"))}
+            ${renderMetric("members", props.data.members.length)}
+            ${renderMetric("papers", props.data.papers.length)}
+            ${general ? nothing : renderMetric("nudges", adminQueueTotal(props.data, "nudges"))}
           </div>`
         : nothing}
       ${firstLoadPending || firstLoadFailed

@@ -409,7 +409,9 @@ export const membersRoutes: readonly Route[] = [
       sendJson(res, 409, { error: { message: identity.error } });
       return;
     }
-    const saved = await saveLabMemberAsAdmin(ctx, principal, identity.id!, body);
+    const saved = await saveLabMemberAsAdmin(ctx, principal, identity.id!, body, {
+      adminOverride: true,
+    });
     sendJson(res, saved.status, saved.body);
   }),
   put(/^\/lab\/members\/([^/]+)$/u, async ({ req, res, ctx, principal, params }) => {
@@ -445,7 +447,9 @@ export const membersRoutes: readonly Route[] = [
     // from SELF_PROFILE_EDITABLE_FIELDS on this path only; the scripts that sync it write straight
     // to the database and do not come through here.
     if (principal.kind === "member" && principal.member.privilege_level === "admin") {
-      const saved = await saveLabMemberAsAdmin(ctx, principal, memberId, body);
+      const saved = await saveLabMemberAsAdmin(ctx, principal, memberId, body, {
+        adminOverride: true,
+      });
       sendJson(res, saved.status, saved.body);
       return;
     }
@@ -975,6 +979,10 @@ export async function saveLabMemberAsAdmin(
   principal: AdminBotMemberPrincipal,
   memberId: string,
   body: Record<string, unknown>,
+  // True only for the admin's own hand-typed save (POST/PUT /lab/members). An approved member
+  // request carries what the requester typed, and a scheduled change replays later, so neither
+  // gets past the guards meant for members (see AdminBotWriteOrigin.adminOverride).
+  options: { adminOverride?: boolean } = {},
 ): Promise<{ status: number; body: unknown }> {
   const { service } = ctx;
   const existing = ctx.store.getLabMember(memberId);
@@ -1048,7 +1056,11 @@ export async function saveLabMemberAsAdmin(
     // stamped `admin` and does not count toward their adoption rate. The actor is recorded so
     // "who typed this" has an answer either way -- and comes from principalActor so that an
     // admin doing this while viewing as another admin is still recorded as themselves.
-    { source: "admin", actor: principalActor(principal) },
+    {
+      source: "admin",
+      actor: principalActor(principal),
+      ...(options.adminOverride ? { adminOverride: true } : {}),
+    },
   );
   const approver = approverIdentityFor(principal);
   // A new record is always enrolled, typed or not: the access design's consequences of holding its

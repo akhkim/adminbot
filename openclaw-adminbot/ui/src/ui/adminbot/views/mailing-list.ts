@@ -67,7 +67,6 @@ class AdminbotMailingListView extends LitElement {
     return html`
       <section class="adminbot-panel">
         <div class="card-title">${t("mailingList.title")}</div>
-        <p class="muted">${t("mailingList.sub")}</p>
         <!-- adminbot-form is what carries this tab's controls into the app's own input styling
              (height, border, focus ring, placeholder colour), and adminbot-form__field is what
              puts a label above its box. Written as bare labels around bare inputs, this row drew
@@ -159,14 +158,10 @@ class AdminbotMailingListView extends LitElement {
               ${props.notice}
             </div>`
           : nothing}
-        ${preview ? this.renderPreview(preview, sendable) : this.renderEmpty()}
+        ${preview ? this.renderPreview(preview, sendable) : nothing}
       </section>
       ${props.outreach ? renderPaperOutreach(props.outreach) : nothing}
     `;
-  }
-
-  private renderEmpty() {
-    return html`<div class="adminbot-empty">${t("mailingList.empty")}</div>`;
   }
 
   private renderPreview(preview: PublicationDigestPreview, sendable: boolean) {
@@ -243,19 +238,25 @@ class AdminbotMailingListView extends LitElement {
         <summary>${t("mailingList.showEmail")}</summary>
         <pre>${preview.body}</pre>
       </details>
-      <div class="adminbot-mailing-list__send">
-        <button
-          class="btn primary"
-          type="button"
-          ?disabled=${!sendable}
-          @click=${() => this.props.onSend()}
-          data-testid="mailing-list-send"
-        >
-          ${this.props.sending
-            ? t("mailingList.sending")
-            : t("mailingList.send", { email: this.email || "—" })}
-        </button>
-      </div>
+      <!-- Only once there is something to send, and primary only once it can go: a disabled
+           primary button reading "Send to —" asked the reader to click a thing that could not work. -->
+      ${preview.publications.length
+        ? html`<div class="adminbot-mailing-list__send">
+            <button
+              class=${this.email.includes("@") ? "btn primary" : "btn"}
+              type="button"
+              ?disabled=${!sendable}
+              @click=${() => this.props.onSend()}
+              data-testid="mailing-list-send"
+            >
+              ${this.props.sending
+                ? t("mailingList.sending")
+                : this.email.includes("@")
+                  ? t("mailingList.send", { email: this.email })
+                  : t("mailingList.sendNeedsAddress")}
+            </button>
+          </div>`
+        : nothing}
     `;
   }
 }

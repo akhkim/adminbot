@@ -48,15 +48,16 @@ export class OpenReviewCitationChecks extends LitElement {
   static override styles = css`
     :host {
       display: block;
-      max-width: 760px;
-      margin: var(--space-6, 24px) auto;
+      max-width: 860px;
+      /* Left-aligned with PaperMentor above it, not centred in the page. */
+      margin: var(--space-6, 24px) 0;
     }
     /* Follows PaperMentor on the same page: a hairline and space, not a box (ui/DESIGN.md). */
     section {
       padding-top: var(--space-6, 24px);
       border-top: 1px solid var(--border, #8885);
     }
-    h2 {
+    h3 {
       margin-top: 0;
     }
     p {
@@ -174,11 +175,7 @@ export class OpenReviewCitationChecks extends LitElement {
     );
     const sweep = listing.current_sweep ?? listing.last_sweep;
     return html`<section>
-      <h2>OpenReview submissions</h2>
-      <p>
-        Every paper the lab's OpenReview account is an author of is checked automatically each time
-        a new PDF is uploaded.
-      </p>
+      <h3>OpenReview submissions</h3>
       <p class="hint">
         ${!listing.enabled
           ? "Automatic checks are off on this deployment."

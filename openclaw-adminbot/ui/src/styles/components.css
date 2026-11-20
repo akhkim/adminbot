@@ -831,43 +831,35 @@
   margin-bottom: calc(-1 * var(--space-8));
 }
 
+/* Lab Overview's figures: one hairline row of "12 members  5 papers", zeros left out. */
 .adminbot-metrics {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--space-3);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-6);
+}
+
+.adminbot-metrics:has(.adminbot-metric) {
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border);
 }
 
 .adminbot-metric {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
   min-width: 0;
-  padding: var(--space-3) var(--space-4);
-  border: 0;
-  border-bottom: 1px solid var(--border);
-  border-radius: 0;
-  background: transparent;
+}
+
+.adminbot-metric__value {
+  color: var(--text-strong);
+  font-size: var(--control-ui-text-lg);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .adminbot-metric__label {
   color: var(--muted);
-  font-size: var(--control-ui-text-xs);
-  font-weight: 600;
-  letter-spacing: var(--tracking-tight);
-}
-
-.adminbot-metric__value {
-  margin-top: var(--space-2);
-  color: var(--text-strong);
-  font-size: var(--control-ui-text-2xl);
-  font-weight: 600;
-  letter-spacing: var(--tracking-tighter);
-  font-variant-numeric: tabular-nums;
-  line-height: 1.1;
-}
-
-.adminbot-metric__detail {
-  margin-top: var(--space-2);
-  color: var(--muted);
   font-size: var(--control-ui-text-sm);
-  line-height: 1.45;
 }
 
 .adminbot-grid {
@@ -10396,10 +10388,6 @@ details[open] > .ov-expandable-toggle::after {
   max-width: 520px;
 }
 
-.adminbot-time-availability__refresh {
-  justify-self: start;
-}
-
 .adminbot-time-availability__report {
   display: grid;
   gap: var(--space-4);
@@ -11247,8 +11235,8 @@ details[open] > .ov-expandable-toggle::after {
 /* ── Add commitment button + picker ────────────────────────────────────────── */
 
 .adminbot-time-availability__add-commitment {
-  width: 100%;
-  min-height: 44px;
+  justify-self: start;
+  width: auto;
 }
 
 .adminbot-time-availability__commitment-picker {
@@ -11438,8 +11426,7 @@ details[open] > .ov-expandable-toggle::after {
    `min(..., 100%)` lets one tile take a narrower aside whole (a 320px window, or 400% zoom)
    instead of holding 21rem and pushing the hint and buttons out of the page. */
 .adminbot-time-availability__deadlines .adminbot-time-availability__deadline-list {
-  grid-template-columns: repeat(auto-fill, minmax(min(21rem, 100%), 1fr));
-  gap: var(--space-2);
+  gap: 0;
 }
 
 /* Sits under the panel title, above the list: it explains what belongs in the list, so it has to
@@ -11466,21 +11453,25 @@ details[open] > .ov-expandable-toggle::after {
 /* Three stacked rows -- countdown and actions, the name, the date -- rather than placing each span
    into a two-column grid by hand. The old placement pinned the link and the remove button to the
    same cell, so they drew on top of each other. */
+/* Rows split by hairlines, not bordered tiles (ui/DESIGN.md: no boxed cards). */
 .adminbot-time-availability__deadline-list li {
   display: grid;
   gap: 0;
-  padding: 6px var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--bg);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.adminbot-time-availability__deadline-list li:last-child {
+  border-bottom: 0;
 }
 
 /* Countdown, name, actions on one line. The name takes the slack, so the countdown stays hard
    against the left edge where a column of them lines up and the actions stay hard against the
-   right. */
+   right. One line: the name wraps inside its own slot, so the link and Hide never drop to a line
+   of their own at phone width. */
 .adminbot-time-availability__deadline-top {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: baseline;
   gap: var(--space-2);
   /* The countdown is the only thing here on a read-only panel, and it is uppercase 11px text; at
@@ -11493,7 +11484,7 @@ details[open] > .ov-expandable-toggle::after {
 }
 
 .adminbot-time-availability__deadline-top .adminbot-time-availability__deadline-label {
-  flex: 1 1 auto;
+  flex: 1 1 0;
 }
 
 .adminbot-time-availability__deadline-top .adminbot-time-availability__deadline-actions {
@@ -11588,10 +11579,6 @@ details[open] > .ov-expandable-toggle::after {
   color: var(--muted);
 }
 
-.adminbot-time-availability__deadline-list li[data-own="true"] {
-  border-color: color-mix(in srgb, var(--deadline-urgency, var(--border)) 40%, var(--border));
-}
-
 /* Shrunk with the tile: at the shared button padding these two set the row height for every
    deadline, including the ones with no button at all next to them. */
 .adminbot-time-availability__deadline-actions .btn {
@@ -11601,6 +11588,20 @@ details[open] > .ov-expandable-toggle::after {
 
 .adminbot-time-availability__deadline-list li .btn {
   flex: 0 0 auto;
+}
+
+/* Hide / Remove is a per-row action: it shows on the row under the pointer or with focus inside it
+   (ui/DESIGN.md rule 14), and always on touch screens, which have no hover. */
+@media (hover: hover) {
+  .adminbot-time-availability__deadline-list li .btn {
+    opacity: 0;
+    transition: opacity var(--duration-fast, 120ms) ease;
+  }
+
+  .adminbot-time-availability__deadline-list li:hover .btn,
+  .adminbot-time-availability__deadline-list li:focus-within .btn {
+    opacity: 1;
+  }
 }
 
 .adminbot-time-availability__milestone-form {
@@ -12398,4 +12399,53 @@ select.input:focus {
 .recent-edits__empty {
   margin: 0;
   color: var(--muted);
+}
+
+/* Filters on demand (views/filter-fold.ts): a button that opens a small panel of controls, and
+   the set filters as removable chips under the heading. */
+.ab-filters {
+  position: relative;
+}
+
+.ab-filters__toggle {
+  list-style: none;
+  cursor: pointer;
+}
+
+.ab-filters__toggle::-webkit-details-marker {
+  display: none;
+}
+
+.ab-filters__panel {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-3);
+  width: max-content;
+  max-width: min(22rem, calc(100vw - 2 * var(--space-4)));
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--panel-strong, var(--bg));
+  box-shadow: var(--shadow-md, 0 8px 24px rgb(0 0 0 / 0.16));
+}
+
+.ab-filters__panel select,
+.ab-filters__panel .profile-overview__filter {
+  width: 100%;
+}
+
+.ab-filters__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.ab-filters__chip {
+  cursor: pointer;
 }

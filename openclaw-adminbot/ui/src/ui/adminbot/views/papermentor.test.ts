@@ -64,7 +64,7 @@ it("is a full-member tab", () => {
   expect(canAccessTab("adminbotPaperMentor", "anonymous")).toBe(false);
 });
 
-it("says so when PaperMentor is not set up, and still lists reviews", async () => {
+it("drops the review form without a setup notice when PaperMentor is off, and still lists reviews", async () => {
   server({
     enabled: false,
     model_provider: null,
@@ -75,12 +75,31 @@ it("says so when PaperMentor is not set up, and still lists reviews", async () =
     reviews: [REVIEW],
   });
   const el = await mount();
-  await vi.waitFor(() => expect(el.shadowRoot!.textContent).toContain("not set up"));
+  await vi.waitFor(() => expect(el.shadowRoot!.textContent).toContain("Synthetic Paper"));
+  expect(el.shadowRoot!.textContent).not.toContain("not set up");
   expect(el.shadowRoot!.querySelector("input[type='file']")).toBeNull();
   expect(el.shadowRoot!.textContent).toContain("Synthetic Paper");
   expect(el.shadowRoot!.textContent).toContain("3 comments · 1 critical · 2 warnings");
   // The PDF-only reference check works without PaperMentor installed.
   expect(el.shadowRoot!.querySelector("adminbot-reference-checker")).not.toBeNull();
+});
+
+it("leaves out the reviews heading until there is a review", async () => {
+  server({
+    enabled: false,
+    model_provider: null,
+    venues: [],
+    max_zip_bytes: null,
+    checks_references: false,
+    reference_checkers: ["references-validation"],
+    reviews: [],
+  });
+  const el = await mount();
+  await vi.waitFor(() =>
+    expect(el.shadowRoot!.querySelector("adminbot-reference-checker")).not.toBeNull(),
+  );
+  expect(el.shadowRoot!.textContent).not.toContain("Your reviews");
+  expect(el.shadowRoot!.textContent).not.toContain("No reviews yet");
 });
 
 it("uploads the zip as-is only after consent, naming the model provider", async () => {

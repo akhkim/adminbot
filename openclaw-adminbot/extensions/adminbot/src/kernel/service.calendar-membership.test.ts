@@ -195,6 +195,86 @@ describe("Sunday lab calendar membership", () => {
       }
     },
   );
+  // An alumnus the type rule leaves out, invited to the Monday meeting by an admin's standing
+  // calendar grant on their record. Without the grant the invite is refused; with it, it executes
+  // and the weekly sync leaves them on the event.
+  it.each([false, true])("honors an admin's calendar access override (%s)", async (override) => {
+    const alum = {
+      id: "alum",
+      name: "Alum",
+      email: "alum@example.org",
+      member_type: "alumni",
+      privilege_level: "member" as const,
+      ...(override
+        ? {
+            access_overrides: [
+              { service: "calendar", access: "view" as const, scope: "group_meeting" },
+            ],
+          }
+        : {}),
+    };
+    // The invite check, against a stub executor so only the policy decides.
+    vi.stubEnv("ADMINBOT_LAB_CALENDAR_ID", CALENDAR);
+    const execute = vi.fn(async () => ({ handled: true }));
+    const inviter = new AdminBotService(undefined, { executor: { execute } });
+    inviter.upsertLabMember(alum);
+    const proposal = inviter.createProposal({
+      type: "calendar.add_attendees",
+      summary: "Invite",
+      proposed_payload: {
+        calendar_id: CALENDAR,
+        event_id: resolveGroupMeetingEventId(),
+        attendees: ["alum@example.org"],
+      },
+    });
+    if (!proposal.ok) {
+      throw new Error(proposal.error.message);
+    }
+    inviter.approve(proposal.payload.id, {
+      payload_hash: proposal.payload.payload_hash,
+      approver_id: "admin",
+      approver_role: "admin",
+    });
+    expect((await inviter.execute(proposal.payload.id, { dry_run: false })).ok).toBe(override);
+    expect(execute).toHaveBeenCalledTimes(override ? 1 : 0);
+
+    // And the weekly sync leaves an overridden alumnus on the Monday event.
+    const { service, read, events } = lab();
+    service.upsertLabMember(alum);
+    events[0].attendees.push({ email: "alum@example.org" });
+    const result = await service.syncLabCalendarMembership(CALENDAR, read, SHARED);
+    expect(result.removed[0].emails).toEqual(
+      override ? ["minor@example.org"] : ["minor@example.org", "alum@example.org"],
+    );
+  });
+
+  it("does not count an override of access none", async () => {
+    vi.stubEnv("ADMINBOT_LAB_CALENDAR_ID", CALENDAR);
+    const service = new AdminBotService(undefined, {
+      executor: { execute: vi.fn(async () => ({ handled: true })) },
+    });
+    service.upsertLabMember({
+      id: "alum",
+      name: "Alum",
+      email: "alum@example.org",
+      member_type: "alumni",
+      access_overrides: [{ service: "calendar", access: "none" }],
+    });
+    const proposed = service.createProposal({
+      type: "calendar.grant_lab_calendar",
+      summary: "Grant",
+      proposed_payload: { email: "alum@example.org", member_id: "alum" },
+    });
+    if (!proposed.ok) {
+      throw new Error(proposed.error.message);
+    }
+    service.approve(proposed.payload.id, {
+      payload_hash: proposed.payload.payload_hash,
+      approver_role: "admin",
+      approver_id: "test",
+    });
+    expect((await service.execute(proposed.payload.id, { dry_run: false })).ok).toBe(false);
+  });
 });
 
 describe("calendar invitation batch filtering", () => {
