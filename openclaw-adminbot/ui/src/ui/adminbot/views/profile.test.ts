@@ -719,6 +719,34 @@ describe("renderProfile onboarding pointer", () => {
     expect(container.querySelector('[data-testid="profile-onboarding-pointer"]')).toBeNull();
   });
 
+  it("drops the pointer once every step is done", () => {
+    const state = createState(createMember(), {
+      adminBotOnboarding: { steps: [step("gpu", "complete"), step("calendar", "complete")] },
+    } as unknown as Partial<AppViewState>);
+    const container = renderPage(state, vi.fn());
+    expect(container.querySelector('[data-testid="profile-onboarding-pointer"]')).toBeNull();
+  });
+
+  it("drops the photo section once the photo passes, but keeps it while options await a pick", () => {
+    const passed = { compliant: true, source: "ai", summary: "", issues: [] };
+    const withReview = (review: Record<string, unknown>) =>
+      renderPage(
+        createState({ ...createMember(), profile_photo_review: review } as unknown as LabMember),
+        vi.fn(),
+      ).querySelector('[data-testid="profile-photo-guidelines"]');
+
+    expect(withReview({ assessment: passed, variants: [] })).toBeNull();
+    expect(
+      withReview({
+        assessment: passed,
+        variants: [{ id: "v1", image_data_url: "data:image/png;base64,AA==" }],
+      }),
+    ).not.toBeNull();
+    expect(
+      withReview({ assessment: { ...passed, compliant: false, issues: ["dark"] }, variants: [] }),
+    ).not.toBeNull();
+  });
+
   // The photo rules are their own section, after the record: reference a member reads once plus a
   // real action, which is more than a suggestion card carries -- but still behind the fields the
   // page exists for.
@@ -1373,6 +1401,15 @@ describe("renderProfile visual structure", () => {
     expect(section?.nextElementSibling?.querySelector("h2")?.textContent).toBe("Basic info");
   });
 
+  it("leaves the badges section out entirely while there are no badges", () => {
+    const container = renderPage(createState(createMember()), vi.fn());
+    expect(container.querySelector('[data-testid="profile-badges-section"]')).toBeNull();
+    expect(
+      container.querySelector(".profile__hero")?.nextElementSibling?.querySelector("h2")
+        ?.textContent,
+    ).toBe("Basic info");
+  });
+
   it("shows admin-managed badges ahead of computed badges and renders the self-nomination form", () => {
     const member = createMember({
       assigned_badges: [
@@ -1835,6 +1872,34 @@ describe("suggesting a new badge", () => {
     expect(row?.textContent).toContain("Approved");
     // "Approved" alone leaves somebody wondering whether the badge exists yet.
     expect(row?.textContent).toContain("Added to the badge list.");
+  });
+
+  it("keeps pending suggestions in view and folds decided ones away", () => {
+    const base = {
+      category: "Team Contributor",
+      description: "d",
+      rationale: "r",
+      created_at: "2026-09-01T10:00:00.000Z",
+    };
+    const container = renderPage(
+      suggestState({
+        adminBotBadgeSuggestions: [
+          { ...base, id: "a", name: "Waiting One", status: "pending" },
+          { ...base, id: "b", name: "Done One", status: "rejected", decided_at: base.created_at },
+        ],
+      } as unknown as Partial<AppViewState>),
+      vi.fn(),
+    );
+    const past = container.querySelector<HTMLDetailsElement>(
+      '[data-testid="profile-badge-suggestions-past"]',
+    )!;
+    expect(past.open).toBe(false);
+    expect(past.querySelector("summary")?.textContent).toContain("Past suggestions (1)");
+    expect(past.textContent).toContain("Done One");
+    expect(past.textContent).not.toContain("Waiting One");
+    expect(container.querySelector(".profile-badge-nominations")?.textContent).toContain(
+      "Waiting One",
+    );
   });
 
   it("shows no empty list when nothing has been suggested yet", () => {

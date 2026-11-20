@@ -135,23 +135,66 @@ export class FinancialNeedsSection extends LitElement {
       margin: 0;
       padding: 0;
     }
-    li {
+    li.form {
       display: grid;
       grid-template-columns: minmax(180px, 230px) 110px 80px minmax(0, 1fr);
       gap: var(--space-2) var(--space-3);
       padding: var(--space-3) 0;
       border-top: 1px solid var(--border);
     }
-    li:last-child {
+    li.form:last-child {
       border-bottom: 1px solid var(--border);
+    }
+    /* Saved entries read as one line each; the form opens for one entry at a time. */
+    .entry {
+      display: flex;
+      gap: var(--space-3);
+      align-items: baseline;
+      justify-content: space-between;
+      padding: var(--space-3) 0;
+      border-top: 1px solid var(--border);
+    }
+    .entry:last-child {
+      border-bottom: 1px solid var(--border);
+    }
+    .entry-main {
+      min-width: 0;
+      display: grid;
+      gap: 2px;
+    }
+    .entry-title {
+      color: var(--text);
+      font-size: var(--control-ui-text-md);
+      overflow-wrap: anywhere;
+    }
+    .entry-amount {
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      margin-right: var(--space-2);
+    }
+    .entry-meta {
+      color: var(--muted);
+      font-size: 0.8125rem;
+      overflow-wrap: anywhere;
+    }
+    .total {
+      margin: var(--space-2) 0 0;
+      color: var(--muted);
+      font-size: 0.8125rem;
+      font-variant-numeric: tabular-nums;
+    }
+    .row-actions {
+      grid-column: 1 / -1;
+      display: flex;
+      gap: var(--space-3);
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .row-actions .spacer {
+      flex: 1;
     }
     .wide {
       grid-column: 1 / -1;
-    }
-    .row-end {
-      grid-column: 1 / -1;
-      display: flex;
-      justify-content: flex-end;
     }
     /* Controls copy the page's shared \`.input\` and \`.btn\` (styles/components.css) and the profile
        form's own rules (styles/layout.css): a shadow root cannot see those classes, so the values
@@ -261,9 +304,9 @@ export class FinancialNeedsSection extends LitElement {
     button.link:hover {
       color: var(--danger);
     }
-    .empty {
+    .optional {
       color: var(--muted);
-      font-size: 0.875rem;
+      font-weight: 400;
     }
     [role="alert"] {
       color: var(--danger);
@@ -278,7 +321,7 @@ export class FinancialNeedsSection extends LitElement {
       }
     }
     @media (max-width: 640px) {
-      li {
+      li.form {
         grid-template-columns: 1fr 1fr;
       }
       li > label:first-child,
@@ -295,46 +338,50 @@ export class FinancialNeedsSection extends LitElement {
     entries: MemberFinancialSupportNeed[],
   ) => Promise<boolean> | boolean;
 
-  @state() private drafts: FinancialNeedDraft[] = [];
-  // The drafts as last loaded or saved. Save shows only while the rows differ from it, so adding a
-  // row and removing it again leaves nothing to save.
-  @state() private baseline = "[]";
+  /** The saved list, as rows. Only the entry being edited is ever a draft. */
+  @state() private rows: FinancialNeedDraft[] = [];
+  /** Which row the form is open on; rows.length means a new one. null: nothing is being edited. */
+  @state() private editing: number | null = null;
+  @state() private draft: FinancialNeedDraft = blankDraft();
   @state() private saving = false;
   @state() private error = "";
 
   protected override willUpdate(changed: Map<string, unknown>) {
-    // A fresh record (first load, or the answer to our own save) replaces the drafts, unless the
-    // member is in the middle of editing: their unsaved typing wins over a background refresh.
-    if (changed.has("entries") && !this.dirty) {
-      this.drafts = toDrafts(this.entries);
-      this.baseline = JSON.stringify(this.drafts);
+    // A fresh record replaces the list unless a form is open: unsaved typing wins over a refresh.
+    if (changed.has("entries") && this.editing === null) {
+      this.rows = toDrafts(this.entries);
     }
   }
 
-  private get dirty() {
-    return JSON.stringify(this.drafts) !== this.baseline;
-  }
-
-  private edit(index: number, patch: Partial<FinancialNeedDraft>) {
-    this.drafts = this.drafts.map((row, i) => (i === index ? { ...row, ...patch } : row));
+  private open(index: number) {
+    this.editing = index;
+    this.draft = index < this.rows.length ? { ...this.rows[index] } : blankDraft();
     this.error = "";
   }
 
-  private add() {
-    if (this.drafts.length >= MAX_ROWS) {
-      this.error = `Up to ${MAX_ROWS} expenses. Combine smaller ones into one line.`;
+  private cancel() {
+    this.editing = null;
+    this.error = "";
+  }
+
+  private edit(patch: Partial<FinancialNeedDraft>) {
+    this.draft = { ...this.draft, ...patch };
+    this.error = "";
+  }
+
+  /** Saves the whole list with the open entry replaced (or dropped, for Remove). */
+  private async commit(remove = false) {
+    const index = this.editing;
+    if (index === null) {
       return;
     }
-    this.drafts = [...this.drafts, blankDraft()];
-  }
-
-  private removeRow(index: number) {
-    this.drafts = this.drafts.filter((_, i) => i !== index);
-    this.error = "";
-  }
-
-  private async save() {
-    const result = fromDrafts(this.drafts);
+    const next = [...this.rows];
+    if (remove) {
+      next.splice(index, 1);
+    } else {
+      next[index] = this.draft;
+    }
+    const result = fromDrafts(next);
     if (!result.ok) {
       this.error = result.error;
       return;
@@ -344,12 +391,12 @@ export class FinancialNeedsSection extends LitElement {
     try {
       const ok = (await this.onSave?.(result.entries)) ?? false;
       if (!ok) {
-        // The reason is in the page notice; the rows stay so nothing typed is lost.
+        // The reason is in the page notice; the form stays open so nothing typed is lost.
         this.error = "Not saved. See the message at the top of the page.";
         return;
       }
-      this.drafts = toDrafts(result.entries);
-      this.baseline = JSON.stringify(this.drafts);
+      this.rows = toDrafts(result.entries);
+      this.editing = null;
     } catch {
       this.error = "Not saved. Check your connection and try again.";
     } finally {
@@ -357,16 +404,44 @@ export class FinancialNeedsSection extends LitElement {
     }
   }
 
-  private renderRow(row: FinancialNeedDraft, index: number) {
+  private renderEntry(row: FinancialNeedDraft, index: number) {
+    const amount = formatAmount(row);
+    return html`<li class="entry" data-testid="financial-need-row">
+      <div class="entry-main">
+        <span class="entry-title"
+          >${amount
+            ? html`<span class="entry-amount">${amount}</span>`
+            : nothing}${row.description}</span
+        >
+        <span class="entry-meta"
+          >${FINANCIAL_SUPPORT_CATEGORY_LABELS[row.category]}${row.pi_permission
+            ? html` · PI: “${row.pi_permission}”`
+            : nothing}</span
+        >
+      </div>
+      <button
+        type="button"
+        class="link"
+        ?disabled=${this.editing !== null}
+        aria-label=${`Edit ${row.description}`}
+        @click=${() => this.open(index)}
+      >
+        Edit
+      </button>
+    </li>`;
+  }
+
+  private renderForm(isNew: boolean) {
+    const row = this.draft;
     const value = (event: Event) =>
       (event.currentTarget as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement).value;
-    return html`<li data-testid="financial-need-row">
+    return html`<li class="form" data-testid="financial-need-form">
       <label
         >Category
         <select
           name="category"
           .value=${row.category}
-          @change=${(event: Event) => this.edit(index, { category: value(event) as Category })}
+          @change=${(event: Event) => this.edit({ category: value(event) as Category })}
         >
           ${(Object.keys(FINANCIAL_SUPPORT_CATEGORY_LABELS) as Category[]).map(
             (key) =>
@@ -384,9 +459,9 @@ export class FinancialNeedsSection extends LitElement {
           min="0"
           step="any"
           inputmode="decimal"
-          placeholder="e.g. 240"
+          placeholder="240"
           .value=${row.amount}
-          @input=${(event: Event) => this.edit(index, { amount: value(event) })}
+          @input=${(event: Event) => this.edit({ amount: value(event) })}
         />
       </label>
       <label
@@ -394,10 +469,9 @@ export class FinancialNeedsSection extends LitElement {
         <input
           name="currency"
           maxlength="3"
-          placeholder="e.g. CAD"
           autocomplete="off"
           .value=${row.currency}
-          @input=${(event: Event) => this.edit(index, { currency: value(event) })}
+          @input=${(event: Event) => this.edit({ currency: value(event) })}
         />
       </label>
       <label class="description"
@@ -405,57 +479,115 @@ export class FinancialNeedsSection extends LitElement {
         <input
           name="description"
           maxlength=${MAX_TEXT}
-          placeholder="Claude Max for agent experiments, Sep–Nov"
+          placeholder="ChatGPT Pro, Sep–Nov"
           .value=${row.description}
-          @input=${(event: Event) => this.edit(index, { description: value(event) })}
+          @input=${(event: Event) => this.edit({ description: value(event) })}
         />
       </label>
       <label class="wide"
-        >What the PI said when allowing it
+        ><span>What the PI said <span class="optional">(optional)</span></span>
         <textarea
           name="pi_permission"
           rows="2"
           maxlength=${MAX_TEXT}
-          placeholder="Paste or paraphrase the message, e.g. “Yes, go ahead and expense it” (Slack, 3 Oct)"
+          placeholder="“Yes, go ahead and expense it” (Slack, 3 Oct)"
           .value=${row.pi_permission}
-          @input=${(event: Event) => this.edit(index, { pi_permission: value(event) })}
+          @input=${(event: Event) => this.edit({ pi_permission: value(event) })}
         ></textarea>
       </label>
-      <div class="row-end">
-        <button type="button" class="link" @click=${() => this.removeRow(index)}>Remove</button>
+      <div class="row-actions">
+        <button
+          type="button"
+          class="primary"
+          ?disabled=${this.saving}
+          @click=${() => void this.commit()}
+        >
+          ${this.saving ? "Saving…" : isNew ? "Add" : "Save"}
+        </button>
+        <button type="button" ?disabled=${this.saving} @click=${() => this.cancel()}>Cancel</button>
+        ${this.error ? html`<span role="alert">${this.error}</span>` : nothing}
+        <span class="spacer"></span>
+        ${isNew
+          ? nothing
+          : html`<button
+              type="button"
+              class="link"
+              ?disabled=${this.saving}
+              @click=${() => void this.commit(true)}
+            >
+              Remove
+            </button>`}
       </div>
     </li>`;
   }
 
   override render() {
+    const adding = this.editing !== null && this.editing >= this.rows.length;
+    const totals = totalsByCurrency(this.rows);
     return html`<section data-testid="financial-needs">
       <h3>Subscription or financial support needs</h3>
       <p class="lede">
-        Costs you have paid and not been reimbursed for yet, but plan to claim: AI agent or
-        subscription bills, travel, anything else. Rough numbers are fine. This helps the lab
-        estimate its budget; it does not file a claim. Only you and the lab admins can see it.
+        Costs you have paid and plan to claim back, such as AI subscriptions or travel. Rough
+        numbers are fine. Only you and the lab admins see this.
       </p>
-      ${this.drafts.length
+      ${this.rows.length || adding
         ? html`<ol>
-            ${this.drafts.map((row, index) => this.renderRow(row, index))}
+            ${this.rows.map((row, index) =>
+              index === this.editing ? this.renderForm(false) : this.renderEntry(row, index),
+            )}
+            ${adding ? this.renderForm(true) : nothing}
           </ol>`
-        : html`<p class="empty">Nothing registered.</p>`}
-      <div class="actions">
-        <button type="button" @click=${() => this.add()}>Add an expense</button>
-        ${this.dirty || this.saving
-          ? html`<button
+        : nothing}
+      ${this.rows.length > 1 && totals ? html`<p class="total">Total ${totals}</p>` : nothing}
+      ${this.editing === null
+        ? html`<div class="actions">
+            <button
               type="button"
-              class="primary"
-              ?disabled=${this.saving}
-              @click=${() => void this.save()}
+              @click=${() =>
+                this.rows.length >= MAX_ROWS
+                  ? (this.error = `Up to ${MAX_ROWS} expenses. Combine smaller ones into one line.`)
+                  : this.open(this.rows.length)}
             >
-              ${this.saving ? "Saving…" : "Save"}
-            </button>`
-          : nothing}
-        ${this.error ? html`<span role="alert">${this.error}</span>` : nothing}
-      </div>
+              Add an expense
+            </button>
+            ${this.error ? html`<span role="alert">${this.error}</span>` : nothing}
+          </div>`
+        : nothing}
     </section>`;
   }
+}
+
+/** "USD 240" -> "$240" style, in the reader's locale; the code alone when the amount is missing. */
+function formatAmount(row: FinancialNeedDraft): string {
+  if (!row.amount) {
+    return "";
+  }
+  const amount = Number(row.amount);
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: row.currency || "USD",
+      maximumFractionDigits: Number.isInteger(amount) ? 0 : 2,
+    }).format(amount);
+  } catch {
+    return `${row.currency} ${row.amount}`.trim();
+  }
+}
+
+/** Per-currency sums, never converted: "$440 · CA$20". Empty when no row has an amount. */
+function totalsByCurrency(rows: readonly FinancialNeedDraft[]): string {
+  const sums = new Map<string, number>();
+  for (const row of rows) {
+    const amount = Number(row.amount);
+    if (row.amount && row.currency && Number.isFinite(amount)) {
+      sums.set(row.currency, (sums.get(row.currency) ?? 0) + amount);
+    }
+  }
+  return [...sums]
+    .map(([currency, amount]) =>
+      formatAmount({ ...blankDraft(), currency, amount: String(amount) }),
+    )
+    .join(" · ");
 }
 
 if (!customElements.get("adminbot-financial-needs")) {

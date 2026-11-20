@@ -1372,7 +1372,11 @@ function renderBadges(state: AppViewState, member: LabMember) {
 }
 
 // Keep earned badge details near the member identity, ahead of profile fields.
+// No badges yet: no section. An empty heading is one more thing to read that says nothing.
 function renderBadgesSection(state: AppViewState, member: LabMember) {
+  if (!member.assigned_badges?.length && !badgesFor(state, member).length) {
+    return nothing;
+  }
   return html`
     <section class="profile__section" data-testid="profile-badges-section">
       <h2 class="profile__section-title">${t("profile.badges.title")}</h2>
@@ -1399,6 +1403,8 @@ function renderBadgeSuggestion(state: AppViewState, props: ProfileProps) {
   const open = state.profileBadgeSuggestOpen === true;
   const busy = state.badgeSuggestionBusy === true;
   const mine = state.adminBotBadgeSuggestions ?? [];
+  const pending = mine.filter((suggestion) => suggestion.status === "pending");
+  const decided = mine.filter((suggestion) => suggestion.status !== "pending");
   return html`
     <section class="profile__section" data-testid="profile-badge-suggestions">
       <h2 class="profile__section-title">${t("profile.badges.suggestTitle")}</h2>
@@ -1544,44 +1550,54 @@ function renderBadgeSuggestion(state: AppViewState, props: ProfileProps) {
             </div>
           </form>`
         : nothing}
-      ${mine.length
+      ${pending.length
         ? html`<div class="profile-badge-nominations">
             <h3 class="profile__group-title">${t("profile.badges.suggestionsTitle")}</h3>
-            <ul class="profile-badge-nominations__list">
-              ${mine.map(
-                (suggestion) => html`<li
-                  class="profile-badge-nominations__item"
-                  data-testid="profile-badge-suggestion"
-                >
-                  <div class="profile-badge-nominations__head">
-                    <span class="profile-badge">
-                      <span class="profile-badge__icon" aria-hidden="true">${icons.spark}</span>
-                      ${suggestion.tier
-                        ? `${suggestion.name} · ${suggestion.tier}`
-                        : suggestion.name}
-                    </span>
-                    <span class=${`ab-chip ab-chip--${suggestion.status}`}>
-                      ${t(`profile.badges.status.${suggestion.status}`)}
-                    </span>
-                  </div>
-                  <div>${suggestion.description}</div>
-                  <div class="profile-badge-nominations__meta">
-                    <span>${suggestion.category}</span>
-                    ${nominationMeta("submittedAt", suggestion.created_at)}
-                    ${nominationMeta("decidedAt", suggestion.decided_at)}
-                    <!-- Says what approval actually did. "Approved" alone leaves somebody
-                         wondering whether the badge exists yet. -->
-                    ${suggestion.created_badge_id
-                      ? html`<span>${t("profile.badges.suggestionAdded")}</span>`
-                      : nothing}
-                  </div>
-                </li>`,
-              )}
-            </ul>
+            ${renderSuggestionList(pending)}
           </div>`
+        : nothing}
+      ${decided.length
+        ? html`<details class="adminbot-fold" data-testid="profile-badge-suggestions-past">
+            <summary>Past suggestions (${decided.length})</summary>
+            ${renderSuggestionList(decided)}
+          </details>`
         : nothing}
     </section>
   `;
+}
+
+// Pending suggestions are still waiting on someone, so they stay in view. Decided ones are history:
+// kept one click away, not in the way of the page.
+function renderSuggestionList(suggestions: NonNullable<AppViewState["adminBotBadgeSuggestions"]>) {
+  return html`<ul class="profile-badge-nominations__list">
+    ${suggestions.map(
+      (suggestion) => html`<li
+        class="profile-badge-nominations__item"
+        data-testid="profile-badge-suggestion"
+      >
+        <div class="profile-badge-nominations__head">
+          <span class="profile-badge">
+            <span class="profile-badge__icon" aria-hidden="true">${icons.spark}</span>
+            ${suggestion.tier ? `${suggestion.name} · ${suggestion.tier}` : suggestion.name}
+          </span>
+          <span class=${`ab-chip ab-chip--${suggestion.status}`}>
+            ${t(`profile.badges.status.${suggestion.status}`)}
+          </span>
+        </div>
+        <div>${suggestion.description}</div>
+        <div class="profile-badge-nominations__meta">
+          <span>${suggestion.category}</span>
+          ${nominationMeta("submittedAt", suggestion.created_at)}
+          ${nominationMeta("decidedAt", suggestion.decided_at)}
+          <!-- Says what approval actually did. "Approved" alone leaves somebody
+                         wondering whether the badge exists yet. -->
+          ${suggestion.created_badge_id
+            ? html`<span>${t("profile.badges.suggestionAdded")}</span>`
+            : nothing}
+        </div>
+      </li>`,
+    )}
+  </ul>`;
 }
 
 function nominationMeta(labelKey: "submittedAt" | "decidedAt", value: string | undefined) {
@@ -1764,6 +1780,11 @@ function renderPhotoCompliance(state: AppViewState, member: LabMember, props: Pr
   const assessment = review?.assessment;
   const variants = review?.variants ?? [];
   const selectedId = review?.selected_variant_id;
+  // A photo that passed has nothing left to do here, unless polished options are waiting for a pick.
+  const waitingForPick = variants.length > 0 && !selectedId;
+  if (assessment?.compliant && !waitingForPick && !state.adminBotPhotoPolishBusy) {
+    return nothing;
+  }
   return html`
     <section class="profile__section" data-testid="profile-photo-guidelines">
       <h2 class="profile__section-title">Slack profile photo guidelines</h2>
@@ -1883,6 +1904,10 @@ function renderOnboardingPointer(state: AppViewState, props: ProfileProps) {
     return nothing;
   }
   const outstanding = steps.filter((step) => step.status !== "complete").length;
+  // A finished checklist needs nothing from the member, so the pointer goes with it.
+  if (!outstanding) {
+    return nothing;
+  }
   return html`
     <section
       class="profile__section profile__onboarding-pointer"
