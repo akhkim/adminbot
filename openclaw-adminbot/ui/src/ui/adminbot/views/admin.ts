@@ -4238,9 +4238,11 @@ export function renderAdminBot(props: AdminBotProps) {
               Add paper
             </button>`
           : nothing}
-        <button class="btn btn--sm" ?disabled=${props.loading} @click=${props.onRefresh}>
-          ${props.loading ? "Refreshing..." : "Refresh"}
-        </button>
+        ${props.panel === "reimbursements"
+          ? nothing
+          : html`<button class="btn btn--sm" ?disabled=${props.loading} @click=${props.onRefresh}>
+              ${props.loading ? "Refreshing..." : "Refresh"}
+            </button>`}
       </div>
 
       ${props.notice

@@ -333,7 +333,6 @@ function renderSignatureSection(props: SignatureProps) {
   return html`
     <section class="logistics-request__section">
       <h3 class="card-title">${t("logistics.signature.title")}</h3>
-      <p class="card-sub">${t("logistics.signature.sub")}</p>
       ${renderFileDrop({
         testId: "logistics-signature-drop",
         inputName: "signature-documents",
@@ -724,7 +723,6 @@ function renderSchoolsSection(props: LettersProps) {
       data-testid="logistics-schools"
     >
       <h3 class="card-title">${t("logistics.schools.title")}</h3>
-      <p class="card-sub">${t("logistics.schools.sub")}</p>
 
       ${renderStatusOptions(APPLICATION_STATUS_LIST_ID, APPLICATION_STATUS_SUGGESTIONS)}
       ${renderStatusOptions(LETTER_STATUS_LIST_ID, LETTER_STATUS_SUGGESTIONS)}
@@ -780,9 +778,8 @@ function renderFactsSection(props: LettersProps) {
       class="logistics-request__section logistics-letters__step"
       data-testid="logistics-facts"
     >
-      <h3 class="card-title">${t("logistics.facts.title")}</h3>
-      <p class="card-sub">
-        ${t("logistics.facts.sub")}
+      <div class="logistics-step__head">
+        <h3 class="card-title">${t("logistics.facts.title")}</h3>
         <button
           class="logistics-facts__link"
           type="button"
@@ -790,7 +787,7 @@ function renderFactsSection(props: LettersProps) {
         >
           ${t("logistics.facts.openMyProjects")}
         </button>
-      </p>
+      </div>
 
       <div class="logistics-letters__list">
         ${props.facts.length
@@ -919,7 +916,6 @@ function renderMeetingSection(props: MeetingProps) {
   return html`
     <section class="logistics-request__section logistics-schools" data-testid="logistics-meeting">
       <h3 class="card-title">${t("logistics.meeting.title")}</h3>
-      <p class="card-sub">${t("logistics.meeting.sub")}</p>
 
       ${renderStatusOptions(TIMEZONE_LIST_ID, timezoneSuggestions())}
 
@@ -1135,7 +1131,7 @@ function renderLinkField(props: LinkFieldProps) {
       data-testid=${props.testId}
     >
       <h3 class="card-title" id=${props.titleId}>${props.title}</h3>
-      <p class="card-sub">${props.description}</p>
+      ${props.description ? html`<p class="card-sub">${props.description}</p>` : nothing}
       <input
         class="logistics-link__input"
         type="url"
@@ -1174,7 +1170,6 @@ function renderDriveFolderSection(props: LettersProps) {
     // The templates are read from the lab's folder and filled in somewhere the member owns, so the
     // link out and the box to paste back into belong to the same instruction.
     description: html`
-      ${t("logistics.driveFolder.sub")}
       <a
         class="logistics-link__folder"
         href=${TEMPLATE_FOLDER_URL}
@@ -1232,8 +1227,6 @@ function renderSignatureRequest(props: SignatureProps) {
         class="logistics-request__section logistics-signature"
         data-testid="logistics-signature-section"
       >
-        <h3 class="card-title">${t("logistics.signature.title")}</h3>
-        <p class="card-sub">${t("logistics.signature.sub")}</p>
         <label class="adminbot-form__field logistics-signature__field">
           <span>${t("logistics.signature.driveUrl")}</span>
           <input
@@ -1338,6 +1331,28 @@ const GUIDEBOOK_URL =
 const GUIDEBOOK_RECOMMENDER_URL =
   "https://docs.google.com/document/d/1H9Bt4z9uvDtieujh8Wp9YXDeLDhkq7vsKYGUvPnktN8/edit?tab=t.0#heading=h.ypvr8psn5zdy";
 
+/**
+ * The eligibility meter, folded behind one line that already says where the member stands. It is
+ * advice and never disables Submit; a freeze is the one state worth reading before writing, so a
+ * frozen member finds it open.
+ */
+function renderEligibilityFold(eligibility: NonNullable<LettersProps["eligibility"]>) {
+  const value = eligibility.value as { status?: string } | null | undefined;
+  const status = value?.status;
+  const title = t("logistics.eligibility.title");
+  const summary = status
+    ? `${title} · ${t(`logistics.eligibility.readiness.title.${status}`)}`
+    : title;
+  return html`<details
+    class="logistics-fold"
+    data-testid="logistics-eligibility-fold"
+    ?open=${status === "frozen"}
+  >
+    <summary>${summary}</summary>
+    ${renderRecLetterAdvisory(eligibility)}
+  </details>`;
+}
+
 // The same container shape for letters, laid out as numbered steps: the schools, what the member
 // did, the two links, then the confirmation and Save and Submit. The numbers come from a CSS
 // counter on the step headings, so a heading's text stays just its name.
@@ -1347,44 +1362,32 @@ function renderLettersRequest(props: LettersProps) {
       class="card adminbot-card adminbot-card--wide logistics-request logistics-letters"
       data-testid="logistics-letters"
     >
-      <section
-        class="logistics-request__section logistics-letters__intro"
-        aria-labelledby="logistics-letters-guide-title"
-        data-testid="logistics-letters-guide"
-      >
-        <h3 class="card-title" id="logistics-letters-guide-title">
-          ${t("logistics.lettersGuide.title")}
-        </h3>
-        <p class="card-sub">
-          ${t("logistics.lettersGuide.sub")}
-          <a
-            class="logistics-link__folder"
-            href=${GUIDEBOOK_URL}
-            target="_blank"
-            rel="noreferrer noopener"
-            >${t("logistics.lettersGuide.open")}
-            <span aria-hidden="true">${icons.externalLink}</span></a
-          >
-        </p>
-        <!-- Reference for a first request, so it stays folded; the confirmation sits by Submit. -->
-        <details class="logistics-letters__more" data-testid="logistics-letters-checklist">
-          <summary>What to prepare</summary>
-          <ul class="logistics-letters__checklist">
-            <li>${t("logistics.lettersGuide.folder")}</li>
-            <li>${t("logistics.lettersGuide.schools")}</li>
-            <li>${t("logistics.lettersGuide.materials")}</li>
-            <li>${t("logistics.lettersGuide.facts")}</li>
-            <li>
-              ${t("logistics.lettersGuide.portal")}
-              <a href=${GUIDEBOOK_RECOMMENDER_URL} target="_blank" rel="noreferrer noopener"
-                >${t("logistics.lettersGuide.portalLink")}</a
-              >
-            </li>
-          </ul>
-          <p class="card-sub">${t("logistics.lettersGuide.reminders")}</p>
-        </details>
-        ${props.eligibility ? renderRecLetterAdvisory(props.eligibility) : nothing}
-      </section>
+      ${props.eligibility ? renderEligibilityFold(props.eligibility) : nothing}
+      <!-- Reference for a first request, so it stays folded; the confirmation sits by Submit. -->
+      <details class="logistics-fold" data-testid="logistics-letters-guide">
+        <summary>${t("logistics.lettersGuide.title")}</summary>
+        <ul class="logistics-letters__checklist" data-testid="logistics-letters-checklist">
+          <li>${t("logistics.lettersGuide.folder")}</li>
+          <li>${t("logistics.lettersGuide.schools")}</li>
+          <li>${t("logistics.lettersGuide.materials")}</li>
+          <li>${t("logistics.lettersGuide.facts")}</li>
+          <li>
+            ${t("logistics.lettersGuide.portal")}
+            <a href=${GUIDEBOOK_RECOMMENDER_URL} target="_blank" rel="noreferrer noopener"
+              >${t("logistics.lettersGuide.portalLink")}</a
+            >
+          </li>
+        </ul>
+        <p class="muted">${t("logistics.lettersGuide.reminders")}</p>
+        <a
+          class="logistics-link__folder"
+          href=${GUIDEBOOK_URL}
+          target="_blank"
+          rel="noreferrer noopener"
+          >${t("logistics.lettersGuide.open")}
+          <span aria-hidden="true">${icons.externalLink}</span></a
+        >
+      </details>
       ${renderSchoolsSection(props)} ${renderFactsSection(props)} ${renderCvOverleafSection(props)}
       ${renderDriveFolderSection(props)}
       <!-- Beside Submit, because it is the last thing to check before pressing it. Submit finds it
@@ -1426,13 +1429,13 @@ function renderMeetingRequest(props: MeetingProps) {
       class="card adminbot-card adminbot-card--wide logistics-request"
       data-testid="logistics-meeting-request"
     >
-      <p class="logistics-meeting__mandatory" data-testid="logistics-meeting-mandatory">
-        <strong>${t("logistics.meeting.mandatory")}</strong>
+      <p class="logistics-meeting__mandatory muted" data-testid="logistics-meeting-mandatory">
+        ${t("logistics.meeting.mandatory")}
       </p>
       ${renderMeetingSection(props)} ${renderRequestActions(props)}
-      <section class="logistics-request__section">
+      <p class="logistics-meeting__sheet">
         <a
-          class="btn logistics-signature__link"
+          class="logistics-signature__link"
           href=${MEETING_SHEET_URL}
           target="_blank"
           rel="noreferrer noopener"
@@ -1441,7 +1444,7 @@ function renderMeetingRequest(props: MeetingProps) {
           ${t("logistics.meeting.openSheet")}
           <span aria-hidden="true">${icons.externalLink}</span>
         </a>
-      </section>
+      </p>
     </div>
   `;
 }
@@ -1455,67 +1458,70 @@ function renderMeetingRequest(props: MeetingProps) {
  * differs is what the list holds: the service scopes it to the caller, so a member's "view" is
  * their own requests and an admin's is the lab's queue. The badge says which one you are reading.
  */
-function renderAdminModes(props: AdminBotLogisticsProps, mode: LogisticsMode) {
-  const button = (target: LogisticsMode, labelKey: string, icon: unknown) => html`
+function renderModeToggle(props: AdminBotLogisticsProps, mode: LogisticsMode) {
+  const button = (target: LogisticsMode, labelKey: string) => html`
     <button
-      class="btn logistics__template ${mode === target ? "active" : ""}"
+      class="logistics-modes__btn ${mode === target ? "active" : ""}"
       type="button"
       aria-pressed=${String(mode === target)}
       @click=${() => props.onModeChange(target)}
     >
-      <span class="logistics__template-icon" aria-hidden="true">${icon}</span>
       ${t(labelKey)}
     </button>
   `;
+  // No "Admins only" label: what differs between roles is what the list holds, and the label on the
+  // second segment already says which list it is.
   const isAdmin = props.role === "admin";
   return html`
-    <div class="card adminbot-card adminbot-card--wide" data-testid="logistics-admin">
-      <div class="logistics-admin__heading">
-        <div class="card-title">${t("logistics.admin.title")}</div>
-        ${isAdmin ? html`<span class="pill">${t("logistics.admin.badge")}</span>` : nothing}
-      </div>
-      <div class="card-sub">
-        ${isAdmin ? t("logistics.admin.sub") : t("logistics.admin.memberSub")}
-      </div>
-      <div class="logistics__templates">
-        ${button("make", "logistics.admin.make", icons.penLine)}
-        ${button(
-          "view",
-          isAdmin ? "logistics.admin.view" : "logistics.admin.viewMine",
-          icons.scrollText,
-        )}
-      </div>
+    <div class="logistics-modes" role="group" aria-label=${t("logistics.admin.title")}>
+      ${button("make", "logistics.admin.make")}
+      ${button("view", isAdmin ? "logistics.admin.view" : "logistics.admin.viewMine")}
     </div>
   `;
+}
+
+function requestForm(props: AdminBotLogisticsProps) {
+  return props.template === "recommendationLetters"
+    ? props.letters
+    : props.template === "bookMeeting"
+      ? props.meeting
+      : props.signature;
+}
+
+/**
+ * Whether the draft saved, as one quiet line on the toolbar beside the mode toggle -- a status, not a
+ * panel above the form (DESIGN.md rule 17). A conflict keeps its buttons: that one needs a choice.
+ */
+function renderSyncStatus(props: AdminBotLogisticsProps) {
+  const sync = requestForm(props).sync;
+  const showSync = props.template !== "documentSignature" || props.signature.editing;
+  if (!sync || !showSync) {
+    return nothing;
+  }
+  return html`<div
+    class="logistics-sync ${sync.status === "conflict" ? "logistics-sync--conflict" : ""}"
+    role="status"
+    data-testid="draft-sync-status"
+  >
+    <span>${renderDraftSyncStatus(sync)}</span>
+    ${sync.hasLegacy
+      ? html`<button class="logistics-sync__link" type="button" @click=${sync.onImportLegacy}>
+          Restore older draft
+        </button>`
+      : nothing}
+    ${sync.status !== "conflict"
+      ? html`<button class="logistics-sync__link" type="button" @click=${sync.onDownload}>
+          Download copy
+        </button>`
+      : nothing}
+  </div>`;
 }
 
 // Which form, and only that form. The picker that used to sit above it is the sidebar now: each of
 // the three templates has its own tab under "Requests to Zhijing", so arriving here already means
 // having chosen, and a picker would be a second place to make the same choice.
 function renderMakeRequest(props: AdminBotLogisticsProps) {
-  const form =
-    props.template === "recommendationLetters"
-      ? props.letters
-      : props.template === "bookMeeting"
-        ? props.meeting
-        : props.signature;
-  const showSync = props.template !== "documentSignature" || props.signature.editing;
   return html`
-    ${form.sync && showSync
-      ? html`<div class="card logistics-sync" role="status" data-testid="draft-sync-status">
-          <span>${renderDraftSyncStatus(form.sync)}</span>
-          ${form.sync.hasLegacy
-            ? html`<button class="btn" type="button" @click=${form.sync.onImportLegacy}>
-                Restore draft saved by the previous version
-              </button>`
-            : nothing}
-          ${form.sync.status !== "conflict"
-            ? html`<button class="btn" type="button" @click=${form.sync.onDownload}>
-                Download saved copies
-              </button>`
-            : nothing}
-        </div>`
-      : nothing}
     ${props.template === "recommendationLetters"
       ? renderLettersRequest(props.letters)
       : props.template === "documentSignature"
@@ -1529,7 +1535,10 @@ function renderMakeRequest(props: AdminBotLogisticsProps) {
 export function renderAdminBotLogistics(props: AdminBotLogisticsProps) {
   return html`
     <section class="adminbot-shell logistics" data-testid="adminbot-logistics">
-      ${renderAdminModes(props, props.mode)}
+      <div class="logistics-toolbar" data-testid="logistics-admin">
+        ${renderModeToggle(props, props.mode)}
+        ${props.mode !== "view" ? renderSyncStatus(props) : nothing}
+      </div>
       ${props.mode !== "view"
         ? renderMakeRequest(props)
         : // An open request is a card either way: the queue is for working across rows, and reading

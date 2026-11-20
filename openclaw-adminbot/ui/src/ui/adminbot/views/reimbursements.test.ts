@@ -42,21 +42,22 @@ function draw(overrides: Partial<AdminBotReimbursementProps> = {}) {
 
 describe("choosing the institute", () => {
   it("keeps guidance specific to the selected institute and does not call an empty draft complete", () => {
+    // Before the institute is chosen, the choice is the whole page: the rules that follow depend on it.
     const initial = draw().container;
-    expect(initial.textContent).toContain("Choose your institute first");
-    // A hint, not an alarm: nothing has been generated to distrust yet.
-    expect(initial.querySelector(".callout.warning")).toBeNull();
-    expect(initial.textContent).toContain("Awaiting trip details");
-    expect(initial.textContent).not.toContain("0 details needed");
+    expect(initial.querySelector(".adminbot-reimbursement-funder")).not.toBeNull();
+    expect(initial.querySelector(".adminbot-reimbursement-workspace")).toBeNull();
+    expect(initial.querySelector(".adminbot-reimbursement-warning")).toBeNull();
     const mpi = draw({ state: state({ funder: "MPI-IS" }) }).container;
     expect(mpi.textContent).toContain("MPI IS travel reimbursement form and a signable copy");
     expect(mpi.querySelector(".adminbot-reimbursement-warning")).not.toBeNull();
     expect(mpi.textContent).not.toContain("gizelda.pereira");
     expect(mpi.textContent).not.toContain("DCS Expense Form");
-    const generate = [...mpi.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
-      button.textContent?.includes("Generate MPI form"),
-    );
-    expect(generate?.disabled).toBe(true);
+    // No preview of an empty form, so nothing to call complete or to generate from.
+    expect(mpi.textContent).not.toContain("Form preview");
+    expect(mpi.textContent).not.toContain("0 details needed");
+    expect(
+      [...mpi.querySelectorAll("button")].some((b) => b.textContent?.includes("Generate MPI form")),
+    ).toBe(false);
     const dcs = draw({ state: state({ funder: "DCS" }) }).container;
     expect(dcs.textContent).toContain("DCS Expense Form");
     expect(dcs.textContent).toContain("gizelda.pereira");
@@ -208,7 +209,7 @@ describe("sending the package", () => {
     expect(button?.textContent).toContain("MPI IS secretariat");
     // Whitespace-normalised: the copy wraps across lines in the template.
     const text = (container.textContent ?? "").replace(/\s+/gu, " ");
-    expect(text).toContain("reply-to to your correspondence address");
+    expect(text).toContain("replies come to you");
   });
 
   it("names the other office for the other funder", () => {
