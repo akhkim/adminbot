@@ -2200,6 +2200,14 @@ export const en: TranslationMap = {
       column: "Actually used it",
       counts: "{logins} sign-ins · {edits} profile saves · {papers} paper/slot edits",
       lastActive: "last active {day}",
+      lastActiveVia: "last active {day} · {channel}",
+      channels: {
+        web_login: "web sign-in",
+        web_seen: "web",
+        cli: "CLI",
+        self_edit: "own edit",
+        slack: "Slack",
+      },
       breakdown:
         "{logins} sign-in(s), {edits} profile save(s), {papers} paper-record or presentation-slot edit(s). Last active {lastActive}. Counts come from the audit trail, which is pruned on a rolling window — older activity is not shown, so these are floors.",
       summaryActive: "members have actually used AdminBot",

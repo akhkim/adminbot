@@ -309,6 +309,21 @@ describe("AdminBotApiTokenService: use tracking", () => {
     expect(touch).toHaveBeenCalledTimes(1);
   });
 
+  it("stamps the owner's last_cli_at, throttled, so terminal use counts as being here", async () => {
+    const { store, tokens, principal, clock } = setup();
+    const token = await mint(tokens, principal("admin-a"));
+    expect(store.getLabMember("admin-a")?.last_cli_at).toBeUndefined();
+    await tokens.resolve(token, "198.51.100.7");
+    expect(store.getLabMember("admin-a")?.last_cli_at).toBe("2026-10-01T12:00:00.000Z");
+    const patch = vi.spyOn(store, "patchLabMemberAuthFields");
+    clock.advance(60_000);
+    await tokens.resolve(token, "198.51.100.7");
+    expect(patch).not.toHaveBeenCalled();
+    clock.advance(10 * 60_000);
+    await tokens.resolve(token, "198.51.100.7");
+    expect(store.getLabMember("admin-a")?.last_cli_at).toBe("2026-10-01T12:11:00.000Z");
+  });
+
   it("names the token on every audit line written during its request", () => {
     const { store } = setup();
     runWithApiToken({ id: "tok_abc", name: "agent" }, () =>

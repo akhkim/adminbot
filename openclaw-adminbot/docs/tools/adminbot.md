@@ -1701,15 +1701,42 @@ Any sign of life ends it at any step -- a sign-in or an edit the member made the
 escalation writes `escalated_at` on the notifications the ladder already filed, so it arrives in the
 queue the professor's page already reads rather than in a second list to remember to check.
 
-Running alongside it is a standing reminder for anyone who has **never signed in at all**, every
-three days. It stands aside while the ladder owns a member, so a newly welcomed member is never
-chased twice in the same week about the same thing in different words.
+Running alongside it is a standing **engagement reminder** for anyone AdminBot has not seen in a
+while. "Seen" is one derived `last_active_at` over every channel a member can show up on: a web
+sign-in, a day the web app saw them, the CLI (an API-token request stamps `last_cli_at`, throttled to
+once every ten minutes), an edit they made themselves, and Slack when the activity sweep measured
+them as active. The profile overview shows the same value with its channel breakdown, and adoption
+counts it, so every "is this person around" reader agrees.
 
-Both are driven by `adminBotDormantChaseMemberTypes` in `contracts/actions.ts`, which is `["full"]`
-today. Adding `"alumni"`, `"own-pace-advisee"` or `"coauthor-major"` to that array is the whole
-change needed to bring those groups in -- nothing else reads a member type to decide who is chased.
-Alumni are refused separately and always, so adding `"alumni"` there will mean "an alumnus still
-holding a lab role", never "chase people who have left".
+Who is reminded, how, and how often is a per-group table in `contracts/engagement.ts`
+(`adminBotDefaultEngagementPolicy`):
+
+| Group                                           | Channel | Quiet after | Every    | Reminders | Then      |
+| ----------------------------------------------- | ------- | ----------- | -------- | --------- | --------- |
+| `full`                                          | Slack   | 14 days     | 3 days   | 5         | professor |
+| `coauthor-major`                                | Slack   | 21 days     | 7 days   | 3         | professor |
+| `coauthor-minor`                                | email   | 45 days     | 14 days  | 2         | stop      |
+| `part_time`                                     | Slack   | 30 days     | 7 days   | 2         | stop      |
+| `alumni`                                        | email   | 180 days    | 180 days | 1         | stop      |
+| `acquaintance`, `mailing-list`, `external-prof` | off     |             |          |           |           |
+
+A member's group is read from standing first (alumni, then `part_time` status), then from the most
+engaged `member_type` token, so going part-time or leaving lowers the expectation rather than
+keeping the old one. Alumni get one gentle email about their alumni access and are never
+escalated; they reach this path only through the policy, never through the general nudge path,
+which still refuses them.
+
+The table is a default. `engagement_policy` in Settings (admin session only) overrides any field
+of any group and stores only the differences; `{}` goes back to the shipped table, and an unknown
+group, field or channel, a non-integer day count, or a blank template is refused. No setting
+reaches the rules: the nudge list (`receives_nudges`), do-not-contact, the head professor, and the
+onboarding ladder, which owns every member it is still chasing so nobody is reminded twice.
+
+A reminder counts only once it reached the member (a portal card or a channel send), and the count
+resets when they come back, so a new quiet spell starts again from one. An email-channel member
+with no address is skipped; one with a malformed address (a stray trailing dot pasted from a
+sentence, say) is skipped and listed under the sweep result's `flagged` for an admin to fix, rather than sent to
+a bounce.
 
 Both run from `scripts/adminbot-disengagement-cron.sh`, which is safe to run daily: the cadences
 live in the service, so a doubled crontab cannot turn either into a daily nag.

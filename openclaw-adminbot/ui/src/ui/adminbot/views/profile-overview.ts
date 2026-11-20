@@ -203,6 +203,15 @@ function renderAdoptionCell(row: MemberProfileOverviewRow, total: number) {
 function renderActivityCell(row: MemberProfileOverviewRow) {
   const activity = row.activity ?? NO_ACTIVITY;
   const silent = activity.logins + activity.profile_edits + activity.paper_updates === 0;
+  // The audit counts only see web actions; the service's engagement sighting also sees the CLI and
+  // Slack. Show whichever is newer, and name the channel only when it came from the sighting, so a
+  // member who lives in the terminal no longer reads as idle here while the sweep leaves them be.
+  const sighted = row.engagement?.last_active_at;
+  const viaEngagement = Boolean(
+    sighted && (!activity.last_active_at || sighted > activity.last_active_at),
+  );
+  const lastActive = viaEngagement ? sighted : activity.last_active_at;
+  const channel = viaEngagement ? row.engagement?.last_channel : undefined;
   return html`
     <div
       class="profile-overview__activity"
@@ -211,9 +220,7 @@ function renderActivityCell(row: MemberProfileOverviewRow) {
         logins: String(activity.logins),
         edits: String(activity.profile_edits),
         papers: String(activity.paper_updates),
-        lastActive: activity.last_active_at
-          ? formatDay(activity.last_active_at)
-          : t("profileOverview.adoption.never"),
+        lastActive: lastActive ? formatDay(lastActive) : t("profileOverview.adoption.never"),
       })}
     >
       <span class="profile-overview__activity-counts ab-num ${silent ? "is-zero" : ""}">
@@ -223,11 +230,18 @@ function renderActivityCell(row: MemberProfileOverviewRow) {
           papers: countOrDash(activity.paper_updates),
         })}
       </span>
-      ${activity.last_active_at
-        ? html`<span class="profile-overview__activity-detail muted"
-            >${t("profileOverview.activity.lastActive", {
-              day: formatDay(activity.last_active_at),
-            })}</span
+      ${lastActive
+        ? html`<span
+            class="profile-overview__activity-detail muted"
+            data-testid="profile-overview-last-active"
+            >${channel
+              ? t("profileOverview.activity.lastActiveVia", {
+                  day: formatDay(lastActive),
+                  channel: t(`profileOverview.activity.channels.${channel}`),
+                })
+              : t("profileOverview.activity.lastActive", {
+                  day: formatDay(lastActive),
+                })}</span
           >`
         : nothing}
     </div>

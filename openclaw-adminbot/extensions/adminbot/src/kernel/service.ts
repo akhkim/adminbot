@@ -177,6 +177,15 @@ import type {
   AdminBotResolvedEmailReviewItem,
 } from "../contracts/email-review.js";
 import {
+  adminBotEmailAddressProblem,
+  adminBotEngagementAudienceOf,
+  adminBotEngagementAudiences,
+  adminBotMemberEngagement,
+  renderEngagementReminder,
+  resolveEngagementPolicy,
+  validateEngagementPolicyOverrides,
+} from "../contracts/engagement.js";
+import {
   adminBotFeedbackCommentMax,
   adminBotFeedbackId,
   adminBotFeedbackMaxRating,
@@ -305,8 +314,8 @@ import type { AdminBotReimbursementFunder } from "../contracts/reimbursement-rul
 import type { ScheduledMemberChangeStore } from "../contracts/scheduled-member-changes.js";
 import { paperTargetsVenue } from "../contracts/venue-targets.js";
 import type { createCollaboratorChatRequestStore } from "../persistence/collaborator-chat-requests.js";
-import type { AdminBotPosterPrintStore } from "../persistence/poster-printing.js";
 import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
+import type { AdminBotPosterPrintStore } from "../persistence/poster-printing.js";
 import type { CalendarEventsReader } from "../workflows/calendar/events.js";
 import { resolveLabCalendar } from "../workflows/calendar/lab-calendar.js";
 import { memberAddresses } from "../workflows/calendar/standing-meetings.js";
@@ -372,6 +381,8 @@ import {
 import { hasCurrentOrUpcomingAvailability } from "../workflows/members/availability.js";
 import { validateBirthday } from "../workflows/members/birthday.js";
 import { collaboratorSubgroupAccess } from "../workflows/members/collaborator-subgroups.js";
+import { isDoNotContact } from "../workflows/members/do-not-contact.js";
+import { travelConferenceSites } from "../workflows/members/lab-travel.js";
 import {
   localEventAudience,
   remainingAttendees,
@@ -397,8 +408,8 @@ import {
 import { memberRosterPage } from "../workflows/members/member-roster.js";
 import { summarizeLabMember } from "../workflows/members/member-summary.js";
 import {
-  dormantChaseDue,
   isChaseableMember,
+  planEngagementReminder,
   planOnboardingFollowUp,
   type OnboardingFollowUpPlan,
   type OnboardingFollowUpStep,
@@ -433,6 +444,7 @@ import {
   type AdminBotNudgeCampaignRefusal,
   type AdminBotNudgeCampaignResult,
   campaignSubjectId,
+  firstName,
   isCampaignRefusal,
   runNudgeCampaign,
 } from "../workflows/nudges/campaign.js";
@@ -495,6 +507,11 @@ import {
   type OpenReviewUpdate,
 } from "../workflows/papers/openreview-updates.js";
 import {
+  buildOutreachReadyMessage,
+  outreachReadyVenues,
+  type OutreachReadyVenue,
+} from "../workflows/papers/outreach-ready.js";
+import {
   type AcceptanceRow,
   type OutreachConfig,
   type OutreachDraft,
@@ -518,11 +535,6 @@ import {
   rankPaperQueue,
 } from "../workflows/papers/paper-queue.js";
 import { duePaperNudges } from "../workflows/papers/paper-reminder-nudges.js";
-import {
-  buildOutreachReadyMessage,
-  outreachReadyVenues,
-  type OutreachReadyVenue,
-} from "../workflows/papers/outreach-ready.js";
 import {
   paperForResponse,
   withheldArtifactWriteError,
@@ -641,8 +653,6 @@ import { LabSharingService } from "./service.lab-sharing.js";
 import { LabTravelService } from "./service.lab-travel.js";
 import { inviteLocalLunches } from "./service.local-lunches.js";
 import { type IntroRunResult, MeetupService } from "./service.meetups.js";
-import { PosterPrintingService } from "./service.poster-printing.js";
-import { travelConferenceSites } from "../workflows/members/lab-travel.js";
 import {
   paperImpactSlotWrite,
   piApprovalImpactDenial,
@@ -650,6 +660,7 @@ import {
   piReviewSlotDenial,
   writePiReviewAck,
 } from "./service.pi-review.js";
+import { PosterPrintingService } from "./service.poster-printing.js";
 import {
   sweepProfessorDigest,
   type ProfessorDigestSweepResult,
@@ -779,6 +790,7 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
         | "location_permission"
         | "location_permission_at"
         | "last_seen_at"
+        | "last_cli_at"
       >
     >,
   ): boolean;
@@ -1785,7 +1797,7 @@ export function buildOnboardingFollowUpMessage(params: {
    *
    * Absent for the already-emailed backlog, whose sends predate the audit trail. The alternative
    * was to derive a number from `created_at`, which would have produced "your onboarding email
-   * went out 400 days ago" -- the exact accusation buildDormantAccountMessage exists to avoid. A
+   * went out 400 days ago" -- the exact accusation renderEngagementReminder exists to avoid. A
    * sentence that does not claim a date is better than one that claims a wrong one.
    */
   days?: number;
@@ -1805,21 +1817,6 @@ export function buildOnboardingFollowUpMessage(params: {
       : `Still nothing on your account ${params.days} days after your onboarding email — this is the second reminder.`,
     "",
     "Signing in once clears it. If something is in the way (no access, wrong address, wrong person), say so here and I will sort it out rather than keep asking.",
-  ].join("\n");
-}
-
-/**
- * The standing reminder for an account nobody has ever opened.
- *
- * Deliberately not the onboarding copy. This one goes to people whose welcome was months ago, and
- * a message saying "your onboarding email went out 90 days ago" reads as an accusation rather than
- * as an offer.
- */
-export function buildDormantAccountMessage(): string {
-  return [
-    "Your AdminBot account is set up but has never been signed into.",
-    "",
-    "One sign-in is all it takes, and it is what puts your profile, papers and deadlines in front of you. If you cannot get in, reply here.",
   ].join("\n");
 }
 
@@ -3967,8 +3964,15 @@ export class AdminBotService {
       ...(settings.venue_sources
         ? { venue_sources: normalizeVenueSources(settings.venue_sources) }
         : {}),
+      // Replaced wholesale too, for the same reason: going back to a default has to be expressible,
+      // and a merge could only ever add overrides. Validated above, so what lands here is exactly
+      // what the admin sent.
+      ...(settings.engagement_policy ? { engagement_policy: settings.engagement_policy } : {}),
       updated_at: new Date().toISOString(),
     };
+    if (settings.engagement_policy && Object.keys(settings.engagement_policy).length === 0) {
+      delete next.engagement_policy;
+    }
     if (settings.head_professor_member_id !== undefined && !headProfessorMemberId) {
       delete next.head_professor_member_id;
     }
@@ -3990,6 +3994,9 @@ export class AdminBotService {
         has_head_professor_member_id: Boolean(next.head_professor_member_id),
         has_lab_manager_member_id: Boolean(next.lab_manager_member_id),
         has_applicant_sheet_id: Boolean(next.applicant_sheet_id),
+        // Which groups the lab has moved off the defaults: a change to who gets chased is the one
+        // part of this row a member would ask about later.
+        engagement_policy_groups: Object.keys(next.engagement_policy ?? {}),
         ...(next.applicant_last_reviewed_at
           ? { applicant_last_reviewed_at: next.applicant_last_reviewed_at }
           : {}),
@@ -8595,7 +8602,8 @@ export class AdminBotService {
           paper_ids: venue.papers.map((paper) => paper.id),
         },
         rationale: `OpenReview recorded ${venue.newly_accepted} new acceptance${venue.newly_accepted === 1 ? "" : "s"} at ${venue.label}.`,
-        undo_plan: "A Slack message cannot be unsent by AdminBot; it only points at drafts, so nothing else to undo.",
+        undo_plan:
+          "A Slack message cannot be unsent by AdminBot; it only points at drafts, so nothing else to undo.",
         idempotency_key: idempotencyKey,
       });
       if (!proposal.ok) {
@@ -14179,6 +14187,11 @@ export class AdminBotService {
             : {}),
           updated_at: member.updated_at,
           ...(selfEdited ? { last_self_edit_at: selfEdited } : {}),
+          ...(member.last_cli_at ? { last_cli_at: member.last_cli_at } : {}),
+          engagement: adminBotMemberEngagement(member, {
+            lastLoginAt: activity.get(member.id)?.last_login_at ?? member.last_login_at,
+            lastSelfEditAt: selfEdited,
+          }),
           ...(reminded ? { last_reminded_at: new Date(reminded).toISOString() } : {}),
         };
       })
@@ -14865,6 +14878,12 @@ export class AdminBotService {
        * identical card.
        */
       dedupePortalNotification?: boolean;
+      /**
+       * Let an alumnus through the alumni refusal below. Only the engagement sweep sets it, and only
+       * when the stored policy's alumni row is enabled -- see that check for why this is an option
+       * on the call and never a field on the request.
+       */
+      allowAlumni?: boolean;
     } = {},
   ): Promise<AdminBotServiceResponse<AdminBotMemberNudgeResult>> {
     const message = request.message.trim();
@@ -14912,7 +14931,13 @@ export class AdminBotService {
       // chased, and that has been a rule of this system rather than a per-person choice since long
       // before there was a list. The allowlist must not become a way to undo it by ticking a box --
       // an admin who wants to reach an alumnus has their address, and this is not that path.
-      if (adminBotIsAlumniMember(member)) {
+      //
+      // The one exception is `allowAlumni`, which no route can reach: it is an argument on this call,
+      // not a field of the request body, and the only caller that passes it is the engagement sweep
+      // acting on the alumni row of the lab's own policy (contracts/engagement.ts) -- one gentle,
+      // explicitly configured note, rather than every sweep that happens to include an alumnus.
+      // Everything after this check still applies to them: the nudge list, the head professor.
+      if (adminBotIsAlumniMember(member) && options.allowAlumni !== true) {
         skipped.push({ member_id: memberId, reason: "member is alumni" });
         continue;
       }
@@ -17169,10 +17194,13 @@ export class AdminBotService {
    * signed in" reminder and the onboarding ladder would both fire on them, three days apart,
    * saying the same thing in different words. The ladder owns anybody it is still running for and
    * the standing reminder stands aside -- which is a decision the two sweeps can only make
-   * together, and is why `dormantChaseDue` takes a `laddered` flag rather than working it out.
+   * together, and is why `planEngagementReminder` takes a `laddered` flag rather than working it
+   * out.
    *
-   * Who is chased at all comes from `adminBotDormantChaseMemberTypes`, which is one line to widen
-   * when alumni, own-pace advisees and major coauthors are brought in.
+   * Who the standing reminder reaches, how often and on which channel comes from the per-group
+   * policy (contracts/engagement.ts, overridable in settings), and "quiet" means no sighting on
+   * any channel -- a CLI user is not dormant. What no policy reaches: the nudge list, the
+   * head professor and do-not-contact members are refused whatever the table says.
    *
    * Server-computed like the other sweeps -- nothing about who is chased or what is said comes
    * from the caller -- so cron can run it under the service principal.
@@ -17195,8 +17223,20 @@ export class AdminBotService {
     AdminBotServiceResponse<{
       reminded: Array<{ member_id: string; step: OnboardingFollowUpStep; days?: number }>;
       escalated: Array<{ member_id: string; notifications: number }>;
+      /** Members sent their group's standing reminder this pass. */
       dormant: string[];
+      /** Members whose standing reminders ran out and went to the professor's desk this pass. */
+      dormant_escalated: Array<{ member_id: string; notifications: number }>;
       skipped: AdminBotMemberNudgeSkip[];
+      /**
+       * Members the email policy could not reach because the address on file is broken. Listed
+       * apart from `skipped` because it is the one skip an admin can fix: the roster is wrong.
+       */
+      flagged: Array<{
+        member_id: string;
+        address: string;
+        problem: "trailing_dot" | "malformed";
+      }>;
     }>
   > {
     const now = options.nowIso ? new Date(options.nowIso) : new Date();
@@ -17210,15 +17250,28 @@ export class AdminBotService {
     const reminded: Array<{ member_id: string; step: OnboardingFollowUpStep; days?: number }> = [];
     const escalated: Array<{ member_id: string; notifications: number }> = [];
     const dormant: string[] = [];
+    const dormantEscalated: Array<{
+      member_id: string;
+      notifications: number;
+    }> = [];
     const skipped: AdminBotMemberNudgeSkip[] = [];
+    const flagged: Array<{
+      member_id: string;
+      address: string;
+      problem: "trailing_dot" | "malformed";
+    }> = [];
     const stamps: Array<{ domain: AdminBotNudgeDomain; subjectId: string; memberId: string }> = [];
+    const policy = resolveEngagementPolicy(this.resolveSettings().engagement_policy);
 
     for (const member of this.store.listLabMembers()) {
       // Widened for the catch-up round: `adminBotDormantChaseMemberTypes` is `["full"]`, so a
-      // member carrying a Test Onboard batch but not the `full` token is outside this sweep
+      // member carrying a Test Onboard batch but not the `full` token is outside the ladder
       // entirely -- and those are half the people the round is for.
       const emailed = claimAlreadyEmailed && adminBotHasBeenOnboardEmailed(member);
-      if (!isChaseableMember(member) && !emailed) {
+      const ladderable = isChaseableMember(member) || emailed;
+      const audience = adminBotEngagementAudienceOf(member);
+      const reminderPolicy = audience ? policy[audience] : undefined;
+      if (!ladderable && !reminderPolicy?.enabled) {
         continue;
       }
       const lastLoginAt = this.lastLoginOf(member);
@@ -17226,13 +17279,15 @@ export class AdminBotService {
       const welcomedAt = welcomes.get(member.id);
       let laddered = false;
 
-      if (welcomedAt || emailed) {
+      if (ladderable && (welcomedAt || emailed)) {
         const entry = ledger.get(`onboarding_followup|${member.id}|${member.id}`);
         const decision = planOnboardingFollowUp({
           ...(welcomedAt ? { welcomedAt } : {}),
           alreadyEmailed: emailed,
           ...(lastLoginAt ? { lastLoginAt } : {}),
           ...(lastEditAt ? { lastSelfEditAt: lastEditAt } : {}),
+          ...(member.last_seen_at ? { lastSeenAt: member.last_seen_at } : {}),
+          ...(member.last_cli_at ? { lastCliAt: member.last_cli_at } : {}),
           sentCount: entry?.nudge_count ?? 0,
           ...(entry?.last_nudged_at ? { lastNudgedAt: entry.last_nudged_at } : {}),
           now,
@@ -17299,34 +17354,117 @@ export class AdminBotService {
         }
       }
 
+      if (!audience || !reminderPolicy) {
+        continue;
+      }
+
       const dormantEntry = ledger.get(`dormant_account|${member.id}|${member.id}`);
-      if (
-        dormantChaseDue({
-          ...(lastLoginAt ? { lastLoginAt } : {}),
-          ...(dormantEntry?.last_nudged_at ? { lastNudgedAt: dormantEntry.last_nudged_at } : {}),
-          now,
-          laddered,
-        })
-      ) {
-        const sent = await this.sendMemberNudge(
-          {
-            channel: "slack",
-            recipient_member_ids: [member.id],
-            message: buildDormantAccountMessage(),
-            kind: "nudge",
-            title: "You have never signed in to AdminBot",
-            tab: "myOnboarding",
-          },
-          actor,
-        );
-        if (!sent.ok) {
-          skipped.push({ member_id: member.id, reason: sent.error.message });
+      const engagement = adminBotMemberEngagement(member, {
+        lastLoginAt,
+        lastSelfEditAt: lastEditAt,
+      });
+      const decision = planEngagementReminder({
+        policy: reminderPolicy,
+        lastActiveAt: engagement.last_active_at,
+        sentCount: dormantEntry?.nudge_count ?? 0,
+        lastNudgedAt: dormantEntry?.last_nudged_at,
+        now,
+        laddered,
+      });
+      if (decision.reset) {
+        // Written before anything is sent so the spell's count restarts even when this pass sends
+        // nothing: `stampNudgeLedger` below increments from whatever is stored.
+        this.store.saveNudgeLedgerEntry({
+          domain: "dormant_account",
+          subject_id: member.id,
+          member_id: member.id,
+          last_nudged_at: dormantEntry?.last_nudged_at ?? nowIso,
+          nudge_count: 0,
+          ...(dormantEntry?.snoozed_until ? { snoozed_until: dormantEntry.snoozed_until } : {}),
+        });
+      }
+      if (!decision.due) {
+        continue;
+      }
+      if (decision.step === "escalate") {
+        const raised = this.escalateOnboardingFollowUp(member.id, nowIso);
+        dormantEscalated.push({ member_id: member.id, notifications: raised });
+        stamps.push({
+          domain: "dormant_account",
+          subjectId: member.id,
+          memberId: member.id,
+        });
+        continue;
+      }
+      // Ahead of the send rather than left to sendMemberNudge: that funnel has no do-not-contact
+      // check of its own yet, and a timer is the worst place to find that out.
+      if (member.do_not_contact === true || isDoNotContact(member)) {
+        skipped.push({
+          member_id: member.id,
+          reason: "member asked not to be contacted",
+        });
+        continue;
+      }
+      if (reminderPolicy.channel === "email") {
+        const address = adminBotOutreachEmail(member);
+        if (!address) {
+          skipped.push({
+            member_id: member.id,
+            reason: "member has no correspondence or account email",
+          });
           continue;
         }
-        skipped.push(...sent.payload.skipped);
-        dormant.push(member.id);
-        stamps.push({ domain: "dormant_account", subjectId: member.id, memberId: member.id });
+        const problem = adminBotEmailAddressProblem(address);
+        if (problem) {
+          // Not stamped: once the roster is corrected, the next pass reaches them on schedule.
+          flagged.push({ member_id: member.id, address, problem });
+          skipped.push({
+            member_id: member.id,
+            reason: `member's email address is ${problem === "trailing_dot" ? "followed by a stray dot" : "malformed"}`,
+          });
+          continue;
+        }
       }
+      const sent = await this.sendMemberNudge(
+        {
+          channel: reminderPolicy.channel,
+          recipient_member_ids: [member.id],
+          message: renderEngagementReminder(reminderPolicy.template, {
+            firstName: firstName(member.preferred_name || member.name),
+            lastActiveAt: engagement.last_active_at,
+          }),
+          ...(reminderPolicy.channel === "email" ? { subject: reminderPolicy.subject } : {}),
+          kind: "nudge",
+          title: reminderPolicy.subject,
+          tab: "myOnboarding",
+          // Important only where the policy escalates: escalateOnboardingFollowUp lifts important
+          // unread notifications onto the professor's desk, and a group that never escalates has no
+          // business putting anything there.
+          ...(reminderPolicy.escalate ? { important: true } : {}),
+        },
+        actor,
+        // No portal dedupe, unlike the outreach sweeps: each reminder here is a deliberate repeat of
+        // the same text an interval apart, and deduping it would file nothing, read as "not
+        // reached" below, and stall the count. A failed channel send is not retried in a loop
+        // either way -- the portal card was filed, so the pass is stamped.
+        audience === "alumni" ? { allowAlumni: true } : {},
+      );
+      if (!sent.ok) {
+        skipped.push({ member_id: member.id, reason: sent.error.message });
+        continue;
+      }
+      skipped.push(...sent.payload.skipped);
+      // Counted only when the member was actually told something -- a proposal ran or a portal
+      // notification was filed. A member the funnel refused outright (not on the nudge list, the
+      // head professor) got nothing, and stamping them anyway would walk them up the count to an
+      // escalation about reminders they never received.
+      const reached =
+        sent.payload.created.length > 0 || (sent.payload.portal_notified ?? []).includes(member.id);
+      if (!reached) {
+        continue;
+      }
+      dormant.push(member.id);
+      stamps.push({ domain: "dormant_account", subjectId: member.id, memberId: member.id });
     }
 
     this.stampNudgeLedger(stamps, nowIso);
@@ -17337,11 +17475,25 @@ export class AdminBotService {
         reminded: reminded.length,
         escalated: escalated.length,
         dormant: dormant.length,
+        dormant_escalated: dormantEscalated.length,
         skipped: skipped.length,
-        member_types: [...adminBotDormantChaseMemberTypes],
+        flagged: flagged.length,
+        ladder_member_types: [...adminBotDormantChaseMemberTypes],
+        policy_groups: adminBotEngagementAudiences.filter((group) => policy[group].enabled),
       },
     });
-    return { ok: true, status: 200, payload: { reminded, escalated, dormant, skipped } };
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        reminded,
+        escalated,
+        dormant,
+        dormant_escalated: dormantEscalated,
+        skipped,
+        flagged,
+      },
+    };
   }
 
   /**
@@ -19398,6 +19550,10 @@ function normalizeVenueSources(sources: AdminBotVenueSource[]): AdminBotVenueSou
 }
 
 function validateSettings(settings: AdminBotSettingsInput): string | undefined {
+  const policyProblem = validateEngagementPolicyOverrides(settings.engagement_policy);
+  if (policyProblem) {
+    return policyProblem;
+  }
   if (
     settings.group_meeting_weekday !== undefined &&
     (!Number.isInteger(settings.group_meeting_weekday) ||

@@ -1,9 +1,9 @@
 // Who has gone quiet, and what the lab does about it.
 //
 // Two sweeps share this module because they answer the same question at different times. A member
-// who has never signed in is chased on a standing three-day clock; a member who was *just* sent an
-// onboarding email is chased on a ladder that starts five business days later and ends on the
-// professor's desk. The second owns anybody it is running for, so the two never both message the
+// who has gone quiet is chased on their group's standing policy (contracts/engagement.ts); a member
+// who was *just* sent an onboarding email is chased on a ladder that starts five business days later
+// and ends on the professor's desk. The second owns anybody it is running for, so the two never both message the
 // same person -- which is the whole reason they are planned in one place rather than as two sweeps
 // that each try to remember what the other did.
 //
@@ -11,13 +11,13 @@
 // does the I/O. That split is what lets the ladder's gaps be tested without a clock or a Slack.
 
 import {
-  adminBotDormantChaseIntervalDays,
   adminBotDormantChaseMemberTypes,
   adminBotHasMemberType,
   adminBotIsAlumniMember,
   adminBotOnboardingFollowUpPlan,
   type AdminBotLabMember,
 } from "../../contracts/actions.js";
+import type { AdminBotEngagementPolicyEntry } from "../../contracts/engagement.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -74,11 +74,27 @@ export function isChaseableMember(
 }
 
 /** Has this member ever done anything themselves? "Login time == 0" plus the edit case. */
-export function hasEverEngaged(params: {
+/**
+ * The sightings the ladder accepts as "they arrived".
+ *
+ * Everything `adminBotMemberEngagement` counts except Slack: being active in the lab's Slack says
+ * nothing about whether somebody has opened the account the ladder is asking them to open. A CLI
+ * token, on the other hand, can only be minted from inside the account, so it is as good as a login.
+ */
+export type OnboardingSightings = {
   lastLoginAt?: string | undefined;
   lastSelfEditAt?: string | undefined;
-}): boolean {
-  return Boolean(params.lastLoginAt?.trim() || params.lastSelfEditAt?.trim());
+  lastSeenAt?: string | undefined;
+  lastCliAt?: string | undefined;
+};
+
+function sightingsOf(params: OnboardingSightings): Array<string | undefined> {
+  return [params.lastLoginAt, params.lastSelfEditAt, params.lastSeenAt, params.lastCliAt];
+}
+
+/** Has this member ever done anything themselves, on any channel the ladder accepts? */
+export function hasEverEngaged(params: OnboardingSightings): boolean {
+  return sightingsOf(params).some((stamp) => Boolean(stamp?.trim()));
 }
 
 /**
@@ -89,15 +105,12 @@ export function hasEverEngaged(params: {
  * unparseable stamp counts as no activity rather than as activity, so a bad date cannot silently
  * switch the ladder off.
  */
-export function engagedSince(
-  welcomedAt: string,
-  params: { lastLoginAt?: string | undefined; lastSelfEditAt?: string | undefined },
-): boolean {
+export function engagedSince(welcomedAt: string, params: OnboardingSightings): boolean {
   const from = Date.parse(welcomedAt);
   if (!Number.isFinite(from)) {
     return false;
   }
-  return [params.lastLoginAt, params.lastSelfEditAt].some((stamp) => {
+  return sightingsOf(params).some((stamp) => {
     const at = Date.parse(stamp ?? "");
     return Number.isFinite(at) && at >= from;
   });
@@ -149,6 +162,8 @@ export function planOnboardingFollowUp(params: {
   welcomedAt?: string | undefined;
   lastLoginAt?: string | undefined;
   lastSelfEditAt?: string | undefined;
+  lastSeenAt?: string | undefined;
+  lastCliAt?: string | undefined;
   /** How many ladder messages have already gone out (the ledger's count). */
   sentCount: number;
   /** When the last ladder message went out. Absent when none has. */
@@ -222,33 +237,85 @@ export function planOnboardingFollowUp(params: {
   return { due: false, reason: "finished" };
 }
 
+export type EngagementReminderDecision =
+  | {
+      due: false;
+      reason: "laddered" | "disabled" | "active" | "too_soon" | "finished";
+      /** Set when the member has been back since the last reminder: the spell's count restarts. */
+      reset?: true;
+    }
+  | { due: true; step: "remind" | "escalate"; reset?: true };
+
 /**
- * Whether a member who has never signed in is due their standing reminder.
+ * The standing reminder for a member who has gone quiet, under their group's policy.
  *
- * Separate from the ladder and deliberately simpler: no steps and no end, because the question it
- * asks ("have you ever been here?") has no deadline attached. The caller is responsible for not
- * running this on somebody the ladder currently owns -- see `dormantChaseDue`'s `laddered` flag.
+ * It replaces "has never signed in, every three days, forever" with "has not been seen anywhere for
+ * `inactive_after_days`, every `interval_days`, at most `max_reminders` times, then the professor".
+ * Three properties the old rule lacked and the sweep depends on:
+ *
+ * - **Any channel counts.** `lastActiveAt` is `adminBotMemberEngagement`'s, so a member who lives
+ *   in the CLI is active, not dormant.
+ * - **It ends.** Counted off the ledger's `nudge_count`, the same single source of truth the ladder
+ *   uses, so a re-run cannot advance it twice.
+ * - **A return restarts it.** Activity after the last reminder means that spell is over; if they go
+ *   quiet again it is a new spell with a fresh count, rather than a member who came back once being
+ *   escalated the next time they take a month off. The caller writes the reset to the ledger.
+ *
+ * The caller still owns precedence: `laddered` is true while the onboarding ladder is running for
+ * this member, and the ladder wins.
  */
-export function dormantChaseDue(params: {
-  lastLoginAt?: string | undefined;
+export function planEngagementReminder(params: {
+  policy: Pick<
+    AdminBotEngagementPolicyEntry,
+    "enabled" | "inactive_after_days" | "interval_days" | "max_reminders" | "escalate"
+  >;
+  lastActiveAt?: string | undefined;
+  /** Reminders already sent in this spell (the ledger's count). */
+  sentCount: number;
   lastNudgedAt?: string | undefined;
   now: Date;
-  /** True while the onboarding ladder is still running for this member; it takes precedence. */
   laddered: boolean;
-  intervalDays?: number;
-}): boolean {
+}): EngagementReminderDecision {
   if (params.laddered) {
-    return false;
+    return { due: false, reason: "laddered" };
   }
-  // "Login time == 0". An edit without a sign-in is not enough to clear this one: the reminder is
-  // about the account never having been opened, and an admin editing the record on their behalf is
-  // exactly the case that must not silently count as the member arriving.
-  if (params.lastLoginAt?.trim()) {
-    return false;
+  if (!params.policy.enabled) {
+    return { due: false, reason: "disabled" };
   }
-  if (!params.lastNudgedAt) {
-    return true;
+  const activeAt = params.lastActiveAt ? Date.parse(params.lastActiveAt) : Number.NaN;
+  // No sighting at all reads as inactive rather than as "too new to judge". Every member on the
+  // roster was invited at some point, and the ladder -- which does wait from the invitation -- has
+  // already taken precedence above for anybody recently welcomed.
+  if (
+    Number.isFinite(activeAt) &&
+    params.now.getTime() - activeAt < params.policy.inactive_after_days * DAY_MS
+  ) {
+    return { due: false, reason: "active" };
   }
-  const interval = params.intervalDays ?? adminBotDormantChaseIntervalDays;
-  return calendarDaysBetween(params.lastNudgedAt, params.now) >= interval;
+  const nudgedAt = params.lastNudgedAt ? Date.parse(params.lastNudgedAt) : Number.NaN;
+  const reset = Number.isFinite(activeAt) && Number.isFinite(nudgedAt) && activeAt > nudgedAt;
+  const sent = reset ? 0 : params.sentCount;
+  const flag = reset ? ({ reset: true } as const) : {};
+  if (sent === 0) {
+    return { due: true, step: "remind", ...flag };
+  }
+  if (!Number.isFinite(nudgedAt)) {
+    // A count with no readable stamp: late rather than a burst, as in planOnboardingFollowUp.
+    return { due: false, reason: "too_soon", ...flag };
+  }
+  const elapsed =
+    calendarDaysBetween(params.lastNudgedAt ?? "", params.now) >= params.policy.interval_days;
+  if (sent < params.policy.max_reminders) {
+    return elapsed
+      ? { due: true, step: "remind", ...flag }
+      : { due: false, reason: "too_soon", ...flag };
+  }
+  if (sent === params.policy.max_reminders && params.policy.escalate) {
+    return elapsed
+      ? { due: true, step: "escalate", ...flag }
+      : { due: false, reason: "too_soon", ...flag };
+  }
+  // Out of asks, and either escalated already or a group the lab never escalates. One escalation per
+  // spell, for the reason the ladder gives: a repeat is the lab nagging through its professor.
+  return { due: false, reason: "finished", ...flag };
 }

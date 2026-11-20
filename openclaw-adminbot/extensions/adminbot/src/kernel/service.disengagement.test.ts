@@ -24,7 +24,14 @@ const FIRST_DUE = "2026-03-09T09:00:00.000Z";
 const SECOND_DUE = "2026-03-12T09:00:00.000Z";
 const ESCALATE_DUE = "2026-03-17T09:00:00.000Z";
 
-function lab(options: { memberType?: string | null; slack?: boolean } = {}) {
+function lab(
+  options: {
+    memberType?: string | null;
+    slack?: boolean;
+    /** Anything else on the roster row: status, name, address, nudge-list membership. */
+    extra?: Record<string, unknown>;
+  } = {},
+) {
   const store = new AdminBotMemoryStore();
   const service = new AdminBotService(store);
   unwrap(
@@ -36,7 +43,8 @@ function lab(options: { memberType?: string | null; slack?: boolean } = {}) {
       ...(options.memberType === null ? {} : { member_type: options.memberType ?? "full" }),
       receives_nudges: true,
       ...(options.slack === false ? {} : { slack_user_id: "U-ADA" }),
-    }),
+      ...options.extra,
+    } as never),
   );
   return { store, service };
 }
@@ -204,27 +212,15 @@ describe("the dormant-account reminder", () => {
 });
 
 describe("who the sweep is for", () => {
-  it("chases the configured member types and leaves everyone else alone", async () => {
-    for (const memberType of ["acquaintance", "coauthor-minor", null]) {
-      const { service } = lab({ memberType });
+  it("leaves the groups the policy switches off alone, and an untyped row too", async () => {
+    for (const memberType of ["acquaintance", "mailing-list", "external-prof", null]) {
+      const { service, store } = lab({ memberType });
       welcome(service);
       const result = unwrap(await run(service, ESCALATE_DUE));
       expect(result.reminded).toEqual([]);
       expect(result.dormant).toEqual([]);
+      expect(store.listMemberNotifications("ada")).toEqual([]);
     }
-  });
-
-  it("never chases somebody who has left", async () => {
-    const { service } = lab();
-    unwrap(
-      service.upsertLabMember({
-        id: "ada",
-        name: "Ada Lovelace",
-        member_type: "full",
-        status: "alumni",
-      }),
-    );
-    expect(unwrap(await run(service, ESCALATE_DUE)).dormant).toEqual([]);
   });
 
   it("reports a member it could not reach instead of silently dropping them", async () => {
@@ -354,5 +350,160 @@ describe("the catch-up round", () => {
     // With no welcome date there is no "since" to test against, so the question becomes "have they
     // ever been here" -- and they have.
     expect(unwrap(await runRound(service, WELCOME_AT)).reminded).toEqual([]);
+  });
+});
+
+describe("the engagement policy", () => {
+  const DAY = 86_400_000;
+  const after = (days: number) => new Date(Date.parse(WELCOME_AT) + days * DAY).toISOString();
+  const titles = (store: AdminBotMemoryStore) =>
+    store.listMemberNotifications("ada").map((entry) => entry.title);
+
+  it("counts CLI use as being here, and says when it last saw them", async () => {
+    const { service, store } = lab();
+    // A member who only ever uses an API token: no login event, no web sighting.
+    store.patchLabMemberAuthFields("ada", { last_cli_at: "2026-03-01T09:00:00.000Z" });
+    expect(unwrap(await run(service, WELCOME_AT)).dormant).toEqual([]);
+    // Two weeks of silence on every channel (from 1 March, the day before WELCOME_AT) is what
+    // makes them quiet.
+    expect(unwrap(await run(service, after(12))).dormant).toEqual([]);
+    expect(unwrap(await run(service, after(13))).dormant).toEqual(["ada"]);
+    expect(store.listMemberNotifications("ada")[0]?.body).toContain(
+      "AdminBot last saw you on March 1, 2026",
+    );
+  });
+
+  it("emails a minor coauthor on a slow clock, and never escalates them", async () => {
+    const { service, store } = lab({ memberType: "coauthor-minor", slack: false });
+    expect(unwrap(await run(service, WELCOME_AT)).dormant).toEqual(["ada"]);
+    expect(unwrap(await run(service, after(13))).dormant).toEqual([]);
+    expect(unwrap(await run(service, after(14))).dormant).toEqual(["ada"]);
+    // Two asks, then done: no third, and nothing on the professor's desk.
+    const spent = unwrap(await run(service, after(60)));
+    expect(spent.dormant).toEqual([]);
+    expect(spent.dormant_escalated).toEqual([]);
+    expect(titles(store)).toEqual(["Your AdminBot account", "Your AdminBot account"]);
+    expect(store.listMemberNotifications("ada").some((entry) => entry.important)).toBe(false);
+  });
+
+  it("chases a part-time member gently, without the full member's escalation", async () => {
+    const { service, store } = lab({ extra: { status: "part_time" } });
+    expect(unwrap(await run(service, WELCOME_AT)).dormant).toEqual(["ada"]);
+    expect(unwrap(await run(service, after(6))).dormant).toEqual([]);
+    expect(unwrap(await run(service, after(7))).dormant).toEqual(["ada"]);
+    expect(unwrap(await run(service, after(30))).dormant_escalated).toEqual([]);
+    expect(store.listMemberNotifications("ada").some((entry) => entry.important)).toBe(false);
+  });
+
+  it("sends somebody who has left one gentle email, not the full member's Slack chase", async () => {
+    const { service, store } = lab({ extra: { status: "alumni" } });
+    welcome(service);
+    // The ladder never owns an alumnus, however their row is typed.
+    const first = unwrap(await run(service, ESCALATE_DUE));
+    expect(first.reminded).toEqual([]);
+    expect(first.dormant).toEqual(["ada"]);
+    expect(titles(store)).toEqual(["Your alumni access to AdminBot"]);
+    // One ask per quiet spell, and never escalated.
+    const later = unwrap(await run(service, after(400)));
+    expect(later.dormant).toEqual([]);
+    expect(later.dormant_escalated).toEqual([]);
+  });
+
+  it("puts a full member on the professor's desk once the reminders run out", async () => {
+    const { service } = lab();
+    unwrap(
+      service.updateSettings({
+        engagement_policy: { full: { max_reminders: 1 } },
+      } as never),
+    );
+    expect(unwrap(await run(service, WELCOME_AT)).dormant).toEqual(["ada"]);
+    expect(unwrap(await run(service, after(2))).dormant_escalated).toEqual([]);
+    expect(unwrap(await run(service, after(3))).dormant_escalated).toEqual([
+      { member_id: "ada", notifications: 1 },
+    ]);
+    expect(unwrap(service.listEscalatedNudges()).members[0]).toMatchObject({ member_id: "ada" });
+    // Once per spell.
+    const spent = unwrap(await run(service, after(30)));
+    expect(spent.dormant).toEqual([]);
+    expect(spent.dormant_escalated).toEqual([]);
+  });
+
+  it("starts a fresh spell when the member comes back and goes quiet again", async () => {
+    const { service, store } = lab();
+    unwrap(service.updateSettings({ engagement_policy: { full: { max_reminders: 1 } } } as never));
+    await run(service, WELCOME_AT);
+    store.patchLabMemberAuthFields("ada", { last_cli_at: after(1) });
+    expect(unwrap(await run(service, after(3))).dormant_escalated).toEqual([]);
+    // Fourteen days after they were last here: a new first reminder, not the old spell's
+    // escalation.
+    const again = unwrap(await run(service, after(15)));
+    expect(again.dormant).toEqual(["ada"]);
+    expect(again.dormant_escalated).toEqual([]);
+  });
+
+  it("flags a broken address instead of mailing it, and keeps flagging until it is fixed", async () => {
+    const { service, store } = lab({
+      memberType: "coauthor-minor",
+      extra: { email: "ada@lab.test." },
+    });
+    for (const day of [0, 30]) {
+      const result = unwrap(await run(service, after(day)));
+      expect(result.dormant).toEqual([]);
+      expect(result.flagged).toEqual([
+        { member_id: "ada", address: "ada@lab.test.", problem: "trailing_dot" },
+      ]);
+    }
+    expect(store.listMemberNotifications("ada")).toEqual([]);
+  });
+
+  it("skips a member with no address at all on the email policy", async () => {
+    const { service } = lab({ memberType: "coauthor-minor", extra: { email: "" } });
+    const result = unwrap(await run(service, WELCOME_AT));
+    expect(result.dormant).toEqual([]);
+    expect(result.flagged).toEqual([]);
+    expect(result.skipped).toMatchObject([
+      { member_id: "ada", reason: "member has no correspondence or account email" },
+    ]);
+  });
+
+  it("respects do-not-contact and the nudge list", async () => {
+    for (const extra of [{ name: "Ada, do not contact" }, { receives_nudges: false }]) {
+      const { service, store } = lab({ extra });
+      const result = unwrap(await run(service, WELCOME_AT));
+      expect(result.dormant).toEqual([]);
+      expect(store.listMemberNotifications("ada")).toEqual([]);
+    }
+  });
+
+  it("does not count a reminder the member never got towards escalating them", async () => {
+    const { service } = lab({ extra: { receives_nudges: false } });
+    unwrap(service.updateSettings({ engagement_policy: { full: { max_reminders: 1 } } } as never));
+    await run(service, WELCOME_AT);
+    unwrap(service.upsertLabMember({ id: "ada", name: "Ada Lovelace", receives_nudges: true }));
+    // Back on the list: this is their first reminder, not grounds to escalate.
+    const result = unwrap(await run(service, after(3)));
+    expect(result.dormant).toEqual(["ada"]);
+    expect(result.dormant_escalated).toEqual([]);
+  });
+
+  it("switches a group off through settings", async () => {
+    const { service } = lab();
+    unwrap(service.updateSettings({ engagement_policy: { full: { enabled: false } } } as never));
+    expect(unwrap(await run(service, WELCOME_AT)).dormant).toEqual([]);
+    // And `{}` puts the shipped policy back.
+    unwrap(service.updateSettings({ engagement_policy: {} } as never));
+    expect(unwrap(await run(service, WELCOME_AT)).dormant).toEqual(["ada"]);
+  });
+
+  it("refuses a policy setting it cannot honor, rather than dropping the bad field", () => {
+    const { service } = lab();
+    for (const engagement_policy of [
+      { full: { interval_days: 0 } },
+      { full: { channel: "sms" } },
+      { wizards: { enabled: true } },
+      { full: { enabeld: false } },
+    ]) {
+      expect(service.updateSettings({ engagement_policy } as never).ok).toBe(false);
+    }
   });
 });

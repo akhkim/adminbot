@@ -95,6 +95,8 @@ const SKIP_FIELDS = new Set([
   "alternate_slack_user_ids",
   "availability_updated_at",
   "last_login_at",
+  "last_seen_at",
+  "last_cli_at",
   "last_login_country",
   "last_login_continent",
   "last_login_city",
@@ -205,6 +207,8 @@ export function adoptionSummary(
     last_login_at?: string;
     projects: { total: number; self_updated: number };
     activity?: { logins: number; profile_edits: number; paper_updates: number };
+    /** The derived sighting over every channel, CLI and Slack included. */
+    engagement?: { last_active_at?: string };
   }>,
   fieldsPerMember: number,
 ): {
@@ -214,7 +218,8 @@ export function adoptionSummary(
   project_rate: number;
   signed_in_ever: number;
   /**
-   * Members with any recorded action at all -- signed in, edited themselves, or touched a paper.
+   * Members with any recorded action at all -- signed in, used the CLI, edited themselves, were
+   * active on Slack, or touched a paper.
    *
    * Separate from `signed_in_ever` because the two diverge in the direction that matters. Somebody
    * who signed in once and left is counted by both; somebody whose sign-in has aged out of the
@@ -237,6 +242,7 @@ export function adoptionSummary(
     active_ever: rows.filter(
       (row) =>
         Boolean(row.last_login_at) ||
+        Boolean(row.engagement?.last_active_at) ||
         Boolean(
           row.activity &&
           (row.activity.logins > 0 ||
