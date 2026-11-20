@@ -8750,7 +8750,7 @@ export interface components {
     } & {
       [key: string]: unknown;
     };
-    AdminBotMemberNudgeRequest: {
+    AdminBotAdminNudgeSendRequest: {
       /** @enum {string} */
       channel: "email" | "slack";
       recipient_member_ids: string[];
@@ -8771,6 +8771,7 @@ export interface components {
       tab?: string;
       important?: boolean;
       optional?: boolean;
+      admin_override?: boolean;
     } & {
       [key: string]: unknown;
     };
@@ -22867,6 +22868,7 @@ export interface operations {
           tab?: string;
           important?: boolean;
           optional?: boolean;
+          admin_override?: boolean;
         } & {
           [key: string]: unknown;
         };
