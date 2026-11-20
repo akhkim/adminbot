@@ -325,6 +325,7 @@ function prefilledTimezone(member: LabMember): string | null {
  */
 const FIELD_HELP: Record<string, string> = {
   next_position: "profile.help.nextPosition",
+  financial_support_needs: "profile.help.financialSupportNeeds",
   personal_circumstances: "profile.help.personalCircumstances",
   current_city: "profile.help.currentCity",
   linkedin_urn: "profile.help.linkedinUrn",

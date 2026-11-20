@@ -1,5 +1,5 @@
 import { render } from "lit";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import {
   adminBotAdminOwnedProfileFields,
   adminBotMandatoryProfileFields,
@@ -898,6 +898,35 @@ describe("renderProfile LinkedIn URN and intake form", () => {
     expect(help).not.toBeNull();
     const bubble = container.querySelector(`#${help!.getAttribute("aria-describedby")}`);
     expect(bubble?.textContent).toContain("admins");
+  });
+
+  it("registers subscription and travel costs still owed as an optional, private paragraph", () => {
+    vi.useFakeTimers();
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    const onSave = vi.fn();
+    const container = renderPage(createState(createMember()), onSave);
+    const field = container.querySelector<HTMLTextAreaElement>(
+      'textarea[name="financial_support_needs"]',
+    );
+    expect(field).not.toBeNull();
+    const row = field?.closest(".profile__form-row");
+    expect(row?.querySelector(".profile__optional")).not.toBeNull();
+    expect(row?.querySelector(".profile__mandatory")).toBeNull();
+    const help = container.querySelector('[data-testid="profile-help-financial_support_needs"]');
+    const bubble = container.querySelector(`#${help!.getAttribute("aria-describedby")}`);
+    expect(bubble?.textContent).toContain("admins");
+
+    field!.value = "Agent plan ~$20/month since Sep; conference train $90";
+    field!.dispatchEvent(new Event("input", { bubbles: true }));
+    vi.advanceTimersByTime(1000);
+    expect(onSave).toHaveBeenCalledWith(
+      "pat",
+      expect.objectContaining({
+        financial_support_needs: "Agent plan ~$20/month since Sep; conference train $90",
+      }),
+    );
   });
 
   it("offers a preferred name, optional, beside the roster name", () => {

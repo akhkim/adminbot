@@ -29,7 +29,12 @@ describe("member field visibility", () => {
   });
 
   it("keeps a phone number and an application off the roster", () => {
-    for (const key of ["whatsapp", "intake_form_url", "personal_circumstances"]) {
+    for (const key of [
+      "whatsapp",
+      "intake_form_url",
+      "personal_circumstances",
+      "financial_support_needs",
+    ]) {
       expect(adminBotMemberFieldVisibility(key), key).toBe("self");
     }
   });
