@@ -219,9 +219,27 @@ export const adminBotPrivilegeLevels = [
   "trial",
   "member",
   "admin",
+  "maintainer",
 ] as const;
 
 export type AdminBotPrivilegeLevel = (typeof adminBotPrivilegeLevels)[number];
+
+/**
+ * Admin work (papers, nudges, onboarding, calendar, Slack, member fields): admins and maintainers.
+ * Every check that used to read `privilege_level === "admin"` means this.
+ */
+export function adminBotIsAdminOrAbove(level: string | undefined | null): boolean {
+  return level === "admin" || level === "maintainer";
+}
+
+/**
+ * The few powers that could seriously break the lab's records or take an account over: moving
+ * someone's sign-in email, granting or removing privilege, deleting or merging members, viewing as
+ * somebody else. Maintainers only.
+ */
+export function adminBotIsMaintainer(level: string | undefined | null): boolean {
+  return level === "maintainer";
+}
 
 /**
  * The Member Type column's vocabulary, in the spreadsheet's own hyphenated spelling.
@@ -589,7 +607,7 @@ export function adminBotMemberTypeTokens(memberType: string | undefined): string
  * the lab asks of its own people, and asking a coauthor at another university when they are
  * working is both useless and slightly rude.
  */
-export const adminBotFullMemberPrivileges = ["member", "admin"] as const;
+export const adminBotFullMemberPrivileges = ["member", "admin", "maintainer"] as const;
 
 /** Which gap a profile reminder pass chases. See sendMandatoryFieldsReminders. */
 export type AdminBotProfileReminderScope = "profile" | "timeline" | "both";

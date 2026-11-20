@@ -1,3 +1,4 @@
+import { adminBotIsAdminOrAbove } from "../../contracts/actions.js";
 import { paperInvolvesMember } from "../../contracts/paper-involvement.js";
 import {
   internalReviewerSuggestions,
@@ -17,7 +18,7 @@ export const internalPeerReviewRoutes: readonly Route[] = [
       const paper = ctx.store.getPaper(id);
       if (
         !paper ||
-        (principal.member.privilege_level !== "admin" &&
+        (!adminBotIsAdminOrAbove(principal.member.privilege_level) &&
           !paperInvolvesMember(paper, principal.member.id, principal.member.name))
       ) {
         sendJson(res, 404, { error: { message: "Paper not found." } });

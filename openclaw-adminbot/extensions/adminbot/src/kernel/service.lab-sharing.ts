@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { AdminBotLabMember, AdminBotPaperRecord } from "../contracts/actions.js";
+import { adminBotIsAdminOrAbove } from "../contracts/actions.js";
 import {
   decodeDiscoveryCursor,
   encodeDiscoveryCursor,
@@ -36,7 +37,7 @@ export class LabSharingService {
     const paper = this.store.getPaper(paperId);
     const request = this.store.getHelpRequest(paperId);
     const canManage = Boolean(
-      paper && (member.privilege_level === "admin" || this.ownsPaper(member, paper)),
+      paper && (adminBotIsAdminOrAbove(member.privilege_level) || this.ownsPaper(member, paper)),
     );
     if (!paper || !request || (request.status !== "open" && !canManage))
       return failure(404, "Project help request not found.");
@@ -68,7 +69,8 @@ export class LabSharingService {
       return {
         ...request,
         can_manage: Boolean(
-          paper && (member.privilege_level === "admin" || this.ownsPaper(member, paper)),
+          paper &&
+          (adminBotIsAdminOrAbove(member.privilege_level) || this.ownsPaper(member, paper)),
         ),
       };
     });
@@ -108,7 +110,7 @@ export class LabSharingService {
     const papers = this.store.listPapers();
     const owns = (paper: AdminBotPaperRecord) => this.ownsPaper(member, paper);
     const canManage = (paper: AdminBotPaperRecord) =>
-      member.privilege_level === "admin" || owns(paper);
+      adminBotIsAdminOrAbove(member.privilege_level) || owns(paper);
     // Resolved once: ownership walks a paper's authors, and the lists below ask about the same
     // papers repeatedly.
     const ownedPaperIds = new Set(papers.filter(owns).map((paper) => paper.id));
@@ -198,7 +200,10 @@ export class LabSharingService {
     if (!withdraw && request.status !== "open") {
       return failure(409, "This help request is closed.");
     }
-    if (!withdraw && (member.privilege_level === "admin" || this.ownsPaper(member, paper))) {
+    if (
+      !withdraw &&
+      (adminBotIsAdminOrAbove(member.privilege_level) || this.ownsPaper(member, paper))
+    ) {
       return failure(403, "Project managers review offers rather than submitting their own.");
     }
     const draft = withdraw ? existing! : validateHelpInterest(input);
@@ -235,7 +240,7 @@ export class LabSharingService {
     if (!paper) {
       return failure(404, "Project not found.");
     }
-    if (member.privilege_level !== "admin" && !this.ownsPaper(member, paper)) {
+    if (!adminBotIsAdminOrAbove(member.privilege_level) && !this.ownsPaper(member, paper)) {
       return failure(403, "Only a project author or administrator can manage its help request.");
     }
     const existing = this.store.listHelpRequests().find((row) => row.paper_id === paperId);

@@ -1,4 +1,5 @@
 import type { AdminBotAuditEvent, AdminBotLabMember } from "../contracts/actions.js";
+import { adminBotIsAdminOrAbove } from "../contracts/actions.js";
 import type { AdminBotConferenceTripRecord } from "../contracts/conference-trips.js";
 import {
   ADMINBOT_LOCATION_MAX_ACCURACY_M,
@@ -63,7 +64,7 @@ const MIN_REPORT_INTERVAL_MS = 15_000;
 const MIN_REPORT_MOVE_KM = 0.5;
 
 export function isTravelEntitled(member: Pick<AdminBotLabMember, "privilege_level"> | undefined) {
-  return member?.privilege_level === "member" || member?.privilege_level === "admin";
+  return member?.privilege_level === "member" || adminBotIsAdminOrAbove(member?.privilege_level);
 }
 
 function addDays(day: string, days: number): string {

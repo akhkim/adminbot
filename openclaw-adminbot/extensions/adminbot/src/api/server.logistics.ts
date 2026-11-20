@@ -16,6 +16,7 @@ import {
   type AdminBotLogisticsRequestInput,
   type AdminBotLogisticsRequestStatus,
 } from "../contracts/actions.js";
+import { adminBotIsAdminOrAbove } from "../contracts/actions.js";
 import { pageOf, readAdminListPage } from "../contracts/list-page.js";
 import type { AdminBotService } from "../kernel/service.js";
 import { logisticsListRow } from "../workflows/logistics/list-row.js";
@@ -103,7 +104,7 @@ export async function handleLogisticsRoute(
   /** The queue read's version tag, when the router could make one (routes/logistics.ts). */
   queueEtag?: string,
 ): Promise<void> {
-  const isAdmin = member.privilege_level === "admin";
+  const isAdmin = adminBotIsAdminOrAbove(member.privilege_level);
   // Falls back to the id rather than sending a blank first column: a row nobody can be matched to
   // is worse than an ugly one, and an unnamed roster row is a thing to fix on the profile.
   const memberName = member.name?.trim() || member.id;

@@ -47,7 +47,7 @@ export function adminBotConsoleScript(): string {
       }
     })();
 
-    const privilegeLevels = ["external_collaborator", "trial", "member", "admin"];
+    const privilegeLevels = ["external_collaborator", "trial", "member", "admin", "maintainer"];
     const collaboratorSubgroups = ${JSON.stringify([...adminBotExternalCollaboratorSubgroups])};
     const collaboratorSubgroupGrants = ${JSON.stringify(collaboratorSubgroupGrants)};
     // Cells that are not a plain yes carry an instruction the person acting on the grant has to
@@ -862,7 +862,7 @@ export function adminBotConsoleScript(): string {
 
     function isPrivileged() {
       const level = sessionMember?.privilege_level;
-      return level === "admin";
+      return level === "admin" || level === "maintainer";
     }
 
     // Cosmetic gating only; the service still enforces privilege on every sensitive route.

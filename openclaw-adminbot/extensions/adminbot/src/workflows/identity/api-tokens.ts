@@ -9,6 +9,7 @@ import {
   type AdminBotAuditEvent,
   type AdminBotPrivilegeLevel,
 } from "../../contracts/actions.js";
+import { adminBotIsAdminOrAbove } from "../../contracts/actions.js";
 import type { AdminBotApiToken } from "../../contracts/api-tokens.js";
 import {
   DEVICE_LOGIN_POLL_SECONDS,
@@ -177,7 +178,7 @@ export class AdminBotApiTokenService {
     return (
       member.cli_role === "power_user" &&
       !adminBotIsAlumniMember(member) &&
-      (member.privilege_level === "member" || member.privilege_level === "admin")
+      (member.privilege_level === "member" || adminBotIsAdminOrAbove(member.privilege_level))
     );
   }
 
@@ -497,10 +498,9 @@ export class AdminBotApiTokenService {
         ...(this.isPowerUser(principal.member)
           ? {
               token_role: "power_user" as const,
-              web_role:
-                principal.member.privilege_level === "admin"
-                  ? ("admin" as const)
-                  : ("member" as const),
+              web_role: adminBotIsAdminOrAbove(principal.member.privilege_level)
+                ? ("admin" as const)
+                : ("member" as const),
               expires_in_days: Math.min(login.expires_in_days ?? 30, 30),
             }
           : login.expires_in_days

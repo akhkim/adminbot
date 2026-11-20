@@ -10,6 +10,7 @@ import {
   type AdminBotLabMember,
   type AdminBotPaperRecord,
 } from "../../contracts/actions.js";
+import { adminBotIsAdminOrAbove } from "../../contracts/actions.js";
 import type { AdminBotNudgeLedgerRecord } from "../../contracts/paper-cycle.js";
 import {
   isAdminBotPaperSlotSettled,
@@ -31,7 +32,7 @@ import { isPaperClosed, isPaperDormant } from "./paper-slots.js";
  * paper's deadlines would be asking somebody who may be gone next month to hold a hard clock.
  */
 export function isFullMember(member: AdminBotLabMember): boolean {
-  if (member.privilege_level !== "member" && member.privilege_level !== "admin") {
+  if (member.privilege_level !== "member" && !adminBotIsAdminOrAbove(member.privilege_level)) {
     return false;
   }
   // Alumni and external outrank the privilege level: somebody who has left still has their roster

@@ -55,7 +55,13 @@ const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 // cell height below without the row growing to fit its busiest day, which is what makes a month
 // with one heavy day unreadable everywhere else.
 const CHIPS_PER_DAY = 4;
-const PRIVILEGE_LEVELS = ["external_collaborator", "trial", "member", "admin"] as const;
+const PRIVILEGE_LEVELS = [
+  "external_collaborator",
+  "trial",
+  "member",
+  "admin",
+  "maintainer",
+] as const;
 const STATUSES = ["active", "part_time", "on_leave", "alumni", "external"] as const;
 
 function filterOf(state: AppViewState): AudienceFilter {

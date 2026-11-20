@@ -17,6 +17,7 @@ import {
   type PaperMentorUpload,
   type PaperMentorUploadReviewer,
 } from "../../connectors/papermentor-uploads.js";
+import { adminBotIsAdminOrAbove } from "../../contracts/actions.js";
 import { sendJson } from "../server.http.js";
 import type { AdminBotPrincipal } from "./context.js";
 import { get, post, type Route } from "./router.js";
@@ -34,7 +35,8 @@ const ZIP_TYPES = new Set(["application/zip", "application/x-zip-compressed"]);
 
 function fullMember(principal: AdminBotPrincipal): string | undefined {
   return principal.kind === "member" &&
-    (principal.member.privilege_level === "member" || principal.member.privilege_level === "admin")
+    (principal.member.privilege_level === "member" ||
+      adminBotIsAdminOrAbove(principal.member.privilege_level))
     ? principal.member.id
     : undefined;
 }

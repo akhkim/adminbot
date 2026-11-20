@@ -4,6 +4,7 @@
 // their head. The daily sweep makes the change with the same save the Edit member form makes, so
 // channels, the Monday meeting and the calendar follow the new type exactly as they would by hand.
 import type { AdminBotAuthSession, AdminBotLabMember } from "../../contracts/actions.js";
+import { adminBotIsAdminOrAbove } from "../../contracts/actions.js";
 import type { AdminBotScheduledMemberChange } from "../../contracts/scheduled-member-changes.js";
 import type { AdminBotMemberPrincipal } from "../../workflows/identity/auth.js";
 import { sameMemberType } from "../../workflows/members/roster-sync.js";
@@ -33,7 +34,7 @@ function schedulerPrincipal(
   change: AdminBotScheduledMemberChange,
 ): AdminBotMemberPrincipal | undefined {
   const admin = ctx.store.getLabMember(change.created_by);
-  if (!admin || admin.privilege_level !== "admin") {
+  if (!admin || !adminBotIsAdminOrAbove(admin.privilege_level)) {
     return undefined;
   }
   // No session exists for a cron run. Nothing on the save path reads it; it is here because a

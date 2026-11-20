@@ -1,3 +1,4 @@
+import { adminBotIsAdminOrAbove } from "../../contracts/actions.js";
 // Badges, their assignments, nominations, and suggestions.
 //
 // Cut from server.ts's handleAuthenticatedRoute. Each route states its audience with a guard
@@ -86,7 +87,7 @@ export const badgesRoutes: readonly Route[] = [
         adminBotBadgeNominationStatuses.includes(rawStatus as AdminBotBadgeNominationStatus)
           ? (rawStatus as AdminBotBadgeNominationStatus)
           : undefined;
-      const isAdmin = principal.member.privilege_level === "admin";
+      const isAdmin = adminBotIsAdminOrAbove(principal.member.privilege_level);
       sendServiceResult(
         res,
         service.listBadgeNominations({
@@ -158,7 +159,7 @@ export const badgesRoutes: readonly Route[] = [
         adminBotBadgeSuggestionStatuses.includes(rawStatus as AdminBotBadgeSuggestionStatus)
           ? (rawStatus as AdminBotBadgeSuggestionStatus)
           : undefined;
-      const isAdmin = principal.member.privilege_level === "admin";
+      const isAdmin = adminBotIsAdminOrAbove(principal.member.privilege_level);
       sendServiceResult(
         res,
         service.listBadgeSuggestions({

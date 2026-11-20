@@ -1,5 +1,6 @@
 // Paged table read, separated from members.ts so the unpaged agent/summary APIs stay unchanged.
 import { redactConfidentialMemberFields } from "../../contracts/actions.js";
+import { adminBotIsAdminOrAbove } from "../../contracts/actions.js";
 import { memberRosterFilterKeys, type MemberRosterFilters } from "../../contracts/member-roster.js";
 import { memberAttends } from "../../workflows/calendar/standing-meetings.js";
 import { sendJson } from "../server.http.js";
@@ -24,7 +25,10 @@ export const memberRosterRoute = get(
     }
     let meetingMembers: Set<string> | undefined;
     if (filters.meeting) {
-      if (principal.kind !== "member" || principal.member.privilege_level !== "admin") {
+      if (
+        principal.kind !== "member" ||
+        !adminBotIsAdminOrAbove(principal.member.privilege_level)
+      ) {
         sendJson(res, 403, { error: { message: "the meeting filter needs an admin session" } });
         return;
       }
@@ -51,7 +55,8 @@ export const memberRosterRoute = get(
       members: result.members.map((member) =>
         redactConfidentialMemberFields(member, {
           ...(principal.kind === "member" ? { memberId: principal.member.id } : {}),
-          isAdmin: principal.kind === "member" && principal.member.privilege_level === "admin",
+          isAdmin:
+            principal.kind === "member" && adminBotIsAdminOrAbove(principal.member.privilege_level),
           isMemberSession: principal.kind === "member",
         }),
       ),

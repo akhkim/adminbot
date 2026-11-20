@@ -1884,13 +1884,14 @@ describe("AdminBotAuthService password reset", () => {
 });
 
 describe("AdminBotAuthService impersonation", () => {
-  // An admin and a plain member, both signed in, which is the state every case below starts from.
+  // A maintainer (the only role that may view as someone) and a plain member, both signed in,
+  // which is the state every case below starts from.
   async function twoAccounts(now?: () => Date) {
     const { store, auth } = setup(now ? { now } : {});
     await claimAndApprove(store, auth, "root", "root@cs.toronto.edu");
     // After the claim, not before: claimAndApprove writes the roster row itself, so promoting
     // first would be overwritten by it.
-    store.saveLabMember(member("root", "root@cs.toronto.edu", { privilege_level: "admin" }));
+    store.saveLabMember(member("root", "root@cs.toronto.edu", { privilege_level: "maintainer" }));
     await claimAndApprove(store, auth, "ada", "ada@cs.toronto.edu");
     const login = await auth.login({ email: "root@cs.toronto.edu", password: "correcthorse" });
     if (!login.ok) {
@@ -1967,6 +1968,17 @@ describe("AdminBotAuthService impersonation", () => {
       ok: false,
       status: 403,
     });
+    // A plain admin is not enough: viewing as someone is a maintainer power.
+    store.saveLabMember(member("ada", "ada@cs.toronto.edu", { privilege_level: "admin" }));
+    const adaAsAdmin = await auth.resolveSession(adaLogin.payload.session_token);
+    if (!adaAsAdmin) {
+      throw new Error("admin session did not resolve");
+    }
+    expect(await auth.startImpersonation({ admin: adaAsAdmin, memberId: "grace" })).toMatchObject({
+      ok: false,
+      status: 403,
+    });
+    store.saveLabMember(member("ada", "ada@cs.toronto.edu"));
     expect(await auth.startImpersonation({ admin, memberId: "root" })).toMatchObject({
       ok: false,
       status: 400,
@@ -1986,15 +1998,15 @@ describe("AdminBotAuthService impersonation", () => {
     });
   });
 
-  it("stops dead when the admin behind it loses admin", async () => {
+  it("stops dead when the maintainer behind it drops to admin", async () => {
     const { store, auth, admin } = await twoAccounts();
     const token = await impersonate(auth, admin);
     expect((await auth.resolveSession(token))?.member.id).toBe("ada");
     const root = store.getLabMember("root");
     if (!root) {
-      throw new Error("admin missing");
+      throw new Error("maintainer missing");
     }
-    store.saveLabMember({ ...root, privilege_level: "member" });
+    store.saveLabMember({ ...root, privilege_level: "admin" });
     // Not merely denied on the next admin route -- the session itself is gone, so a demotion
     // cannot leave a token behind that outlives the access that justified it.
     expect(await auth.resolveSession(token)).toBeUndefined();

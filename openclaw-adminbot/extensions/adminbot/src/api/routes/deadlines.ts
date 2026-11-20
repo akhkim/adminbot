@@ -1,3 +1,4 @@
+import { adminBotIsAdminOrAbove } from "../../contracts/actions.js";
 // Deadline proposals, deadline recommendations, and the Opportunities board.
 //
 // Cut from server.ts's handleAuthenticatedRoute. Each route states its audience with a guard
@@ -78,7 +79,7 @@ export const deadlinesRoutes: readonly Route[] = [
     sendServiceResult(
       res,
       service.listDeadlineProposals(
-        principal.member.privilege_level === "admin" ? undefined : principal.member.id,
+        adminBotIsAdminOrAbove(principal.member.privilege_level) ? undefined : principal.member.id,
       ),
     );
   }),
@@ -147,7 +148,7 @@ export const deadlinesRoutes: readonly Route[] = [
           principal.kind === "member"
             ? {
                 memberId: principal.member.id,
-                isAdmin: principal.member.privilege_level === "admin",
+                isAdmin: adminBotIsAdminOrAbove(principal.member.privilege_level),
               }
             : {},
         ),
@@ -174,7 +175,7 @@ export const deadlinesRoutes: readonly Route[] = [
         res,
         service.updateOpportunity(decodeURIComponent(params[1]!), readOpportunity(body), {
           memberId: principal.member.id,
-          isAdmin: principal.member.privilege_level === "admin",
+          isAdmin: adminBotIsAdminOrAbove(principal.member.privilege_level),
         }),
       );
     }),
@@ -187,7 +188,7 @@ export const deadlinesRoutes: readonly Route[] = [
         res,
         service.deleteOpportunity(decodeURIComponent(params[1]!), {
           memberId: principal.member.id,
-          isAdmin: principal.member.privilege_level === "admin",
+          isAdmin: adminBotIsAdminOrAbove(principal.member.privilege_level),
         }),
       );
     }),

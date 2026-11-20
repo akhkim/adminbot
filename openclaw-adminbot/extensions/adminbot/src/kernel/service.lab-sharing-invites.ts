@@ -4,6 +4,7 @@ import type {
   AdminBotLabMember,
   AdminBotPaperRecord,
 } from "../contracts/actions.js";
+import { adminBotIsAdminOrAbove } from "../contracts/actions.js";
 import { adminBotCalendarEmail } from "../contracts/member-outreach-email.js";
 import type { AdminBotService, AdminBotServiceStore } from "./service.js";
 
@@ -51,7 +52,10 @@ export class LabSharingInvites {
     const body = input as Record<string, unknown>;
     const paper =
       typeof body.paper_id === "string" ? this.store.getPaper(body.paper_id) : undefined;
-    if (!paper || !(actor.privilege_level === "admin" || this.ownsPaper(actor, paper))) {
+    if (
+      !paper ||
+      !(adminBotIsAdminOrAbove(actor.privilege_level) || this.ownsPaper(actor, paper))
+    ) {
       return fail(403, "Choose a project you manage.");
     }
     if (

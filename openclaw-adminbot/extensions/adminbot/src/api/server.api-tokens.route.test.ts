@@ -28,6 +28,7 @@ async function start() {
   const { port } = mock.server.address() as { port: number };
   for (const [id, level] of [
     ["admin-a", "admin"],
+    ["maint-m", "maintainer"],
     ["plain-c", "member"],
   ] as const) {
     mock.store.saveLabMember({
@@ -361,21 +362,32 @@ describe("personal API tokens over HTTP", () => {
     }
   });
 
-  it("lets an admin token move someone else's sign-in email, never its own holder's", async () => {
+  it("lets a maintainer token move someone else's sign-in email, never its own holder's", async () => {
     const { baseUrl, mock } = await start();
-    const token = await mint(baseUrl, await signIn(baseUrl, "admin-a"));
+    const token = await mint(baseUrl, await signIn(baseUrl, "maint-m"));
     const moved = await call(baseUrl, "POST", "/lab/members/plain-c/email", {
       bearer: token,
       body: { new_email: "moved@example.invalid" },
     });
     expect(moved.status).toBe(200);
     expect(mock.store.getCredentialByMemberId("plain-c")?.email).toBe("moved@example.invalid");
-    const own = await call(baseUrl, "POST", "/lab/members/admin-a/email", {
+    const own = await call(baseUrl, "POST", "/lab/members/maint-m/email", {
       bearer: token,
       body: { new_email: "elsewhere@example.invalid" },
     });
     expect(own.status).toBe(403);
-    expect(mock.store.getCredentialByMemberId("admin-a")?.email).toBe("admin-a@example.invalid");
+    expect(mock.store.getCredentialByMemberId("maint-m")?.email).toBe("maint-m@example.invalid");
+  });
+
+  it("refuses a plain admin token moving someone else's sign-in email", async () => {
+    const { baseUrl, mock } = await start();
+    const token = await mint(baseUrl, await signIn(baseUrl, "admin-a"));
+    const moved = await call(baseUrl, "POST", "/lab/members/plain-c/email", {
+      bearer: token,
+      body: { new_email: "moved@example.invalid" },
+    });
+    expect(moved.status).toBe(403);
+    expect(mock.store.getCredentialByMemberId("plain-c")?.email).toBe("plain-c@example.invalid");
   });
 
   it("logs out by revoking the token, and attributes its actions in the audit", async () => {

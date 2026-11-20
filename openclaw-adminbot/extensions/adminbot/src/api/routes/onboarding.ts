@@ -7,6 +7,7 @@ import type {
   AdminBotMemberNudgeChannel,
   AdminBotStoredProposal,
 } from "../../contracts/actions.js";
+import { adminBotIsAdminOrAbove } from "../../contracts/actions.js";
 import { ADMINBOT_ALUMNI_SLACK_CONNECT_TEMPLATE_ID } from "../../contracts/paper-cycle.js";
 import type { AdminBotOnboardingSendRequest } from "../../workflows/onboarding/guide-sender.js";
 import { memberGuideStatus } from "../../workflows/onboarding/guide-status.js";
@@ -61,7 +62,7 @@ export const onboardingRoutes: readonly Route[] = [
   // authenticates every agent tool call regardless of who is chatting, so accepting it here
   // would let anyone talking to AdminBot put an onboarding mail in the approval queue.
   get(/^\/lab\/members\/([^/]+)\/onboarding\/guide$/u, ({ res, ctx, principal, params }) => {
-    if (principal.kind !== "member" || principal.member.privilege_level !== "admin") {
+    if (principal.kind !== "member" || !adminBotIsAdminOrAbove(principal.member.privilege_level)) {
       sendJson(res, 403, { error: { message: "An admin member session is required." } });
       return;
     }
@@ -414,7 +415,7 @@ export const onboardingRoutes: readonly Route[] = [
   get("/onboarding/interviewers", ({ res, url, ctx, principal }) => {
     if (
       principal.kind !== "member" ||
-      !["member", "admin"].includes(principal.member.privilege_level)
+      !["member", "admin", "maintainer"].includes(principal.member.privilege_level)
     ) {
       sendJson(res, 403, { error: { message: "A lab member session is required." } });
       return;
@@ -426,7 +427,7 @@ export const onboardingRoutes: readonly Route[] = [
         .filter(
           (member) =>
             member.slack_user_id &&
-            ["member", "admin"].includes(member.privilege_level) &&
+            ["member", "admin", "maintainer"].includes(member.privilege_level) &&
             (!query || member.name.toLowerCase().includes(query)),
         )
         .slice(0, 50)
@@ -442,7 +443,7 @@ export const onboardingRoutes: readonly Route[] = [
     const { service } = ctx;
     if (
       principal.kind !== "member" ||
-      !["member", "admin"].includes(principal.member.privilege_level)
+      !["member", "admin", "maintainer"].includes(principal.member.privilege_level)
     ) {
       sendJson(res, 403, { error: { message: "A lab member session is required." } });
       return;

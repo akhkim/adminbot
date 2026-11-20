@@ -24,6 +24,7 @@ import { html, nothing } from "lit";
 import { t } from "../../../i18n/index.ts";
 import type { AppViewState } from "../../app-view-state.ts";
 import { renderSkeleton } from "../../loading/skeleton.ts";
+import { isAdminPrivilegeLevel } from "../access.ts";
 import { loadStoredMemberSession } from "../auth/session.ts";
 import {
   askAdminBotLabSharingMember,
@@ -1446,7 +1447,7 @@ export function renderLabSharing(state: AppViewState) {
   return html`
     <div class="lab-sharing" data-testid="lab-sharing" aria-busy=${loading ? "true" : "false"}>
       ${renderLoadNotices(state)}
-      ${session && state.memberPrivilegeLevel === "admin"
+      ${session && isAdminPrivilegeLevel(state.memberPrivilegeLevel)
         ? html`<adminbot-collaborator-chats
             .baseUrl=${resolveAdminBotBaseUrl(state.settings)}
             .sessionToken=${session.sessionToken}

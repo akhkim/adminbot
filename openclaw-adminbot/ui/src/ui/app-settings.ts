@@ -2,6 +2,7 @@ import { ADMINBOT_PASSWORD_RESET_PATH } from "../../../extensions/adminbot/src/c
 // Control UI module implements app settings behavior.
 import { roleScopesAllow } from "../../../src/shared/operator-scope-compat.js";
 import { t } from "../i18n/index.ts";
+import { isAdminPrivilegeLevel } from "./adminbot/access.ts";
 import { registerAdminBotPageReads } from "./adminbot/auth/page-reads.ts";
 import { loadStoredMemberSession } from "./adminbot/auth/session.ts";
 import { ensureAdminQueuesForTab } from "./adminbot/controllers/admin-queues.ts";
@@ -563,7 +564,7 @@ async function refreshAccessibleTab(host: SettingsHost, opts?: TabRefreshOptions
       : loadAdminBot(
           app,
           // A plain member asked in "admin" mode spends five reads on queues the service refuses.
-          app.memberPrivilegeLevel === "admin" ? "admin" : "general",
+          isAdminPrivilegeLevel(app.memberPrivilegeLevel) ? "admin" : "general",
           needsPapers,
           Boolean(app.adminBotData?.loadedAt && needsPapers && papersMissingFor(app)),
         );

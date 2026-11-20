@@ -115,6 +115,7 @@ export type BlockerSort = "stage" | "age" | "paper";
  * somebody looks.
  */
 export type PreregSort = "readiness" | "deadline" | "title" | "editLink" | "viewLink";
+import { isAdminPrivilegeLevel } from "../access.ts";
 import { adminQueueTotal, type PagedAdminQueue } from "../controllers/admin-queues.ts";
 import { paperSteps, stepLabels } from "../data/paper-steps.ts";
 import {
@@ -1347,7 +1348,7 @@ function renderMemberTypeField(member?: AdminBotLabMember) {
   const hasAdminTag = held.some((token) =>
     ["adminbot-admin", "admin"].includes(token.toLowerCase()),
   );
-  if (member?.privilege_level === "admin" && !hasAdminTag) {
+  if (isAdminPrivilegeLevel(member?.privilege_level) && !hasAdminTag) {
     held.push("adminbot-admin");
   }
   return html`<div class="adminbot-form__field" data-no-autosave>

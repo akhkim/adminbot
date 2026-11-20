@@ -1548,8 +1548,13 @@ describe("AdminBot service-principal privilege scoping", () => {
   const SERVICE_DENIED =
     "this action requires an admin or core member session and cannot be performed by the service principal";
 
-  async function adminToken(baseUrl: string, id: string, email: string): Promise<string> {
-    seedMember(baseUrl, id, { name: id, email, privilege_level: "admin" });
+  async function adminToken(
+    baseUrl: string,
+    id: string,
+    email: string,
+    privilege_level: "admin" | "maintainer" = "admin",
+  ): Promise<string> {
+    seedMember(baseUrl, id, { name: id, email, privilege_level });
     await approveClaim(baseUrl, id, email);
     return loginToken(baseUrl, email);
   }
@@ -1621,24 +1626,29 @@ describe("AdminBot service-principal privilege scoping", () => {
     expect(target?.privilege_level).toBe("member");
   });
 
-  it("keeps full governance writes for a genuine admin member session", async () => {
+  it("keeps full governance writes for a maintainer session, and refuses them to a plain admin", async () => {
     const { baseUrl } = await startService();
-    const token = await adminToken(baseUrl, "boss", "boss@cs.toronto.edu");
+    const admin = await adminToken(baseUrl, "deputy", "deputy@cs.toronto.edu");
+    const maintainer = await adminToken(baseUrl, "boss", "boss@cs.toronto.edu", "maintainer");
     seedMember(baseUrl, "grantee", {
       name: "Grantee",
       email: "grantee@cs.toronto.edu",
       privilege_level: "member",
     });
-    const res = await fetch(`${baseUrl}/lab/members/grantee`, {
-      method: "PUT",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: "Grantee",
-        email: "grantee@cs.toronto.edu",
-        privilege_level: "admin",
-        status: "active",
-      }),
-    });
+    const grant = (token: string) =>
+      fetch(`${baseUrl}/lab/members/grantee`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "Grantee",
+          email: "grantee@cs.toronto.edu",
+          privilege_level: "admin",
+          status: "active",
+        }),
+      });
+    const refused = await grant(admin);
+    expect(refused.status).toBe(403);
+    const res = await grant(maintainer);
     expect(res.status).toBe(200);
     await expect(res.json()).resolves.toMatchObject({
       id: "grantee",
@@ -4453,12 +4463,13 @@ describe("GET /nudges/escalated", () => {
 });
 
 describe("viewing the lab as another member", () => {
-  // An admin and a plain member, both with real sessions, which is where every case starts.
+  // A maintainer (the only role that may view as someone) and a plain member, both with real
+  // sessions, which is where every case starts.
   async function twoAccounts(baseUrl: string): Promise<{ adminToken: string }> {
     seedMember(baseUrl, "root", {
       name: "Root",
       email: "root@cs.toronto.edu",
-      privilege_level: "admin",
+      privilege_level: "maintainer",
     });
     seedMember(baseUrl, "ada", { name: "Ada", email: "ada@cs.toronto.edu" });
     await approveClaim(baseUrl, "root", "root@cs.toronto.edu");
@@ -4483,7 +4494,7 @@ describe("viewing the lab as another member", () => {
     seedMember(baseUrl, "root", {
       name: "Root",
       email: "root@cs.toronto.edu",
-      privilege_level: "admin",
+      privilege_level: "maintainer",
     });
     // A member-tier record with its mandatory profile fields unfilled -- the state that locks a
     // real login to the profile page, and that used to answer every feature read with a 403 when
@@ -5094,7 +5105,10 @@ describe("research outreach", () => {
   });
 
   it("keeps the shared service token out of sends and sheet writes", async () => {
-    const sheet = { rows: [HEADER], appended: [] as Array<Array<{ at: number; rows: string[][] }>> };
+    const sheet = {
+      rows: [HEADER],
+      appended: [] as Array<Array<{ at: number; rows: string[][] }>>,
+    };
     const { baseUrl, sent } = await labWithAcceptances({ sheet });
     for (const [path, body] of [
       ["/papers/outreach/send", { venue: "ICLR 2027", outlet: "vector" }],
@@ -5228,7 +5242,10 @@ describe("research outreach", () => {
   });
 
   it("will not append under a header that is not the acceptance header", async () => {
-    const sheet = { rows: [["name", "email"]], appended: [] as Array<Array<{ at: number; rows: string[][] }>> };
+    const sheet = {
+      rows: [["name", "email"]],
+      appended: [] as Array<Array<{ at: number; rows: string[][] }>>,
+    };
     const { baseUrl, token } = await labWithAcceptances({ sheet });
     const res = await fetch(`${baseUrl}/papers/outreach/acceptance-sheet`, {
       method: "POST",
@@ -5385,7 +5402,7 @@ describe("POST /profile/device-location", () => {
       body: JSON.stringify({ lat: 44.7, lon: 10.63 }),
     });
     expect([401, 403]).toContain(service.status);
-    const adminToken = await signedIn(baseUrl, "root", { privilege_level: "admin" });
+    const adminToken = await signedIn(baseUrl, "root", { privilege_level: "maintainer" });
     const viewing = await fetch(`${baseUrl}/auth/impersonate`, {
       method: "POST",
       headers: jsonHeaders({ Authorization: `Bearer ${adminToken}` }),
@@ -5424,7 +5441,7 @@ describe("POST /profile/device-location", () => {
     expect(own).not.toContain("location_permission");
     expect((await answer(token, "maybe")).status).toBe(400);
     expect((await answer(undefined, "granted")).status).toBe(401);
-    const adminToken = await signedIn(baseUrl, "root", { privilege_level: "admin" });
+    const adminToken = await signedIn(baseUrl, "root", { privilege_level: "maintainer" });
     const viewing = await fetch(`${baseUrl}/auth/impersonate`, {
       method: "POST",
       headers: jsonHeaders({ Authorization: `Bearer ${adminToken}` }),

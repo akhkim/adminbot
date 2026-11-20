@@ -10,6 +10,7 @@ import type {
 } from "../../../../../extensions/adminbot/src/contracts/reimbursement-rules.js";
 import type { GatewayBrowserClient } from "../../gateway.ts";
 import type { UiSettings } from "../../storage.ts";
+import { isAdminPrivilegeLevel } from "../access.ts";
 // Control UI controller for the AdminBot dashboard surface.
 import type { CalendarEvent, CalendarEventDraft, LabCalendar } from "../api/calendar.ts";
 import {
@@ -48,7 +49,12 @@ import { papersWithUnread, seenSaveInput } from "../nudge-alerts.ts";
 import { paperScopeForTab, papersReadyFor } from "../papers-required.ts";
 import { type AdminQueueCounts, type AdminQueuePages, loadAdminQueues } from "./admin-queues.ts";
 
-export type AdminBotPrivilegeLevel = "external_collaborator" | "trial" | "member" | "admin";
+export type AdminBotPrivilegeLevel =
+  | "external_collaborator"
+  | "trial"
+  | "member"
+  | "admin"
+  | "maintainer";
 
 /**
  * The service's subgroup vocabulary, derived rather than copied.
@@ -1348,7 +1354,8 @@ export function pendingAdminBotLoad(host: AdminBotHost): Promise<void> | undefin
 // session has already loaded it -- a write on a page without papers has nothing to refresh there.
 export function loadAdminBot(
   host: AdminBotHost,
-  mode: AdminBotLoadMode = loadStoredMemberSession() && host.memberPrivilegeLevel !== "admin"
+  mode: AdminBotLoadMode = loadStoredMemberSession() &&
+  !isAdminPrivilegeLevel(host.memberPrivilegeLevel)
     ? "general"
     : "admin",
   includePapers = Boolean(host.adminBotData.papersLoadedAt || host.adminBotData.ownPapersLoadedAt),

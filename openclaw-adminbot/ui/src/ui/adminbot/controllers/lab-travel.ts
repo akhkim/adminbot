@@ -6,6 +6,7 @@
 // the two come to disagree.
 import { t } from "../../../i18n/index.ts";
 import type { UiSettings } from "../../storage.ts";
+import { isAdminPrivilegeLevel } from "../access.ts";
 import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 import {
   fetchTravelOverview,
@@ -48,7 +49,7 @@ export type LabTravelHost = {
 
 /** Whether this viewer may read /travel at all. The service checks the same thing. */
 export function isTravelViewer(privilegeLevel: string | null | undefined): boolean {
-  return privilegeLevel === "member" || privilegeLevel === "admin";
+  return privilegeLevel === "member" || isAdminPrivilegeLevel(privilegeLevel);
 }
 
 function baseUrlOf(host: LabTravelHost): string {

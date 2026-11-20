@@ -20,11 +20,24 @@ function rank(role: AccessRole): number {
   return ACCESS_ROLES.indexOf(role);
 }
 
-// AdminBot privilege levels that carry governance rights. `admin` alone, matching the service's
-// sole approver class (AdminBotApproverRole in service-core.ts); anything below is a plain member.
-// The retired `core_member` tier used to sit here too — its access grants folded into `member`,
-// its governance rights did not.
-const ADMIN_PRIVILEGE_LEVELS = new Set(["admin"]);
+// AdminBot privilege levels that carry governance rights: `admin`, and `maintainer` above it.
+// A maintainer sees exactly what an admin sees -- like the head professor (ViewerIdentity below),
+// they are a particular admin rather than a rung of their own, so every `role === "admin"` test
+// keeps reading true for them. What sets them apart (moving sign-in emails, granting privilege,
+// merging and deleting people, "view as") is enforced by the service; `isMaintainerPrivilegeLevel`
+// only decides whether those controls are shown. The retired `core_member` tier used to sit here
+// too — its access grants folded into `member`, its governance rights did not.
+const ADMIN_PRIVILEGE_LEVELS = new Set(["admin", "maintainer"]);
+
+/** Whether a raw privilege level gets the admin view (admins and maintainers). */
+export function isAdminPrivilegeLevel(level: unknown): boolean {
+  return typeof level === "string" && ADMIN_PRIVILEGE_LEVELS.has(level);
+}
+
+/** Whether a raw privilege level holds the maintainer-only powers. */
+export function isMaintainerPrivilegeLevel(level: unknown): boolean {
+  return level === "maintainer";
+}
 
 export function resolveAccessRole(params: {
   signedIn: boolean;
@@ -169,7 +182,9 @@ export function canAccessTab(
 ): boolean {
   // The broad UI member role also includes trial members and external collaborators.
   if (tab === "adminbotPaperMentor" || tab === "events") {
-    return role !== "anonymous" && (privilegeLevel === "member" || privilegeLevel === "admin");
+    return (
+      role !== "anonymous" && (privilegeLevel === "member" || isAdminPrivilegeLevel(privilegeLevel))
+    );
   }
   return rank(role) >= rank(TAB_MINIMUM_ROLE[tab]);
 }

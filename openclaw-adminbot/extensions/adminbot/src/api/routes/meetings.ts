@@ -6,6 +6,7 @@ import type {
   AdminBotMeetingAttendee,
   AdminBotMeetingRecordInput,
 } from "../../contracts/actions.js";
+import { adminBotIsAdminOrAbove } from "../../contracts/actions.js";
 import {
   type GroupMeetingSchedule,
   groupMeetingSeriesId,
@@ -53,7 +54,7 @@ function meetingsEtag(
   url: URL,
 ): string | undefined {
   const version = ctx.store.meetingVersion?.();
-  const isAdmin = principal.member.privilege_level === "admin";
+  const isAdmin = adminBotIsAdminOrAbove(principal.member.privilege_level);
   if (version === undefined || (!isAdmin && !ctx.store.getLabMember(principal.member.id))) {
     return undefined;
   }
@@ -82,7 +83,7 @@ export const meetingsRoutes: readonly Route[] = [
   get("/lab/meetings", async ({ res, ctx, principal }) => {
     // The Lab Members form's Meetings checkboxes. Guest lists name real people's addresses, so
     // this is for an admin session only, like the form that uses it.
-    if (principal.kind !== "member" || principal.member.privilege_level !== "admin") {
+    if (principal.kind !== "member" || !adminBotIsAdminOrAbove(principal.member.privilege_level)) {
       sendJson(res, 403, { error: { message: "the meeting list needs an admin session" } });
       return;
     }
@@ -101,7 +102,7 @@ export const meetingsRoutes: readonly Route[] = [
     "/meetings",
     memberOnly(({ res, url, principal, ctx }) => {
       const { service } = ctx;
-      const isAdmin = principal.member.privilege_level === "admin";
+      const isAdmin = adminBotIsAdminOrAbove(principal.member.privilege_level);
       // An admin's rows leave the roster for GET /meetings/:id; a member's row already carries
       // only their own line, which their closed card does render.
       const row = isAdmin ? meetingListRowWithoutRoster : meetingListRow;
@@ -158,7 +159,7 @@ export const meetingsRoutes: readonly Route[] = [
       // The tab's index: one row per recurring meeting with its count and latest date. Titles and
       // counts name nobody, so a member gets the same rows an admin does; the per-viewer part of
       // the tab (own attendance, the roster) stays on GET /meetings and GET /meetings/:id.
-      const isAdmin = principal.member.privilege_level === "admin";
+      const isAdmin = adminBotIsAdminOrAbove(principal.member.privilege_level);
       const version = ctx.store.meetingVersion?.();
       const settings = ctx.store.getSettings();
       const etag =
@@ -254,10 +255,9 @@ export const meetingsRoutes: readonly Route[] = [
       // The service applies the list's own projection -- the whole roster for an admin, a member's
       // own line and a headcount for anyone else -- so this read cannot show more than the list.
       const meetingId = decodeURIComponent(params[1]);
-      const read =
-        principal.member.privilege_level === "admin"
-          ? ctx.service.getListedMeeting(meetingId)
-          : ctx.service.getListedMeeting(meetingId, principal.member.id);
+      const read = adminBotIsAdminOrAbove(principal.member.privilege_level)
+        ? ctx.service.getListedMeeting(meetingId)
+        : ctx.service.getListedMeeting(meetingId, principal.member.id);
       sendServiceResult(res, read.ok ? { ...read, payload: meetingListRow(read.payload) } : read);
     }),
   ),

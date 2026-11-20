@@ -277,6 +277,12 @@ export function privilegeForMemberTypeChange(
       collaborator_subgroup?: AdminBotExternalCollaboratorSubgroup;
     }
   | undefined {
+  // Maintainer is granted by hand, never read off a Member Type: retyping a maintainer (onboarding
+  // tidy-ups, a move between tiers) must not quietly demote them. Only an explicit privilege
+  // change by another maintainer takes it away.
+  if (member.privilege_level === "maintainer") {
+    return undefined;
+  }
   const tokens = adminBotMemberTypeTokens(nextMemberType);
   if (tokens.some((token) => ADMINBOT_ADMIN_MEMBER_TYPE_TOKENS.includes(token))) {
     return { privilege_level: "admin" };

@@ -9,6 +9,7 @@ import {
   type AdminBotLabMemberInput,
   redactConfidentialMemberFields,
 } from "../../contracts/actions.js";
+import { adminBotIsAdminOrAbove } from "../../contracts/actions.js";
 import { ADMIN_LIST_PAGE_SIZE, pageOf, readAdminListPage } from "../../contracts/list-page.js";
 import {
   type AdminBotMemberRequestStatus,
@@ -59,6 +60,8 @@ import {
   memberOnly,
   principalActor,
   privilegedOnly,
+  isMaintainerAtKeyboard,
+  requireMaintainer,
   requireNewMemberDecider,
   requireMemberPrivileged,
   requirePrivileged,
@@ -109,7 +112,8 @@ export const membersRoutes: readonly Route[] = [
     // the service principal keeps them so the importer and the scheduling tools still work.
     const viewer = {
       ...(principal.kind === "member" ? { memberId: principal.member.id } : {}),
-      isAdmin: principal.kind === "member" && principal.member.privilege_level === "admin",
+      isAdmin:
+        principal.kind === "member" && adminBotIsAdminOrAbove(principal.member.privilege_level),
       isMemberSession: principal.kind === "member",
     };
     const view = url.searchParams.get("view");
@@ -220,7 +224,8 @@ export const membersRoutes: readonly Route[] = [
               member: redactConfidentialMemberFields(result.payload.member, {
                 ...(principal.kind === "member" ? { memberId: principal.member.id } : {}),
                 isAdmin:
-                  principal.kind === "member" && principal.member.privilege_level === "admin",
+                  principal.kind === "member" &&
+                  adminBotIsAdminOrAbove(principal.member.privilege_level),
                 isMemberSession: principal.kind === "member",
               }),
             },
@@ -278,11 +283,10 @@ export const membersRoutes: readonly Route[] = [
   }),
   post("/lab/members/merge", async ({ req, res, principal, ctx }) => {
     const { service } = ctx;
-    // requireMemberPrivileged, not requirePrivileged: a merge retires a person's record, moves
-    // their login and cannot be undone from the UI, and the caller names both ids -- so it is
-    // exactly the kind of admin-composed write the service principal is kept out of. The same
-    // reasoning as /papers/slot-reminder/run.
-    if (!requireMemberPrivileged(res, principal) || principal.kind !== "member") {
+    // A maintainer's own session or token: a merge retires a person's record, moves their login and
+    // cannot be undone from the UI, and the caller names both ids -- so it is kept from the service
+    // principal and from plain admins, who must not be able to wreck the roster.
+    if (!requireMaintainer(res, principal) || principal.kind !== "member") {
       return;
     }
     const body = readRecord(await readJson(req));
@@ -296,9 +300,9 @@ export const membersRoutes: readonly Route[] = [
     );
   }),
   post(/^\/lab\/members\/([^/]+)\/id$/u, async ({ req, res, principal, ctx, params }) => {
-    // Admin session only, for the merge's reason: it re-keys a person's login, papers and
+    // Maintainer only, for the merge's reason: it re-keys a person's login, papers and
     // settings in one go, and the caller types the new key.
-    if (!requireMemberPrivileged(res, principal) || principal.kind !== "member") {
+    if (!requireMaintainer(res, principal) || principal.kind !== "member") {
       return;
     }
     const body = readRecord(await readJson(req));
@@ -312,14 +316,15 @@ export const membersRoutes: readonly Route[] = [
     );
   }),
   post(/^\/lab\/members\/([^/]+)\/email$/u, async ({ req, res, principal, ctx, params }) => {
-    // An admin member, in a browser session or with their own API token, never a viewed-as session.
+    // A maintainer, in a browser session or with their own API token, never a viewed-as session.
+    // Plain admins may not move someone's sign-in: it is the account itself.
     // The service refuses the caller's own account and the head professor's, so this route only ever
     // moves someone else's sign-in. A token used to be refused here on the ground that the login email
     // is where password resets go; they now go to `correspondence_email`, which an admin token can
     // already set (see the PUT below), so refusing the token here protected nothing and only pushed
     // admins back to the browser for an ordinary roster fix. A token still may not change its own
     // holder's email: that is /auth/email, which keeps refuseApiToken.
-    if (!requireMemberPrivileged(res, principal) || principal.kind !== "member") {
+    if (!requireMaintainer(res, principal) || principal.kind !== "member") {
       return;
     }
     if (refuseWhileImpersonating(res, principal)) {
@@ -347,13 +352,13 @@ export const membersRoutes: readonly Route[] = [
   }),
   post("/lab/members/without-email/purge", async ({ req, res, principal, ctx }) => {
     const { service } = ctx;
-    // Deletes people, so it takes a genuine admin member session and never the shared service
+    // Deletes people, so it takes a maintainer's own session and never the shared service
     // principal -- the same line the merge draws, for a stronger reason: a merge keeps the history
     // under the survivor and this keeps nothing. There is deliberately no cron caller.
     //
     // `dry_run` defaults to true in the service, so a body-less POST previews rather than deletes:
     // the destructive reading of an ambiguous request is the wrong default.
-    if (!requireMemberPrivileged(res, principal) || principal.kind !== "member") {
+    if (!requireMaintainer(res, principal) || principal.kind !== "member") {
       return;
     }
     const body = readRecord(await readJsonOrEmpty(req));
@@ -367,9 +372,9 @@ export const membersRoutes: readonly Route[] = [
   }),
   del(/^\/lab\/members\/([^/]+)$/u, async ({ req, res, principal, ctx, params }) => {
     const { service } = ctx;
-    // Same gate as the merge, and the id comes from the path rather than a body so a mistyped
+    // Same gate as the merge (maintainers only), and the id comes from the path rather than a body so a mistyped
     // request 404s instead of deleting somebody adjacent.
-    if (!requireMemberPrivileged(res, principal) || principal.kind !== "member") {
+    if (!requireMaintainer(res, principal) || principal.kind !== "member") {
       return;
     }
     const body = readRecord(await readJsonOrEmpty(req));
@@ -399,7 +404,7 @@ export const membersRoutes: readonly Route[] = [
     );
   }),
   post("/lab/members", async ({ req, res, ctx, principal }) => {
-    if (principal.kind !== "member" || principal.member.privilege_level !== "admin") {
+    if (principal.kind !== "member" || !adminBotIsAdminOrAbove(principal.member.privilege_level)) {
       sendJson(res, 403, { error: { message: "An admin member session is required." } });
       return;
     }
@@ -444,7 +449,7 @@ export const membersRoutes: readonly Route[] = [
     // was the worse failure. If that judgement changes, the fix is to drop `correspondence_email`
     // from SELF_PROFILE_EDITABLE_FIELDS on this path only; the scripts that sync it write straight
     // to the database and do not come through here.
-    if (principal.kind === "member" && principal.member.privilege_level === "admin") {
+    if (principal.kind === "member" && adminBotIsAdminOrAbove(principal.member.privilege_level)) {
       const saved = await saveLabMemberAsAdmin(ctx, principal, memberId, body);
       sendJson(res, saved.status, saved.body);
       return;
@@ -852,7 +857,7 @@ export async function handleMemberRequestRoute(
   principal: AdminBotMemberPrincipal,
 ): Promise<void> {
   const { service } = ctx;
-  const isAdmin = principal.member.privilege_level === "admin";
+  const isAdmin = adminBotIsAdminOrAbove(principal.member.privilege_level);
   if (req.method === "GET" && url.pathname === "/lab/members/requests") {
     const status = url.searchParams.get("status");
     const result = service.listMemberRequests({
@@ -970,6 +975,13 @@ export async function handleMemberRequestRoute(
  * approving a request can never do less (or more) than an admin typing the record in themselves --
  * Member Type still sets the access level, and the Meetings boxes still reach the calendar.
  */
+/** Fields of somebody else's record that only a maintainer may change (see saveLabMemberAsAdmin). */
+const MAINTAINER_ONLY_MEMBER_FIELDS = [
+  "email",
+  "correspondence_email",
+  "access_overrides",
+] as const;
+
 export async function saveLabMemberAsAdmin(
   ctx: AdminBotRouteContext,
   principal: AdminBotMemberPrincipal,
@@ -1016,8 +1028,8 @@ export async function saveLabMemberAsAdmin(
   // who can put it back. Another admin can.
   if (
     memberId === principal.member.id &&
-    existing?.privilege_level === "admin" &&
-    nextPrivilege !== "admin"
+    adminBotIsAdminOrAbove(existing?.privilege_level) &&
+    !adminBotIsAdminOrAbove(nextPrivilege)
   ) {
     return {
       status: 409,
@@ -1027,6 +1039,37 @@ export async function saveLabMemberAsAdmin(
         },
       },
     };
+  }
+  // Admins run the lab day to day; maintainers keep the keys. Granting or taking away admin or
+  // maintainer (by hand or through a Member Type that implies it) and changing where somebody
+  // else signs in or receives their reset link are the edits that could take an account or the
+  // whole roster over, so a plain admin is refused them.
+  if (!isMaintainerAtKeyboard(principal)) {
+    const previousPrivilege = existing?.privilege_level;
+    const changesGovernance =
+      nextPrivilege !== previousPrivilege &&
+      (adminBotIsAdminOrAbove(previousPrivilege) || adminBotIsAdminOrAbove(nextPrivilege));
+    const changesSomeoneElsesAccount =
+      existing !== undefined &&
+      memberId !== principal.member.id &&
+      MAINTAINER_ONLY_MEMBER_FIELDS.some(
+        (key) =>
+          Object.hasOwn(input, key) &&
+          JSON.stringify((input as Record<string, unknown>)[key] ?? null) !==
+            JSON.stringify((existing as Record<string, unknown>)[key] ?? null),
+      );
+    if (changesGovernance || changesSomeoneElsesAccount) {
+      return {
+        status: 403,
+        body: {
+          error: {
+            message: changesGovernance
+              ? "Only a maintainer can grant or remove admin or maintainer access."
+              : "Only a maintainer can change another member's email or access overrides.",
+          },
+        },
+      };
+    }
   }
   const saved = service.upsertLabMember(
     {

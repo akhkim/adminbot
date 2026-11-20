@@ -21,6 +21,7 @@ import type {
   AdminBotRegistrationStatus,
 } from "../../contracts/actions.js";
 import { adminBotMemberRoles } from "../../contracts/actions.js";
+import { adminBotIsMaintainer } from "../../contracts/actions.js";
 import {
   adminBotCalendarShareEmail,
   adminBotOutreachEmail,
@@ -896,7 +897,7 @@ export class AdminBotAuthService {
     // rather than trusting the row means demoting or deleting an admin ends their impersonated
     // sessions at once, instead of leaving a token that outlives their own access.
     const impersonator = await this.store.getLabMember(session.impersonated_by);
-    if (!impersonator || impersonator.privilege_level !== "admin") {
+    if (!impersonator || !adminBotIsMaintainer(impersonator.privilege_level)) {
       await this.store.revokeSession(tokenHash, nowIso);
       return undefined;
     }
@@ -1026,8 +1027,9 @@ export class AdminBotAuthService {
     memberId: string;
   }): Promise<AdminBotAuthResponse<AdminBotAuthSessionPayload>> {
     const { admin, memberId } = params;
-    if (admin.member.privilege_level !== "admin") {
-      return authError(403, "admin privileges required");
+    // "View as" acts with the other person's full account, so it is a maintainer's power.
+    if (!adminBotIsMaintainer(admin.member.privilege_level)) {
+      return authError(403, "only a maintainer can view as another member");
     }
     if (admin.session.impersonated_by) {
       return authError(403, "cannot impersonate from an impersonated session");

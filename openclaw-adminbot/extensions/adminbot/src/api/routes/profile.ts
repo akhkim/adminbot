@@ -3,6 +3,7 @@
 // Cut from server.ts's handleAuthenticatedRoute. Each route states its audience with a guard
 // decorator from guards.ts; the order below is the order the old if-chain tried them in.
 import { redactConfidentialMemberFields } from "../../contracts/actions.js";
+import { adminBotIsAdminOrAbove } from "../../contracts/actions.js";
 import { campaignModeFromBody } from "../../workflows/nudges/campaign.js";
 import {
   asString,
@@ -91,7 +92,7 @@ export const profileRoutes: readonly Route[] = [
                 payload: {
                   member: redactConfidentialMemberFields(result.payload.member, {
                     memberId: principal.member.id,
-                    isAdmin: principal.member.privilege_level === "admin",
+                    isAdmin: adminBotIsAdminOrAbove(principal.member.privilege_level),
                     isMemberSession: true,
                   }),
                 },

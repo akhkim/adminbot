@@ -13,6 +13,7 @@ import {
   resolveAccessibleTab,
   visibleTabsForMember,
   type AccessRole,
+  isAdminPrivilegeLevel,
 } from "./adminbot/access.ts";
 import { submitFeedback } from "./adminbot/api/workspace.ts";
 import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "./adminbot/auth/session.ts";
@@ -2574,7 +2575,7 @@ export function renderApp(state: AppViewState) {
   // The member editor's Meetings checkboxes read the lab calendar. Admin-only, like the route.
   if (
     adminBotPanel === "members" &&
-    state.memberPrivilegeLevel === "admin" &&
+    isAdminPrivilegeLevel(state.memberPrivilegeLevel) &&
     hasMemberSession &&
     !state.adminBotStandingMeetings.loading &&
     !state.adminBotStandingMeetings.loadedAt &&
@@ -3736,7 +3737,7 @@ export function renderApp(state: AppViewState) {
           ? renderPaperMentorPage(
               resolveAdminBotBaseUrl(state.settings),
               loadStoredMemberSession()?.sessionToken ?? "",
-              state.memberPrivilegeLevel === "admin",
+              isAdminPrivilegeLevel(state.memberPrivilegeLevel),
             )
           : nothing}
         ${state.tab === "adminbotConferencePapers"

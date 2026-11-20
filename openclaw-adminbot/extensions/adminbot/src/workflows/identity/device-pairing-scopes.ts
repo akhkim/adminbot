@@ -1,6 +1,7 @@
 // Member devices may read and chat, while privileged tools still require operator.write.
 
 import type { AdminBotPrivilegeLevel } from "../../contracts/actions.js";
+import { adminBotIsAdminOrAbove } from "../../contracts/actions.js";
 
 export const OPERATOR_READ_SCOPE = "operator.read" as const;
 
@@ -21,6 +22,6 @@ export const PRIVILEGED_OPERATOR_SCOPES = [
 export function allowedGatewayScopesForPrivilege(
   privilege: AdminBotPrivilegeLevel,
 ): readonly string[] {
-  const privileged = privilege === "admin";
+  const privileged = adminBotIsAdminOrAbove(privilege);
   return privileged ? [...PRIVILEGED_OPERATOR_SCOPES] : [OPERATOR_READ_SCOPE, "operator.chat"];
 }

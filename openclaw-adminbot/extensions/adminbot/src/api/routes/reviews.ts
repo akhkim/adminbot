@@ -13,6 +13,7 @@ import {
   createPdfReferenceChecker,
   extractPdfFullText,
 } from "../../connectors/reference-check.js";
+import { adminBotIsAdminOrAbove } from "../../contracts/actions.js";
 import { type AdminBotServiceStore, AdminBotService } from "../../kernel/service.js";
 import { IclrIntegrityWatch } from "../../workflows/papers/iclr-integrity-watch.js";
 import { summarizeOpenReviewCitationChecks } from "../../workflows/papers/openreview-citation-summary.js";
@@ -27,7 +28,7 @@ export const reviewsRoutes: readonly Route[] = [
     if (
       principal.kind !== "member" ||
       (principal.member.privilege_level !== "member" &&
-        principal.member.privilege_level !== "admin")
+        !adminBotIsAdminOrAbove(principal.member.privilege_level))
     ) {
       sendJson(res, 403, { error: { message: "Member or admin session required" } });
       return;

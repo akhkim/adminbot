@@ -8,6 +8,7 @@
 // These hide nothing and grant nothing beyond what the principal already is: the principal comes
 // from resolvePrincipal in server.ts, and the service re-checks resource ownership itself.
 import type { ServerResponse } from "node:http";
+import { adminBotIsAdminOrAbove, adminBotIsMaintainer } from "../../contracts/actions.js";
 import type { AdminBotMemberPrincipal } from "../../workflows/identity/auth.js";
 import { sendJson } from "../server.http.js";
 import type { AdminBotPrincipal, AdminBotRouteContext } from "./context.js";
@@ -57,7 +58,7 @@ export function isPrivileged(principal: AdminBotPrincipal): boolean {
     return false;
   }
   const level = principal.member.privilege_level;
-  return level === "admin";
+  return adminBotIsAdminOrAbove(level);
 }
 
 export function requirePrivileged(res: ServerResponse, principal: AdminBotPrincipal): boolean {
@@ -82,6 +83,36 @@ export function requireMemberPrivileged(
     return false;
   }
   return requirePrivileged(res, principal);
+}
+
+/**
+ * A maintainer, in their own session or with their own API token, never "view as".
+ *
+ * Maintainers hold the few powers that could seriously break the lab's records or take an account
+ * over (moving a sign-in email, re-keying, merging or deleting people, granting privilege). Admins
+ * keep everything else. The service principal is refused for the same reason as
+ * requireMemberPrivileged: a person has to own these acts.
+ */
+export function isMaintainerAtKeyboard(principal: AdminBotPrincipal): boolean {
+  return (
+    principal.kind === "member" &&
+    !principal.impersonator &&
+    adminBotIsMaintainer(principal.member.privilege_level)
+  );
+}
+
+export function requireMaintainer(res: ServerResponse, principal: AdminBotPrincipal): boolean {
+  if (isMaintainerAtKeyboard(principal)) {
+    return true;
+  }
+  if (principal.kind === "anonymous") {
+    sendJson(res, 401, { error: { message: "authentication required" } });
+    return false;
+  }
+  sendJson(res, 403, {
+    error: { message: "only a maintainer can do this; ask a maintainer" },
+  });
+  return false;
 }
 
 /**
@@ -179,7 +210,10 @@ export function approverIdentityFor(
     return undefined;
   }
   return {
-    approver_role: principal.member.privilege_level,
+    // Approval policies name "admin" for anyone admin-or-above; approver_id still says who.
+    approver_role: adminBotIsMaintainer(principal.member.privilege_level)
+      ? "admin"
+      : principal.member.privilege_level,
     approver_id: principal.member.id,
   };
 }

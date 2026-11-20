@@ -253,7 +253,8 @@ export class InterviewInvite extends LitElement {
       ).values(),
     ].filter(
       (member) =>
-        member.slack_user_id && ["member", "admin"].includes(member.privilege_level || ""),
+        member.slack_user_id &&
+        ["member", "admin", "maintainer"].includes(member.privilege_level || ""),
     );
     return html`<details
       @toggle=${(event: Event) => {

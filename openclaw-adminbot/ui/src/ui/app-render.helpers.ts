@@ -1,7 +1,7 @@
 // Control UI module implements app render behavior.
 import { html, nothing } from "lit";
 import { t } from "../i18n/index.ts";
-import { visibleTabsForMember, type AccessRole } from "./adminbot/access.ts";
+import { visibleTabsForMember, type AccessRole, isAdminPrivilegeLevel } from "./adminbot/access.ts";
 import { navigateToProject } from "./adminbot/projects/model.ts";
 import { isProfileBlocked } from "./adminbot/views/profile-gate.ts";
 import {
@@ -72,7 +72,7 @@ export { isCronSessionKey, parseSessionKey, resolveSessionDisplayName, resolveSe
 export function resolveAdminBotMode(
   privilegeLevel: string | null,
 ): import("./adminbot/controllers/admin.ts").AdminBotLoadMode {
-  return privilegeLevel === "admin" ? "admin" : "general";
+  return isAdminPrivilegeLevel(privilegeLevel) ? "admin" : "general";
 }
 
 type SessionDefaultsSnapshot = {
@@ -854,7 +854,7 @@ export async function createChatSession(
       agentId:
         scopedAgentParamsForSession(state, previousSessionKey).agentId ??
         resolveAgentIdFromSessionKey(previousSessionKey),
-      ...(state.memberId && state.memberPrivilegeLevel !== "admin"
+      ...(state.memberId && !isAdminPrivilegeLevel(state.memberPrivilegeLevel)
         ? {}
         : {
             parentSessionKey,

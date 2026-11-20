@@ -6,6 +6,7 @@
 // See docs/adminbot/api-tokens.md for the design.
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import {
+  adminBotIsMaintainer,
   adminBotPrivilegeLevels,
   type AdminBotLabMember,
   type AdminBotPrivilegeLevel,
@@ -82,7 +83,7 @@ export function apiTokenHint(token: string): string {
 }
 
 /**
- * Which privilege levels may hold a token. Admins only by default; a deployment widens it with
+ * Which privilege levels may hold a token. Admins only by default (maintainers always may); a deployment widens it with
  * ADMINBOT_API_TOKEN_LEVELS (e.g. "admin,member") without a code change. Unknown names are ignored
  * so a typo narrows rather than widens.
  */
@@ -100,7 +101,8 @@ export function apiTokensAllowed(
   member: Pick<AdminBotLabMember, "privilege_level">,
   levels: Set<AdminBotPrivilegeLevel>,
 ): boolean {
-  return levels.has(member.privilege_level);
+  // Maintainers run the lab from the CLI, so no deployment setting can take their tokens away.
+  return adminBotIsMaintainer(member.privilege_level) || levels.has(member.privilege_level);
 }
 
 /**

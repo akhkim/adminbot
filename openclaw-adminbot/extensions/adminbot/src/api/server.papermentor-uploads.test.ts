@@ -109,7 +109,7 @@ async function setup(
 function session(
   app: Awaited<ReturnType<typeof setup>>["app"],
   memberId: string,
-  level: "admin" | "member" | "trial" | "external_collaborator" = "member",
+  level: "maintainer" | "admin" | "member" | "trial" | "external_collaborator" = "member",
 ) {
   const sessionToken = `${memberId}-session`;
   app.service.upsertLabMember(
@@ -271,7 +271,7 @@ describe("the PaperMentor tab", () => {
 
   it("refuses an upload from an admin viewing as a member", async () => {
     const { app, url, reviewer } = await setup();
-    session(app, "pi", "admin");
+    session(app, "pi", "maintainer");
     session(app, "ada");
     app.store.saveSession({
       member_id: "ada",

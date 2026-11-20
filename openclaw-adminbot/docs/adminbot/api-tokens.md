@@ -69,9 +69,24 @@ The same section can also create a token directly, for a CI job. The token is sh
 `apiTokensAllowed(member)` decides who may have a token. It is checked when a token is created
 and again on every request, so demoting a member stops their tokens at once.
 
-- The default is `privilege_level === "admin"`.
+- The default is `privilege_level` of `admin` or `maintainer`.
 - `ADMINBOT_API_TOKEN_LEVELS` (comma-separated privilege levels) widens it. For example,
   `admin,member` opens tokens to every member later. No schema or code change is needed.
+- Maintainers can always hold tokens, whatever that setting says.
+
+## Admins and maintainers
+
+Both levels run the lab with the same day-to-day rights, on the website and the CLI. A
+maintainer can also do the few things that could take an account or the roster over:
+
+- grant or remove `admin` or `maintainer`, by hand or through a Member Type that implies it,
+- change another member's `email`, `correspondence_email` or `access_overrides`, and move
+  their sign-in email (`POST /lab/members/{id}/email`),
+- rename, merge, purge or delete a member,
+- view the website as another member.
+
+A plain admin is refused these with 403, and nothing is changed. Only a maintainer can make
+someone a maintainer, so the first maintainers are set directly in the database.
 
 ## Power-user enrollment and permissions
 
@@ -127,9 +142,11 @@ unchanged. A token may also create tokens, approve a CLI sign-in and pair gatewa
 agent never has to hand anything back to a person. It cannot:
 
 - change the owner's password or email,
-- change another member's sign-in email (`POST /lab/members/{id}/email`, the admin version of the
-  same change, which skips that member's password),
 - start or stop impersonation.
+
+A maintainer's token can change another member's sign-in email (`POST /lab/members/{id}/email`,
+which skips that member's password). A plain admin's token cannot, and nor can the website for a
+plain admin.
 
 So a leaked token cannot lock its owner out or act as somebody else, and changing the password
 revokes every token, including any it created. Impersonation sessions cannot create tokens.

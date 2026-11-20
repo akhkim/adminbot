@@ -32,7 +32,7 @@ export async function prepareInterviewInvitation(
     );
     if (
       interviewers.some(
-        (member) => !member || !["member", "admin"].includes(member.privilege_level),
+        (member) => !member || !["member", "admin", "maintainer"].includes(member.privilege_level),
       )
     ) {
       throw new Error("Choose two current lab interviewers.");

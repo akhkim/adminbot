@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { adminBotIsAdminOrAbove } from "../contracts/actions.js";
 import {
   ADMINBOT_BROADCAST_HISTORY_LIMIT,
   currentBroadcast,
@@ -9,7 +10,11 @@ import type { AdminBotServiceStore } from "./service.js";
 
 type StatusStore = Pick<
   AdminBotServiceStore,
-  "getLabMember" | "readDirectorStatus" | "saveDirectorStatus" | "listDirectorStatusHistory" | "recordAudit"
+  | "getLabMember"
+  | "readDirectorStatus"
+  | "saveDirectorStatus"
+  | "listDirectorStatusHistory"
+  | "recordAudit"
 >;
 const denied = () => ({
   ok: false as const,
@@ -39,12 +44,13 @@ export class LabSharingStatusService {
       payload: {
         status: currentBroadcast(history, this.clock()),
         history,
-        can_manage: member.privilege_level === "admin",
+        can_manage: adminBotIsAdminOrAbove(member.privilege_level),
       },
     };
   }
   save(memberId: string, input: unknown, clear = false) {
-    if (this.store.getLabMember(memberId)?.privilege_level !== "admin") return denied();
+    if (!adminBotIsAdminOrAbove(this.store.getLabMember(memberId)?.privilege_level))
+      return denied();
     const now = this.clock();
     const draft = clear ? null : validateDirectorStatus(input, now);
     if (typeof draft === "string")

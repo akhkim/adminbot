@@ -8,6 +8,7 @@ import {
   adminBotRegistrationStatuses,
   type AdminBotRegistrationStatus,
 } from "../../contracts/actions.js";
+import { adminBotIsAdminOrAbove } from "../../contracts/actions.js";
 import type { AdminBotMemberPrincipal } from "../../workflows/identity/auth.js";
 import { allowedGatewayScopesForPrivilege } from "../../workflows/identity/device-pairing-scopes.js";
 import { sendJson, readRecord, readJson, asString } from "../server.http.js";
@@ -113,12 +114,11 @@ export async function handleAuthRoute(
               privilege_level: principal.member.privilege_level,
             },
             expires_at: principal.session.expires_at,
-            scope:
-              principal.member.privilege_level === "admin"
-                ? "Your admin account permissions apply. PI-only, personal and approval rules still apply."
-                : "Create projects and edit projects you own or coauthor. Manage your own profile, schedule, notes, drafts, requests and RSVPs. Shared boards and directory use their member views.",
+            scope: adminBotIsAdminOrAbove(principal.member.privilege_level)
+              ? "Your admin account permissions apply. PI-only, personal and approval rules still apply."
+              : "Create projects and edit projects you own or coauthor. Manage your own profile, schedule, notes, drafts, requests and RSVPs. Shared boards and directory use their member views.",
             limits: { requests_per_minute_per_member: 30, maximum_token_days: 30 },
-            operations: pilotOperations(principal.member.privilege_level === "admin"),
+            operations: pilotOperations(adminBotIsAdminOrAbove(principal.member.privilege_level)),
           }
         : ctx.auth.sessionView(principal);
     sendJson(res, 200, view);

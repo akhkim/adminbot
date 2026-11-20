@@ -1,3 +1,4 @@
+import { adminBotIsAdminOrAbove } from "../../contracts/actions.js";
 // The guidebook question box and the local chat.
 //
 // Cut from server.ts's handleAuthenticatedRoute. Each route states its audience with a guard
@@ -42,7 +43,7 @@ export const assistantRoutes: readonly Route[] = [
     if (
       principal.kind !== "member" ||
       principal.impersonator ||
-      principal.member.privilege_level !== "admin" ||
+      !adminBotIsAdminOrAbove(principal.member.privilege_level) ||
       !settings.ok ||
       !isTravelHistorySubject(principal.member.id, settings.payload)
     ) {

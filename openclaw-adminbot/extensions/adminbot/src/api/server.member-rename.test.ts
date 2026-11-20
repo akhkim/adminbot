@@ -92,7 +92,14 @@ async function lab() {
     });
     return ((await res.json()) as { session_token: string }).session_token;
   };
-  seed({ id: "admin", name: "Admin", email: "admin@cs.toronto.edu", privilege_level: "admin" });
+  // Renaming and merging members are maintainer powers; "deputy" is a plain admin who may not.
+  seed({
+    id: "admin",
+    name: "Admin",
+    email: "admin@cs.toronto.edu",
+    privilege_level: "maintainer",
+  });
+  seed({ id: "deputy", name: "Deputy", email: "deputy@cs.toronto.edu", privilege_level: "admin" });
   seed({
     id: "mem_2589c705",
     name: "Terry Zhang",
@@ -101,6 +108,7 @@ async function lab() {
   });
   seed({ id: "pat", name: "Pat", email: "pat@cs.toronto.edu", privilege_level: "member" });
   const admin = await login("admin", "admin@cs.toronto.edu");
+  const deputy = await login("deputy", "deputy@cs.toronto.edu");
   const terry = await login("mem_2589c705", "terry@cs.toronto.edu");
   const rename = (token: string, memberId: string, newId: string) =>
     fetch(`${baseUrl}/lab/members/${encodeURIComponent(memberId)}/id`, {
@@ -108,10 +116,18 @@ async function lab() {
       headers: jsonHeaders({ Authorization: `Bearer ${token}` }),
       body: JSON.stringify({ new_id: newId }),
     });
-  return { baseUrl, mock, store, admin, terry, rename };
+  return { baseUrl, mock, store, admin, deputy, terry, rename };
 }
 
 describe("changing a member id", () => {
+  it("refuses a plain admin and leaves the member where they were", async () => {
+    const { store, deputy, rename } = await lab();
+    const res = await rename(deputy, "mem_2589c705", "terry-zhang");
+    expect(res.status).toBe(403);
+    expect(store.getLabMember("mem_2589c705")).toBeDefined();
+    expect(store.getLabMember("terry-zhang")).toBeUndefined();
+  });
+
   it("moves the member and everything that named them to the new id", async () => {
     const { baseUrl, mock, store, admin, terry, rename } = await lab();
     const created = mock.service.upsertPaper({
@@ -204,7 +220,7 @@ describe("changing a member id", () => {
     // Matching "admin" as a whole value would rewrite every admin's privilege level with it.
     const { store, admin, rename } = await lab();
     expect((await rename(admin, "admin", "the-admin")).status).toBe(409);
-    expect(store.getLabMember("admin")?.privilege_level).toBe("admin");
+    expect(store.getLabMember("admin")?.privilege_level).toBe("maintainer");
     expect(store.getLabMember("the-admin")).toBeUndefined();
   });
 });

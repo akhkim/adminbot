@@ -21,6 +21,7 @@ import {
   PROTOCOL_VERSION,
 } from "../../../packages/gateway-protocol/src/version.js";
 import { buildDeviceAuthPayload } from "../../../src/gateway/device-auth.js";
+import { isAdminPrivilegeLevel } from "./adminbot/access.ts";
 import { clearDeviceAuthToken, loadDeviceAuthToken, storeDeviceAuthToken } from "./device-auth.ts";
 import { loadOrCreateDeviceIdentity, signDevicePayload } from "./device-identity.ts";
 import { isLoopbackGatewayHost } from "./loopback-host.ts";
@@ -201,7 +202,7 @@ export const CONTROL_UI_OPERATOR_SCOPES = [
 
 // Mirrors the service ceiling: members may read and chat, but cannot invoke privileged tools.
 export function resolveMemberOperatorScopes(privilegeLevel: string | null | undefined): string[] {
-  const privileged = privilegeLevel === "admin";
+  const privileged = isAdminPrivilegeLevel(privilegeLevel);
   return privileged ? [...CONTROL_UI_OPERATOR_SCOPES] : ["operator.read", "operator.chat"];
 }
 

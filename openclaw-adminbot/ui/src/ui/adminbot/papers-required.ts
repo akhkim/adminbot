@@ -1,3 +1,4 @@
+import { isAdminPrivilegeLevel } from "./access.ts";
 /** Pages whose visible content or filters use the lab-wide paper list. */
 export function needsLabPapers(tab: string): boolean {
   return (
@@ -23,7 +24,7 @@ export function needsLabPapers(tab: string): boolean {
 export type PaperScope = "own" | "lab";
 
 export function paperScopeForTab(tab: unknown, privilegeLevel: unknown): PaperScope {
-  if (tab === "profile" || (tab === "dashboard" && privilegeLevel !== "admin")) {
+  if (tab === "profile" || (tab === "dashboard" && !isAdminPrivilegeLevel(privilegeLevel))) {
     return "own";
   }
   return "lab";

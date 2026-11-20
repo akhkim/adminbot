@@ -11,6 +11,7 @@
 import { adminBotIsAlumniMember } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import { t } from "../../../i18n/index.ts";
 import type { UiSettings } from "../../storage.ts";
+import { isAdminPrivilegeLevel } from "../access.ts";
 import {
   fetchPaperNudgeBatches,
   fetchPaperSlotOverview,
@@ -132,7 +133,8 @@ export function nudgeableBatches(
     if (!member) {
       return false;
     }
-    const full = member.privilege_level === "member" || member.privilege_level === "admin";
+    const full =
+      member.privilege_level === "member" || isAdminPrivilegeLevel(member.privilege_level);
     return full && !adminBotIsAlumniMember(member) && member.status !== "external";
   });
 }

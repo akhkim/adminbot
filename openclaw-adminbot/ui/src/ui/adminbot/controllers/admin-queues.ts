@@ -1,3 +1,4 @@
+import { isAdminPrivilegeLevel } from "../access.ts";
 // The administrator's work queues, read for the page that shows them rather than on every load.
 //
 // An admin load used to fire five reads on whatever page it ran for -- the pending proposals, the
@@ -162,7 +163,11 @@ export async function loadAdminQueues(
  */
 export function ensureAdminQueuesForTab(host: AdminBotHost, tab: unknown): Promise<void> {
   const stored = loadStoredMemberSession();
-  if (!stored || host.memberPrivilegeLevel !== "admin" || adminQueuesForTab(tab).length === 0) {
+  if (
+    !stored ||
+    !isAdminPrivilegeLevel(host.memberPrivilegeLevel) ||
+    adminQueuesForTab(tab).length === 0
+  ) {
     return Promise.resolve();
   }
   return loadAdminQueues(

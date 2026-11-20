@@ -28,7 +28,7 @@ async function setup(localChat?: ReturnType<typeof createLocalChat>) {
   const tokens: Record<string, string> = {};
   for (const [id, privilege_level] of [
     ["professor", "admin"],
-    ["other-admin", "admin"],
+    ["other-admin", "maintainer"],
     ["member", "member"],
   ] as const) {
     mock.service.upsertLabMember(

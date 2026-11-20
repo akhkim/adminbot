@@ -1,3 +1,4 @@
+import { adminBotIsAdminOrAbove } from "../../contracts/actions.js";
 import { resolveRecLetterOverdueConfig } from "../../kernel/service.rec-letter-overdue.js";
 import type { AdminBotMemberPrincipal } from "../../workflows/identity/auth.js";
 // Requests to the PI: signatures, rec letters, meeting requests, and the call sheet.
@@ -30,7 +31,7 @@ function logisticsQueueEtag(
   if (version === undefined) {
     return undefined;
   }
-  const isAdmin = principal.member.privilege_level === "admin";
+  const isAdmin = adminBotIsAdminOrAbove(principal.member.privilege_level);
   return versionEtag("logistics.requests", [
     version,
     principalRole(principal),

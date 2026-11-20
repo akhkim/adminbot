@@ -5,6 +5,7 @@
 
 import { timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { adminBotIsAdminOrAbove } from "../../contracts/actions.js";
 import { isApiTokenShaped, isPowerUserToken } from "../../workflows/identity/api-token-format.js";
 import type {
   AdminBotAuthResponse,
@@ -104,7 +105,7 @@ export async function authorizePersonalTokenRequest(
     sendJson(res, 401, { error: { message: "API token expired, revoked or ineligible" } });
     return false;
   }
-  const admin = principal.member.privilege_level === "admin";
+  const admin = adminBotIsAdminOrAbove(principal.member.privilege_level);
   const op = pilotOperation(url.pathname, req.method, admin);
   if (op) {
     if (!admin && op.path.startsWith("/papers/{papers_id}")) {

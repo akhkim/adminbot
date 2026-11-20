@@ -96,13 +96,21 @@ async function lab() {
     const res = await loginRaw(email);
     return ((await res.json()) as { session_token: string }).session_token;
   };
-  seed({ id: "admin", name: "Admin", email: "admin@cs.toronto.edu", privilege_level: "admin" });
+  // Moving someone else's sign-in is a maintainer power; "deputy" is a plain admin who may not.
+  seed({
+    id: "admin",
+    name: "Admin",
+    email: "admin@cs.toronto.edu",
+    privilege_level: "maintainer",
+  });
+  seed({ id: "deputy", name: "Deputy", email: "deputy@cs.toronto.edu", privilege_level: "admin" });
   seed({ id: "pi", name: "Pi", email: "pi@cs.toronto.edu", privilege_level: "admin" });
   seed({ id: "ada", name: "Ada", email: "ada@cs.toronto.edu", privilege_level: "member" });
   seed({ id: "bo", name: "Bo", email: "bo@cs.toronto.edu", privilege_level: "member" });
   // On the roster but never claimed an account.
   seed({ id: "cy", name: "Cy", email: "cy@cs.toronto.edu", privilege_level: "member" });
   const admin = await claim("admin", "admin@cs.toronto.edu");
+  const deputy = await claim("deputy", "deputy@cs.toronto.edu");
   await claim("pi", "pi@cs.toronto.edu");
   const ada = await claim("ada", "ada@cs.toronto.edu");
   await claim("bo", "bo@cs.toronto.edu");
@@ -113,10 +121,18 @@ async function lab() {
       headers: jsonHeaders(token ? { Authorization: `Bearer ${token}` } : {}),
       body: JSON.stringify({ new_email: newEmail }),
     });
-  return { baseUrl, mock, store, admin, ada, change, loginRaw, resetMail };
+  return { baseUrl, mock, store, admin, deputy, ada, change, loginRaw, resetMail };
 }
 
-describe("an admin changing a member's sign-in email", () => {
+describe("a maintainer changing a member's sign-in email", () => {
+  it("refuses a plain admin and leaves the sign-in where it was", async () => {
+    const { store, deputy, change, loginRaw } = await lab();
+    const res = await change(deputy, "ada", "ada.new@example.org");
+    expect(res.status).toBe(403);
+    expect(store.getLabMember("ada")?.email).toBe("ada@cs.toronto.edu");
+    expect((await loginRaw("ada@cs.toronto.edu")).status).toBe(200);
+  });
+
   it("moves the sign-in and the roster email together, and the old address stops working", async () => {
     const { store, admin, change, loginRaw } = await lab();
     const res = await change(admin, "ada", "  Ada.New@Example.ORG ");

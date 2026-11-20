@@ -351,14 +351,9 @@ describe("PUT /lab/members/:id changing Member Type", () => {
     expect(explicit.privilege_level).toBe("trial");
   });
 
-  it("grants admin from the admin tag, and refuses an admin removing their own", async () => {
+  it("grants admin from the admin tag for a maintainer only, and refuses an admin removing their own", async () => {
     const { baseUrl, mock, mailed } = await startService();
     const token = await adminToken(mock, baseUrl);
-
-    const promoted = (await (
-      await save(baseUrl, token, "cora", { member_type: "full, adminbot-admin" })
-    ).json()) as ChangeBody;
-    expect(promoted.privilege_level).toBe("admin");
 
     const self = await save(baseUrl, token, "admin", { member_type: "alumni" });
     expect(self.status).toBe(409);
@@ -367,10 +362,26 @@ describe("PUT /lab/members/:id changing Member Type", () => {
     expect(
       stillAdmin.ok && stillAdmin.payload.members.find((row) => row.id === "admin"),
     ).toMatchObject({ privilege_level: "admin", member_type: "full" });
-    // Cora's move into `full` is the only mail; the refused self-demotion sends nothing.
+
+    // A plain admin cannot hand out admin: that is a maintainer power.
+    const refused = await save(baseUrl, token, "cora", { member_type: "full, adminbot-admin" });
+    expect(refused.status).toBe(403);
+    expect(mock.store.getLabMember("cora")?.privilege_level).toBe("external_collaborator");
+    // Neither the refused self-demotion nor the refused grant sends anything.
+    expect(mailed).toEqual([]);
+
+    const me = mock.store.getLabMember("admin");
+    if (!me) {
+      throw new Error("admin missing");
+    }
+    mock.store.saveLabMember({ ...me, privilege_level: "maintainer" });
+    const promoted = (await (
+      await save(baseUrl, token, "cora", { member_type: "full, adminbot-admin" })
+    ).json()) as ChangeBody;
+    expect(promoted.privilege_level).toBe("admin");
     expect(mailed).toEqual([{ email: "cora@lab.test", template: "member" }]);
 
-    // Another admin can take it away.
+    // And a maintainer can take it away.
     const demoted = (await (
       await save(baseUrl, token, "cora", { member_type: "full" })
     ).json()) as ChangeBody;

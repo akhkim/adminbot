@@ -116,6 +116,7 @@ import {
   adminBotTimeOffKinds,
   isAdminBotTimezone,
 } from "../contracts/actions.js";
+import { adminBotIsAdminOrAbove } from "../contracts/actions.js";
 import {
   paperRecordSlotId,
   paperSlotId,
@@ -305,8 +306,8 @@ import type { AdminBotReimbursementFunder } from "../contracts/reimbursement-rul
 import type { ScheduledMemberChangeStore } from "../contracts/scheduled-member-changes.js";
 import { paperTargetsVenue } from "../contracts/venue-targets.js";
 import type { createCollaboratorChatRequestStore } from "../persistence/collaborator-chat-requests.js";
-import type { AdminBotPosterPrintStore } from "../persistence/poster-printing.js";
 import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
+import type { AdminBotPosterPrintStore } from "../persistence/poster-printing.js";
 import type { CalendarEventsReader } from "../workflows/calendar/events.js";
 import { resolveLabCalendar } from "../workflows/calendar/lab-calendar.js";
 import { memberAddresses } from "../workflows/calendar/standing-meetings.js";
@@ -372,6 +373,7 @@ import {
 import { hasCurrentOrUpcomingAvailability } from "../workflows/members/availability.js";
 import { validateBirthday } from "../workflows/members/birthday.js";
 import { collaboratorSubgroupAccess } from "../workflows/members/collaborator-subgroups.js";
+import { travelConferenceSites } from "../workflows/members/lab-travel.js";
 import {
   localEventAudience,
   remainingAttendees,
@@ -495,6 +497,11 @@ import {
   type OpenReviewUpdate,
 } from "../workflows/papers/openreview-updates.js";
 import {
+  buildOutreachReadyMessage,
+  outreachReadyVenues,
+  type OutreachReadyVenue,
+} from "../workflows/papers/outreach-ready.js";
+import {
   type AcceptanceRow,
   type OutreachConfig,
   type OutreachDraft,
@@ -518,11 +525,6 @@ import {
   rankPaperQueue,
 } from "../workflows/papers/paper-queue.js";
 import { duePaperNudges } from "../workflows/papers/paper-reminder-nudges.js";
-import {
-  buildOutreachReadyMessage,
-  outreachReadyVenues,
-  type OutreachReadyVenue,
-} from "../workflows/papers/outreach-ready.js";
 import {
   paperForResponse,
   withheldArtifactWriteError,
@@ -641,8 +643,6 @@ import { LabSharingService } from "./service.lab-sharing.js";
 import { LabTravelService } from "./service.lab-travel.js";
 import { inviteLocalLunches } from "./service.local-lunches.js";
 import { type IntroRunResult, MeetupService } from "./service.meetups.js";
-import { PosterPrintingService } from "./service.poster-printing.js";
-import { travelConferenceSites } from "../workflows/members/lab-travel.js";
 import {
   paperImpactSlotWrite,
   piApprovalImpactDenial,
@@ -650,6 +650,7 @@ import {
   piReviewSlotDenial,
   writePiReviewAck,
 } from "./service.pi-review.js";
+import { PosterPrintingService } from "./service.poster-printing.js";
 import {
   sweepProfessorDigest,
   type ProfessorDigestSweepResult,
@@ -1639,6 +1640,15 @@ const DEFAULT_ACTION_POLICIES = {
   "slides.sync_working_groups": approvalPolicy("T2", ["admin"]),
 } as const satisfies Record<AdminBotActionType, AdminBotActionPolicy>;
 
+const ADMIN_ACCESS: AdminBotAccessGrant[] = [
+  { service: "slack", access: "admin", scope: "lab workspace" },
+  { service: "google_drive", access: "admin", scope: "lab drive" },
+  { service: "overleaf", access: "admin", scope: "lab projects" },
+  { service: "calendar", access: "admin", scope: "lab calendars" },
+  { service: "github", access: "admin", scope: "lab org" },
+  { service: "paper_pipeline", access: "admin", scope: "all records" },
+];
+
 const PRIVILEGE_ACCESS: Record<AdminBotPrivilegeLevel, AdminBotAccessGrant[]> = {
   external_collaborator: [
     { service: "slack", access: "view", scope: "shared channels" },
@@ -1662,14 +1672,9 @@ const PRIVILEGE_ACCESS: Record<AdminBotPrivilegeLevel, AdminBotAccessGrant[]> = 
     { service: "github", access: "edit", scope: "lab repos" },
     { service: "paper_pipeline", access: "edit", scope: "paper records" },
   ],
-  admin: [
-    { service: "slack", access: "admin", scope: "lab workspace" },
-    { service: "google_drive", access: "admin", scope: "lab drive" },
-    { service: "overleaf", access: "admin", scope: "lab projects" },
-    { service: "calendar", access: "admin", scope: "lab calendars" },
-    { service: "github", access: "admin", scope: "lab org" },
-    { service: "paper_pipeline", access: "admin", scope: "all records" },
-  ],
+  admin: ADMIN_ACCESS,
+  // Same reach into the lab's tools; what sets a maintainer apart is governance on AdminBot itself.
+  maintainer: ADMIN_ACCESS,
 };
 
 // How often the Slack sync re-stamps an unchanged `slack_tz`, so its date says "seen recently".
@@ -3685,7 +3690,10 @@ export class AdminBotService {
   private automationAlertAdmins(): AdminBotLabMember[] {
     return this.store
       .listLabMembers()
-      .filter((member) => member.privilege_level === "admin" && !adminBotIsAlumniMember(member));
+      .filter(
+        (member) =>
+          adminBotIsAdminOrAbove(member.privilege_level) && !adminBotIsAlumniMember(member),
+      );
   }
 
   /**
@@ -5535,7 +5543,7 @@ export class AdminBotService {
     actor: string,
     body: Record<string, unknown>,
   ): AdminBotServiceResponse<{ request: AdminBotMemberRequest }> {
-    if (this.store.getLabMember(actor)?.privilege_level !== "admin") {
+    if (!adminBotIsAdminOrAbove(this.store.getLabMember(actor)?.privilege_level)) {
       return serviceError(403, "only an admin can edit a member request");
     }
     const existing = this.store.getMemberRequest(requestId);
@@ -6156,7 +6164,7 @@ export class AdminBotService {
     if (!member) {
       return serviceError(404, "member not found");
     }
-    if (member.privilege_level !== "admin" && !this.memberOwnsPaper(member, paper)) {
+    if (!adminBotIsAdminOrAbove(member.privilege_level) && !this.memberOwnsPaper(member, paper)) {
       return serviceError(403, "Members can only update projects they authored");
     }
     const body = params.body.trim().slice(0, adminBotWeeklyUpdateBodyMax);
@@ -8595,7 +8603,8 @@ export class AdminBotService {
           paper_ids: venue.papers.map((paper) => paper.id),
         },
         rationale: `OpenReview recorded ${venue.newly_accepted} new acceptance${venue.newly_accepted === 1 ? "" : "s"} at ${venue.label}.`,
-        undo_plan: "A Slack message cannot be unsent by AdminBot; it only points at drafts, so nothing else to undo.",
+        undo_plan:
+          "A Slack message cannot be unsent by AdminBot; it only points at drafts, so nothing else to undo.",
         idempotency_key: idempotencyKey,
       });
       if (!proposal.ok) {
@@ -11586,7 +11595,7 @@ export class AdminBotService {
       }
       case "admin":
         return roster
-          .filter((member) => member.privilege_level === "admin")
+          .filter((member) => adminBotIsAdminOrAbove(member.privilege_level))
           .map((member) => member.id);
     }
   }
@@ -15275,7 +15284,7 @@ export class AdminBotService {
       .listLabMembers()
       .filter(
         (member) =>
-          member.privilege_level === "admin" &&
+          adminBotIsAdminOrAbove(member.privilege_level) &&
           member.slack_user_id &&
           member.status !== "alumni" &&
           member.id !== headProfessorId,

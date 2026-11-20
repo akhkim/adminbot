@@ -12,14 +12,15 @@
 // change are marked with [SQUARE BRACKETS] so it is obvious at a glance what still needs a human.
 // Everything the record already knows -- title, venue, track -- is filled in rather than bracketed.
 
-import type { AdminBotLabMember, AdminBotPaperRecord } from "./controllers/admin.ts";
 import { isSamePerson } from "../../../../extensions/adminbot/src/contracts/person-names.js";
+import { isAdminPrivilegeLevel } from "./access.ts";
+import type { AdminBotLabMember, AdminBotPaperRecord } from "./controllers/admin.ts";
 
 /** Every email the lab sends about a paper is copied here, so the record is not one person's inbox. */
 export const ADMINBOT_BCC = "jinesis.adminbot@gmail.com";
 
 function isFullMember(member: AdminBotLabMember): boolean {
-  return member.privilege_level === "member" || member.privilege_level === "admin";
+  return member.privilege_level === "member" || isAdminPrivilegeLevel(member.privilege_level);
 }
 
 /**
@@ -77,7 +78,9 @@ export function firstFullMemberAuthor(
     return pinned;
   }
   for (const author of paper.authors ?? []) {
-    const match = members.find((member) => isFullMember(member) && isSamePerson(author, member.name));
+    const match = members.find(
+      (member) => isFullMember(member) && isSamePerson(author, member.name),
+    );
     if (match) {
       return match;
     }
@@ -86,10 +89,7 @@ export function firstFullMemberAuthor(
 }
 
 /** Addresses for everyone on the author list the roster knows, senior authors included. */
-export function coauthorEmails(
-  paper: AdminBotPaperRecord,
-  members: AdminBotLabMember[],
-): string[] {
+export function coauthorEmails(paper: AdminBotPaperRecord, members: AdminBotLabMember[]): string[] {
   const found: string[] = [];
   for (const author of paper.authors ?? []) {
     const match = members.find((member) => isSamePerson(author, member.name));

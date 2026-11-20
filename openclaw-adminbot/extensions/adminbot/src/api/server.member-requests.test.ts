@@ -121,13 +121,13 @@ async function lab(options: { memberApproverIds?: string[]; piApproverIds?: stri
     id: "admin",
     name: "Admin",
     email: "admin@cs.toronto.edu",
-    privilege_level: "admin",
+    privilege_level: "maintainer",
   });
   seedMember(mock, {
     id: "andy",
     name: "Andy",
     email: "andy@cs.toronto.edu",
-    privilege_level: "admin",
+    privilege_level: "maintainer",
   });
   seedMember(mock, {
     id: "pat",
