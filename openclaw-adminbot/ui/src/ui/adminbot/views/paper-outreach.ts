@@ -207,17 +207,14 @@ function renderSheet(props: PaperOutreachProps, data: PaperOutreach): TemplateRe
   const working = props.busy === "sheet";
   return html`
     <h3 class="adminbot-outreach__heading">${t("mailingList.outreach.sheet.title")}</h3>
-    <p class="muted">
-      ${data.acceptance_sheet_configured
-        ? t("mailingList.outreach.sheet.sub")
-        : t("mailingList.outreach.sheet.unconfigured")}
-    </p>
-    <details class="adminbot-outreach__outlet" data-testid="outreach-sheet-rows">
-      <summary>${t("mailingList.outreach.sheet.rows", { count: String(rows.length) })}</summary>
-      <ul class="adminbot-outreach__notes">
-        ${rows.map((row) => html`<li>${row.year} · ${row.conference} · ${row.title}</li>`)}
-      </ul>
-    </details>
+    ${rows.length > 0
+      ? html`<details class="adminbot-outreach__outlet" data-testid="outreach-sheet-rows">
+          <summary>${t("mailingList.outreach.sheet.rows", { count: String(rows.length) })}</summary>
+          <ul class="adminbot-outreach__notes">
+            ${rows.map((row) => html`<li>${row.year} · ${row.conference} · ${row.title}</li>`)}
+          </ul>
+        </details>`
+      : nothing}
     ${check
       ? html`<p data-testid="outreach-sheet-result">
           ${check.missing.length === 0
@@ -234,18 +231,22 @@ function renderSheet(props: PaperOutreachProps, data: PaperOutreach): TemplateRe
         href=${ACCEPTANCE_TAB_URL}
         target="_blank"
         rel="noopener noreferrer"
+        title=${data.acceptance_sheet_configured
+          ? t("mailingList.outreach.sheet.sub")
+          : t("mailingList.outreach.sheet.unconfigured")}
         data-testid="outreach-sheet-open"
       >
         ${t("mailingList.outreach.sheet.open")}
       </a>
-      <button
-        class="btn btn--sm"
-        type="button"
-        ?disabled=${rows.length === 0}
-        @click=${() => copy(acceptanceRowsAsTsv(rows))}
-      >
-        ${t("mailingList.outreach.sheet.copy")}
-      </button>
+      ${rows.length > 0
+        ? html`<button
+            class="btn btn--sm"
+            type="button"
+            @click=${() => copy(acceptanceRowsAsTsv(rows))}
+          >
+            ${t("mailingList.outreach.sheet.copy")}
+          </button>`
+        : nothing}
       ${data.acceptance_sheet_configured
         ? check && check.missing.length > 0
           ? html`<button
@@ -283,14 +284,14 @@ export function renderPaperOutreach(props: PaperOutreachProps): TemplateResult |
   return html`
     <section class="adminbot-panel adminbot-outreach" data-testid="outreach">
       <div class="card-title">${t("mailingList.outreach.title")}</div>
-      <p class="muted">
-        ${data?.venue
-          ? t("mailingList.outreach.sub", {
+      ${data?.venue
+        ? html`<p class="muted">
+            ${t("mailingList.outreach.sub", {
               venue: data.venue,
               count: String(data.paper_count),
-            })
-          : t("mailingList.outreach.chooseVenue")}
-      </p>
+            })}
+          </p>`
+        : nothing}
       ${props.loading ? html`<p class="muted">${t("mailingList.previewing")}</p>` : nothing}
       ${props.error
         ? html`<div class="adminbot-error" data-testid="outreach-error">${props.error}</div>`

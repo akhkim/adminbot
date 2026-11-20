@@ -1793,7 +1793,8 @@ describe("Next step per paper — reads the slot overview", () => {
     const rows = overview(["arxiv"]) as unknown as Array<Record<string, unknown>>;
     rows[0]!.dormant = true;
     const container = draw(rows as never);
-    expect(container.textContent).toContain("Nothing actionable");
+    // With nothing actionable the board draws nothing at all.
+    expect(container.querySelector(".adminbot-next-list")).toBeNull();
   });
 
   it("ignores a slot this build does not know, rather than crashing", () => {
@@ -2003,7 +2004,7 @@ describe("pre-registration venue table", () => {
     expect(empty.querySelector('[data-testid="prereg-empty"]')?.textContent).toContain(
       "matches these filters",
     );
-    // And still says the plain thing when no filter is on.
+    // With nothing registered at all the board is not drawn.
     const none = renderToDiv(
       baseProps({
         mode: "admin",
@@ -2016,9 +2017,7 @@ describe("pre-registration venue table", () => {
         },
       }),
     );
-    expect(none.querySelector('[data-testid="prereg-empty"]')?.textContent).toContain(
-      "Nobody has pre-registered",
-    );
+    expect(none.querySelector('[data-testid="prereg-board"]')).toBeNull();
   });
 
   it("folds the active papers table into a disclosure that arrives closed", () => {

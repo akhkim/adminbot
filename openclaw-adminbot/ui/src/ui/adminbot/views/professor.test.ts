@@ -356,57 +356,67 @@ describe("the adoption columns", () => {
   });
 });
 
+const busyDesk = (): Partial<ProfessorViewProps> => ({
+  requests: [request({ id: "a", deadline_at: "2026-02-01T00:00:00Z" })],
+  papers: [paper({ id: "d", artifacts: { overleaf_edit_url: "https://overleaf.com/project/1" } })],
+  profiles: [profile({ id: "p", missing_fields: ["office"] })],
+});
+
 describe("renderProfessorView", () => {
-  it("shows every queue with its count, and no approval section", () => {
-    const { container } = draw();
+  it("shows only the queues with something in them, and no approval section", () => {
+    const { container } = draw(busyDesk());
     for (const id of ["letters", "drafts", "adoption"]) {
       expect(container.querySelector(`[data-testid="professor-${id}"]`), id).not.toBeNull();
+    }
+    for (const id of ["pi-review", "escalated"]) {
+      expect(container.querySelector(`[data-testid="professor-${id}"]`), id).toBeNull();
     }
     // Approvals live on Pending Actions, which the sidebar reaches directly.
     expect(container.querySelector('[data-testid="professor-approvals"]')).toBeNull();
   });
 
-  // One line per queue saying what it is for. Three of these sections are a list of papers with
-  // her name against them, and the titles alone did not say which question each was asking --
-  // approve the finished thing, read the unfinished thing, or go and ask somebody for something.
-  it("says what each paper queue is for, in words that tell them apart", () => {
+  it("says one line, and draws no queue, when nothing is waiting", () => {
     const { container } = draw();
-    const blurb = (id: string) =>
-      container.querySelector(`[data-testid="professor-${id}"] .professor__blurb`)?.textContent ??
-      "";
-    // Blocked on her: nothing moves until she acts.
-    expect(blurb("pi-review")).toContain("Nothing is posted until you say yes");
-    // Not blocked on her: reading, while reading can still change something.
-    expect(blurb("drafts")).toContain("Nobody is blocked on you here");
-    // Not a paper queue at all: information nobody sent, and she is the one left to ask.
-    expect(blurb("escalated")).toContain("a message from you is what is left");
+    expect(queueOrder(container)).toEqual([]);
+    expect(container.querySelector('[data-testid="professor-clear"]')?.textContent?.trim()).toBe(
+      "Nothing waiting on you.",
+    );
+    expect(container.querySelector('[data-testid="professor-summary"]')).toBeNull();
   });
 
-  it("titles the two paper queues by the job, not by where the file lives", () => {
-    const { container } = draw();
+  // The titles carry the meaning; there is no paragraph under each one explaining it.
+  it("names each queue by the job, with no explanatory paragraph", () => {
+    const { container } = draw({
+      ...busyDesk(),
+      piReview: [piReviewRow()],
+      escalated: [
+        {
+          memberId: "mei",
+          name: "Mei Chen",
+          escalatedAt: "2026-08-20T09:00:00.000Z",
+          items: [{ id: "n1", title: "Poster", body: "", createdAt: "2026-08-14T09:00:00.000Z" }],
+        },
+      ],
+    });
     const title = (id: string) =>
       container.querySelector(`[data-testid="professor-${id}"] .card-title`)?.textContent ?? "";
     expect(title("pi-review")).toBe("Paper feedback and publication approval");
-    expect(title("drafts")).toBe("Read and comment while they are still writing");
-    expect(title("escalated")).toBe("Missing information — needs a word from you");
+    expect(title("drafts")).toBe("Drafts to read");
+    expect(title("escalated")).toBe("Missing information");
+    expect(title("adoption")).toBe("Members to remind");
+    expect(container.querySelector(".professor__blurb")).toBeNull();
   });
 
-  it("goes quiet at zero, and loud when something is waiting", () => {
-    const empty = draw().container.querySelector<HTMLElement>(
-      '[data-testid="professor-letters"] .professor__count',
-    );
-    expect(empty?.dataset.empty).toBe("true");
-
+  it("shows the count of a queue that has something in it", () => {
     const busy = draw({
       requests: [request({ id: "a", deadline_at: "2026-02-01T00:00:00Z" })],
     }).container.querySelector<HTMLElement>('[data-testid="professor-letters"] .professor__count');
-    expect(busy?.dataset.empty).toBe("false");
     expect(busy?.textContent?.trim()).toBe("1");
   });
 
   it("links each queue at the page that does the work", () => {
     // It aggregates and links; it does not re-implement. Every section has a way through.
-    const { container, opened } = draw();
+    const { container, opened } = draw(busyDesk());
     for (const [id, tab] of [
       ["letters", "adminbotRecLetters"],
       ["drafts", "adminbotPapers"],
@@ -644,7 +654,8 @@ describe("renderProfessorView", () => {
     expect(section?.querySelector(".professor__count")?.textContent?.trim()).toBe("1");
     expect(section?.querySelector('[data-testid="professor-adoption-profile"]')).not.toBeNull();
     expect(section?.querySelector('[data-testid="professor-adoption-timeline"]')).not.toBeNull();
-    expect(section?.querySelector('[data-testid="professor-adoption-papers"]')).not.toBeNull();
+    // A column with nobody in it is left out rather than drawn empty.
+    expect(section?.querySelector('[data-testid="professor-adoption-papers"]')).toBeNull();
   });
 
   it("heads each column and the section with the service's counts, not the rows it was sent", () => {
@@ -679,16 +690,9 @@ describe("renderProfessorView", () => {
       profiles: [profile({ id: "a", missing_fields: ["office"] })],
     });
     const order = queueOrder(container);
-    expect(order).toEqual([
-      "professor-drafts",
-      // The settled ones keep their relative order below it, the PI gate among them.
-      "professor-pi-review",
-      "professor-letters",
-      // Pinned at the foot, below even the settled ones: escalations, then adoption -- which is
-      // pinned even when it has people in it.
-      "professor-escalated",
-      "professor-adoption",
-    ]);
+    // The empty queues are not drawn at all; adoption stays pinned at the foot even when it has
+    // people in it.
+    expect(order).toEqual(["professor-drafts", "professor-adoption"]);
   });
 
   // The queue the escalation pass was always computing. It sits at the bottom of the page, and
@@ -760,24 +764,25 @@ describe("renderProfessorView", () => {
     });
 
     it("sits at the foot, above adoption, even when somebody is waiting on her", () => {
-      const { container } = draw({ escalated: [row()] });
+      const { container } = draw({
+        escalated: [row()],
+        piReview: [piReviewRow()],
+        profiles: [profile({ id: "a", missing_fields: ["office"] })],
+      });
       const order = queueOrder(container);
       // Pinned at the foot with adoption, which goes under it: a pinned section outranks the
       // settled sort rather than joining it.
       expect(order.slice(-2)).toEqual(["professor-escalated", "professor-adoption"]);
-      expect(order).toHaveLength(5);
+      expect(order).toEqual(["professor-pi-review", "professor-escalated", "professor-adoption"]);
     });
 
-    it("stays at the bottom, and says so plainly, when nobody is waiting", () => {
+    it("is not drawn when nobody is waiting", () => {
       const { container } = draw({
         escalated: [],
         profiles: [profile({ id: "a", missing_fields: ["office"] })],
       });
-      const section = container.querySelector('[data-testid="professor-escalated"]');
-      expect(section?.textContent).toContain("Nobody has ignored a nudge long enough");
-      const order = queueOrder(container);
-      // Still in its pinned place above adoption, which does have somebody in it.
-      expect(order.slice(-2)).toEqual(["professor-escalated", "professor-adoption"]);
+      expect(container.querySelector('[data-testid="professor-escalated"]')).toBeNull();
+      expect(queueOrder(container)).toEqual(["professor-adoption"]);
     });
 
     it("sends her where she can write to them", () => {
@@ -987,11 +992,9 @@ describe("the papers waiting on her yes", () => {
     expect(queueOrder(container)[0]).toBe("professor-pi-review");
   });
 
-  it("says so plainly when nothing is", () => {
+  it("is not drawn when nothing is waiting on her", () => {
     const { container } = draw({ piReview: [] });
-    expect(container.querySelector('[data-testid="professor-pi-review"]')?.textContent).toContain(
-      "No paper is waiting on your approval.",
-    );
+    expect(container.querySelector('[data-testid="professor-pi-review"]')).toBeNull();
   });
 });
 
@@ -1617,15 +1620,16 @@ describe("the desk's layout", () => {
     expect(jumps).toEqual(["professor-jump-pi-review", "professor-jump-adoption"]);
   });
 
-  it("says plainly when nothing is waiting", () => {
-    const { container } = draw();
-    const strip = container.querySelector('[data-testid="professor-summary"]');
-    expect(strip?.querySelector("button")).toBeNull();
-    expect(strip?.textContent).toContain("Nothing is waiting on you.");
+  it("draws no strip for a single queue: the queue itself is the first thing on the page", () => {
+    const { container } = draw({ piReview: [piReviewRow()] });
+    expect(container.querySelector('[data-testid="professor-summary"]')).toBeNull();
   });
 
   it("jumps to the section a strip entry names", () => {
-    const { container } = draw({ piReview: [piReviewRow()] });
+    const { container } = draw({
+      piReview: [piReviewRow()],
+      profiles: [profile({ id: "a", missing_fields: ["office"] })],
+    });
     const target = container.querySelector<HTMLElement>('[data-section="pi-review"]');
     const scrolled = vi.fn();
     if (target) {

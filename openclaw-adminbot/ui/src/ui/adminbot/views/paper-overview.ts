@@ -22,7 +22,12 @@ import { paperStepProgress } from "../../../../../extensions/adminbot/src/contra
 import { t } from "../../../i18n/index.ts";
 import type { PaperSlotOverviewRow } from "../api/paper-admin.ts";
 import type { AdminBotPaperRecord } from "../controllers/admin.ts";
-import { matchesMemberTypeFilter, renderMemberTypeFilter } from "../member-type-filter.ts";
+import {
+  ADMINBOT_MEMBER_TYPE_FILTERS,
+  matchesMemberTypeFilter,
+  renderMemberTypeFilter,
+} from "../member-type-filter.ts";
+import { type FilterChip, renderFilterChips, renderFilterFold } from "./filter-fold.ts";
 
 /**
  * Which papers the page is looking at.
@@ -528,6 +533,39 @@ export type PaperOverviewProps = {
   actions?: unknown;
 };
 
+/** Every filter that is set, as a chip that puts it back to its default. */
+function paperFilterChips(props: PaperOverviewProps): FilterChip[] {
+  const { filter, onFilterChange } = props;
+  const chips: FilterChip[] = [];
+  if (filter.state !== "all") {
+    const option = STATE_OPTIONS.find((entry) => entry.value === filter.state);
+    chips.push({
+      label: option ? t(option.labelKey) : filter.state,
+      onClear: () => onFilterChange({ ...filter, state: "all" }),
+    });
+  }
+  if (filter.stage) {
+    chips.push({
+      label: props.stages.find((stage) => stage.value === filter.stage)?.label ?? filter.stage,
+      onClear: () => onFilterChange({ ...filter, stage: "" }),
+    });
+  }
+  if (filter.venue) {
+    chips.push({ label: filter.venue, onClear: () => onFilterChange({ ...filter, venue: "" }) });
+  }
+  for (const type of filter.memberTypes) {
+    chips.push({
+      label: ADMINBOT_MEMBER_TYPE_FILTERS.find((entry) => entry.value === type)?.label ?? type,
+      onClear: () =>
+        onFilterChange({
+          ...filter,
+          memberTypes: filter.memberTypes.filter((entry) => entry !== type),
+        }),
+    });
+  }
+  return chips;
+}
+
 export function renderPaperOverviewTable(props: PaperOverviewProps) {
   const summary = paperOverviewSummary(props.rows);
   const shown = filterPaperRows(props.rows, props.filter);
@@ -535,75 +573,84 @@ export function renderPaperOverviewTable(props: PaperOverviewProps) {
     matchesMemberTypeFilter(props.memberTypeOf?.(person.memberId), props.filter.memberTypes),
   );
   const venues = paperVenueOptions(props.rows);
+  const chips = paperFilterChips(props);
   return html`
     <section class="adminbot-shell paper-overview" data-testid="adminbot-paper-overview">
       <div class="card adminbot-card adminbot-card--wide">
         <div class="profile-overview__heading">
-          <div>
-            <div class="card-title">${t("paperOverview.title")}</div>
-            <div class="card-sub">${t("paperOverview.sub")}</div>
-          </div>
-          <div class="profile-overview__actions">
-            <label class="profile-overview__filter">
-              <span class="sr-only">${t("paperOverview.filters.searchLabel")}</span>
-              <input
-                class="input"
-                type="search"
-                data-testid="paper-overview-search"
-                placeholder=${t("paperOverview.filters.searchPlaceholder")}
-                .value=${props.filter.search}
-                @input=${(event: Event) =>
-                  props.onFilterChange({
-                    ...props.filter,
-                    search: (event.target as HTMLInputElement).value,
-                  })}
-              />
-            </label>
-            ${renderSelect({
-              testId: "paper-overview-filter-state",
-              label: t("paperOverview.filters.stateLabel"),
-              value: props.filter.state,
-              options: STATE_OPTIONS.map((option) => ({
-                value: option.value,
-                label: t(option.labelKey),
-              })),
-              onChange: (value) =>
-                props.onFilterChange({
-                  ...props.filter,
-                  state: value as PaperOverviewState,
-                }),
-            })}
-            ${renderSelect({
-              testId: "paper-overview-filter-stage",
-              label: t("paperOverview.filters.stageLabel"),
-              value: props.filter.stage,
-              options: [
-                { value: "", label: t("paperOverview.filters.allStages") },
-                ...props.stages,
-              ],
-              onChange: (value) => props.onFilterChange({ ...props.filter, stage: value }),
-            })}
-            ${renderSelect({
-              testId: "paper-overview-filter-venue",
-              label: t("paperOverview.filters.venueLabel"),
-              value: props.filter.venue,
-              options: [
-                { value: "", label: t("paperOverview.filters.allVenues") },
-                ...venues.map((venue) => ({ value: venue, label: venue })),
-              ],
-              onChange: (value) => props.onFilterChange({ ...props.filter, venue: value }),
-            })}
-            ${renderMemberTypeFilter({
-              selected: props.filter.memberTypes,
-              onChange: (memberTypes) => props.onFilterChange({ ...props.filter, memberTypes }),
-              testIdPrefix: "paper-overview",
-              label: t("profileOverview.filters.memberTypeLabel"),
-            })}
-            ${props.actions ?? nothing}
-          </div>
+          <div class="card-title">${t("paperOverview.title")}</div>
+          ${props.rows.length
+            ? html`<div class="profile-overview__actions">
+                <label class="profile-overview__filter">
+                  <span class="sr-only">${t("paperOverview.filters.searchLabel")}</span>
+                  <input
+                    class="input"
+                    type="search"
+                    data-testid="paper-overview-search"
+                    placeholder=${t("paperOverview.filters.searchPlaceholder")}
+                    .value=${props.filter.search}
+                    @input=${(event: Event) =>
+                      props.onFilterChange({
+                        ...props.filter,
+                        search: (event.target as HTMLInputElement).value,
+                      })}
+                  />
+                </label>
+                ${renderFilterFold({
+                  testId: "paper-overview-filters",
+                  chips,
+                  controls: html`
+                    ${renderSelect({
+                      testId: "paper-overview-filter-state",
+                      label: t("paperOverview.filters.stateLabel"),
+                      value: props.filter.state,
+                      options: STATE_OPTIONS.map((option) => ({
+                        value: option.value,
+                        label: t(option.labelKey),
+                      })),
+                      onChange: (value) =>
+                        props.onFilterChange({
+                          ...props.filter,
+                          state: value as PaperOverviewState,
+                        }),
+                    })}
+                    ${renderSelect({
+                      testId: "paper-overview-filter-stage",
+                      label: t("paperOverview.filters.stageLabel"),
+                      value: props.filter.stage,
+                      options: [
+                        { value: "", label: t("paperOverview.filters.allStages") },
+                        ...props.stages,
+                      ],
+                      onChange: (value) => props.onFilterChange({ ...props.filter, stage: value }),
+                    })}
+                    ${renderSelect({
+                      testId: "paper-overview-filter-venue",
+                      label: t("paperOverview.filters.venueLabel"),
+                      value: props.filter.venue,
+                      options: [
+                        { value: "", label: t("paperOverview.filters.allVenues") },
+                        ...venues.map((venue) => ({ value: venue, label: venue })),
+                      ],
+                      onChange: (value) => props.onFilterChange({ ...props.filter, venue: value }),
+                    })}
+                    ${renderMemberTypeFilter({
+                      selected: props.filter.memberTypes,
+                      onChange: (memberTypes) =>
+                        props.onFilterChange({ ...props.filter, memberTypes }),
+                      testIdPrefix: "paper-overview",
+                      label: t("profileOverview.filters.memberTypeLabel"),
+                    })}
+                  `,
+                })}
+                ${props.actions ?? nothing}
+              </div>`
+            : nothing}
         </div>
-
-        ${renderSummary(summary, props, paperPersonRows(props.rows).length)}
+        ${renderFilterChips("paper-overview-filters", chips)}
+        ${props.rows.length
+          ? renderSummary(summary, props, paperPersonRows(props.rows).length)
+          : nothing}
         ${people.length
           ? html`
               <div class="profile-overview__scroll">
@@ -651,28 +698,26 @@ export function renderPaperOverviewTable(props: PaperOverviewProps) {
  * them -- so the head count sits alongside as a plain figure rather than a fifth filter.
  */
 function renderSummary(summary: PaperOverviewSummary, props: PaperOverviewProps, people: number) {
-  const figure = (
-    value: number,
-    labelKey: string,
-    state: PaperOverviewState,
-    tone?: "attention",
-  ) => html`
-    <button
-      class="paper-overview__figure ${props.filter.state === state ? "is-active" : ""}"
-      type="button"
-      data-testid=${`paper-overview-figure-${state}`}
-      aria-pressed=${props.filter.state === state ? "true" : "false"}
-      @click=${() => props.onFilterChange({ ...props.filter, state })}
-    >
-      <span
-        class="profile-overview__adoption-figure ab-num ${tone === "attention" && value > 0
-          ? "is-attention"
-          : ""}"
-        >${value}</span
-      >
-      <span class="muted">${t(labelKey)}</span>
-    </button>
-  `;
+  const figure = (value: number, labelKey: string, state: PaperOverviewState, tone?: "attention") =>
+    value === 0 && props.filter.state !== state
+      ? nothing
+      : html`
+          <button
+            class="paper-overview__figure ${props.filter.state === state ? "is-active" : ""}"
+            type="button"
+            data-testid=${`paper-overview-figure-${state}`}
+            aria-pressed=${props.filter.state === state ? "true" : "false"}
+            @click=${() => props.onFilterChange({ ...props.filter, state })}
+          >
+            <span
+              class="profile-overview__adoption-figure ab-num ${tone === "attention" && value > 0
+                ? "is-attention"
+                : ""}"
+              >${value}</span
+            >
+            <span class="muted">${t(labelKey)}</span>
+          </button>
+        `;
   return html`
     <div class="profile-overview__adoption-summary" data-testid="paper-overview-summary">
       ${figure(summary.attention, "paperOverview.summary.attention", "attention", "attention")}

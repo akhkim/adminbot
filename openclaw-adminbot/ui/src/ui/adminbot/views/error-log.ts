@@ -225,10 +225,7 @@ export class AdminBotErrorLog extends LitElement {
     const groups = this.groups;
     return html`<section class="error-log" data-testid="error-log">
       <div class="error-log__head">
-        <div>
-          <h2 class="error-log__title">${t("errorLog.title")}</h2>
-          <p class="error-log__blurb">${t("errorLog.blurb")}</p>
-        </div>
+        <h2 class="error-log__title">${t("errorLog.title")}</h2>
         <div class="error-log__actions">
           <label class="error-log__toggle">
             <input
@@ -242,15 +239,6 @@ export class AdminBotErrorLog extends LitElement {
             />
             ${t("errorLog.showResolved")}
           </label>
-          <button
-            class="btn btn--sm btn--ghost"
-            type="button"
-            data-testid="error-log-refresh"
-            ?disabled=${this.loading}
-            @click=${() => void this.load()}
-          >
-            ${t("errorLog.refresh")}
-          </button>
         </div>
       </div>
 
@@ -272,8 +260,6 @@ export class AdminBotErrorLog extends LitElement {
             ${groups.map((group) => this.renderGroup(group))}
           </ul>`
         : nothing}
-
-      <p class="error-log__caveat">${t("errorLog.caveat")}</p>
     </section>`;
   }
 }
