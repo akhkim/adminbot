@@ -343,8 +343,6 @@ describe("personal API tokens over HTTP", () => {
       ["/auth/password", { current_password: PASSWORD, new_password: "another-password-2" }],
       ["/auth/email", { email: "new@example.invalid", password: PASSWORD }],
       ["/auth/impersonate", { member_id: "plain-c" }],
-      // The admin's version of /auth/email, which skips the member's password.
-      ["/lab/members/plain-c/email", { new_email: "moved@example.invalid" }],
     ] as const) {
       const response = await call(baseUrl, "POST", path, { bearer: token, body });
       expect([path, response.status]).toEqual([path, 403]);
@@ -361,6 +359,23 @@ describe("personal API tokens over HTTP", () => {
       });
       expect([path, response.status]).not.toEqual([path, 403]);
     }
+  });
+
+  it("lets an admin token move someone else's sign-in email, never its own holder's", async () => {
+    const { baseUrl, mock } = await start();
+    const token = await mint(baseUrl, await signIn(baseUrl, "admin-a"));
+    const moved = await call(baseUrl, "POST", "/lab/members/plain-c/email", {
+      bearer: token,
+      body: { new_email: "moved@example.invalid" },
+    });
+    expect(moved.status).toBe(200);
+    expect(mock.store.getCredentialByMemberId("plain-c")?.email).toBe("moved@example.invalid");
+    const own = await call(baseUrl, "POST", "/lab/members/admin-a/email", {
+      bearer: token,
+      body: { new_email: "elsewhere@example.invalid" },
+    });
+    expect(own.status).toBe(403);
+    expect(mock.store.getCredentialByMemberId("admin-a")?.email).toBe("admin-a@example.invalid");
   });
 
   it("logs out by revoking the token, and attributes its actions in the audit", async () => {
