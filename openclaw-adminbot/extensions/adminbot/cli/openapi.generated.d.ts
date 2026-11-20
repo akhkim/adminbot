@@ -5999,6 +5999,7 @@ export interface components {
       time_off?: components["schemas"]["AdminBotTimeOffRow"][];
       milestones?: components["schemas"]["AdminBotMemberMilestone"][];
       trips?: components["schemas"]["AdminBotMemberTrip"][];
+      financial_support_needs?: components["schemas"]["AdminBotMemberFinancialSupportNeed"][];
       dismissed_deadlines?: string[];
       availability_notes?: string;
       availability_doc_url?: string;
@@ -6100,6 +6101,16 @@ export interface components {
       timezone?: string;
       note?: string;
       link?: string;
+    } & {
+      [key: string]: unknown;
+    };
+    AdminBotMemberFinancialSupportNeed: {
+      /** @enum {string} */
+      category: "other" | "travel" | "ai_subscription";
+      amount?: number;
+      currency?: string;
+      description: string;
+      pi_permission?: string;
     } & {
       [key: string]: unknown;
     };
@@ -6847,6 +6858,7 @@ export interface components {
       time_off?: components["schemas"]["AdminBotTimeOffRow"][];
       milestones?: components["schemas"]["AdminBotMemberMilestone"][];
       trips?: components["schemas"]["AdminBotMemberTrip"][];
+      financial_support_needs?: components["schemas"]["AdminBotMemberFinancialSupportNeed"][];
       dismissed_deadlines?: string[];
       availability_notes?: string;
       availability_doc_url?: string;
@@ -6993,6 +7005,7 @@ export interface components {
       time_off?: components["schemas"]["AdminBotTimeOffRow"][];
       milestones?: components["schemas"]["AdminBotMemberMilestone"][];
       trips?: components["schemas"]["AdminBotMemberTrip"][];
+      financial_support_needs?: components["schemas"]["AdminBotMemberFinancialSupportNeed"][];
       dismissed_deadlines?: string[];
       availability_notes?: string;
       availability_doc_url?: string;
@@ -8343,6 +8356,7 @@ export interface components {
       time_off?: components["schemas"]["AdminBotTimeOffRow"][];
       milestones?: components["schemas"]["AdminBotMemberMilestone"][];
       trips?: components["schemas"]["AdminBotMemberTrip"][];
+      financial_support_needs?: components["schemas"]["AdminBotMemberFinancialSupportNeed"][];
       dismissed_deadlines?: string[];
       availability_notes?: string;
       availability_doc_url?: string;
@@ -18551,6 +18565,7 @@ export interface operations {
               time_off?: components["schemas"]["AdminBotTimeOffRow"][];
               milestones?: components["schemas"]["AdminBotMemberMilestone"][];
               trips?: components["schemas"]["AdminBotMemberTrip"][];
+              financial_support_needs?: components["schemas"]["AdminBotMemberFinancialSupportNeed"][];
               dismissed_deadlines?: string[];
               availability_notes?: string;
               availability_doc_url?: string;
