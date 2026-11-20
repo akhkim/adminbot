@@ -1,0 +1,106 @@
+/* One search box, a Filters button, and chips for the filters that are set (DESIGN.md rule 13). */
+adminbot-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.adminbot-filter-bar__search {
+  flex: 1 1 220px;
+  min-width: 0;
+  max-width: 420px;
+  height: var(--control-h-sm);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--input);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--control-ui-input-text-size);
+}
+.adminbot-filter-bar__search::placeholder {
+  color: var(--placeholder);
+}
+.adminbot-filter-bar__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.adminbot-filter-bar__count {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  color: var(--accent-foreground);
+  font-size: var(--control-ui-text-xs);
+  line-height: 18px;
+  text-align: center;
+}
+.adminbot-filter-bar__panel {
+  width: 300px;
+  max-width: calc(100vw - 24px);
+  max-height: min(70vh, 520px);
+  overflow: auto;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--popover);
+  color: var(--popover-foreground);
+  box-shadow: var(--shadow-lg);
+}
+.adminbot-filter-bar__panel:popover-open {
+  display: grid;
+  gap: var(--space-3);
+}
+@supports (position-area: block-end) {
+  .adminbot-filter-bar__panel {
+    position-area: block-end span-inline-end;
+    position-try-fallbacks: flip-inline, flip-block;
+    margin: 6px 0;
+  }
+}
+.adminbot-filter-bar__panel label {
+  display: grid;
+  gap: var(--space-1);
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+}
+.adminbot-filter-bar__panel select {
+  width: 100%;
+  min-width: 0;
+}
+.adminbot-filter-bar__panel > .btn {
+  justify-self: start;
+}
+.adminbot-filter-bar__chips {
+  display: flex;
+  flex: 1 0 100%;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.adminbot-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 100%;
+  padding: 2px var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: var(--bg-hover);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--control-ui-text-sm);
+  cursor: pointer;
+}
+.adminbot-filter-chip > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.adminbot-filter-chip:hover {
+  border-color: var(--border-strong);
+}

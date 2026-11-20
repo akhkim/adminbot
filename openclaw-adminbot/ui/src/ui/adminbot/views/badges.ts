@@ -675,25 +675,11 @@ export function renderAdminBotBadges(props: AdminBotBadgesProps) {
   }
   return html`
     <section class="adminbot-shell">
-      <div class="card adminbot-card adminbot-card--wide">
-        <div class="card-title">${t("adminbotBadges.title")}</div>
-        <div class="card-sub">${t("adminbotBadges.sub")}</div>
-        ${props.notice
-          ? html`<div class="callout ${props.notice.kind === "error" ? "danger" : "success"}">
-              ${props.notice.text}
-            </div>`
-          : nothing}
-        <div class="adminbot-form__actions">
-          <button
-            class="btn btn--sm"
-            type="button"
-            ?disabled=${props.definitionsLoading}
-            @click=${props.onRefresh}
-          >
-            ${t("adminbotBadges.refresh")}
-          </button>
-        </div>
-      </div>
+      ${props.notice
+        ? html`<div class="callout ${props.notice.kind === "error" ? "danger" : "success"}">
+            ${props.notice.text}
+          </div>`
+        : nothing}
       ${renderCreateForm(props)}
       <div class="card adminbot-card adminbot-card--wide">
         <div class="card-title">${t("adminbotBadges.catalog")}</div>

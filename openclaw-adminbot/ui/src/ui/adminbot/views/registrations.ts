@@ -66,17 +66,14 @@ function errorSummaryKey(error: RegistrationsLoadError): string {
 function renderErrorState(props: AdminBotRegistrationsProps, error: RegistrationsLoadError) {
   const retryable = error === "unreachable" || error === "failed";
   return html`
-    <div class="card adminbot-card adminbot-card--wide">
-      <div class="card-title">${t("adminbotRegistrations.empty.title")}</div>
-      <div class="card-sub">${t(errorSummaryKey(error))}</div>
+    <p class="adminbot-registrations__status muted">
+      ${t(errorSummaryKey(error))}
       ${retryable
-        ? html`<div class="adminbot-form__actions">
-            <button class="btn btn--sm" type="button" @click=${props.onRefresh}>
-              ${t("adminbotRegistrations.retry")}
-            </button>
-          </div>`
+        ? html`<button class="btn btn--sm btn--ghost" type="button" @click=${props.onRefresh}>
+            ${t("adminbotRegistrations.retry")}
+          </button>`
         : nothing}
-    </div>
+    </p>
   `;
 }
 
@@ -152,7 +149,7 @@ function renderRegistration(props: AdminBotRegistrationsProps, registration: Mem
       ? t("adminbotRegistrations.kind.claim")
       : t("adminbotRegistrations.kind.signup");
   return html`
-    <li class="card adminbot-card adminbot-card--wide adminbot-registration">
+    <li class="adminbot-registration">
       <div class="adminbot-registration__head">
         <span class="ab-chip">${kindLabel}</span>
         <span class="adminbot-form__meta ab-num">
@@ -214,33 +211,19 @@ export function renderAdminBotRegistrations(props: AdminBotRegistrationsProps) {
     return html`<section class="adminbot-shell">${renderErrorState(props, props.error)}</section>`;
   }
   return html`
-    <section class="adminbot-shell">
-      <div class="card adminbot-card adminbot-card--wide">
-        <div class="card-title">${t("adminbotRegistrations.title")}</div>
-        <div class="card-sub">${t("adminbotRegistrations.sub")}</div>
-        ${props.notice
-          ? html`<div
-              class="callout ${props.notice.kind === "error" ? "danger" : "success"}"
-              role="status"
-            >
-              ${props.notice.text}
-            </div>`
-          : nothing}
-        <div class="adminbot-form__actions">
-          <button
-            class="btn btn--sm"
-            type="button"
-            ?disabled=${props.loading}
-            @click=${props.onRefresh}
+    <section class="adminbot-shell adminbot-registrations-page">
+      ${props.notice
+        ? html`<div
+            class="callout ${props.notice.kind === "error" ? "danger" : "success"}"
+            role="status"
           >
-            ${t("adminbotRegistrations.refresh")}
-          </button>
-        </div>
-      </div>
-      ${props.registrations.length === 0
-        ? html`<div class="card adminbot-card adminbot-card--wide">
-            <div class="adminbot-form__meta">${t("adminbotRegistrations.empty.none")}</div>
+            ${props.notice.text}
           </div>`
+        : nothing}
+      ${props.registrations.length === 0
+        ? html`<p class="adminbot-registrations__status muted">
+            ${t("adminbotRegistrations.empty.none")}
+          </p>`
         : html`<ul class="adminbot-registrations">
             ${props.registrations.map((registration) => renderRegistration(props, registration))}
           </ul>`}

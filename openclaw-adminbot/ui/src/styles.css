@@ -1,5 +1,7 @@
 @import "./styles/base.css";
 @import "./styles/birthday-picker.css";
+@import "./styles/filter-bar.css";
+@import "./styles/people-rows.css";
 @import "./styles/layout.css";
 @import "./styles/layout.mobile.css";
 @import "./styles/deadline-recommendations.css";

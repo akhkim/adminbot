@@ -13,18 +13,18 @@ import {
   findDuplicateMembers,
   type MemberDuplicatePair,
 } from "../../../../../extensions/adminbot/src/contracts/member-duplicates.js";
-import "./interview-invite.ts";
 import {
   MEMBER_CITY_OPTIONS,
   MEMBER_AFFILIATION_OPTIONS,
 } from "../../../../../extensions/adminbot/src/contracts/member-profile-values.js";
-import "./member-guide-status.ts";
-import "./acquaintance-welcome.ts";
+import "./interview-invite.ts";
 import {
   formatAdminBotMemberRoles,
   parseAdminBotMemberRoles,
 } from "../../../../../extensions/adminbot/src/contracts/member-roles.js";
 import type { MemberRosterFilters } from "../../../../../extensions/adminbot/src/contracts/member-roster.js";
+import "./member-guide-status.ts";
+import "./acquaintance-welcome.ts";
 import { memberRosterFilterKeys } from "../../../../../extensions/adminbot/src/contracts/member-roster.js";
 import {
   adminBotPaperSlotRegistry,
@@ -68,9 +68,10 @@ import {
   type RecentEditsState,
 } from "../controllers/recent-edits.ts";
 import type { AdminBotSettingsSaveInput } from "../controllers/workspace.ts";
-import { renderAvailabilitySchedule, renderAvailabilityStrip } from "../data/availability.js";
+import { renderAvailabilitySchedule } from "../data/availability.js";
 import { noteField, parseMemberNotes } from "../data/member-notes.ts";
 import { renderDateControl } from "../date-control.ts";
+import { type AdminBotFilterBar, type FilterBarField, filterOptions } from "../filter-bar.ts";
 import { saveMemberInBackground, waitForMemberSave } from "../member-autosave.ts";
 import { PROFILE_FIELDS, type ProfileField } from "../member-fields.ts";
 import { takeMemberSearchSeed } from "../member-search-seed.ts";
@@ -92,6 +93,7 @@ import {
   normalizeMemberLists,
 } from "./admin.member-filters.ts";
 import { renderMemberBadgeSymbols } from "./badge-symbols.ts";
+import type { InterviewInvite } from "./interview-invite.ts";
 import {
   MEMBER_REQUEST_POPOVER_ID,
   type MemberRequestsProps,
@@ -99,7 +101,6 @@ import {
   renderMemberRequests,
 } from "./member-requests.ts";
 import { renderRecentEditsBody } from "./recent-edits.ts";
-import { startSheetPan } from "./sheet-pan.ts";
 
 export type BlockerSort = "stage" | "age" | "paper";
 
@@ -1095,6 +1096,8 @@ function signedInMember(props: AdminBotProps): AdminBotLabMember | undefined {
 }
 
 const memberFilterSelections = new WeakMap<HTMLFormElement, Map<string, string>>();
+const memberSearchTimers = new WeakMap<HTMLFormElement, ReturnType<typeof setTimeout>>();
+const MEMBER_SEARCH_DEBOUNCE_MS = 300;
 
 function filterMemberSpreadsheet(form: EventTarget | null | undefined): void {
   if (!(form instanceof HTMLFormElement)) {
@@ -1845,6 +1848,25 @@ function memberRowEdit(member: AdminBotLabMember, props: AdminBotProps): MemberR
   return props.signedInMemberId && member.id === props.signedInMemberId ? "self" : "none";
 }
 
+/** Up to two tags, then "+N" — a row is one line, the editor holds the rest. */
+const MEMBER_ROW_TAGS = 2;
+function renderMemberTags(values: readonly string[] | undefined) {
+  const list = values ?? [];
+  if (list.length === 0) {
+    return "—";
+  }
+  return html`${list
+    .slice(0, MEMBER_ROW_TAGS)
+    .map((value) => html`<span class="adminbot-tag" title=${value}>${value}</span>`)}${list.length >
+  MEMBER_ROW_TAGS
+    ? html`<span
+        class="adminbot-tag adminbot-tag--more"
+        title=${list.slice(MEMBER_ROW_TAGS).join(", ")}
+        >+${list.length - MEMBER_ROW_TAGS}</span
+      >`
+    : nothing}`;
+}
+
 function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMember[]) {
   const page = props.memberList;
   const papers = props.data.papers;
@@ -1889,36 +1911,81 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
     [...new Set(members.flatMap((member) => conferencesForMember(member, papers)))].toSorted(
       (left, right) => left.localeCompare(right),
     );
+  const facetFields: FilterBarField[] = Object.entries(memberFacetLabels).map(([key, label]) => {
+    const facet = key as keyof typeof memberFacetLabels;
+    const options =
+      (facet === "meeting" && page
+        ? props.standingMeetings?.meetings.map((meeting) => meeting.id)
+        : facet !== "meeting"
+          ? page?.options[facet]
+          : undefined) ??
+      [
+        ...new Set([
+          ...(facet === "membership" ? adminBotMemberTypes : []),
+          ...members.flatMap((member) => facets.get(member.id)![facet]),
+        ]),
+      ].toSorted();
+    const unavailable = facet === "meeting" && !props.standingMeetings?.loadedAt;
+    return {
+      name: key,
+      label,
+      value: page?.filters[key as keyof MemberRosterFilters],
+      anyLabel: unavailable ? "Invitations unavailable" : "Any",
+      disabled: unavailable,
+      options: filterOptions(options, (value) =>
+        facet === "meeting"
+          ? (props.standingMeetings?.meetings.find((meeting) => meeting.id === value)?.title ??
+            value)
+          : facet === "membership"
+            ? friendly(value)
+            : value,
+      ),
+    };
+  });
+  const filterFields: FilterBarField[] = [
+    {
+      name: "status",
+      label: "Status",
+      value: page?.filters.status,
+      options: filterOptions(statuses, friendly),
+    },
+    {
+      name: "project",
+      label: "Project",
+      value: page?.filters.project,
+      options: filterOptions(projects),
+    },
+    // Search already matches paper titles (the server-side roster search includes them too).
+    // Past a short list a dropdown of every title is scrolling, not picking, and in a lab with
+    // 1,500 papers it was most of the page.
+    ...(paperTitles.length <= INLINE_OPTION_LIMIT
+      ? [
+          {
+            name: "paper",
+            label: "Paper",
+            value: page?.filters.paper,
+            options: filterOptions(paperTitles),
+          },
+        ]
+      : []),
+    {
+      name: "conference",
+      label: "Conference",
+      value: page?.filters.conference,
+      options: filterOptions(conferences),
+    },
+    ...facetFields,
+  ];
   return html`
-    <section class="adminbot-member-sheet">
+    <section class="adminbot-member-sheet adminbot-member-sheet--rows">
       ${renderSharedOptionLists()}
-      <div class="adminbot-member-sheet__heading">
-        <div>
-          <strong>People database</strong>
-          <span>Research, staffing, and publication context</span>
-          ${ownMemberOutsidePage && ownMember
-            ? html`<button
-                class="btn btn--sm adminbot-member-sheet__edit"
-                type="button"
-                popovertarget="adminbot-self-edit-member-own"
-                @click=${() => openMemberEditor(ownMember.id, props)}
-              >
-                Edit my profile
-              </button>`
-            : nothing}
-        </div>
-        <span
-          class="pill"
-          data-member-result-count
-          .textContent=${`${total} ${total === 1 ? "person" : "people"}`}
-        ></span>
-      </div>
       <form
-        class="adminbot-member-filters"
+        class="adminbot-member-filters adminbot-member-toolbar"
         ${ref((form) => {
           // Restore selections by value after options/rows change, then reapply the filters.
           if (form instanceof HTMLFormElement) {
-            queueMicrotask(() => {
+            const bar = form.querySelector<AdminBotFilterBar>("adminbot-filter-bar");
+            const restore = () => {
               const selections = memberFilterSelections.get(form);
               for (const select of form.querySelectorAll("select")) {
                 const value = page
@@ -1928,6 +1995,7 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
                   ? value
                   : "";
               }
+              bar?.sync();
               const search = form.elements.namedItem("search");
               const seeded = search instanceof HTMLInputElement ? takeMemberSearchSeed() : null;
               if (seeded !== null && search instanceof HTMLInputElement) {
@@ -1941,12 +2009,26 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
               } else {
                 filterMemberSpreadsheet(form);
               }
-            });
+            };
+            // The bar draws its selects on connect; when new options are still on their way, wait.
+            if (bar?.isUpdatePending) {
+              void bar.updateComplete.then(restore);
+            } else {
+              restore();
+            }
           }
         })}
         @input=${(event: Event) => {
+          const form = event.currentTarget as HTMLFormElement;
           if (!page) {
-            filterMemberSpreadsheet(event.currentTarget);
+            filterMemberSpreadsheet(form);
+          } else if (event.target instanceof HTMLInputElement) {
+            // The server-side roster searches as you type, once typing pauses.
+            clearTimeout(memberSearchTimers.get(form));
+            memberSearchTimers.set(
+              form,
+              setTimeout(() => requestPage(form), MEMBER_SEARCH_DEBOUNCE_MS),
+            );
           }
         }}
         @change=${(event: Event) => {
@@ -1959,113 +2041,47 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
         @submit=${(event: Event) => {
           event.preventDefault();
           if (page) {
-            requestPage(event.currentTarget as HTMLFormElement);
+            const form = event.currentTarget as HTMLFormElement;
+            clearTimeout(memberSearchTimers.get(form));
+            requestPage(form);
           }
         }}
       >
-        <div class="adminbot-member-filters__search">
-          <label
-            ><span>Search</span
-            ><input
-              name="search"
-              type="search"
-              placeholder="Name, topic, project, paper…"
-              .value=${page?.filters.q ?? ""}
-              ?disabled=${page?.loading ?? false}
-          /></label>
-          ${page
-            ? html`<button class="btn btn--sm" ?disabled=${page.loading}>Search</button>`
-            : nothing}
-        </div>
-        <label
-          ><span>Status</span
-          ><select name="status" ?disabled=${page?.loading}>
-            <option value="">All statuses</option>
-            ${statuses.map((value) => html`<option value=${value}>${friendly(value)}</option>`)}
-          </select></label
-        >
-        <label
-          ><span>Project</span
-          ><select name="project" ?disabled=${page?.loading}>
-            <option value="">All projects</option>
-            ${projects.map((value) => html`<option value=${value}>${value}</option>`)}
-          </select></label
-        >
-        ${
-          // Search already matches paper titles (the server-side roster search includes them
-          // too). Past a short list a dropdown of every title is scrolling, not picking, and in a
-          // lab with 1,500 papers it was most of the page.
-          paperTitles.length <= INLINE_OPTION_LIMIT
-            ? html`<label
-                ><span>Paper</span
-                ><select name="paper" ?disabled=${page?.loading}>
-                  <option value="">All papers</option>
-                  ${paperTitles.map((value) => html`<option value=${value}>${value}</option>`)}
-                </select></label
-              >`
-            : nothing
-        }
-        <label
-          ><span>Conference</span
-          ><select name="conference" ?disabled=${page?.loading}>
-            <option value="">All conferences</option>
-            ${conferences.map((value) => html`<option value=${value}>${value}</option>`)}
-          </select></label
-        >
-        ${Object.entries(memberFacetLabels).map(([key, label]) => {
-          const facet = key as keyof typeof memberFacetLabels;
-          const options =
-            (facet === "meeting" && page
-              ? props.standingMeetings?.meetings.map((meeting) => meeting.id)
-              : facet !== "meeting"
-                ? page?.options[facet]
-                : undefined) ??
-            [
-              ...new Set([
-                ...(facet === "membership" ? adminBotMemberTypes : []),
-                ...members.flatMap((member) => facets.get(member.id)![facet]),
-              ]),
-            ].toSorted();
-          const unavailable = facet === "meeting" && !props.standingMeetings?.loadedAt;
-          return html`<label
-            ><span>${label}</span
-            ><select name=${key} ?disabled=${unavailable || page?.loading}>
-              <option value="">
-                ${unavailable ? "Invitations unavailable" : `Any ${label.toLowerCase()}`}
-              </option>
-              ${options.map(
-                (value) =>
-                  html`<option value=${value}>
-                    ${facet === "meeting"
-                      ? props.standingMeetings?.meetings.find((meeting) => meeting.id === value)
-                          ?.title
-                      : facet === "membership"
-                        ? friendly(value)
-                        : value}
-                  </option>`,
-              )}
-            </select></label
-          >`;
-        })}
+        <adminbot-filter-bar
+          placeholder="Search people"
+          search-label="Search people"
+          .searchValue=${page?.filters.q ?? ""}
+          .fields=${filterFields}
+          ?disabled=${page?.loading ?? false}
+        ></adminbot-filter-bar>
+        <span
+          class="adminbot-member-toolbar__count"
+          data-member-result-count
+          .textContent=${`${total} ${total === 1 ? "person" : "people"}`}
+        ></span>
+        ${ownMemberOutsidePage && ownMember
+          ? html`<button
+              class="btn btn--sm"
+              type="button"
+              popovertarget="adminbot-self-edit-member-own"
+              @click=${() => openMemberEditor(ownMember.id, props)}
+            >
+              Edit my profile
+            </button>`
+          : nothing}
       </form>
-      <div class="adminbot-member-sheet__scroll" @mousedown=${startSheetPan}>
+      <div class="adminbot-member-sheet__scroll">
         <table>
           <thead>
             <tr>
               <th>Person</th>
-              <th>Email</th>
               <th>Role</th>
               <th>Status</th>
-              <th>Topics</th>
               <th>Projects</th>
-              <th>Active papers</th>
-              <th>Availability</th>
+              <th>Topics</th>
               <th>Location</th>
-              <th>Timezone</th>
-              <th>Affiliation</th>
-              <th>Joined</th>
-              <th>Contact</th>
-              <th>Access</th>
+              <th class="num">Papers</th>
+              <th><span class="sr-only">Actions</span></th>
             </tr>
           </thead>
           <tbody>
@@ -2095,6 +2111,7 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
                 .join(" ")
                 .toLocaleLowerCase();
               return html`<tr
+                data-member-id=${member.id}
                 data-facets=${JSON.stringify(facets.get(member.id))}
                 data-search=${search}
                 data-status=${memberDisplayStatus(member)}
@@ -2102,10 +2119,9 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
                 data-papers=${memberPapers.map((entry) => entry.title).join("|")}
                 data-conferences=${[...new Set(memberPapers.map(paperConference))].join("|")}
               >
-                <td>
-                  <strong>${member.name}</strong>${renderMemberBadgeSymbols(
-                    member.assigned_badges,
-                  )}<small>${member.id}</small>
+                <td class="adminbot-member-sheet__person">
+                  <strong>${member.name}</strong>${renderMemberBadgeSymbols(member.assigned_badges)}
+                  ${member.email ? html`<small>${member.email}</small>` : nothing}
                   ${memberPapers.length
                     ? html`<span class="adminbot-member-sheet__papers">
                         ${memberPapers
@@ -2125,6 +2141,22 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
                           : nothing}
                       </span>`
                     : nothing}
+                </td>
+                <td>
+                  ${member.role ??
+                  privilegeLabels[member.privilege_level] ??
+                  friendly(member.privilege_level)}
+                </td>
+                <td>
+                  <span class="adminbot-status adminbot-status--${memberDisplayStatus(member)}"
+                    >${friendly(memberDisplayStatus(member))}</span
+                  >
+                </td>
+                <td>${renderMemberTags(member.projects)}</td>
+                <td>${renderMemberTags(member.research_topics)}</td>
+                <td>${member.location ?? noteDraft.location ?? "—"}</td>
+                <td class="num">${memberPapers.length || "—"}</td>
+                <td class="adminbot-member-sheet__actions">
                   ${rowEdit === "none"
                     ? nothing
                     : html`<button
@@ -2164,81 +2196,8 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
                         type="button"
                         @click=${() => props.onShowOnboardingWelcome?.()}
                       >
-                        View onboarding checklist
+                        Onboarding checklist
                       </button>`
-                    : nothing}
-                </td>
-                <td>${member.email ?? "—"}</td>
-                <td>
-                  ${member.role ??
-                  privilegeLabels[member.privilege_level] ??
-                  friendly(member.privilege_level)}
-                </td>
-                <td>
-                  <span class="adminbot-status adminbot-status--${memberDisplayStatus(member)}"
-                    >${friendly(memberDisplayStatus(member))}</span
-                  >
-                </td>
-                <td>
-                  ${(member.research_topics ?? []).map(
-                    (value) => html`<span class="adminbot-tag">${value}</span>`,
-                  )}
-                </td>
-                <td>
-                  ${(member.projects ?? []).map(
-                    (value) => html`<span class="adminbot-tag">${value}</span>`,
-                  )}
-                </td>
-                <td class="num">${memberPapers.length || "—"}</td>
-                <td>
-                  ${renderAvailabilityStrip(member.availability, member.time_off)}
-                  <small
-                    >${member.hours_per_week === undefined
-                      ? "Hours not set"
-                      : `${member.hours_per_week} h/week`}</small
-                  >
-                </td>
-                <td>${member.location ?? noteDraft.location ?? "—"}</td>
-                <td>${member.timezone ?? "—"}</td>
-                <td>${member.affiliation ?? "—"}</td>
-                <td>${memberJoinedMonth(member) || "—"}</td>
-                <td>
-                  ${noteDraft.calendarEmail
-                    ? html`<span class="adminbot-contact-item"
-                        >Calendar: ${noteDraft.calendarEmail}</span
-                      >`
-                    : nothing}
-                  ${noteDraft.whatsapp
-                    ? html`<span class="adminbot-contact-item"
-                        >WhatsApp: ${noteDraft.whatsapp}</span
-                      >`
-                    : nothing}
-                  ${noteDraft.github
-                    ? html`<span class="adminbot-contact-item">GitHub: ${noteDraft.github}</span>`
-                    : nothing}
-                  ${noteDraft.website
-                    ? html`<span class="adminbot-contact-item">Website: ${noteDraft.website}</span>`
-                    : nothing}
-                  ${member.slack_user_id
-                    ? html`<span class="adminbot-contact-item"
-                        >Slack: ${member.slack_user_id}</span
-                      >`
-                    : nothing}
-                  ${!noteDraft.calendarEmail &&
-                  !noteDraft.whatsapp &&
-                  !noteDraft.github &&
-                  !noteDraft.website &&
-                  !member.slack_user_id
-                    ? "—"
-                    : nothing}
-                </td>
-                <td>
-                  ${privilegeLabels[member.privilege_level] ?? friendly(member.privilege_level)}
-                  ${member.privilege_level === "external_collaborator" &&
-                  member.collaborator_subgroup
-                    ? html`<span class="adminbot-tag"
-                        >${friendly(member.collaborator_subgroup)}</span
-                      >`
                     : nothing}
                 </td>
               </tr>`;
@@ -2246,9 +2205,9 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
           </tbody>
         </table>
         ${members.length === 0 && !page?.loading && !page?.error
-          ? html`<div class="adminbot-empty adminbot-empty--compact">
-              ${page ? "No matching lab members." : "No lab members yet."}
-            </div>`
+          ? html`<p class="adminbot-member-sheet__empty muted">
+              ${page ? "No matching people." : "No lab members yet."}
+            </p>`
           : nothing}
       </div>
       ${page
@@ -2530,10 +2489,32 @@ function renderDuplicateMembers(props: AdminBotProps, members: AdminBotLabMember
   `;
 }
 
+const INTERVIEW_INVITE_POPOVER_ID = "adminbot-interview-invite";
+
 function renderMembers(props: AdminBotProps, members: AdminBotLabMember[]) {
-  const interviewInvite = html`<adminbot-interview-invite
-    .members=${members}
-  ></adminbot-interview-invite>`;
+  // A rare path, so it opens from the page's actions instead of sitting above the roster.
+  const interviewInvite = html`<article
+    class="adminbot-editor-card adminbot-popover"
+    id=${INTERVIEW_INVITE_POPOVER_ID}
+    popover
+    @toggle=${(event: ToggleEvent) => {
+      if (event.newState === "open") {
+        (event.currentTarget as HTMLElement)
+          .querySelector<InterviewInvite>("adminbot-interview-invite")
+          ?.load();
+      }
+    }}
+  >
+    <button
+      class="btn btn--sm adminbot-popover__close"
+      type="button"
+      popovertarget=${INTERVIEW_INVITE_POPOVER_ID}
+      popovertargetaction="hide"
+    >
+      Close
+    </button>
+    <adminbot-interview-invite .members=${members}></adminbot-interview-invite>
+  </article>`;
   const spreadsheet = renderMemberSpreadsheet(props, props.memberList?.rows ?? members);
   const requests = props.memberRequests
     ? { ...props.memberRequests, isAdmin: props.mode === "admin" }
@@ -3719,7 +3700,7 @@ function filterAnnouncementRecipients(event: Event, props: AdminBotProps): void 
   const data = new FormData(form);
   const view = recipientView(props.data);
   view.filters = {
-    search: getFormValue(data, "search").toLocaleLowerCase(),
+    search: getFormValue(data, "search"),
     status: getFormValue(data, "status"),
     branch: getFormValue(data, "branch"),
     privilege: getFormValue(data, "privilege"),
@@ -3813,7 +3794,7 @@ function matchesRecipient(
       .filter(Boolean)
       .join(" ")
       .toLocaleLowerCase()
-      .includes(filters.search)
+      .includes(filters.search.trim().toLocaleLowerCase())
   );
 }
 
@@ -3848,19 +3829,42 @@ function renderAnnouncementRecipients(
   const conferences = [...new Set(papers.filter(isOngoingPaper).map(paperConference))].toSorted(
     (left, right) => left.localeCompare(right),
   );
+  const filterFields: FilterBarField[] = [
+    {
+      name: "status",
+      label: "Status",
+      value: view.filters.status,
+      options: filterOptions(statuses, friendly),
+    },
+    {
+      name: "branch",
+      label: "Branch",
+      value: view.filters.branch,
+      options: filterOptions(branches),
+    },
+    {
+      name: "privilege",
+      label: "Access",
+      value: view.filters.privilege,
+      options: filterOptions(privileges, (value) => privilegeLabels[value] ?? friendly(value)),
+    },
+    {
+      name: "project",
+      label: "Project",
+      value: view.filters.project,
+      options: filterOptions(projects),
+    },
+    {
+      name: "conference",
+      label: "Conference",
+      value: view.filters.conference,
+      options: filterOptions(conferences),
+    },
+  ];
   return html`
     <section class="adminbot-nudge-recipients">
-      <div class="adminbot-member-sheet__heading">
-        <div>
-          <strong>Recipients</strong>
-          <span>${selected.size} selected</span>
-        </div>
-        <span class="pill" data-recipient-result-count>
-          ${filtered.length} matching ${filtered.length === 1 ? "person" : "people"}
-        </span>
-      </div>
       <form
-        class="adminbot-member-filters"
+        class="adminbot-member-filters adminbot-member-toolbar"
         @input=${(event: Event) => {
           if (event.target instanceof HTMLInputElement) {
             filterAnnouncementRecipients(event, props);
@@ -3871,53 +3875,20 @@ function renderAnnouncementRecipients(
             filterAnnouncementRecipients(event, props);
           }
         }}
+        @submit=${(event: Event) => event.preventDefault()}
       >
-        <label
-          ><span>Search</span
-          ><input
-            name="search"
-            type="search"
-            placeholder="Name, topic, project…"
-            .value=${view.filters.search}
-        /></label>
-        <label
-          ><span>Status</span
-          ><select name="status" .value=${view.filters.status}>
-            <option value="">All statuses</option>
-            ${statuses.map((value) => html`<option value=${value}>${friendly(value)}</option>`)}
-          </select></label
-        >
-        <label
-          ><span>Research branch</span
-          ><select name="branch" .value=${view.filters.branch}>
-            <option value="">All branches</option>
-            ${branches.map((value) => html`<option value=${value}>${value}</option>`)}
-          </select></label
-        >
-        <label
-          ><span>Privilege</span
-          ><select name="privilege" .value=${view.filters.privilege}>
-            <option value="">All levels</option>
-            ${privileges.map(
-              (value) =>
-                html`<option value=${value}>${privilegeLabels[value] ?? friendly(value)}</option>`,
-            )}
-          </select></label
-        >
-        <label
-          ><span>Project</span
-          ><select name="project" .value=${view.filters.project}>
-            <option value="">All projects</option>
-            ${projects.map((value) => html`<option value=${value}>${value}</option>`)}
-          </select></label
-        >
-        <label
-          ><span>Ongoing conference</span
-          ><select name="conference" .value=${view.filters.conference}>
-            <option value="">All conferences</option>
-            ${conferences.map((value) => html`<option value=${value}>${value}</option>`)}
-          </select></label
-        >
+        <adminbot-filter-bar
+          placeholder="Search people"
+          search-label="Search recipients"
+          .searchValue=${view.filters.search}
+          .fields=${filterFields}
+        ></adminbot-filter-bar>
+        <span class="adminbot-member-toolbar__count">
+          <strong>${selected.size} selected</strong> ·
+          <span data-recipient-result-count
+            >${filtered.length} ${filtered.length === 1 ? "person" : "people"}</span
+          >
+        </span>
       </form>
       <div class="adminbot-nudge-recipients__actions">
         <button
@@ -3935,42 +3906,33 @@ function renderAnnouncementRecipients(
         >
           Select: LinkedIn not joined
         </button>
-        <button type="button" class="btn btn--sm" @click=${() => props.onNudgeSetRecipients([])}>
-          Clear selection
-        </button>
+        ${selected.size
+          ? html`<button
+              type="button"
+              class="btn btn--sm btn--ghost"
+              @click=${() => props.onNudgeSetRecipients([])}
+            >
+              Clear selection
+            </button>`
+          : nothing}
       </div>
       <div class="adminbot-member-sheet__scroll">
         <table>
           <thead>
             <tr>
-              <th></th>
+              <th><span class="sr-only">Selected</span></th>
               <th>Person</th>
-              <th>Contact</th>
               <th>Status</th>
-              <th>Research branch</th>
-              <th>Topics</th>
               <th>Projects</th>
-              <th>Ongoing conferences</th>
+              <th>Conferences</th>
             </tr>
           </thead>
           <tbody>
             ${pageMembers.map((member) => {
               const memberConferences = ongoingConferencesForMember(member, papers);
-              const search = [
-                member.name,
-                member.email,
-                member.slack_user_id,
-                member.research_branch,
-                ...(member.research_topics ?? []),
-                ...(member.projects ?? []),
-                ...memberConferences,
-              ]
-                .filter(Boolean)
-                .join(" ")
-                .toLocaleLowerCase();
               const hasContact = announceChannelHasContact(member, channel);
+              const contact = channel === "slack" ? member.slack_user_id : member.email;
               return html`<tr
-                data-search=${search}
                 data-status=${memberDisplayStatus(member)}
                 data-branch=${member.research_branch ?? ""}
                 data-privilege=${member.privilege_level}
@@ -3981,59 +3943,41 @@ function renderAnnouncementRecipients(
                 <td>
                   <input
                     type="checkbox"
+                    aria-label=${`Send to ${member.name}`}
                     ?checked=${selected.has(member.id)}
                     ?disabled=${!hasContact}
                     title=${hasContact
                       ? ""
                       : channel === "slack"
-                        ? "No slack_user_id on file"
+                        ? "No Slack ID on file"
                         : "No email on file"}
                     @change=${() => props.onNudgeToggleRecipient(member.id)}
                   />
                 </td>
-                <td>
-                  <strong>${member.name}</strong>${renderMemberBadgeSymbols(
-                    member.assigned_badges,
-                  )}<small>${member.id}</small>
-                </td>
-                <td>
-                  ${channel === "slack"
-                    ? (member.slack_user_id ??
-                      html`<span class="adminbot-nudge-recipients__missing">no Slack ID</span>`)
-                    : (member.email ??
-                      html`<span class="adminbot-nudge-recipients__missing">no email</span>`)}
+                <td class="adminbot-member-sheet__person">
+                  <strong>${member.name}</strong>${renderMemberBadgeSymbols(member.assigned_badges)}
+                  <small
+                    >${contact ??
+                    html`<span class="adminbot-nudge-recipients__missing"
+                      >${channel === "slack" ? "No Slack ID" : "No email"}</span
+                    >`}</small
+                  >
                 </td>
                 <td>
                   <span class="adminbot-status adminbot-status--${memberDisplayStatus(member)}"
                     >${friendly(memberDisplayStatus(member))}</span
                   >
                 </td>
-                <td>${member.research_branch ?? "—"}</td>
-                <td>
-                  ${(member.research_topics ?? []).map(
-                    (value) => html`<span class="adminbot-tag">${value}</span>`,
-                  )}
-                </td>
-                <td>
-                  ${(member.projects ?? []).map(
-                    (value) => html`<span class="adminbot-tag">${value}</span>`,
-                  )}
-                </td>
-                <td>
-                  ${memberConferences.length
-                    ? memberConferences.map(
-                        (value) => html`<span class="adminbot-tag">${value}</span>`,
-                      )
-                    : html`<span class="adminbot-nudge-recipients__missing">none</span>`}
-                </td>
+                <td>${renderMemberTags(member.projects)}</td>
+                <td>${renderMemberTags(memberConferences)}</td>
               </tr>`;
             })}
           </tbody>
         </table>
         ${filtered.length === 0
-          ? html`<div class="adminbot-empty adminbot-empty--compact">
-              ${members.length === 0 ? "No lab members yet." : "No matching recipients."}
-            </div>`
+          ? html`<p class="adminbot-member-sheet__empty muted">
+              ${members.length === 0 ? "No lab members yet." : "No matching people."}
+            </p>`
           : nothing}
       </div>
       <nav class="adminbot-form__actions" aria-label="Recipient pages">
@@ -4121,9 +4065,6 @@ function renderAnnouncements(props: AdminBotProps) {
               : `Send to ${recipientCount} recipient${recipientCount === 1 ? "" : "s"}`}
           </button>
         </div>
-        <p class="adminbot-announce__hint">
-          Sends immediately to each selected recipient — there's no separate approval step.
-        </p>
       </div>
       ${renderAnnouncementRecipients(props, props.data.members, props.data.papers)}
     </div>
@@ -4227,6 +4168,15 @@ export function renderAdminBot(props: AdminBotProps) {
               popovertarget=${general ? MEMBER_REQUEST_POPOVER_ID : "adminbot-add-member"}
             >
               Add member
+            </button>`
+          : nothing}
+        ${props.panel === "members" && (!general || props.signedInMemberId)
+          ? html`<button
+              class="btn btn--sm"
+              type="button"
+              popovertarget=${INTERVIEW_INVITE_POPOVER_ID}
+            >
+              Invite interviewee
             </button>`
           : nothing}
         ${addPaper

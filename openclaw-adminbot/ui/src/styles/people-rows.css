@@ -1,0 +1,218 @@
+/* Lab Members as rows, not a spreadsheet (DESIGN.md rules 3, 5, 9): no fill, no box, no column
+   rules, only a hairline between people. Actions stay out of sight until the row is hovered or
+   focused, and always show where there is no hover. Scoped by --rows so the Onboarding roster,
+   which shares .adminbot-member-sheet, keeps its grid. */
+/* Doubled class: beats the older .adminbot-member-filters grid, which comes later in the bundle. */
+.adminbot-member-filters.adminbot-member-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+.adminbot-member-toolbar adminbot-filter-bar {
+  flex: 1 1 320px;
+}
+.adminbot-member-toolbar .adminbot-filter-bar__search {
+  height: var(--control-h-sm);
+}
+.adminbot-member-toolbar__count {
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+  white-space: nowrap;
+}
+.adminbot-member-sheet.adminbot-member-sheet--rows .adminbot-member-sheet__scroll {
+  max-height: none;
+  overflow-y: visible;
+  border: 0;
+  border-radius: 0;
+  cursor: auto;
+}
+.adminbot-member-sheet.adminbot-member-sheet--rows table {
+  min-width: 860px;
+  background: transparent;
+}
+.adminbot-member-sheet.adminbot-member-sheet--rows :is(th, td) {
+  padding: var(--space-3);
+  border-right: 0;
+  vertical-align: top;
+}
+.adminbot-member-sheet.adminbot-member-sheet--rows th {
+  position: static;
+  background: transparent;
+  border-bottom: 1px solid var(--border);
+  font-weight: 500;
+}
+.adminbot-member-sheet.adminbot-member-sheet--rows :is(th, td):first-child {
+  position: static;
+  min-width: 220px;
+  padding-left: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.adminbot-member-sheet.adminbot-member-sheet--rows tbody tr:hover td {
+  background: transparent;
+}
+.adminbot-member-sheet--rows .adminbot-member-sheet__person small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* No badges: drop the empty line between the name and the contact. */
+.adminbot-member-sheet__person .adminbot-member-badge-symbols:not(:has(> span)) {
+  display: none;
+}
+.adminbot-member-sheet--rows .adminbot-tag {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: top;
+}
+.adminbot-member-sheet--rows .adminbot-member-sheet__actions {
+  padding-right: 0;
+  text-align: right;
+  white-space: nowrap;
+}
+.adminbot-member-sheet--rows .adminbot-member-sheet__actions .adminbot-member-sheet__edit {
+  margin: 0 0 0 var(--space-1);
+}
+@media (hover: hover) and (min-width: 641px) {
+  .adminbot-member-sheet--rows .adminbot-member-sheet__actions > * {
+    opacity: 0;
+    transition: opacity 120ms ease;
+  }
+  .adminbot-member-sheet--rows tr:is(:hover, :focus-within) .adminbot-member-sheet__actions > * {
+    opacity: 1;
+  }
+}
+.adminbot-member-sheet__empty {
+  margin: var(--space-4) 0;
+}
+
+/* Phone: one person per block -- name, status and actions; the rest is in the editor. */
+@media (max-width: 640px) {
+  .adminbot-member-sheet.adminbot-member-sheet--rows table {
+    min-width: 0;
+  }
+  .adminbot-member-sheet--rows thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .adminbot-member-sheet--rows tbody tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    border-bottom: 1px solid var(--border);
+  }
+  .adminbot-member-sheet--rows tbody tr[hidden] {
+    display: none;
+  }
+  .adminbot-member-sheet.adminbot-member-sheet--rows tbody td {
+    border: 0;
+    padding: var(--space-1) 0;
+  }
+  .adminbot-member-sheet--rows tbody td:nth-child(n + 4):not(.adminbot-member-sheet__actions) {
+    display: none;
+  }
+  .adminbot-member-sheet.adminbot-member-sheet--rows tbody td:first-child {
+    grid-column: 1 / -1;
+    min-width: 0;
+    width: auto;
+    max-width: none;
+    padding-top: var(--space-3);
+  }
+  .adminbot-member-sheet--rows tbody td:nth-child(2) {
+    color: var(--muted);
+  }
+  .adminbot-member-sheet--rows .adminbot-member-sheet__actions {
+    grid-column: 1 / -1;
+    padding-bottom: var(--space-3);
+    text-align: left;
+    white-space: normal;
+  }
+  .adminbot-member-sheet--rows .adminbot-member-sheet__actions .adminbot-member-sheet__edit {
+    margin: 0 var(--space-1) var(--space-1) 0;
+  }
+}
+
+/* Nudges recipients: the same rows -- a checkbox, the person, and three short columns. */
+.adminbot-nudge-recipients .adminbot-member-sheet__scroll {
+  max-height: none;
+  overflow-y: visible;
+  border: 0;
+  border-radius: 0;
+  cursor: auto;
+}
+.adminbot-nudge-recipients table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--control-ui-text-sm);
+}
+.adminbot-nudge-recipients :is(th, td) {
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+.adminbot-nudge-recipients th {
+  color: var(--muted);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.adminbot-nudge-recipients :is(th, td):first-child {
+  width: 1%;
+  padding-left: 0;
+}
+.adminbot-nudge-recipients .adminbot-member-sheet__person small {
+  display: block;
+  max-width: 280px;
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.adminbot-nudge-recipients .adminbot-tag {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: top;
+}
+@media (max-width: 640px) {
+  .adminbot-nudge-recipients thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .adminbot-nudge-recipients tbody td:nth-child(n + 4) {
+    display: none;
+  }
+}
+
+/* Membership requests: one ruled record per request, no card (DESIGN.md rules 3, 5). */
+.adminbot-registrations-page .adminbot-registrations {
+  gap: 0;
+}
+.adminbot-registrations-page .adminbot-registration {
+  padding: var(--space-5) 0;
+  border-bottom: 1px solid var(--border);
+}
+.adminbot-registrations-page .adminbot-registration:first-child {
+  padding-top: 0;
+}
+.adminbot-registrations-page .adminbot-registration .adminbot-form__actions {
+  margin-top: var(--space-4);
+  padding-top: 0;
+  border-top: 0;
+}
+.adminbot-registrations__status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0;
+}
