@@ -30,10 +30,15 @@ function lab(
     slack?: boolean;
     /** Anything else on the roster row: status, name, address, nudge-list membership. */
     extra?: Record<string, unknown>;
+    /** A live Slack executor, for the sweeps that count a member reached only by a sent proposal. */
+    executor?: boolean;
   } = {},
 ) {
   const store = new AdminBotMemoryStore();
-  const service = new AdminBotService(store);
+  const service = new AdminBotService(
+    store,
+    options.executor ? { executor: { execute: async () => ({ handled: true }) } } : undefined,
+  );
   unwrap(
     service.upsertLabMember({
       id: "ada",
@@ -259,7 +264,10 @@ describe("the catch-up round", () => {
     // No welcome recorded: the email went out before the audit trail existed, which is the state
     // most of the roster is in. The standing ladder cannot see these people at all.
     expect(unwrap(await run(service, WELCOME_AT)).reminded).toEqual([]);
-    expect(unwrap(await runRound(service, WELCOME_AT)).reminded).toMatchObject([
+    // A fresh roster for the round: the standing pass above just sent Ada her dormant reminder,
+    // and the shared long-term cycle would rightly hold a second ask the same day.
+    const { service: round } = lab();
+    expect(unwrap(await runRound(round, WELCOME_AT)).reminded).toMatchObject([
       { member_id: "ada", step: "first_reminder" },
     ]);
   });
@@ -505,5 +513,63 @@ describe("the engagement policy", () => {
     ]) {
       expect(service.updateSettings({ engagement_policy } as never).ok).toBe(false);
     }
+  });
+});
+
+describe("one long-term reminder per cycle, across every sweep", () => {
+  const profile = (service: AdminBotService, nowIso: string, recipientIds?: string[]) =>
+    service.sendMandatoryFieldsReminders("service", {
+      nowIso,
+      ...(recipientIds ? { recipientIds } : {}),
+    });
+
+  it("holds the dormant reminder on the day the profile reminder reached the member", async () => {
+    const { service } = lab({ executor: true });
+    // Ada is a full member with an empty profile who has never signed in: both sweeps want her.
+    expect(unwrap(await profile(service, WELCOME_AT)).created).not.toEqual([]);
+    const sameDay = unwrap(await run(service, "2026-03-02T10:50:00.000Z"));
+    expect(sameDay.dormant).toEqual([]);
+    expect(sameDay.skipped).toContainEqual({
+      member_id: "ada",
+      reason: "already sent a long-term reminder this cycle",
+    });
+    // Full's cycle is two calendar days, so Wednesday is hers again.
+    expect(unwrap(await run(service, "2026-03-04T10:50:00.000Z")).dormant).toEqual(["ada"]);
+  });
+
+  it("holds the profile reminder after the dormant reminder, the other way round", async () => {
+    const { service } = lab({ executor: true });
+    expect(unwrap(await run(service, WELCOME_AT)).dormant).toEqual(["ada"]);
+    const held = unwrap(await profile(service, "2026-03-03T09:20:00.000Z"));
+    expect(held.created).toEqual([]);
+    expect(held.skipped).toContainEqual({
+      member_id: "ada",
+      reason: "already sent a long-term reminder this cycle",
+    });
+  });
+
+  it("still sends what an admin picked by hand, and backs the timers off after it", async () => {
+    const { service } = lab({ executor: true });
+    expect(unwrap(await run(service, WELCOME_AT)).dormant).toEqual(["ada"]);
+    // A person deciding today outranks the cycle the timers approximate.
+    expect(unwrap(await profile(service, "2026-03-03T09:20:00.000Z", ["ada"])).created).not.toEqual(
+      [],
+    );
+    // Stamped all the same: Wednesday is inside the cycle that Tuesday's send restarted.
+    expect(unwrap(await run(service, "2026-03-04T10:50:00.000Z")).dormant).toEqual([]);
+  });
+
+  it("sends a mailing-list member no profile reminder and does not report it", async () => {
+    const { service } = lab({ memberType: "mailing-list", executor: true });
+    expect(unwrap(await profile(service, WELCOME_AT))).toEqual({ created: [], skipped: [] });
+  });
+
+  it("reports an untyped member instead of sending them the dormant reminder", async () => {
+    const { service } = lab({ memberType: null, executor: true });
+    const result = unwrap(await run(service, WELCOME_AT));
+    expect(result.dormant).toEqual([]);
+    expect(result.unclassified).toEqual(["ada"]);
+    // The profile reminder stands on the empty fields rather than the type, so it still goes.
+    expect(unwrap(await profile(service, WELCOME_AT)).created).not.toEqual([]);
   });
 });

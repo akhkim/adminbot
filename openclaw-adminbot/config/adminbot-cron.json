@@ -474,8 +474,8 @@
     },
     {
       "name": "adminbot-weekly-updates",
-      "description": "Ask authors for the week's paper updates",
-      "cron": "0 10 * * 1",
+      "description": "Ask authors for the week's paper updates. Runs first on Monday morning: the long-term reminders share one per-member cycle, and the weekly ask is the only one that cannot wait a day",
+      "cron": "15 9 * * 1",
       "argv": [
         "bash",
         "scripts/adminbot-weekly-update-cron.sh"

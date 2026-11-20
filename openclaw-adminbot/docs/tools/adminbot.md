@@ -1709,16 +1709,42 @@ them as active. The profile overview shows the same value with its channel break
 counts it, so every "is this person around" reader agrees.
 
 Who is reminded, how, and how often is a per-group table in `contracts/engagement.ts`
-(`adminBotDefaultEngagementPolicy`):
+(`adminBotDefaultEngagementPolicy`). Every `member_type` has its own row, plus `part_time`; a
+coverage test fails the build if a new type is added without a decision. The dormant columns apply
+to the sign-in reminder only:
 
-| Group                                           | Channel | Quiet after | Every    | Reminders | Then      |
-| ----------------------------------------------- | ------- | ----------- | -------- | --------- | --------- |
-| `full`                                          | Slack   | 14 days     | 3 days   | 5         | professor |
-| `coauthor-major`                                | Slack   | 21 days     | 7 days   | 3         | professor |
-| `coauthor-minor`                                | email   | 45 days     | 14 days  | 2         | stop      |
-| `part_time`                                     | Slack   | 30 days     | 7 days   | 2         | stop      |
-| `alumni`                                        | email   | 180 days    | 180 days | 1         | stop      |
-| `acquaintance`, `mailing-list`, `external-prof` | off     |             |          |           |           |
+| Group                                                            | Long-term reminders                        | Cycle   | Channel | Quiet after | Every    | Max | Then      |
+| ---------------------------------------------------------------- | ------------------------------------------ | ------- | ------- | ----------- | -------- | --- | --------- |
+| `full`                                                           | dormant, onboarding, profile, weekly notes | 2 days  | Slack   | 14 days     | 3 days   | 5   | professor |
+| `part_time`                                                      | dormant, onboarding, profile, weekly notes | 5 days  | Slack   | 30 days     | 7 days   | 2   | stop      |
+| `own-pace-advisee`                                               | dormant, onboarding, profile               | 7 days  | Slack   | 30 days     | 14 days  | 2   | stop      |
+| `coauthor-major`                                                 | dormant, onboarding, profile, weekly notes | 5 days  | Slack   | 21 days     | 7 days   | 3   | professor |
+| `coauthor-minor`                                                 | dormant, onboarding, profile, weekly notes | 10 days | email   | 45 days     | 14 days  | 2   | stop      |
+| `disappearing-coauthor`                                          | dormant, onboarding, weekly notes          | 10 days | email   | 30 days     | 14 days  | 2   | stop      |
+| `coauthor-discussant-or-designer`, `slightly-better-than-emails` | onboarding, weekly notes                   | 14 days |         |             |          |     |           |
+| `interviewee`                                                    | onboarding                                 | 7 days  |         |             |          |     |           |
+| `alumni`                                                         | alumni check-in only                       | 90 days | email   | 180 days    | 180 days | 1   | stop      |
+| `external-prof`, `benefit-*`, `acquaintance`                     | off (welcome only)                         |         |         |             |          |     |           |
+| `adminbot-admin`, `adminbot-developer`, `mailing-list`           | off                                        |         |         |             |          |     |           |
+
+**One reminder per cycle, across every sweep.** The five long-term reminder kinds -- the dormant
+sign-in reminder, the onboarding chase, the mandatory-profile-fields reminder, the weekly-notes ask
+and the alumni check-in -- share one clock: a `long_term_reminder` row in the nudge ledger per
+member, stamped by whichever sweep actually reached them. Every sweep checks it first, so a member
+who got the profile reminder on Monday does not also get the sign-in reminder that afternoon; it
+waits until their group's cycle (counted in UTC calendar days) has passed. A held reminder is
+reported under the sweep's `skipped` as "already sent a long-term reminder this cycle", and a kind
+the group has turned off is dropped without a report. Because the weekly-notes ask can only go out
+on Monday, its cron runs at 09:15, ahead of the profile reminder at 09:20, so it gets the slot.
+
+A reminder an admin sends to members they picked by hand goes through regardless and still stamps
+the clock. Escalations to the professor are not reminders to the member and are never held.
+
+A member with no `member_type` -- most of the imported roster -- still gets the reminders that are
+about something concrete they have not done (onboarding, profile fields, weekly notes), on a
+3-day cycle, but never the dormant sign-in reminder or the alumni check-in, which need a group to
+pick a cadence and a tone. The disengagement sweep lists them under `unclassified` so an admin can
+type them.
 
 A member's group is read from standing first (alumni, then `part_time` status), then from the most
 engaged `member_type` token, so going part-time or leaving lowers the expectation rather than

@@ -180,6 +180,11 @@ import {
   adminBotEmailAddressProblem,
   adminBotEngagementAudienceOf,
   adminBotEngagementAudiences,
+  adminBotLongTermReminderGate,
+  adminBotStandingReminderKind,
+  type AdminBotEngagementPolicy,
+  type AdminBotLongTermReminderGate,
+  type AdminBotLongTermReminderKind,
   adminBotMemberEngagement,
   renderEngagementReminder,
   resolveEngagementPolicy,
@@ -6278,6 +6283,7 @@ export class AdminBotService {
       return collected;
     }
     const { week_start: weekStart, gaps } = collected.payload;
+    const now = nowIso ? new Date(nowIso) : new Date();
     const alreadyAsked = this.weeklyUpdateAskedFor(weekStart);
     const byMember = new Map<string, string[]>();
     for (const gap of gaps) {
@@ -6289,7 +6295,19 @@ export class AdminBotService {
     const created: AdminBotMemberNudgeResult["created"] = [];
     const skipped: AdminBotMemberNudgeResult["skipped"] = [];
     const asked: string[] = [];
+    const policy = this.engagementPolicy();
+    const ledger = this.nudgeLedgerIndex();
     for (const [memberId, titles] of byMember) {
+      const member = this.store.getLabMember(memberId);
+      const gate = member
+        ? this.longTermReminderGate(member, "weekly_notes", { policy, ledger, now })
+        : ({ allowed: false, reason: "unclassified" } as const);
+      if (!gate.allowed) {
+        if (gate.reason !== "off") {
+          skipped.push({ member_id: memberId, reason: longTermReminderSkipReason(gate) });
+        }
+        continue;
+      }
       const result = await this.sendMemberNudge(
         {
           channel: "slack",
@@ -6313,6 +6331,7 @@ export class AdminBotService {
       }
     }
     if (asked.length > 0) {
+      this.stampNudgeLedger(asked.map(longTermReminderStamp), now.toISOString());
       this.recordAudit({
         type: "paper_weekly_updates.nudged",
         actor,
@@ -10386,6 +10405,49 @@ export class AdminBotService {
   }
 
   /**
+   * The shared long-term reminder gate for one member (see adminBotLongTermReminderGate).
+   *
+   * Every long-term sweep asks this with its own `now` and stamps `longTermReminderStamp` with the
+   * same `now` once the member was reached, so the five sweeps keep one clock between them.
+   */
+  private longTermReminderGate(
+    member: AdminBotLabMember,
+    kind: AdminBotLongTermReminderKind,
+    params: {
+      policy: AdminBotEngagementPolicy;
+      ledger: Map<string, AdminBotNudgeLedgerRecord>;
+      now: Date;
+    },
+  ): AdminBotLongTermReminderGate {
+    return adminBotLongTermReminderGate({
+      member,
+      kind,
+      policy: params.policy,
+      lastLongTermReminderAt: params.ledger.get(longTermReminderKey(member.id))?.last_nudged_at,
+      now: params.now,
+    });
+  }
+
+  /** The policy table as settings leave it. */
+  private engagementPolicy(): AdminBotEngagementPolicy {
+    return resolveEngagementPolicy(this.resolveSettings().engagement_policy);
+  }
+
+  /**
+   * Active members whose type matches no policy row, so no long-term reminder reaches them.
+   *
+   * Reported by the disengagement sweep on every pass rather than assumed empty: the gate fails
+   * closed for them, and the fix is a roster edit somebody has to be told to make.
+   */
+  unclassifiedReminderMembers(): string[] {
+    return this.store
+      .listLabMembers()
+      .filter(isActiveRosterMember)
+      .filter((member) => !adminBotEngagementAudienceOf(member))
+      .map((member) => member.id);
+  }
+
+  /**
    * The say-once ledger: has this subject ever been announced?
    *
    * Distinct from the counting sweeps on purpose. A graduation or a thesis milestone is an event
@@ -14333,9 +14395,13 @@ export class AdminBotService {
       include?: AdminBotProfileReminderScope;
       /** Narrows to people an admin picked out of the page. Only ever subtracts. */
       recipientIds?: string[];
+      /** The sweep's clock, for both its own cadence and the shared long-term cycle. */
+      nowIso?: string;
     } = {},
   ): Promise<AdminBotServiceResponse<AdminBotMemberNudgeResult>> {
     const include = options.include ?? "both";
+    const now = options.nowIso ? new Date(options.nowIso) : new Date();
+    const nowIso = now.toISOString();
     const chosen = options.recipientIds?.length ? new Set(options.recipientIds) : undefined;
     // Take back what is already settled before deciding who to chase. A member can close their gap
     // without touching their own profile page -- an admin fills in a field, a trip lands on the
@@ -14356,10 +14422,34 @@ export class AdminBotService {
     // whatever schedule happens to invoke the cron script. A misconfigured crontab, a manual run,
     // or two hosts running the same job cannot turn this into a daily nag.
     const remindedAt = this.lastMandatoryFieldsReminderByMember();
-    const cutoff = Date.now() - MANDATORY_FIELDS_REMINDER_INTERVAL_MS;
-    const due = attention.filter((row) => (remindedAt.get(row.id) ?? 0) <= cutoff);
+    const cutoff = now.getTime() - MANDATORY_FIELDS_REMINDER_INTERVAL_MS;
+    const cadenceDue = attention.filter((row) => (remindedAt.get(row.id) ?? 0) <= cutoff);
+    // The shared long-term gate, for the timer only. Members an admin picked out of the page by
+    // hand are sent to as asked: that is a person's decision about these people today, which the
+    // cycle exists to approximate when nobody is deciding. They are still stamped below, so the
+    // sweeps back off afterwards.
+    const policy = this.engagementPolicy();
+    const ledger = this.nudgeLedgerIndex();
+    const gateSkipped: AdminBotMemberNudgeResult["skipped"] = [];
+    const due = chosen
+      ? cadenceDue
+      : cadenceDue.filter((row) => {
+          const member = this.store.getLabMember(row.id);
+          if (!member) {
+            return false;
+          }
+          const gate = this.longTermReminderGate(member, "profile_fields", { policy, ledger, now });
+          if (gate.allowed) {
+            return true;
+          }
+          // "Off" is the policy working, not something to report every morning.
+          if (gate.reason !== "off") {
+            gateSkipped.push({ member_id: row.id, reason: longTermReminderSkipReason(gate) });
+          }
+          return false;
+        });
     if (due.length === 0) {
-      return { ok: true, status: 200, payload: { created: [], skipped: [] } };
+      return { ok: true, status: 200, payload: { created: [], skipped: gateSkipped } };
     }
     // Grouped by the message they get rather than sent one request per person: everybody in a group
     // is owed exactly the same sentence, so they can share one send. The key is the gap itself now
@@ -14381,7 +14471,7 @@ export class AdminBotService {
       groups.set(key, group);
     }
     const created: AdminBotMemberNudgeResult["created"] = [];
-    const skipped: AdminBotMemberNudgeResult["skipped"] = [];
+    const skipped: AdminBotMemberNudgeResult["skipped"] = [...gateSkipped];
     const notified: string[] = [];
     for (const { missingFields, timelineEntries, ids: recipients } of groups.values()) {
       const needsProfile = missingFields.length > 0;
@@ -14419,6 +14509,7 @@ export class AdminBotService {
       );
     }
     if (notified.length > 0) {
+      this.stampNudgeLedger(notified.map(longTermReminderStamp), nowIso);
       this.recordAudit({
         type: "mandatory_fields.reminded",
         actor,
@@ -17237,6 +17328,11 @@ export class AdminBotService {
         address: string;
         problem: "trailing_dot" | "malformed";
       }>;
+      /**
+       * Active members whose type matches no policy row, so no long-term reminder reaches them.
+       * Reported every pass because the gate fails closed for them and only a roster edit helps.
+       */
+      unclassified: string[];
     }>
   > {
     const now = options.nowIso ? new Date(options.nowIso) : new Date();
@@ -17261,7 +17357,8 @@ export class AdminBotService {
       problem: "trailing_dot" | "malformed";
     }> = [];
     const stamps: Array<{ domain: AdminBotNudgeDomain; subjectId: string; memberId: string }> = [];
-    const policy = resolveEngagementPolicy(this.resolveSettings().engagement_policy);
+    const policy = this.engagementPolicy();
+    const gateParams = { policy, ledger, now };
 
     for (const member of this.store.listLabMembers()) {
       // Widened for the catch-up round: `adminBotDormantChaseMemberTypes` is `["full"]`, so a
@@ -17307,6 +17404,18 @@ export class AdminBotService {
             memberId: member.id,
           });
         } else if (decision.due && decision.step !== "escalate") {
+          // The ladder's asks are onboarding chases, so they share the long-term cycle. Held back
+          // without a stamp: the rung stays due, and the first pass the cycle allows sends it.
+          // `laddered` stays true either way, so the standing reminder does not step in instead.
+          // An untyped member is chased on the fallback cycle (see adminBotEvidenceReminderKinds):
+          // the catch-up round exists for people the roster has not typed yet.
+          const gate = this.longTermReminderGate(member, "onboarding_chase", gateParams);
+          if (!gate.allowed) {
+            if (gate.reason !== "off") {
+              skipped.push({ member_id: member.id, reason: longTermReminderSkipReason(gate) });
+            }
+            continue;
+          }
           // Undefined when no welcome was ever recorded -- the message then drops the day count
           // rather than inventing one. See buildOnboardingFollowUpMessage.
           const days = welcomedAt ? daysBetween(welcomedAt, now) : undefined;
@@ -17345,11 +17454,10 @@ export class AdminBotService {
             // "emailed today", which is the opposite of why these people are being chased.
             ...(days === undefined ? {} : { days }),
           });
-          stamps.push({
-            domain: "onboarding_followup",
-            subjectId: member.id,
-            memberId: member.id,
-          });
+          stamps.push(
+            { domain: "onboarding_followup", subjectId: member.id, memberId: member.id },
+            longTermReminderStamp(member.id),
+          );
           continue;
         }
       }
@@ -17363,8 +17471,18 @@ export class AdminBotService {
         lastLoginAt,
         lastSelfEditAt: lastEditAt,
       });
+      // Alumni get the periodic check-in, everybody else the dormant-login reminder; both are the
+      // same ladder underneath. A kind the table turns off disables the planner outright, so the
+      // spell is not counted. A cycle hold leaves it enabled: the escalation step goes to the
+      // professor rather than the member and is not the member's reminder to ration, and a due
+      // member reminder is held below without a stamp.
+      const gate = this.longTermReminderGate(
+        member,
+        adminBotStandingReminderKind(audience),
+        gateParams,
+      );
       const decision = planEngagementReminder({
-        policy: reminderPolicy,
+        policy: { ...reminderPolicy, enabled: gate.allowed || gate.reason === "cycle" },
         lastActiveAt: engagement.last_active_at,
         sentCount: dormantEntry?.nudge_count ?? 0,
         lastNudgedAt: dormantEntry?.last_nudged_at,
@@ -17394,6 +17512,10 @@ export class AdminBotService {
           subjectId: member.id,
           memberId: member.id,
         });
+        continue;
+      }
+      if (!gate.allowed) {
+        skipped.push({ member_id: member.id, reason: longTermReminderSkipReason(gate) });
         continue;
       }
       // Ahead of the send rather than left to sendMemberNudge: that funnel has no do-not-contact
@@ -17464,10 +17586,14 @@ export class AdminBotService {
         continue;
       }
       dormant.push(member.id);
-      stamps.push({ domain: "dormant_account", subjectId: member.id, memberId: member.id });
+      stamps.push(
+        { domain: "dormant_account", subjectId: member.id, memberId: member.id },
+        longTermReminderStamp(member.id),
+      );
     }
 
     this.stampNudgeLedger(stamps, nowIso);
+    const unclassified = this.unclassifiedReminderMembers();
     this.recordAudit({
       type: "members.disengagement_swept",
       actor,
@@ -17480,6 +17606,7 @@ export class AdminBotService {
         flagged: flagged.length,
         ladder_member_types: [...adminBotDormantChaseMemberTypes],
         policy_groups: adminBotEngagementAudiences.filter((group) => policy[group].enabled),
+        unclassified,
       },
     });
     return {
@@ -17492,6 +17619,7 @@ export class AdminBotService {
         dormant_escalated: dormantEscalated,
         skipped,
         flagged,
+        unclassified,
       },
     };
   }
@@ -17549,6 +17677,8 @@ export class AdminBotService {
     const nowIso = now.toISOString();
     const nudged: Array<{ member_id: string; open_steps: number; days_open: number }> = [];
     const skipped: AdminBotMemberNudgeSkip[] = [];
+    const policy = this.engagementPolicy();
+    const ledger = this.nudgeLedgerIndex();
 
     for (const member of this.store.listLabMembers()) {
       // The checklist is for people currently working in the lab. Chasing somebody who has left is
@@ -17572,6 +17702,15 @@ export class AdminBotService {
       }
       const lastNudged = onboarding?.last_nudged_at;
       if (lastNudged && daysBetween(lastNudged, now) < adminBotOnboardingRepeatChaseDays) {
+        continue;
+      }
+      const gate = this.longTermReminderGate(member, "onboarding_chase", { policy, ledger, now });
+      if (!gate.allowed) {
+        // Not stamped: the checklist's own clock stays where it was, so the next pass the cycle
+        // allows picks this member up rather than waiting another two months.
+        if (gate.reason !== "off") {
+          skipped.push({ member_id: member.id, reason: longTermReminderSkipReason(gate) });
+        }
         continue;
       }
       const sent = await this.sendMemberNudge(
@@ -17603,6 +17742,10 @@ export class AdminBotService {
       });
       nudged.push({ member_id: member.id, open_steps: open.length, days_open: daysOpen });
     }
+    this.stampNudgeLedger(
+      nudged.map((row) => longTermReminderStamp(row.member_id)),
+      nowIso,
+    );
 
     this.recordAudit({
       type: "onboarding.chased",
@@ -18389,6 +18532,32 @@ function serviceError<T>(status: number, message: string): AdminBotServiceRespon
 // often as it likes -- daily is fine, and gives a member who fills their profile in on day one a
 // prompt exit from the list -- but nobody is nudged about the same gap more than once per window.
 const MANDATORY_FIELDS_REMINDER_INTERVAL_MS = 3 * 24 * 60 * 60 * 1000;
+
+function longTermReminderKey(memberId: string): string {
+  return `long_term_reminder|${memberId}|${memberId}`;
+}
+
+function longTermReminderStamp(memberId: string): {
+  domain: AdminBotNudgeDomain;
+  subjectId: string;
+  memberId: string;
+} {
+  return { domain: "long_term_reminder", subjectId: memberId, memberId };
+}
+
+/** Why the shared gate held a member back, in the words a sweep's `skipped` list uses. */
+function longTermReminderSkipReason(
+  gate: Extract<AdminBotLongTermReminderGate, { allowed: false }>,
+): string {
+  switch (gate.reason) {
+    case "unclassified":
+      return "member has no type, and this reminder needs one";
+    case "off":
+      return `reminder is off for ${gate.audience ?? "this group"}`;
+    case "cycle":
+      return "already sent a long-term reminder this cycle";
+  }
+}
 const WEEKLY_UPDATE_NUDGE_TITLE = "This week's paper update";
 // Eight days: the Sunday sweep asks about the week just ending, so its nudge stays up through the
 // following week and gives way to the next Sunday's.

@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vitest";
+import { BASIC_WELCOME_MEMBER_TYPES } from "../workflows/onboarding/member-type-template.js";
+import { adminBotMemberTypes } from "./actions.js";
 import {
   adminBotDefaultEngagementPolicy,
   adminBotEmailAddressProblem,
   adminBotEngagementAudienceOf,
+  adminBotEngagementAudiences,
+  adminBotLongTermReminderGate,
+  adminBotLongTermReminderKinds,
   adminBotMemberEngagement,
+  adminBotUnclassifiedReminderCycleDays,
   renderEngagementReminder,
   resolveEngagementPolicy,
   validateEngagementPolicyOverrides,
@@ -88,11 +94,57 @@ describe("the shipped policy", () => {
       .filter(([, entry]) => entry.enabled)
       .map(([group]) => group)
       .toSorted();
-    expect(enabled).toEqual(["alumni", "coauthor-major", "coauthor-minor", "full", "part_time"]);
+    expect(enabled).toEqual([
+      "alumni",
+      "coauthor-discussant-or-designer",
+      "coauthor-major",
+      "coauthor-minor",
+      "disappearing-coauthor",
+      "full",
+      "interviewee",
+      "own-pace-advisee",
+      "part_time",
+      "slightly-better-than-emails",
+    ]);
     expect(adminBotDefaultEngagementPolicy.alumni).toMatchObject({
       channel: "email",
       max_reminders: 1,
       escalate: false,
+    });
+  });
+
+  it("gives alumni the periodic check-in and nothing else", () => {
+    expect(adminBotDefaultEngagementPolicy.alumni.reminders).toEqual({
+      dormant_login: false,
+      onboarding_chase: false,
+      profile_fields: false,
+      weekly_notes: false,
+      alumni_checkin: true,
+    });
+  });
+
+  it("sends nothing long-term to the operational and mailing-list types", () => {
+    for (const group of [
+      "external-prof",
+      "benefit-partner",
+      "benefit-direct-relative",
+      "acquaintance",
+      "adminbot-admin",
+      "adminbot-developer",
+      "mailing-list",
+    ] as const) {
+      expect(adminBotDefaultEngagementPolicy[group].enabled, group).toBe(false);
+      expect(Object.values(adminBotDefaultEngagementPolicy[group].reminders), group).not.toContain(
+        true,
+      );
+    }
+  });
+
+  it("lays reminder switches over the defaults one kind at a time", () => {
+    const resolved = resolveEngagementPolicy({ full: { reminders: { weekly_notes: false } } });
+    expect(resolved.full.reminders).toEqual({
+      ...adminBotDefaultEngagementPolicy.full.reminders,
+      weekly_notes: false,
     });
   });
 
@@ -101,6 +153,143 @@ describe("the shipped policy", () => {
     expect(resolved.full).toEqual({ ...adminBotDefaultEngagementPolicy.full, max_reminders: 2 });
     expect(resolved.alumni).toEqual(adminBotDefaultEngagementPolicy.alumni);
     expect(resolveEngagementPolicy(undefined)).toEqual(adminBotDefaultEngagementPolicy);
+  });
+});
+
+describe("policy coverage", () => {
+  // The compile-time check in engagement.ts already refuses a member type with no row. This pins
+  // the same thing at runtime, through the classifier the sweeps actually call, for every type a
+  // welcome template or the basic welcome names and for the standings that outrank a type.
+  const everyType = [
+    ...new Set<string>([
+      ...adminBotMemberTypes,
+      ...BASIC_WELCOME_MEMBER_TYPES,
+      "own-pace-advisee",
+      "interviewee",
+      "mailing-list",
+    ]),
+  ];
+
+  it.each(everyType)("maps %s to its own policy row", (type) => {
+    const audience = adminBotEngagementAudienceOf({ member_type: type } as never);
+    expect(audience).toBe(type);
+    const entry = adminBotDefaultEngagementPolicy[audience!];
+    expect(Object.keys(entry.reminders).toSorted()).toEqual(
+      [...adminBotLongTermReminderKinds].toSorted(),
+    );
+    expect(entry.cycle_days).toBeGreaterThan(0);
+  });
+
+  it("maps part-time standing to its own row whatever the type says", () => {
+    const audience = adminBotEngagementAudienceOf({
+      status: "part_time",
+      member_type: "full",
+    } as never);
+    expect(audience).toBe("part_time");
+    expect(adminBotDefaultEngagementPolicy.part_time.enabled).toBe(true);
+  });
+
+  it("has a row for every audience and no audience without one", () => {
+    expect(Object.keys(adminBotDefaultEngagementPolicy).toSorted()).toEqual(
+      [...adminBotEngagementAudiences].toSorted(),
+    );
+  });
+});
+
+describe("adminBotLongTermReminderGate", () => {
+  const policy = adminBotDefaultEngagementPolicy;
+  const now = new Date("2026-03-11T09:20:00.000Z");
+  const gate = (
+    member: { status?: string; member_type?: string },
+    kind: (typeof adminBotLongTermReminderKinds)[number],
+    lastLongTermReminderAt?: string,
+  ) =>
+    adminBotLongTermReminderGate({
+      member: member as never,
+      kind,
+      policy,
+      lastLongTermReminderAt,
+      now,
+    });
+
+  it("lets a full member through when nothing went out before", () => {
+    expect(gate({ member_type: "full" }, "dormant_login")).toEqual({
+      allowed: true,
+      audience: "full",
+    });
+  });
+
+  it("holds any second reminder inside the cycle, whichever kind went first", () => {
+    // Full's cycle is two days: a profile reminder on Tuesday holds Wednesday's weekly ask.
+    expect(gate({ member_type: "full" }, "weekly_notes", "2026-03-10T10:50:00.000Z")).toEqual({
+      allowed: false,
+      reason: "cycle",
+      audience: "full",
+    });
+  });
+
+  it("counts the cycle in calendar days, so a later time of day does not shift it", () => {
+    // Monday 10:50 and a two-day cycle: Wednesday 09:20 is allowed, though under 48 hours.
+    expect(gate({ member_type: "full" }, "profile_fields", "2026-03-09T10:50:00.000Z")).toEqual({
+      allowed: true,
+      audience: "full",
+    });
+  });
+
+  it("says off for a kind the row does not send", () => {
+    expect(gate({ member_type: "alumni" }, "weekly_notes")).toMatchObject({
+      allowed: false,
+      reason: "off",
+    });
+    expect(gate({ member_type: "mailing-list" }, "profile_fields")).toMatchObject({
+      allowed: false,
+      reason: "off",
+    });
+  });
+
+  it("reads standing first, so an alumnus typed full gets only the check-in", () => {
+    expect(gate({ status: "alumni", member_type: "full" }, "dormant_login")).toMatchObject({
+      reason: "off",
+    });
+    expect(gate({ status: "alumni", member_type: "full" }, "alumni_checkin")).toMatchObject({
+      allowed: true,
+    });
+  });
+
+  it("refuses an untyped member the reminders only a type can justify", () => {
+    expect(gate({}, "dormant_login")).toEqual({ allowed: false, reason: "unclassified" });
+    expect(gate({ member_type: "visiting-wizard" }, "alumni_checkin")).toEqual({
+      allowed: false,
+      reason: "unclassified",
+    });
+  });
+
+  it("sends an untyped member the evidence reminders on the fallback cycle", () => {
+    expect(gate({}, "profile_fields")).toEqual({ allowed: true });
+    const held = new Date(now.getTime() - (adminBotUnclassifiedReminderCycleDays - 1) * 86_400_000);
+    expect(gate({}, "weekly_notes", held.toISOString())).toEqual({
+      allowed: false,
+      reason: "cycle",
+    });
+    const clear = new Date(now.getTime() - adminBotUnclassifiedReminderCycleDays * 86_400_000);
+    expect(gate({}, "onboarding_chase", clear.toISOString())).toEqual({ allowed: true });
+  });
+
+  it("follows an override that turns a kind off", () => {
+    expect(
+      adminBotLongTermReminderGate({
+        member: { member_type: "full" } as never,
+        kind: "weekly_notes",
+        policy: resolveEngagementPolicy({ full: { reminders: { weekly_notes: false } } }),
+        now,
+      }),
+    ).toMatchObject({ allowed: false, reason: "off" });
+  });
+
+  it("ignores an unparseable stamp rather than treating it as recent", () => {
+    expect(gate({ member_type: "full" }, "dormant_login", "whenever")).toMatchObject({
+      allowed: true,
+    });
   });
 });
 
@@ -123,6 +312,10 @@ describe("validateEngagementPolicyOverrides", () => {
     ["an unknown channel", { full: { channel: "sms" } }],
     ["a blank template", { full: { template: "  " } }],
     ["too many reminders", { full: { max_reminders: 99 } }],
+    ["a zero cycle", { full: { cycle_days: 0 } }],
+    ["an unknown reminder kind", { full: { reminders: { birthday: true } } }],
+    ["a non-boolean reminder switch", { full: { reminders: { weekly_notes: "yes" } } }],
+    ["reminders as a list", { full: { reminders: ["weekly_notes"] } }],
   ])("refuses %s", (_label, value) => {
     expect(validateEngagementPolicyOverrides(value)).toEqual(expect.any(String));
   });
