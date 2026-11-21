@@ -15,7 +15,7 @@ import {
   type AdminBotReminderReplyReading,
   type AdminBotReminderReplyTarget,
 } from "../contracts/email-review.js";
-import type { AdminBotNudgeLedgerRecord } from "../contracts/paper-cycle.js";
+import { adminBotNudgeDomains, type AdminBotNudgeLedgerRecord } from "../contracts/paper-cycle.js";
 import {
   adminBotPaperflowStageRegistry,
   adminBotPaperflowStages,
@@ -37,7 +37,10 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /** One reminder AdminBot actually delivered by email. */
 export type ReminderSend = {
   action_id: string;
-  type: "member_nudge.send" | "logistics.rec_letter_reminder";
+  type:
+    | "member_nudge.send"
+    | "logistics.rec_letter_reminder"
+    | "logistics.rec_letter_overdue_check";
   subject: string;
   body: string;
   sent_at: string;
@@ -74,8 +77,8 @@ function payloadRecord(payload: unknown): Record<string, unknown> {
  * Every reminder email that left the building inside the lookback, newest first.
  *
  * Only executed, live sends: a dry run or a proposal nobody approved never reached anyone, so a
- * reply cannot be answering it. A rec-letter reminder is addressed by email rather than by member,
- * so its member is whoever on the roster owns the address it went to.
+ * reply cannot be answering it. The two letter mails are addressed by email rather than by member,
+ * so their member is whoever on the roster owns the address it went to.
  */
 export function listReminderSends(
   store: Pick<
@@ -87,7 +90,11 @@ export function listReminderSends(
   const since = now.getTime() - reminderReplyLookbackDays * DAY_MS;
   const roster = store.listLabMembers();
   const sends: ReminderSend[] = [];
-  for (const type of ["member_nudge.send", "logistics.rec_letter_reminder"] as const) {
+  for (const type of [
+    "member_nudge.send",
+    "logistics.rec_letter_reminder",
+    "logistics.rec_letter_overdue_check",
+  ] as const) {
     for (const proposal of store.listProposalsByType(type)) {
       const payload = payloadRecord(proposal.proposed_payload);
       const target = payloadRecord(proposal.target);
@@ -163,6 +170,20 @@ export function matchReminderSend(
   return bySubject ? { send: bySubject, matched_by: "subject" } : undefined;
 }
 
+/** How close to a send a ledger stamp must be to belong to that mail: sweeps stamp just after. */
+const STAMP_BEFORE_MS = 60_000;
+const STAMP_AFTER_MS = 10 * 60_000;
+
+function stampedWith(entry: AdminBotNudgeLedgerRecord, send: ReminderSend): boolean {
+  const sentAt = Date.parse(send.sent_at);
+  const stamped = Date.parse(entry.last_nudged_at ?? "");
+  return (
+    !Number.isNaN(stamped) &&
+    stamped >= sentAt - STAMP_BEFORE_MS &&
+    stamped <= sentAt + STAMP_AFTER_MS
+  );
+}
+
 export type ReminderTargetDeps = {
   papers: readonly AdminBotPaperRecord[];
   /** The stages open right now, from the same walk the sweep sends from. */
@@ -172,6 +193,7 @@ export type ReminderTargetDeps = {
     paper: AdminBotPaperRecord,
     memberId: string,
   ) => Array<{ slot: string; label: string }>;
+  /** Every domain's rows: a generic nudge is tied to its subject only by the stamp beside it. */
   ledger: readonly AdminBotNudgeLedgerRecord[];
   getLogisticsRequest: AdminBotServiceStore["getLogisticsRequest"];
 };
@@ -186,12 +208,90 @@ export function reminderTargets(
   send: ReminderSend,
   deps: ReminderTargetDeps,
 ): AdminBotReminderReplyTarget[] {
-  return send.type === "logistics.rec_letter_reminder"
-    ? recLetterTargets(send, deps)
-    : (() => {
-        const stage = paperflowTarget(send, deps);
-        return stage ? [stage] : paperSlotTargets(send, deps);
-      })();
+  if (send.type === "logistics.rec_letter_reminder") {
+    return recLetterTargets(send, deps);
+  }
+  if (send.type === "logistics.rec_letter_overdue_check") {
+    return recLetterOverdueTargets(send, deps);
+  }
+  const stage = paperflowTarget(send, deps);
+  if (stage) {
+    return [stage];
+  }
+  const slots = paperSlotTargets(send, deps);
+  return slots.length ? slots : ledgerTargets(send, deps);
+}
+
+/**
+ * Any other nudge, by the ledger row its sweep stamped for this member as the mail went out.
+ *
+ * Every sweep writes one, so this reaches every domain -- profile fields, attendance, thesis
+ * milestones -- without a parser per subject line. What it cannot do is know what "done" would
+ * close for that domain, so only a snooze is ever built on it; the rest goes to a person.
+ */
+function ledgerTargets(
+  send: ReminderSend,
+  deps: ReminderTargetDeps,
+): AdminBotReminderReplyTarget[] {
+  const now = Date.now();
+  return deps.ledger
+    .filter(
+      (entry) =>
+        entry.member_id === send.member_id &&
+        (adminBotNudgeDomains as readonly string[]).includes(entry.domain) &&
+        entry.domain !== "email_review" &&
+        stampedWith(entry, send),
+    )
+    .map((entry) => ({
+      domain: entry.domain,
+      subject_id: entry.subject_id,
+      member_id: entry.member_id,
+      label: `${entry.domain.replace(/_/gu, " ")} reminder (${entry.subject_id})`,
+      open: !entry.snoozed_until || Date.parse(entry.snoozed_until) <= now,
+    }));
+}
+
+/**
+ * The student's own letter requests one "did it go in?" mail asked about.
+ *
+ * Same stamp-beside-the-send rule as the professor's reminder, but under the student, and the
+ * request is open only while it is still waiting on a submission.
+ */
+function recLetterOverdueTargets(
+  send: ReminderSend,
+  deps: ReminderTargetDeps,
+): AdminBotReminderReplyTarget[] {
+  const targets: AdminBotReminderReplyTarget[] = [];
+  const seen = new Set<string>();
+  for (const entry of deps.ledger) {
+    if (
+      entry.domain !== "rec_letter_overdue" ||
+      entry.member_id !== send.member_id ||
+      !stampedWith(entry, send)
+    ) {
+      continue;
+    }
+    const requestId = entry.subject_id.split("|")[1];
+    if (!requestId || seen.has(requestId)) {
+      continue;
+    }
+    seen.add(requestId);
+    const request = deps.getLogisticsRequest(requestId);
+    if (!request) {
+      continue;
+    }
+    const schools = (request.schools ?? []).map((school) => school.school);
+    targets.push({
+      domain: "rec_letter_overdue",
+      subject_id: entry.subject_id,
+      member_id: send.member_id,
+      label: `your letter for ${schools.join(", ") || "your recommendation"}`,
+      open: request.status === "submitted" || request.status === "in_progress",
+      request_id: requestId,
+      schools,
+    });
+  }
+  return targets;
 }
 
 /** A PaperFlow nudge's subject is `${label}: ${title}` (workflows/papers/paperflow-stages.ts). */
@@ -265,14 +365,13 @@ function recLetterTargets(
   send: ReminderSend,
   deps: ReminderTargetDeps,
 ): AdminBotReminderReplyTarget[] {
-  const sentAt = Date.parse(send.sent_at);
   const requestIds = new Set<string>();
   for (const entry of deps.ledger) {
-    if (entry.domain !== "rec_letter_reminder" || entry.member_id !== send.member_id) {
-      continue;
-    }
-    const stamped = Date.parse(entry.last_nudged_at ?? "");
-    if (Number.isNaN(stamped) || stamped < sentAt - 60_000 || stamped > sentAt + 10 * 60_000) {
+    if (
+      entry.domain !== "rec_letter_reminder" ||
+      entry.member_id !== send.member_id ||
+      !stampedWith(entry, send)
+    ) {
       continue;
     }
     const requestId = entry.subject_id.split("|")[1];
@@ -342,7 +441,8 @@ export function reminderReplyResolution(
   const withUrl = reading.evidence_url ? `${note} (${reading.evidence_url})` : note;
 
   if (reading.intent === "needs_time") {
-    if (target.domain === "rec_letter_reminder") {
+    // Both letter mails are said once per deadline, so there is no cadence for a snooze to pause.
+    if (target.domain === "rec_letter_reminder" || target.domain === "rec_letter_overdue") {
       return byHand(`they need more time on the letters ("${note}")`);
     }
     const cap = now.getTime() + reminderReplySnoozeDays * DAY_MS;
@@ -423,6 +523,17 @@ export function reminderReplyResolution(
       undo_plan: "Set the schools' letter status back on the request.",
     };
   }
+  if (target.domain === "rec_letter_overdue" && target.request_id && reading.intent === "done") {
+    return {
+      resolution: {
+        kind: "rec_letter_confirmed",
+        request_id: target.request_id,
+        member_id: target.member_id,
+      },
+      summary: `Mark ${who}'s letter request submitted, as they confirmed: ${note}`,
+      undo_plan: "Reopen the request; it goes back to waiting on the professor.",
+    };
+  }
   return byHand(`"${note}"`);
 }
 
@@ -487,11 +598,26 @@ export function parseEmailReviewResolution(
       const subjectId = text(row.subject_id);
       const memberId = text(row.member_id);
       const until = text(row.until);
-      return (domain === "paperflow_stage" || domain === "paper_slot") &&
+      return typeof domain === "string" &&
+        (adminBotNudgeDomains as readonly string[]).includes(domain) &&
+        domain !== "email_review" &&
         subjectId &&
         memberId &&
         until
-        ? { kind: "reminder_snoozed", domain, subject_id: subjectId, member_id: memberId, until }
+        ? {
+            kind: "reminder_snoozed",
+            domain: domain as AdminBotReminderReplyTarget["domain"],
+            subject_id: subjectId,
+            member_id: memberId,
+            until,
+          }
+        : undefined;
+    }
+    case "rec_letter_confirmed": {
+      const requestId = text(row.request_id);
+      const memberId = text(row.member_id);
+      return requestId && memberId
+        ? { kind: "rec_letter_confirmed", request_id: requestId, member_id: memberId }
         : undefined;
     }
     default:

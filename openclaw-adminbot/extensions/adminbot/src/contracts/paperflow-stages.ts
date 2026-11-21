@@ -123,7 +123,8 @@ export type AdminBotPaperflowEvidenceRecord = {
   /** Who the bcc came from, normalized. */
   sender?: string;
   recorded_at: string;
-  recorded_by: "email_bcc" | "admin" | "openreview";
+  /** `reply`: the member answered the reminder itself and AdminBot applied it (undoable). */
+  recorded_by: "email_bcc" | "admin" | "openreview" | "reply";
   /** The classifier's confidence, for the admin reviewing a stage that closed itself. */
   confidence?: number;
   /**

@@ -2464,7 +2464,12 @@
                       "type": "string",
                       "enum": [
                         "dismissed",
-                        "paperflow_evidence"
+                        "paperflow_evidence",
+                        "paperflow_skipped",
+                        "paper_slot_waived",
+                        "rec_letter_submitted",
+                        "rec_letter_confirmed",
+                        "reminder_snoozed"
                       ]
                     },
                     "evidence_recorded": {
@@ -21042,6 +21047,9 @@
                         "professor.escalation_digest",
                         "logistics.rec_letter_overdue_check",
                         "email_review.resolve",
+                        "reminder_reply.apply",
+                        "reminder_reply.undo",
+                        "reminder_reply.confirm",
                         "member_nudge.send",
                         "member_nudge.escalate",
                         "paper_integrity.alert",
@@ -30819,6 +30827,9 @@
                       "professor.escalation_digest",
                       "logistics.rec_letter_overdue_check",
                       "email_review.resolve",
+                      "reminder_reply.apply",
+                      "reminder_reply.undo",
+                      "reminder_reply.confirm",
                       "member_nudge.send",
                       "member_nudge.escalate",
                       "paper_integrity.alert",
@@ -34558,6 +34569,9 @@
               "professor.escalation_digest",
               "logistics.rec_letter_overdue_check",
               "email_review.resolve",
+              "reminder_reply.apply",
+              "reminder_reply.undo",
+              "reminder_reply.confirm",
               "member_nudge.send",
               "member_nudge.escalate",
               "paper_integrity.alert",
@@ -34792,6 +34806,9 @@
               "automation_health.alerted",
               "paperflow_stage.evidenced",
               "email_review.resolved",
+              "reminder_reply.applied",
+              "reminder_reply.undone",
+              "email_review.reminder_reply",
               "paper_social_draft.saved",
               "paper_social_draft.circulated",
               "paper_social_consent.recorded",
@@ -36166,7 +36183,12 @@
             "type": "string",
             "enum": [
               "dismissed",
-              "paperflow_evidence"
+              "paperflow_evidence",
+              "paperflow_skipped",
+              "paper_slot_waived",
+              "rec_letter_submitted",
+              "rec_letter_confirmed",
+              "reminder_snoozed"
             ]
           },
           "resolved_at": {
@@ -46785,7 +46807,8 @@
             "enum": [
               "admin",
               "openreview",
-              "email_bcc"
+              "email_bcc",
+              "reply"
             ]
           }
         },
@@ -47556,11 +47579,15 @@
             "enum": [
               "admin",
               "openreview",
-              "email_bcc"
+              "email_bcc",
+              "reply"
             ]
           },
           "confidence": {
             "type": "number"
+          },
+          "note": {
+            "type": "string"
           }
         },
         "required": [
@@ -48443,6 +48470,9 @@
               "professor.escalation_digest",
               "logistics.rec_letter_overdue_check",
               "email_review.resolve",
+              "reminder_reply.apply",
+              "reminder_reply.undo",
+              "reminder_reply.confirm",
               "member_nudge.send",
               "member_nudge.escalate",
               "paper_integrity.alert",
@@ -48583,6 +48613,9 @@
               "professor.escalation_digest",
               "logistics.rec_letter_overdue_check",
               "email_review.resolve",
+              "reminder_reply.apply",
+              "reminder_reply.undo",
+              "reminder_reply.confirm",
               "member_nudge.send",
               "member_nudge.escalate",
               "paper_integrity.alert",

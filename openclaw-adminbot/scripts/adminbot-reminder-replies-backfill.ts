@@ -1,0 +1,143 @@
+#!/usr/bin/env -S node --import tsx
+// Settle the reminder replies already waiting in Needs Review, the way the hourly pass now would.
+//
+//   node --import tsx scripts/adminbot-reminder-replies-backfill.ts --database <path> [--apply]
+//
+// Dry run by default: nothing is written and nothing is sent. It prints, for every reminder reply
+// still held for an admin, whether it would be applied (and the receipt that would go to whom) or
+// stay in review (and why), followed by the accepted papers whose conference stage and attendance
+// roll-call are no longer asked about because the conference has been held or the venue moved on.
+// That second list needs no --apply: it is computed on read, and is printed so the change is seen.
+//
+// With --apply, each "apply" row goes through the same `reminder_reply.apply` action as a live
+// reply -- audited, undoable by the member replying "undo" -- and the receipt is sent from the bot
+// mailbox (ADMINBOT_BOT_EMAIL) through gog. Rows that would stay in review are left untouched.
+import { createGogAdminBotExecutor } from "../extensions/adminbot/src/connectors/gog.js";
+import type { AdminBotReminderReplyReading } from "../extensions/adminbot/src/contracts/email-review.js";
+import { reminderReplyConfirmationBody } from "../extensions/adminbot/src/kernel/service.reminder-reply-auto.js";
+import { createAdminBotSqliteService } from "../extensions/adminbot/src/persistence/sqlite.js";
+import { adminbotServiceDatabasePath } from "./adminbot-service-database.js";
+
+type Args = { databasePath: string; apply: boolean; account?: string };
+
+function parseArgs(argv: string[]): Args {
+  const value = (flag: string): string | undefined => {
+    const index = argv.indexOf(flag);
+    return index >= 0 ? argv[index + 1] : undefined;
+  };
+  return {
+    databasePath: value("--database") ?? adminbotServiceDatabasePath(),
+    apply: argv.includes("--apply"),
+    account: value("--account") ?? process.env.ADMINBOT_BOT_EMAIL?.trim() ?? undefined,
+  };
+}
+
+type HeldReply = {
+  proposal_id: string;
+  message_id: string;
+  thread_id: string;
+  sender: string;
+  subject?: string;
+  reading: AdminBotReminderReplyReading;
+};
+
+async function main(): Promise<void> {
+  const args = parseArgs(process.argv.slice(2));
+  if (args.apply && !args.account) {
+    throw new Error(
+      "--apply sends receipts from the bot mailbox: set ADMINBOT_BOT_EMAIL or --account",
+    );
+  }
+  const { service, store, close } = createAdminBotSqliteService({
+    databasePath: args.databasePath,
+    ...(args.apply ? { executor: createGogAdminBotExecutor() } : {}),
+  });
+  try {
+    const held: HeldReply[] = [];
+    for (const proposal of store.listProposalsByType("email_review.resolve")) {
+      const payload = proposal.proposed_payload as Partial<HeldReply> | undefined;
+      if (
+        proposal.status !== "pending" ||
+        !payload?.reading ||
+        typeof payload.message_id !== "string" ||
+        typeof payload.thread_id !== "string" ||
+        typeof payload.sender !== "string" ||
+        !store.getEmailReview(payload.message_id)
+      ) {
+        continue;
+      }
+      held.push({ ...(payload as HeldReply), proposal_id: proposal.id });
+    }
+
+    console.log(`${args.apply ? "APPLY" : "DRY RUN"}: ${held.length} reminder repl(ies) in review`);
+    let applied = 0;
+    for (const reply of held) {
+      const plan = service.planReminderReply({
+        sender: reply.sender,
+        threadId: reply.thread_id,
+        ...(reply.subject ? { subject: reply.subject } : {}),
+        reading: reply.reading,
+      });
+      if (!plan.ok) {
+        console.log(
+          `- ${reply.message_id} (${reply.sender}): stays in review: ${plan.error.message}`,
+        );
+        continue;
+      }
+      const { mode, member_name, resolution, label, why_review } = plan.payload;
+      if (mode === "review") {
+        console.log(`- ${reply.message_id} ${member_name}: stays in review (${why_review})`);
+        continue;
+      }
+      console.log(`- ${reply.message_id} ${member_name}: would ${resolution.kind} on ${label}`);
+      console.log(`  receipt to ${reply.sender}:`);
+      for (const line of reminderReplyConfirmationBody({
+        memberName: member_name,
+        label: label ?? "this reminder",
+        resolution,
+      }).split("\n")) {
+        console.log(`    | ${line}`);
+      }
+      if (!args.apply) {
+        continue;
+      }
+      const result = await service.autoApplyReminderReply({
+        messageId: reply.message_id,
+        threadId: reply.thread_id,
+        sender: reply.sender,
+        ...(reply.subject ? { subject: reply.subject } : {}),
+        reading: reply.reading,
+        actor: "adminbot-reminder-replies-backfill",
+        ...(args.account ? { account: args.account } : {}),
+      });
+      if (result.ok && result.payload.mode === "applied") {
+        applied += 1;
+        console.log(
+          `  applied ${result.payload.apply_action_id}${result.payload.confirm_error ? `; receipt NOT sent: ${result.payload.confirm_error}` : ""}`,
+        );
+      } else {
+        console.log(
+          `  not applied: ${result.ok ? (result.payload.mode === "proposed" ? (result.payload.apply_error ?? "held") : "") : result.error.message}`,
+        );
+      }
+    }
+
+    const closed = service.conferencesClosedByVenue();
+    console.log(`\n${closed.length} accepted paper(s) no longer asked about the conference:`);
+    for (const paper of closed) {
+      console.log(
+        `- ${paper.paper_id} (${paper.venue ?? "no venue"}): ${paper.unanswered_attendance} unanswered attendance row(s) dropped`,
+      );
+    }
+    if (args.apply) {
+      console.log(`\napplied ${applied} of ${held.length}`);
+    }
+  } finally {
+    close();
+  }
+}
+
+main().catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
+});

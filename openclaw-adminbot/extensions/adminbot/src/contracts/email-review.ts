@@ -1,3 +1,4 @@
+import type { AdminBotNudgeDomain } from "./paper-cycle.js";
 import type { AdminBotPaperflowStage } from "./paperflow-stages.js";
 
 /** One inbound message the hourly pass deliberately left for an administrator to decide. */
@@ -38,6 +39,8 @@ export type AdminBotEmailReviewResolution =
   | { kind: "paper_slot_waived"; paper_id: string; slot: string; note: string }
   /** The head professor says the letters went in: mark these schools submitted on the request. */
   | { kind: "rec_letter_submitted"; request_id: string; schools: string[] }
+  /** The student says their own letter went in, answering the after-deadline question. */
+  | { kind: "rec_letter_confirmed"; request_id: string; member_id: string }
   /** The member needs more time: keep the reminder quiet until `until`, then ask again. */
   | {
       kind: "reminder_snoozed";
@@ -53,12 +56,17 @@ export const adminBotEmailReviewResolutionKinds = [
   "paperflow_skipped",
   "paper_slot_waived",
   "rec_letter_submitted",
+  "rec_letter_confirmed",
   "reminder_snoozed",
   "dismissed",
 ] as const satisfies ReadonlyArray<AdminBotEmailReviewResolution["kind"]>;
 
-/** The nudge ledger domains a reply to a reminder can settle. */
-export type AdminBotReminderReplyDomain = "paperflow_stage" | "paper_slot" | "rec_letter_reminder";
+/**
+ * The nudge ledger domain a reply to a reminder answers. Any of them: a reminder is a ledger row,
+ * and "give me two weeks" means the same thing whichever row it is. What a "done" can close is
+ * per domain (service.reminder-replies.ts).
+ */
+export type AdminBotReminderReplyDomain = AdminBotNudgeDomain;
 
 /**
  * What a member's reply to a reminder says, as the model reads it.

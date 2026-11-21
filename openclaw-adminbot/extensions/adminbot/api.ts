@@ -30,6 +30,10 @@ export type {
 export { AdminBotService, payloadHash } from "./src/kernel/service.js";
 export type { AdminBotActionExecutor } from "./src/kernel/service.js";
 export { createGogAdminBotExecutor } from "./src/connectors/gog.js";
+export {
+  isUndoReply,
+  resolveReminderReplyAutoConfig,
+} from "./src/kernel/service.reminder-reply-auto.js";
 export { renderEmailBodyHtml } from "./src/connectors/email-html.js";
 export { createAdminBotSocialExecutor } from "./src/connectors/social.js";
 export { createLinkedInDraftRunner } from "./src/connectors/social-draft.js";

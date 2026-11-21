@@ -100,8 +100,8 @@ import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery
 import { withApiTokenAttribution } from "../workflows/identity/api-token-context.js";
 import { meetingSeriesKey, meetsDurationFloor } from "../workflows/meetings/records.js";
 import { createCollaboratorChatRequestStore } from "./collaborator-chat-requests.js";
-import { createPosterPrintStore } from "./poster-printing.js";
 import { discoverMemoryHelpRequests } from "./lab-sharing-discovery-memory.js";
+import { createPosterPrintStore } from "./poster-printing.js";
 
 /** Addresses are matched case-insensitively, as they are in the SQLite store. */
 function slackConnectInviteKey(email: string, channelId: string): string {
@@ -1255,6 +1255,10 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
       return;
     }
     this.paperflowEvidence.set(key, record);
+  }
+
+  deletePaperflowEvidence(paperId: string, stage: string): boolean {
+    return this.paperflowEvidence.delete(`${paperId}\u0000${stage}`);
   }
 
   listPaperflowEvidence(paperId?: string): AdminBotPaperflowEvidenceRecord[] {

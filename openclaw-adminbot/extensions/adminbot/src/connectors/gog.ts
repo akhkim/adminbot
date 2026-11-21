@@ -558,6 +558,8 @@ function buildGogArgs(proposal: AdminBotStoredProposal): string[] | undefined {
       return buildCalendarDeleteArgs(proposal);
     case "sheet.update_cells":
       return buildSheetUpdateArgs(proposal);
+    case "reminder_reply.confirm":
+      return buildReminderReplyConfirmArgs(proposal);
     case "sheet.append_rows":
       return buildSheetAppendArgs(proposal);
     case "paper_integrity.sheet_scores":
@@ -713,6 +715,21 @@ function buildEmailArgs(proposal: AdminBotStoredProposal, draft: boolean): strin
   appendOptional(args, "--cc", recipients(payload.cc));
   appendOptional(args, "--bcc", recipients(payload.bcc));
   appendOptional(args, "--reply-to", optionalString(payload, "reply_to"));
+  return args;
+}
+
+/**
+ * The short "I've marked it" note, sent as a reply on the member's own thread.
+ *
+ * A reply rather than a fresh send so it lands under the message it answers and the member can
+ * answer "undo" in place; the undo is matched by that thread. No quote: the member just wrote it.
+ */
+function buildReminderReplyConfirmArgs(proposal: AdminBotStoredProposal): string[] {
+  const payload = requirePayload(proposal);
+  const messageId = requireString(payload, "message_id");
+  const body = requireString(payload, "body");
+  const args = rootArgs("gmail.reply", optionalString(payload, "account"));
+  args.push("gmail", "reply", messageId, "--body", body, "--no-quote");
   return args;
 }
 

@@ -104,7 +104,6 @@ import {
 } from "../workflows/onboarding/onboarding-storage.js";
 import { parseTalkMaterialsConfig } from "../workflows/papers/talk-materials.js";
 import { createCollaboratorChatRequestStore } from "./collaborator-chat-requests.js";
-import { createPosterPrintStore } from "./poster-printing.js";
 import {
   adminBotEmailReviewFromRow,
   adminBotResolvedEmailReviewFromRow,
@@ -148,6 +147,7 @@ import {
   listPaperAiTextChecks,
   savePaperAiTextCheck,
 } from "./paper-ai-text-checks.js";
+import { createPosterPrintStore } from "./poster-printing.js";
 import {
   ensureReferenceScanSchema,
   getReferenceScan,
@@ -2809,6 +2809,15 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         record.confidence ?? null,
         record.note ?? null,
       );
+  }
+
+  /** Reopen one stage. Only an undo calls this, for a row it can show it wrote. */
+  deletePaperflowEvidence(paperId: string, stage: string): boolean {
+    return (
+      this.db
+        .prepare("DELETE FROM adminbot_paperflow_evidence WHERE paper_id = ? AND stage = ?")
+        .run(paperId, stage).changes > 0
+    );
   }
 
   listPaperflowEvidence(paperId?: string): AdminBotPaperflowEvidenceRecord[] {

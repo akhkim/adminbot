@@ -5529,6 +5529,9 @@ export interface components {
         | "professor.escalation_digest"
         | "logistics.rec_letter_overdue_check"
         | "email_review.resolve"
+        | "reminder_reply.apply"
+        | "reminder_reply.undo"
+        | "reminder_reply.confirm"
         | "member_nudge.send"
         | "member_nudge.escalate"
         | "paper_integrity.alert"
@@ -5651,6 +5654,9 @@ export interface components {
         | "automation_health.alerted"
         | "paperflow_stage.evidenced"
         | "email_review.resolved"
+        | "reminder_reply.applied"
+        | "reminder_reply.undone"
+        | "email_review.reminder_reply"
         | "paper_social_draft.saved"
         | "paper_social_draft.circulated"
         | "paper_social_consent.recorded"
@@ -6200,7 +6206,14 @@ export interface components {
       received_at?: string;
       updated_at: string;
       /** @enum {string} */
-      resolution: "dismissed" | "paperflow_evidence";
+      resolution:
+        | "dismissed"
+        | "paperflow_evidence"
+        | "paperflow_skipped"
+        | "paper_slot_waived"
+        | "rec_letter_submitted"
+        | "rec_letter_confirmed"
+        | "reminder_snoozed";
       resolved_at: string;
       resolved_by: string;
       resolved_by_name?: string;
@@ -9561,7 +9574,7 @@ export interface components {
       closed_at?: string;
       closed_by_subject?: string;
       /** @enum {string} */
-      closed_by?: "admin" | "openreview" | "email_bcc";
+      closed_by?: "admin" | "openreview" | "email_bcc" | "reply";
     } & {
       [key: string]: unknown;
     };
@@ -9799,8 +9812,9 @@ export interface components {
       sender?: string;
       recorded_at: string;
       /** @enum {string} */
-      recorded_by: "admin" | "openreview" | "email_bcc";
+      recorded_by: "admin" | "openreview" | "email_bcc" | "reply";
       confidence?: number;
+      note?: string;
     } & {
       [key: string]: unknown;
     };
@@ -10124,6 +10138,9 @@ export interface components {
         | "professor.escalation_digest"
         | "logistics.rec_letter_overdue_check"
         | "email_review.resolve"
+        | "reminder_reply.apply"
+        | "reminder_reply.undo"
+        | "reminder_reply.confirm"
         | "member_nudge.send"
         | "member_nudge.escalate"
         | "paper_integrity.alert"
@@ -10208,6 +10225,9 @@ export interface components {
         | "professor.escalation_digest"
         | "logistics.rec_letter_overdue_check"
         | "email_review.resolve"
+        | "reminder_reply.apply"
+        | "reminder_reply.undo"
+        | "reminder_reply.confirm"
         | "member_nudge.send"
         | "member_nudge.escalate"
         | "paper_integrity.alert"
@@ -12649,7 +12669,14 @@ export interface operations {
         content: {
           "application/json": {
             /** @enum {string} */
-            resolution: "dismissed" | "paperflow_evidence";
+            resolution:
+              | "dismissed"
+              | "paperflow_evidence"
+              | "paperflow_skipped"
+              | "paper_slot_waived"
+              | "rec_letter_submitted"
+              | "rec_letter_confirmed"
+              | "reminder_snoozed";
             evidence_recorded: boolean;
           } & {
             [key: string]: unknown;
@@ -23359,6 +23386,9 @@ export interface operations {
               | "professor.escalation_digest"
               | "logistics.rec_letter_overdue_check"
               | "email_review.resolve"
+              | "reminder_reply.apply"
+              | "reminder_reply.undo"
+              | "reminder_reply.confirm"
               | "member_nudge.send"
               | "member_nudge.escalate"
               | "paper_integrity.alert"
@@ -29108,6 +29138,9 @@ export interface operations {
             | "professor.escalation_digest"
             | "logistics.rec_letter_overdue_check"
             | "email_review.resolve"
+            | "reminder_reply.apply"
+            | "reminder_reply.undo"
+            | "reminder_reply.confirm"
             | "member_nudge.send"
             | "member_nudge.escalate"
             | "paper_integrity.alert"

@@ -278,7 +278,39 @@ export function isPaperConferenceOver(
   }
   const venue = paperVenueLabel(paper);
   const year = (venue ? venueKey(venue)?.year : undefined) ?? paper.accepted_year;
-  return isPastVenueYear(year, now) || isConferenceHeld(venue, dataset, now);
+  return (
+    isPastVenueYear(year, now) ||
+    isConferenceHeld(venue, dataset, now) ||
+    isVenueSuperseded(venue, dataset)
+  );
+}
+
+/**
+ * Whether the dataset has moved on from this edition: it lists a later year of the same venue
+ * family and nothing for this one.
+ *
+ * The deadline dataset keeps one edition per venue and replaces it once the next call is out, so
+ * by November "ICML 2026" is gone and "ICML 2027" is there. Without this a workshop at a July
+ * conference keeps asking about travel all autumn, because its own dates were never in the
+ * dataset and the year is still the current one.
+ */
+export function isVenueSuperseded(venue: string | undefined, dataset: readonly unknown[]): boolean {
+  const key = venue ? venueKey(venue) : undefined;
+  if (!key) {
+    return false;
+  }
+  let later = false;
+  for (const raw of dataset) {
+    const recordKey = datasetRecordKey((raw ?? {}) as DatasetRecord);
+    if (recordKey?.family !== key.family) {
+      continue;
+    }
+    if (recordKey.year === key.year) {
+      return false;
+    }
+    later ||= recordKey.year > key.year;
+  }
+  return later;
 }
 
 /**
@@ -581,7 +613,13 @@ function openReviewRows(
       ];
     }
 
-    const stage = openPaperflowStage({ paper, slots, evidence, now });
+    const stage = openPaperflowStage({
+      paper,
+      slots,
+      evidence,
+      now,
+      conferenceOver: isPaperConferenceOver(paper, dataset, now),
+    });
     if (sync.status === "accepted") {
       if (stage?.stage !== "camera_ready") {
         return [];

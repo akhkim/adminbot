@@ -87,6 +87,36 @@ describe("createGogAdminBotExecutor", () => {
     ]);
   });
 
+  it("sends a reminder-reply receipt as an unquoted reply from the bot mailbox", async () => {
+    const run = vi.fn(async () => {});
+    const executor = createGogAdminBotExecutor({ run });
+    await expect(
+      executor.execute(
+        proposal("reminder_reply.confirm", {
+          account: "bot@example.org",
+          message_id: "msg-1",
+          thread_id: "thread-1",
+          to: "member@example.org",
+          body: "Thanks.",
+        }),
+      ),
+    ).resolves.toMatchObject({ handled: true });
+    expect(run).toHaveBeenCalledWith([
+      "--json",
+      "--no-input",
+      "--enable-commands-exact",
+      "gmail.reply",
+      "--account",
+      "bot@example.org",
+      "gmail",
+      "reply",
+      "msg-1",
+      "--body",
+      "Thanks.",
+      "--no-quote",
+    ]);
+  });
+
   it("maps calendar invites and cancellations without emailing anyone", async () => {
     const run = vi.fn(async () => {});
     const executor = createGogAdminBotExecutor({ run });

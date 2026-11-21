@@ -716,6 +716,93 @@ describe("reminder replies", () => {
     }
   });
 
+  it('with auto on, applies a clear reply, mails a receipt, and undoes it on "undo"', async () => {
+    const { databasePath, state, cleanup } = await mailbox();
+    const sent: Array<{ message_id: string; to: string; body: string; account?: string }> = [];
+    const options = {
+      env: { ADMINBOT_REMINDER_REPLY_AUTO_ENABLED: "1" },
+      account: "bot@example.org",
+      executor: {
+        execute: async (proposal: { type: string; proposed_payload?: unknown }) => {
+          if (proposal.type !== "reminder_reply.confirm") {
+            return { handled: false };
+          }
+          sent.push(proposal.proposed_payload as (typeof sent)[number]);
+          return { handled: true };
+        },
+      },
+    };
+    try {
+      expect(
+        await fileReminderReply(
+          message({
+            id: "reply-1",
+            threadId: "thread-nudge",
+            from: "Xuanqiang Huang <xq@ethz.example>",
+            subject: `Re: Camera ready: ${title}`,
+            body: "Yes we submitted it to a journal springer",
+          }),
+          state,
+          { reminderReply: async () => springer },
+          databasePath,
+          undefined,
+          options as never,
+        ),
+      ).toBe("handled");
+      expect(state.status("reply-1")).toBe("completed");
+      expect(sent).toEqual([
+        expect.objectContaining({
+          message_id: "reply-1",
+          to: "xq@ethz.example",
+          account: "bot@example.org",
+        }),
+      ]);
+      expect(sent[0]?.body).toContain('Reply "undo"');
+
+      const reopened = createAdminBotSqliteService({ databasePath });
+      try {
+        expect(reopened.store.listPaperflowEvidence("p1").map((row) => row.recorded_by)).toEqual([
+          "reply",
+          "reply",
+        ]);
+        const pending = reopened.service.listPending();
+        expect(pending.ok && pending.payload.proposals).toEqual([]);
+      } finally {
+        reopened.close();
+      }
+
+      const reminderReply = vi.fn(async () => springer);
+      expect(
+        await fileReminderReply(
+          message({
+            id: "undo-1",
+            threadId: "thread-nudge",
+            from: "xq@ethz.example",
+            body: "undo\n\nOn Mon, AdminBot wrote:\n> Thanks",
+          }),
+          state,
+          { reminderReply },
+          databasePath,
+          undefined,
+          options as never,
+        ),
+      ).toBe("handled");
+      expect(reminderReply).not.toHaveBeenCalled();
+      expect(state.status("undo-1")).toBe("completed");
+      expect(sent).toHaveLength(2);
+      expect(sent[1]?.body).toContain("undone");
+
+      const after = createAdminBotSqliteService({ databasePath });
+      try {
+        expect(after.store.listPaperflowEvidence("p1")).toEqual([]);
+      } finally {
+        after.close();
+      }
+    } finally {
+      cleanup();
+    }
+  });
+
   it("parks the reply for a person when the model cannot read it", async () => {
     const { databasePath, state, cleanup } = await mailbox();
     try {

@@ -9,12 +9,16 @@ import { promisify } from "node:util";
 import {
   adminBotPaperflowEvidenceMinConfidence,
   createAdminBotSqliteService,
+  createGogAdminBotExecutor,
   ensureAdminBotEmailReviewSchema,
   isAdminBotPaperflowStage,
+  isUndoReply,
   looksLikeZoomRecordingNotice,
   noticeToMeeting,
   renderEmailBodyHtml,
+  resolveReminderReplyAutoConfig,
 } from "../extensions/adminbot/api.js";
+import type { AdminBotActionExecutor } from "../extensions/adminbot/api.js";
 import {
   getSlackWriteClient,
   resolveSlackAccount,
@@ -1770,9 +1774,14 @@ async function fileRecordingNotice(
  * what the reply says, never who it is about. Nothing closes here: the service files a held review,
  * snoozes the reminder, and proposes `email_review.resolve` for an admin to approve or reject.
  *
+ * With ADMINBOT_REMINDER_REPLY_AUTO_ENABLED=1, a clear answer from the member themself is applied
+ * instead (service.reminder-reply-auto.ts): the item closes or snoozes, the member gets a one-line
+ * receipt from the bot mailbox, and an "undo" on that thread puts it back and returns the reply to
+ * review. A question or an unclear reply still waits for an admin, and gets no receipt.
+ *
  * Returns "none" when the mail does not answer a reminder, so the caller falls through to the
- * normal path; "skipped" when an earlier pass already claimed it; "proposed" otherwise, with the
- * message left in needs_review either way.
+ * normal path; "skipped" when an earlier pass already claimed it; "handled" when it was applied or
+ * undone; "proposed" otherwise, with the message left in needs_review.
  */
 export async function fileReminderReply(
   message: EmailMessage,
@@ -1780,10 +1789,45 @@ export async function fileReminderReply(
   model: Pick<AdminBotEmailModel, "reminderReply">,
   databasePath: string,
   nowIso?: string,
-): Promise<"none" | "skipped" | "proposed"> {
-  const { service, close } = createAdminBotSqliteService({ databasePath });
+  options: { env?: NodeJS.ProcessEnv; executor?: AdminBotActionExecutor; account?: string } = {},
+): Promise<"none" | "skipped" | "proposed" | "handled"> {
+  const auto = resolveReminderReplyAutoConfig(options.env ?? process.env).enabled;
+  const { service, close } = createAdminBotSqliteService({
+    databasePath,
+    ...(auto ? { executor: options.executor ?? createGogAdminBotExecutor() } : {}),
+  });
+  const account = auto ? (options.account ?? botEmail()) : undefined;
   try {
     const sender = normalizeAddress(message.from);
+    // An "undo" answers AdminBot's receipt, not the reminder, so it is checked first. Only a
+    // member's own applied reply on this thread can be undone; anything else falls through.
+    if (
+      auto &&
+      isUndoReply(message.body) &&
+      service.findUndoableReminderReply({ threadId: message.threadId, sender })
+    ) {
+      if (
+        !state.begin(message, { category: "reminder_reply", reason: "undo of an applied reply" })
+      ) {
+        return "skipped";
+      }
+      const undone = await service.undoReminderReplyFromEmail({
+        threadId: message.threadId,
+        sender,
+        messageId: message.id,
+        ...(account ? { account } : {}),
+      });
+      if (undone.ok) {
+        state.finish(
+          message.id,
+          "completed",
+          `undid ${undone.payload.apply_action_id}${undone.payload.confirm_error ? `; receipt not sent: ${undone.payload.confirm_error}` : ""}`,
+        );
+        return "handled";
+      }
+      state.finish(message.id, "needs_review", `undo request: ${undone.error.message}`);
+      return "proposed";
+    }
     const match = service.matchReminderReply({
       sender,
       subject: message.subject,
@@ -1803,7 +1847,7 @@ export async function fileReminderReply(
         body: match.reminder_body,
         asks: match.targets.map((target) => target.label),
       });
-      const proposed = service.proposeReminderReply({
+      const params = {
         messageId: message.id,
         threadId: message.threadId,
         sender,
@@ -1821,7 +1865,32 @@ export async function fileReminderReply(
         },
         actor: "adminbot-email-automation",
         ...(nowIso ? { nowIso } : {}),
-      });
+      };
+      if (auto) {
+        const handled = await service.autoApplyReminderReply({
+          ...params,
+          ...(account ? { account } : {}),
+        });
+        if (handled.ok && handled.payload.mode === "applied") {
+          state.finish(
+            message.id,
+            "completed",
+            `${asked}: applied ${handled.payload.apply_action_id}${handled.payload.confirm_error ? `; receipt not sent: ${handled.payload.confirm_error}` : ""}`,
+          );
+          return "handled";
+        }
+        state.finish(
+          message.id,
+          "needs_review",
+          handled.ok
+            ? handled.payload.mode === "proposed"
+              ? `${asked}: ${read.intent}; proposed ${handled.payload.resolution} for admin approval${handled.payload.apply_error ? ` (apply failed: ${handled.payload.apply_error})` : ""}`
+              : `${asked}: ${read.intent}; held for admin review`
+            : `${asked}: ${handled.error.message}`,
+        );
+        return "proposed";
+      }
+      const proposed = service.proposeReminderReply(params);
       state.finish(
         message.id,
         "needs_review",
@@ -1967,6 +2036,9 @@ export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
         if (replied !== "none") {
           if (replied === "skipped") {
             summary.skipped += 1;
+          } else if (replied === "handled") {
+            summary.completed += 1;
+            await file(message.id, "completed");
           } else {
             summary.needs_review += 1;
             await file(message.id, "needs_review");

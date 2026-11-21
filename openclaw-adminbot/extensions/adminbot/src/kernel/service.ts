@@ -307,8 +307,8 @@ import type { AdminBotReimbursementFunder } from "../contracts/reimbursement-rul
 import type { ScheduledMemberChangeStore } from "../contracts/scheduled-member-changes.js";
 import { paperTargetsVenue } from "../contracts/venue-targets.js";
 import type { createCollaboratorChatRequestStore } from "../persistence/collaborator-chat-requests.js";
-import type { AdminBotPosterPrintStore } from "../persistence/poster-printing.js";
 import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
+import type { AdminBotPosterPrintStore } from "../persistence/poster-printing.js";
 import type { CalendarEventsReader } from "../workflows/calendar/events.js";
 import { resolveLabCalendar } from "../workflows/calendar/lab-calendar.js";
 import { memberAddresses } from "../workflows/calendar/standing-meetings.js";
@@ -377,6 +377,7 @@ import {
 import { hasCurrentOrUpcomingAvailability } from "../workflows/members/availability.js";
 import { validateBirthday } from "../workflows/members/birthday.js";
 import { collaboratorSubgroupAccess } from "../workflows/members/collaborator-subgroups.js";
+import { travelConferenceSites } from "../workflows/members/lab-travel.js";
 import {
   localEventAudience,
   remainingAttendees,
@@ -500,6 +501,11 @@ import {
   type OpenReviewUpdate,
 } from "../workflows/papers/openreview-updates.js";
 import {
+  buildOutreachReadyMessage,
+  outreachReadyVenues,
+  type OutreachReadyVenue,
+} from "../workflows/papers/outreach-ready.js";
+import {
   type AcceptanceRow,
   type OutreachConfig,
   type OutreachDraft,
@@ -523,11 +529,6 @@ import {
   rankPaperQueue,
 } from "../workflows/papers/paper-queue.js";
 import { duePaperNudges } from "../workflows/papers/paper-reminder-nudges.js";
-import {
-  buildOutreachReadyMessage,
-  outreachReadyVenues,
-  type OutreachReadyVenue,
-} from "../workflows/papers/outreach-ready.js";
 import {
   paperForResponse,
   withheldArtifactWriteError,
@@ -646,8 +647,6 @@ import { LabSharingService } from "./service.lab-sharing.js";
 import { LabTravelService } from "./service.lab-travel.js";
 import { inviteLocalLunches } from "./service.local-lunches.js";
 import { type IntroRunResult, MeetupService } from "./service.meetups.js";
-import { PosterPrintingService } from "./service.poster-printing.js";
-import { travelConferenceSites } from "../workflows/members/lab-travel.js";
 import {
   paperImpactSlotWrite,
   piApprovalImpactDenial,
@@ -655,6 +654,7 @@ import {
   piReviewSlotDenial,
   writePiReviewAck,
 } from "./service.pi-review.js";
+import { PosterPrintingService } from "./service.poster-printing.js";
 import {
   sweepProfessorDigest,
   type ProfessorDigestSweepResult,
@@ -679,6 +679,18 @@ import {
   reminderReplySnoozeDays,
   reminderTargets,
 } from "./service.reminder-replies.js";
+import {
+  autoApplyReminderReply,
+  canAutoApplyReminderReply,
+  executeReminderReplyApply,
+  executeReminderReplyUndo,
+  findUndoableApply,
+  reminderReplyUndoBody,
+  resolutionTarget,
+  sendReminderReplyNote,
+  type ReminderReplyAutoDeps,
+  type ReminderReplyAutoOutcome,
+} from "./service.reminder-reply-auto.js";
 import { ScheduledMemberChangeService } from "./service.scheduled-member-changes.js";
 import { runSlackRosterSync, type SlackRosterSyncOptions } from "./service.slack-roster-sync.js";
 import {
@@ -906,6 +918,7 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   listPaperMentorRuns(paperId?: string): AdminBotPaperMentorRun[];
   /** First sighting wins: a stage that already closed keeps the mail that closed it. */
   savePaperflowEvidence(record: AdminBotPaperflowEvidenceRecord): void;
+  deletePaperflowEvidence(paperId: string, stage: string): boolean;
   /** One paper's stage evidence, or every paper's when the id is omitted. */
   listPaperflowEvidence(paperId?: string): AdminBotPaperflowEvidenceRecord[];
   /** Messages the hourly mailbox pass refused to automate, newest first. */
@@ -1569,6 +1582,16 @@ const DEFAULT_ACTION_POLICIES = {
   // is not done here (a role is not a person); it is the Slack account's allowFrom list, which is
   // what `isSlackApprovalAuthorizedSender` tests. See deploy/aurora/adminbot.env.example.
   "email_review.resolve": approvalPolicy("T3", ["admin"]),
+  // The three reminder-reply actions run without an approval, and T1 because resolvePolicy only
+  // honors auto_allowed below T2. Nothing a caller types reaches them: the only creator is
+  // autoApplyReminderReply / undoReminderReply, which build the payload from a reminder this
+  // service sent, a sender that matched the nudged member's roster address, and a reading at or
+  // above reminderReplyAutoMinConfidence. Anything less goes to email_review.resolve above. The
+  // apply is reversible by construction -- its artifacts hold the prior state the undo restores --
+  // and the confirmation tells the member so, which is what makes skipping the reviewer safe.
+  "reminder_reply.apply": autoPolicy("T1"),
+  "reminder_reply.undo": autoPolicy("T1"),
+  "reminder_reply.confirm": autoPolicy("T1"),
   "deadline.recommend": approvalPolicy("T1", ["recommender"]),
   "member_nudge.send": autoPolicy("T1"),
   // Auto-approved on the same reasoning as member_nudge.send, and T1 for the same mechanical
@@ -3410,6 +3433,29 @@ export class AdminBotService {
         resolution: applied.payload.resolution,
         evidence_recorded: String(applied.payload.evidence_recorded),
       };
+      handled = true;
+    } else if (
+      proposal.type === "reminder_reply.apply" ||
+      proposal.type === "reminder_reply.undo"
+    ) {
+      // In-service like `email_review.resolve`: the write is to this store. No approver, because
+      // the only creators are the member's own reply (apply, undo) and an admin's undo; the
+      // member is the actor, read from the payload the service itself built.
+      const outcome =
+        proposal.type === "reminder_reply.apply"
+          ? executeReminderReplyApply(this.reminderReplyAutoDeps(), proposal)
+          : executeReminderReplyUndo(
+              this.reminderReplyAutoDeps(),
+              proposal,
+              String(
+                (proposal.proposed_payload as { requested_by?: unknown } | undefined)
+                  ?.requested_by ?? "",
+              ) || "unknown",
+            );
+      if (!outcome.ok) {
+        return this.executionFailure(proposal, outcome.status, outcome.error.message);
+      }
+      artifacts = outcome.payload;
       handled = true;
     } else if (proposal.type === "lab_member.remove") {
       // In-service for the same reason as the two arms above: deleting a roster record is a write
@@ -7759,7 +7805,14 @@ export class AdminBotService {
     slots: AdminBotPaperSlotRecord[],
   ): AdminBotPaperflowStageView[] {
     const evidence = this.store.listPaperflowEvidence(paper.id);
-    const open = openPaperflowStage({ paper, slots, evidence, now: new Date() });
+    const now = new Date();
+    const open = openPaperflowStage({
+      paper,
+      slots,
+      evidence,
+      now,
+      conferenceOver: isPaperConferenceOver(paper, this.deadlineReadModel(DEADLINE_VENUES), now),
+    });
     return adminBotPaperflowStages.map((stage) => {
       const closed = evidence.find((row) => row.stage === stage);
       const definition = adminBotPaperflowStageRegistry[stage];
@@ -10558,6 +10611,7 @@ export class AdminBotService {
     stamped: Array<{ item: NudgeItem; memberId: string }>;
     papersConsidered: number;
   } {
+    let dataset: unknown[] | undefined;
     const ledger = this.nudgeLedgerIndex();
     const papers = this.store.listPapers();
     const byRecipient = new Map<string, Map<string, NudgeGroup>>();
@@ -10710,10 +10764,12 @@ export class AdminBotService {
       // The whole roll-call, not the rows somebody remembered to add. This is what makes "tell us
       // who is attending" mandatory rather than optional: an accepted paper nobody has answered
       // for produces one line per author here, and keeps producing them until it is answered.
-      for (const attendee of mergeConferenceAttendance(
-        paper,
-        this.paperRows().listConferenceAttendees(paper.id),
-      )) {
+      // Unless the conference has been held: who went is history, not a question.
+      dataset ??= this.deadlineReadModel(DEADLINE_VENUES);
+      const roll = isPaperConferenceOver(paper, dataset, now)
+        ? []
+        : mergeConferenceAttendance(paper, this.paperRows().listConferenceAttendees(paper.id));
+      for (const attendee of roll) {
         if (attendee.attending !== "unknown") {
           continue;
         }
@@ -10908,6 +10964,7 @@ export class AdminBotService {
     const roster = this.store.listLabMembers();
     const priorityMemberId = this.options.paperflowPriorityMemberId;
     const items: AdminBotPaperflowStageNudge[] = [];
+    const dataset = this.deadlineReadModel(DEADLINE_VENUES);
 
     for (const paper of this.store.listPapers()) {
       const evidence = this.paperRows().listPaperflowEvidence(paper.id);
@@ -10916,6 +10973,7 @@ export class AdminBotService {
         slots: this.paperRows().listPaperSlots(paper.id),
         evidence,
         now,
+        conferenceOver: isPaperConferenceOver(paper, dataset, now),
       });
       if (!open) {
         continue;
@@ -11301,6 +11359,8 @@ export class AdminBotService {
     messageId: string;
     resolution: AdminBotEmailReviewResolution;
     actor: string;
+    /** `reply` when the member's own answer is applied without a reviewer; see reminder-reply-auto. */
+    recordedBy?: "admin" | "reply";
   }): AdminBotServiceResponse<{
     resolution: AdminBotEmailReviewResolution["kind"];
     evidence_recorded: boolean;
@@ -11328,7 +11388,7 @@ export class AdminBotService {
         messageId: review.message_id,
         ...(review.subject ? { subject: review.subject } : {}),
         sender: review.sender,
-        recordedBy: "admin",
+        recordedBy: params.recordedBy ?? "admin",
         ...(resolution.note ? { note: resolution.note } : {}),
         actor: params.actor,
       });
@@ -11337,7 +11397,12 @@ export class AdminBotService {
       }
       evidenceRecorded = evidence.payload.recorded;
     } else if (resolution.kind !== "dismissed") {
-      const applied = this.applyReminderReplyResolution(review, resolution, params.actor);
+      const applied = this.applyReminderReplyResolution(
+        review,
+        resolution,
+        params.actor,
+        params.recordedBy ?? "admin",
+      );
       if (!applied.ok) {
         return applied;
       }
@@ -11372,6 +11437,10 @@ export class AdminBotService {
         ...(resolution.kind === "rec_letter_submitted"
           ? { request_id: resolution.request_id, schools: resolution.schools }
           : {}),
+        ...(resolution.kind === "rec_letter_confirmed"
+          ? { request_id: resolution.request_id, member_id: resolution.member_id }
+          : {}),
+        ...(params.recordedBy === "reply" ? { recorded_by: "reply" } : {}),
         ...(resolution.kind === "reminder_snoozed"
           ? {
               domain: resolution.domain,
@@ -11469,7 +11538,7 @@ export class AdminBotService {
             )
             .map((item) => ({ slot: item.slot as string, label: item.label }));
         },
-        ledger: this.store.listNudgeLedger("rec_letter_reminder"),
+        ledger: this.store.listNudgeLedger(),
         getLogisticsRequest: (requestId) => this.store.getLogisticsRequest(requestId),
       }),
     );
@@ -11625,6 +11694,7 @@ export class AdminBotService {
       { kind: "dismissed" | "paperflow_evidence" }
     >,
     actor: string,
+    recordedBy: "admin" | "reply",
   ): AdminBotServiceResponse<{ evidence_recorded: boolean }> {
     switch (resolution.kind) {
       case "paperflow_skipped": {
@@ -11655,7 +11725,7 @@ export class AdminBotService {
             messageId: review.message_id,
             ...(review.subject ? { subject: review.subject } : {}),
             sender: review.sender,
-            recordedBy: "admin",
+            recordedBy,
             note: `skipped: ${resolution.note}`,
             actor,
           });
@@ -11701,6 +11771,16 @@ export class AdminBotService {
         });
         return { ok: true, status: 200, payload: { evidence_recorded: false } };
       }
+      case "rec_letter_confirmed": {
+        const confirmed = confirmLetterSubmitted(
+          this.letterConfirmDeps(),
+          resolution.request_id,
+          resolution.member_id,
+        );
+        return confirmed.ok
+          ? { ok: true, status: 200, payload: { evidence_recorded: false } }
+          : serviceError(confirmed.status, confirmed.error.message);
+      }
       case "reminder_snoozed": {
         const snoozed = this.snoozeNudge({
           domain: resolution.domain,
@@ -11713,6 +11793,314 @@ export class AdminBotService {
           : serviceError(snoozed.status, snoozed.error.message);
       }
     }
+  }
+
+  private reminderReplyAutoDeps(): ReminderReplyAutoDeps {
+    return {
+      store: this.store,
+      createProposal: (proposal) => this.createProposal(proposal),
+      execute: (actionId, request) => this.execute(actionId, request),
+      resolveEmailReview: (params) => this.resolveEmailReview(params),
+      undoLetterConfirmation: (requestId, memberId) =>
+        undoLetterConfirmation(this.letterConfirmDeps(), requestId, memberId),
+      recordAudit: (event) => this.recordAudit(event),
+    };
+  }
+
+  /**
+   * What one reminder reply would do, without doing it: apply and confirm, or hold for review.
+   *
+   * The dry run and the backfill both read this, so what they print is what the live path does.
+   */
+  planReminderReply(params: {
+    sender: string;
+    threadId: string;
+    subject?: string;
+    reading: AdminBotReminderReplyReading;
+    nowIso?: string;
+  }): AdminBotServiceResponse<{
+    mode: "apply" | "review";
+    member_id: string;
+    member_name: string;
+    resolution: AdminBotEmailReviewResolution;
+    summary: string;
+    label?: string;
+    why_review?: string;
+  }> {
+    if (!isReminderReplyReading(params.reading)) {
+      return serviceError(400, "reminder reply reading is malformed");
+    }
+    const nowIso = params.nowIso ?? new Date().toISOString();
+    const match = this.matchReminderReply({
+      sender: params.sender,
+      ...(params.subject ? { subject: params.subject } : {}),
+      threadId: params.threadId,
+      nowIso,
+    });
+    if (!match) {
+      return serviceError(404, "this email does not answer an AdminBot reminder from its sender");
+    }
+    const { resolution, summary } = reminderReplyResolution(
+      match,
+      params.reading,
+      new Date(nowIso),
+    );
+    const target = resolutionTarget(match, resolution);
+    const confident = canAutoApplyReminderReply(params.reading, resolution);
+    const whyReview = !confident
+      ? params.reading.intent === "question"
+        ? "the member asked a question"
+        : resolution.kind === "dismissed"
+          ? "no single open item this reply can settle"
+          : `only ${Math.round(params.reading.confidence * 100)}% confident`
+      : !target
+        ? "the item it answers is no longer open"
+        : undefined;
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        mode: whyReview ? "review" : "apply",
+        member_id: match.member_id,
+        member_name: match.member_name,
+        resolution,
+        summary,
+        ...(target ? { label: target.label } : {}),
+        ...(whyReview ? { why_review: whyReview } : {}),
+      },
+    };
+  }
+
+  /**
+   * A reminder reply, applied when the member's answer is clear and held for review when not.
+   *
+   * The confident path closes or snoozes the one thing the reminder asked, as the member, and
+   * mails them a receipt they can answer "undo" to. Everything else -- and an apply that fails its
+   * own checks -- goes through `proposeReminderReply`, unchanged.
+   */
+  async autoApplyReminderReply(params: {
+    messageId: string;
+    threadId: string;
+    sender: string;
+    subject?: string;
+    receivedAt?: string;
+    reading: AdminBotReminderReplyReading;
+    actor: string;
+    /** The bot mailbox the receipt goes from. */
+    account?: string;
+    nowIso?: string;
+  }): Promise<
+    AdminBotServiceResponse<
+      | ({ mode: "applied" } & ReminderReplyAutoOutcome)
+      | {
+          mode: "proposed";
+          proposal_id?: string;
+          already_proposed: boolean;
+          resolution: AdminBotEmailReviewResolution["kind"];
+          apply_error?: string;
+        }
+    >
+  > {
+    const plan = this.planReminderReply(params);
+    if (!plan.ok) {
+      return plan;
+    }
+    const alreadyApplied = this.store
+      .listProposalsByType("reminder_reply.apply")
+      .some(
+        (proposal) =>
+          (proposal.proposed_payload as { review?: { message_id?: unknown } } | undefined)?.review
+            ?.message_id === params.messageId,
+      );
+    let applyError: string | undefined;
+    if (plan.payload.mode === "apply" && !alreadyApplied) {
+      const nowIso = params.nowIso ?? new Date().toISOString();
+      const match = this.matchReminderReply({
+        sender: params.sender,
+        ...(params.subject ? { subject: params.subject } : {}),
+        threadId: params.threadId,
+        nowIso,
+      })!;
+      const outcome = await autoApplyReminderReply(this.reminderReplyAutoDeps(), {
+        review: {
+          message_id: params.messageId,
+          thread_id: params.threadId,
+          sender: params.sender,
+          ...(params.subject ? { subject: params.subject } : {}),
+          category: "reminder_reply",
+          reason: `reply to "${match.reminder_subject}": ${params.reading.intent}`,
+          ...(params.receivedAt ? { received_at: params.receivedAt } : {}),
+          updated_at: nowIso,
+        },
+        match,
+        reading: params.reading,
+        resolution: plan.payload.resolution,
+        summary: plan.payload.summary,
+        label: plan.payload.label ?? "this reminder",
+        to: params.sender,
+        ...(params.account ? { account: params.account } : {}),
+      });
+      if (outcome.outcome === "applied") {
+        return { ok: true, status: 200, payload: { mode: "applied", ...outcome } };
+      }
+      applyError = outcome.error;
+    }
+    const proposed = this.proposeReminderReply(params);
+    if (!proposed.ok) {
+      return proposed;
+    }
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        mode: "proposed",
+        ...(proposed.payload.proposal_id ? { proposal_id: proposed.payload.proposal_id } : {}),
+        already_proposed: proposed.payload.already_proposed,
+        resolution: proposed.payload.resolution,
+        ...(applyError ? { apply_error: applyError } : {}),
+      },
+    };
+  }
+
+  /**
+   * Take back one applied reply. `requestedBy` is the member (from their "undo" mail) or an admin.
+   */
+  async undoReminderReply(
+    applyActionId: string,
+    requestedBy: string,
+  ): Promise<AdminBotServiceResponse<{ undo_action_id: string; reverted: string }>> {
+    const key = `reminder_reply.undo:${applyActionId}`;
+    const created = this.createProposal({
+      type: "reminder_reply.undo",
+      summary: `Undo reminder reply ${applyActionId}`,
+      target: { service: "adminbot", channel: "adminbot", target: applyActionId },
+      proposed_payload: { apply_action_id: applyActionId, requested_by: requestedBy },
+      undo_plan: "Resolve the reply again from the review queue.",
+      idempotency_key: key,
+    });
+    if (!created.ok) {
+      return serviceError(created.status, created.error.message);
+    }
+    const executed = await this.execute(created.payload.id, {
+      dry_run: false,
+      idempotency_key: key,
+    });
+    if (!executed.ok) {
+      return serviceError(executed.status, executed.error.message);
+    }
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        undo_action_id: created.payload.id,
+        reverted: executed.payload.artifacts?.reverted ?? "",
+      },
+    };
+  }
+
+  /**
+   * Accepted papers whose conference has been held (or whose venue moved on), so their conference
+   * stage and attendance roll-call are no longer asked about. Read-only; for the backfill report.
+   */
+  conferencesClosedByVenue(nowIso?: string): Array<{
+    paper_id: string;
+    title: string;
+    venue?: string;
+    unanswered_attendance: number;
+  }> {
+    const now = nowIso ? new Date(nowIso) : new Date();
+    const dataset = this.deadlineReadModel(DEADLINE_VENUES);
+    const rows: Array<{
+      paper_id: string;
+      title: string;
+      venue?: string;
+      unanswered_attendance: number;
+    }> = [];
+    for (const paper of this.store.listPapers()) {
+      if (isPaperClosed(paper) || !isConferenceBranchOpen(paper)) {
+        continue;
+      }
+      if (!isPaperConferenceOver(paper, dataset, now)) {
+        continue;
+      }
+      if (this.store.listPaperflowEvidence(paper.id).some((row) => row.stage === "conference")) {
+        continue;
+      }
+      const venue = paper.accepted_venue ?? paper.venue;
+      rows.push({
+        paper_id: paper.id,
+        title: paper.title,
+        ...(venue ? { venue } : {}),
+        unanswered_attendance: mergeConferenceAttendance(
+          paper,
+          this.paperRows().listConferenceAttendees(paper.id),
+        ).filter((row) => row.attending === "unknown").length,
+      });
+    }
+    return rows;
+  }
+
+  /** The applied reply an "undo" from this sender on this thread would take back, if any. Read-only. */
+  findUndoableReminderReply(params: {
+    threadId: string;
+    sender: string;
+  }): ReturnType<typeof findUndoableApply> {
+    return findUndoableApply(this.store, {
+      threadId: params.threadId,
+      sender: params.sender,
+      addressesOf: (memberId) => {
+        const member = this.store.getLabMember(memberId);
+        return member ? memberAddresses(member).map((address) => address.toLowerCase()) : [];
+      },
+    });
+  }
+
+  /**
+   * A member's "undo" on the thread of a receipt: revert the newest applied reply there that was
+   * applied for them, and tell them it is back. 404 when there is nothing of theirs to undo.
+   */
+  async undoReminderReplyFromEmail(params: {
+    threadId: string;
+    sender: string;
+    messageId: string;
+    account?: string;
+  }): Promise<
+    AdminBotServiceResponse<{
+      undo_action_id: string;
+      apply_action_id: string;
+      confirm_action_id?: string;
+      confirm_error?: string;
+    }>
+  > {
+    const found = this.findUndoableReminderReply(params);
+    if (!found) {
+      return serviceError(404, "no applied reminder reply of this sender's on this thread");
+    }
+    const undone = await this.undoReminderReply(found.proposal.id, found.payload.member_id);
+    if (!undone.ok) {
+      return undone;
+    }
+    const note = await sendReminderReplyNote(this.reminderReplyAutoDeps(), {
+      messageId: params.messageId,
+      threadId: params.threadId,
+      to: params.sender,
+      body: reminderReplyUndoBody({
+        memberName: found.payload.member_name,
+        label: found.payload.label,
+      }),
+      summary: `Tell ${found.payload.member_name} their reply was undone`,
+      ...(params.account ? { account: params.account } : {}),
+      key: `reminder_reply.confirm:${params.messageId}`,
+    });
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        undo_action_id: undone.payload.undo_action_id,
+        apply_action_id: found.proposal.id,
+        ...note,
+      },
+    };
   }
 
   /**

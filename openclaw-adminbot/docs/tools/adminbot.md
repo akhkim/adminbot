@@ -1746,6 +1746,56 @@ deliberately drops `important`. The reason the escalation can auto-execute is th
 server-computed sweep can raise the flag, so "AdminBot escalated this" cannot come to mean "an
 admin typed something and waited".
 
+## Replies to reminders
+
+When a member answers one of AdminBot's own reminders (a PaperFlow stage, a paper slot, a
+rec-letter reminder or any other nudge-ledger domain), the hourly email pass matches the reply to
+the send by Gmail thread, falling back to the subject. It only does this when the sender is the
+member who was nudged. The model then reads the reply as done, not applicable, needs time,
+submitted or a question.
+
+**With `ADMINBOT_REMINDER_REPLY_AUTO_ENABLED=1`**, a clear answer is applied without an admin.
+A clear answer is one that is not a question, has confidence at least 0.8, and maps to one open
+item.
+
+- `reminder_reply.apply` (T1) closes or skips the stage, waives the slot, marks the letters
+  submitted, or snoozes the chase.
+  - It records the change as `recorded_by: "reply"`, with the reply's message id and the member's
+    own reason.
+  - Its audit row is `reminder_reply.applied`.
+- `reminder_reply.confirm` (T1) then sends one short receipt from the bot mailbox
+  (`ADMINBOT_BOT_EMAIL`), as an unquoted `gmail reply` on the member's thread. The receipt ends
+  "Reply "undo" if that's wrong".
+- A reply whose first own line starts with "undo" runs `reminder_reply.undo` (T1) and sends a
+  second receipt. The undo:
+  - removes only the evidence rows this reply wrote, so a row an admin recorded since is kept;
+  - restores the slot, letter statuses or snooze exactly as they were;
+  - puts the reply back in Needs Review;
+  - is audited as `reminder_reply.undone`.
+- A question, a low-confidence reading, or a reply that settles no single open item goes to Needs
+  Review as an `email_review.resolve` proposal, as before, with no receipt.
+
+With the flag off, every reply takes that review path.
+
+Once an accepted paper's conference has been held, the conference stage and its attendance
+roll-call are no longer asked about. The same applies once the deadline dataset lists only a later
+edition of the venue (for example, an ICML 2026 workshop once ICML 2027 is listed).
+
+Replies already waiting in review can be settled the same way. The command below is a dry run by
+default: it writes nothing and sends nothing.
+
+```bash
+node --import tsx scripts/adminbot-reminder-replies-backfill.ts --database <path>
+```
+
+For each reply it prints either:
+
+- "would apply", with the exact receipt and its recipient; or
+- "stays in review", with the reason.
+
+It then lists the papers whose conference questions stop. `--apply` runs the same actions as the
+live path.
+
 ## Scheduled passes
 
 Every recurring AdminBot job is declared in [`config/adminbot-cron.json`](../../config/adminbot-cron.json)
