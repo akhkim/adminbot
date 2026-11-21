@@ -5,6 +5,7 @@ import {
   type MemberAuthHost,
   resumeMemberSession,
 } from "./adminbot/auth/flow.ts";
+import { resolveAdminBotBaseUrl } from "./adminbot/auth/session.ts";
 import { connectGateway } from "./app-gateway.ts";
 import {
   startLogsPolling,
@@ -30,6 +31,7 @@ import { persistChatComposerState, restoreChatComposerState } from "./chat/compo
 import { startControlUiResponsivenessObserver } from "./control-ui-performance.ts";
 import { loadControlUiBootstrapConfig } from "./controllers/control-ui-bootstrap.ts";
 import { operatorScopesWidened, resolveMemberOperatorScopes } from "./gateway.ts";
+import { saveBootReadPlan } from "./loading/boot-read-plan.ts";
 import type { Tab } from "./navigation.ts";
 import { syncSignedOutViewWithLocation } from "./signed-out-view.ts";
 import type { ChatQueueItem } from "./ui-types.ts";
@@ -102,6 +104,11 @@ export function handleConnected(host: LifecycleHost) {
   const connectGeneration = ++host.connectGeneration;
   host.basePath = inferBasePath();
   applySettingsFromUrl(host as unknown as Parameters<typeof applySettingsFromUrl>[0]);
+  // What the next cold load of this browser asks for before its code arrives (ui/index.html).
+  saveBootReadPlan(
+    () => resolveAdminBotBaseUrl((host as unknown as MemberAuthHost).settings),
+    host.basePath,
+  );
   host.controlUiBootstrapReady = loadControlUiBootstrapConfig(
     host as unknown as Parameters<typeof loadControlUiBootstrapConfig>[0],
     { applyIdentity: false },

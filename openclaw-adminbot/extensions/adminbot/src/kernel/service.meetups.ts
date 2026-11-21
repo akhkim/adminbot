@@ -635,9 +635,11 @@ export class MeetupService {
     );
   }
 
-  private sentKeys(): Map<string, string> {
+  private sentKeys(
+    proposals = this.store.listProposalsByType("slack.conference_intro"),
+  ): Map<string, string> {
     const status = new Map<string, string>();
-    for (const proposal of this.store.listProposalsByType("slack.conference_intro")) {
+    for (const proposal of proposals) {
       if (proposal.idempotency_key?.startsWith("say-hi:")) {
         status.set(proposal.idempotency_key, proposal.status);
       }
@@ -795,8 +797,10 @@ export class MeetupService {
     });
     const cards: AdminBotEventCard[] = [];
     const seenGroups = new Set<string>();
-    const sayHiSent = this.sentKeys();
-    const pairs = introPairs(this.store.listProposalsByType("slack.conference_intro"));
+    // Read and parsed once for both: the intro proposals are every Say hi the lab has ever sent.
+    const introProposals = this.store.listProposalsByType("slack.conference_intro");
+    const sayHiSent = this.sentKeys(introProposals);
+    const pairs = introPairs(introProposals);
     const canSayHi = new Map<string, boolean>();
     const sayHiTo = (groupKey: string) => {
       if (!canSayHi.has(groupKey)) {

@@ -74,6 +74,7 @@ import { resolveCronJobLastRunStatus } from "./cron-status.ts";
 import { syncCustomThemeStyleTag } from "./custom-theme.ts";
 import { notePageIntent, trackPageActivity } from "./loading/page-activity.ts";
 import { prefetchTabDataNow } from "./loading/page-data-prefetch.ts";
+import { prefetchTab } from "./loading/page-prefetch.ts";
 import { rememberPageScroll, restorePageScroll } from "./loading/page-scroll.ts";
 import { isMonitoredAuthProvider } from "./model-auth-helpers.ts";
 import {
@@ -556,7 +557,10 @@ async function refreshAccessibleTab(host: SettingsHost, opts?: TabRefreshOptions
     return;
   }
   // Navigation should reuse the session's dashboard read where the page has its own Refresh button.
-  const needsPapers = needsLabPapers(host.tab);
+  // Lab Members with a member session reads the paged roster, whose rows carry their own paper
+  // tags, so it skips the lab-wide paper list (same rule as app-render.ts).
+  const needsPapers =
+    needsLabPapers(host.tab) && !(host.tab === "adminbotMembers" && loadStoredMemberSession());
   const loadAdminBotOnce = () =>
     app.adminBotLoading || (app.adminBotData?.loadedAt && (!needsPapers || !papersMissingFor(app)))
       ? Promise.resolve()
@@ -838,8 +842,11 @@ function applyTabSelection(
     // Navigation is something the viewer asked for: the progress line may show for what follows,
     // and each page keeps its own place in the shared content pane.
     notePageIntent();
-    // The page's first read goes out now, beside the download of its code, not after it.
+    // The page's first read goes out now, beside the download of its code, not after it. The
+    // code itself starts downloading here too, rather than when the page first renders, which on
+    // a cold load waits for the session check.
     prefetchTabDataNow(next);
+    prefetchTab(next);
     const pane = () => globalThis.document?.querySelector<HTMLElement>("main.content");
     rememberPageScroll(prev, pane());
     if (next !== "chat") {

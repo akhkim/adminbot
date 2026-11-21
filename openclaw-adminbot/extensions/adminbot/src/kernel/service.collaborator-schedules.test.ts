@@ -1,6 +1,10 @@
-import { describe, expect, it } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
 import { adminBotPaperSlots } from "../contracts/paper-slots.js";
 import { AdminBotMemoryStore } from "../persistence/memory.js";
+import { AdminBotSqliteStore } from "../persistence/sqlite.js";
 import { AdminBotService } from "./service.js";
 
 describe("active collaborator schedules", () => {
@@ -120,4 +124,41 @@ describe("active collaborator schedules", () => {
       payload: { members: [{ id: "late-peer" }] },
     });
   });
+
+  // The SQLite store versions its tables, so the coauthor index is memoized there; a slot filed
+  // after the first read must still end the sharing.
+  it("stops sharing on SQLite too, once the memoized coauthor index sees the settled slots", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "adminbot-collab-schedules-"));
+    dirs.push(dir);
+    const store = new AdminBotSqliteStore(path.join(dir, "adminbot.sqlite"));
+    const service = new AdminBotService(store);
+    for (const id of ["viewer", "peer"]) service.upsertLabMember({ id, name: id });
+    service.upsertPaper({
+      id: "one",
+      title: "one",
+      authors: [],
+      current_step: "brainstorming_docs",
+      author_links: [
+        { name: "viewer", member_id: "viewer" },
+        { name: "peer", member_id: "peer" },
+      ],
+    });
+    expect(service.listActiveCollaboratorSchedules("viewer")).toMatchObject({
+      payload: { members: [{ id: "peer" }] },
+    });
+    expect(service.listActiveCollaboratorSchedules("peer")).toMatchObject({
+      payload: { members: [{ id: "viewer" }] },
+    });
+    for (const slot of adminBotPaperSlots)
+      store.savePaperSlot({ paper_id: "one", slot, status: "waived" });
+    expect(service.listActiveCollaboratorSchedules("viewer")).toMatchObject({
+      payload: { members: [] },
+    });
+    store.close();
+  });
+});
+
+const dirs: string[] = [];
+afterEach(() => {
+  for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });

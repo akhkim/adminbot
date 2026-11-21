@@ -11,6 +11,7 @@ import type { UiSettings } from "../../storage.ts";
 import {
   fetchLogisticsRequest,
   fetchLogisticsRequests,
+  peekLogisticsRequests,
   sendSignedLogisticsDocuments,
   setLogisticsRequestStatus,
   submitLogisticsRequest,
@@ -141,6 +142,19 @@ export async function loadAdminBotLogisticsRequests(
   const version = nextListVersion(host, "logistics");
   host.adminBotLogisticsRequestsLoading = true;
   host.adminBotLogisticsRequestsError = null;
+  // Moving between the admin's Requests tabs changes the query, and the rows on hand belong to
+  // the tab just left. Draw the page this session last read for the new query, if any, while the
+  // request below revalidates it.
+  const seen = peekLogisticsRequests(wire.token, wire.baseUrl, query);
+  if (seen) {
+    host.adminBotLogisticsRequests = seen.requests;
+    host.adminBotLogisticsPage = {
+      total: seen.total,
+      nextCursor: seen.nextCursor,
+      loadingMore: false,
+      query: query.toString(),
+    };
+  }
   try {
     const result = await fetchLogisticsRequests(wire.token, wire.baseUrl, query);
     if (!current(host, wire.token, version)) return;

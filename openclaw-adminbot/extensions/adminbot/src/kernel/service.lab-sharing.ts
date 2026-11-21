@@ -23,6 +23,9 @@ export class LabSharingService {
   constructor(
     private store: AdminBotServiceStore,
     private ownsPaper: OwnsPaper,
+    // Every paper, from the service's version-keyed snapshot when it has one: a fresh listPapers()
+    // parses every paper's payload, and the tab's list read did that on each load.
+    private allPapers: () => readonly AdminBotPaperRecord[] = () => store.listPapers(),
   ) {}
   directorStatus() {
     return new LabSharingStatusService(this.store);
@@ -105,13 +108,19 @@ export class LabSharingService {
     if (!member) {
       return failure(403, "A member session is required.");
     }
-    const papers = this.store.listPapers();
-    const owns = (paper: AdminBotPaperRecord) => this.ownsPaper(member, paper);
-    const canManage = (paper: AdminBotPaperRecord) =>
-      member.privilege_level === "admin" || owns(paper);
+    const papers = this.allPapers();
     // Resolved once: ownership walks a paper's authors, and the lists below ask about the same
-    // papers repeatedly.
-    const ownedPaperIds = new Set(papers.filter(owns).map((paper) => paper.id));
+    // papers repeatedly, so every later question is a set lookup.
+    const ownedPaperIds = new Set(
+      papers.filter((paper) => this.ownsPaper(member, paper)).map((paper) => paper.id),
+    );
+    const canManage = (paper: AdminBotPaperRecord) =>
+      member.privilege_level === "admin" || ownedPaperIds.has(paper.id);
+    // Looked up by id below, once per interest and request, instead of scanning every paper.
+    const paperById = new Map(papers.map((paper) => [paper.id, paper]));
+    // One read of every request, rather than one query per managed paper.
+    const allRequests = this.store.listHelpRequests();
+    const requestByPaper = new Map(allRequests.map((request) => [request.paper_id, request]));
     // Sorts own work to the front while leaving everything else in the order it arrived. Array
     // sort is stable, so "mine first" is all this says -- it does not reshuffle either group.
     const mineFirst = <T>(rows: T[], paperIdOf: (row: T) => string) =>
@@ -127,7 +136,7 @@ export class LabSharingService {
           this.store.listHelpInterests(),
           (interest) => interest.paper_id,
         ).flatMap((interest) => {
-          const paper = papers.find((entry) => entry.id === interest.paper_id);
+          const paper = paperById.get(interest.paper_id);
           if (
             !paper ||
             (interest.member_id !== memberId && !(canManage(paper) && interest.status === "active"))
@@ -149,13 +158,13 @@ export class LabSharingService {
         })),
         requests: (managedOnly
           ? mineFirst(papers.filter(canManage), (paper) => paper.id).flatMap((paper) => {
-              const request = this.store.getHelpRequest(paper.id);
+              const request = requestByPaper.get(paper.id);
               return request ? [request] : [];
             })
-          : this.store.listHelpRequests()
+          : allRequests
         )
           .flatMap((request) => {
-            const paper = papers.find((p) => p.id === request.paper_id);
+            const paper = paperById.get(request.paper_id);
             if (!paper || (request.status !== "open" && !canManage(paper))) {
               return [];
             }

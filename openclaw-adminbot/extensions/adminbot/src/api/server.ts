@@ -43,7 +43,11 @@ import { createAdminBotPrivacyBroker } from "../privacy/broker.js";
 import { createLocalChat } from "../privacy/local-chat.js";
 import { createAdminBotSensitiveInfoDocument } from "../privacy/sensitive-info-doc.js";
 import { createEventDraftRunner } from "../workflows/calendar/event-draft.js";
-import { createCalendarEventsReader } from "../workflows/calendar/events.js";
+import {
+  calendarMonthWindow,
+  createCachedCalendarEventsReader,
+  createCalendarEventsReader,
+} from "../workflows/calendar/events.js";
 import { resolveLabCalendar } from "../workflows/calendar/lab-calendar.js";
 import { DEADLINE_VENUES } from "../workflows/deadlines/generated/dataset.js";
 import { readDeadlineDataset } from "../workflows/deadlines/runtime-dataset.js";
@@ -94,13 +98,20 @@ import type { AdminBotMockServiceOptions } from "./routes/context.js";
 import { runCvDailySweep } from "./routes/directory.js";
 import { recordServerRouteError } from "./routes/error-log.js";
 import { AUTHENTICATED_ROUTES } from "./routes/index.js";
+import { readGroupMeetingInvite } from "./routes/meetings.js";
 import { memberEnrollmentContext } from "./routes/onboarding.js";
 import { DEFAULT_ALLOWED_ORIGINS, applyCors, parseOrigins, remoteIp } from "./routes/origin.js";
 import { createOpenReviewCitationWatch, createIclrIntegrityWatch } from "./routes/reviews.js";
 import { dispatchRoute } from "./routes/router.js";
-import { ApiTokenRateLimitedError, authorizePersonalTokenRequest, resolvePrincipal } from "./routes/session.js";
+import {
+  ApiTokenRateLimitedError,
+  authorizePersonalTokenRequest,
+  resolvePrincipal,
+} from "./routes/session.js";
+import { previewCallSheetPush } from "./server.call-sheet.js";
 import { PayloadTooLargeError, sendJson } from "./server.http.js";
 import { executeMemberEnrollment } from "./server.member-onboarding.js";
+import { readMemberSheet } from "./server.member-sheet.js";
 import {
   handlePaperMentorAffiliations,
   PAPERMENTOR_AFFILIATIONS_PATH,
@@ -110,9 +121,15 @@ import {
   handlePublicDeadlineProposal,
 } from "./server.public-deadline-proposals.js";
 import { servePublicRoute } from "./server.public.js";
+import { createSheetPageReads } from "./sheet-page-reads.js";
 
 // Long enough that a deploy's restart has settled before CVs start downloading.
 const CV_SWEEP_FIRST_CHECK_MS = 2 * 60 * 1000;
+
+// Proposal types whose execution can change the Membership grid or the call queue.
+const SHEET_PROPOSAL_TYPE =
+  /^(?:sheet\.|acceptance_sheet\.|dcs_roster\.|paper_integrity\.sheet|lab_member|roster_sync\.|logistics|calendar\.|meeting)/u;
+
 export type { AdminBotCvDigestPublisher } from "./routes/context.js";
 export type { AdminBotMemberSheetSource } from "./routes/context.js";
 export type { DeviceTokenIssuance } from "./routes/context.js";
@@ -189,14 +206,41 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     ...serviceOptions(options),
     ...(reverseGeocoder ? { reverseGeocoder } : {}),
   };
+  // The reader shells out to `gog`, so it is built unconditionally but only ever runs when the
+  // Calendar tab asks. It is cached because the Calendar tab and the meetings page read it on every
+  // load; it is built here, before the service, because the executor below is what forgets it.
+  // The two spreadsheet page views. Dropped after every executed proposal below: each sheet write
+  // is one, so an approval from Pending Actions shows on the next view as a direct save does.
+  const sheetPageReads = createSheetPageReads();
+  const calendarEvents = createCachedCalendarEventsReader(
+    options.calendarEventsReader ?? createCalendarEventsReader(),
+  );
   const wiredOptions: AdminBotServiceOptions = {
     ...baseOptions,
     // The arm is installed whether or not a connector was injected: `onboarding.send_guide` is
     // executed in-process by the sender, not by the CLI connector, so a deployment with no
     // executor at all still executes this one.
     executor: {
-      execute: (proposal) =>
-        referenceScans.executor(withOnboarding(baseOptions.executor)).execute(proposal),
+      async execute(proposal) {
+        try {
+          return await referenceScans
+            .executor(withOnboarding(baseOptions.executor))
+            .execute(proposal);
+        } finally {
+          // Every calendar write, from whichever route or sweep proposed it, is executed here, so
+          // this is the one place a kept calendar read can be dropped for all of them. A failed
+          // execute is included: Google may have accepted the change before the CLI gave up.
+          if (proposal.type.startsWith("calendar.")) {
+            calendarEvents.invalidate();
+          }
+          // Only proposals that can touch the spreadsheets or the call queue drop the sheet views;
+          // a nudge or an email approval used to force the next viewer onto a seconds-long read.
+          // Anything this misses is still picked up by the 50 s warm read.
+          if (SHEET_PROPOSAL_TYPE.test(proposal.type)) {
+            sheetPageReads.invalidate();
+          }
+        }
+      },
     },
   };
   if (options.databasePath) {
@@ -513,6 +557,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     ...(options.openReviewResultsPath ? { snapshotPath: options.openReviewResultsPath } : {}),
   };
   const ctx: AdminBotRouteContext = {
+    sheetPageReads,
     openReviewPaperSources,
     notificationDrafts: createNotificationDraftHandler(
       options.notificationDraftScriptPath,
@@ -601,9 +646,8 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     ...(options.fetchSlackChannelNames
       ? { fetchSlackChannelNames: options.fetchSlackChannelNames }
       : {}),
-    // The reader shells out to `gog`, so it is built unconditionally but only ever runs when the
-    // Calendar tab asks. The drafter defaults to the same broker `adminbot_reason` uses.
-    readCalendarEvents: options.calendarEventsReader ?? createCalendarEventsReader(),
+    // The cached reader built above. The drafter defaults to the same broker `adminbot_reason` uses.
+    readCalendarEvents: calendarEvents.read,
     labCalendar: resolveLabCalendar(),
     inviteToLabCalendar: calendarInviteRunner,
     draftCalendarEvent:
@@ -686,9 +730,64 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
         )
       : undefined;
   cvSweepFirstCheck?.unref();
+  // The Membership grid and the call queue read a Google sheet through gog, which takes seconds;
+  // kept warm behind the page so no admin is the one who waits. Disabled when unset, like the
+  // sweeps.
+  const sheetViewWarmIntervalMs = options.sheetViewWarmIntervalMs;
+  const stopSheetViewWarm =
+    typeof sheetViewWarmIntervalMs === "number" && sheetViewWarmIntervalMs > 0
+      ? sheetPageReads.keepWarm(
+          {
+            ...(memberSheet ? { member: () => readMemberSheet(memberSheet) } : {}),
+            ...(callSheet
+              ? {
+                  call: {
+                    load: () => previewCallSheetPush(service, callSheet, {}),
+                    keep: (value: unknown) =>
+                      !(typeof value === "object" && value !== null && "error" in value),
+                  },
+                }
+              : {}),
+          },
+          sheetViewWarmIntervalMs,
+        )
+      : undefined;
+  // The OpenReview forms walk takes about 24 s; start it at boot so the first visit after a
+  // restart is handed forms instead of an empty list. Same switch as the sheet warming.
+  if (stopSheetViewWarm && openReviewWorkflow) {
+    void openReviewWorkflow.readForms({ waitMs: 0 }).catch(() => {});
+  }
+  // Calendar reads are a gog process each (about 1.5 s). The meetings pages' fixed read is warmed
+  // from boot, and every read a page has made recently is read again behind it, so the Calendar
+  // tab, group meetings and the attendance nudges never wait on Google. Same switch.
+  const stopCalendarWarm = stopSheetViewWarm
+    ? calendarEvents.keepWarm(sheetViewWarmIntervalMs!, () => {
+        const calendar = resolveLabCalendar();
+        return [
+          { calendarId: calendar.id, max: 250 },
+          // The Calendar tab's first read: this month in the lab's zone, as monthWindow builds it.
+          { calendarId: calendar.id, ...calendarMonthWindow(calendar.timezone), max: 250 },
+        ];
+      })
+    : undefined;
+  // The attendance-nudge preview's invite list has its own day-long cache; fill it now, so the
+  // first preview after a restart does not wait on gog. It swallows its own failures.
+  if (stopSheetViewWarm) {
+    void Promise.resolve()
+      .then(() => readGroupMeetingInvite(ctx, ctx.service.groupMeetingSchedule()))
+      .catch(() => {});
+  }
   const server = createServer(async (req, res) => {
     try {
-      await routeRequest(req, res, ctx);
+      try {
+        await routeRequest(req, res, ctx);
+      } finally {
+        // A write that failed part-way may still have reached the sheet.
+        sheetPageReads.noteRequest(
+          req.method,
+          new URL(req.url ?? "/", "http://localhost").pathname,
+        );
+      }
     } catch (error) {
       if (error instanceof PayloadTooLargeError) {
         sendJson(res, 413, { error: { message: error.message } });
@@ -719,6 +818,17 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     runCvSweep: (now?: Date) => runCvDailySweep(ctx, service, now),
     async listen(port = 8765, host = "127.0.0.1") {
       await listen(server, port, host);
+      // Parse the audit log once now, off any request. The first read after a restart parsed ~10k
+      // events (a quarter of a second on Aurora) inside whichever admin request came first:
+      // automation health, the audit read, profile and nudge reads all walk it. Later reads reuse
+      // the kept list (persistence/sqlite.audit.ts), so this costs nothing when nobody needs it.
+      setTimeout(() => {
+        try {
+          store.listAuditEvents();
+        } catch {
+          // A store closed before the timer fired (a short-lived test server) has nothing to warm.
+        }
+      }, 0).unref();
       return `http://${host}:${port}`;
     },
     close() {
@@ -729,6 +839,8 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
         clearInterval(meetupSweepTimer);
       }
       clearTimeout(cvSweepFirstCheck);
+      stopSheetViewWarm?.();
+      stopCalendarWarm?.();
       if (cvSweepTimer) {
         clearInterval(cvSweepTimer);
       }

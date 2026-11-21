@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { OpenReviewCitationCheck } from "../../contracts/openreview-citation-checks.js";
-import { summarizeOpenReviewCitationChecks } from "./openreview-citation-summary.js";
+import {
+  flaggedCitationFindings,
+  summarizeOpenReviewCitationChecks,
+} from "./openreview-citation-summary.js";
 
 const check = (
   submission_id: string,
@@ -47,21 +50,31 @@ describe("summarizeOpenReviewCitationChecks", () => {
         findings: [{ citation: "Old ref", status: "not_found", explanation: "No record." }],
       }),
     ]);
+    const { pdf_path: _a, ...latestA } = check("paperA", "/pdf/v2.pdf");
+    const { pdf_path: _b, ...failedB } = check("paperB", "/pdf/b1.pdf", {
+      status: "failed",
+      error: "download failed",
+    });
     expect(summaries).toEqual([
-      {
-        ...check("paperA", "/pdf/v2.pdf"),
-        findings: [
-          { citation: "Odd ref", status: "review", explanation: "Year differs." },
-          { citation: "Missing ref", status: "not_found", explanation: "No record." },
-        ],
-        finding_count: 4,
-        version_count: 2,
-      },
-      {
-        ...check("paperB", "/pdf/b1.pdf", { status: "failed", error: "download failed" }),
-        finding_count: 0,
-        version_count: 1,
-      },
+      { ...latestA, finding_count: 4, flagged_count: 2, not_found_count: 1, version_count: 2 },
+      { ...failedB, finding_count: 0, flagged_count: 0, not_found_count: 0, version_count: 1 },
     ]);
+  });
+
+  it("gives the flagged references of the latest version, without match details", () => {
+    expect(
+      flaggedCitationFindings([
+        check("paperA", "/pdf/v2.pdf", {
+          findings: [
+            { citation: "Matched ref", status: "matched", explanation: "Found." },
+            { citation: "Odd ref", status: "review", explanation: "Year differs.", url: "x" },
+          ],
+        }),
+        check("paperA", "/pdf/v1.pdf", {
+          findings: [{ citation: "Old ref", status: "not_found", explanation: "No record." }],
+        }),
+      ]),
+    ).toEqual([{ citation: "Odd ref", status: "review", explanation: "Year differs." }]);
+    expect(flaggedCitationFindings([])).toEqual([]);
   });
 });

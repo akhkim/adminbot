@@ -396,7 +396,10 @@ import {
   type AdminBotCityCentroidResolver,
   type AdminBotMemberMap,
 } from "../workflows/members/member-map.js";
-import { memberRosterPage } from "../workflows/members/member-roster.js";
+import {
+  buildMemberRosterIndex,
+  selectMemberRosterPage,
+} from "../workflows/members/member-roster.js";
 import { summarizeLabMember } from "../workflows/members/member-summary.js";
 import {
   dormantChaseDue,
@@ -471,7 +474,13 @@ import {
   paperConferenceKey,
   type ConferenceAttendanceView,
 } from "../workflows/papers/conference-attendance.js";
-import { buildLabProjects, type AdminBotLabProject } from "../workflows/papers/lab-projects.js";
+import type { RowVersionedTable } from "../persistence/sqlite.row-versions.js";
+import { ReadModelMemo } from "./read-model-memo.js";
+import {
+  buildLabProjects,
+  labProjectStatus,
+  type AdminBotLabProject,
+} from "../workflows/papers/lab-projects.js";
 import {
   isProjectActive,
   summarizeProject,
@@ -880,6 +889,11 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   deletePaper(paperId: string): boolean;
   /** Changes on every paper write (api/version-etag.ts); without it /papers hashes its body. */
   paperVersion?(): string;
+  /**
+   * Database-kept change counters of the named tables (persistence/sqlite.row-versions.ts). A
+   * store without it gets no read-model cache and builds every read, which is correct, only slower.
+   */
+  rowVersion?(tables: readonly RowVersionedTable[]): string;
   savePaperSlot(record: AdminBotPaperSlotRecord): void;
   /** One paper's slots, or every paper's when the id is omitted. */
   listPaperSlots(paperId?: string): AdminBotPaperSlotRecord[];
@@ -935,7 +949,7 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   /** Newest first. `limit` is a cap, not a page: nothing here needs to walk a member's whole history. */
   listMemberLocations(memberId: string, limit?: number): AdminBotMemberLocationEntry[];
   /** Every member's entries since a timestamp, so the admin view is one query rather than one per member. */
-  listMemberLocationsSince(since: string): AdminBotMemberLocationEntry[];
+  listMemberLocationsSince(since: string, source?: string): AdminBotMemberLocationEntry[];
   saveWorkshopMatchRun(run: AdminBotWorkshopMatchRun): void;
   latestWorkshopMatchRun(): AdminBotWorkshopMatchRun | undefined;
   appendLoginEvent(event: AdminBotLoginEvent): void;
@@ -1956,6 +1970,29 @@ export type OutreachReadyReport = {
   skipped: Array<{ venue: string; reason: string }>;
 };
 
+/** Every stored table the Lab Projects list reads. Adding a source means adding it here. */
+const LAB_PROJECT_TABLES = [
+  "adminbot_papers",
+  "adminbot_paper_slots",
+  "adminbot_paper_social_drafts",
+  "adminbot_paper_weekly_updates",
+  "adminbot_help_requests",
+  "adminbot_lab_members",
+] as const satisfies readonly RowVersionedTable[];
+
+// The dataset loader hands back the same array until its file changes, so the array itself is the
+// version: each distinct one gets a number, and a replaced file reads as a new one.
+const identityTokens = new WeakMap<object, number>();
+let nextIdentityToken = 0;
+function identityToken(value: object): number {
+  let token = identityTokens.get(value);
+  if (token === undefined) {
+    token = nextIdentityToken++;
+    identityTokens.set(value, token);
+  }
+  return token;
+}
+
 export class AdminBotService {
   constructor(
     private readonly store: AdminBotServiceStore = new AdminBotMemoryStore(),
@@ -2134,6 +2171,9 @@ export class AdminBotService {
 
   // Invite payloads do not change once proposed, and a sweep asks about the same few hundred
   // failures once per invite it considers; remembered so that is a map read, not a query.
+  /** Heavy multi-table GET bodies, kept until a source table changes (kernel/read-model-memo.ts). */
+  private readonly readModels = new ReadModelMemo();
+
   private readonly failedInviteProposals = new Map<string, AdminBotStoredProposal | undefined>();
   // The checks whose newest recorded OpenReview login was refused; read from the audit trail on
   // first use, then kept here so each sweep does not rescan it. See recordOpenReviewLogin.
@@ -2921,6 +2961,29 @@ export class AdminBotService {
    * Warned once rather than per call: the cause is a file, and this runs once per member at boot.
    */
   deadlineReadModel(generated: readonly unknown[]): unknown[] {
+    const dataset = this.deadlineDatasetOrSnapshot(generated);
+    // Every member view, the travel tab and the meetups page read this, often several times a
+    // request, and each build walked every paper. It is rebuilt when a paper or published deadline
+    // changes, the dataset file is replaced, or the hour turns (camera-ready rows drop out once
+    // their date has passed). The result is shared: callers must not edit it.
+    const rows = this.store.rowVersion?.(["adminbot_papers", "adminbot_published_deadlines"]);
+    return this.readModels.get(
+      "deadline-read-model",
+      rows === undefined
+        ? undefined
+        : `${rows}|${identityToken(dataset)}|${Math.floor(Date.now() / 3_600_000)}`,
+      () =>
+        // Venues only the lab's accepted papers know about (OpenReview's camera-ready form) are
+        // added after the published corrections, so a curated or approved date always wins.
+        withPaperCameraReadyDeadlines(
+          mergePublishedDeadlines(dataset, this.store.listPublishedDeadlines()),
+          this.store.listPapers(),
+          new Date(),
+        ),
+    );
+  }
+
+  private deadlineDatasetOrSnapshot(generated: readonly unknown[]): readonly unknown[] {
     let dataset = generated;
     try {
       dataset = this.options.deadlineDataset?.() ?? generated;
@@ -2932,13 +2995,7 @@ export class AdminBotService {
         );
       }
     }
-    // Venues only the lab's accepted papers know about (OpenReview's camera-ready form) are added
-    // after the published corrections, so a curated or approved date always wins over them.
-    return withPaperCameraReadyDeadlines(
-      mergePublishedDeadlines(dataset, this.store.listPublishedDeadlines()),
-      this.store.listPapers(),
-      new Date(),
-    );
+    return dataset;
   }
 
   /** Set once `deadlineDataset` has thrown, so the warning above is not repeated per member. */
@@ -4688,25 +4745,24 @@ export class AdminBotService {
   }
 
   listMemberRoster(query: MemberRosterQuery, meetingMembers?: ReadonlySet<string>) {
-    const page = memberRosterPage(
-      this.store.listLabMembers(),
-      this.store.listPapers(),
-      query,
-      meetingMembers,
+    // Rows, facets, options and order depend only on the members and papers tables, so they are
+    // built once per change to either; a request only filters and slices. Rows carry no
+    // milestones (memberRosterOmittedFields), so memberView has no deadlines to reconcile.
+    const index = this.readModels.get(
+      "member-roster-index",
+      this.store.rowVersion?.(["adminbot_lab_members", "adminbot_papers"]),
+      () => buildMemberRosterIndex(this.store.listLabMembers(), this.allPapersSnapshot()),
     );
+    const page = selectMemberRosterPage(index, query, meetingMembers);
     const { badgesById, assignmentsByMember } = this.rosterBadgeViews(
       page.members.map((member) => member.id),
     );
-    const deadlines = page.members.some((member) => member.milestones?.length)
-      ? this.deadlineReadModel(DEADLINE_VENUES)
-      : undefined;
     return {
       ...page,
       members: page.members.map((member) =>
         this.memberView(
           member,
           this.assignedBadgesFor(member.id, assignmentsByMember.get(member.id) ?? [], badgesById),
-          deadlines,
         ),
       ),
     };
@@ -4787,29 +4843,7 @@ export class AdminBotService {
     if (!this.store.getLabMember(viewerId)) {
       return { ok: false, status: 404, error: { message: "member not found" } };
     }
-    const ids = new Set<string>();
-    // Read only this viewer's papers, including every page rather than silently truncating.
-    for (let offset = 0; ; offset += 200) {
-      const papers = this.store.listPapers({ authorMemberId: viewerId, limit: 200, offset });
-      for (const paper of papers) {
-        const progress = paperSlotProgress(
-          paper.id,
-          this.store.listPaperSlots(paper.id),
-          this.store.listSocialDrafts(paper.id),
-        );
-        if (progress.provided >= progress.total) {
-          continue;
-        }
-        for (const author of paper.author_links ?? []) {
-          if (author.member_id && author.member_id !== viewerId) {
-            ids.add(author.member_id);
-          }
-        }
-      }
-      if (papers.length < 200) {
-        break;
-      }
-    }
+    const ids = this.activeCoauthorIndex().get(viewerId) ?? new Set<string>();
     const members = [...ids]
       .flatMap((id) => {
         const member = this.store.getLabMember(id);
@@ -4843,6 +4877,58 @@ export class AdminBotService {
       })
       .toSorted((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
     return { ok: true, status: 200, payload: { members } };
+  }
+
+  /**
+   * Linked author -> the other linked authors on their papers that still have slots to fill.
+   *
+   * One build for every viewer, kept until a paper, slot or draft changes. Asking per viewer was a
+   * json_each scan of every paper's payload plus two queries per matching paper, on each load of
+   * the Time & Availability tab.
+   */
+  private activeCoauthorIndex(): Map<string, Set<string>> {
+    return this.readModels.get(
+      "active-coauthors",
+      this.store.rowVersion?.([
+        "adminbot_papers",
+        "adminbot_paper_slots",
+        "adminbot_paper_social_drafts",
+      ]),
+      () =>
+        this.withPaperTables(() => {
+          const index = new Map<string, Set<string>>();
+          for (const paper of this.allPapersSnapshot()) {
+            const linked = [
+              ...new Set(
+                (paper.author_links ?? []).flatMap((author) =>
+                  author.member_id ? [author.member_id] : [],
+                ),
+              ),
+            ];
+            if (linked.length < 2) {
+              continue;
+            }
+            const progress = paperSlotProgress(
+              paper.id,
+              this.paperRows().listPaperSlots(paper.id),
+              this.paperRows().listSocialDrafts(paper.id),
+            );
+            if (progress.provided >= progress.total) {
+              continue;
+            }
+            for (const memberId of linked) {
+              const others = index.get(memberId) ?? new Set<string>();
+              for (const other of linked) {
+                if (other !== memberId) {
+                  others.add(other);
+                }
+              }
+              index.set(memberId, others);
+            }
+          }
+          return index;
+        }),
+    );
   }
 
   listBadgeDefinitions(): AdminBotServiceResponse<{ badges: AdminBotBadgeDefinition[] }> {
@@ -7363,8 +7449,29 @@ export class AdminBotService {
   }
 
   labSharing() {
-    return new LabSharingService(this.store, (member, paper) =>
-      this.memberOwnsPaper(member, paper),
+    // The name counts read once per request rather than once per paper asked about: each read
+    // checks the roster's row version, and the list read asks about every paper.
+    let counts: Map<string, number> | undefined;
+    return new LabSharingService(
+      this.store,
+      (member, paper) => {
+        counts ??= this.rosterNameCounts();
+        const held = counts;
+        return memberOwnsPaper(member, paper, (name) => held.get(name) ?? 0);
+      },
+      () => this.allPapersSnapshot(),
+    );
+  }
+
+  /**
+   * Every paper record, parsed once per change to the papers table rather than on every read. A
+   * full listPapers() parses each paper's whole payload (about a megabyte on the live lab), and the
+   * Collaborate tab and the collaborator schedules each did that per request. Ordered by title like
+   * listPapers(). Shared between callers: never edit a record or the array in place.
+   */
+  allPapersSnapshot(): readonly AdminBotPaperRecord[] {
+    return this.readModels.get("all-papers", this.store.rowVersion?.(["adminbot_papers"]), () =>
+      this.store.listPapers(),
     );
   }
 
@@ -7380,20 +7487,27 @@ export class AdminBotService {
   }
 
   listOwnedPapers(member: AdminBotLabMember): AdminBotPaperRecord[] {
-    const counts = rosterNameCounts(this.store.listLabMembers());
+    const counts = this.rosterNameCounts();
     return this.store
       .listPapers()
       .filter((paper) => memberOwnsPaper(member, paper, (name) => counts.get(name) ?? 0));
   }
 
   memberOwnsPaper(member: AdminBotLabMember, paper: AdminBotPaperRecord): boolean {
-    return memberOwnsPaper(
-      member,
-      paper,
-      (name) =>
-        this.store
-          .listLabMembers()
-          .filter((entry) => entry.name.trim().toLocaleLowerCase() === name).length,
+    const counts = this.rosterNameCounts();
+    return memberOwnsPaper(member, paper, (name) => counts.get(name) ?? 0);
+  }
+
+  /**
+   * How many roster members carry each folded name. Ownership asks this once per paper, and a
+   * page asks about every paper, so filtering the roster each time was papers x members; it is
+   * counted once and kept until the roster changes.
+   */
+  private rosterNameCounts(): Map<string, number> {
+    return this.readModels.get(
+      "roster-name-counts",
+      this.store.rowVersion?.(["adminbot_lab_members"]),
+      () => rosterNameCounts(this.store.listLabMembers()),
     );
   }
 
@@ -7460,17 +7574,48 @@ export class AdminBotService {
    * carry no credentials, off-roster emails or prose (workflows/papers/lab-projects.ts).
    */
   listLabProjects(nowIso?: string): AdminBotServiceResponse<{ projects: AdminBotLabProject[] }> {
-    const projects = buildLabProjects({
-      papers: this.store.listPapers(),
-      roster: this.store.listLabMembers(),
-      slots: (paperId) => this.store.listPaperSlots(paperId),
-      drafts: (paperId) => this.store.listSocialDrafts(paperId),
-      weeklyUpdates: this.store.listPaperWeeklyUpdates(),
-      helpRequests: this.store.listHelpRequests(),
-      now: nowIso ? new Date(nowIso) : new Date(),
-    });
-    return { ok: true, status: 200, payload: { projects } };
+    const now = nowIso ? new Date(nowIso) : new Date();
+    const { projects, papers } = this.readModels.get("lab-projects", this.labProjectsVersion(), () =>
+      this.buildLabProjectsModel(now),
+    );
+    // Status is the only field that moves with the clock (a quiet project turns dormant), so the
+    // cached rows are re-dated here, and a row is copied only when its status actually changed.
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        projects: projects.map((project) => {
+          const paper = papers.get(project.paper_id);
+          const status = paper ? labProjectStatus(paper, now) : project.status;
+          return status === project.status ? project : { ...project, status };
+        }),
+      },
+    };
   }
+
+  /** What the Lab Projects list is built from; undefined when the store keeps no counters. */
+  labProjectsVersion(): string | undefined {
+    return this.store.rowVersion?.(LAB_PROJECT_TABLES);
+  }
+
+  private buildLabProjectsModel(now: Date) {
+    const papers = this.store.listPapers();
+    // One read per table instead of two queries per paper: on the live lab that was over a
+    // thousand synchronous SQLite reads per request, on NFS, blocking every other request.
+    const projects = this.withPaperTables(() =>
+      buildLabProjects({
+        papers,
+        roster: this.store.listLabMembers(),
+        slots: (paperId) => this.paperRows().listPaperSlots(paperId),
+        drafts: (paperId) => this.paperRows().listSocialDrafts(paperId),
+        weeklyUpdates: this.store.listPaperWeeklyUpdates(),
+        helpRequests: this.store.listHelpRequests(),
+        now,
+      }),
+    );
+    return { projects, papers: new Map(papers.map((paper) => [paper.id, paper])) };
+  }
+
 
   // Case-insensitive relevance match of a member's research focus against paper metadata.
   listPapersRelevantToMember(
@@ -11880,7 +12025,13 @@ export class AdminBotService {
     const capped = Math.min(Math.max(Math.trunc(limit) || 0, 1), 200);
     // Names for the two ids on each row, resolved once for the whole page rather than per row.
     const names = new Map(this.store.listLabMembers().map((member) => [member.id, member.name]));
-    const titles = new Map(this.store.listPapers().map((paper) => [paper.id, paper.title]));
+    // Titles from the papers snapshot kept per papers-table version: a fresh listPapers() parsed
+    // every paper's whole payload (about a megabyte) on each feed read just to name a few of them.
+    const titles = this.readModels.get(
+      "paper-titles",
+      this.store.rowVersion?.(["adminbot_papers"]),
+      () => new Map(this.allPapersSnapshot().map((paper) => [paper.id, paper.title])),
+    );
     const updates = read(capped).map((event) => {
       const parsed = parseSlotId(event.slot_id);
       const actorName = names.get(event.member_id);
@@ -11987,25 +12138,50 @@ export class AdminBotService {
    * this is rendered on a tab, not a cron.
    */
   listLocationDrifts(): AdminBotServiceResponse<{ drifts: AdminBotLocationDrift[] }> {
-    const since = new Date(Date.now() - LOCATION_DRIFT_WINDOW_MS).toISOString();
-    const byMember = new Map<string, AdminBotMemberLocationEntry[]>();
-    for (const entry of this.store.listMemberLocationsSince(since)) {
-      const held = byMember.get(entry.member_id);
-      if (held) {
-        held.push(entry);
-      } else {
-        byMember.set(entry.member_id, [entry]);
-      }
-    }
-    const now = new Date();
-    const drifts: AdminBotLocationDrift[] = [];
-    for (const [memberId, entries] of byMember) {
-      const member = this.store.getLabMember(memberId);
-      const drift = member ? detectLocationDrift(member, entries, now) : undefined;
-      if (drift) {
-        drifts.push(drift);
-      }
-    }
+    // Rebuilt only when a location or a member row changes, or the window moves on a day: this
+    // parsed every reading of the last 90 days on each tab load. The window start is in the key
+    // by day, which is as fine as the drift rule itself (it counts days, not hours).
+    const day = Math.floor(Date.now() / 86_400_000);
+    const locations = this.store.rowVersion?.(["adminbot_member_locations"]);
+    const members = this.store.rowVersion?.(["adminbot_lab_members"]);
+    const drifts = this.readModels.get(
+      "location-drifts",
+      locations === undefined || members === undefined
+        ? undefined
+        : `${locations}|${members}|${day}`,
+      () => {
+        // The sign-ins by member, kept apart from the member join: member rows change many times a
+        // day (a daily "seen" stamp each), the readings at most once per member per day.
+        const byMember = this.readModels.get(
+          "location-drift-sign-ins",
+          locations === undefined ? undefined : `${locations}|${day}`,
+          () => {
+            const since = new Date(day * 86_400_000 - LOCATION_DRIFT_WINDOW_MS).toISOString();
+            const grouped = new Map<string, AdminBotMemberLocationEntry[]>();
+            // detectLocationDrift reads only sign-in readings, so only those are parsed.
+            for (const entry of this.store.listMemberLocationsSince(since, "login_ip")) {
+              const held = grouped.get(entry.member_id);
+              if (held) {
+                held.push(entry);
+              } else {
+                grouped.set(entry.member_id, [entry]);
+              }
+            }
+            return grouped;
+          },
+        );
+        const now = new Date();
+        const found: AdminBotLocationDrift[] = [];
+        for (const [memberId, entries] of byMember) {
+          const member = this.store.getLabMember(memberId);
+          const drift = member ? detectLocationDrift(member, entries, now) : undefined;
+          if (drift) {
+            found.push(drift);
+          }
+        }
+        return found;
+      },
+    );
     return { ok: true, status: 200, payload: { drifts } };
   }
 

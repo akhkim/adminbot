@@ -2087,7 +2087,15 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
           <tbody>
             ${members.map((member, index) => {
               const rowEdit = memberRowEdit(member, props);
-              const memberPapers = papersForMember(member, papers);
+              // A /lab/members/roster row carries its papers already matched on the server (and
+              // omits the field when there are none), so the Lab Members tab need not download
+              // every paper. Rows from the unpaged roster are matched against the loaded papers.
+              const memberPapers: Array<{ title: string; conference: string }> =
+                member.roster_papers ??
+                papersForMember(member, papers).map((entry) => ({
+                  title: entry.title,
+                  conference: paperConference(entry),
+                }));
               const noteDraft = parseMemberNotes(member.notes);
               const search = [
                 member.name,
@@ -2105,7 +2113,7 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
                 ...(member.research_topics ?? []),
                 ...(member.projects ?? []),
                 ...memberPapers.map((entry) => entry.title),
-                ...memberPapers.map(paperConference),
+                ...memberPapers.map((entry) => entry.conference),
               ]
                 .filter(Boolean)
                 .join(" ")
@@ -2117,7 +2125,9 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
                 data-status=${memberDisplayStatus(member)}
                 data-projects=${(member.projects ?? []).join("|")}
                 data-papers=${memberPapers.map((entry) => entry.title).join("|")}
-                data-conferences=${[...new Set(memberPapers.map(paperConference))].join("|")}
+                data-conferences=${[...new Set(memberPapers.map((entry) => entry.conference))].join(
+                  "|",
+                )}
               >
                 <td class="adminbot-member-sheet__person">
                   <strong>${member.name}</strong>${renderMemberBadgeSymbols(member.assigned_badges)}
@@ -2254,7 +2264,12 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
           if (rowEdit === "admin") {
             return renderMemberEditPopover(member, index, props);
           }
-          return rowEdit === "self" ? renderMemberSelfEditPopover(member, index, props) : nothing;
+          // Roster rows leave out schedules (availability, time off), so the self editor draws
+          // from the signed-in member's full record when it has one.
+          const selfRecord = ownMember?.id === member.id ? { ...member, ...ownMember } : member;
+          return rowEdit === "self"
+            ? renderMemberSelfEditPopover(selfRecord, index, props)
+            : nothing;
         },
       )}
       ${ownMemberOutsidePage && ownMember

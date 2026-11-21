@@ -124,14 +124,77 @@ describe("GET /lab/members/roster", () => {
     const admin = await token(true);
     const privatePage = await (await get("?location=Zurich", admin)).json();
     expect(privatePage.members[0].personal_circumstances).toBe("Private test note");
+    // The failure comes first: a successful calendar read is kept for a minute, so a failure
+    // asked for after one would be answered from the kept read instead. A failed one is not kept.
+    reader.mockRejectedValueOnce(new Error("offline"));
+    const failed = await get(`?meeting=${resolveGroupMeetingEventId()}`, admin);
+    expect(failed.status).toBe(500); // sendJson maps connector 502s for the Cloudflare tunnel.
+    expect((await failed.json()).error.message).toContain("offline");
     const response = await get(`?meeting=${resolveGroupMeetingEventId()}`, admin);
     expect(response.status).toBe(200);
     expect((await response.json()).members.map((m: { id: string }) => m.id)).toEqual([
       "person-104",
     ]);
-    reader.mockRejectedValueOnce(new Error("offline"));
-    const failed = await get(`?meeting=${resolveGroupMeetingEventId()}`, admin);
-    expect(failed.status).toBe(500); // sendJson maps connector 502s for the Cloudflare tunnel.
-    expect((await failed.json()).error.message).toContain("offline");
+  });
+  it("sends lean rows with their papers attached and answers an unchanged page with 304", async () => {
+    const { app, get } = await setup();
+    const paper = app.service.upsertPaper({
+      id: "paper-1",
+      title: "Roster Study",
+      authors: ["Person 104"],
+      current_step: "submission",
+      artifacts: { conference: "ExampleConf" },
+    });
+    if (!paper.ok) {
+      throw new Error(paper.error.message);
+    }
+    const first = await get("?limit=50&offset=0");
+    expect(first.status).toBe(200);
+    const etag = first.headers.get("etag");
+    expect(etag).toBeTruthy();
+    const body = await first.json();
+    const row = body.members[0];
+    expect(row.id).toBe("person-104");
+    expect(row.roster_papers).toEqual([{ title: "Roster Study", conference: "ExampleConf" }]);
+    // Heavy per-member records the table never draws stay on the detail read.
+    for (const field of ["field_provenance", "onboarding", "availability", "time_off", "trips"]) {
+      expect(row).not.toHaveProperty(field);
+    }
+    expect(body.members[1]).not.toHaveProperty("roster_papers");
+    const again = await fetch(first.url, {
+      headers: { Authorization: "Bearer test-token", "If-None-Match": etag! },
+    });
+    expect(again.status).toBe(304);
+    // A roster write moves the tag, so the next read draws the change.
+    const write = app.service.upsertLabMember(
+      withCompleteProfile({
+        id: "person-0",
+        name: "Person 0 Renamed",
+        email: "person-0@example.test",
+        privilege_level: "member",
+        member_type: "full",
+      }),
+    );
+    expect(write.ok).toBe(true);
+    const changed = await fetch(first.url, {
+      headers: { Authorization: "Bearer test-token", "If-None-Match": etag! },
+    });
+    expect(changed.status).toBe(200);
+    expect(changed.headers.get("etag")).not.toBe(etag);
+    // A paper write moves it too, since rows carry their papers.
+    const next = changed.headers.get("etag")!;
+    app.service.upsertPaper({
+      id: "paper-1",
+      title: "Roster Study Renamed",
+      authors: ["Person 104"],
+      current_step: "submission",
+    });
+    const afterPaper = await fetch(first.url, {
+      headers: { Authorization: "Bearer test-token", "If-None-Match": next },
+    });
+    expect(afterPaper.status).toBe(200);
+    expect((await afterPaper.json()).members[0].roster_papers[0].title).toBe(
+      "Roster Study Renamed",
+    );
   });
 });

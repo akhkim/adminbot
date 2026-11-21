@@ -278,7 +278,15 @@ function resolveDefaults() {
   return { gatewayUrl, adminBotUrl, legacyGatewayUrls };
 }
 
-const gatewayScript = (defaults) => `    <script>
+// Opens the connection to AdminBot (DNS, TCP, TLS: about half a second through the tunnel) while
+// the bundle downloads, so the first API request does not pay for it. The inline boot-read script
+// in ui/index.html does the same from the stored plan; this covers a first visit, which has none.
+const adminBotPreconnect = (defaults) =>
+  defaults.adminBotUrl
+    ? `    <link rel="preconnect" href="${escapeHtml(new URL(defaults.adminBotUrl).origin)}" crossorigin />\n`
+    : "";
+
+const gatewayScript = (defaults) => `${adminBotPreconnect(defaults)}    <script>
       (function () {
         var DEFAULT_GATEWAY_URL = ${JSON.stringify(defaults.gatewayUrl ?? null)};
         var DEFAULT_ADMINBOT_URL = ${JSON.stringify(defaults.adminBotUrl ?? null)};

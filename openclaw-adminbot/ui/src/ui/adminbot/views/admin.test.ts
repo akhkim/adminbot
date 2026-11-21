@@ -179,6 +179,28 @@ describe("renderAdminBot paginated roster", () => {
     expect(change).toHaveBeenLastCalledWith({ location: "Berlin", q: "Robotics" }, 0);
   });
 
+  it("draws a row's paper tags from roster_papers without the lab paper list", async () => {
+    const page = {
+      ...createEmptyAdminBotMemberList(),
+      rows: [
+        member({
+          id: "author",
+          roster_papers: [{ title: "Server Matched", conference: "ExampleConf" }],
+        }),
+      ],
+      total: 1,
+    };
+    const props = baseProps({ memberList: page });
+    const container = renderToDiv(
+      { ...props, data: { ...props.data, papers: [] } },
+      { openEditors: false },
+    );
+    await settle();
+    const row = container.querySelector<HTMLTableRowElement>('tr[data-member-id="author"]')!;
+    expect(row.querySelector(".adminbot-tag--paper")?.textContent).toBe("Server Matched");
+    expect(row.dataset.conferences).toBe("ExampleConf");
+  });
+
   it("keeps selections by value and search drafts across option updates, and resets vanished values", async () => {
     const page = {
       ...createEmptyAdminBotMemberList(),

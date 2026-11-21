@@ -24,7 +24,7 @@ import { html, nothing } from "lit";
 import { t } from "../../../i18n/index.ts";
 import type { AppViewState } from "../../app-view-state.ts";
 import { renderSkeleton } from "../../loading/skeleton.ts";
-import { loadStoredMemberSession } from "../auth/session.ts";
+import { loadStoredMemberSession, resolveAdminBotBaseUrl } from "../auth/session.ts";
 import {
   askAdminBotLabSharingMember,
   closeAdminBotLabSharingRequest,

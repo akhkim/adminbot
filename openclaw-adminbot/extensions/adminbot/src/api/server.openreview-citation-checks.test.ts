@@ -166,7 +166,11 @@ describe("OpenReview citation check routes", () => {
   });
 
   it("sends the page one trimmed row per paper for view=summary", async () => {
-    const { app, call } = await setup({ configured: false });
+    const { app, call, url } = await setup({ configured: false });
+    const revalidate = (etag: string) =>
+      fetch(`${url}/openreview/citation-checks?view=summary`, {
+        headers: { Authorization: `Bearer ${token}`, "If-None-Match": etag },
+      });
     const row = {
       submission_id: "paperAAAA",
       title: "Synthetic paper",
@@ -195,18 +199,46 @@ describe("OpenReview citation check routes", () => {
     expect(summary.checks).toEqual([
       {
         ...row,
-        pdf_path: "/pdf/v2.pdf",
         checked_at: "2027-01-02T00:00:00.000Z",
-        findings: [{ citation: "Missing ref", status: "not_found", explanation: "No record." }],
         finding_count: 2,
+        flagged_count: 1,
+        not_found_count: 1,
         version_count: 2,
       },
     ]);
+    // The flagged references are read per paper, when the page opens them.
+    const opened = await (
+      await call("/openreview/citation-checks?view=findings&submission_id=paperAAAA")
+    ).json();
+    expect(opened).toEqual({
+      submission_id: "paperAAAA",
+      findings: [{ citation: "Missing ref", status: "not_found", explanation: "No record." }],
+    });
+    expect((await call("/openreview/citation-checks?view=findings")).status).toBe(400);
+    // An unchanged summary answers 304, and a new check moves the tag.
+    const first = await call("/openreview/citation-checks?view=summary");
+    const etag = first.headers.get("etag") ?? "";
+    expect(etag).toMatch(/^W\//u);
+    const again = await revalidate(etag);
+    expect(again.status).toBe(304);
+    app.store.saveOpenReviewCitationCheck({
+      ...row,
+      submission_id: "paperBBBB",
+      pdf_path: "/pdf/b1.pdf",
+      checked_at: "2027-01-03T00:00:00.000Z",
+    });
+    const moved = await revalidate(etag);
+    expect(moved.status).toBe(200);
+    expect(((await moved.json()) as { checks: unknown[] }).checks).toHaveLength(2);
     // The unqualified read is unchanged: every version, every reference.
     const full = (await (await call("/openreview/citation-checks")).json()) as {
-      checks: Array<{ findings: unknown[] }>;
+      checks: Array<{ submission_id: string; findings?: unknown[] }>;
     };
-    expect(full.checks.map((check) => check.findings.length)).toEqual([2, 1]);
+    expect(
+      full.checks
+        .filter((check) => check.submission_id === "paperAAAA")
+        .map((check) => check.findings?.length),
+    ).toEqual([2, 1]);
     expect((await call("/openreview/citation-checks?view=other")).status).toBe(400);
   });
 

@@ -9,6 +9,17 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
+    <!--
+      The wordmark face (Fraunces). Linked here rather than @imported from base.css: an @import is
+      only found after the app stylesheet has downloaded, which chained two extra requests in
+      front of first paint. display=swap keeps text visible while it loads.
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&amp;display=swap"
+    />
     <script>
       (function () {
         // Resolved before first paint, from the same stored settings the app reads later. If the
@@ -48,6 +59,55 @@
           document.documentElement.setAttribute("data-theme", "dark");
           document.documentElement.setAttribute("data-theme-mode", "dark");
         }
+      })();
+    </script>
+    <script>
+      (function () {
+        // Starts this route's first AdminBot reads while the app's code is still downloading, so
+        // a cold load spends one round trip on data instead of waiting for the bundle first. The
+        // app's loaders take these responses (ui/src/ui/loading/boot-reads.ts, which also writes
+        // the plan read here). Headers match what the app sends, so the CORS preflight the
+        // browser cached for those requests still applies.
+        try {
+          var plan = JSON.parse(localStorage.getItem("openclaw.adminbot.boot-reads.v1") || "null");
+          var session = JSON.parse(localStorage.getItem("openclaw.adminbot.session.v1") || "null");
+          if (!plan || plan.v !== 1 || typeof plan.base !== "string" || !/^https?:\/\//.test(plan.base)) return;
+          var link = document.createElement("link");
+          link.rel = "preconnect";
+          link.href = plan.base;
+          link.crossOrigin = "anonymous";
+          document.head.appendChild(link);
+          var token = session && typeof session.sessionToken === "string" ? session.sessionToken.trim() : "";
+          if (!token) return;
+          var expires = Date.parse(session.expiresAt || "");
+          if (expires && expires <= Date.now()) return;
+          var route = location.pathname.replace(/\/+$/, "") || "/";
+          var paths = (plan.always || []).concat((plan.routes && plan.routes[route]) || []);
+          var clock = {};
+          try {
+            var zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+            if (zone && /^[A-Za-z0-9_+\-/]{1,64}$/.test(zone)) clock["X-AdminBot-Device-TZ"] = zone;
+          } catch (e) {}
+          clock["X-AdminBot-Device-TZ-Offset"] = String(-new Date().getTimezoneOffset());
+          var send = function (path, json) {
+            var headers = { Accept: "application/json", Authorization: "Bearer " + token };
+            if (json) headers["Content-Type"] = "application/json";
+            for (var key in clock) headers[key] = clock[key];
+            var init = { method: "GET", credentials: "omit", headers: headers };
+            // The app gives its session check five seconds; this copy of it gets the same.
+            if (!json && typeof AbortSignal !== "undefined" && AbortSignal.timeout) {
+              init.signal = AbortSignal.timeout(5000);
+            }
+            var response = fetch(plan.base + path, init);
+            response.catch(function () {});
+            reads[plan.base + path] = { token: token, at: Date.now(), response: response };
+          };
+          var reads = (window.__adminbotBootReads = {});
+          send("/auth/session", false);
+          for (var i = 0; i < paths.length; i++) {
+            if (typeof paths[i] === "string" && paths[i].charAt(0) === "/") send(paths[i], true);
+          }
+        } catch (e) {}
       })();
     </script>
     <style>

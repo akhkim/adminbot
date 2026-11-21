@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { createCalendarEventsReader, parseCalendarEvents } from "./events.js";
+import {
+  calendarMonthWindow,
+  createCachedCalendarEventsReader,
+  createCalendarEventsReader,
+  parseCalendarEvents,
+} from "./events.js";
 
 const TIMED = {
   id: "evt-1",
@@ -151,5 +156,149 @@ describe("createCalendarEventsReader", () => {
     expect(args[args.indexOf("list") + 1]).toBe("lab@jinesis.ai");
     expect(args[args.indexOf("--max") + 1]).toBe("5");
     expect(args[args.indexOf("--query") + 1]).toBe("retreat");
+  });
+});
+
+describe("createCachedCalendarEventsReader", () => {
+  function counted() {
+    let clock = 0;
+    const calls: Array<Record<string, unknown>> = [];
+    const cached = createCachedCalendarEventsReader(
+      async (params) => {
+        calls.push(params);
+        return [{ id: `evt-${calls.length}`, summary: "Lab meeting", start: "2026-08-18" }];
+      },
+      { now: () => clock },
+    );
+    return {
+      cached,
+      calls,
+      advance: (ms: number) => {
+        clock += ms;
+      },
+    };
+  }
+
+  it("answers a repeat of the same parameters from the kept read", async () => {
+    const { cached, calls, advance } = counted();
+    const first = await cached.read({ calendarId: "lab", max: 250 });
+    advance(59_000);
+    expect(await cached.read({ calendarId: "lab", max: 250 })).toEqual(first);
+    expect(calls).toHaveLength(1);
+  });
+
+  it("keeps each parameter set apart", async () => {
+    const { cached, calls } = counted();
+    await cached.read({ calendarId: "lab", max: 250 });
+    await cached.read({ calendarId: "lab", max: 50 });
+    await cached.read({ calendarId: "other", max: 250 });
+    expect(calls).toHaveLength(3);
+  });
+
+  it("serves a stale read while it refreshes, and waits once that is too old", async () => {
+    const { cached, calls, advance } = counted();
+    await cached.read({ calendarId: "lab" });
+    advance(2 * 60_000);
+    expect((await cached.read({ calendarId: "lab" }))[0]?.id).toBe("evt-1");
+    expect(calls).toHaveLength(2);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    advance(10 * 60_000);
+    expect((await cached.read({ calendarId: "lab" }))[0]?.id).toBe("evt-3");
+  });
+
+  it("asks Google again after invalidate", async () => {
+    const { cached, calls } = counted();
+    await cached.read({ calendarId: "lab" });
+    await cached.read({ calendarId: "other" });
+    cached.invalidate();
+    expect((await cached.read({ calendarId: "lab" }))[0]?.id).toBe("evt-3");
+    expect(calls).toHaveLength(3);
+  });
+
+  it("does not keep a failed read", async () => {
+    let fail = true;
+    const cached = createCachedCalendarEventsReader(async () => {
+      if (fail) {
+        throw new Error("keyring locked");
+      }
+      return [];
+    });
+    await expect(cached.read({})).rejects.toThrow("keyring locked");
+    fail = false;
+    await expect(cached.read({})).resolves.toEqual([]);
+  });
+
+  it("keeps seeded and recently asked reads warm, and re-reads them right after a write", async () => {
+    vi.useFakeTimers();
+    try {
+      const calls: Array<Record<string, unknown>> = [];
+      const cached = createCachedCalendarEventsReader(async (params) => {
+        calls.push(params);
+        return [];
+      });
+      const stop = cached.keepWarm(50_000, [{ calendarId: "lab", max: 250 }]);
+      expect(calls).toEqual([{ calendarId: "lab", max: 250 }]);
+      await vi.advanceTimersByTimeAsync(0);
+      // The page's own read is handed the warmed answer.
+      await cached.read({ calendarId: "lab", max: 250 });
+      expect(calls).toHaveLength(1);
+      await cached.read({ calendarId: "lab", from: "2026-11-20" });
+      expect(calls).toHaveLength(2);
+      await vi.advanceTimersByTimeAsync(50_000);
+      expect(calls).toHaveLength(4);
+      cached.invalidate();
+      expect(calls).toHaveLength(6);
+      // An hour on, only the seed is still read; the page's range was not asked for again.
+      await vi.advanceTimersByTimeAsync(60 * 60_000);
+      const before = calls.length;
+      await vi.advanceTimersByTimeAsync(50_000);
+      expect(calls.length - before).toBe(1);
+      stop();
+      await vi.advanceTimersByTimeAsync(500_000);
+      expect(calls.length - before).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("calendarMonthWindow", () => {
+  it("is the month in the lab's zone, as whole UTC days, the way the Calendar tab asks", () => {
+    expect(calendarMonthWindow("UTC", Date.parse("2026-11-20T12:00:00Z"))).toEqual({
+      from: "2026-11-01T00:00:00.000Z",
+      to: "2026-12-01T00:00:00.000Z",
+    });
+    expect(calendarMonthWindow("UTC", Date.parse("2026-12-31T23:00:00Z"))).toEqual({
+      from: "2026-12-01T00:00:00.000Z",
+      to: "2027-01-01T00:00:00.000Z",
+    });
+    // Still October in Toronto, though November in UTC.
+    expect(calendarMonthWindow("America/Toronto", Date.parse("2026-11-01T02:00:00Z")).from).toBe(
+      "2026-10-01T00:00:00.000Z",
+    );
+    expect(calendarMonthWindow("Not/AZone", Date.parse("2026-11-20T12:00:00Z")).from).toBe(
+      "2026-11-01T00:00:00.000Z",
+    );
+  });
+
+  it("lets seeds move with the clock, so a new month is warmed and the old one dropped", async () => {
+    vi.useFakeTimers();
+    try {
+      const calls: string[] = [];
+      const reader = createCachedCalendarEventsReader(async (params) => {
+        calls.push(params.from ?? "");
+        return [];
+      });
+      let month = "2026-11-01T00:00:00.000Z";
+      const stop = reader.keepWarm(50_000, () => [{ from: month, max: 250 }]);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(calls).toEqual(["2026-11-01T00:00:00.000Z"]);
+      month = "2026-12-01T00:00:00.000Z";
+      await vi.advanceTimersByTimeAsync(50_000);
+      expect(calls).toEqual(["2026-11-01T00:00:00.000Z", "2026-12-01T00:00:00.000Z"]);
+      stop();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

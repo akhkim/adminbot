@@ -1,10 +1,15 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AdminBotMemberNotification } from "../contracts/actions.js";
 import { AdminBotMemoryStore } from "./memory.js";
 import { AdminBotSqliteStore } from "./sqlite.js";
+import {
+  escalatedMemberNotificationsIndexSql,
+  escalatedMemberNotificationsSql,
+} from "./sqlite.member-notifications.js";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -53,5 +58,26 @@ describe("listEscalatedMemberNotifications", () => {
       JSON.stringify(expected),
     );
     sqlite.close();
+  });
+});
+
+describe("escalated notifications index", () => {
+  it("is what the escalated query reads, rather than a scan of every notification", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "adminbot-escalated-plan-"));
+    dirs.push(dir);
+    const file = path.join(dir, "adminbot.sqlite");
+    // The store lays down the real table; the plan is checked on a second connection to it.
+    new AdminBotSqliteStore(file).close();
+    const db = new DatabaseSync(file);
+    db.exec(escalatedMemberNotificationsIndexSql);
+    const plan = (
+      db.prepare(`EXPLAIN QUERY PLAN ${escalatedMemberNotificationsSql}`).all() as Array<{
+        detail: string;
+      }>
+    )
+      .map((row) => row.detail)
+      .join("\n");
+    db.close();
+    expect(plan).toContain("USING INDEX adminbot_member_notifications_escalated_unread_idx");
   });
 });
