@@ -21,7 +21,7 @@ const LETTERS: AdminBotLogisticsRequestInput = {
 };
 
 function labWithMail(options: { headProfessorEmail?: string | undefined } = {}) {
-  const sent: { to: string; subject: string; body: string }[] = [];
+  const sent: { to: string; cc?: string[]; subject: string; body: string }[] = [];
   const service = new AdminBotService(undefined, {
     executor: {
       execute: async (proposal) => {
@@ -61,8 +61,11 @@ describe("sweepRecLetterReminders", () => {
       {
         request_id: request.id,
         member_id: "ada",
+        member_name: "Ada Lovelace",
         deadline_at: request.deadline_at,
         days_until: 3,
+        tier: "final",
+        schools: ["MIT"],
       },
     ]);
     expect(sent).toHaveLength(1);
@@ -147,5 +150,91 @@ describe("sweepRecLetterReminders", () => {
     const result = unwrap(await service.sweepRecLetterReminders("cron", { nowIso: NOW }));
 
     expect(result.reminded).toEqual([]);
+  });
+
+  it("previews the mail on a dry run without sending or stamping it", async () => {
+    const { service, sent } = labWithMail();
+    unwrap(service.submitLogisticsRequest("ada", LETTERS));
+
+    const preview = unwrap(
+      await service.sweepRecLetterReminders("admin", { nowIso: NOW, dryRun: true }),
+    );
+    expect(preview.dry_run).toBe(true);
+    expect(preview.recipient).toBe("zjin@cs.toronto.edu");
+    expect(preview.subject).toBe("Recommendation letter for Ada Lovelace is due in 3 days");
+    expect(preview.body).toContain("MIT");
+    expect(sent).toHaveLength(0);
+
+    const real = unwrap(await service.sweepRecLetterReminders("cron", { nowIso: NOW }));
+    expect(real.reminded).toHaveLength(1);
+    expect(sent).toHaveLength(1);
+  });
+
+  it("sends a week heads-up and still sends the last call later", async () => {
+    const { service, sent } = labWithMail();
+    unwrap(service.submitLogisticsRequest("ada", LETTERS));
+
+    const week = unwrap(
+      await service.sweepRecLetterReminders("cron", { nowIso: "2026-11-25T13:00:00Z" }),
+    );
+    expect(week.reminded.map((entry) => entry.tier)).toEqual(["week"]);
+    expect(
+      unwrap(await service.sweepRecLetterReminders("cron", { nowIso: "2026-11-26T13:00:00Z" }))
+        .reminded,
+    ).toEqual([]);
+    const last = unwrap(await service.sweepRecLetterReminders("cron", { nowIso: NOW }));
+    expect(last.reminded.map((entry) => entry.tier)).toEqual(["final"]);
+    expect(sent).toHaveLength(2);
+  });
+
+  it("counts a manual look-ahead as the heads-up, leaving the last call armed", async () => {
+    const { service, sent } = labWithMail();
+    unwrap(service.submitLogisticsRequest("ada", LETTERS));
+
+    const early = unwrap(
+      await service.sweepRecLetterReminders("admin", {
+        nowIso: "2026-11-21T13:00:00Z",
+        withinDays: 14,
+      }),
+    );
+    expect(early.reminded.map((entry) => entry.tier)).toEqual(["week"]);
+    expect(
+      unwrap(await service.sweepRecLetterReminders("cron", { nowIso: "2026-11-25T13:00:00Z" }))
+        .reminded,
+    ).toEqual([]);
+    expect(
+      unwrap(await service.sweepRecLetterReminders("cron", { nowIso: NOW })).reminded,
+    ).toHaveLength(1);
+    expect(sent).toHaveLength(2);
+  });
+
+  it("refuses a look-ahead outside 1 to 31 days", async () => {
+    const { service } = labWithMail();
+    const result = await service.sweepRecLetterReminders("admin", {
+      nowIso: NOW,
+      withinDays: 90,
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  it("copies the addresses named in settings, never the main one twice", async () => {
+    const { service, sent } = labWithMail();
+    unwrap(
+      service.updateSettings({
+        rec_letter_reminder_cc_emails: ["zjin.admin@cs.toronto.edu", "ZJIN@cs.toronto.edu"],
+      }),
+    );
+    unwrap(service.submitLogisticsRequest("ada", LETTERS));
+
+    const result = unwrap(await service.sweepRecLetterReminders("cron", { nowIso: NOW }));
+    expect(result.cc).toEqual(["zjin.admin@cs.toronto.edu"]);
+    expect(sent[0]?.cc).toEqual(["zjin.admin@cs.toronto.edu"]);
+  });
+
+  it("refuses a cc address that is not an email", () => {
+    const { service } = labWithMail();
+    expect(service.updateSettings({ rec_letter_reminder_cc_emails: ["not an email"] }).ok).toBe(
+      false,
+    );
   });
 });

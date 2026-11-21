@@ -10364,6 +10364,7 @@ export interface components {
       vector_roster_email?: string;
       papers_submission_report_email?: string;
       papers_acceptance_mpi_emails?: string[];
+      rec_letter_reminder_cc_emails?: string[];
       papers_acceptance_dcs_email?: string;
       papers_acceptance_vector_email?: string;
       papers_acceptance_sri_email?: string;
@@ -10399,6 +10400,7 @@ export interface components {
       vector_roster_email?: string;
       papers_submission_report_email?: string;
       papers_acceptance_mpi_emails?: string[];
+      rec_letter_reminder_cc_emails?: string[];
       papers_acceptance_dcs_email?: string;
       papers_acceptance_vector_email?: string;
       papers_acceptance_sri_email?: string;
@@ -19693,7 +19695,10 @@ export interface operations {
   };
   "post-logistics-rec-letter-reminders-run": {
     parameters: {
-      query?: never;
+      query?: {
+        dry_run?: string;
+        within_days?: string;
+      };
       header?: never;
       path?: never;
       cookie?: never;
@@ -19708,11 +19713,20 @@ export interface operations {
         content: {
           "application/json": {
             recipient?: string;
+            cc?: string[];
+            /** @constant */
+            dry_run?: true;
+            subject?: string;
+            body?: string;
             reminded: ({
               request_id: string;
               member_id: string;
+              member_name: string;
               deadline_at: string;
               days_until: number;
+              /** @enum {string} */
+              tier: "final" | "week";
+              schools: string[];
             } & {
               [key: string]: unknown;
             })[];
@@ -29923,6 +29937,7 @@ export interface operations {
           vector_roster_email?: string;
           papers_submission_report_email?: string;
           papers_acceptance_mpi_emails?: string[];
+          rec_letter_reminder_cc_emails?: string[];
           papers_acceptance_dcs_email?: string;
           papers_acceptance_vector_email?: string;
           papers_acceptance_sri_email?: string;
