@@ -11,6 +11,9 @@
 import type { DatabaseSync } from "node:sqlite";
 import {
   adminBotApiUsageRetentionDays,
+  adminBotIsSweep,
+  adminBotNotASweepOperations,
+  type AdminBotAutomationSweep,
   type AdminBotApiUsageAdoption,
   type AdminBotApiUsageCount,
   type AdminBotApiUsageEntry,
@@ -34,6 +37,8 @@ const API_USAGE_SCHEMA = `
   );
   CREATE INDEX IF NOT EXISTS adminbot_api_usage_at_idx ON adminbot_api_usage(at);
   CREATE INDEX IF NOT EXISTS adminbot_api_usage_member_idx ON adminbot_api_usage(member_id, at);
+  -- The automation report reads service-token rows only.
+  CREATE INDEX IF NOT EXISTS adminbot_api_usage_auth_idx ON adminbot_api_usage(auth, at);
   CREATE TABLE IF NOT EXISTS adminbot_api_usage_daily (
     day TEXT NOT NULL,
     member_id TEXT NOT NULL,
@@ -78,8 +83,8 @@ export type ApiUsageLog = {
   summary(options?: { days?: number; now?: Date }): AdminBotApiUsageSummary;
   /** Newest first, for one member or everybody. */
   recent(options?: { memberId?: string; limit?: number }): AdminBotApiUsageEntry[];
-  /** Service-token requests since `from`, oldest first: what the automation report reads. */
-  serviceRuns(from: string): AdminBotApiUsageEntry[];
+  /** What each sweep endpoint did since `from`, busiest first: the automation report's sweeps. */
+  sweeps(from: string): AdminBotAutomationSweep[];
   /** CLI adoption, power users and drop-off. `liveTokens` counts each member's live API tokens. */
   adoption(options: {
     days?: number;
@@ -90,7 +95,12 @@ export type ApiUsageLog = {
 };
 
 /** When a member first and last used a client. */
-export type ApiUsageMemberRow = { member_id: string; client: string; first_at: string; last_at: string };
+export type ApiUsageMemberRow = {
+  member_id: string;
+  client: string;
+  first_at: string;
+  last_at: string;
+};
 
 /** Members who used the CLI before but not in this many days count as dropped off. */
 const DROPPED_AFTER_DAYS = 30;
@@ -217,11 +227,7 @@ export function summarizeApiUsage(
       members.add(row.member_id);
     }
   }
-  const byDay = groupBy(
-    rows,
-    (row) => row.day,
-    (row) => ({ day: row.day }),
-  ).toSorted((left, right) => left.day.localeCompare(right.day));
+  const byDay = summarizeDays(rows);
   const byMember = groupBy(
     rows.filter((row) => row.member_id),
     (row) => row.member_id,
@@ -268,69 +274,30 @@ export function summarizeApiUsage(
   };
 }
 
-/** The Monday (UTC) that starts the week a `YYYY-MM-DD` day falls in. */
-export function usageWeekOf(day: string): string {
-  const date = new Date(`${day}T00:00:00.000Z`);
-  const sinceMonday = (date.getUTCDay() + 6) % 7;
-  return new Date(date.getTime() - sinceMonday * 86_400_000).toISOString().slice(0, 10);
+/** Requests per day, oldest first. */
+export function summarizeDays(
+  rows: readonly ApiUsageRollupRow[],
+): AdminBotApiUsageSummary["by_day"] {
+  return groupBy(
+    rows,
+    (row) => row.day,
+    (row) => ({ day: row.day }),
+  ).toSorted((left, right) => left.day.localeCompare(right.day));
 }
 
 /**
- * Adoption, power users and drop-off. `rows` is the whole retained rollup (weekly users span it);
- * the power-user ranking reads only the window's days.
+ * Per-member calls, client shares and per-operation counts, from people's rollup cells (no
+ * service token, no empty member). Active days are left at 0: a cell may span several days, so
+ * each store counts those itself.
  */
-export function summarizeApiAdoption(
-  rows: readonly ApiUsageRollupRow[],
-  members: readonly ApiUsageMemberRow[],
-  options: { now: Date; days: number; liveTokens: ReadonlyMap<string, number> },
-): AdminBotApiUsageAdoption {
-  const from = cutoffDay(options.now, options.days);
-  const droppedBefore = new Date(
-    options.now.getTime() - DROPPED_AFTER_DAYS * 86_400_000,
-  ).toISOString();
-  const cli = new Map(
-    members.filter((row) => row.client === "cli").map((row) => [row.member_id, row]),
-  );
-
-  const people = new Set([
-    ...[...options.liveTokens].filter(([, count]) => count > 0).map(([id]) => id),
-    ...cli.keys(),
-  ]);
-  const memberRows = [...people]
-    .map((memberId) => {
-      const use = cli.get(memberId);
-      return {
-        member_id: memberId,
-        live_tokens: options.liveTokens.get(memberId) ?? 0,
-        ...(use ? { first_cli_at: use.first_at, last_cli_at: use.last_at } : {}),
-      };
-    })
-    .toSorted(
-      (left, right) =>
-        (right.first_cli_at ?? "").localeCompare(left.first_cli_at ?? "") ||
-        left.member_id.localeCompare(right.member_id),
-    );
-
-  const weeks = new Map<string, Set<string>>();
-  for (const row of rows) {
-    if (row.client !== "cli" || !row.member_id) {
-      continue;
-    }
-    const week = usageWeekOf(row.day);
-    const users = weeks.get(week) ?? new Set<string>();
-    users.add(row.member_id);
-    weeks.set(week, users);
-  }
-
-  type Power = AdminBotApiUsageAdoption["power_users"][number] & {
-    days: Set<string>;
-    ops: Map<string, { operation: string; method: string; requests: number }>;
-  };
+export function tallyPowerUsers(cells: readonly ApiUsageRollupRow[]): {
+  power: ApiUsagePowerRow[];
+  operations: ApiUsageMemberOperationRow[];
+} {
+  type Power = ApiUsagePowerRow & { opset: Set<string> };
   const power = new Map<string, Power>();
-  for (const row of rows) {
-    if (!row.member_id || row.day < from || row.auth === "service") {
-      continue;
-    }
+  const operations = new Map<string, ApiUsageMemberOperationRow>();
+  for (const row of cells) {
     const entry: Power = power.get(row.member_id) ?? {
       member_id: row.member_id,
       requests: 0,
@@ -340,9 +307,7 @@ export function summarizeApiAdoption(
       website_requests: 0,
       other_requests: 0,
       last_at: row.last_at,
-      top_operations: [],
-      days: new Set(),
-      ops: new Map(),
+      opset: new Set(),
     };
     entry.requests += row.requests;
     if (row.client === "cli") {
@@ -355,21 +320,114 @@ export function summarizeApiAdoption(
     if (row.last_at > entry.last_at) {
       entry.last_at = row.last_at;
     }
-    entry.days.add(row.day);
     const opKey = `${row.method} ${row.operation}`;
-    const op = entry.ops.get(opKey) ?? { operation: row.operation, method: row.method, requests: 0 };
-    op.requests += row.requests;
-    entry.ops.set(opKey, op);
+    entry.opset.add(opKey);
     power.set(row.member_id, entry);
+    const id = `${row.member_id}\u0000${opKey}`;
+    const op = operations.get(id) ?? {
+      member_id: row.member_id,
+      operation: row.operation,
+      method: row.method,
+      requests: 0,
+    };
+    op.requests += row.requests;
+    operations.set(id, op);
   }
-  const powerUsers = [...power.values()]
-    .map(({ days, ops, ...entry }) => ({
-      ...entry,
-      active_days: days.size,
-      operations: ops.size,
-      top_operations: [...ops.values()]
-        .toSorted((left, right) => right.requests - left.requests)
-        .slice(0, TOP_OPERATIONS_PER_USER),
+  return {
+    power: [...power.values()].map(({ opset, ...entry }) => ({ ...entry, operations: opset.size })),
+    operations: [...operations.values()],
+  };
+}
+
+/** The Monday (UTC) that starts the week a `YYYY-MM-DD` day falls in. */
+export function usageWeekOf(day: string): string {
+  const date = new Date(`${day}T00:00:00.000Z`);
+  const sinceMonday = (date.getUTCDay() + 6) % 7;
+  return new Date(date.getTime() - sinceMonday * 86_400_000).toISOString().slice(0, 10);
+}
+
+/**
+ * The first Monday on or after the retention cutoff. Weeks before it are only partly in the log,
+ * so their user counts would read as a dip that never happened.
+ */
+export function usageFirstWholeWeek(now: Date): string {
+  const cutoff = cutoffDay(now, adminBotApiUsageRetentionDays);
+  const week = usageWeekOf(cutoff);
+  return week < cutoff
+    ? new Date(Date.parse(`${week}T00:00:00.000Z`) + 7 * 86_400_000).toISOString().slice(0, 10)
+    : week;
+}
+
+/** One member's calls in the window, before ranking. */
+export type ApiUsagePowerRow = Omit<
+  AdminBotApiUsageAdoption["power_users"][number],
+  "top_operations"
+>;
+
+/** How often one member called one operation in the window. */
+export type ApiUsageMemberOperationRow = {
+  member_id: string;
+  operation: string;
+  method: string;
+  requests: number;
+};
+
+/**
+ * Adoption, power users and drop-off, from numbers either store has already added up: per-member
+ * totals, per-member operation counts, distinct CLI users per whole week, and first/last use.
+ */
+export function finishApiAdoption(input: {
+  now: Date;
+  days: number;
+  liveTokens: ReadonlyMap<string, number>;
+  members: readonly ApiUsageMemberRow[];
+  weekly: ReadonlyArray<{ week: string; users: number }>;
+  power: readonly ApiUsagePowerRow[];
+  operations: readonly ApiUsageMemberOperationRow[];
+}): AdminBotApiUsageAdoption {
+  const from = cutoffDay(input.now, input.days);
+  const droppedBefore = new Date(
+    input.now.getTime() - DROPPED_AFTER_DAYS * 86_400_000,
+  ).toISOString();
+  const cli = new Map(
+    input.members.filter((row) => row.client === "cli").map((row) => [row.member_id, row]),
+  );
+  const people = new Set([
+    ...[...input.liveTokens].filter(([, count]) => count > 0).map(([id]) => id),
+    ...cli.keys(),
+  ]);
+  const memberRows = [...people]
+    .map((memberId) => {
+      const use = cli.get(memberId);
+      return {
+        member_id: memberId,
+        live_tokens: input.liveTokens.get(memberId) ?? 0,
+        ...(use ? { first_cli_at: use.first_at, last_cli_at: use.last_at } : {}),
+      };
+    })
+    .toSorted(
+      (left, right) =>
+        (right.first_cli_at ?? "").localeCompare(left.first_cli_at ?? "") ||
+        left.member_id.localeCompare(right.member_id),
+    );
+
+  const topOperations = new Map<string, ApiUsageMemberOperationRow[]>();
+  for (const row of input.operations) {
+    const list = topOperations.get(row.member_id) ?? [];
+    list.push(row);
+    topOperations.set(row.member_id, list);
+  }
+  const powerUsers = input.power
+    .map((row) => ({
+      ...row,
+      top_operations: (topOperations.get(row.member_id) ?? [])
+        .toSorted(
+          (left, right) =>
+            right.requests - left.requests ||
+            `${left.method} ${left.operation}`.localeCompare(`${right.method} ${right.operation}`),
+        )
+        .slice(0, TOP_OPERATIONS_PER_USER)
+        .map(({ operation, method, requests }) => ({ operation, method, requests })),
     }))
     .toSorted(
       (left, right) =>
@@ -382,7 +440,7 @@ export function summarizeApiAdoption(
   const holders = memberRows.filter((row) => row.live_tokens > 0);
   return {
     from,
-    days: options.days,
+    days: input.days,
     dropped_after_days: DROPPED_AFTER_DAYS,
     totals: {
       token_holders: holders.length,
@@ -392,15 +450,116 @@ export function summarizeApiAdoption(
         .length,
     },
     members: memberRows,
-    weekly_cli_users: [...weeks]
-      .map(([week, users]) => ({ week, users: users.size }))
+    weekly_cli_users: input.weekly
+      .map(({ week, users }) => ({ week, users }))
       .toSorted((left, right) => left.week.localeCompare(right.week)),
     power_users: powerUsers,
     dropped_off: [...cli.values()]
       .filter((row) => row.last_at < droppedBefore)
-      .map((row) => ({ member_id: row.member_id, first_cli_at: row.first_at, last_cli_at: row.last_at }))
+      .map((row) => ({
+        member_id: row.member_id,
+        first_cli_at: row.first_at,
+        last_cli_at: row.last_at,
+      }))
       .toSorted((left, right) => right.last_cli_at.localeCompare(left.last_cli_at)),
   };
+}
+
+/** The memory store's adoption: the same sums `finishApiAdoption` takes, added up in JS. */
+export function summarizeApiAdoption(
+  rows: readonly ApiUsageRollupRow[],
+  members: readonly ApiUsageMemberRow[],
+  options: { now: Date; days: number; liveTokens: ReadonlyMap<string, number> },
+): AdminBotApiUsageAdoption {
+  const from = cutoffDay(options.now, options.days);
+  const firstWeek = usageFirstWholeWeek(options.now);
+  const weeks = new Map<string, Set<string>>();
+  const activeDays = new Map<string, Set<string>>();
+  const people: ApiUsageRollupRow[] = [];
+  for (const row of rows) {
+    if (!row.member_id) {
+      continue;
+    }
+    if (row.client === "cli" && row.day >= firstWeek) {
+      const users = weeks.get(usageWeekOf(row.day)) ?? new Set<string>();
+      users.add(row.member_id);
+      weeks.set(usageWeekOf(row.day), users);
+    }
+    if (row.day < from || row.auth === "service") {
+      continue;
+    }
+    people.push(row);
+    const days = activeDays.get(row.member_id) ?? new Set<string>();
+    days.add(row.day);
+    activeDays.set(row.member_id, days);
+  }
+  const { power, operations } = tallyPowerUsers(people);
+  return finishApiAdoption({
+    now: options.now,
+    days: options.days,
+    liveTokens: options.liveTokens,
+    members,
+    weekly: [...weeks].map(([week, users]) => ({ week, users: users.size })),
+    power: power.map((row) => ({
+      ...row,
+      active_days: activeDays.get(row.member_id)?.size ?? 0,
+    })),
+    operations,
+  });
+}
+
+/** The memory store's sweeps, from its raw rows. The SQLite store does this in SQL. */
+export function summarizeSweeps(
+  entries: readonly AdminBotApiUsageEntry[],
+  from: string,
+): AdminBotAutomationSweep[] {
+  type Sweep = AdminBotAutomationSweep & { total_ms: number };
+  const sweeps = new Map<string, Sweep>();
+  for (const run of entries) {
+    if (run.auth !== "service" || run.at < from || !adminBotIsSweep(run)) {
+      continue;
+    }
+    const key = `${run.method} ${run.operation}`;
+    const sweep: Sweep = sweeps.get(key) ?? {
+      operation: run.operation,
+      method: run.method,
+      runs: 0,
+      failures: 0,
+      metrics: {},
+      total_ms: 0,
+    };
+    sweeps.set(key, sweep);
+    sweep.runs += 1;
+    sweep.total_ms += run.duration_ms;
+    sweep.max_ms = Math.max(sweep.max_ms ?? 0, run.duration_ms);
+    if (!sweep.last_at || run.at > sweep.last_at) {
+      sweep.last_at = run.at;
+    }
+    if (run.status >= 400) {
+      sweep.failures += 1;
+    } else if (!sweep.last_ok_at || run.at > sweep.last_ok_at) {
+      sweep.last_ok_at = run.at;
+    }
+    for (const [name, value] of Object.entries(run.metrics ?? {})) {
+      if (typeof value === "number" && Number.isFinite(value)) {
+        sweep.metrics[name] = (sweep.metrics[name] ?? 0) + value;
+      }
+    }
+  }
+  return sortSweeps(
+    [...sweeps.values()].map(({ total_ms, ...sweep }) => ({
+      ...sweep,
+      avg_ms: Math.round(total_ms / sweep.runs),
+    })),
+  );
+}
+
+function sortSweeps(sweeps: AdminBotAutomationSweep[]): AdminBotAutomationSweep[] {
+  return sweeps.toSorted(
+    (left, right) =>
+      right.runs - left.runs ||
+      `${left.method} ${left.operation}`.localeCompare(`${right.method} ${right.operation}`),
+  );
 }
 
 /**
@@ -422,9 +581,16 @@ function createBuffer(write: (entries: AdminBotApiUsageEntry[], now: Date) => vo
     pending = [];
     try {
       write(batch, now);
-    } catch {
+    } catch (error) {
       // Telemetry never fails the request it describes, and a database that cannot take this
-      // batch now is unlikely to take it on a retry loop either. The batch is dropped.
+      // batch now is unlikely to take it on a retry loop either. The batch is dropped, but said
+      // out loud, so a usage page that stops moving has a reason in the service log. Only the
+      // count and the database's message: never the rows, which name people.
+      console.warn(
+        `AdminBot API usage: dropped ${batch.length} request rows: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
   };
   return {
@@ -503,8 +669,8 @@ export function createMemoryApiUsageLog(): ApiUsageLog {
         .toSorted((left, right) => right.at.localeCompare(left.at))
         .slice(0, clampLimit(options.limit));
     },
-    serviceRuns(from) {
-      return requests.filter((entry) => entry.auth === "service" && entry.at >= from);
+    sweeps(from) {
+      return summarizeSweeps(requests, from);
     },
     adoption(options) {
       const now = options.now ?? new Date();
@@ -550,14 +716,57 @@ export function createApiUsageLogFromDatabase(db: DatabaseSync): ApiUsageLog {
   const memberUse = db.prepare(`SELECT * FROM adminbot_api_usage_members`);
   const pruneRequests = db.prepare(`DELETE FROM adminbot_api_usage WHERE at < ?`);
   const pruneDaily = db.prepare(`DELETE FROM adminbot_api_usage_daily WHERE day < ?`);
-  const rollupSince = db.prepare(`SELECT * FROM adminbot_api_usage_daily WHERE day >= ?`);
+  // The page reads sums, never rows. Each read is one or two scans of the window that SQLite
+  // collapses to a few thousand cells (one per member, client and operation, or per day and
+  // member); the shared JS above finishes those. A busy quarter costs a scan, not 300k objects.
+  const COUNTS = `SUM(requests) AS requests, SUM(client_errors) AS client_errors,
+    SUM(server_errors) AS server_errors, SUM(total_ms) AS total_ms, MAX(max_ms) AS max_ms,
+    MAX(last_at) AS last_at`;
+  const cellsSince = db.prepare(`
+    SELECT member_id, auth, client, client_version, method, operation, ${COUNTS}
+    FROM adminbot_api_usage_daily WHERE day >= ?
+    GROUP BY member_id, auth, client, client_version, method, operation`);
+  // The summary and adoption reads of one page load want the same cells, so the second reuses
+  // the first's scan. Keyed on total_changes(): any write on this connection, a flush or a
+  // member merge alike, makes the next read scan again, so a cached answer is never stale.
+  const changes = db.prepare(`SELECT total_changes() AS n`);
+  let cellCache: { from: string; version: number; rows: ApiUsageRollupRow[] } | undefined;
+  const cells = (from: string): ApiUsageRollupRow[] => {
+    const version = Number((changes.get() as { n: number }).n);
+    if (cellCache?.from !== from || cellCache.version !== version) {
+      const rows = (cellsSince.all(from) as Array<Record<string, unknown>>).map((row) =>
+        rollupFromSqlite({ ...row, day: from }),
+      );
+      cellCache = { from, version, rows };
+    }
+    return cellCache.rows;
+  };
+  const daysSince = db.prepare(`
+    SELECT day, ${COUNTS} FROM adminbot_api_usage_daily WHERE day >= ? GROUP BY day`);
+  // Per day and member, which the primary key already orders: who was active, and on the CLI.
+  const activeSince = db.prepare(`
+    SELECT day, member_id, MAX(client = 'cli') AS cli, MAX(auth <> 'service') AS person
+    FROM adminbot_api_usage_daily WHERE day >= ? AND member_id <> ''
+    GROUP BY day, member_id`);
   const recentAll = db.prepare(`SELECT * FROM adminbot_api_usage ORDER BY at DESC LIMIT ?`);
   const recentForMember = db.prepare(
     `SELECT * FROM adminbot_api_usage WHERE member_id = ? ORDER BY at DESC LIMIT ?`,
   );
-  const serviceSince = db.prepare(
-    `SELECT * FROM adminbot_api_usage WHERE auth = 'service' AND at >= ? ORDER BY at`,
-  );
+  // Sweeps: service-token writes, minus the heartbeat. Reads the (auth, at) index.
+  const notSweeps = adminBotNotASweepOperations.map((operation) => `'${operation}'`).join(", ");
+  const SWEEPS = `FROM adminbot_api_usage
+    WHERE auth = 'service' AND at >= ? AND method <> 'GET' AND operation NOT IN (${notSweeps})`;
+  const sweepsSince = db.prepare(`
+    SELECT method, operation, COUNT(*) AS runs, SUM(status >= 400) AS failures,
+      CAST(ROUND(AVG(duration_ms)) AS INTEGER) AS avg_ms, MAX(duration_ms) AS max_ms,
+      MAX(at) AS last_at, MAX(CASE WHEN status < 400 THEN at END) AS last_ok_at
+    ${SWEEPS} GROUP BY method, operation`);
+  const sweepMetricsSince = db.prepare(`
+    SELECT method, operation, metric.key AS name, SUM(metric.value) AS total
+    FROM (SELECT method, operation, metrics_json ${SWEEPS} AND metrics_json IS NOT NULL) AS run,
+      json_each(run.metrics_json) AS metric
+    WHERE metric.type IN ('integer', 'real')
+    GROUP BY method, operation, metric.key`);
   let prunedAt = 0;
   const buffer = createBuffer((entries, now) => {
     db.exec("BEGIN");
@@ -616,8 +825,10 @@ export function createApiUsageLogFromDatabase(db: DatabaseSync): ApiUsageLog {
     summary(options = {}) {
       const days = clampDays(options.days);
       const from = cutoffDay(options.now ?? new Date(), days);
-      const rows = (rollupSince.all(from) as Array<Record<string, unknown>>).map(rollupFromSqlite);
-      return summarizeApiUsage(rows, { from, days });
+      const byDay = (daysSince.all(from) as Array<Record<string, unknown>>).map((row) =>
+        rollupFromSqlite({ ...row, day: String(row.day) }),
+      );
+      return { ...summarizeApiUsage(cells(from), { from, days }), by_day: summarizeDays(byDay) };
     },
     recent(options = {}) {
       const limit = clampLimit(options.limit);
@@ -626,29 +837,113 @@ export function createApiUsageLogFromDatabase(db: DatabaseSync): ApiUsageLog {
       ) as Array<Record<string, unknown>>;
       return rows.map(entryFromSqlite);
     },
-    serviceRuns(from) {
-      return (serviceSince.all(from) as Array<Record<string, unknown>>).map(entryFromSqlite);
+    sweeps(from) {
+      const metrics = new Map<string, Record<string, number>>();
+      for (const row of sweepMetricsSince.all(from) as Array<Record<string, unknown>>) {
+        const key = `${String(row.method)} ${String(row.operation)}`;
+        metrics.set(key, { ...metrics.get(key), [String(row.name)]: Number(row.total) });
+      }
+      return sortSweeps(
+        (sweepsSince.all(from) as Array<Record<string, unknown>>).map((row) => ({
+          operation: String(row.operation),
+          method: String(row.method),
+          runs: Number(row.runs),
+          failures: Number(row.failures),
+          avg_ms: Number(row.avg_ms),
+          max_ms: Number(row.max_ms),
+          last_at: String(row.last_at),
+          ...(row.last_ok_at ? { last_ok_at: String(row.last_ok_at) } : {}),
+          metrics: metrics.get(`${String(row.method)} ${String(row.operation)}`) ?? {},
+        })),
+      );
     },
     adoption(options) {
       const now = options.now ?? new Date();
-      const rows = (
-        rollupSince.all(cutoffDay(now, adminBotApiUsageRetentionDays)) as Array<
-          Record<string, unknown>
-        >
-      ).map(rollupFromSqlite);
+      const days = clampDays(options.days);
+      const from = cutoffDay(now, days);
       const members = (memberUse.all() as Array<Record<string, unknown>>).map((row) => ({
         member_id: String(row.member_id),
         client: String(row.client),
         first_at: String(row.first_at),
         last_at: String(row.last_at),
       }));
-      return summarizeApiAdoption(rows, members, {
+      const firstWeek = usageFirstWholeWeek(now);
+      const active = activeSince.all(firstWeek < from ? firstWeek : from) as Array<
+        Record<string, unknown>
+      >;
+      const weeks = new Map<string, Set<string>>();
+      const activeDays = new Map<string, number>();
+      for (const row of active) {
+        const day = String(row.day);
+        const memberId = String(row.member_id);
+        if (Number(row.cli) && day >= firstWeek) {
+          const users = weeks.get(usageWeekOf(day)) ?? new Set<string>();
+          users.add(memberId);
+          weeks.set(usageWeekOf(day), users);
+        }
+        if (Number(row.person) && day >= from) {
+          activeDays.set(memberId, (activeDays.get(memberId) ?? 0) + 1);
+        }
+      }
+      const people = cells(from).filter((row) => row.member_id && row.auth !== "service");
+      const { power, operations } = tallyPowerUsers(people);
+      return finishApiAdoption({
         now,
-        days: clampDays(options.days),
+        days,
         liveTokens: options.liveTokens,
+        members,
+        weekly: [...weeks].map(([week, users]) => ({ week, users: users.size })),
+        power: power.map((row) => ({ ...row, active_days: activeDays.get(row.member_id) ?? 0 })),
+        operations,
       });
     },
   };
+}
+
+/**
+ * Moves one member's usage onto another when two member records are merged. The rollup and the
+ * first/last table are keyed by member, so a plain re-key would collide wherever both members
+ * have a cell for the same day and operation. Colliding cells are added together instead, and
+ * first/last use keeps the earlier first and the later last. Request rows have no key to collide
+ * on and move with the generic re-key. Call inside the merge's transaction.
+ */
+export function mergeApiUsageMember(
+  db: DatabaseSync,
+  from: string,
+  to: string,
+): { daily: number; members: number } {
+  db.exec(API_USAGE_SCHEMA);
+  const daily = db
+    .prepare(
+      `INSERT INTO adminbot_api_usage_daily
+         (day, member_id, auth, token_id, client, client_version, operation, method,
+          requests, client_errors, server_errors, total_ms, max_ms, last_at)
+       SELECT day, ?, auth, token_id, client, client_version, operation, method,
+          requests, client_errors, server_errors, total_ms, max_ms, last_at
+       FROM adminbot_api_usage_daily WHERE member_id = ? AND true
+       ON CONFLICT(day, member_id, auth, token_id, client, client_version, operation, method)
+       DO UPDATE SET
+         requests = requests + excluded.requests,
+         client_errors = client_errors + excluded.client_errors,
+         server_errors = server_errors + excluded.server_errors,
+         total_ms = total_ms + excluded.total_ms,
+         max_ms = MAX(max_ms, excluded.max_ms),
+         last_at = MAX(last_at, excluded.last_at)`,
+    )
+    .run(to, from);
+  db.prepare(`DELETE FROM adminbot_api_usage_daily WHERE member_id = ?`).run(from);
+  const members = db
+    .prepare(
+      `INSERT INTO adminbot_api_usage_members (member_id, client, first_at, last_at)
+       SELECT ?, client, first_at, last_at FROM adminbot_api_usage_members
+       WHERE member_id = ? AND true
+       ON CONFLICT(member_id, client) DO UPDATE SET
+         first_at = MIN(first_at, excluded.first_at),
+         last_at = MAX(last_at, excluded.last_at)`,
+    )
+    .run(to, from);
+  db.prepare(`DELETE FROM adminbot_api_usage_members WHERE member_id = ?`).run(from);
+  return { daily: Number(daily.changes), members: Number(members.changes) };
 }
 
 function rollupFromSqlite(row: Record<string, unknown>): ApiUsageRollupRow {

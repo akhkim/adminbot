@@ -103,9 +103,12 @@ import {
   toStoredLabMember,
 } from "../workflows/onboarding/onboarding-storage.js";
 import { parseTalkMaterialsConfig } from "../workflows/papers/talk-materials.js";
-import { createApiUsageLogFromDatabase, type ApiUsageLog } from "./api-usage.js";
+import {
+  createApiUsageLogFromDatabase,
+  mergeApiUsageMember,
+  type ApiUsageLog,
+} from "./api-usage.js";
 import { createCollaboratorChatRequestStore } from "./collaborator-chat-requests.js";
-import { createPosterPrintStore } from "./poster-printing.js";
 import {
   adminBotEmailReviewFromRow,
   adminBotResolvedEmailReviewFromRow,
@@ -149,6 +152,7 @@ import {
   listPaperAiTextChecks,
   savePaperAiTextCheck,
 } from "./paper-ai-text-checks.js";
+import { createPosterPrintStore } from "./poster-printing.js";
 import {
   ensureReferenceScanSchema,
   getReferenceScan,
@@ -2126,6 +2130,15 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         }
         // Whatever the UPDATE could not move is a collision with a row the survivor already owns.
         this.db.prepare(`DELETE FROM "${table}" WHERE ${column} = ?`).run(fromMemberId);
+      }
+      {
+        const merged = mergeApiUsageMember(this.db, fromMemberId, toMemberId);
+        if (merged.daily > 0) {
+          moved["adminbot_api_usage_daily.member_id"] = merged.daily;
+        }
+        if (merged.members > 0) {
+          moved["adminbot_api_usage_members.member_id"] = merged.members;
+        }
       }
       // Badge suggestions are repointed here rather than from MEMBER_REFERENCE_COLUMNS because
       // that loop moves the column and leaves `payload_json` alone -- and payload_json is what is

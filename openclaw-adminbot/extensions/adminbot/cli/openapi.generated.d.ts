@@ -10871,21 +10871,22 @@ export interface components {
       } & {
         [key: string]: unknown;
       })[];
-      sweeps: ({
-        runs: number;
-        failures: number;
-        avg_ms?: number;
-        max_ms?: number;
-        last_at?: string;
-        last_ok_at?: string;
-        metrics: {
-          [key: string]: number;
-        };
-        operation: string;
-        method: string;
-      } & {
-        [key: string]: unknown;
-      })[];
+      sweeps: components["schemas"]["AdminBotAutomationSweep"][];
+    } & {
+      [key: string]: unknown;
+    };
+    AdminBotAutomationSweep: {
+      operation: string;
+      method: string;
+      runs: number;
+      failures: number;
+      avg_ms?: number;
+      max_ms?: number;
+      last_at?: string;
+      last_ok_at?: string;
+      metrics: {
+        [key: string]: number;
+      };
     } & {
       [key: string]: unknown;
     };

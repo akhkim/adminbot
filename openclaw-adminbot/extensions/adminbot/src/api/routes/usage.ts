@@ -21,7 +21,6 @@ import { privilegedOnly } from "./guards.js";
 import { contractOperation } from "./pilot-access.js";
 import { limitParam } from "./query-params.js";
 import { get, type Route } from "./router.js";
-import { cookieToken } from "./session.js";
 
 const principals = new WeakMap<IncomingMessage, AdminBotPrincipal>();
 
@@ -52,12 +51,12 @@ export function usageEntryFor(input: {
   const pathname = new URL(req.url ?? "/", "http://127.0.0.1").pathname;
   const operation = contractOperation(pathname, method)?.id ?? "unmatched";
   const userAgent = req.headers["user-agent"];
-  const client = adminBotApiUsageClient(
-    typeof userAgent === "string" ? userAgent : undefined,
-    Boolean(cookieToken(req)),
-  );
   const auth =
     principal.kind === "service" ? "service" : principal.apiToken ? "api_token" : "session";
+  const client = adminBotApiUsageClient(
+    typeof userAgent === "string" ? userAgent : undefined,
+    auth === "session",
+  );
   return {
     at: input.at.toISOString(),
     ...(principal.kind === "member"
@@ -97,8 +96,9 @@ export function trackApiUsage(
       const entry = usageEntryFor({
         req,
         principal: principals.get(req),
-        // A client that hung up before any answer is told nothing; 499 says so, as nginx does.
-        status: res.headersSent ? res.statusCode : 499,
+        // A client that hung up before the whole answer was written got nothing it can use, even
+        // when the status line had already gone; 499 says so, as nginx does.
+        status: res.writableFinished ? res.statusCode : 499,
         durationMs: performance.now() - started,
         at,
         metrics: metrics(),
@@ -187,7 +187,7 @@ export const usageRoutes: readonly Route[] = [
         200,
         automationRunReport({
           events: ctx.store.listAuditEvents(),
-          serviceRuns: ctx.apiUsage.serviceRuns(from),
+          sweeps: ctx.apiUsage.sweeps(from),
           from,
           days,
         }),

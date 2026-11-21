@@ -4,7 +4,7 @@ import type { AdminBotAuditEvent } from "../contracts/actions.js";
 // Two sources, neither new: the cron heartbeats every job posts (scripts/lib/adminbot-cron-run.sh,
 // now with the run's duration and counters), and the service-token rows of the API usage log, which
 // carry what the sweep endpoints counted while they ran (nudges sent per domain and so on).
-import type { AdminBotApiUsageEntry } from "../contracts/api-usage.js";
+import type { AdminBotAutomationSweep } from "../contracts/api-usage.js";
 
 export type AutomationRunTotals = {
   runs: number;
@@ -23,7 +23,7 @@ export type AutomationRunReport = {
   /** One row per cron job, from its heartbeats. */
   jobs: Array<AutomationRunTotals & { job: string }>;
   /** One row per sweep endpoint the cron scripts call with the service token. */
-  sweeps: Array<AutomationRunTotals & { operation: string; method: string }>;
+  sweeps: AdminBotAutomationSweep[];
 };
 
 type Tally = AutomationRunTotals & { timed: number; total_ms: number };
@@ -78,7 +78,7 @@ function numericRecord(raw: unknown): Record<string, number> | undefined {
 
 export function automationRunReport(input: {
   events: readonly AdminBotAuditEvent[];
-  serviceRuns: readonly AdminBotApiUsageEntry[];
+  sweeps: AdminBotAutomationSweep[];
   from: string;
   days: number;
 }): AutomationRunReport {
@@ -101,30 +101,12 @@ export function automationRunReport(input: {
       ...(metrics ? { metrics } : {}),
     });
   }
-  const sweeps = new Map<string, Tally & { operation: string; method: string }>();
-  for (const run of input.serviceRuns) {
-    // A GET is somebody reading, not a sweep doing something.
-    if (run.at < input.from || run.method === "GET") {
-      continue;
-    }
-    const key = `${run.method} ${run.operation}`;
-    const sweep = sweeps.get(key) ?? { ...tally(), operation: run.operation, method: run.method };
-    sweeps.set(key, sweep);
-    note(sweep, {
-      at: run.at,
-      ok: run.status < 400,
-      duration_ms: run.duration_ms,
-      ...(run.metrics ? { metrics: run.metrics } : {}),
-    });
-  }
   return {
     from: input.from,
     days: input.days,
     jobs: [...jobs.entries()]
       .map(([job, value]) => ({ job, ...finish(value) }))
       .toSorted((left, right) => left.job.localeCompare(right.job)),
-    sweeps: [...sweeps.values()]
-      .map(({ operation, method, ...value }) => ({ operation, method, ...finish(value) }))
-      .toSorted((left, right) => right.runs - left.runs),
+    sweeps: input.sweeps,
   };
 }

@@ -51194,47 +51194,7 @@
           "sweeps": {
             "type": "array",
             "items": {
-              "type": "object",
-              "properties": {
-                "runs": {
-                  "type": "number"
-                },
-                "failures": {
-                  "type": "number"
-                },
-                "avg_ms": {
-                  "type": "number"
-                },
-                "max_ms": {
-                  "type": "number"
-                },
-                "last_at": {
-                  "type": "string"
-                },
-                "last_ok_at": {
-                  "type": "string"
-                },
-                "metrics": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "number"
-                  }
-                },
-                "operation": {
-                  "type": "string"
-                },
-                "method": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "runs",
-                "failures",
-                "metrics",
-                "operation",
-                "method"
-              ],
-              "additionalProperties": true
+              "$ref": "#/components/schemas/AdminBotAutomationSweep"
             }
           }
         },
@@ -51243,6 +51203,49 @@
           "days",
           "jobs",
           "sweeps"
+        ],
+        "additionalProperties": true
+      },
+      "AdminBotAutomationSweep": {
+        "type": "object",
+        "properties": {
+          "operation": {
+            "type": "string"
+          },
+          "method": {
+            "type": "string"
+          },
+          "runs": {
+            "type": "number"
+          },
+          "failures": {
+            "type": "number"
+          },
+          "avg_ms": {
+            "type": "number"
+          },
+          "max_ms": {
+            "type": "number"
+          },
+          "last_at": {
+            "type": "string"
+          },
+          "last_ok_at": {
+            "type": "string"
+          },
+          "metrics": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "number"
+            }
+          }
+        },
+        "required": [
+          "operation",
+          "method",
+          "runs",
+          "failures",
+          "metrics"
         ],
         "additionalProperties": true
       },

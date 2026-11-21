@@ -17,7 +17,8 @@ export type AdminBotApiUsageAuth = "session" | "api_token" | "service";
  * What sent the request.
  *
  *   cli      the adminbot CLI, which sends `User-Agent: adminbot-cli/<version>`
- *   website  the Control UI in a browser
+ *   website  a member session that is not the CLI: the Control UI, which sends its session as
+ *            `Authorization: Bearer` with credentials omitted, or a cookie
  *   other    anything else holding a token: curl, a script, the cron service
  */
 export type AdminBotApiUsageClient = "cli" | "website" | "other";
@@ -68,23 +69,31 @@ export type AdminBotApiUsageSummary = {
   by_auth: Array<AdminBotApiUsageCount & { auth: AdminBotApiUsageAuth }>;
 };
 
-const CLI_AGENT = /^adminbot-cli\/(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]{1,32})?)(?:\s|$)/u;
+const CLI_AGENT =
+  /^adminbot-cli\/(\d{1,3})\.(\d{1,3})\.(\d{1,3})((?:[-+][0-9A-Za-z.-]{1,32})?)(?:\s|$)/u;
 
 /**
- * Which client sent a request, from its User-Agent and whether it rode a browser cookie.
+ * Which client sent a request, from its User-Agent and how it authenticated.
  *
- * The version is taken only when it parses as semver, so the column cannot become a place a caller
- * writes arbitrary text into an admin's page.
+ * The Control UI never sends a cookie: it holds the member session and sends it as a bearer
+ * token with `credentials: "omit"` (ui/src/ui/adminbot/auth/session.ts). So a member session that
+ * is not the CLI is the website, and an API token that is not the CLI is something else.
+ *
+ * The version is kept only as `major.minor.patch`, each part at most three digits, with `-pre`
+ * for any prerelease or build suffix. That keeps the column from becoming a place a caller writes
+ * arbitrary text into an admin's page, and keeps one caller from growing the daily rollup by
+ * inventing a new version on every request.
  */
 export function adminBotApiUsageClient(
   userAgent: string | undefined,
-  viaCookie: boolean,
+  viaSession: boolean,
 ): { client: AdminBotApiUsageClient; version?: string } {
   const cli = CLI_AGENT.exec(userAgent ?? "");
   if (cli) {
-    return { client: "cli", version: cli[1] };
+    const core = [cli[1], cli[2], cli[3]].map((part) => String(Number(part))).join(".");
+    return { client: "cli", version: cli[4] ? `${core}-pre` : core };
   }
-  return { client: viaCookie ? "website" : "other" };
+  return { client: viaSession ? "website" : "other" };
 }
 
 export function adminBotApiUsageDays(raw: string | null | undefined, fallback = 30): number {
@@ -138,3 +147,28 @@ export type AdminBotApiUsageAdoption = {
   }>;
   dropped_off: Array<{ member_id: string; first_cli_at: string; last_cli_at: string }>;
 };
+
+/** What one sweep endpoint did over a window: the service-token POSTs the cron scripts make. */
+export type AdminBotAutomationSweep = {
+  operation: string;
+  method: string;
+  runs: number;
+  failures: number;
+  avg_ms?: number;
+  max_ms?: number;
+  last_at?: string;
+  last_ok_at?: string;
+  /** Summed over the window, for the counters the runs reported. */
+  metrics: Record<string, number>;
+};
+
+/**
+ * Service-token requests that are not sweeps. A GET is somebody reading. The heartbeat is the cron
+ * wrapper reporting its run, which already has a row of its own under `jobs`; counting it again as
+ * a sweep would list every cron run twice.
+ */
+export const adminBotNotASweepOperations: readonly string[] = ["post-automation-health-heartbeat"];
+
+export function adminBotIsSweep(run: { method: string; operation: string }): boolean {
+  return run.method !== "GET" && !adminBotNotASweepOperations.includes(run.operation);
+}

@@ -1,6 +1,10 @@
 // API usage telemetry over HTTP: which requests become rows, what a row says, and who may read them.
+import { EventEmitter } from "node:events";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
+import { createMemoryApiUsageLog } from "../persistence/api-usage.js";
 import { hashPassword } from "../workflows/identity/auth.js";
+import { noteUsagePrincipal, trackApiUsage } from "./routes/usage.js";
 import { createAdminBotMockService } from "./server.js";
 
 const PASSWORD = "synthetic-password-1";
@@ -17,7 +21,7 @@ afterEach(async () => {
   }
 });
 
-async function start() {
+async function start(options: { plainCliRole?: "power_user" } = {}) {
   const mock = createAdminBotMockService({ serviceToken: SERVICE });
   running.push(mock);
   await new Promise<void>((resolve) => {
@@ -33,6 +37,7 @@ async function start() {
       name: `Test ${id}`,
       email: `${id}@example.invalid`,
       privilege_level: level,
+      ...(id === "plain-c" && options.plainCliRole ? { cli_role: options.plainCliRole } : {}),
       access: [],
       created_at: "2026-01-01T00:00:00.000Z",
       updated_at: "2026-01-01T00:00:00.000Z",
@@ -52,9 +57,15 @@ async function call(
   baseUrl: string,
   method: string,
   path: string,
-  options: { bearer?: string; agent?: string; body?: unknown } = {},
+  options: {
+    bearer?: string;
+    agent?: string;
+    body?: unknown;
+    headers?: Record<string, string>;
+    credentials?: RequestCredentials;
+  } = {},
 ) {
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { ...options.headers };
   if (options.bearer) {
     headers.Authorization = `Bearer ${options.bearer}`;
   }
@@ -67,6 +78,7 @@ async function call(
   const response = await fetch(`${baseUrl}${path}`, {
     method,
     headers,
+    ...(options.credentials ? { credentials: options.credentials } : {}),
     ...(options.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
   });
   const text = await response.text();
@@ -129,6 +141,65 @@ describe("API usage telemetry", () => {
     ).toBe(false);
   });
 
+  it("counts the Control UI as the website, from the headers it really sends", async () => {
+    const { baseUrl } = await start();
+    const session = await signIn(baseUrl, "plain-c");
+    // ui/src/ui/adminbot/auth/session.ts: the session as a bearer, credentials omitted, no cookie.
+    const page = await call(baseUrl, "GET", "/auth/session", {
+      bearer: session,
+      credentials: "omit",
+      headers: {
+        Accept: "application/json",
+        "User-Agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15",
+      },
+    });
+    expect(page.status).toBe(200);
+    const recent = await call(baseUrl, "GET", "/usage/requests?member_id=plain-c", {
+      bearer: SERVICE,
+    });
+    const row = recent.body.requests.find(
+      (entry: { operation: string }) =>
+        entry.operation !== "unmatched" && entry.operation !== "post-auth-login",
+    );
+    expect(row).toMatchObject({ auth: "session", client: "website", method: "GET", status: 200 });
+    expect(row.client_version).toBeUndefined();
+  });
+
+  it("records 499 when the client hangs up after the headers went", async () => {
+    const log = createMemoryApiUsageLog();
+    const req = {
+      method: "GET",
+      url: "/auth/session",
+      headers: { "user-agent": "adminbot-cli/0.3.0" },
+    } as unknown as IncomingMessage;
+    noteUsagePrincipal(req, { kind: "service" });
+    const res = Object.assign(new EventEmitter(), {
+      statusCode: 200,
+      headersSent: true,
+      writableFinished: false,
+    }) as unknown as ServerResponse;
+    await trackApiUsage(req, res, log, async () => {});
+    res.emit("close");
+    log.flush();
+    expect(log.recent()).toEqual([expect.objectContaining({ status: 499, auth: "service" })]);
+
+    // The same request finishing normally keeps its real status.
+    const done = Object.assign(new EventEmitter(), {
+      statusCode: 200,
+      writableFinished: true,
+    }) as unknown as ServerResponse;
+    await trackApiUsage(req, done, log, async () => {});
+    done.emit("close");
+    log.flush();
+    expect(
+      log
+        .recent()
+        .map((entry) => entry.status)
+        .sort(),
+    ).toEqual([200, 499]);
+  });
+
   it("names a personal token by its id, never its value", async () => {
     const { baseUrl } = await start();
     const session = await signIn(baseUrl, "admin-a");
@@ -153,7 +224,10 @@ describe("API usage telemetry", () => {
     const adoption = await call(baseUrl, "GET", "/usage/adoption?days=7", { bearer: SERVICE });
     expect(adoption.status).toBe(200);
     expect(adoption.body.totals).toMatchObject({ token_holders: 1, token_holders_using_cli: 1 });
-    expect(adoption.body.power_users[0]).toMatchObject({ member_id: "admin-a", name: "Test admin-a" });
+    expect(adoption.body.power_users[0]).toMatchObject({
+      member_id: "admin-a",
+      name: "Test admin-a",
+    });
     expect(JSON.stringify(adoption.body)).not.toContain(token);
   });
 
@@ -170,6 +244,27 @@ describe("API usage telemetry", () => {
       expect((await call(baseUrl, "GET", path, { bearer: member })).status).toBe(403);
       expect((await call(baseUrl, "GET", path)).status).toBe(401);
       expect((await call(baseUrl, "GET", path, { bearer: admin })).status).toBe(200);
+    }
+  });
+
+  it("refuses a non-admin power_user token", async () => {
+    const { baseUrl } = await start({ plainCliRole: "power_user" });
+    const session = await signIn(baseUrl, "plain-c");
+    const created = await call(baseUrl, "POST", "/auth/api-tokens", {
+      bearer: session,
+      body: { name: "pilot", expires_in_days: 30 },
+    });
+    expect(created.status).toBe(201);
+    const token = created.body.token as string;
+    const whoami = await call(baseUrl, "GET", "/auth/session", { bearer: token });
+    expect(whoami.body.token_role).toBe("power_user");
+    for (const path of [
+      "/usage/summary",
+      "/usage/requests",
+      "/usage/automation",
+      "/usage/adoption",
+    ]) {
+      expect((await call(baseUrl, "GET", path, { bearer: token })).status).toBe(403);
     }
   });
 
@@ -202,7 +297,7 @@ describe("API usage telemetry", () => {
         metrics: { "emails.reimbursement": 2, needs_review: 1, errors: 1 },
       }),
     ]);
-    // The heartbeats were themselves service calls, and show up as the endpoint that took them.
-    expect(report.body.sweeps).toContainEqual(expect.objectContaining({ method: "POST", runs: 2 }));
+    // The heartbeat is the cron wrapper reporting the run above, not a sweep of its own.
+    expect(report.body.sweeps).toEqual([]);
   });
 });

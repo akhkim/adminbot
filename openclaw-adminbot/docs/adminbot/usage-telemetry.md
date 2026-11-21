@@ -16,10 +16,20 @@ One row for each **authenticated** API request, with:
 - the acting member id. Under "view as" this is the admin, not the member being viewed;
 - how the request authenticated (`session`, `api_token` or `service`) and, for a token, its
   public `tok_…` id;
-- the client (`cli`, `website` or `other`) and, for the CLI, its version. The CLI now sends
-  `User-Agent: adminbot-cli/<version>`, and the version is kept only when it parses as semver;
+- the client and, for the CLI, its version:
+  - `cli`: the User-Agent is `adminbot-cli/<version>`, which the CLI now sends;
+  - `website`: a member session that is not the CLI. The Control UI sends its session as
+    `Authorization: Bearer` with credentials omitted, so there is no cookie to go by;
+  - `other`: an API token or the service token from anything but the CLI, such as curl or cron.
+
+  The version is kept as `major.minor.patch`, each part at most three digits, leading zeros
+  dropped. Any prerelease or build suffix becomes `-pre`. A version that does not fit makes the
+  request `other`. This stops a caller from writing free text into the admin page, or growing the
+  rollup with a new version on every request;
+
 - the OpenAPI operationId (`unmatched` for a path outside the contract), the method and the
-  status (499 when the client hung up first);
+  status. A client that disconnected before the whole response was written is recorded as 499,
+  even if the status line had already been sent;
 - the duration in milliseconds;
 - for service-token requests, counters the service kept while handling the request, such as
   `nudges_sent.<domain>`. A nudge counts when its ledger `nudge_count` goes up.
@@ -45,8 +55,20 @@ automation sweep reports `emails.found`, `emails_status.completed`, `emails_stat
 Request rows and the daily rollup are kept for 90 days (`adminBotApiUsageRetentionDays`). Older
 rows are deleted at most once an hour during a normal write. The one exception is
 `adminbot_api_usage_members`: one row per member and client holding only the first and last
-request time. It is not pruned, so "first used the CLI" stays true after the request rows are gone. Writes are buffered and flushed in
-one transaction every few seconds, so a crash can lose the last few seconds of telemetry.
+request time. It is not pruned, so "first used the CLI" stays true after the request rows are gone.
+
+Writes are buffered and flushed in one transaction every few seconds, so a crash can lose the last
+few seconds of telemetry. A batch that fails to write is dropped with a warning in the gateway log
+that gives the row count and the error, never the rows.
+
+## Merging and deleting members
+
+- Deleting a member purges their rows from the request log, the daily rollup and
+  `adminbot_api_usage_members`.
+- Merging a duplicate into a member moves the duplicate's usage onto the survivor:
+  - in the daily rollup, cells that collide are summed (requests, errors, total time), with the
+    larger max duration and the later last-request time;
+  - in `adminbot_api_usage_members`, the earlier first time and the later last time are kept.
 
 ## Who can see it
 
@@ -55,15 +77,28 @@ Only admins and the service token (`privilegedOnly`):
 - `GET /usage/summary?days=N`: totals and breakdowns by day, member, operation, client and auth.
 - `GET /usage/requests?member_id=&limit=`: recent request rows.
 - `GET /usage/automation?days=N`: cron runs and service sweeps with their durations and counters.
+  A sweep is a service-token request that is not a GET. The cron heartbeat is left out: it already
+  appears as the run under `jobs`.
 - `GET /usage/adoption?days=N`: CLI adoption and power users.
   - Token holders: members with at least one live token (not revoked, not expired), and how many
     of them have used the CLI.
   - Each holder or CLI user's first and last CLI use.
-  - Distinct CLI users per week over the retained 90 days. Weeks start on Monday, UTC.
+  - Distinct CLI users per week over the retained 90 days. Weeks start on Monday, UTC. The series
+    starts at the first Monday inside the retained log, so the oldest week is never a partial week
+    that looks like a dip.
   - Power users in the window, ranked by calls, then active days, then distinct operations. Each
     row has the CLI, website and other share of calls and the top three operations. Service-token
     calls are left out.
   - Dropped off: members who used the CLI before but not in the last 30 days.
+
+A non-admin token, including a `power_user` pilot token, gets 403 on all four.
+
+Summary and adoption read the daily rollup. Sweeps read service rows from the request log through
+an `(auth, at)` index. All totals and groupings are computed in SQLite, so nothing loads every row
+into JavaScript. The page makes
+three reads: summary, adoption and automation. On a synthetic 90-day log of 324,000 rollup cells and
+50,000 service runs, the three together take about 550 ms, inside the 1-second page budget.
+`persistence/api-usage.test.ts` checks this.
 
 In the Control UI, **Lab overview → API Usage** shows these numbers for a 7-, 30- or 90-day
 window, with CLI adoption, power users and drop-off above the request breakdowns. Members do not
