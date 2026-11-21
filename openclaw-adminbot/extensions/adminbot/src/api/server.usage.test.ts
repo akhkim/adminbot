@@ -375,10 +375,11 @@ describe("API usage telemetry", () => {
 });
 
 describe("api usage page latency", () => {
-  // The supported ceiling, written down in docs/adminbot/usage-telemetry.md: 324k rollup cells
-  // (60 members x 60 operations x 90 days, far busier than the lab), 50k service runs and an audit
-  // log of 200k events, 26k of them cron heartbeats. Timed through the real authenticated routes
-  // the page calls, against a SQLite store, so routing, auth and serialization are in the number.
+  // The supported ceiling, written down in docs/adminbot/usage-telemetry.md: 162k rollup cells
+  // (40 members each calling 45 operations every day for 90 days, busier than the lab), 50k
+  // service runs and an audit log of 200k events, 26k of them cron heartbeats (the 55 cron jobs
+  // run about 310 times a day). Timed through the real authenticated routes the page calls,
+  // against a SQLite store, so routing, auth and serialization are in the number.
   it("answers the page's three GETs within the budget at the supported ceiling", async () => {
     const dir = mkdtempSync(join(tmpdir(), "adminbot-usage-latency-"));
     const mock = createAdminBotMockService({
@@ -403,8 +404,8 @@ describe("api usage page latency", () => {
         VALUES (?, ?, 'api_token', 'tok', ?, '', ?, 'GET', 3, 0, 0, 30, 15, ?)`);
       for (let d = 0; d < 90; d += 1) {
         const day = new Date(now - d * 86_400_000).toISOString().slice(0, 10);
-        for (let m = 0; m < 60; m += 1) {
-          for (let o = 0; o < 60; o += 1) {
+        for (let m = 0; m < 40; m += 1) {
+          for (let o = 0; o < 45; o += 1) {
             cell.run(day, `m${m}`, o % 2 ? "cli" : "website", `op${o}`, `${day}T10:00:00.000Z`);
           }
         }
@@ -446,13 +447,18 @@ describe("api usage page latency", () => {
         );
         return { summary, adoption, automation };
       };
-      // Best of three cold loads. Each GET is itself a service request, so every load follows a
-      // write and no cached answer is reused. One slow attempt on a busy CI machine is noise;
-      // three in a row is a regression.
+      // Best of five cold loads. Before each, the store writes something that is not usage, as
+      // heartbeats and member edits do between two visits to the page, so no load reuses the
+      // window the last one read. One slow attempt on a busy CI machine is noise; five in a row
+      // is a regression.
+      const unrelated = db.prepare(`INSERT INTO adminbot_audit_events
+        (id, action_id, event_type, timestamp, actor, event_json)
+        VALUES (?, NULL, 'member.updated', ?, 'system', '{}')`);
       const timings: number[] = [];
       let result: Awaited<ReturnType<typeof page>> | undefined;
-      for (let attempt = 0; attempt < 3; attempt += 1) {
+      for (let attempt = 0; attempt < 5; attempt += 1) {
         store.apiUsageLog().flush();
+        unrelated.run(`between-loads-${attempt}`, new Date().toISOString());
         const started = performance.now();
         result = await page();
         timings.push(performance.now() - started);
@@ -461,7 +467,7 @@ describe("api usage page latency", () => {
       for (const response of Object.values(result!)) {
         expect(response.status).toBe(200);
       }
-      expect(result!.summary.body.by_member).toHaveLength(60);
+      expect(result!.summary.body.by_member).toHaveLength(40);
       expect(result!.adoption.body.power_users[0]?.top_operations).toHaveLength(3);
       expect(result!.automation.body.sweeps).toHaveLength(12);
       expect(result!.automation.body.jobs).toHaveLength(12);

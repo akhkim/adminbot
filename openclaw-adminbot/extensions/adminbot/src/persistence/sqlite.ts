@@ -418,6 +418,9 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
       CREATE INDEX IF NOT EXISTS adminbot_audit_events_timestamp_idx
         ON adminbot_audit_events(timestamp);
+      -- One event type since a time: the automation report's cron heartbeats.
+      CREATE INDEX IF NOT EXISTS adminbot_audit_events_type_idx
+        ON adminbot_audit_events(event_type, timestamp);
 
       CREATE TABLE IF NOT EXISTS adminbot_openreview_cycles (
         venue_id TEXT NOT NULL,

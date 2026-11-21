@@ -37,8 +37,11 @@ const API_USAGE_SCHEMA = `
   );
   CREATE INDEX IF NOT EXISTS adminbot_api_usage_at_idx ON adminbot_api_usage(at);
   CREATE INDEX IF NOT EXISTS adminbot_api_usage_member_idx ON adminbot_api_usage(member_id, at);
-  -- The automation report reads service-token rows only.
-  CREATE INDEX IF NOT EXISTS adminbot_api_usage_auth_idx ON adminbot_api_usage(auth, at);
+  -- The automation report reads service-token rows only, and everything it reads is in this
+  -- index, so its two scans of the window never touch the table.
+  CREATE INDEX IF NOT EXISTS adminbot_api_usage_service_idx
+    ON adminbot_api_usage(at, method, operation, status, duration_ms, metrics_json)
+    WHERE auth = 'service';
   CREATE TABLE IF NOT EXISTS adminbot_api_usage_daily (
     day TEXT NOT NULL,
     member_id TEXT NOT NULL,
@@ -130,6 +133,15 @@ export type ApiUsageRollupRow = {
   max_ms: number;
   last_at: string;
 };
+
+/**
+ * Where the day-by-member half of the window starts: early enough for both the window and the
+ * weekly CLI series, so summary and adoption read the same scan.
+ */
+function pageDaysFrom(now: Date, from: string): string {
+  const firstWeek = usageFirstWholeWeek(now);
+  return firstWeek < from ? firstWeek : from;
+}
 
 function cutoffDay(now: Date, days: number): string {
   return new Date(now.getTime() - (days - 1) * 86_400_000).toISOString().slice(0, 10);
@@ -733,35 +745,121 @@ export function createApiUsageLogFromDatabase(db: DatabaseSync): ApiUsageLog {
     SELECT member_id, auth, client, client_version, method, operation, ${COUNTS}
     FROM adminbot_api_usage_daily WHERE day >= ?
     GROUP BY member_id, auth, client, client_version, method, operation`);
-  // The summary and adoption reads want the same cells, so the second reuses the first's scan when
-  // nothing was written in between. Keyed on total_changes(): any write on this connection, a
-  // flush or a member merge alike, makes the next read scan again, so a cached answer is never
-  // stale. On a real page load the first GET's own row is usually flushed before the second read,
-  // so this is a bonus; the covering index is what keeps two scans inside the page budget.
-  const changes = db.prepare(`SELECT total_changes() AS n`);
-  let cellCache: { from: string; version: number; rows: ApiUsageRollupRow[] } | undefined;
-  const cells = (from: string): ApiUsageRollupRow[] => {
-    const version = Number((changes.get() as { n: number }).n);
-    if (cellCache?.from !== from || cellCache.version !== version) {
-      const rows = (cellsSince.all(from) as Array<Record<string, unknown>>).map((row) =>
-        rollupFromSqlite({ ...row, day: from }),
-      );
-      cellCache = { from, version, rows };
-    }
-    return cellCache.rows;
+  const dayMembersSince = db.prepare(`
+    SELECT day, member_id, ${COUNTS}, MAX(client = 'cli') AS cli, MAX(auth <> 'service') AS person
+    FROM adminbot_api_usage_daily WHERE day >= ? GROUP BY day, member_id`);
+  // The window the page reads, grouped twice: cells (member, client and operation, for summary and
+  // adoption) and day by member (for by_day, weekly CLI users and active days). One scan of each
+  // serves every read until something other than a flush writes. A flush adds the rows it wrote to
+  // both maps instead of throwing them away, because each GET the page sends is itself a usage row
+  // that the next GET flushes: dropping the window there made every page load scan four times.
+  // Keyed on total_changes(): any other write on this connection (a prune, a member merge, purge
+  // or rename, a store write) makes the next read scan again, so the window is never stale.
+  type DayMember = { row: ApiUsageRollupRow; cli: boolean; person: boolean };
+  type UsageWindow = {
+    from: string;
+    daysFrom: string;
+    version: number;
+    cells: Map<string, ApiUsageRollupRow>;
+    days: Map<string, DayMember>;
+    sorted: boolean;
   };
-  const daysSince = db.prepare(`
-    SELECT day, ${COUNTS} FROM adminbot_api_usage_daily WHERE day >= ? GROUP BY day`);
-  // Per day and member, which the primary key already orders: who was active, and on the CLI.
-  const activeSince = db.prepare(`
-    SELECT day, member_id, MAX(client = 'cli') AS cli, MAX(auth <> 'service') AS person
-    FROM adminbot_api_usage_daily WHERE day >= ? AND member_id <> ''
-    GROUP BY day, member_id`);
+  const changes = db.prepare(`SELECT total_changes() AS n`);
+  const version = () => Number((changes.get() as { n: number }).n);
+  const cellKey = (row: Omit<ApiUsageRollupRow, "day">) =>
+    [row.member_id, row.auth, row.client, row.client_version, row.method, row.operation].join(
+      "\u0000",
+    );
+  let window: UsageWindow | undefined;
+  const windowSince = (from: string, daysFrom: string): UsageWindow => {
+    const now = version();
+    if (window?.from !== from || window.daysFrom !== daysFrom || window.version !== now) {
+      const cells = new Map<string, ApiUsageRollupRow>();
+      for (const row of cellsSince.all(from) as Array<Record<string, unknown>>) {
+        const cell = rollupFromSqlite({ ...row, day: from });
+        cells.set(cellKey(cell), cell);
+      }
+      const days = new Map<string, DayMember>();
+      for (const row of dayMembersSince.all(daysFrom) as Array<Record<string, unknown>>) {
+        const day = rollupFromSqlite({ ...row, auth: "", client: "", operation: "", method: "" });
+        days.set(`${day.day}\u0000${day.member_id}`, {
+          row: day,
+          cli: Number(row.cli) === 1,
+          person: Number(row.person) === 1,
+        });
+      }
+      window = { from, daysFrom, version: now, cells, days, sorted: true };
+    }
+    if (!window.sorted) {
+      // A flush appends cells it had not seen. Put them back in the scan's order, so tied counts
+      // list the same way whether this read scanned or not.
+      window.cells = new Map(
+        [...window.cells].toSorted(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
+      );
+      window.days = new Map([...window.days].toSorted(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+      window.sorted = true;
+    }
+    return window;
+  };
+  const addTo = (into: ApiUsageRollupRow, row: ApiUsageRollupRow) => {
+    add(into, row);
+    if (row.last_at > into.last_at) {
+      into.last_at = row.last_at;
+    }
+  };
+  /** Adds a flushed batch to the window, as the upsert added it to the rollup. */
+  const patchWindow = (open: UsageWindow, entries: readonly AdminBotApiUsageEntry[]) => {
+    for (const entry of entries) {
+      const key = rollupKey(entry);
+      const one: ApiUsageRollupRow = {
+        ...key,
+        token_id: "",
+        requests: 1,
+        ...errorCounts(entry.status),
+        total_ms: entry.duration_ms,
+        max_ms: entry.duration_ms,
+        last_at: entry.at,
+      };
+      if (key.day >= open.from) {
+        const id = cellKey(one);
+        const cell = open.cells.get(id);
+        if (cell) {
+          addTo(cell, one);
+        } else {
+          open.cells.set(id, { ...one, day: open.from });
+          open.sorted = false;
+        }
+      }
+      if (key.day >= open.daysFrom) {
+        const id = `${key.day}\u0000${key.member_id}`;
+        const day = open.days.get(id);
+        if (day) {
+          addTo(day.row, one);
+          day.cli ||= entry.client === "cli";
+          day.person ||= entry.auth !== "service";
+        } else {
+          open.days.set(id, {
+            row: {
+              ...one,
+              auth: "" as ApiUsageRollupRow["auth"],
+              client: "",
+              operation: "",
+              method: "",
+              client_version: "",
+            },
+            cli: entry.client === "cli",
+            person: entry.auth !== "service",
+          });
+          open.sorted = false;
+        }
+      }
+    }
+  };
   const recentAll = db.prepare(`SELECT * FROM adminbot_api_usage ORDER BY at DESC LIMIT ?`);
   const recentForMember = db.prepare(
     `SELECT * FROM adminbot_api_usage WHERE member_id = ? ORDER BY at DESC LIMIT ?`,
   );
-  // Sweeps: service-token writes, minus the heartbeat. Reads the (auth, at) index.
+  // Sweeps: service-token writes, minus the heartbeat. Read from the covering service index.
   const notSweeps = adminBotNotASweepOperations.map((operation) => `'${operation}'`).join(", ");
   const SWEEPS = `FROM adminbot_api_usage
     WHERE auth = 'service' AND at >= ? AND method <> 'GET' AND operation NOT IN (${notSweeps})`;
@@ -778,6 +876,8 @@ export function createApiUsageLogFromDatabase(db: DatabaseSync): ApiUsageLog {
     GROUP BY method, operation, metric.key`);
   let prunedAt = 0;
   const buffer = createBuffer((entries, now) => {
+    const before = version();
+    let pruned = false;
     db.exec("BEGIN");
     try {
       for (const entry of entries) {
@@ -817,6 +917,7 @@ export function createApiUsageLogFromDatabase(db: DatabaseSync): ApiUsageLog {
       }
       if (now.getTime() - prunedAt >= PRUNE_EVERY_MS) {
         prunedAt = now.getTime();
+        pruned = true;
         const cutoff = new Date(now.getTime() - adminBotApiUsageRetentionDays * 86_400_000);
         pruneRequests.run(cutoff.toISOString());
         pruneDaily.run(cutoff.toISOString().slice(0, 10));
@@ -826,6 +927,10 @@ export function createApiUsageLogFromDatabase(db: DatabaseSync): ApiUsageLog {
       db.exec("ROLLBACK");
       throw error;
     }
+    if (window && !pruned && window.version === before) {
+      patchWindow(window, entries);
+      window.version = version();
+    }
   });
   return {
     record: buffer.record,
@@ -834,10 +939,14 @@ export function createApiUsageLogFromDatabase(db: DatabaseSync): ApiUsageLog {
     summary(options = {}) {
       const days = clampDays(options.days);
       const from = cutoffDay(options.now ?? new Date(), days);
-      const byDay = (daysSince.all(from) as Array<Record<string, unknown>>).map((row) =>
-        rollupFromSqlite({ ...row, day: String(row.day) }),
-      );
-      return { ...summarizeApiUsage(cells(from), { from, days }), by_day: summarizeDays(byDay) };
+      const open = windowSince(from, pageDaysFrom(options.now ?? new Date(), from));
+      const byDay = [...open.days.values()]
+        .filter(({ row }) => row.day >= from)
+        .map(({ row }) => row);
+      return {
+        ...summarizeApiUsage([...open.cells.values()], { from, days }),
+        by_day: summarizeDays(byDay),
+      };
     },
     recent(options = {}) {
       const limit = clampLimit(options.limit);
@@ -877,24 +986,26 @@ export function createApiUsageLogFromDatabase(db: DatabaseSync): ApiUsageLog {
         last_at: String(row.last_at),
       }));
       const firstWeek = usageFirstWholeWeek(now);
-      const active = activeSince.all(firstWeek < from ? firstWeek : from) as Array<
-        Record<string, unknown>
-      >;
+      const open = windowSince(from, pageDaysFrom(now, from));
       const weeks = new Map<string, Set<string>>();
       const activeDays = new Map<string, number>();
-      for (const row of active) {
-        const day = String(row.day);
-        const memberId = String(row.member_id);
-        if (Number(row.cli) && day >= firstWeek) {
+      for (const { row, cli, person } of open.days.values()) {
+        const { day, member_id: memberId } = row;
+        if (!memberId) {
+          continue;
+        }
+        if (cli && day >= firstWeek) {
           const users = weeks.get(usageWeekOf(day)) ?? new Set<string>();
           users.add(memberId);
           weeks.set(usageWeekOf(day), users);
         }
-        if (Number(row.person) && day >= from) {
+        if (person && day >= from) {
           activeDays.set(memberId, (activeDays.get(memberId) ?? 0) + 1);
         }
       }
-      const people = cells(from).filter((row) => row.member_id && row.auth !== "service");
+      const people = [...open.cells.values()].filter(
+        (row) => row.member_id && row.auth !== "service",
+      );
       const { power, operations } = tallyPowerUsers(people);
       return finishApiAdoption({
         now,

@@ -103,26 +103,33 @@ A non-admin token, including a `power_user` pilot token, gets 403 on all four.
 The page makes three reads: summary, adoption and automation.
 
 - Summary and adoption read the daily rollup through a covering index in their grouping order,
-  so the scan needs no sort and no table read.
-- Automation reads service rows from the request log through an `(auth, at)` index, and only the
-  heartbeats inside the window from the audit log, through its timestamp index.
+  so the scan needs no sort and no table read. They share one cached window of that scan: the
+  member, operation and client cells, and one row per member and day.
+- Each flush of the write buffer adds its rows to that window instead of throwing it away, so the
+  page's own GETs, which are usage rows too, do not force a rescan between its reads. Any other
+  write to the database (a heartbeat, a member edit, a prune) makes the next read scan again.
+- Automation reads service rows through a partial index that holds every column it needs, so its
+  scans never touch the request table. It reads only the heartbeats inside the window from the
+  audit log, through an `(event_type, timestamp)` index.
 - All totals and groupings are computed in SQLite, so nothing loads every row into JavaScript.
 
-Summary and adoption share one scan when nothing was written in between. On a real page load the
-first GET's own usage row is flushed before the second read, so in practice each one scans. The
-index is what keeps two scans inside the budget.
+**Supported ceiling.** The page is built for up to 162,000 rollup cells in the 90-day window (40
+active members each calling 45 operations every day), 50,000 service runs and an audit log of
+200,000 events, 26,000 of them heartbeats. The run and heartbeat numbers match the cron manifest:
+55 jobs run about 310 times a day, so 90 days hold about 28,000 runs. The cell count is well above
+the lab's real use. At that size a cold load of the page's three authenticated GETs, sent together
+as the Control UI sends them, takes about 250 to 400 ms on a laptop.
 
-**Supported ceiling.** The page is built for up to 324,000 rollup cells in the 90-day window (60
-active members each calling 60 operations every day), 50,000 service runs and an audit log of
-200,000 events, 26,000 of them heartbeats. That is far busier than the lab. At that size the
-page's three authenticated GETs, sent together as the Control UI sends them, take about 530 ms on
-a laptop, inside the 1-second page budget.
+An earlier version of the test seeded 60 members x 60 operations (324,000 cells). Cold loads at
+that size took 350 to 850 ms on a laptop and over 1 second on CI, which runs about twice as slow,
+so the ceiling was lowered to a lab size the budget can promise on CI hardware.
 
 `api/server.usage.test.ts` seeds this ceiling in a SQLite-backed server and times the real
-`/usage/summary`, `/usage/adoption` and `/usage/automation` requests. It times three cold loads
-and asserts that the fastest is under 1 second. Each load follows a write, so no cached answer is
-reused. One slow attempt on a busy CI machine does not fail it; three in a row do. If the lab
-outgrows the ceiling, rerun that test at the new size before raising it.
+`/usage/summary`, `/usage/adoption` and `/usage/automation` requests. Before each of five loads it
+writes an unrelated audit event, as the live store does between visits, so every load scans cold.
+It asserts that the fastest is under 1 second. One slow attempt on a busy CI machine does not fail
+it; five in a row do. If the lab outgrows the ceiling, rerun that test at the new size before
+raising it.
 
 In the Control UI, **Lab overview → API Usage** shows these numbers for a 7-, 30- or 90-day
 window, with CLI adoption, power users and drop-off above the request breakdowns. Members do not

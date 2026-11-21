@@ -155,16 +155,37 @@ export const userAgent = `adminbot-cli/${
 
 /** Typed for SDK consumers by client.d.ts and the generated OpenAPI declarations. */
 export function createAdminBotClient(options = {}) {
-  // A caller may pass a plain object, a Headers or a list of pairs; spreading the last two drops
-  // them, auth included. The User-Agent is set last so a caller cannot pass itself off as the CLI.
-  const headers = new Headers(options.headers);
-  headers.set("User-Agent", userAgent);
-  return createClient({
+  const client = createClient({
     ...options,
-    headers,
+    headers: clientHeaders(options.headers),
     baseUrl: serviceOrigin(options.baseUrl ?? document.servers[0].url),
     redirect: "error",
   });
+  // Last, after the client's headers and any a single call passes, so nothing can pass itself off
+  // as the CLI (or hide that it is one) in the usage telemetry.
+  client.use({
+    onRequest({ request }) {
+      request.headers.set("User-Agent", userAgent);
+    },
+  });
+  return client;
+}
+
+/**
+ * The caller's headers in a form openapi-fetch merges correctly. A plain object and a Headers go
+ * through untouched, so openapi-fetch keeps its own rules: an undefined value is skipped, null
+ * removes the header and an array value is sent once per item. A list of pairs is the one form it
+ * misreads (as headers named "0", "1", ...), so it becomes a Headers here, repeated names appended.
+ */
+function clientHeaders(headers) {
+  if (!Array.isArray(headers)) {
+    return headers;
+  }
+  const normalized = new Headers();
+  for (const [name, value] of headers) {
+    normalized.append(name, value);
+  }
+  return normalized;
 }
 
 /** The service's `{ error: { code, message } }`, when it sent one. */

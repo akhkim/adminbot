@@ -247,6 +247,43 @@ describe("api usage log (sqlite) retention", () => {
     ]);
   });
 
+  it("answers from a flush-patched window exactly as a fresh scan does", () => {
+    const db = new DatabaseSync(":memory:");
+    const log = createApiUsageLogFromDatabase(db);
+    log.record(entry({ at: "2026-11-01T09:00:00.000Z", client: "cli", auth: "api_token" }));
+    log.record(entry({ member_id: "bob", at: "2026-11-19T09:00:00.000Z" }));
+    log.flush(NOW);
+    const read = (from: typeof log) => ({
+      summary: from.summary({ days: 30, now: NOW }),
+      adoption: from.adoption({ days: 30, now: NOW, liveTokens: new Map([["ada", 1]]) }),
+    });
+    read(log);
+    // Each flush lands on a window the last read left open: an existing cell, a new member, a
+    // new operation, a new day, a CLI day, a service row with no member, an error, and a day
+    // before the window that must stay out of it.
+    log.record(entry({ duration_ms: 90, at: "2026-11-20T11:00:00.000Z" }));
+    log.record(entry({ member_id: "cy", client: "cli", auth: "api_token", status: 404 }));
+    log.record(entry({ operation: "getPaper", at: "2026-11-21T08:00:00.000Z", status: 500 }));
+    log.record(entry({ member_id: "bob", client: "cli", at: "2026-11-21T09:00:00.000Z" }));
+    log.flush(NOW);
+    read(log);
+    log.record(entry({ member_id: undefined, auth: "service", client: "other", method: "POST" }));
+    log.record(entry({ member_id: "dee", at: "2026-09-01T09:00:00.000Z" }));
+    log.flush(NOW);
+    const patched = read(log);
+    expect(patched).toEqual(read(createApiUsageLogFromDatabase(db)));
+    expect(patched.summary.totals.requests).toBe(7);
+    expect(patched.adoption.power_users.map((row) => row.member_id)).toContain("cy");
+
+    // A write that is not a flush (here a merge-like re-key) makes the next read scan again.
+    db.prepare(
+      "UPDATE adminbot_api_usage_daily SET member_id = 'bea' WHERE member_id = 'bob'",
+    ).run();
+    const after = log.summary({ days: 30, now: NOW });
+    expect(after.by_member.map((row) => row.member_id)).toContain("bea");
+    expect(after.by_member.map((row) => row.member_id)).not.toContain("bob");
+  });
+
   it("stores no column a body, query string or token value could land in", () => {
     const db = new DatabaseSync(":memory:");
     createApiUsageLogFromDatabase(db);
