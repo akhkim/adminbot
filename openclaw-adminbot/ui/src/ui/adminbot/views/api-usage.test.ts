@@ -13,9 +13,16 @@ vi.mock("../auth/session.ts", () => ({
 }));
 vi.mock("../../storage.ts", () => ({ loadSettings: () => ({}) }));
 
-const { AdminBotApiUsage, durationLabel, errorRate, metricsLabel, slowestOperations } =
-  await import("./api-usage.ts");
+const {
+  AdminBotApiUsage,
+  clientShareLabel,
+  durationLabel,
+  errorRate,
+  metricsLabel,
+  slowestOperations,
+} = await import("./api-usage.ts");
 type ApiUsageSummary = import("./api-usage.ts").ApiUsageSummary;
+type ApiUsageAdoption = import("./api-usage.ts").ApiUsageAdoption;
 
 const count = (requests: number, extra: Partial<Record<string, number>> = {}) => ({
   requests,
@@ -77,6 +84,69 @@ const runs = {
   sweeps: [],
 };
 
+function adoption(): ApiUsageAdoption {
+  return {
+    days: 30,
+    dropped_after_days: 30,
+    totals: {
+      token_holders: 3,
+      token_holders_using_cli: 2,
+      cli_users_ever: 3,
+      cli_users_in_window: 1,
+    },
+    members: [
+      {
+        member_id: "ada",
+        name: "Ada",
+        live_tokens: 1,
+        first_cli_at: "2026-11-01T09:00:00.000Z",
+        last_cli_at: "2026-11-20T09:00:00.000Z",
+      },
+      { member_id: "lin", name: "Lin", live_tokens: 1 },
+    ],
+    weekly_cli_users: [
+      { week: "2026-11-09", users: 2 },
+      { week: "2026-11-16", users: 1 },
+    ],
+    power_users: [
+      {
+        member_id: "ada",
+        name: "Ada",
+        requests: 9,
+        active_days: 4,
+        operations: 3,
+        cli_requests: 6,
+        website_requests: 3,
+        other_requests: 0,
+        last_at: "2026-11-20T10:00:00.000Z",
+        top_operations: [{ operation: "get-papers", method: "GET", requests: 5 }],
+      },
+    ],
+    dropped_off: [
+      {
+        member_id: "kai",
+        name: "Kai",
+        first_cli_at: "2026-08-03T09:00:00.000Z",
+        last_cli_at: "2026-09-12T09:00:00.000Z",
+      },
+    ],
+  };
+}
+
+const emptyAdoption = (): ApiUsageAdoption => ({
+  ...adoption(),
+  totals: {
+    token_holders: 0,
+    token_holders_using_cli: 0,
+    cli_users_ever: 0,
+    cli_users_in_window: 0,
+  },
+  members: [],
+  weekly_cli_users: [],
+  power_users: [],
+  dropped_off: [],
+});
+
 function answer(status: number, body: unknown) {
   return { response: new Response(null, { status }), body };
 }
@@ -96,7 +166,11 @@ async function mount(): Promise<InstanceType<typeof AdminBotApiUsage>> {
 beforeEach(() => {
   storedSession = { sessionToken: "token" };
   authedJson.mockImplementation(async (_base: string, path: string) =>
-    path.startsWith("/usage/summary") ? answer(200, summary()) : answer(200, runs),
+    path.startsWith("/usage/summary")
+      ? answer(200, summary())
+      : path.startsWith("/usage/adoption")
+        ? answer(200, adoption())
+        : answer(200, runs),
   );
 });
 
@@ -106,9 +180,10 @@ afterEach(() => {
 });
 
 describe("API usage page", () => {
-  it("reads both reports for the window and draws people, operations and runs", async () => {
+  it("reads the reports for the window and draws people, operations and runs", async () => {
     const element = await mount();
     expect(authedJson.mock.calls.map((call) => call[1]).toSorted()).toEqual([
+      "/usage/adoption?days=30",
       "/usage/automation?days=30",
       "/usage/summary?days=30",
     ]);
@@ -135,6 +210,27 @@ describe("API usage page", () => {
     );
   });
 
+  it("draws CLI adoption, power users and who stopped", async () => {
+    const element = await mount();
+    expect(element.querySelector('[data-testid="api-usage-adoption"]')?.textContent).toContain(
+      "2 / 3",
+    );
+    expect(element.querySelector('[data-testid="api-usage-adopter-lin"]')?.textContent).toContain(
+      "Not yet",
+    );
+    const power = element.querySelector('[data-testid="api-usage-power-ada"]')?.textContent ?? "";
+    expect(power).toContain("Ada");
+    expect(power).toContain("get-papers");
+    expect(power).toContain("CLI 67%");
+    // Newest week first.
+    expect(element.querySelector('[data-testid="api-usage-weekly"] li')?.textContent).toContain(
+      "2026-11-16",
+    );
+    const dropped = element.querySelector('[data-testid="api-usage-dropped"]')?.textContent ?? "";
+    expect(dropped).toContain("Kai");
+    expect(dropped).toContain("2026-09-12");
+  });
+
   it("asks for the new window when one is picked", async () => {
     const element = await mount();
     authedJson.mockClear();
@@ -154,10 +250,13 @@ describe("API usage page", () => {
             by_operation: [],
             by_client: [],
           })
-        : answer(200, { jobs: [], sweeps: [] }),
+        : path.startsWith("/usage/adoption")
+          ? answer(200, emptyAdoption())
+          : answer(200, { jobs: [], sweeps: [] }),
     );
     const element = await mount();
     expect(element.querySelector('[data-testid="api-usage-empty"]')).not.toBeNull();
+    expect(element.querySelector('[data-testid="api-usage-adoption"]')).toBeNull();
     expect(element.querySelector("table")).toBeNull();
   });
 
@@ -180,6 +279,12 @@ describe("API usage labels", () => {
     expect(durationLabel(2400)).toBe("2.4 s");
     expect(durationLabel(190_000)).toBe("3m 10s");
     expect(metricsLabel({ a: 1, b: 3 })).toBe("b 3 · a 1");
+    expect(
+      clientShareLabel({ requests: 4, cli_requests: 1, website_requests: 3, other_requests: 0 }),
+    ).toBe("Website 75% · adminbot CLI 25%");
+    expect(
+      clientShareLabel({ requests: 0, cli_requests: 0, website_requests: 0, other_requests: 0 }),
+    ).toBe("—");
   });
 
   it("ranks slow operations by average and ignores one-off calls", () => {

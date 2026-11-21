@@ -43,7 +43,9 @@ automation sweep reports `emails.found`, `emails_status.completed`, `emails_stat
 ## Retention
 
 Request rows and the daily rollup are kept for 90 days (`adminBotApiUsageRetentionDays`). Older
-rows are deleted at most once an hour during a normal write. Writes are buffered and flushed in
+rows are deleted at most once an hour during a normal write. The one exception is
+`adminbot_api_usage_members`: one row per member and client holding only the first and last
+request time. It is not pruned, so "first used the CLI" stays true after the request rows are gone. Writes are buffered and flushed in
 one transaction every few seconds, so a crash can lose the last few seconds of telemetry.
 
 ## Who can see it
@@ -53,9 +55,19 @@ Only admins and the service token (`privilegedOnly`):
 - `GET /usage/summary?days=N`: totals and breakdowns by day, member, operation, client and auth.
 - `GET /usage/requests?member_id=&limit=`: recent request rows.
 - `GET /usage/automation?days=N`: cron runs and service sweeps with their durations and counters.
+- `GET /usage/adoption?days=N`: CLI adoption and power users.
+  - Token holders: members with at least one live token (not revoked, not expired), and how many
+    of them have used the CLI.
+  - Each holder or CLI user's first and last CLI use.
+  - Distinct CLI users per week over the retained 90 days. Weeks start on Monday, UTC.
+  - Power users in the window, ranked by calls, then active days, then distinct operations. Each
+    row has the CLI, website and other share of calls and the top three operations. Service-token
+    calls are left out.
+  - Dropped off: members who used the CLI before but not in the last 30 days.
 
 In the Control UI, **Lab overview → API Usage** shows these numbers for a 7-, 30- or 90-day
-window. Members do not see the tab.
+window, with CLI adoption, power users and drop-off above the request breakdowns. Members do not
+see the tab.
 
 ## Known gaps
 

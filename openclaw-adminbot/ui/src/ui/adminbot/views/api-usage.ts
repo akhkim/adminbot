@@ -50,6 +50,43 @@ export type ApiUsageSummary = {
   by_client: Array<ApiUsageCount & { client: string; client_version?: string }>;
 };
 
+export type ApiUsageAdoption = {
+  days: number;
+  dropped_after_days: number;
+  totals: {
+    token_holders: number;
+    token_holders_using_cli: number;
+    cli_users_ever: number;
+    cli_users_in_window: number;
+  };
+  members: Array<{
+    member_id: string;
+    name?: string;
+    live_tokens: number;
+    first_cli_at?: string;
+    last_cli_at?: string;
+  }>;
+  weekly_cli_users: Array<{ week: string; users: number }>;
+  power_users: Array<{
+    member_id: string;
+    name?: string;
+    requests: number;
+    active_days: number;
+    operations: number;
+    cli_requests: number;
+    website_requests: number;
+    other_requests: number;
+    last_at: string;
+    top_operations: Array<{ operation: string; method: string; requests: number }>;
+  }>;
+  dropped_off: Array<{
+    member_id: string;
+    name?: string;
+    first_cli_at: string;
+    last_cli_at: string;
+  }>;
+};
+
 export type AutomationRunTotals = {
   runs: number;
   failures: number;
@@ -113,6 +150,29 @@ export function metricsLabel(metrics: Record<string, number>): string {
     .join(" · ");
 }
 
+/** "CLI 62% · web 38%": where a person's calls came from, biggest first, zero shares left out. */
+export function clientShareLabel(row: {
+  requests: number;
+  cli_requests: number;
+  website_requests: number;
+  other_requests: number;
+}): string {
+  if (!row.requests) {
+    return "—";
+  }
+  return (
+    [
+      [t("apiUsage.client.cli"), row.cli_requests],
+      [t("apiUsage.client.website"), row.website_requests],
+      [t("apiUsage.client.other"), row.other_requests],
+    ] as Array<[string, number]>
+  )
+    .filter(([, count]) => count > 0)
+    .toSorted(([, a], [, b]) => b - a)
+    .map(([name, count]) => `${name} ${Math.round((count / row.requests) * 100)}%`)
+    .join(" · ");
+}
+
 function clientLabel(row: { client: string; client_version?: string }): string {
   const name = t(`apiUsage.client.${row.client}`);
   return row.client_version ? `${name} ${row.client_version}` : name;
@@ -138,6 +198,7 @@ export class AdminBotApiUsage extends LitElement {
   @state() private days: number = 30;
   @state() private summary: ApiUsageSummary | null = null;
   @state() private runs: AutomationRunReport | null = null;
+  @state() private adoption: ApiUsageAdoption | null = null;
   @state() private loading = false;
   @state() private error: string | null = null;
 
@@ -169,13 +230,14 @@ export class AdminBotApiUsage extends LitElement {
     this.loading = true;
     this.error = null;
     try {
-      const [summary, runs] = await Promise.all([
+      const [summary, runs, adoption] = await Promise.all([
         this.read<ApiUsageSummary>(`/usage/summary?days=${days}`, session.token, session.baseUrl),
         this.read<AutomationRunReport>(
           `/usage/automation?days=${days}`,
           session.token,
           session.baseUrl,
         ),
+        this.read<ApiUsageAdoption>(`/usage/adoption?days=${days}`, session.token, session.baseUrl),
       ]);
       if (days !== this.days) {
         // A newer window was picked while this one was in flight; its own read will land.
@@ -192,6 +254,11 @@ export class AdminBotApiUsage extends LitElement {
         this.error ??= runs;
       } else {
         this.runs = runs;
+      }
+      if (typeof adoption === "string") {
+        this.error ??= adoption;
+      } else {
+        this.adoption = adoption;
       }
     } finally {
       if (days === this.days) {
@@ -239,6 +306,139 @@ export class AdminBotApiUsage extends LitElement {
       ${total(errorRate(summary.totals), t("apiUsage.totals.errors"))}
       ${total(durationLabel(summary.totals.avg_ms), t("apiUsage.totals.avg"))}
     </div>`;
+  }
+
+  private cliAdoption(adoption: ApiUsageAdoption) {
+    const { totals } = adoption;
+    const busiestWeek = Math.max(0, ...adoption.weekly_cli_users.map((row) => row.users));
+    const day = (iso: string | undefined) => iso?.slice(0, 10) ?? t("apiUsage.adoption.never");
+    return html`<h3 class="api-usage__section">${t("apiUsage.adoption.title")}</h3>
+      <div class="tab-usage__totals" data-testid="api-usage-adoption">
+        <div class="tab-usage__total">
+          <span class="tab-usage__total-value ab-num"
+            >${totals.token_holders_using_cli} / ${totals.token_holders}</span
+          >
+          <span class="tab-usage__total-label">${t("apiUsage.adoption.holdersUsing")}</span>
+        </div>
+        <div class="tab-usage__total">
+          <span class="tab-usage__total-value ab-num">${totals.cli_users_in_window}</span>
+          <span class="tab-usage__total-label">${t("apiUsage.adoption.inWindow")}</span>
+        </div>
+        <div class="tab-usage__total">
+          <span class="tab-usage__total-value ab-num">${totals.cli_users_ever}</span>
+          <span class="tab-usage__total-label">${t("apiUsage.adoption.ever")}</span>
+        </div>
+      </div>
+      ${adoption.weekly_cli_users.length
+        ? html`<h3 class="api-usage__section">${t("apiUsage.adoption.weekly")}</h3>
+            <ul class="api-usage__list" data-testid="api-usage-weekly">
+              ${adoption.weekly_cli_users.toReversed().map(
+                (row) => html`<li class="api-usage__item">
+                  <span class="muted">${row.week}</span>
+                  <span class="api-usage__day-bar">
+                    <span
+                      class="tab-usage__bar"
+                      style=${share(row.users, busiestWeek)}
+                      aria-hidden="true"
+                    ></span>
+                  </span>
+                  <span class="ab-num">${row.users}</span>
+                </li>`,
+              )}
+            </ul>`
+        : nothing}
+      ${adoption.members.length
+        ? html`<h3 class="api-usage__section">${t("apiUsage.adoption.members")}</h3>
+            <div class="tab-usage__scroll">
+              <table class="tab-usage__table" data-testid="api-usage-adopters">
+                <thead>
+                  <tr>
+                    <th scope="col">${t("apiUsage.column.person")}</th>
+                    <th scope="col" class="tab-usage__numeric">
+                      ${t("apiUsage.column.liveTokens")}
+                    </th>
+                    <th scope="col" class="tab-usage__numeric">${t("apiUsage.column.firstCli")}</th>
+                    <th scope="col" class="tab-usage__numeric">${t("apiUsage.column.lastCli")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${adoption.members.map(
+                    (row) => html`<tr data-testid=${`api-usage-adopter-${row.member_id}`}>
+                      <th scope="row" class="tab-usage__tab">${row.name ?? row.member_id}</th>
+                      <td class="tab-usage__numeric ab-num">${row.live_tokens}</td>
+                      <td class="tab-usage__numeric muted">${day(row.first_cli_at)}</td>
+                      <td class="tab-usage__numeric muted">${day(row.last_cli_at)}</td>
+                    </tr>`,
+                  )}
+                </tbody>
+              </table>
+            </div>`
+        : nothing}`;
+  }
+
+  private powerUsers(adoption: ApiUsageAdoption) {
+    const busiest = adoption.power_users[0]?.requests ?? 0;
+    return html`<h3 class="api-usage__section">${t("apiUsage.power.title")}</h3>
+      <div class="tab-usage__scroll">
+        <table class="tab-usage__table" data-testid="api-usage-power">
+          <thead>
+            <tr>
+              <th scope="col">${t("apiUsage.column.person")}</th>
+              <th scope="col" class="tab-usage__numeric">${t("apiUsage.column.requests")}</th>
+              <th scope="col" class="tab-usage__numeric">${t("apiUsage.column.activeDays")}</th>
+              <th scope="col" class="tab-usage__numeric">${t("apiUsage.column.operations")}</th>
+              <th scope="col">${t("apiUsage.column.share")}</th>
+              <th scope="col">${t("apiUsage.column.topOperations")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${adoption.power_users.slice(0, 15).map(
+              (row) => html`<tr data-testid=${`api-usage-power-${row.member_id}`}>
+                <th scope="row" class="tab-usage__tab">
+                  <span class="tab-usage__tab-name">${row.name ?? row.member_id}</span>
+                  <span
+                    class="tab-usage__bar"
+                    style=${share(row.requests, busiest)}
+                    aria-hidden="true"
+                  ></span>
+                </th>
+                <td class="tab-usage__numeric ab-num">${row.requests}</td>
+                <td class="tab-usage__numeric ab-num">${row.active_days}</td>
+                <td class="tab-usage__numeric ab-num">${row.operations}</td>
+                <td class="muted">${clientShareLabel(row)}</td>
+                <td class="api-usage__top-ops">
+                  ${row.top_operations.map(
+                    (op) =>
+                      html`<span
+                        ><code class="api-usage__operation">${op.operation}</code>
+                        <span class="muted ab-num">${op.requests}</span></span
+                      >`,
+                  )}
+                </td>
+              </tr>`,
+            )}
+          </tbody>
+        </table>
+      </div>`;
+  }
+
+  private droppedOff(adoption: ApiUsageAdoption) {
+    return html`<h3 class="api-usage__section">
+        ${t("apiUsage.dropped.title", { days: String(adoption.dropped_after_days) })}
+      </h3>
+      <ul class="api-usage__list" data-testid="api-usage-dropped">
+        ${adoption.dropped_off.map(
+          (row) => html`<li class="api-usage__item">
+            <span>${row.name ?? row.member_id}</span>
+            <span class="muted">
+              ${t("apiUsage.dropped.range", {
+                first: row.first_cli_at.slice(0, 10),
+                last: row.last_cli_at.slice(0, 10),
+              })}
+            </span>
+          </li>`,
+        )}
+      </ul>`;
   }
 
   private people(summary: ApiUsageSummary) {
@@ -390,6 +590,7 @@ export class AdminBotApiUsage extends LitElement {
     const hasRequests = Boolean(summary?.totals.requests);
     const hasRuns = Boolean(runs && (runs.jobs.length || runs.sweeps.length));
     const slow = summary ? slowestOperations(summary.by_operation) : [];
+    const adoption = this.adoption;
     return html`<section class="api-usage" data-testid="api-usage">
       <div class="tab-usage__head">
         <h2 class="error-log__title">${t("apiUsage.title")}</h2>
@@ -407,8 +608,14 @@ export class AdminBotApiUsage extends LitElement {
       ${summary && !hasRequests && runs && !hasRuns
         ? html`<p class="tab-usage__empty" data-testid="api-usage-empty">${t("apiUsage.empty")}</p>`
         : nothing}
+      ${summary && hasRequests ? this.totals(summary) : nothing}
+      ${adoption && (adoption.members.length || adoption.power_users.length)
+        ? html`${this.cliAdoption(adoption)}
+          ${adoption.power_users.length ? this.powerUsers(adoption) : nothing}
+          ${adoption.dropped_off.length ? this.droppedOff(adoption) : nothing}`
+        : nothing}
       ${summary && hasRequests
-        ? html`${this.totals(summary)} ${this.people(summary)}
+        ? html`${this.people(summary)}
           ${this.operations(
             t("apiUsage.operations.title"),
             summary.by_operation,

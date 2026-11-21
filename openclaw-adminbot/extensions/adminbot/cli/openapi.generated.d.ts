@@ -5264,6 +5264,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/usage/adoption": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** GET /usage/adoption */
+    get: operations["get-usage-adoption"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/usage/automation": {
     parameters: {
       query?: never;
@@ -30923,6 +30940,96 @@ export interface operations {
             visits: components["schemas"]["AdminBotTabVisit"][];
             from: string;
             days: number;
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "get-usage-adoption": {
+    parameters: {
+      query?: {
+        days?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            members: ({
+              member_id: string;
+              live_tokens: number;
+              first_cli_at?: string;
+              last_cli_at?: string;
+              name: string;
+            } & {
+              [key: string]: unknown;
+            })[];
+            power_users: ({
+              member_id: string;
+              requests: number;
+              active_days: number;
+              operations: number;
+              cli_requests: number;
+              website_requests: number;
+              other_requests: number;
+              last_at: string;
+              top_operations: ({
+                operation: string;
+                method: string;
+                requests: number;
+              } & {
+                [key: string]: unknown;
+              })[];
+              name: string;
+            } & {
+              [key: string]: unknown;
+            })[];
+            dropped_off: ({
+              member_id: string;
+              first_cli_at: string;
+              last_cli_at: string;
+              name: string;
+            } & {
+              [key: string]: unknown;
+            })[];
+            from: string;
+            days: number;
+            dropped_after_days: number;
+            totals: {
+              token_holders: number;
+              token_holders_using_cli: number;
+              cli_users_ever: number;
+              cli_users_in_window: number;
+            } & {
+              [key: string]: unknown;
+            };
+            weekly_cli_users: ({
+              week: string;
+              users: number;
+            } & {
+              [key: string]: unknown;
+            })[];
           } & {
             [key: string]: unknown;
           };

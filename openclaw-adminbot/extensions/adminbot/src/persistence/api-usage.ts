@@ -11,6 +11,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import {
   adminBotApiUsageRetentionDays,
+  type AdminBotApiUsageAdoption,
   type AdminBotApiUsageCount,
   type AdminBotApiUsageEntry,
   type AdminBotApiUsageSummary,
@@ -50,6 +51,15 @@ const API_USAGE_SCHEMA = `
     last_at TEXT NOT NULL,
     PRIMARY KEY (day, member_id, auth, token_id, client, client_version, operation, method)
   );
+  -- First and last use per member and client. Not pruned: it is what keeps "first used the CLI"
+  -- true after the request rows are gone, and it holds two timestamps and nothing else.
+  CREATE TABLE IF NOT EXISTS adminbot_api_usage_members (
+    member_id TEXT NOT NULL,
+    client TEXT NOT NULL,
+    first_at TEXT NOT NULL,
+    last_at TEXT NOT NULL,
+    PRIMARY KEY (member_id, client)
+  );
 `;
 
 /** A request is written at most this long after it finished. */
@@ -70,8 +80,21 @@ export type ApiUsageLog = {
   recent(options?: { memberId?: string; limit?: number }): AdminBotApiUsageEntry[];
   /** Service-token requests since `from`, oldest first: what the automation report reads. */
   serviceRuns(from: string): AdminBotApiUsageEntry[];
+  /** CLI adoption, power users and drop-off. `liveTokens` counts each member's live API tokens. */
+  adoption(options: {
+    days?: number;
+    now?: Date;
+    liveTokens: ReadonlyMap<string, number>;
+  }): AdminBotApiUsageAdoption;
   close(): void;
 };
+
+/** When a member first and last used a client. */
+export type ApiUsageMemberRow = { member_id: string; client: string; first_at: string; last_at: string };
+
+/** Members who used the CLI before but not in this many days count as dropped off. */
+const DROPPED_AFTER_DAYS = 30;
+const TOP_OPERATIONS_PER_USER = 3;
 
 /** One rollup cell: a day, a caller, a client, an operation. */
 export type ApiUsageRollupRow = {
@@ -245,6 +268,141 @@ export function summarizeApiUsage(
   };
 }
 
+/** The Monday (UTC) that starts the week a `YYYY-MM-DD` day falls in. */
+export function usageWeekOf(day: string): string {
+  const date = new Date(`${day}T00:00:00.000Z`);
+  const sinceMonday = (date.getUTCDay() + 6) % 7;
+  return new Date(date.getTime() - sinceMonday * 86_400_000).toISOString().slice(0, 10);
+}
+
+/**
+ * Adoption, power users and drop-off. `rows` is the whole retained rollup (weekly users span it);
+ * the power-user ranking reads only the window's days.
+ */
+export function summarizeApiAdoption(
+  rows: readonly ApiUsageRollupRow[],
+  members: readonly ApiUsageMemberRow[],
+  options: { now: Date; days: number; liveTokens: ReadonlyMap<string, number> },
+): AdminBotApiUsageAdoption {
+  const from = cutoffDay(options.now, options.days);
+  const droppedBefore = new Date(
+    options.now.getTime() - DROPPED_AFTER_DAYS * 86_400_000,
+  ).toISOString();
+  const cli = new Map(
+    members.filter((row) => row.client === "cli").map((row) => [row.member_id, row]),
+  );
+
+  const people = new Set([
+    ...[...options.liveTokens].filter(([, count]) => count > 0).map(([id]) => id),
+    ...cli.keys(),
+  ]);
+  const memberRows = [...people]
+    .map((memberId) => {
+      const use = cli.get(memberId);
+      return {
+        member_id: memberId,
+        live_tokens: options.liveTokens.get(memberId) ?? 0,
+        ...(use ? { first_cli_at: use.first_at, last_cli_at: use.last_at } : {}),
+      };
+    })
+    .toSorted(
+      (left, right) =>
+        (right.first_cli_at ?? "").localeCompare(left.first_cli_at ?? "") ||
+        left.member_id.localeCompare(right.member_id),
+    );
+
+  const weeks = new Map<string, Set<string>>();
+  for (const row of rows) {
+    if (row.client !== "cli" || !row.member_id) {
+      continue;
+    }
+    const week = usageWeekOf(row.day);
+    const users = weeks.get(week) ?? new Set<string>();
+    users.add(row.member_id);
+    weeks.set(week, users);
+  }
+
+  type Power = AdminBotApiUsageAdoption["power_users"][number] & {
+    days: Set<string>;
+    ops: Map<string, { operation: string; method: string; requests: number }>;
+  };
+  const power = new Map<string, Power>();
+  for (const row of rows) {
+    if (!row.member_id || row.day < from || row.auth === "service") {
+      continue;
+    }
+    const entry: Power = power.get(row.member_id) ?? {
+      member_id: row.member_id,
+      requests: 0,
+      active_days: 0,
+      operations: 0,
+      cli_requests: 0,
+      website_requests: 0,
+      other_requests: 0,
+      last_at: row.last_at,
+      top_operations: [],
+      days: new Set(),
+      ops: new Map(),
+    };
+    entry.requests += row.requests;
+    if (row.client === "cli") {
+      entry.cli_requests += row.requests;
+    } else if (row.client === "website") {
+      entry.website_requests += row.requests;
+    } else {
+      entry.other_requests += row.requests;
+    }
+    if (row.last_at > entry.last_at) {
+      entry.last_at = row.last_at;
+    }
+    entry.days.add(row.day);
+    const opKey = `${row.method} ${row.operation}`;
+    const op = entry.ops.get(opKey) ?? { operation: row.operation, method: row.method, requests: 0 };
+    op.requests += row.requests;
+    entry.ops.set(opKey, op);
+    power.set(row.member_id, entry);
+  }
+  const powerUsers = [...power.values()]
+    .map(({ days, ops, ...entry }) => ({
+      ...entry,
+      active_days: days.size,
+      operations: ops.size,
+      top_operations: [...ops.values()]
+        .toSorted((left, right) => right.requests - left.requests)
+        .slice(0, TOP_OPERATIONS_PER_USER),
+    }))
+    .toSorted(
+      (left, right) =>
+        right.requests - left.requests ||
+        right.active_days - left.active_days ||
+        right.operations - left.operations ||
+        left.member_id.localeCompare(right.member_id),
+    );
+
+  const holders = memberRows.filter((row) => row.live_tokens > 0);
+  return {
+    from,
+    days: options.days,
+    dropped_after_days: DROPPED_AFTER_DAYS,
+    totals: {
+      token_holders: holders.length,
+      token_holders_using_cli: holders.filter((row) => row.first_cli_at).length,
+      cli_users_ever: cli.size,
+      cli_users_in_window: [...cli.values()].filter((row) => row.last_at.slice(0, 10) >= from)
+        .length,
+    },
+    members: memberRows,
+    weekly_cli_users: [...weeks]
+      .map(([week, users]) => ({ week, users: users.size }))
+      .toSorted((left, right) => left.week.localeCompare(right.week)),
+    power_users: powerUsers,
+    dropped_off: [...cli.values()]
+      .filter((row) => row.last_at < droppedBefore)
+      .map((row) => ({ member_id: row.member_id, first_cli_at: row.first_at, last_cli_at: row.last_at }))
+      .toSorted((left, right) => right.last_cli_at.localeCompare(left.last_cli_at)),
+  };
+}
+
 /**
  * The buffer and its timer, shared by both stores so the memory one behaves like the real one in
  * tests: nothing is visible to `summary` until it has been flushed.
@@ -294,9 +452,20 @@ function createBuffer(write: (entries: AdminBotApiUsageEntry[], now: Date) => vo
 export function createMemoryApiUsageLog(): ApiUsageLog {
   const requests: AdminBotApiUsageEntry[] = [];
   const rollup = new Map<string, ApiUsageRollupRow>();
+  const memberUse = new Map<string, ApiUsageMemberRow>();
   const buffer = createBuffer((entries) => {
     for (const entry of entries) {
       requests.push(entry);
+      if (entry.member_id) {
+        const useKey = `${entry.member_id}\u0000${entry.client}`;
+        const use = memberUse.get(useKey);
+        memberUse.set(useKey, {
+          member_id: entry.member_id,
+          client: entry.client,
+          first_at: use && use.first_at < entry.at ? use.first_at : entry.at,
+          last_at: use && use.last_at > entry.at ? use.last_at : entry.at,
+        });
+      }
       const key = rollupKey(entry);
       const id = Object.values(key).join("\u0000");
       const row = rollup.get(id) ?? {
@@ -337,6 +506,15 @@ export function createMemoryApiUsageLog(): ApiUsageLog {
     serviceRuns(from) {
       return requests.filter((entry) => entry.auth === "service" && entry.at >= from);
     },
+    adoption(options) {
+      const now = options.now ?? new Date();
+      const retained = cutoffDay(now, adminBotApiUsageRetentionDays);
+      return summarizeApiAdoption(
+        [...rollup.values()].filter((row) => row.day >= retained),
+        [...memberUse.values()],
+        { now, days: clampDays(options.days), liveTokens: options.liveTokens },
+      );
+    },
   };
 }
 
@@ -362,6 +540,14 @@ export function createApiUsageLogFromDatabase(db: DatabaseSync): ApiUsageLog {
       max_ms = MAX(max_ms, excluded.max_ms),
       last_at = MAX(last_at, excluded.last_at)
   `);
+  const touchMember = db.prepare(`
+    INSERT INTO adminbot_api_usage_members (member_id, client, first_at, last_at)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(member_id, client) DO UPDATE SET
+      first_at = MIN(first_at, excluded.first_at),
+      last_at = MAX(last_at, excluded.last_at)
+  `);
+  const memberUse = db.prepare(`SELECT * FROM adminbot_api_usage_members`);
   const pruneRequests = db.prepare(`DELETE FROM adminbot_api_usage WHERE at < ?`);
   const pruneDaily = db.prepare(`DELETE FROM adminbot_api_usage_daily WHERE day < ?`);
   const rollupSince = db.prepare(`SELECT * FROM adminbot_api_usage_daily WHERE day >= ?`);
@@ -407,6 +593,9 @@ export function createApiUsageLogFromDatabase(db: DatabaseSync): ApiUsageLog {
           entry.duration_ms,
           entry.at,
         );
+        if (entry.member_id) {
+          touchMember.run(entry.member_id, entry.client, entry.at, entry.at);
+        }
       }
       if (now.getTime() - prunedAt >= PRUNE_EVERY_MS) {
         prunedAt = now.getTime();
@@ -439,6 +628,25 @@ export function createApiUsageLogFromDatabase(db: DatabaseSync): ApiUsageLog {
     },
     serviceRuns(from) {
       return (serviceSince.all(from) as Array<Record<string, unknown>>).map(entryFromSqlite);
+    },
+    adoption(options) {
+      const now = options.now ?? new Date();
+      const rows = (
+        rollupSince.all(cutoffDay(now, adminBotApiUsageRetentionDays)) as Array<
+          Record<string, unknown>
+        >
+      ).map(rollupFromSqlite);
+      const members = (memberUse.all() as Array<Record<string, unknown>>).map((row) => ({
+        member_id: String(row.member_id),
+        client: String(row.client),
+        first_at: String(row.first_at),
+        last_at: String(row.last_at),
+      }));
+      return summarizeApiAdoption(rows, members, {
+        now,
+        days: clampDays(options.days),
+        liveTokens: options.liveTokens,
+      });
     },
   };
 }

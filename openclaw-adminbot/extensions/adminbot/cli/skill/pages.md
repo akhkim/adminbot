@@ -218,6 +218,7 @@ Website: `/settings` · Who: admin
 | `get-slack-channels`                        | GET `/slack/channels`                       |
 | `get-ui-tab-visits-rows`                    | GET `/ui/tab-visits/rows`                   |
 | `get-ui-tab-visits`                         | GET `/ui/tab-visits`                        |
+| `get-usage-adoption`                        | GET `/usage/adoption`                       |
 | `get-usage-automation`                      | GET `/usage/automation`                     |
 | `get-usage-requests`                        | GET `/usage/requests`                       |
 | `get-usage-summary`                         | GET `/usage/summary`                        |

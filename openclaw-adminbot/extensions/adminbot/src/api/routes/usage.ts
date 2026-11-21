@@ -149,6 +149,34 @@ export const usageRoutes: readonly Route[] = [
     }),
   ),
   get(
+    "/usage/adoption",
+    privilegedOnly(({ res, url, ctx }) => {
+      ctx.apiUsage.flush();
+      const nowIso = new Date().toISOString();
+      const liveTokens = new Map<string, number>();
+      for (const member of ctx.store.listLabMembers()) {
+        const live = ctx.store
+          .listApiTokensForMember(member.id)
+          .filter((token) => !token.revoked_at && token.expires_at > nowIso).length;
+        if (live > 0) {
+          liveTokens.set(member.id, live);
+        }
+      }
+      const adoption = ctx.apiUsage.adoption({
+        days: adminBotApiUsageDays(url.searchParams.get("days"), 30),
+        liveTokens,
+      });
+      const named = <T extends { member_id: string }>(rows: T[]) =>
+        rows.map((row) => ({ ...row, name: memberName(ctx, row.member_id) }));
+      sendJson(res, 200, {
+        ...adoption,
+        members: named(adoption.members),
+        power_users: named(adoption.power_users),
+        dropped_off: named(adoption.dropped_off),
+      });
+    }),
+  ),
+  get(
     "/usage/automation",
     privilegedOnly(({ res, url, ctx }) => {
       ctx.apiUsage.flush();

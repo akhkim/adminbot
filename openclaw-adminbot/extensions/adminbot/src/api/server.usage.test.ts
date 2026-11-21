@@ -147,13 +147,26 @@ describe("API usage telemetry", () => {
     );
     expect(tokenRow.token_id).toBe(created.body.api_token.id);
     expect(JSON.stringify(recent.body)).not.toContain(token);
+
+    // The token makes admin-a a holder; a CLI call through it makes them a CLI user.
+    await call(baseUrl, "GET", "/auth/session", { bearer: token, agent: "adminbot-cli/0.2.0" });
+    const adoption = await call(baseUrl, "GET", "/usage/adoption?days=7", { bearer: SERVICE });
+    expect(adoption.status).toBe(200);
+    expect(adoption.body.totals).toMatchObject({ token_holders: 1, token_holders_using_cli: 1 });
+    expect(adoption.body.power_users[0]).toMatchObject({ member_id: "admin-a", name: "Test admin-a" });
+    expect(JSON.stringify(adoption.body)).not.toContain(token);
   });
 
   it("is admin-only", async () => {
     const { baseUrl } = await start();
     const member = await signIn(baseUrl, "plain-c");
     const admin = await signIn(baseUrl, "admin-a");
-    for (const path of ["/usage/summary", "/usage/requests", "/usage/automation"]) {
+    for (const path of [
+      "/usage/summary",
+      "/usage/requests",
+      "/usage/automation",
+      "/usage/adoption",
+    ]) {
       expect((await call(baseUrl, "GET", path, { bearer: member })).status).toBe(403);
       expect((await call(baseUrl, "GET", path)).status).toBe(401);
       expect((await call(baseUrl, "GET", path, { bearer: admin })).status).toBe(200);

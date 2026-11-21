@@ -94,3 +94,47 @@ export function adminBotApiUsageDays(raw: string | null | undefined, fallback = 
   }
   return Math.min(Math.trunc(parsed), adminBotApiUsageRetentionDays);
 }
+
+/**
+ * CLI adoption and power users, for the admin usage page.
+ *
+ * First and last CLI use come from a one-row-per-member table that outlives the 90-day request
+ * log, so "first used" stays true after the request rows are gone. It holds two timestamps per
+ * member and client and nothing else.
+ */
+export type AdminBotApiUsageAdoption = {
+  from: string;
+  days: number;
+  /** Members who stopped: used the CLI before, but not in this many days. */
+  dropped_after_days: number;
+  totals: {
+    /** Members holding at least one live (unrevoked, unexpired) API token. */
+    token_holders: number;
+    /** Token holders who have used the CLI at least once. */
+    token_holders_using_cli: number;
+    cli_users_ever: number;
+    cli_users_in_window: number;
+  };
+  /** Everyone with a live token or any CLI use, newest first use first. */
+  members: Array<{
+    member_id: string;
+    live_tokens: number;
+    first_cli_at?: string;
+    last_cli_at?: string;
+  }>;
+  /** Distinct CLI users per week (weeks start Monday, UTC), oldest first, over the retained log. */
+  weekly_cli_users: Array<{ week: string; users: number }>;
+  /** Ranked by calls, then active days, then distinct operations, within the window. */
+  power_users: Array<{
+    member_id: string;
+    requests: number;
+    active_days: number;
+    operations: number;
+    cli_requests: number;
+    website_requests: number;
+    other_requests: number;
+    last_at: string;
+    top_operations: Array<{ operation: string; method: string; requests: number }>;
+  }>;
+  dropped_off: Array<{ member_id: string; first_cli_at: string; last_cli_at: string }>;
+};

@@ -2764,6 +2764,12 @@ adminbot-offline-access {
   font-weight: 600;
 }
 
+.api-usage__top-ops {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
 .api-usage__operation {
   font-size: var(--control-ui-text-xs);
 }

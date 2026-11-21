@@ -125,6 +125,65 @@ describe.each(stores)("api usage log (%s)", (_name, make) => {
       }),
     ]);
   });
+
+  it("reports CLI adoption, power users and who stopped", () => {
+    const log = make();
+    // ada: CLI since September, still active. bo: CLI in August, then only the website.
+    log.record(entry({ at: "2026-09-02T09:00:00.000Z", client: "cli", auth: "api_token" }));
+    log.record(entry({ at: "2026-11-20T09:00:00.000Z", client: "cli", auth: "api_token" }));
+    log.record(entry({ at: "2026-11-19T09:00:00.000Z", client: "cli", operation: "getPaper" }));
+    log.record(entry({ at: "2026-11-19T10:00:00.000Z", client: "website" }));
+    log.record(entry({ member_id: "bo", at: "2026-08-30T09:00:00.000Z", client: "cli" }));
+    log.record(entry({ member_id: "bo", at: "2026-11-18T09:00:00.000Z" }));
+    log.record(entry({ member_id: undefined, auth: "service", client: "other" }));
+    log.flush(NOW);
+
+    const report = log.adoption({
+      now: NOW,
+      days: 7,
+      liveTokens: new Map([
+        ["ada", 1],
+        ["cy", 2],
+      ]),
+    });
+    expect(report.totals).toEqual({
+      token_holders: 2,
+      token_holders_using_cli: 1,
+      cli_users_ever: 2,
+      cli_users_in_window: 1,
+    });
+    expect(report.members.map((row) => row.member_id)).toEqual(["ada", "bo", "cy"]);
+    expect(report.members[0]).toMatchObject({
+      live_tokens: 1,
+      first_cli_at: "2026-09-02T09:00:00.000Z",
+      last_cli_at: "2026-11-20T09:00:00.000Z",
+    });
+    // bo has not used the CLI in the last 30 days.
+    expect(report.dropped_off).toEqual([
+      {
+        member_id: "bo",
+        first_cli_at: "2026-08-30T09:00:00.000Z",
+        last_cli_at: "2026-08-30T09:00:00.000Z",
+      },
+    ]);
+    expect(report.weekly_cli_users).toEqual([
+      { week: "2026-08-24", users: 1 },
+      { week: "2026-08-31", users: 1 },
+      { week: "2026-11-16", users: 1 },
+    ]);
+    expect(report.power_users.map((row) => row.member_id)).toEqual(["ada", "bo"]);
+    expect(report.power_users[0]).toMatchObject({
+      requests: 3,
+      active_days: 2,
+      operations: 2,
+      cli_requests: 2,
+      website_requests: 1,
+      top_operations: [
+        { operation: "listPapers", method: "GET", requests: 2 },
+        { operation: "getPaper", method: "GET", requests: 1 },
+      ],
+    });
+  });
 });
 
 describe("api usage log (sqlite) retention", () => {
@@ -140,6 +199,10 @@ describe("api usage log (sqlite) retention", () => {
     };
     expect(raw.n).toBe(1);
     expect(daily.n).toBe(1);
+    // First use outlives the request rows it came from.
+    expect(db.prepare("SELECT member_id, first_at FROM adminbot_api_usage_members").all()).toEqual([
+      { member_id: "ada", first_at: "2026-07-01T00:00:00.000Z" },
+    ]);
   });
 
   it("stores no column a body, query string or token value could land in", () => {

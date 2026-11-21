@@ -33548,6 +33548,242 @@
         }
       }
     },
+    "/usage/adoption": {
+      "get": {
+        "operationId": "get-usage-adoption",
+        "summary": "GET /usage/adoption",
+        "tags": [
+          "usage"
+        ],
+        "x-source": "src/api/routes/usage.ts",
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "members": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "member_id": {
+                            "type": "string"
+                          },
+                          "live_tokens": {
+                            "type": "number"
+                          },
+                          "first_cli_at": {
+                            "type": "string"
+                          },
+                          "last_cli_at": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "member_id",
+                          "live_tokens",
+                          "name"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "power_users": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "member_id": {
+                            "type": "string"
+                          },
+                          "requests": {
+                            "type": "number"
+                          },
+                          "active_days": {
+                            "type": "number"
+                          },
+                          "operations": {
+                            "type": "number"
+                          },
+                          "cli_requests": {
+                            "type": "number"
+                          },
+                          "website_requests": {
+                            "type": "number"
+                          },
+                          "other_requests": {
+                            "type": "number"
+                          },
+                          "last_at": {
+                            "type": "string"
+                          },
+                          "top_operations": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "operation": {
+                                  "type": "string"
+                                },
+                                "method": {
+                                  "type": "string"
+                                },
+                                "requests": {
+                                  "type": "number"
+                                }
+                              },
+                              "required": [
+                                "operation",
+                                "method",
+                                "requests"
+                              ],
+                              "additionalProperties": true
+                            }
+                          },
+                          "name": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "member_id",
+                          "requests",
+                          "active_days",
+                          "operations",
+                          "cli_requests",
+                          "website_requests",
+                          "other_requests",
+                          "last_at",
+                          "top_operations",
+                          "name"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "dropped_off": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "member_id": {
+                            "type": "string"
+                          },
+                          "first_cli_at": {
+                            "type": "string"
+                          },
+                          "last_cli_at": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "member_id",
+                          "first_cli_at",
+                          "last_cli_at",
+                          "name"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "from": {
+                      "type": "string"
+                    },
+                    "days": {
+                      "type": "number"
+                    },
+                    "dropped_after_days": {
+                      "type": "number"
+                    },
+                    "totals": {
+                      "type": "object",
+                      "properties": {
+                        "token_holders": {
+                          "type": "number"
+                        },
+                        "token_holders_using_cli": {
+                          "type": "number"
+                        },
+                        "cli_users_ever": {
+                          "type": "number"
+                        },
+                        "cli_users_in_window": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "token_holders",
+                        "token_holders_using_cli",
+                        "cli_users_ever",
+                        "cli_users_in_window"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "weekly_cli_users": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "week": {
+                            "type": "string"
+                          },
+                          "users": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "week",
+                          "users"
+                        ],
+                        "additionalProperties": true
+                      }
+                    }
+                  },
+                  "required": [
+                    "members",
+                    "power_users",
+                    "dropped_off",
+                    "from",
+                    "days",
+                    "dropped_after_days",
+                    "totals",
+                    "weekly_cli_users"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/usage/automation": {
       "get": {
         "operationId": "get-usage-automation",
