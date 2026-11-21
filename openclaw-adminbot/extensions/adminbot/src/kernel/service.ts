@@ -174,6 +174,8 @@ import type {
   AdminBotEmailReviewItem,
   AdminBotEmailReviewPaperflowCandidate,
   AdminBotEmailReviewResolution,
+  AdminBotReminderReplyMatch,
+  AdminBotReminderReplyReading,
   AdminBotResolvedEmailReviewItem,
 } from "../contracts/email-review.js";
 import {
@@ -332,6 +334,7 @@ import {
 import {
   byUrgency,
   deadlineInstant,
+  isLetterStatusSubmitted,
   prepareLogisticsRequest,
   withoutAttachmentBytes,
   withCurrentLogisticsDeadline,
@@ -667,6 +670,15 @@ import {
   sweepRecLetterOverdueConfirmations,
   undoLetterConfirmation,
 } from "./service.rec-letter-overdue.js";
+import {
+  isReminderReplyReading,
+  listReminderSends,
+  matchReminderSend,
+  parseEmailReviewResolution,
+  reminderReplyResolution,
+  reminderReplySnoozeDays,
+  reminderTargets,
+} from "./service.reminder-replies.js";
 import { ScheduledMemberChangeService } from "./service.scheduled-member-changes.js";
 import { runSlackRosterSync, type SlackRosterSyncOptions } from "./service.slack-roster-sync.js";
 import {
@@ -8609,7 +8621,8 @@ export class AdminBotService {
           paper_ids: venue.papers.map((paper) => paper.id),
         },
         rationale: `OpenReview recorded ${venue.newly_accepted} new acceptance${venue.newly_accepted === 1 ? "" : "s"} at ${venue.label}.`,
-        undo_plan: "A Slack message cannot be unsent by AdminBot; it only points at drafts, so nothing else to undo.",
+        undo_plan:
+          "A Slack message cannot be unsent by AdminBot; it only points at drafts, so nothing else to undo.",
         idempotency_key: idempotencyKey,
       });
       if (!proposal.ok) {
@@ -11094,6 +11107,8 @@ export class AdminBotService {
     sender?: string;
     confidence?: number;
     recordedBy?: AdminBotPaperflowEvidenceRecord["recorded_by"];
+    /** Why, in a person's words: "moved to a Springer journal". Shown with the record. */
+    note?: string;
     actor: string;
   }): AdminBotServiceResponse<{ recorded: boolean; record: AdminBotPaperflowEvidenceRecord }> {
     if (!isAdminBotPaperflowStage(params.stage)) {
@@ -11128,6 +11143,7 @@ export class AdminBotService {
       ...(params.subject ? { subject: params.subject } : {}),
       ...(params.sender ? { sender: params.sender } : {}),
       ...(typeof params.confidence === "number" ? { confidence: params.confidence } : {}),
+      ...(params.note?.trim() ? { note: params.note.trim() } : {}),
     };
     this.store.savePaperflowEvidence(record);
     this.recordAudit({
@@ -11227,9 +11243,16 @@ export class AdminBotService {
     }
     const { reviews, paperflow_candidates: candidates } = queue.payload;
     const ledger = this.nudgeLedgerIndex();
+    const pending = this.pendingEmailReviewProposals({ remindersOnly: true });
     const proposed: string[] = [];
     const alreadyAsked: string[] = [];
     for (const review of reviews) {
+      // A reply to a reminder is proposed the moment it arrives, with the resolution it actually
+      // supports. A second, generic dismissal beside it would be two approvals for one email.
+      if (pending.has(review.message_id)) {
+        alreadyAsked.push(review.message_id);
+        continue;
+      }
       // The updated stamp is part of the subject so a message the pass re-examines and holds again
       // is asked about again, while one sitting untouched is asked exactly once.
       const subject = `${review.message_id}|${review.updated_at}`;
@@ -11306,12 +11329,19 @@ export class AdminBotService {
         ...(review.subject ? { subject: review.subject } : {}),
         sender: review.sender,
         recordedBy: "admin",
+        ...(resolution.note ? { note: resolution.note } : {}),
         actor: params.actor,
       });
       if (!evidence.ok) {
         return evidence;
       }
       evidenceRecorded = evidence.payload.recorded;
+    } else if (resolution.kind !== "dismissed") {
+      const applied = this.applyReminderReplyResolution(review, resolution, params.actor);
+      if (!applied.ok) {
+        return applied;
+      }
+      evidenceRecorded = applied.payload.evidence_recorded;
     }
     const resolvedAt = new Date().toISOString();
     if (
@@ -11330,9 +11360,27 @@ export class AdminBotService {
       details: {
         message_id: review.message_id,
         resolution: resolution.kind,
-        ...(resolution.kind === "paperflow_evidence"
+        ...(resolution.kind === "paperflow_evidence" || resolution.kind === "paperflow_skipped"
           ? { paper_id: resolution.paper_id, stage: resolution.stage }
           : {}),
+        ...(resolution.kind === "paperflow_skipped" && resolution.later_stages
+          ? { later_stages: true }
+          : {}),
+        ...(resolution.kind === "paper_slot_waived"
+          ? { paper_id: resolution.paper_id, slot: resolution.slot }
+          : {}),
+        ...(resolution.kind === "rec_letter_submitted"
+          ? { request_id: resolution.request_id, schools: resolution.schools }
+          : {}),
+        ...(resolution.kind === "reminder_snoozed"
+          ? {
+              domain: resolution.domain,
+              subject_id: resolution.subject_id,
+              member_id: resolution.member_id,
+              until: resolution.until,
+            }
+          : {}),
+        ...("note" in resolution && resolution.note ? { note: resolution.note } : {}),
       },
     });
     return {
@@ -11340,6 +11388,331 @@ export class AdminBotService {
       status: 200,
       payload: { resolution: resolution.kind, evidence_recorded: evidenceRecorded },
     };
+  }
+
+  /** Message ids that already have an `email_review.resolve` waiting on somebody. */
+  /**
+   * Message ids with an `email_review.resolve` still waiting on an admin. `remindersOnly` keeps it
+   * to the ones a reminder reply proposed (they carry the model's reading): the hourly pass still
+   * re-asks about its own proposals once it has touched the message again.
+   */
+  private pendingEmailReviewProposals(options: { remindersOnly?: boolean } = {}): Set<string> {
+    const ids = new Set<string>();
+    for (const proposal of this.store.listProposalsByType("email_review.resolve")) {
+      const payload = proposal.proposed_payload as
+        | { message_id?: unknown; reading?: unknown }
+        | undefined;
+      if (
+        proposal.status === "pending" &&
+        typeof payload?.message_id === "string" &&
+        (!options.remindersOnly || payload.reading !== undefined)
+      ) {
+        ids.add(payload.message_id);
+      }
+    }
+    return ids;
+  }
+
+  /**
+   * The AdminBot reminder an inbound email answers, and what that reminder asked about.
+   *
+   * Undefined when it answers none -- including when it looks like a reply but came from somebody
+   * other than the person the reminder went to. The open-stage walk only runs once a reminder has
+   * matched, so the inbox pass can ask this of every message.
+   */
+  matchReminderReply(params: {
+    sender: string;
+    subject?: string;
+    threadId?: string;
+    nowIso?: string;
+  }): AdminBotReminderReplyMatch | undefined {
+    const now = params.nowIso ? new Date(params.nowIso) : new Date();
+    if (Number.isNaN(now.getTime())) {
+      return undefined;
+    }
+    const found = matchReminderSend(
+      listReminderSends(this.store, now),
+      {
+        sender: params.sender,
+        ...(params.subject ? { subject: params.subject } : {}),
+        ...(params.threadId ? { threadId: params.threadId } : {}),
+      },
+      (memberId) => {
+        const member = this.store.getLabMember(memberId);
+        return member ? memberAddresses(member) : [];
+      },
+    );
+    if (!found) {
+      return undefined;
+    }
+    const { send, matched_by } = found;
+    const targets = this.withPaperTables(() =>
+      reminderTargets(send, {
+        papers: this.store.listPapers(),
+        openStages: this.sweepPaperflowStages(now).items,
+        openSlots: (paper, memberId) => {
+          if (isPaperDormant(paper, now) || isPaperClosed(paper)) {
+            return [];
+          }
+          const stored = this.paperRows().listPaperSlots(paper.id);
+          return actionablePaperSlots(
+            paper,
+            stored,
+            now,
+            this.paperRows().listSocialDrafts(paper.id),
+            this.paperMentorContext(paper, stored),
+          )
+            .filter(
+              (item) =>
+                item.slot !== undefined &&
+                this.resolvePaperSlotOwner(paper, item.owner).includes(memberId),
+            )
+            .map((item) => ({ slot: item.slot as string, label: item.label }));
+        },
+        ledger: this.store.listNudgeLedger("rec_letter_reminder"),
+        getLogisticsRequest: (requestId) => this.store.getLogisticsRequest(requestId),
+      }),
+    );
+    return {
+      reminder_action_id: send.action_id,
+      reminder_type: send.type,
+      reminder_subject: send.subject,
+      reminder_body: send.body,
+      reminder_sent_at: send.sent_at,
+      member_id: send.member_id,
+      member_name: this.store.getLabMember(send.member_id)?.name ?? send.member_id,
+      matched_by,
+      targets,
+    };
+  }
+
+  /**
+   * Hold a reply to a reminder for one-click approval, and quiet the reminder meanwhile.
+   *
+   * Never closes anything itself. The reply is filed in the review queue, the reminder it answers is
+   * snoozed so the member is not asked again while an admin decides, and one `email_review.resolve`
+   * proposal carries the resolution the reading supports. The approval is what writes.
+   */
+  proposeReminderReply(params: {
+    messageId: string;
+    threadId: string;
+    sender: string;
+    subject?: string;
+    receivedAt?: string;
+    reading: AdminBotReminderReplyReading;
+    actor: string;
+    nowIso?: string;
+  }): AdminBotServiceResponse<{
+    proposal_id?: string;
+    already_proposed: boolean;
+    resolution: AdminBotEmailReviewResolution["kind"];
+    snoozed: string[];
+  }> {
+    if (!isReminderReplyReading(params.reading)) {
+      return serviceError(400, "reminder reply reading is malformed");
+    }
+    const nowIso = params.nowIso ?? new Date().toISOString();
+    const now = new Date(nowIso);
+    if (Number.isNaN(now.getTime())) {
+      return serviceError(400, "now must be a date");
+    }
+    const match = this.matchReminderReply({
+      sender: params.sender,
+      ...(params.subject ? { subject: params.subject } : {}),
+      threadId: params.threadId,
+      nowIso,
+    });
+    if (!match) {
+      return serviceError(404, "this email does not answer an AdminBot reminder from its sender");
+    }
+    const { resolution, summary, undo_plan } = reminderReplyResolution(match, params.reading, now);
+    if (this.pendingEmailReviewProposals().has(params.messageId)) {
+      return {
+        ok: true,
+        status: 200,
+        payload: { already_proposed: true, resolution: resolution.kind, snoozed: [] },
+      };
+    }
+    const review: AdminBotEmailReviewItem = {
+      message_id: params.messageId,
+      thread_id: params.threadId,
+      sender: params.sender,
+      ...(params.subject ? { subject: params.subject } : {}),
+      category: "reminder_reply",
+      reason: `reply to "${match.reminder_subject}": ${params.reading.intent}`,
+      ...(params.receivedAt ? { received_at: params.receivedAt } : {}),
+      updated_at: nowIso,
+    };
+    this.store.saveEmailReview(review);
+
+    // Quiet first, then ask. Bounded by the real clock as well as `now`, because the snooze cap is.
+    const until = new Date(
+      Math.min(now.getTime(), Date.now()) + reminderReplySnoozeDays * 24 * 60 * 60 * 1000,
+    ).toISOString();
+    const snoozed: string[] = [];
+    for (const target of match.targets) {
+      if (!target.open || target.domain === "rec_letter_reminder") {
+        continue;
+      }
+      const result = this.snoozeNudge({
+        domain: target.domain,
+        subjectId: target.subject_id,
+        memberId: target.member_id,
+        until,
+      });
+      if (result.ok) {
+        snoozed.push(`${target.domain}|${target.subject_id}|${target.member_id}`);
+      }
+    }
+
+    const created = this.createProposal({
+      type: "email_review.resolve",
+      summary,
+      target: { service: "adminbot", channel: "adminbot", target: params.messageId },
+      proposed_payload: {
+        message_id: params.messageId,
+        thread_id: params.threadId,
+        sender: params.sender,
+        ...(params.subject ? { subject: params.subject } : {}),
+        held_because: review.reason,
+        reminder_action_id: match.reminder_action_id,
+        reading: params.reading,
+        resolution,
+      },
+      rationale: `${match.member_name} replied to the reminder "${match.reminder_subject}" (matched by ${match.matched_by}).`,
+      undo_plan,
+    });
+    if (!created.ok) {
+      return serviceError(created.status, created.error.message);
+    }
+    // The hourly pass keys on the same stamp, so it does not ask about this message a second time.
+    this.markNudgeSaid(
+      "email_review",
+      `${review.message_id}|${review.updated_at}`,
+      params.actor,
+      nowIso,
+    );
+    this.recordAudit({
+      type: "email_review.reminder_reply",
+      actor: params.actor,
+      action_id: created.payload.id,
+      details: {
+        message_id: params.messageId,
+        reminder_action_id: match.reminder_action_id,
+        member_id: match.member_id,
+        intent: params.reading.intent,
+        resolution: resolution.kind,
+        snoozed: snoozed.length,
+      },
+    });
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        proposal_id: created.payload.id,
+        already_proposed: false,
+        resolution: resolution.kind,
+        snoozed,
+      },
+    };
+  }
+
+  /** The writes behind the resolutions a reminder reply can propose. Each checks it still applies. */
+  private applyReminderReplyResolution(
+    review: AdminBotEmailReviewItem,
+    resolution: Exclude<
+      AdminBotEmailReviewResolution,
+      { kind: "dismissed" | "paperflow_evidence" }
+    >,
+    actor: string,
+  ): AdminBotServiceResponse<{ evidence_recorded: boolean }> {
+    switch (resolution.kind) {
+      case "paperflow_skipped": {
+        if (!isAdminBotPaperflowStage(resolution.stage)) {
+          return serviceError(400, `${resolution.stage} is not a PaperFlow stage`);
+        }
+        const openStages = this.collectPaperflowStageNudges();
+        if (!openStages.ok) {
+          return openStages;
+        }
+        if (
+          !openStages.payload.items.some(
+            (item) => item.paper_id === resolution.paper_id && item.stage === resolution.stage,
+          )
+        ) {
+          return serviceError(409, "that paper stage is no longer open");
+        }
+        // A paper that left this venue's track will not reach its later stages either. Each gets
+        // the same admin record, so the chase does not step onto the next one tomorrow.
+        const stages = resolution.later_stages
+          ? adminBotPaperflowStages.slice(adminBotPaperflowStages.indexOf(resolution.stage))
+          : [resolution.stage];
+        let recorded = false;
+        for (const stage of stages) {
+          const evidence = this.recordPaperflowEvidence({
+            paperId: resolution.paper_id,
+            stage,
+            messageId: review.message_id,
+            ...(review.subject ? { subject: review.subject } : {}),
+            sender: review.sender,
+            recordedBy: "admin",
+            note: `skipped: ${resolution.note}`,
+            actor,
+          });
+          if (!evidence.ok) {
+            return evidence;
+          }
+          recorded ||= evidence.payload.recorded;
+        }
+        return { ok: true, status: 200, payload: { evidence_recorded: recorded } };
+      }
+      case "paper_slot_waived": {
+        const waived = this.waivePaperSlot({
+          paperId: resolution.paper_id,
+          slot: resolution.slot,
+          reason: resolution.note,
+          memberId: actor,
+        });
+        return waived.ok
+          ? { ok: true, status: 200, payload: { evidence_recorded: false } }
+          : serviceError(waived.status, waived.error.message);
+      }
+      case "rec_letter_submitted": {
+        const request = this.store.getLogisticsRequest(resolution.request_id);
+        if (!request) {
+          return serviceError(404, "letter request not found");
+        }
+        const named = new Set(resolution.schools);
+        let changed = false;
+        const schools = (request.schools ?? []).map((school) => {
+          if (!named.has(school.school) || isLetterStatusSubmitted(school.letter_status)) {
+            return school;
+          }
+          changed = true;
+          return { ...school, letter_status: "submitted" };
+        });
+        if (!changed) {
+          return serviceError(409, "those letters are already marked submitted");
+        }
+        this.store.saveLogisticsRequest({
+          ...request,
+          schools,
+          updated_at: new Date().toISOString(),
+        });
+        return { ok: true, status: 200, payload: { evidence_recorded: false } };
+      }
+      case "reminder_snoozed": {
+        const snoozed = this.snoozeNudge({
+          domain: resolution.domain,
+          subjectId: resolution.subject_id,
+          memberId: resolution.member_id,
+          until: resolution.until,
+        });
+        return snoozed.ok
+          ? { ok: true, status: 200, payload: { evidence_recorded: false } }
+          : serviceError(snoozed.status, snoozed.error.message);
+      }
+    }
   }
 
   /**
@@ -18037,31 +18410,8 @@ function emailReviewResolutionPayload(
   }
   const row = payload as Record<string, unknown>;
   const messageId = typeof row.message_id === "string" ? row.message_id.trim() : "";
-  const resolution = row.resolution;
-  if (!messageId || !resolution || typeof resolution !== "object") {
-    return undefined;
-  }
-  const kind = (resolution as Record<string, unknown>).kind;
-  if (kind === "dismissed") {
-    return { message_id: messageId, resolution: { kind: "dismissed" } };
-  }
-  if (kind !== "paperflow_evidence") {
-    return undefined;
-  }
-  const paperId = (resolution as Record<string, unknown>).paper_id;
-  const stage = (resolution as Record<string, unknown>).stage;
-  if (
-    typeof paperId !== "string" ||
-    !paperId.trim() ||
-    typeof stage !== "string" ||
-    !stage.trim()
-  ) {
-    return undefined;
-  }
-  return {
-    message_id: messageId,
-    resolution: { kind: "paperflow_evidence", paper_id: paperId, stage },
-  };
+  const resolution = parseEmailReviewResolution(row.resolution);
+  return messageId && resolution ? { message_id: messageId, resolution } : undefined;
 }
 
 function deadlinePayload(proposal: AdminBotStoredProposal): DeadlinePublicationPayload | undefined {

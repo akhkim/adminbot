@@ -222,7 +222,13 @@ export function openPaperflowStage(params: {
   if (!seen.has("camera_ready")) {
     return open("camera_ready", "accepted and the camera ready has not been confirmed");
   }
-  if (!seen.has("conference")) {
+  // A conference in a year already over has been held; asking who is travelling to it is the
+  // mail that tells an author these reminders are not reading the calendar. The record carries the
+  // year and no dates, so a workshop held earlier this year still opens -- the admin closes that one.
+  if (
+    !seen.has("conference") &&
+    !(typeof paper.accepted_year === "number" && paper.accepted_year < now.getUTCFullYear())
+  ) {
     return open("conference", "accepted and conference travel has not been confirmed");
   }
   return undefined;

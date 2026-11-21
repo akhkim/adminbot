@@ -1761,6 +1761,89 @@ async function fileRecordingNotice(
   return true;
 }
 
+/**
+ * Turn a member's reply to an AdminBot reminder into a proposal an admin approves in one click.
+ *
+ * Runs before the classifier, which has no category for "yes, we submitted it" and would park it as
+ * an opaque unknown while the reminder kept firing. The match itself is deterministic -- the Gmail
+ * thread of the send, else the reminder's subject from the same sender -- so the model only reads
+ * what the reply says, never who it is about. Nothing closes here: the service files a held review,
+ * snoozes the reminder, and proposes `email_review.resolve` for an admin to approve or reject.
+ *
+ * Returns "none" when the mail does not answer a reminder, so the caller falls through to the
+ * normal path; "skipped" when an earlier pass already claimed it; "proposed" otherwise, with the
+ * message left in needs_review either way.
+ */
+export async function fileReminderReply(
+  message: EmailMessage,
+  state: Pick<StateStore, "begin" | "finish">,
+  model: Pick<AdminBotEmailModel, "reminderReply">,
+  databasePath: string,
+  nowIso?: string,
+): Promise<"none" | "skipped" | "proposed"> {
+  const { service, close } = createAdminBotSqliteService({ databasePath });
+  try {
+    const sender = normalizeAddress(message.from);
+    const match = service.matchReminderReply({
+      sender,
+      subject: message.subject,
+      threadId: message.threadId,
+      ...(nowIso ? { nowIso } : {}),
+    });
+    if (!match) {
+      return "none";
+    }
+    const asked = `reply to AdminBot reminder "${match.reminder_subject}"`;
+    if (!state.begin(message, { category: "reminder_reply", reason: asked })) {
+      return "skipped";
+    }
+    try {
+      const read = await model.reminderReply(message, {
+        subject: match.reminder_subject,
+        body: match.reminder_body,
+        asks: match.targets.map((target) => target.label),
+      });
+      const proposed = service.proposeReminderReply({
+        messageId: message.id,
+        threadId: message.threadId,
+        sender,
+        subject: message.subject,
+        ...(message.internalDate
+          ? { receivedAt: new Date(Number(message.internalDate)).toISOString() }
+          : {}),
+        reading: {
+          intent: read.intent,
+          note: read.note,
+          ...(read.evidenceUrl ? { evidence_url: read.evidenceUrl } : {}),
+          ...(read.until ? { until: read.until } : {}),
+          moved_elsewhere: read.movedElsewhere,
+          confidence: read.confidence,
+        },
+        actor: "adminbot-email-automation",
+        ...(nowIso ? { nowIso } : {}),
+      });
+      state.finish(
+        message.id,
+        "needs_review",
+        proposed.ok
+          ? `${asked}: ${read.intent}; proposed ${proposed.payload.resolution} for admin approval`
+          : `${asked}: ${proposed.error.message}`,
+      );
+    } catch (error) {
+      // The claim is held, so a failed read must still land somewhere a person looks rather than
+      // staying "processing" and blocking the watermark.
+      state.finish(
+        message.id,
+        "needs_review",
+        `${asked}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    return "proposed";
+  } finally {
+    close();
+  }
+}
+
 export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
   loadDotEnv(path.join(os.homedir(), ".openclaw", ".env"));
   process.env.GOG_ACCOUNT = botEmail();
@@ -1875,6 +1958,27 @@ export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
           );
           await file(message.id, "failed");
         }
+        continue;
+      }
+      // A reply to one of AdminBot's own reminders: matched by thread or subject and sender, read
+      // by the model, and turned into a held proposal rather than a guess at a category.
+      try {
+        const replied = await fileReminderReply(message, state, model, databasePath);
+        if (replied !== "none") {
+          if (replied === "skipped") {
+            summary.skipped += 1;
+          } else {
+            summary.needs_review += 1;
+            await file(message.id, "needs_review");
+          }
+          continue;
+        }
+      } catch (error) {
+        summary.failed += 1;
+        summary.errors.push(
+          `${message.id}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        await file(message.id, "failed");
         continue;
       }
       const onboarding =

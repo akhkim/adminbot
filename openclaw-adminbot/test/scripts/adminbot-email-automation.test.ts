@@ -5,6 +5,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   authorizeClassification,
   calendarCommandRefusal,
+  fileReminderReply,
   PERSONAL_CALENDAR_DEFAULT,
   resolveCalendarTarget,
   validTimeZone,
@@ -14,7 +15,11 @@ import {
   StateStore,
   type EmailMessage,
 } from "../../scripts/adminbot-email-automation.js";
-import type { ModelClassification } from "../../scripts/adminbot-email-model.js";
+import { createAdminBotSqliteService } from "../../extensions/adminbot/api.js";
+import type {
+  ModelClassification,
+  ModelReminderReply,
+} from "../../scripts/adminbot-email-model.js";
 import type { OpenClawConfig } from "../../src/config/types/openclaw.js";
 
 const message = (overrides: Partial<EmailMessage> = {}): EmailMessage => ({
@@ -572,6 +577,162 @@ describe("email automation claims", () => {
       first.close();
       second.close();
       fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// A member answering one of AdminBot's reminders. The classifier has no category for "yes, we
+// submitted it", so before this branch the reply parked as unknown and the reminder kept firing.
+describe("reminder replies", () => {
+  const title = "Multi-Agent AI Systems Need Institutional Design";
+
+  async function mailbox() {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "adminbot-reminder-reply-"));
+    const databasePath = path.join(dir, "service.sqlite");
+    const seeded = createAdminBotSqliteService({
+      databasePath,
+      paperflowBotEmail: "adminbot@example.org",
+      executor: {
+        execute: async (proposal) =>
+          proposal.type === "member_nudge.send"
+            ? { handled: true, artifacts: { gmail_thread_id: "thread-nudge" } }
+            : { handled: false },
+      },
+    });
+    try {
+      seeded.service.upsertLabMember({
+        receives_nudges: true,
+        id: "xq",
+        name: "Xuanqiang Huang",
+        privilege_level: "member",
+        email: "xq@ethz.example",
+      } as never);
+      seeded.service.upsertPaper({
+        id: "p1",
+        title,
+        authors: ["Xuanqiang Huang"],
+        current_step: "submission",
+        venue_decision: "accept",
+      } as never);
+      seeded.service.setPaperSlot({
+        paperId: "p1",
+        slot: "submission",
+        input: { url: "https://openreview.net/forum?id=x" },
+        memberId: "xq",
+        privileged: true,
+      });
+      const sent = await seeded.service.sendPaperflowStageNudges("cron");
+      expect(sent.ok && sent.payload.created).toHaveLength(1);
+    } finally {
+      seeded.close();
+    }
+    const state = new StateStore(path.join(dir, "ledger.sqlite"));
+    return {
+      databasePath,
+      state,
+      cleanup: () => {
+        state.close();
+        fs.rmSync(dir, { recursive: true, force: true });
+      },
+    };
+  }
+
+  const springer: ModelReminderReply = {
+    intent: "not_applicable",
+    note: "moved to a Springer journal",
+    evidenceUrl: null,
+    until: null,
+    movedElsewhere: true,
+    confidence: 0.9,
+  };
+
+  it("proposes a resolution for a reply on the reminder thread and parks the mail", async () => {
+    const { databasePath, state, cleanup } = await mailbox();
+    const reminderReply = vi.fn(async () => springer);
+    try {
+      const outcome = await fileReminderReply(
+        message({
+          id: "reply-1",
+          threadId: "thread-nudge",
+          from: "Xuanqiang Huang <xq@ethz.example>",
+          subject: `Re: Camera ready: ${title}`,
+          body: "Yes we submitted it to a journal springer",
+        }),
+        state,
+        { reminderReply },
+        databasePath,
+      );
+      expect(outcome).toBe("proposed");
+      expect(reminderReply).toHaveBeenCalledWith(
+        expect.objectContaining({ id: "reply-1" }),
+        expect.objectContaining({
+          subject: `Camera ready: ${title}`,
+          asks: [`Camera ready for ${title}`],
+        }),
+      );
+      expect(state.status("reply-1")).toBe("needs_review");
+
+      const reopened = createAdminBotSqliteService({ databasePath });
+      try {
+        const pending = reopened.service.listPending();
+        const proposals = pending.ok ? pending.payload.proposals : [];
+        expect(proposals.map((row) => row.type)).toEqual(["email_review.resolve"]);
+        expect(proposals[0]?.summary).toContain("moved to a Springer journal");
+      } finally {
+        reopened.close();
+      }
+
+      // A second pass over the same mail is a no-op, not a second proposal or model call.
+      expect(
+        await fileReminderReply(
+          message({ id: "reply-1", threadId: "thread-nudge", from: "xq@ethz.example" }),
+          state,
+          { reminderReply },
+          databasePath,
+        ),
+      ).toBe("skipped");
+      expect(reminderReply).toHaveBeenCalledTimes(1);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("leaves mail that answers no reminder to the normal path, without asking the model", async () => {
+    const { databasePath, state, cleanup } = await mailbox();
+    const reminderReply = vi.fn(async () => springer);
+    try {
+      expect(
+        await fileReminderReply(
+          message({ from: "stranger@example.org", threadId: "thread-nudge" }),
+          state,
+          { reminderReply },
+          databasePath,
+        ),
+      ).toBe("none");
+      expect(reminderReply).not.toHaveBeenCalled();
+      expect(state.status("m1")).toBeUndefined();
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("parks the reply for a person when the model cannot read it", async () => {
+    const { databasePath, state, cleanup } = await mailbox();
+    try {
+      const outcome = await fileReminderReply(
+        message({ id: "reply-2", threadId: "thread-nudge", from: "xq@ethz.example" }),
+        state,
+        {
+          reminderReply: async () => {
+            throw new Error("model timed out");
+          },
+        },
+        databasePath,
+      );
+      expect(outcome).toBe("proposed");
+      expect(state.status("reply-2")).toBe("needs_review");
+    } finally {
+      cleanup();
     }
   });
 });

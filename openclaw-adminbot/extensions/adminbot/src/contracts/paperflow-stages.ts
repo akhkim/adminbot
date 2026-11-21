@@ -126,6 +126,11 @@ export type AdminBotPaperflowEvidenceRecord = {
   recorded_by: "email_bcc" | "admin" | "openreview";
   /** The classifier's confidence, for the admin reviewing a stage that closed itself. */
   confidence?: number;
+  /**
+   * Why an admin closed it, when the close came from a member's reply rather than venue mail --
+   * "skipped: moved to a Springer journal". Absent on a close the venue mail itself proves.
+   */
+  note?: string;
 };
 
 /** The ledger id for one chased stage. */

@@ -41,7 +41,11 @@ export function resolveGogExecutable(env?: NodeJS.ProcessEnv): string {
   return "gog";
 }
 
-type GogRun = (args: string[]) => Promise<void>;
+/**
+ * Runs one gog command. The real runner hands back gog's stdout so a send can report what Gmail
+ * created; a test double may return nothing, and nothing is then reported.
+ */
+type GogRun = (args: string[]) => Promise<string | void>;
 type GogCapture = (args: string[]) => Promise<string>;
 
 export type GogAdminBotExecutorOptions = {
@@ -394,10 +398,49 @@ export function createGogAdminBotExecutor(
         }
         return { handled: true, artifacts: { event_id: id } };
       }
-      await run(args);
-      return { handled: true };
+      const output = await run(args);
+      return { handled: true, ...gmailSendArtifacts(args, output) };
     },
   };
+}
+
+/**
+ * The Gmail ids of a mail that has just gone out, for matching the replies it gets.
+ *
+ * Best-effort by design. The send has already happened by the time this runs, so an output gog
+ * printed in some other shape must cost the ids, never the execution -- reporting a delivered mail
+ * as failed is how it gets sent twice.
+ */
+function gmailSendArtifacts(
+  args: string[],
+  output: string | void,
+): { artifacts?: Record<string, string> } {
+  if (!args.includes("gmail.send") || typeof output !== "string" || !output.trim()) {
+    return {};
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(output);
+  } catch {
+    return {};
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return {};
+  }
+  const row = parsed as Record<string, unknown>;
+  const nested =
+    row.message && typeof row.message === "object" && !Array.isArray(row.message)
+      ? (row.message as Record<string, unknown>)
+      : {};
+  const pick = (...values: unknown[]) =>
+    values.find((value): value is string => typeof value === "string" && Boolean(value.trim()));
+  const threadId = pick(row.threadId, row.thread_id, nested.threadId, nested.thread_id);
+  const messageId = pick(row.id, row.messageId, row.message_id, nested.id);
+  const artifacts: Record<string, string> = {
+    ...(threadId ? { gmail_thread_id: threadId } : {}),
+    ...(messageId ? { gmail_message_id: messageId } : {}),
+  };
+  return Object.keys(artifacts).length ? { artifacts } : {};
 }
 
 /**
@@ -1224,10 +1267,7 @@ export function runGogPaced(
 }
 
 function createGogRunner(env: NodeJS.ProcessEnv | undefined): GogRun {
-  const capture = createGogCapture(env);
-  return async (args) => {
-    await capture(args);
-  };
+  return createGogCapture(env);
 }
 
 type GogExec = (

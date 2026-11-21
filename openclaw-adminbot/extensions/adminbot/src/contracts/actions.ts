@@ -2845,6 +2845,7 @@ export type AdminBotAuditEvent = {
     | "automation_health.alerted"
     | "paperflow_stage.evidenced"
     | "email_review.resolved"
+    | "email_review.reminder_reply"
     | "paper_social_draft.saved"
     | "paper_social_draft.circulated"
     | "paper_social_consent.recorded"

@@ -41,10 +41,11 @@ import type {
 } from "../contracts/badges.js";
 import type { AdminBotConferenceTripRecord } from "../contracts/conference-trips.js";
 import type { PublishedDeadlineRecord } from "../contracts/deadline-proposals.js";
-import type {
-  AdminBotEmailReviewItem,
-  AdminBotEmailReviewResolution,
-  AdminBotResolvedEmailReviewItem,
+import {
+  adminBotEmailReviewResolutionKinds,
+  type AdminBotEmailReviewItem,
+  type AdminBotEmailReviewResolution,
+  type AdminBotResolvedEmailReviewItem,
 } from "../contracts/email-review.js";
 import type { AdminBotFeedbackEntry } from "../contracts/feedback.js";
 import type { DiscoveryPosition } from "../contracts/lab-sharing-discovery-cursor.js";
@@ -656,6 +657,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         recorded_at TEXT NOT NULL,
         recorded_by TEXT NOT NULL,
         confidence REAL,
+        note TEXT,
         PRIMARY KEY (paper_id, stage)
       );
 
@@ -1051,6 +1053,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     this.errors = createErrorLogFromDatabase(this.db);
     this.migrateWorkshopMatchRuns();
     this.migrateSessionColumns();
+    this.migratePaperflowEvidenceColumns();
     this.migrateBadgeNominationColumns();
     this.migrateLoginEventColumns();
   }
@@ -1073,6 +1076,20 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
    * -- which is what they all are. Nothing else about the row changes, so live sessions survive
    * the upgrade rather than everybody being signed out by a migration.
    */
+  /** Evidence written before an admin could close a stage from a member's reply has no `note`. */
+  private migratePaperflowEvidenceColumns(): void {
+    const columns = new Set(
+      (
+        this.db.prepare("PRAGMA table_info(adminbot_paperflow_evidence)").all() as Array<{
+          name: string;
+        }>
+      ).map((row) => row.name),
+    );
+    if (!columns.has("note")) {
+      this.db.exec("ALTER TABLE adminbot_paperflow_evidence ADD COLUMN note TEXT");
+    }
+  }
+
   private migrateSessionColumns(): void {
     const columns = new Set(
       (
@@ -2776,8 +2793,9 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     this.db
       .prepare(
         `INSERT INTO adminbot_paperflow_evidence
-          (paper_id, stage, message_id, subject, sender, recorded_at, recorded_by, confidence)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          (paper_id, stage, message_id, subject, sender, recorded_at, recorded_by, confidence,
+           note)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(paper_id, stage) DO NOTHING`,
       )
       .run(
@@ -2789,6 +2807,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         record.recorded_at,
         record.recorded_by,
         record.confidence ?? null,
+        record.note ?? null,
       );
   }
 
@@ -2814,6 +2833,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         optionalText(row, "message_id"),
         optionalText(row, "subject"),
         optionalText(row, "sender"),
+        optionalText(row, "note"),
       );
       if (row.confidence !== null && row.confidence !== undefined) {
         record.confidence = Number(row.confidence);
@@ -2968,13 +2988,13 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
                 resolution, resolved_at, resolved_by
            FROM adminbot_email_messages
           WHERE status = 'reviewed'
-            AND resolution IN ('paperflow_evidence', 'dismissed')
+            AND resolution IN (${adminBotEmailReviewResolutionKinds.map(() => "?").join(", ")})
             AND resolved_at IS NOT NULL
             AND resolved_by IS NOT NULL
           ORDER BY resolved_at DESC
           LIMIT ?`,
       )
-      .all(limit) as Array<Record<string, unknown>>;
+      .all(...adminBotEmailReviewResolutionKinds, limit) as Array<Record<string, unknown>>;
     return rows.map(adminBotResolvedEmailReviewFromRow);
   }
 

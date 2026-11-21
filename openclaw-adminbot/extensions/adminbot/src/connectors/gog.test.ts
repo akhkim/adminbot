@@ -473,6 +473,28 @@ describe("createGogAdminBotExecutor", () => {
       ),
     ).resolves.toEqual({ handled: false });
   });
+
+  // A reply to a reminder is tied back to it by the Gmail thread, so the send has to keep the ids
+  // gog prints. Output it cannot read is not a failed send: the mail went, and the reply falls back
+  // to matching by subject.
+  it("keeps the Gmail thread and message ids a send prints", async () => {
+    const send = proposal("member_nudge.send", {
+      channel: "email",
+      to: "person@example.test",
+      subject: "Camera ready: Paper",
+      body: "Has the camera ready gone in?",
+    });
+    const printed = createGogAdminBotExecutor({
+      run: async () => JSON.stringify({ id: "msg-1", threadId: "thread-1" }),
+    });
+    await expect(printed.execute(send)).resolves.toEqual({
+      handled: true,
+      artifacts: { gmail_thread_id: "thread-1", gmail_message_id: "msg-1" },
+    });
+
+    const garbled = createGogAdminBotExecutor({ run: async () => "sent!" });
+    await expect(garbled.execute(send)).resolves.toEqual({ handled: true });
+  });
 });
 
 describe("appendGogSheetRows", () => {
