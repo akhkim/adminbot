@@ -85,6 +85,7 @@ import type {
 } from "../contracts/scheduled-member-changes.js";
 import type { AdminBotTabVisit } from "../contracts/tab-visits.js";
 import { MemberRenameBlockedError } from "../kernel/member-rename.js";
+import { countNudgeLedgerWrite } from "../kernel/run-metrics.js";
 import {
   AdminBotService,
   type AdminBotLabMemberSummary,
@@ -102,6 +103,7 @@ import {
   toStoredLabMember,
 } from "../workflows/onboarding/onboarding-storage.js";
 import { parseTalkMaterialsConfig } from "../workflows/papers/talk-materials.js";
+import { createApiUsageLogFromDatabase, type ApiUsageLog } from "./api-usage.js";
 import { createCollaboratorChatRequestStore } from "./collaborator-chat-requests.js";
 import { createPosterPrintStore } from "./poster-printing.js";
 import {
@@ -317,6 +319,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   private readonly db: DatabaseSync;
   private readonly failedRequests: FailedExternalRequestLedger;
   private readonly errors: ErrorLog;
+  private readonly apiUsage: ApiUsageLog;
   private readonly venueIndex: SqliteVenuePaperIndex;
   private readonly members: SqliteLabMemberCache;
   private readonly versions: SqliteTableVersions;
@@ -1049,6 +1052,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     migrateSocialDraftColumns(this.db);
     this.failedRequests = createFailedRequestLedgerFromDatabase(this.db);
     this.errors = createErrorLogFromDatabase(this.db);
+    this.apiUsage = createApiUsageLogFromDatabase(this.db);
     this.migrateWorkshopMatchRuns();
     this.migrateSessionColumns();
     this.migrateBadgeNominationColumns();
@@ -1169,6 +1173,10 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
   errorLog(): ErrorLog {
     return this.errors;
+  }
+
+  apiUsageLog(): ApiUsageLog {
+    return this.apiUsage;
   }
 
   failedRequestLedger(): FailedExternalRequestLedger {
@@ -2475,6 +2483,18 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   }
 
   saveNudgeLedgerEntry(record: AdminBotNudgeLedgerRecord): void {
+    const previous = this.db
+      .prepare(
+        `SELECT nudge_count FROM adminbot_nudge_ledger
+         WHERE domain = ? AND subject_id = ? AND member_id = ?`,
+      )
+      .get(record.domain, record.subject_id, record.member_id) as
+      | { nudge_count?: unknown }
+      | undefined;
+    countNudgeLedgerWrite(
+      previous === undefined ? undefined : Number(previous.nudge_count) || 0,
+      record,
+    );
     this.db
       .prepare(
         `INSERT INTO adminbot_nudge_ledger
@@ -4255,6 +4275,8 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   }
 
   close(): void {
+    // Queued usage rows go out before the handle does; after close they would have nowhere to go.
+    this.apiUsage.close();
     this.db.close();
   }
 }

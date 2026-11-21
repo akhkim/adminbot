@@ -87,6 +87,7 @@ import type {
 } from "../contracts/scheduled-member-changes.js";
 import type { AdminBotTabVisit } from "../contracts/tab-visits.js";
 import { MemberRenameBlockedError } from "../kernel/member-rename.js";
+import { countNudgeLedgerWrite } from "../kernel/run-metrics.js";
 import type {
   AdminBotLabMemberSummary,
   AdminBotListPage,
@@ -1112,7 +1113,9 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   }
 
   saveNudgeLedgerEntry(record: AdminBotNudgeLedgerRecord): void {
-    this.nudgeLedger.set(`${record.domain}|${record.subject_id}|${record.member_id}`, record);
+    const key = `${record.domain}|${record.subject_id}|${record.member_id}`;
+    countNudgeLedgerWrite(this.nudgeLedger.get(key)?.nudge_count, record);
+    this.nudgeLedger.set(key, record);
   }
 
   listNudgeLedger(domain?: string): AdminBotNudgeLedgerRecord[] {

@@ -145,10 +145,19 @@ export function validate(schema, value, label = "input") {
   }
 }
 
+/**
+ * Sent on every request so an admin can see which CLI versions are in use. It names the program and
+ * its version, nothing about the machine or the person; the CLI keeps no usage record of its own.
+ */
+export const userAgent = `adminbot-cli/${
+  JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")).version
+}`;
+
 /** Typed for SDK consumers by client.d.ts and the generated OpenAPI declarations. */
 export function createAdminBotClient(options = {}) {
   return createClient({
     ...options,
+    headers: { "User-Agent": userAgent, ...options.headers },
     baseUrl: serviceOrigin(options.baseUrl ?? document.servers[0].url),
     redirect: "error",
   });

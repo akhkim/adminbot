@@ -2754,3 +2754,47 @@ adminbot-offline-access {
     margin-left: 0;
   }
 }
+
+/* API usage: who calls the API, through what, and what the automation runs did.
+   The tables and totals are Tab Usage's own; these only add the section headings and the two short
+   lists, all on hairlines. */
+.api-usage__section {
+  margin: var(--space-6) 0 0;
+  font-size: var(--control-ui-text-sm);
+  font-weight: 600;
+}
+
+.api-usage__operation {
+  font-size: var(--control-ui-text-xs);
+}
+
+.api-usage__metrics {
+  display: block;
+  margin-top: var(--space-1);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 400;
+}
+
+.api-usage__list {
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--control-ui-text-sm);
+}
+
+.api-usage__item {
+  display: grid;
+  grid-template-columns: minmax(6rem, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.api-usage__item:has(.api-usage__day-bar) {
+  grid-template-columns: 6.5rem minmax(0, 1fr) 4rem 3.5rem;
+}
+
+.api-usage__item > .ab-num {
+  text-align: end;
+}

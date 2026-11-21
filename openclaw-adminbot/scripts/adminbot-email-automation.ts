@@ -36,6 +36,7 @@ import {
   type PaperflowCandidate,
 } from "./adminbot-email-model.js";
 import { isMainModule } from "./lib/is-main-module.mjs";
+import { writeRunMetrics } from "./lib/adminbot-run-metrics.js";
 
 const execFileAsync = promisify(execFile);
 // Every address, calendar and channel below identifies a specific workspace, so it is deployment
@@ -1950,6 +1951,14 @@ if (isMainModule(import.meta.url)) {
   void runEmailAutomation()
     .then((summary) => {
       console.log(JSON.stringify(summary));
+      writeRunMetrics({
+        "emails.found": summary.found,
+        "emails_status.completed": summary.completed,
+        "emails_status.failed": summary.failed,
+        "emails_status.needs_review": summary.needs_review,
+        "emails_status.skipped": summary.skipped,
+        errors: summary.errors.length,
+      });
       if (
         summary.failed > 0 &&
         process.env.ADMINBOT_EMAIL_ALLOW_PARTIAL !== "1"

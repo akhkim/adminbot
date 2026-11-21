@@ -7,7 +7,7 @@ import { Readable } from "node:stream";
 import { test } from "node:test";
 import { run } from "./adminbot.mjs";
 import { aliases } from "./aliases.mjs";
-import { callOperation, document, operations } from "./client.mjs";
+import { callOperation, document, operations, userAgent } from "./client.mjs";
 
 async function invoke(args, options = {}) {
   let out = "",
@@ -682,4 +682,20 @@ await test("pilot permissions show commands and PaperMentor uploads the original
     },
   );
   assert.equal(upload.code, 0, upload.err);
+});
+
+await test("every request names the CLI and its version in the User-Agent", async () => {
+  const version = JSON.parse(
+    await readFile(new URL("./package.json", import.meta.url), "utf8"),
+  ).version;
+  assert.equal(userAgent, `adminbot-cli/${version}`);
+  let seen;
+  await callOperation("get-auth-session", {
+    token: "abt_sample",
+    fetchImpl: async (request) => {
+      seen = request.headers.get("user-agent");
+      return new Response("{}", { headers: { "Content-Type": "application/json" } });
+    },
+  });
+  assert.equal(seen, userAgent);
 });

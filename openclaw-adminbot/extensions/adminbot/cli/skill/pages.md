@@ -218,6 +218,9 @@ Website: `/settings` · Who: admin
 | `get-slack-channels`                        | GET `/slack/channels`                       |
 | `get-ui-tab-visits-rows`                    | GET `/ui/tab-visits/rows`                   |
 | `get-ui-tab-visits`                         | GET `/ui/tab-visits`                        |
+| `get-usage-automation`                      | GET `/usage/automation`                     |
+| `get-usage-requests`                        | GET `/usage/requests`                       |
+| `get-usage-summary`                         | GET `/usage/summary`                        |
 | `post-automation-email-review-by-review-id` | POST `/automation/email/review/{review_id}` |
 | `post-automation-email-review-propose`      | POST `/automation/email/review/propose`     |
 | `post-automation-email-run`                 | POST `/automation/email/run`                |

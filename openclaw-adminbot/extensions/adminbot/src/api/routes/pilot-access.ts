@@ -133,14 +133,31 @@ export function pilotOperations(admin: boolean): string[] {
   );
 }
 
-export function pilotOperation(path: string, method: string | undefined, admin: boolean) {
+function contractRoute(path: string) {
   const parts = path.split("/");
-  const route = routes.find(
+  return routes.find(
     (r) =>
       r.parts.length === parts.length &&
       r.parts.every(
         (segment, i) => segment === parts[i] || (segment.startsWith("{") && Boolean(parts[i])),
       ),
   );
-  return route?.operations.find((op) => op.method === method && admits(op, admin));
+}
+
+export function pilotOperation(path: string, method: string | undefined, admin: boolean) {
+  return contractRoute(path)?.operations.find((op) => op.method === method && admits(op, admin));
+}
+
+/**
+ * The published operation a request path and method resolve to, whoever is asking.
+ *
+ * Usage telemetry names a request by this rather than by its path, because a concrete path carries
+ * ids (`/lab/members/pat-lee`) and the template does not.
+ */
+export function contractOperation(
+  path: string,
+  method: string | undefined,
+): { id: string; path: string } | undefined {
+  const op = contractRoute(path)?.operations.find((entry) => entry.method === method);
+  return op ? { id: op.id, path: op.path } : undefined;
 }

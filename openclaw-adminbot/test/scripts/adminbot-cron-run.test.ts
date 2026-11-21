@@ -4,8 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-// Runs a job that writes `stderr` and exits `code`, and returns the heartbeat it reported.
-function heartbeatFor(stderr: string, code: number) {
+// Runs a job that writes `stderr`, runs `extra` (bash), exits `code`, and returns its heartbeat.
+function heartbeatFor(stderr: string, code: number, extra = "") {
   const dir = mkdtempSync(path.join(os.tmpdir(), "adminbot-cron-run-"));
   try {
     const envFile = path.join(dir, "env");
@@ -26,7 +26,7 @@ function heartbeatFor(stderr: string, code: number) {
         "--",
         "bash",
         "-c",
-        `cat "${path.join(dir, "stderr.txt")}" >&2; exit ${code}`,
+        `cat "${path.join(dir, "stderr.txt")}" >&2; ${extra}\nexit ${code}`,
       ],
       {
         encoding: "utf8",
@@ -83,5 +83,25 @@ describe("cron heartbeat", () => {
   it("sends no detail for a successful run", () => {
     const run = heartbeatFor("(node:1) ExperimentalWarning: x\n", 0);
     expect(run.beat).toMatchObject({ ok: true, exit_code: 0, detail: "" });
+  });
+
+  it("reports the run's duration and sums the counters the job wrote, dropping anything else", () => {
+    const run = heartbeatFor(
+      "",
+      0,
+      [
+        'printf "emails_status.completed\\t3\\n" >> "$ADMINBOT_RUN_METRICS_FILE"',
+        'printf "emails_status.completed\\t2\\nneeds_review\\t1\\n" >> "$ADMINBOT_RUN_METRICS_FILE"',
+        'printf "Subject: hello\\t9\\nerrors\\t-1\\nbad\\tword\\n" >> "$ADMINBOT_RUN_METRICS_FILE"',
+      ].join("\n"),
+    );
+    expect(run.beat.duration_ms).toBeGreaterThanOrEqual(0);
+    expect(run.beat.metrics).toEqual({ "emails_status.completed": 5, needs_review: 1 });
+  });
+
+  it("sends no metrics when the job counted nothing", () => {
+    const run = heartbeatFor("", 0);
+    expect(run.beat).not.toHaveProperty("metrics");
+    expect(Number.isInteger(run.beat.duration_ms)).toBe(true);
   });
 });

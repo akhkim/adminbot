@@ -5264,6 +5264,57 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/usage/automation": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** GET /usage/automation */
+    get: operations["get-usage-automation"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/usage/requests": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** GET /usage/requests */
+    get: operations["get-usage-requests"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/usage/summary": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** GET /usage/summary */
+    get: operations["get-usage-summary"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/venue-papers/categories": {
     parameters: {
       query?: never;
@@ -10783,6 +10834,60 @@ export interface components {
       tab: string;
       at: string;
       impersonated?: boolean;
+    } & {
+      [key: string]: unknown;
+    };
+    AutomationRunReport: {
+      from: string;
+      days: number;
+      jobs: ({
+        runs: number;
+        failures: number;
+        avg_ms?: number;
+        max_ms?: number;
+        last_at?: string;
+        last_ok_at?: string;
+        metrics: {
+          [key: string]: number;
+        };
+        job: string;
+      } & {
+        [key: string]: unknown;
+      })[];
+      sweeps: ({
+        runs: number;
+        failures: number;
+        avg_ms?: number;
+        max_ms?: number;
+        last_at?: string;
+        last_ok_at?: string;
+        metrics: {
+          [key: string]: number;
+        };
+        operation: string;
+        method: string;
+      } & {
+        [key: string]: unknown;
+      })[];
+    } & {
+      [key: string]: unknown;
+    };
+    AdminBotApiUsageEntry: {
+      at: string;
+      member_id?: string;
+      /** @enum {string} */
+      auth: "service" | "session" | "api_token";
+      token_id?: string;
+      /** @enum {string} */
+      client: "other" | "cli" | "website";
+      client_version?: string;
+      operation: string;
+      method: string;
+      status: number;
+      duration_ms: number;
+      metrics?: {
+        [key: string]: number;
+      };
     } & {
       [key: string]: unknown;
     };
@@ -30818,6 +30923,182 @@ export interface operations {
             visits: components["schemas"]["AdminBotTabVisit"][];
             from: string;
             days: number;
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "get-usage-automation": {
+    parameters: {
+      query?: {
+        days?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AutomationRunReport"];
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "get-usage-requests": {
+    parameters: {
+      query?: {
+        limit?: string;
+        member_id?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            requests: components["schemas"]["AdminBotApiUsageEntry"][];
+          } & {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Authentication, authorization, validation, policy, or connector error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "get-usage-summary": {
+    parameters: {
+      query?: {
+        days?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            by_member: ({
+              name: string;
+              requests: number;
+              client_errors: number;
+              server_errors: number;
+              avg_ms: number;
+              max_ms: number;
+              member_id: string;
+              last_at: string;
+              cli_requests: number;
+              token_requests: number;
+            } & {
+              [key: string]: unknown;
+            })[];
+            from: string;
+            days: number;
+            totals: {
+              requests: number;
+              client_errors: number;
+              server_errors: number;
+              avg_ms: number;
+              max_ms: number;
+              members: number;
+            } & {
+              [key: string]: unknown;
+            };
+            by_day: ({
+              requests: number;
+              client_errors: number;
+              server_errors: number;
+              avg_ms: number;
+              max_ms: number;
+              day: string;
+            } & {
+              [key: string]: unknown;
+            })[];
+            by_operation: ({
+              requests: number;
+              client_errors: number;
+              server_errors: number;
+              avg_ms: number;
+              max_ms: number;
+              operation: string;
+              method: string;
+            } & {
+              [key: string]: unknown;
+            })[];
+            by_client: ({
+              requests: number;
+              client_errors: number;
+              server_errors: number;
+              avg_ms: number;
+              max_ms: number;
+              client: string;
+              client_version?: string;
+            } & {
+              [key: string]: unknown;
+            })[];
+            by_auth: ({
+              requests: number;
+              client_errors: number;
+              server_errors: number;
+              avg_ms: number;
+              max_ms: number;
+              /** @enum {string} */
+              auth: "service" | "session" | "api_token";
+            } & {
+              [key: string]: unknown;
+            })[];
           } & {
             [key: string]: unknown;
           };

@@ -33548,6 +33548,411 @@
         }
       }
     },
+    "/usage/automation": {
+      "get": {
+        "operationId": "get-usage-automation",
+        "summary": "GET /usage/automation",
+        "tags": [
+          "usage"
+        ],
+        "x-source": "src/api/routes/usage.ts",
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutomationRunReport"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/usage/requests": {
+      "get": {
+        "operationId": "get-usage-requests",
+        "summary": "GET /usage/requests",
+        "tags": [
+          "usage"
+        ],
+        "x-source": "src/api/routes/usage.ts",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "member_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "requests": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AdminBotApiUsageEntry"
+                      }
+                    }
+                  },
+                  "required": [
+                    "requests"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/usage/summary": {
+      "get": {
+        "operationId": "get-usage-summary",
+        "summary": "GET /usage/summary",
+        "tags": [
+          "usage"
+        ],
+        "x-source": "src/api/routes/usage.ts",
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "by_member": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "requests": {
+                            "type": "number"
+                          },
+                          "client_errors": {
+                            "type": "number"
+                          },
+                          "server_errors": {
+                            "type": "number"
+                          },
+                          "avg_ms": {
+                            "type": "number"
+                          },
+                          "max_ms": {
+                            "type": "number"
+                          },
+                          "member_id": {
+                            "type": "string"
+                          },
+                          "last_at": {
+                            "type": "string"
+                          },
+                          "cli_requests": {
+                            "type": "number"
+                          },
+                          "token_requests": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "requests",
+                          "client_errors",
+                          "server_errors",
+                          "avg_ms",
+                          "max_ms",
+                          "member_id",
+                          "last_at",
+                          "cli_requests",
+                          "token_requests"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "from": {
+                      "type": "string"
+                    },
+                    "days": {
+                      "type": "number"
+                    },
+                    "totals": {
+                      "type": "object",
+                      "properties": {
+                        "requests": {
+                          "type": "number"
+                        },
+                        "client_errors": {
+                          "type": "number"
+                        },
+                        "server_errors": {
+                          "type": "number"
+                        },
+                        "avg_ms": {
+                          "type": "number"
+                        },
+                        "max_ms": {
+                          "type": "number"
+                        },
+                        "members": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "requests",
+                        "client_errors",
+                        "server_errors",
+                        "avg_ms",
+                        "max_ms",
+                        "members"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "by_day": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "requests": {
+                            "type": "number"
+                          },
+                          "client_errors": {
+                            "type": "number"
+                          },
+                          "server_errors": {
+                            "type": "number"
+                          },
+                          "avg_ms": {
+                            "type": "number"
+                          },
+                          "max_ms": {
+                            "type": "number"
+                          },
+                          "day": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "requests",
+                          "client_errors",
+                          "server_errors",
+                          "avg_ms",
+                          "max_ms",
+                          "day"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "by_operation": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "requests": {
+                            "type": "number"
+                          },
+                          "client_errors": {
+                            "type": "number"
+                          },
+                          "server_errors": {
+                            "type": "number"
+                          },
+                          "avg_ms": {
+                            "type": "number"
+                          },
+                          "max_ms": {
+                            "type": "number"
+                          },
+                          "operation": {
+                            "type": "string"
+                          },
+                          "method": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "requests",
+                          "client_errors",
+                          "server_errors",
+                          "avg_ms",
+                          "max_ms",
+                          "operation",
+                          "method"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "by_client": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "requests": {
+                            "type": "number"
+                          },
+                          "client_errors": {
+                            "type": "number"
+                          },
+                          "server_errors": {
+                            "type": "number"
+                          },
+                          "avg_ms": {
+                            "type": "number"
+                          },
+                          "max_ms": {
+                            "type": "number"
+                          },
+                          "client": {
+                            "type": "string"
+                          },
+                          "client_version": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "requests",
+                          "client_errors",
+                          "server_errors",
+                          "avg_ms",
+                          "max_ms",
+                          "client"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "by_auth": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "requests": {
+                            "type": "number"
+                          },
+                          "client_errors": {
+                            "type": "number"
+                          },
+                          "server_errors": {
+                            "type": "number"
+                          },
+                          "avg_ms": {
+                            "type": "number"
+                          },
+                          "max_ms": {
+                            "type": "number"
+                          },
+                          "auth": {
+                            "type": "string",
+                            "enum": [
+                              "service",
+                              "session",
+                              "api_token"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "requests",
+                          "client_errors",
+                          "server_errors",
+                          "avg_ms",
+                          "max_ms",
+                          "auth"
+                        ],
+                        "additionalProperties": true
+                      }
+                    }
+                  },
+                  "required": [
+                    "by_member",
+                    "from",
+                    "days",
+                    "totals",
+                    "by_day",
+                    "by_operation",
+                    "by_client",
+                    "by_auth"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/venue-papers/categories": {
       "get": {
         "operationId": "get-venue-papers-categories",
@@ -50496,6 +50901,173 @@
           "member_id",
           "tab",
           "at"
+        ],
+        "additionalProperties": true
+      },
+      "AutomationRunReport": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "days": {
+            "type": "number"
+          },
+          "jobs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "runs": {
+                  "type": "number"
+                },
+                "failures": {
+                  "type": "number"
+                },
+                "avg_ms": {
+                  "type": "number"
+                },
+                "max_ms": {
+                  "type": "number"
+                },
+                "last_at": {
+                  "type": "string"
+                },
+                "last_ok_at": {
+                  "type": "string"
+                },
+                "metrics": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "number"
+                  }
+                },
+                "job": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "runs",
+                "failures",
+                "metrics",
+                "job"
+              ],
+              "additionalProperties": true
+            }
+          },
+          "sweeps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "runs": {
+                  "type": "number"
+                },
+                "failures": {
+                  "type": "number"
+                },
+                "avg_ms": {
+                  "type": "number"
+                },
+                "max_ms": {
+                  "type": "number"
+                },
+                "last_at": {
+                  "type": "string"
+                },
+                "last_ok_at": {
+                  "type": "string"
+                },
+                "metrics": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "number"
+                  }
+                },
+                "operation": {
+                  "type": "string"
+                },
+                "method": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "runs",
+                "failures",
+                "metrics",
+                "operation",
+                "method"
+              ],
+              "additionalProperties": true
+            }
+          }
+        },
+        "required": [
+          "from",
+          "days",
+          "jobs",
+          "sweeps"
+        ],
+        "additionalProperties": true
+      },
+      "AdminBotApiUsageEntry": {
+        "type": "object",
+        "properties": {
+          "at": {
+            "type": "string"
+          },
+          "member_id": {
+            "type": "string"
+          },
+          "auth": {
+            "type": "string",
+            "enum": [
+              "service",
+              "session",
+              "api_token"
+            ]
+          },
+          "token_id": {
+            "type": "string"
+          },
+          "client": {
+            "type": "string",
+            "enum": [
+              "other",
+              "cli",
+              "website"
+            ]
+          },
+          "client_version": {
+            "type": "string"
+          },
+          "operation": {
+            "type": "string"
+          },
+          "method": {
+            "type": "string"
+          },
+          "status": {
+            "type": "number"
+          },
+          "duration_ms": {
+            "type": "number"
+          },
+          "metrics": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "number"
+            }
+          }
+        },
+        "required": [
+          "at",
+          "auth",
+          "client",
+          "operation",
+          "method",
+          "status",
+          "duration_ms"
         ],
         "additionalProperties": true
       },

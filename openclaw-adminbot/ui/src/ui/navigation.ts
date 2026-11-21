@@ -138,6 +138,9 @@ export const TAB_PAGES = [
       // What broke for the people using it. Beside Tab Usage because both are the lab's use of
       // AdminBot seen from the operator's side: where people went, and where it failed them.
       "adminbotErrorLog",
+      // Who calls the API and through what: the CLI, tokens and the website, plus what the cron
+      // runs did. Tab Usage's other half -- that one sees browser tabs, this one every request.
+      "adminbotApiUsage",
     ],
   },
   { page: "nudges", tabs: ["adminbotAnnouncements", "adminbotWorkshopNudges"] },
@@ -230,6 +233,7 @@ export type Tab =
   | "adminbotProfileOverview"
   | "adminbotTabUsage"
   | "adminbotErrorLog"
+  | "adminbotApiUsage"
   | "adminbotProfessor"
   | "adminbotTimeAvailability"
   | "adminbotMeetings"
@@ -324,6 +328,7 @@ const TAB_PATHS: Record<Tab, string> = {
   adminbotProfileOverview: "/profile-overview",
   adminbotTabUsage: "/tab-usage",
   adminbotErrorLog: "/error-log",
+  adminbotApiUsage: "/api-usage",
   adminbotProfessor: "/professor",
   adminbotTimeAvailability: "/time-availability",
   adminbotMeetings: "/meetings",
@@ -596,6 +601,7 @@ export function iconForTab(tab: Tab): IconName {
     case "adminbotProfileOverview":
       return "check";
     case "adminbotTabUsage":
+    case "adminbotApiUsage":
       return "barChart";
     case "adminbotErrorLog":
       return "bug";

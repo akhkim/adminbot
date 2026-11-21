@@ -184,6 +184,8 @@ describe("TAB_GROUPS", () => {
       "adminbotTabUsage",
       // The error log is the same operator's-eye view: where AdminBot failed the people using it.
       "adminbotErrorLog",
+      // API Usage is Tab Usage for every request: the CLI, tokens and the cron runs.
+      "adminbotApiUsage",
     ]);
     // Neither is its own sidebar entry any more, which is the whole point of the move.
     const sidebarTabs = TAB_GROUPS.flatMap((group) => group.tabs as readonly string[]);

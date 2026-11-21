@@ -1,0 +1,195 @@
+// API usage telemetry over HTTP: which requests become rows, what a row says, and who may read them.
+import { afterEach, describe, expect, it } from "vitest";
+import { hashPassword } from "../workflows/identity/auth.js";
+import { createAdminBotMockService } from "./server.js";
+
+const PASSWORD = "synthetic-password-1";
+const PASSWORD_HASH = hashPassword(PASSWORD);
+const SERVICE = "test-usage-service-token";
+const running: Array<ReturnType<typeof createAdminBotMockService>> = [];
+
+afterEach(async () => {
+  for (const mock of running.splice(0)) {
+    await new Promise<void>((resolve) => {
+      mock.server.close(() => resolve());
+    });
+    mock.close();
+  }
+});
+
+async function start() {
+  const mock = createAdminBotMockService({ serviceToken: SERVICE });
+  running.push(mock);
+  await new Promise<void>((resolve) => {
+    mock.server.listen(0, "127.0.0.1", resolve);
+  });
+  const { port } = mock.server.address() as { port: number };
+  for (const [id, level] of [
+    ["admin-a", "admin"],
+    ["plain-c", "member"],
+  ] as const) {
+    mock.store.saveLabMember({
+      id,
+      name: `Test ${id}`,
+      email: `${id}@example.invalid`,
+      privilege_level: level,
+      access: [],
+      created_at: "2026-01-01T00:00:00.000Z",
+      updated_at: "2026-01-01T00:00:00.000Z",
+    });
+    mock.store.saveCredential({
+      member_id: id,
+      email: `${id}@example.invalid`,
+      password_scrypt: PASSWORD_HASH,
+      claimed_at: "2026-01-01T00:00:00.000Z",
+      updated_at: "2026-01-01T00:00:00.000Z",
+    });
+  }
+  return { mock, baseUrl: `http://127.0.0.1:${port}` };
+}
+
+async function call(
+  baseUrl: string,
+  method: string,
+  path: string,
+  options: { bearer?: string; agent?: string; body?: unknown } = {},
+) {
+  const headers: Record<string, string> = {};
+  if (options.bearer) {
+    headers.Authorization = `Bearer ${options.bearer}`;
+  }
+  if (options.agent) {
+    headers["User-Agent"] = options.agent;
+  }
+  if (options.body !== undefined) {
+    headers["Content-Type"] = "application/json";
+  }
+  const response = await fetch(`${baseUrl}${path}`, {
+    method,
+    headers,
+    ...(options.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
+  });
+  const text = await response.text();
+  // The row is written when the server sees the response close, a tick after the client has it.
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  return { status: response.status, body: text ? JSON.parse(text) : {} };
+}
+
+async function signIn(baseUrl: string, id: string): Promise<string> {
+  const login = await call(baseUrl, "POST", "/auth/login", {
+    body: { email: `${id}@example.invalid`, password: PASSWORD },
+  });
+  expect(login.status).toBe(200);
+  return login.body.session_token as string;
+}
+
+describe("API usage telemetry", () => {
+  it("records who called what, through which client, and how it went", async () => {
+    const { baseUrl } = await start();
+    const session = await signIn(baseUrl, "plain-c");
+    expect(
+      (
+        await call(baseUrl, "GET", "/auth/session", {
+          bearer: session,
+          agent: "adminbot-cli/0.1.0",
+        })
+      ).status,
+    ).toBe(200);
+    // Unauthenticated: nobody's usage, so no row.
+    expect((await call(baseUrl, "GET", "/papers")).status).toBe(401);
+
+    const recent = await call(baseUrl, "GET", "/usage/requests?member_id=plain-c", {
+      bearer: SERVICE,
+    });
+    expect(recent.status).toBe(200);
+    const row = recent.body.requests.find(
+      (entry: { operation: string }) => entry.operation !== "unmatched",
+    );
+    expect(row).toMatchObject({
+      member_id: "plain-c",
+      auth: "session",
+      client: "cli",
+      client_version: "0.1.0",
+      method: "GET",
+      status: 200,
+    });
+    expect(typeof row.duration_ms).toBe("number");
+    // Nothing that names a request's content or its credential.
+    expect(JSON.stringify(recent.body)).not.toContain(session);
+
+    const summary = await call(baseUrl, "GET", "/usage/summary?days=7", { bearer: SERVICE });
+    expect(summary.status).toBe(200);
+    expect(summary.body.days).toBe(7);
+    const member = summary.body.by_member.find(
+      (entry: { member_id: string }) => entry.member_id === "plain-c",
+    );
+    expect(member).toMatchObject({ name: "Test plain-c", cli_requests: 1 });
+    expect(
+      summary.body.by_member.some((entry: { member_id: string }) => entry.member_id === ""),
+    ).toBe(false);
+  });
+
+  it("names a personal token by its id, never its value", async () => {
+    const { baseUrl } = await start();
+    const session = await signIn(baseUrl, "admin-a");
+    const created = await call(baseUrl, "POST", "/auth/api-tokens", {
+      bearer: session,
+      body: { name: "agent", expires_in_days: 30 },
+    });
+    expect(created.status).toBe(201);
+    const token = created.body.token as string;
+    expect((await call(baseUrl, "GET", "/auth/session", { bearer: token })).status).toBe(200);
+    const recent = await call(baseUrl, "GET", "/usage/requests?member_id=admin-a", {
+      bearer: SERVICE,
+    });
+    const tokenRow = recent.body.requests.find(
+      (entry: { auth: string }) => entry.auth === "api_token",
+    );
+    expect(tokenRow.token_id).toBe(created.body.api_token.id);
+    expect(JSON.stringify(recent.body)).not.toContain(token);
+  });
+
+  it("is admin-only", async () => {
+    const { baseUrl } = await start();
+    const member = await signIn(baseUrl, "plain-c");
+    const admin = await signIn(baseUrl, "admin-a");
+    for (const path of ["/usage/summary", "/usage/requests", "/usage/automation"]) {
+      expect((await call(baseUrl, "GET", path, { bearer: member })).status).toBe(403);
+      expect((await call(baseUrl, "GET", path)).status).toBe(401);
+      expect((await call(baseUrl, "GET", path, { bearer: admin })).status).toBe(200);
+    }
+  });
+
+  it("reports cron runs with their duration and counters", async () => {
+    const { baseUrl } = await start();
+    const beat = await call(baseUrl, "POST", "/automation/health/heartbeat", {
+      bearer: SERVICE,
+      body: {
+        job: "adminbot-email",
+        ok: true,
+        cron: "0 * * * *",
+        duration_ms: 4200,
+        metrics: { "emails.reimbursement": 2, needs_review: 1, "not a counter": 5 },
+      },
+    });
+    expect(beat.status).toBe(200);
+    await call(baseUrl, "POST", "/automation/health/heartbeat", {
+      bearer: SERVICE,
+      body: { job: "adminbot-email", ok: false, duration_ms: 800, metrics: { errors: 1 } },
+    });
+    const report = await call(baseUrl, "GET", "/usage/automation?days=7", { bearer: SERVICE });
+    expect(report.status).toBe(200);
+    expect(report.body.jobs).toEqual([
+      expect.objectContaining({
+        job: "adminbot-email",
+        runs: 2,
+        failures: 1,
+        avg_ms: 2500,
+        max_ms: 4200,
+        metrics: { "emails.reimbursement": 2, needs_review: 1, errors: 1 },
+      }),
+    ]);
+    // The heartbeats were themselves service calls, and show up as the endpoint that took them.
+    expect(report.body.sweeps).toContainEqual(expect.objectContaining({ method: "POST", runs: 2 }));
+  });
+});

@@ -20,6 +20,7 @@ import { ReferenceScans } from "../../kernel/reference-scans.js";
 import type { ActiveChannelReader } from "../../kernel/service.active-channels.js";
 import { AdminBotService, type AdminBotServiceStore } from "../../kernel/service.js";
 import type { AdminBotActionExecutor, AdminBotServiceOptions } from "../../kernel/service.js";
+import type { ApiUsageLog } from "../../persistence/api-usage.js";
 import type { createCollaboratorChatRequestStore } from "../../persistence/collaborator-chat-requests.js";
 import type { ErrorLog } from "../../persistence/error-log.js";
 import type { FailedExternalRequestLedger } from "../../persistence/failed-requests.js";
@@ -177,6 +178,8 @@ export type AdminBotRouteContext = {
   failedRequestLedger: FailedExternalRequestLedger;
   /** Browser and route-handler errors, one row per problem. See contracts/error-log.ts. */
   errorLog: ErrorLog;
+  /** One row per authenticated request, admin-read. See contracts/api-usage.ts. */
+  apiUsage: ApiUsageLog;
 };
 
 /**
@@ -408,6 +411,7 @@ export type AdminBotMockServiceOptions = {
   llmRouter?: LlmLoadRouter;
   failedRequestLedger?: FailedExternalRequestLedger;
   errorLog?: ErrorLog;
+  apiUsage?: ApiUsageLog;
   // Approves a pending gateway device pairing on behalf of a signed-in member. Injected from the
   // repo-root composition layer (start-adminbot.mjs) so the extension never imports core
   // device-pairing internals. `allowedScopes` is the ceiling derived from the member's privilege;

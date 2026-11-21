@@ -605,6 +605,7 @@ import {
   type AdminBotTalkMaterialsView,
 } from "../workflows/papers/talk-materials.js";
 import { PaperTableSnapshot, type PaperRowReader } from "./paper-table-snapshot.js";
+import { cleanRunMetrics } from "./run-metrics.js";
 import {
   enforceActiveChannels,
   isActiveChannelEligible,
@@ -3556,7 +3557,15 @@ export class AdminBotService {
   /** One cron run, as reported by scripts/lib/adminbot-cron-run.sh. */
   recordAutomationHeartbeat(
     actor: string,
-    input: { job?: unknown; ok?: unknown; cron?: unknown; exit_code?: unknown; detail?: unknown },
+    input: {
+      job?: unknown;
+      ok?: unknown;
+      cron?: unknown;
+      exit_code?: unknown;
+      detail?: unknown;
+      duration_ms?: unknown;
+      metrics?: unknown;
+    },
   ): AdminBotServiceResponse<{ recorded: true }> {
     const job = typeof input.job === "string" ? input.job.trim() : "";
     if (!/^[a-z0-9][a-z0-9-]{0,79}$/u.test(job) || typeof input.ok !== "boolean") {
@@ -3573,6 +3582,14 @@ export class AdminBotService {
         ...(typeof input.detail === "string" && input.detail.trim()
           ? { detail: input.detail.trim().slice(0, 300) }
           : {}),
+        // How long the run took and what it counted, for the admin usage page. Counters only:
+        // cleanRunMetrics drops anything that is not a short name and a non-negative integer.
+        ...(typeof input.duration_ms === "number" &&
+        Number.isSafeInteger(input.duration_ms) &&
+        input.duration_ms >= 0
+          ? { duration_ms: Math.min(input.duration_ms, 7 * 24 * 3_600_000) }
+          : {}),
+        ...((metrics) => (metrics ? { metrics } : {}))(cleanRunMetrics(input.metrics)),
       },
     });
     return { ok: true, status: 200, payload: { recorded: true } };

@@ -79,6 +79,7 @@ describe("iconForTab", () => {
       adminbotTalkLeaderboard: "mic",
       adminbotTabUsage: "barChart",
       adminbotErrorLog: "bug",
+      adminbotApiUsage: "barChart",
       adminbotGrantReport: "scrollText",
       adminbotMailingList: "send",
       adminbotProfessor: "lobster",
@@ -145,6 +146,7 @@ describe("titleForTab", () => {
       adminbotTalkLeaderboard: "Talk Leaderboard",
       adminbotTabUsage: "Tab Usage",
       adminbotErrorLog: "Error Log",
+      adminbotApiUsage: "API Usage",
       adminbotGrantReport: "Grant Report",
       adminbotMailingList: "Mailing List",
       adminbotProfessor: "My Desk",
@@ -209,6 +211,7 @@ describe("subtitleForTab", () => {
       adminbotTalkLeaderboard: "This year's talks and orals, counted from members' CVs.",
       adminbotTabUsage: "Which parts of AdminBot the lab actually opens.",
       adminbotErrorLog: "What broke for the people using AdminBot.",
+      adminbotApiUsage: "Who uses the API and CLI, how, and what the automation runs did.",
       adminbotGrantReport:
         "Every paper mapped to a safety area, and the track record behind each ask.",
       adminbotMailingList: "Mail our publications for a date range to one address.",
