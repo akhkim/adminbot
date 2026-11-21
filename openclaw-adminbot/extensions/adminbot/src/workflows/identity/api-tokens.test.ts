@@ -8,7 +8,7 @@ import {
   hashApiToken,
   isApiTokenShaped,
 } from "./api-token-format.js";
-import { AdminBotApiTokenService } from "./api-tokens.js";
+import { AdminBotApiTokenService, DEVICE_STARTS_PER_IP } from "./api-tokens.js";
 import { hashPassword, type AdminBotMemberPrincipal } from "./auth.js";
 
 // Synthetic people only. One scrypt hash for the whole file: it is deliberately slow.
@@ -390,7 +390,7 @@ describe("AdminBotApiTokenService: revocation", () => {
 
 describe("AdminBotApiTokenService: adminbot login", () => {
   it("issues the token once, to the CLI that started the request, after a one-click approval", async () => {
-    const { tokens, principal, clock } = setup();
+    const { tokens, principal, clock, store } = setup();
     const started = await tokens.startDeviceLogin({
       name: "claude-laptop",
       expires_in_days: 7,
@@ -401,9 +401,9 @@ describe("AdminBotApiTokenService: adminbot login", () => {
     }
     const { device_code, user_code, verification_uri_complete } = started.payload;
     expect(user_code).toMatch(/^[A-Z]{4}-[A-Z]{4}$/u);
-    expect(verification_uri_complete).toBe(
-      `https://ui.example.invalid/profile?cliLogin=${user_code}`,
-    );
+    // The link opens the card but never carries the code: the member types it.
+    expect(verification_uri_complete).toBe("https://ui.example.invalid/profile?cliLogin");
+    expect(verification_uri_complete).not.toContain(user_code);
 
     expect((await tokens.pollDeviceLogin(device_code)).ok && 1).toBe(1);
     expect(await tokens.pollDeviceLogin(device_code)).toMatchObject({
@@ -421,7 +421,17 @@ describe("AdminBotApiTokenService: adminbot login", () => {
         user_code,
       }),
     ).toMatchObject({ ok: false, status: 403 });
-    expect(await tokens.approveDeviceLogin(admin, { user_code })).toMatchObject({ ok: true });
+    // Two approvers with the same code at once: the first reserves the request before its audit
+    // write, so the second finds nothing pending and cannot become the token's owner.
+    const [first, second] = await Promise.all([
+      tokens.approveDeviceLogin(admin, { user_code }),
+      tokens.approveDeviceLogin(principal("admin-b"), { user_code }),
+    ]);
+    expect(first).toMatchObject({ ok: true });
+    expect(second).toMatchObject({ ok: false });
+    expect(
+      store.listAuditEvents().find((e) => e.type === "auth.api_token.cli_login_approved"),
+    ).toMatchObject({ actor: "admin-a", details: { name: "claude-laptop", ip: "198.51.100.7" } });
 
     clock.advance(5000);
     const polled = await tokens.pollDeviceLogin(device_code);
@@ -484,7 +494,7 @@ describe("AdminBotApiTokenService: adminbot login", () => {
 
   it("rate-limits anonymous starts per address", async () => {
     const { tokens } = setup();
-    for (let i = 0; i < 10; i += 1) {
+    for (let i = 0; i < DEVICE_STARTS_PER_IP; i += 1) {
       expect(
         (await tokens.startDeviceLogin({ name: "n", expires_in_days: 1, remoteIp: "192.0.2.1" }))
           .ok,

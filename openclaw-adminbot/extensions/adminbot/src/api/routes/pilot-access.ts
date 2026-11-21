@@ -2,6 +2,11 @@
 // ownership, approval and workflow checks still determine access to the target.
 import contract from "../../../cli/openapi.generated.json" with { type: "json" };
 
+// A member's CLI token reads and edits their own records. It does not message other people or
+// spend model or paid-API time: a leaked token, or an agent stuck in a loop, could otherwise send
+// invites, Slack hellos and social posts, or run up model calls, as fast as it can make requests.
+// Those routes stay on the website, behind a click (say-hi, invites, social drafts, reimbursement
+// filing, the guidebook and lab-sharing assistants, photo polish, venue search, PaperMentor runs).
 const memberPaths: Record<string, string> = {
   "/auth/session": "GET",
   "/auth/logout": "POST",
@@ -20,12 +25,8 @@ const memberPaths: Record<string, string> = {
   "/papers/{papers_id}/recent-edits": "GET",
   "/papers/{papers_id}/attendees": "PUT",
   "/papers/{papers_id}/reimbursements/{reimbursements_id}": "PUT",
-  "/papers/{papers_id}/social-drafts": "POST",
-  "/papers/social-drafts/{social_drafts_id}/circulate": "POST",
   "/papers/social-drafts/{social_drafts_id}/consent": "POST",
   "/papers/slot-overview": "GET",
-  "/papers/linkedin-draft": "POST",
-  "/papers/x-draft": "POST",
   "/papers/relevant": "GET",
   "/lab/members/self": "GET",
   "/lab/members/roster": "GET",
@@ -48,17 +49,15 @@ const memberPaths: Record<string, string> = {
   "/profile/location-permission": "POST",
   "/profile/location-prompt": "GET POST",
   "/profile-photo/apply": "POST",
-  "/profile-photo/polish": "POST",
   "/badges": "GET",
   "/badges/nominations": "GET POST",
   "/badges/suggestions": "GET POST",
   "/lab-sharing": "GET",
-  "/lab-sharing/ask": "POST",
   "/lab-sharing/discover": "GET",
   "/lab-sharing/mine": "GET",
   "/lab-sharing/members": "GET",
   "/lab-sharing/projects/{projects_id}": "GET",
-  "/lab-sharing/invites": "GET POST",
+  "/lab-sharing/invites": "GET",
   "/lab-sharing/requests/{requests_id}": "PUT",
   "/lab-sharing/requests/{requests_id}/close": "POST",
   "/lab-sharing/requests/{requests_id}/interest": "PUT",
@@ -69,7 +68,6 @@ const memberPaths: Record<string, string> = {
   "/meetings/{meetings_id}": "GET",
   "/events": "GET",
   "/events/preferences": "PUT",
-  "/events/say-hi": "POST",
   "/travel": "GET",
   "/travel/location": "POST",
   "/travel/sharing": "GET PUT",
@@ -83,21 +81,16 @@ const memberPaths: Record<string, string> = {
   "/logistics/requests/{requests_id}/confirm-submitted/undo": "POST",
   "/logistics/eligibility/me": "GET",
   "/logistics/signature-form": "POST",
-  "/reimbursements/converse": "POST",
-  "/reimbursements/generate": "POST",
-  "/reimbursements/submit": "POST",
   "/deadlines": "GET",
   "/deadline-proposals": "GET POST",
   "/opportunities": "GET POST",
   "/opportunities/{opportunities_id}": "PUT DELETE",
   "/venue-picker": "GET",
   "/venue-papers/categories": "GET",
-  "/venue-papers/search": "POST",
   "/venue-papers/sources": "GET",
-  "/papermentor/reviews": "GET POST",
+  "/papermentor/reviews": "GET",
   "/papermentor/reviews/{reviews_id}/files/{files_id}": "GET",
   "/cv/talk-leaderboard": "GET",
-  "/guidebook/ask": "POST",
   "/feedback": "POST",
   "/openapi.json": "GET",
 };
@@ -119,9 +112,30 @@ const routes = Object.entries(contract.paths)
 
 type Operation = (typeof routes)[number]["operations"][number];
 
+// Admin routes an admin's CLI token cannot reach, because each can hand someone access or a
+// sign-in another way: a merge copies the duplicate's reset address, CLI role and password onto
+// the survivor; renaming an id sidesteps the "already enrolled" check; sheet rows and onboarding
+// derive privilege from Member Type; PUT /settings can name the PI. They stay in the browser.
+const adminBrowserOnly = new Set([
+  "POST /lab/members/merge",
+  "POST /lab/members/{members_id}/id",
+  "POST /membership/sheet/rows",
+  "PUT /membership/sheet/rows",
+  "PATCH /membership/sheet/rows",
+  "DELETE /membership/sheet/rows",
+  "POST /membership/sheet/onboard",
+  "PUT /settings",
+  "PATCH /settings",
+]);
+
 function admits(op: Operation, admin: boolean): boolean {
   if (op.member) return true;
-  if (!admin || op.path.startsWith("/internal/") || op.path === "/lab/members/{members_id}/email")
+  if (
+    !admin ||
+    op.path.startsWith("/internal/") ||
+    op.path === "/lab/members/{members_id}/email" ||
+    adminBrowserOnly.has(`${op.method} ${op.path}`)
+  )
     return false;
   // Credential management and device pairing require interactive authentication.
   return !op.path.startsWith("/auth/") || op.path.startsWith("/auth/registrations");

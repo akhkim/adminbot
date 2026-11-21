@@ -89,7 +89,7 @@ The pilot section of the skill uses the allowed operations returned by the servi
 ```bash
 adminbot login                    # opens AdminBot in the browser; click Approve
 adminbot whoami
-adminbot auth token               # prints the saved token, for scripts that need it
+adminbot auth token               # prints the saved token, for scripts (pilot tokens: --reveal, terminal only)
 adminbot auth tokens list
 adminbot auth tokens revoke TOKEN_ID
 adminbot logout                   # revokes this machine's token

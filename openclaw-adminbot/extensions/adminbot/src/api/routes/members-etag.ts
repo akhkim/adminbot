@@ -11,6 +11,9 @@ import type { AdminBotPrincipal } from "./context.js";
 import { MEMBER_SUMMARY_PROJECTION } from "./member-summary-row.js";
 import { principalRole, versionEtag } from "./version-etag.js";
 
+// Bump when the redaction rules change, so a cached body from the old rules is not revalidated.
+const MEMBER_REDACTION_VERSION = "redaction-2";
+
 type MemberViewVersionedStore = AdminBotServiceStore & { labMemberViewVersion?(): string };
 
 export function memberViewEtag(
@@ -26,6 +29,7 @@ export function memberViewEtag(
   return versionEtag(route, [
     version,
     deadlineDatasetVersion(),
+    MEMBER_REDACTION_VERSION,
     principalRole(principal),
     // Redaction keeps a member's own private fields and the summary view carries `self`, so the
     // body differs per member. Admins are keyed too: it costs nothing and needs no argument.

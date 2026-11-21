@@ -40,13 +40,13 @@ adminbot <generated command> [IDs] [flags]    Same API with readable command nam
 adminbot <command> --help                     Show generated parameters and flags
 adminbot skill install                        Install the agent skill for Claude Code and Codex
 
-Sign-in (one click in the browser, like gh and Modal):
+Sign-in (type the code in the browser, like gh):
   adminbot login                              Approve access in your browser
   adminbot login --power-user                 Request an enrolled pilot credential
   adminbot login --no-browser                 Print the link instead of opening it (agents, SSH)
   adminbot login --insecure-storage           Keep the token in the credentials file, not the Keychain
   adminbot whoami                             Who you are signed in as (also: auth status)
-  adminbot auth token                         Print the token, e.g. ADMINBOT_TOKEN=$(adminbot auth token)
+  adminbot auth token [--reveal]              Print the token (pilot tokens: --reveal, terminal only)
   adminbot logout                             Revoke this machine's token
 
 Examples:
@@ -394,21 +394,37 @@ export async function run(
     }
     if (argv[0] === "auth" && argv[1] === "token") {
       // Like `gh auth token`: for handing the saved login to another tool, never for a transcript.
-      const [flag, inline] = (argv[2] ?? "").split(/[=](.*)/su);
-      if (argv.length > 4 || (argv[2] && flag !== "--url")) {
-        throw new ApiError("INVALID_ARGUMENTS", "Usage: adminbot auth token [--url ORIGIN]");
+      const usage = "Usage: adminbot auth token [--url ORIGIN] [--reveal]";
+      let url;
+      let reveal = false;
+      for (let i = 2; i < argv.length; i += 1) {
+        const [flag, inline] = argv[i].split(/[=](.*)/su);
+        if (flag === "--reveal" && inline === undefined) {
+          reveal = true;
+        } else if (flag === "--url" && url === undefined) {
+          url = inline ?? argv[++i];
+          if (!url) throw new ApiError("INVALID_ARGUMENTS", usage);
+        } else {
+          throw new ApiError("INVALID_ARGUMENTS", usage);
+        }
       }
-      const origin = serviceOrigin(
-        (flag === "--url" ? (inline ?? argv[3]) : undefined) ??
-          env.ADMINBOT_URL ??
-          document.servers[0].url,
-      );
+      const origin = serviceOrigin(url ?? env.ADMINBOT_URL ?? document.servers[0].url);
       const saved = await sessionToken(credentials, origin, env.ADMINBOT_TOKEN, env);
       if (!saved) {
         throw new ApiError(
           "AUTH_REQUIRED",
           `Not signed in to ${origin}: no saved login and ADMINBOT_TOKEN is unset`,
           401,
+        );
+      }
+      // A pilot (member) token is printed only to a person at a terminal who asks for it. Agents
+      // run with stdout piped into their transcript, so this keeps the secret out of it; the CLI
+      // itself never needs the token printed to use it.
+      if (saved.startsWith("abt_p1_") && !(reveal && stdout.isTTY)) {
+        throw new ApiError(
+          "ACCESS_DENIED",
+          "Not printing a CLI pilot token. The adminbot command uses it for you. To see it yourself, run `adminbot auth token --reveal` in a terminal",
+          403,
         );
       }
       stdout.write(`${saved}\n`);

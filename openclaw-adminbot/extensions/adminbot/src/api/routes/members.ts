@@ -6,6 +6,7 @@
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import {
+  type AdminBotLabMember,
   type AdminBotLabMemberInput,
   redactConfidentialMemberFields,
 } from "../../contracts/actions.js";
@@ -418,15 +419,21 @@ export const membersRoutes: readonly Route[] = [
     const { service } = ctx;
     const memberId = decodeURIComponent(params[1]);
     const body = readRecord(await readJson(req));
-    if (
-      principal.kind === "member" &&
-      principal.apiToken?.role === "power_user" &&
-      ["email", "correspondence_email"].some((key) => Object.hasOwn(body, key))
-    ) {
-      sendJson(res, 403, {
-        error: { message: "Use your browser to update account email addresses" },
-      });
-      return;
+    // Before the split below: a member's own edit goes through updateOwnProfile, not
+    // saveLabMemberAsAdmin, and a CLI token must not move its holder's reset address either.
+    if (principal.kind === "member") {
+      const existing = ctx.store.getLabMember(memberId);
+      const input = body as AdminBotLabMemberInput;
+      const refused = pilotTokenAccessChange(
+        principal,
+        existing,
+        input,
+        input.privilege_level ?? existing?.privilege_level,
+      );
+      if (refused) {
+        sendJson(res, 403, { error: { message: refused } });
+        return;
+      }
     }
     // Only a genuine admin *member* session (the Control UI's own Bearer) gets the full governance
     // write that can set privilege_level/status/email/access_overrides. The shared service principal
@@ -969,6 +976,41 @@ export async function handleMemberRequestRoute(
 }
 
 /**
+ * A CLI pilot token must not change anyone's sign-in address or access, its own included: a stolen
+ * admin token would otherwise make admins or power users, or point a password reset at an address
+ * it controls, without a browser sign-in. Judged on the result of the save, so a Member Type that
+ * implies admin is caught as surely as privilege_level itself. Called on PUT before the self-edit
+ * split, and again inside saveLabMemberAsAdmin where Member Type is resolved.
+ */
+function pilotTokenAccessChange(
+  principal: AdminBotMemberPrincipal,
+  existing: AdminBotLabMember | undefined,
+  input: AdminBotLabMemberInput,
+  nextPrivilege: string | undefined,
+): string | undefined {
+  if (principal.apiToken?.role !== "power_user") {
+    return undefined;
+  }
+  const message = "Use your browser to change email addresses or access rights";
+  const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+  const touches = (key: "cli_role" | "access_overrides" | "email" | "correspondence_email") =>
+    input[key] !== undefined && !same(input[key], existing?.[key]);
+  if (!existing) {
+    // A new record needs an email; it just cannot start as an admin or with CLI or access switches.
+    return nextPrivilege === "admin" || touches("cli_role") || touches("access_overrides")
+      ? message
+      : undefined;
+  }
+  return nextPrivilege !== existing.privilege_level ||
+    touches("cli_role") ||
+    touches("access_overrides") ||
+    touches("email") ||
+    touches("correspondence_email")
+    ? message
+    : undefined;
+}
+
+/**
  * The admin's write of one roster record: the Add member and Edit member forms, and the approval of
  * a member request, which is the same save made on the requester's behalf. One function so that
  * approving a request can never do less (or more) than an admin typing the record in themselves --
@@ -1020,6 +1062,10 @@ export async function saveLabMemberAsAdmin(
     implied && !explicitPrivilege
       ? implied.privilege_level
       : (input.privilege_level ?? existing?.privilege_level);
+  const refused = pilotTokenAccessChange(principal, existing, input, nextPrivilege);
+  if (refused) {
+    return { status: 403, body: { error: { message: refused } } };
+  }
   // An admin cannot take away their own admin access: done by mistake, nobody is left signed in
   // who can put it back. Another admin can.
   if (

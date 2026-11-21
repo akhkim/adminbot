@@ -1,6 +1,6 @@
 // `adminbot auth login` without --email: sign this machine in through the browser, after RFC 8628.
 //
-// The CLI asks the service for a one-time code, the person approves it in AdminBot with one click,
+// The CLI asks the service for a one-time code, the person types it into AdminBot and approves,
 // and the CLI collects a personal API token. No password ever passes through the
 // terminal, and the token is only ever sent to the process that started the request.
 // See docs/adminbot/api-tokens.md.
@@ -77,9 +77,9 @@ export async function deviceLogin({
     );
   }
   stderr.write(
-    `To sign in, open ${verification_uri_complete ?? verification_uri}\n` +
-      `and check that it shows this code: ${user_code}\n` +
-      `Approve it only if you started this login. Waiting…\n`,
+    `To sign in, open ${verification_uri ?? verification_uri_complete}\n` +
+      `and type this code there: ${user_code}\n` +
+      `Never type a code someone else sent you. Waiting…\n`,
   );
   if (browser) {
     openBrowser(verification_uri_complete ?? verification_uri, env);

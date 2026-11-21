@@ -14,15 +14,15 @@ resulting 7-day browser session in a plaintext file. That has four problems:
 - A copied credentials file, or one pasted into a log or commit, works for anybody.
 
 This design follows what Modal, GitHub and Stripe do for their CLIs: a browser approves the
-sign-in with one click, and the server issues a named, revocable personal access token.
+sign-in after the member types the code from their terminal, and the server issues a named, revocable personal access token.
 
 ## What a member gets
 
 ```
 $ adminbot login --name claude-laptop
-To sign in, open https://adminbot.example/profile?cliLogin=WDJB-MJHT
-and check that it shows this code: WDJB-MJHT
-Approve it only if you started this login. Waiting…
+To sign in, open https://adminbot.example/profile
+and type this code there: WDJB-MJHT
+Never type a code someone else sent you. Waiting…
 {"authenticated": true, "member": {...}, "api_token": {"id": "tok_…", "name": "claude-laptop", ...}}
 
 $ adminbot get-papers --limit 5        # every API operation, as before
@@ -40,7 +40,9 @@ Options:
 - `--url`, `--timeout`
 
 `login`, `whoami` and `logout` are top-level shortcuts for the `auth` commands, as in `gh`.
-`adminbot auth token` prints the saved token for a script. `adminbot auth login --email …
+`adminbot auth token` prints the saved token for a script. A CLI pilot token (`abt_p1_…`) is
+printed only with `--reveal` and only to a terminal, never to a pipe, so an agent's transcript
+cannot capture it. `adminbot auth login --email …
 --password-stdin` still signs in with a password and a browser session, for older setups.
 
 The **API tokens** section of **My Profile** lists every token with:
@@ -115,6 +117,14 @@ the longer format as a wildcard token after rollback. Keep the deployment's exis
 `ADMINBOT_API_TOKEN_LEVELS` setting for legacy tokens. Broadening that setting enables
 browser-equivalent tokens for an entire website privilege level.
 
+A pilot token, an admin's included, cannot change anyone's `privilege_level`, Member Type,
+`cli_role`, `access_overrides`, `email` or `correspondence_email`, create an admin, or schedule a
+member change (`POST /lab/scheduled-member-changes`, which the sweep later replays as the
+service). Those return 403 and are done in the browser. Restating an unchanged value is allowed.
+It also cannot merge members, rename a member id, write or onboard membership-sheet rows,
+change workspace settings, file, approve or run `lab_member.*` proposals, or approve sign-ups and
+claims as the PI. Each of those can grant access or move a reset address another way.
+
 Maintain the member method/path table in `src/api/routes/pilot-access.ts`, the route isolation tests and the
 packaged agent skill together. Regenerate the API contract after route changes.
 The standard CLI and generated SDK expose the full catalog. The server enforces the
@@ -152,22 +162,28 @@ call. Paths added later cannot forget this.
 1. `POST /auth/device/start {name, expires_in_days}` (anonymous, rate-limited by IP). It returns
    a `device_code` (32 random bytes, kept by the CLI only), a `user_code` such as `WDJB-MJHT`, the
    approval URL and a 10-minute expiry.
-2. The CLI opens `/profile?cliLogin=WDJB-MJHT`. The app reads the code out of the URL (and drops
-   it from the address bar), and My Profile shows the approval card. The page requires a
-   signed-in browser. `POST /auth/device/lookup {user_code}` gives it the token name, expiry and
-   the IP of the request, and it shows **Approve** and **Deny**.
-3. `POST /auth/device/approve {user_code}` creates the token, which is held for the CLI.
+2. The CLI opens `/profile?cliLogin` (`verification_uri_complete`). The link carries no code;
+   any value on `cliLogin` is ignored and the parameter is dropped from the address bar. My
+   Profile shows the sign-in card, which needs a signed-in browser and asks for the code from
+   the terminal. Only once it is typed does `POST /auth/device/lookup {user_code}` return the
+   token name, role, expiry and requesting IP, with **Approve** and **Deny**. Wrong codes are
+   limited per member.
+3. `POST /auth/device/approve {user_code}` writes `auth.api_token.cli_login_approved` (approver
+   and requesting IP) first, and only then marks the request approved, so no token is issued
+   without its audit record. The token is held for the CLI.
    `POST /auth/device/deny {user_code}` cancels the request.
 4. The CLI polls `POST /auth/device/poll {device_code}`. It gets the token exactly once, after
    which the request is deleted.
 
-**Why one click is enough.** The `device_code` never leaves the CLI, so only the process that
-started the sign-in can collect the token. Visiting a link does nothing on its own: the member
-has to press Approve. The remaining risk is the one every device flow has: an attacker starts a
-sign-in and talks a member into approving the attacker's code. The card shows the token name and
-the requesting IP, the CLI tells the member to approve only a code they started, and the token
-is revocable and audited. This trades a password prompt for fewer interruptions, as `gh` and
-Modal do. User codes avoid ambiguous letters and expire after 10 minutes.
+**Why typing the code, and not one click.** The `device_code` never leaves the CLI, so only the
+process that started the sign-in can collect the token. The risk every device flow has is an
+attacker who starts a sign-in on their own machine and sends a member the link. With a one-click
+card, a member who opens that link sees a code and an Approve button and has nothing to compare
+it against. So the link only finds the request; the member must type the code their own terminal
+printed. Someone who never ran `adminbot login` has no code to type, and a forwarded link opens
+an empty code box. The card also shows the
+token name and the requesting IP, and every approval is audited and revocable. There is still no
+password prompt. User codes avoid ambiguous letters and expire after 10 minutes.
 
 Pending sign-ins are kept in memory. The service runs as one process, and a restart just asks
 the CLI user to try again. `DeviceLoginStore` is an interface, so a shared table can replace it if
@@ -239,7 +255,7 @@ commit stays in history: revoke it, which is what makes it harmless.
 | Store: `adminbot_api_tokens`                             | `persistence/sqlite.ts`, `persistence/postgres-auth.ts`                                                                              |
 | Principal resolution                                     | `api/routes/session.ts` (`abt_` bearer, before sessions)                                                                             |
 | Routes                                                   | `api/routes/api-tokens.ts` (`/auth/api-tokens*`, `/auth/device/*`)                                                                   |
-| UI                                                       | `ui/src/ui/adminbot/views/api-tokens.ts` (token list and CLI approval card), `surfaces/profile.ts`, `app-settings.ts` (`?cliLogin=`) |
+| UI                                                       | `ui/src/ui/adminbot/views/api-tokens.ts` (token list and CLI approval card), `surfaces/profile.ts`, `app-settings.ts` (`?cliLogin`) |
 | OpenAPI and CLI aliases                                  | `tooling/openapi-routes.ts`, `cli/aliases.mjs` (`auth tokens list                                                                    | revoke | revoke-all`) |
 | CLI                                                      | `cli/adminbot.mjs`, `cli/keychain.mjs`, `cli/login.mjs`                                                                              |
 | Secret scan                                              | `scripts/check-secrets.mjs`, `git-hooks/pre-commit`, `.github/workflows/ci.yaml`, `test/scripts/check-secrets.test.ts`               |

@@ -396,59 +396,61 @@ export class ApiTokensSection extends LitElement {
 }
 
 /**
- * The approval card for `adminbot auth login`. Shows what asked to sign in and from where; one click
- * approves or denies, as with `gh auth login`. Fires `cli-login-done` when the
- * member has answered or dismissed it.
+ * The approval card for `adminbot auth login`, like github.com/login/device. The link that opens it
+ * carries no code: the member types the code their own terminal shows, and that typed code is the
+ * only thing that finds the request and approves it. A link someone else sent therefore approves
+ * nothing. Fires `cli-login-done` when the member has answered or dismissed it.
  */
 export class CliLoginApproval extends LitElement {
-  @property() code = "";
   @state() private pending: PendingCliLogin | null = null;
+  /** The code `pending` was found with, sent again on approve or deny. */
+  @state() private code = "";
   @state() private busy = false;
   @state() private error = "";
   @state() private outcome: "approved" | "denied" | null = null;
+  @state() private typed = "";
 
-  // After the first render rather than on connect, so `code` is set however the element was made.
-  firstUpdated() {
-    void this.lookup();
+  /** XXXX-XXXX from whatever the member typed (any case, spaces, with or without the dash). */
+  private typedCode(): string | null {
+    const plain = this.typed.toUpperCase().replace(/[^A-Z]/gu, "");
+    return /^[A-Z]{8}$/u.test(plain) ? `${plain.slice(0, 4)}-${plain.slice(4)}` : null;
   }
 
-  private async lookup() {
-    try {
-      this.pending = await tokenRequest<PendingCliLogin>("/auth/device/lookup", "POST", {
-        user_code: this.code,
-      });
-    } catch (error) {
-      this.error = error instanceof Error ? error.message : "This sign-in request was not found.";
+  private lookup() {
+    const code = this.typedCode();
+    if (!code) {
+      this.error = "Type the 8-letter code your terminal shows.";
+      return;
     }
-  }
-
-  private finish() {
-    this.dispatchEvent(new CustomEvent("cli-login-done", { bubbles: true, composed: true }));
-  }
-
-  private approve() {
     this.busy = true;
     this.error = "";
-    void tokenRequest("/auth/device/approve", "POST", { user_code: this.code })
-      .then(() => {
-        this.outcome = "approved";
+    void tokenRequest<PendingCliLogin>("/auth/device/lookup", "POST", { user_code: code })
+      .then((pending) => {
+        this.pending = pending;
+        this.code = code;
       })
-      .catch((error: unknown) => {
-        this.error = error instanceof Error ? error.message : "Approval failed.";
+      .catch(() => {
+        this.error =
+          "No sign-in is waiting with that code. Check your terminal, or run adminbot auth login again.";
       })
       .finally(() => {
         this.busy = false;
       });
   }
 
-  private deny() {
+  private finish() {
+    this.dispatchEvent(new CustomEvent("cli-login-done", { bubbles: true, composed: true }));
+  }
+
+  private answer(path: "/auth/device/approve" | "/auth/device/deny") {
     this.busy = true;
-    void tokenRequest("/auth/device/deny", "POST", { user_code: this.code })
+    this.error = "";
+    void tokenRequest(path, "POST", { user_code: this.code })
       .then(() => {
-        this.outcome = "denied";
+        this.outcome = path === "/auth/device/approve" ? "approved" : "denied";
       })
       .catch((error: unknown) => {
-        this.error = error instanceof Error ? error.message : "Could not deny the request.";
+        this.error = error instanceof Error ? error.message : "That did not work. Try again.";
       })
       .finally(() => {
         this.busy = false;
@@ -456,6 +458,76 @@ export class CliLoginApproval extends LitElement {
   }
 
   static styles = shared;
+
+  private renderRequest(pending: PendingCliLogin) {
+    return html`<p>
+        <strong>${pending.name}</strong> is asking for
+        ${pending.token_role === "power_user"
+          ? pending.web_role === "admin"
+            ? "CLI access with your admin permissions"
+            : pending.web_role === "member"
+              ? "CLI access to create and edit your projects and manage your own member work"
+              : "CLI access with your current web permissions"
+          : "an API token that acts as you"}
+        ${pending.expires_in_days
+          ? `for ${pending.expires_in_days} days`
+          : "until you revoke it or leave it unused for 90 days"}${pending.requested_ip
+          ? html`, from <code>${pending.requested_ip}</code>`
+          : nothing}.
+      </p>
+      <p>
+        Approve only if you ran <code>adminbot auth login</code> yourself just now. If someone sent
+        you a code or this link, deny it.
+      </p>
+      <div class="row">
+        <button
+          type="button"
+          class="primary"
+          ?disabled=${this.busy}
+          @click=${() => this.answer("/auth/device/approve")}
+        >
+          Approve
+        </button>
+        <button
+          type="button"
+          class="danger"
+          ?disabled=${this.busy}
+          @click=${() => this.answer("/auth/device/deny")}
+        >
+          Deny
+        </button>
+      </div>`;
+  }
+
+  private renderCodeEntry() {
+    return html`<form
+      @submit=${(event: Event) => {
+        event.preventDefault();
+        this.lookup();
+      }}
+    >
+      <label>
+        Type the code your terminal shows
+        <input
+          data-testid="cli-login-code"
+          autocomplete="off"
+          spellcheck="false"
+          placeholder="XXXX-XXXX"
+          .value=${this.typed}
+          @input=${(event: Event) => {
+            this.typed = (event.target as HTMLInputElement).value;
+          }}
+        />
+      </label>
+      <p>Never type a code someone else sent you.</p>
+      <div class="row">
+        <button type="submit" class="primary" ?disabled=${this.busy || !this.typedCode()}>
+          Continue
+        </button>
+        <button type="button" ?disabled=${this.busy} @click=${() => this.finish()}>Cancel</button>
+      </div>
+    </form>`;
+  }
 
   render() {
     if (this.outcome) {
@@ -471,52 +543,8 @@ export class CliLoginApproval extends LitElement {
     }
     return html`<section aria-labelledby="cli-login-title" data-testid="cli-login">
       <h3 id="cli-login-title">Sign in the AdminBot CLI?</h3>
-      ${this.pending
-        ? html`<p>
-              <strong>${this.pending.name}</strong> is asking for
-              ${this.pending.token_role === "power_user"
-                ? this.pending.web_role === "admin"
-                  ? "CLI access with your admin permissions"
-                  : this.pending.web_role === "member"
-                    ? "CLI access to create and edit your projects and manage your own member work"
-                    : "CLI access with your current web permissions"
-                : "an API token that acts as you"}
-              ${this.pending.expires_in_days
-                ? `for ${this.pending.expires_in_days} days`
-                : "until you revoke it or leave it unused for 90 days"}${this.pending.requested_ip
-                ? html`, from <code>${this.pending.requested_ip}</code>`
-                : nothing}.
-            </p>
-            <p>
-              Check that your terminal shows <code>${this.pending.user_code}</code>. Approve only if
-              you ran <code>adminbot auth login</code> yourself just now.
-            </p>
-            <div class="row">
-              <button
-                type="button"
-                class="primary"
-                ?disabled=${this.busy}
-                @click=${() => this.approve()}
-              >
-                Approve
-              </button>
-              <button
-                type="button"
-                class="danger"
-                ?disabled=${this.busy}
-                @click=${() => this.deny()}
-              >
-                Deny
-              </button>
-            </div>`
-        : this.error
-          ? html`<p>
-                This code has expired, was already used, or is not yours. Run
-                <code>adminbot auth login</code> again.
-              </p>
-              <button type="button" @click=${() => this.finish()}>Dismiss</button>`
-          : html`<p>Checking the code…</p>`}
-      ${this.error && this.pending ? html`<div role="alert">${this.error}</div>` : nothing}
+      ${this.pending ? this.renderRequest(this.pending) : this.renderCodeEntry()}
+      ${this.error ? html`<div role="alert">${this.error}</div>` : nothing}
     </section>`;
   }
 }

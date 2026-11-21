@@ -702,9 +702,10 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
         });
         return;
       }
-      sendJson(res, 500, {
-        error: { message: error instanceof Error ? error.message : "mock service failed" },
-      });
+      // The cause goes to the service log, not the caller: a raw message can carry a file path, a
+      // query or a record's contents, and a CLI token can provoke errors in bulk.
+      console.error("adminbot request failed", req.method, req.url?.split("?")[0], error);
+      sendJson(res, 500, { error: { message: "AdminBot hit an internal error" } });
     }
   });
   return {

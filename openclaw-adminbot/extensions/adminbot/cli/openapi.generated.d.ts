@@ -5778,6 +5778,7 @@ export interface components {
         | "auth.api_token.revoked_all"
         | "auth.api_token.new_ip"
         | "auth.api_token.cli_login_started"
+        | "auth.api_token.cli_login_approved"
         | "auth.api_token.cli_login_denied"
         | "member.slack_stopped"
         | "member.slack_started"

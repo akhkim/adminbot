@@ -20,15 +20,34 @@ import {
   requireMemberPrivileged,
 } from "./guards.js";
 import { limitParam } from "./query-params.js";
+import type { AdminBotPrincipal } from "./context.js";
 import { get, post, type Route } from "./router.js";
 
 /** How many of the newest audit events GET /audit sends when the caller gives no `limit`. */
 export const AUDIT_DEFAULT_LIMIT = 1000;
 
+// Member actions (enroll, remove, ...) write privilege straight to the roster when executed, past
+// the PUT checks that keep a CLI pilot token from changing anyone's access. File, approve and
+// execute them in the browser.
+function pilotTokenMemberAction(principal: AdminBotPrincipal, type: unknown): boolean {
+  return (
+    principal.kind === "member" &&
+    principal.apiToken?.role === "power_user" &&
+    typeof type === "string" &&
+    type.startsWith("lab_member.")
+  );
+}
+
+const PILOT_MEMBER_ACTION_MESSAGE = "Use your browser to file, approve or run member changes";
+
 export const governanceRoutes: readonly Route[] = [
-  post("/proposals", async ({ req, res, ctx }) => {
+  post("/proposals", async ({ req, res, ctx, principal }) => {
     const { service } = ctx;
     const body = (await readJson(req, 3_000_000)) as AdminBotActionProposal;
+    if (pilotTokenMemberAction(principal, (body as { type?: unknown } | null)?.type)) {
+      sendJson(res, 403, { error: { message: PILOT_MEMBER_ACTION_MESSAGE } });
+      return;
+    }
     sendServiceResult(res, service.createProposal(body));
   }),
   post("/privacy/tasks", async ({ req, res, ctx }) => {
@@ -98,6 +117,10 @@ export const governanceRoutes: readonly Route[] = [
     adminSessionOnly(async ({ req, res, principal, ctx, params }) => {
       const { service } = ctx;
       const actionId = decodeURIComponent(params[1]);
+      if (pilotTokenMemberAction(principal, ctx.store.getProposal(actionId)?.type)) {
+        sendJson(res, 403, { error: { message: PILOT_MEMBER_ACTION_MESSAGE } });
+        return;
+      }
       const body = (await readJson(req)) as AdminBotApprovalRequest;
       // Role and approver id come from the session, never the body: a client-chosen role would make
       // the policy check self-attested, and a client-chosen id would let one person fill a
@@ -117,9 +140,13 @@ export const governanceRoutes: readonly Route[] = [
   ),
   post(
     /^\/actions\/([^/]+)\/execute$/u,
-    adminSessionOnly(async ({ req, res, params, ctx }) => {
+    adminSessionOnly(async ({ req, res, params, ctx, principal }) => {
       const { service } = ctx;
       const actionId = decodeURIComponent(params[1]);
+      if (pilotTokenMemberAction(principal, ctx.store.getProposal(actionId)?.type)) {
+        sendJson(res, 403, { error: { message: PILOT_MEMBER_ACTION_MESSAGE } });
+        return;
+      }
       const body = (await readJson(req)) as AdminBotExecutionRequest;
       sendServiceResult(res, await service.execute(actionId, body));
     }),

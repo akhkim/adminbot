@@ -424,22 +424,26 @@ describe("applySettingsFromUrl", () => {
     expect(window.location.search).toBe("?signedOut=login");
   });
 
-  it("reads an adminbot auth login code into state and strips it from the address bar", () => {
-    setTestWindowUrl("https://control.example/profile?cliLogin=bcdfghjk");
-    const host = createHost("profile") as SettingsHost & { cliLoginCode?: string };
+  it("opens the CLI sign-in card from the link and strips the parameter", () => {
+    setTestWindowUrl("https://control.example/profile?cliLogin");
+    const host = createHost("profile") as SettingsHost & { cliLoginOpen?: boolean };
 
     applySettingsFromUrl(host);
 
-    expect(host.cliLoginCode).toBe("BCDF-GHJK");
+    expect(host.cliLoginOpen).toBe(true);
     expect(window.location.search).toBe("");
   });
 
-  it("drops a cliLogin value that is not a login code", () => {
-    setTestWindowUrl("https://control.example/profile?cliLogin=%3Cscript%3E");
-    const host = createHost("profile") as SettingsHost & { cliLoginCode?: string };
+  it("ignores any code carried in an old or forwarded cliLogin link", () => {
+    setTestWindowUrl("https://control.example/profile?cliLogin=bcdfghjk");
+    const host = createHost("profile") as SettingsHost & {
+      cliLoginOpen?: boolean;
+      cliLoginCode?: string;
+    };
 
     applySettingsFromUrl(host);
 
+    expect(host.cliLoginOpen).toBe(true);
     expect(host.cliLoginCode).toBeUndefined();
     expect(window.location.search).toBe("");
   });

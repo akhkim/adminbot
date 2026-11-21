@@ -130,7 +130,7 @@ type SettingsHost = ProfileGateState & {
   pendingGatewayToken?: string | null;
   passwordResetToken?: string;
   // The code from `adminbot auth login`'s link, shown on My Profile for the member to approve.
-  cliLoginCode?: string;
+  cliLoginOpen?: boolean;
   loginMode?: import("./adminbot/auth/flow.ts").LoginMode;
   requestUpdate?: () => void;
   updateComplete?: Promise<unknown>;
@@ -361,16 +361,11 @@ export function applySettingsFromUrl(host: SettingsHost) {
     shouldCleanUrl = true;
   }
 
-  // The code `adminbot auth login` printed, from the link it opened on My Profile. Not a secret --
-  // approving it takes the member's password -- but stripped like the reset token so a copied
-  // address bar cannot carry someone else's pending login. The shape check keeps arbitrary text
-  // out of the approval card.
-  const cliLoginRaw = params.get("cliLogin") ?? hashParams.get("cliLogin");
-  if (cliLoginRaw != null) {
-    const code = normalizeOptionalString(cliLoginRaw)?.toUpperCase();
-    if (code && /^[A-Z]{4}-?[A-Z]{4}$/u.test(code)) {
-      host.cliLoginCode = code.includes("-") ? code : `${code.slice(0, 4)}-${code.slice(4)}`;
-    }
+  // The link `adminbot auth login` opened on My Profile. It only opens the approval card; the member
+  // types the code from their own terminal there. Any value is ignored on purpose (older CLIs put
+  // the code here), so a link someone else sent never carries a code that could be approved.
+  if (params.has("cliLogin") || hashParams.has("cliLogin")) {
+    host.cliLoginOpen = true;
     params.delete("cliLogin");
     hashParams.delete("cliLogin");
     shouldCleanUrl = true;
