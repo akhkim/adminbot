@@ -1,3 +1,7 @@
+import {
+  adminBotLogisticsSettledStatuses,
+  type AdminBotLogisticsRequest,
+} from "../../contracts/actions.js";
 // The letter queue read after the clock has run out: which requests passed their deadline while the
 // portal still calls them open, and what the student is asked about them.
 //
@@ -7,10 +11,7 @@
 //
 // Pure, like the before-deadline reminder beside it: the requests and the instant arrive as
 // arguments and the result is a decision. The service resolves the address and does the sending.
-import {
-  adminBotLogisticsSettledStatuses,
-  type AdminBotLogisticsRequest,
-} from "../../contracts/actions.js";
+import { readableDeadline } from "./rec-letter-reminders.js";
 import { requestDeadlineDetails } from "./requests.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -69,7 +70,7 @@ export function recLetterOverdueConfirmationsDue(
           member_id: request.member_id,
           member_name: request.member_name,
           deadline_at: deadline.at,
-          deadline_label: `${deadline.date} ${deadline.time} ${deadline.timezone}`,
+          deadline_label: readableDeadline(deadline),
           days_overdue: daysOverdue,
           schools: (request.schools ?? [])
             .map((school) => school.school.trim())

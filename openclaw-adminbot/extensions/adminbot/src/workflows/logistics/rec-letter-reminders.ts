@@ -138,7 +138,7 @@ export function recLetterRemindersDue(
             member_id: request.member_id,
             member_name: request.member_name,
             deadline_at: deadline.at,
-            deadline_label: `${deadline.date} ${deadline.time} ${deadline.timezone}`,
+            deadline_label: readableDeadline(deadline),
             days_until: Math.floor((deadlineMs - nowMs) / DAY_MS),
             schools,
             tier,
@@ -235,13 +235,14 @@ export function recLetterReminderSubject(
 export function recLetterReminderBody(
   due: readonly RecLetterReminderDue[],
   portalUrl: string,
+  options: { recipientName?: string } = {},
 ): string {
   const final = due.filter((entry) => entry.tier === "final");
   const week = due.filter((entry) => entry.tier === "week");
   const intro =
     due.length === 1
-      ? "A recommendation letter request is coming due:"
-      : "These recommendation letter requests are coming due:";
+      ? "A recommendation letter is coming due:"
+      : "These recommendation letters are coming due:";
   const sections =
     final.length && week.length
       ? [
@@ -252,18 +253,57 @@ export function recLetterReminderBody(
           ...week.map(reminderLine),
         ]
       : due.map(reminderLine);
+  const firstName = options.recipientName?.trim().split(/\s+/)[0];
   return [
+    firstName ? `Hi ${firstName},` : "Hello,",
+    "",
     intro,
     "",
     ...sections,
     "",
-    `The requests, with the schools table and what each member sent in: ${portalUrl}`,
+    `Each request, with the member's full school list, is on AdminBot: ${portalUrl}`,
+    "",
+    "— AdminBot, Jinesis AI Lab",
   ].join("\n");
 }
 
 function reminderLine(entry: RecLetterReminderDue): string {
   const schools = describeSchools(entry.schools);
   return `• ${entry.member_name} — due ${entry.deadline_label ?? entry.deadline_at.slice(0, 10)} (${recLetterReminderWhen(entry.days_until)})${schools ? ` — ${schools}` : ""}`;
+}
+
+/**
+ * "Wed 25 Nov, 23:59 AoE": the deadline as the school wrote it, in words a person reads at a glance.
+ * The stored zone stays the school's own (the instant is computed from it); only its name is made
+ * readable, since "Etc/GMT+12" is AoE spelled for a computer.
+ */
+export function readableDeadline(
+  deadline: Pick<LogisticsDeadline, "date" | "time" | "timezone">,
+): string {
+  const day = new Date(`${deadline.date}T12:00:00Z`);
+  const dayLabel = Number.isNaN(day.getTime())
+    ? deadline.date
+    : day
+        .toLocaleDateString("en-GB", {
+          weekday: "short",
+          day: "numeric",
+          month: "short",
+          timeZone: "UTC",
+        })
+        .replace(",", "");
+  return `${dayLabel}, ${deadline.time} ${readableZone(deadline.timezone)}`;
+}
+
+function readableZone(zone: string): string {
+  const trimmed = zone.trim();
+  if (/^(aoe|etc\/gmt\+12|utc-12(:00)?|gmt-12(:00)?)$/i.test(trimmed)) {
+    return "AoE";
+  }
+  if (trimmed.includes("/")) {
+    const city = trimmed.split("/").pop()?.replaceAll("_", " ");
+    return city ? `${city} time` : trimmed;
+  }
+  return trimmed;
 }
 
 /** The schools on one entry, cut off before the line becomes a paragraph. */

@@ -48,7 +48,7 @@ describe("recLetterOverdueConfirmationsDue", () => {
     expect(due[0]).toMatchObject({
       member_id: "ada",
       deadline_at: "2026-12-01T23:59:00.000Z",
-      deadline_label: "2026-12-01 23:59 UTC",
+      deadline_label: "Tue 1 Dec, 23:59 UTC",
       days_overdue: 8,
       schools: ["MIT"],
     });
@@ -125,7 +125,7 @@ describe("the mail", () => {
     expect(recLetterOverdueSubject(due)).toBe("Did your recommendation letter go in?");
     expect(body).toContain("Hi Ada,");
     expect(body).toContain("still shows it as not submitted");
-    expect(body).toContain("• MIT — due 2026-12-01 23:59 UTC");
+    expect(body).toContain("• MIT — due Tue 1 Dec, 23:59 UTC");
     expect(body).toContain("Letter was submitted");
     expect(body).toContain("https://portal.example/rec-letters?view=requests");
   });

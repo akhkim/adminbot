@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { AdminBotLogisticsRequest } from "../../contracts/actions.js";
 import {
   adminBotRecLetterReminderMaxWithinDays,
+  readableDeadline,
   recLetterReminderBody,
   recLetterReminderLedgerSubject,
   recLetterReminderSubject,
@@ -171,9 +172,13 @@ describe("the mail", () => {
       NOW,
     );
 
-    const body = recLetterReminderBody(due, "https://portal.example");
-    expect(body).toContain("• Ada Lovelace — due 2026-12-01 23:59 UTC (in 3 days) — MIT, Stanford");
+    const body = recLetterReminderBody(due, "https://portal.example", {
+      recipientName: "Zhijing Jin",
+    });
+    expect(body.startsWith("Hi Zhijing,\n")).toBe(true);
+    expect(body).toContain("• Ada Lovelace — due Tue 1 Dec, 23:59 UTC (in 3 days) — MIT, Stanford");
     expect(body).toContain("https://portal.example");
+    expect(body.endsWith("— AdminBot, Jinesis AI Lab")).toBe(true);
   });
 
   it("stops listing schools before the line becomes a paragraph", () => {
@@ -291,9 +296,26 @@ describe("every school deadline, in two tiers", () => {
     const due = recLetterRemindersDue([ellisThenToronto], new Date("2026-11-25T12:00:00Z"));
     expect(recLetterReminderSubject(due)).toBe("2 recommendation letters due within a week");
     const body = recLetterReminderBody(due, "https://portal.example");
-    expect(body).toContain("Due within 2 business days:\n• Ada Lovelace — due 2026-11-25");
     expect(body).toContain(
-      "Coming up later:\n• Ada Lovelace — due 2026-12-01 23:59 America/Toronto",
+      "Due within 2 business days:\n• Ada Lovelace — due Wed 25 Nov, 23:59 AoE",
+    );
+    expect(body).toContain("Coming up later:\n• Ada Lovelace — due Tue 1 Dec, 23:59 Toronto time");
+  });
+});
+
+describe("readableDeadline", () => {
+  it("names the day and spells zones for a person, not a computer", () => {
+    expect(readableDeadline({ date: "2026-11-25", time: "23:59", timezone: "Etc/GMT+12" })).toBe(
+      "Wed 25 Nov, 23:59 AoE",
+    );
+    expect(readableDeadline({ date: "2026-11-25", time: "23:59", timezone: "Europe/Berlin" })).toBe(
+      "Wed 25 Nov, 23:59 Berlin time",
+    );
+    expect(
+      readableDeadline({ date: "2026-12-15", time: "12:00", timezone: "America/New_York" }),
+    ).toBe("Tue 15 Dec, 12:00 New York time");
+    expect(readableDeadline({ date: "2026-11-23", time: "23:59", timezone: "PST" })).toBe(
+      "Mon 23 Nov, 23:59 PST",
     );
   });
 });
