@@ -1679,6 +1679,12 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     return [...this.auditEvents];
   }
 
+  listAuditEventsSince(type: string, fromIso: string): AdminBotAuditEvent[] {
+    return this.auditEvents
+      .filter((event) => event.type === type && event.timestamp >= fromIso)
+      .toSorted((left, right) => left.timestamp.localeCompare(right.timestamp));
+  }
+
   pruneAuditEventsBefore(cutoffIso: string): number {
     const before = this.auditEvents.length;
     const retained = this.auditEvents.filter((event) => event.timestamp >= cutoffIso);

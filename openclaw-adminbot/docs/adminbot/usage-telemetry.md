@@ -22,10 +22,12 @@ One row for each **authenticated** API request, with:
     `Authorization: Bearer` with credentials omitted, so there is no cookie to go by;
   - `other`: an API token or the service token from anything but the CLI, such as curl or cron.
 
-  The version is kept as `major.minor.patch`, each part at most three digits, leading zeros
-  dropped. Any prerelease or build suffix becomes `-pre`. A version that does not fit makes the
-  request `other`. This stops a caller from writing free text into the admin page, or growing the
-  rollup with a new version on every request;
+  The User-Agent counts as the CLI only when it is exactly `adminbot-cli/<version>`, at most 64
+  characters. The version is kept as `major.minor.patch`, each part a number of at most three
+  digits with no leading zero. Any prerelease or build suffix, up to 32 characters, is kept only
+  as `-pre`, never its text. A User-Agent that does not fit is not the CLI: the request counts as
+  `website` under a member session and `other` otherwise. This stops a caller from writing free
+  text into the admin page, or growing the rollup with a new version on every request;
 
 - the OpenAPI operationId (`unmatched` for a path outside the contract), the method and the
   status. A client that disconnected before the whole response was written is recorded as 499,
@@ -69,6 +71,9 @@ that gives the row count and the error, never the rows.
   - in the daily rollup, cells that collide are summed (requests, errors, total time), with the
     larger max duration and the later last-request time;
   - in `adminbot_api_usage_members`, the earlier first time and the later last time are kept.
+- Renaming a member id moves their usage rows to the new id.
+- Before any of these, the write buffer is flushed, so rows recorded a moment earlier are purged,
+  merged or renamed too instead of bringing the old id back.
 
 ## Who can see it
 
@@ -93,12 +98,24 @@ Only admins and the service token (`privilegedOnly`):
 
 A non-admin token, including a `power_user` pilot token, gets 403 on all four.
 
-Summary and adoption read the daily rollup. Sweeps read service rows from the request log through
-an `(auth, at)` index. All totals and groupings are computed in SQLite, so nothing loads every row
-into JavaScript. The page makes
-three reads: summary, adoption and automation. On a synthetic 90-day log of 324,000 rollup cells and
-50,000 service runs, the three together take about 550 ms, inside the 1-second page budget.
-`persistence/api-usage.test.ts` checks this.
+### Performance
+
+The page makes three reads: summary, adoption and automation.
+
+- Summary and adoption read the daily rollup.
+- Automation reads service rows from the request log through an `(auth, at)` index, and only the
+  heartbeats inside the window from the audit log, through its timestamp index.
+- All totals and groupings are computed in SQLite, so nothing loads every row into JavaScript.
+
+**Supported ceiling.** The page is built for up to 324,000 rollup cells in the 90-day window (60
+active members each calling 60 operations every day), 50,000 service runs and an audit log of
+200,000 events, 26,000 of them heartbeats. That is far busier than the lab. At that size the three
+reads take about 600 ms together on a laptop, inside the 1-second page budget.
+
+`persistence/api-usage.test.ts` seeds this ceiling and checks the budget. It times three cold
+loads, each after a fresh write so no cached answer is reused, and asserts that the fastest is
+under 1 second. One slow attempt on a busy CI machine does not fail it; three in a row do. If the
+lab outgrows the ceiling, rerun that test at the new size before raising it.
 
 In the Control UI, **Lab overview → API Usage** shows these numbers for a 7-, 30- or 90-day
 window, with CLI adoption, power users and drop-off above the request breakdowns. Members do not

@@ -1003,6 +1003,8 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   saveSettings(settings: AdminBotSettings): void;
   recordAudit(event: AdminBotAuditEvent): void;
   listAuditEvents(): AdminBotAuditEvent[];
+  /** Events of one type at or after `fromIso`, oldest first, without reading the whole log. */
+  listAuditEventsSince(type: string, fromIso: string): AdminBotAuditEvent[];
   pruneAuditEventsBefore(cutoffIso: string): number;
   getCredentialByEmail(email: string): AdminBotMemberCredential | undefined;
   getCredentialByMemberId(memberId: string): AdminBotMemberCredential | undefined;

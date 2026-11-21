@@ -69,8 +69,10 @@ export type AdminBotApiUsageSummary = {
   by_auth: Array<AdminBotApiUsageCount & { auth: AdminBotApiUsageAuth }>;
 };
 
+/** The whole User-Agent, as cli/client.mjs sends it: nothing before it and nothing after. */
 const CLI_AGENT =
-  /^adminbot-cli\/(\d{1,3})\.(\d{1,3})\.(\d{1,3})((?:[-+][0-9A-Za-z.-]{1,32})?)(?:\s|$)/u;
+  /^adminbot-cli\/(0|[1-9]\d{0,2})\.(0|[1-9]\d{0,2})\.(0|[1-9]\d{0,2})([-+][0-9A-Za-z.-]{1,32})?$/u;
+const CLI_AGENT_MAX_LENGTH = 64;
 
 /**
  * Which client sent a request, from its User-Agent and how it authenticated.
@@ -79,18 +81,20 @@ const CLI_AGENT =
  * token with `credentials: "omit"` (ui/src/ui/adminbot/auth/session.ts). So a member session that
  * is not the CLI is the website, and an API token that is not the CLI is something else.
  *
- * The version is kept only as `major.minor.patch`, each part at most three digits, with `-pre`
- * for any prerelease or build suffix. That keeps the column from becoming a place a caller writes
- * arbitrary text into an admin's page, and keeps one caller from growing the daily rollup by
- * inventing a new version on every request.
+ * The User-Agent must be exactly `adminbot-cli/<version>`, at most 64 characters. The version is
+ * kept only as `major.minor.patch`, each part a number of at most three digits with no leading
+ * zero, plus `-pre` for any prerelease or build suffix, whose text is never kept. That keeps the
+ * column from becoming a place a caller writes arbitrary text into an admin's page, and keeps one
+ * caller from growing the daily rollup by inventing a new version on every request.
  */
 export function adminBotApiUsageClient(
   userAgent: string | undefined,
   viaSession: boolean,
 ): { client: AdminBotApiUsageClient; version?: string } {
-  const cli = CLI_AGENT.exec(userAgent ?? "");
+  const agent = userAgent ?? "";
+  const cli = agent.length <= CLI_AGENT_MAX_LENGTH ? CLI_AGENT.exec(agent) : null;
   if (cli) {
-    const core = [cli[1], cli[2], cli[3]].map((part) => String(Number(part))).join(".");
+    const core = `${cli[1]}.${cli[2]}.${cli[3]}`;
     return { client: "cli", version: cli[4] ? `${core}-pre` : core };
   }
   return { client: viaSession ? "website" : "other" };

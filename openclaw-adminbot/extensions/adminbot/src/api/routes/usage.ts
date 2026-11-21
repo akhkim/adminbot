@@ -186,7 +186,7 @@ export const usageRoutes: readonly Route[] = [
         res,
         200,
         automationRunReport({
-          events: ctx.store.listAuditEvents(),
+          events: ctx.store.listAuditEventsSince("automation_health.heartbeat", from),
           sweeps: ctx.apiUsage.sweeps(from),
           from,
           days,

@@ -1,6 +1,6 @@
 // API usage telemetry over HTTP: which requests become rows, what a row says, and who may read them.
 import { EventEmitter } from "node:events";
-import type { IncomingMessage, ServerResponse } from "node:http";
+import { createServer, request, type IncomingMessage, type ServerResponse } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
 import { createMemoryApiUsageLog } from "../persistence/api-usage.js";
 import { hashPassword } from "../workflows/identity/auth.js";
@@ -198,6 +198,73 @@ describe("API usage telemetry", () => {
         .map((entry) => entry.status)
         .sort(),
     ).toEqual([200, 499]);
+  });
+
+  it("keeps the true status of a bodiless answer on a real socket: HEAD, 204 and 304", async () => {
+    const log = createMemoryApiUsageLog();
+    const server = createServer((req, res) => {
+      noteUsagePrincipal(req, { kind: "service" });
+      void trackApiUsage(req, res, log, async () => {
+        res.statusCode = req.method === "HEAD" ? 200 : req.url === "/a" ? 204 : 304;
+        if (req.method === "HEAD") {
+          res.setHeader("Content-Length", "12");
+        }
+        res.end();
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address() as { port: number };
+    try {
+      for (const [method, path] of [
+        ["HEAD", "/auth/session"],
+        ["GET", "/a"],
+        ["GET", "/b"],
+      ] as const) {
+        await new Promise<void>((resolve, reject) => {
+          const sent = request({ host: "127.0.0.1", port, method, path }, (response) => {
+            response.resume();
+            response.on("end", resolve);
+          });
+          sent.on("error", reject);
+          sent.end();
+        });
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      log.flush();
+      expect(
+        log
+          .recent()
+          .map((entry) => `${entry.method} ${entry.status}`)
+          .toSorted(),
+      ).toEqual(["GET 204", "GET 304", "HEAD 200"]);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it("records a revalidated GET as 304", async () => {
+    const { baseUrl } = await start();
+    const session = await signIn(baseUrl, "plain-c");
+    const first = await fetch(`${baseUrl}/auth/session`, {
+      headers: { Authorization: `Bearer ${session}` },
+    });
+    const etag = first.headers.get("etag");
+    await first.text();
+    expect(etag).toBeTruthy();
+    const again = await call(baseUrl, "GET", "/auth/session", {
+      bearer: session,
+      headers: { "If-None-Match": etag! },
+    });
+    expect(again.status).toBe(304);
+    const recent = await call(baseUrl, "GET", "/usage/requests?member_id=plain-c", {
+      bearer: SERVICE,
+    });
+    const statuses = recent.body.requests
+      .filter(
+        (entry: { method: string; operation: string }) => entry.operation !== "post-auth-login",
+      )
+      .map((entry: { status: number }) => entry.status);
+    expect(statuses.toSorted()).toEqual([200, 304]);
   });
 
   it("names a personal token by its id, never its value", async () => {

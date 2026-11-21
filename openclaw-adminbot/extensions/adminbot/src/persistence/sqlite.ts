@@ -2025,6 +2025,9 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
   purgeMemberReferences(memberId: string): Record<string, number> {
     const removed: Record<string, number> = {};
+    // Buffered usage rows are written first, or the next flush would bring the member back. The
+    // flush is its own transaction, so it cannot run inside the one below.
+    this.apiUsage.flush();
     // One transaction, for the reason the merge gives: a half-purged member leaves rows naming an
     // id nothing can resolve, which is worse than a member who is still there.
     this.db.exec("BEGIN");
@@ -2110,6 +2113,8 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
   reassignMemberReferences(fromMemberId: string, toMemberId: string): Record<string, number> {
     const moved: Record<string, number> = {};
+    // Buffered usage rows first: written after the merge, they would recreate the duplicate.
+    this.apiUsage.flush();
     // One transaction: a half-repointed member is worse than an unmerged one, because the rows
     // that did move no longer name a record anybody can find their way back from. Written as an
     // explicit BEGIN/COMMIT for the same reason replaceVenueIndex is -- node:sqlite's DatabaseSync
@@ -2167,6 +2172,9 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
   renameMemberId(fromMemberId: string, toMemberId: string): Record<string, number> {
     const changed: Record<string, number> = {};
+    // Buffered usage rows first, so they are renamed with the rest rather than written later
+    // under the old id.
+    this.apiUsage.flush();
     // Every table, discovered rather than listed: a member id lives in dedicated columns and inside
     // payload_json (paper author links, the head-professor setting, attendee maps keyed by id), and
     // a hand-kept list is how the merge ended up moving the column a page reads from but not the
@@ -3548,6 +3556,10 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
   listAuditEvents(): AdminBotAuditEvent[] {
     return this.audit.list();
+  }
+
+  listAuditEventsSince(type: string, fromIso: string): AdminBotAuditEvent[] {
+    return this.audit.listSince(type, fromIso);
   }
 
   pruneAuditEventsBefore(cutoffIso: string): number {

@@ -56,6 +56,21 @@ export class SqliteAuditLog {
     }
   }
 
+  /**
+   * Events of one type at or after `fromIso`, oldest first, read straight from the table. For a
+   * windowed report that should not copy the whole log, however long the log has grown.
+   */
+  listSince(type: string, fromIso: string): AdminBotAuditEvent[] {
+    const rows = this.db
+      .prepare(
+        `SELECT event_json FROM adminbot_audit_events
+          WHERE timestamp >= ? AND event_type = ?
+          ORDER BY timestamp ASC`,
+      )
+      .all(fromIso, type) as Array<{ event_json: string }>;
+    return rows.map((row) => JSON.parse(row.event_json) as AdminBotAuditEvent);
+  }
+
   pruneBefore(cutoffIso: string): number {
     const { changes } = this.db
       .prepare("DELETE FROM adminbot_audit_events WHERE timestamp < ?")
