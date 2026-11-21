@@ -16582,7 +16582,9 @@ export class AdminBotService {
       ),
     ];
     const subject = recLetterReminderSubject(due);
-    const body = recLetterReminderBody(due, resolveAdminBotControlUiUrl());
+    const body = recLetterReminderBody(due, resolveAdminBotControlUiUrl(), {
+      recipientName: headProfessor.name,
+    });
     const reminded = due.map((entry) => ({
       request_id: entry.request_id,
       member_id: entry.member_id,
