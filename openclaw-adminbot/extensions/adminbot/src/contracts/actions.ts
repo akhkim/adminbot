@@ -2076,6 +2076,11 @@ export type AdminBotSettingsInput = {
    */
   papers_acceptance_mpi_emails?: string[];
   /**
+   * Copied on every letter-deadline reminder to the head professor, e.g. the inbox she keeps for
+   * letter requests. Settings rather than a constant for the same reason as the desks above.
+   */
+  rec_letter_reminder_cc_emails?: string[];
+  /**
    * The other three partners, on an acceptance, one mail each.
    *
    * Separate fields rather than a list, so that a missing SRI address cannot silently shorten the
@@ -2171,6 +2176,11 @@ export type AdminBotSettings = {
    * one desk -- the pair read the same queue and a second copy is a second thing to reconcile.
    */
   papers_acceptance_mpi_emails?: string[];
+  /**
+   * Copied on every letter-deadline reminder to the head professor, e.g. the inbox she keeps for
+   * letter requests. Settings rather than a constant for the same reason as the desks above.
+   */
+  rec_letter_reminder_cc_emails?: string[];
   /**
    * The other three partners, on an acceptance, one mail each.
    *

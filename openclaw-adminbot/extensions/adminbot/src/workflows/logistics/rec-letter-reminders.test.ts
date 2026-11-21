@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import type { AdminBotLogisticsRequest } from "../../contracts/actions.js";
 import {
+  adminBotRecLetterReminderMaxWithinDays,
   recLetterReminderBody,
   recLetterReminderLedgerSubject,
   recLetterReminderSubject,
@@ -60,9 +61,14 @@ describe("recLetterRemindersDue", () => {
         },
       ],
     });
-    expect(recLetterRemindersDue([request], new Date("2026-11-26T04:59:00Z"))).toEqual([]);
-    expect(recLetterRemindersDue([request], new Date("2026-11-26T05:00:00Z"))).toHaveLength(1);
-    expect(recLetterRemindersDue([request], new Date("2026-11-30T17:00:01Z"))).toEqual([]);
+    const tierAt = (iso: string) =>
+      recLetterRemindersDue([request], new Date(iso)).map((entry) => entry.tier);
+    // The week heads-up opens at midnight Toronto seven days before, the last call Thursday.
+    expect(tierAt("2026-11-23T04:59:00Z")).toEqual([]);
+    expect(tierAt("2026-11-23T05:00:00Z")).toEqual(["week"]);
+    expect(tierAt("2026-11-26T04:59:00Z")).toEqual(["week"]);
+    expect(tierAt("2026-11-26T05:00:00Z")).toEqual(["final"]);
+    expect(tierAt("2026-11-30T17:00:01Z")).toEqual([]);
   });
 
   it("still fires on a letter due tomorrow, so a pass that did not run yesterday is not a miss", () => {
@@ -185,6 +191,109 @@ describe("the mail", () => {
 
     expect(recLetterReminderBody(due, "https://portal.example")).toContain(
       "MIT, Stanford, CMU, Berkeley, ETH and 2 more",
+    );
+  });
+});
+
+describe("every school deadline, in two tiers", () => {
+  // ELLIS on the 25th, Toronto on the 1st: the shape that went unreminded when only the soonest
+  // date on a request counted.
+  const ellisThenToronto = letters({
+    id: "two-dates",
+    schools: [
+      {
+        school: "ELLIS",
+        letter_deadline: "2026-11-25",
+        letter_deadline_time: "23:59",
+        deadline_timezone: "Etc/GMT+12",
+      },
+      {
+        school: "University of Toronto",
+        letter_deadline: "2026-12-01",
+        letter_deadline_time: "23:59",
+        deadline_timezone: "America/Toronto",
+      },
+      { school: "Later", letter_deadline: "2027-01-07", deadline_timezone: "America/Toronto" },
+    ],
+  });
+  const at = (iso: string) =>
+    recLetterRemindersDue([ellisThenToronto], new Date(iso)).map((entry) => [
+      entry.schools.join("+"),
+      entry.tier,
+    ]);
+
+  it("reminds about the later school once the earlier one has passed", () => {
+    expect(at("2026-11-21T12:00:00Z")).toEqual([["ELLIS", "week"]]);
+    expect(at("2026-11-23T12:00:00Z")).toEqual([["ELLIS", "final"]]);
+    expect(at("2026-11-25T12:00:00Z")).toEqual([
+      ["ELLIS", "final"],
+      ["University of Toronto", "week"],
+    ]);
+    // ELLIS has closed (AoE), Toronto's last call opens Friday 27th at midnight Toronto.
+    expect(at("2026-11-26T13:00:00Z")).toEqual([["University of Toronto", "week"]]);
+    expect(at("2026-11-27T05:00:00Z")).toEqual([["University of Toronto", "final"]]);
+    expect(at("2026-12-02T05:00:00Z")).toEqual([]);
+  });
+
+  it("skips a school whose letter is already in", () => {
+    const request = letters({
+      id: "half-done",
+      schools: [
+        { school: "Done", letter_deadline: "2026-11-30", letter_status: "Submitted" },
+        { school: "Open", letter_deadline: "2026-11-30" },
+      ],
+    });
+    expect(recLetterRemindersDue([request], NOW).map((entry) => entry.schools)).toEqual([["Open"]]);
+  });
+
+  it("puts schools with the same deadline on one line", () => {
+    const due = recLetterRemindersDue(
+      [
+        letters({
+          id: "same",
+          schools: [
+            { school: "MIT", letter_deadline: "2026-12-01", deadline_timezone: "UTC" },
+            { school: "Stanford", letter_deadline: "2026-12-01", deadline_timezone: "UTC" },
+          ],
+        }),
+      ],
+      NOW,
+    );
+    expect(due).toHaveLength(1);
+    expect(due[0]?.schools).toEqual(["MIT", "Stanford"]);
+  });
+
+  it("stamps the two tiers apart, the final one under the old key", () => {
+    const base = { request_id: "r", deadline_at: "2026-12-01T23:59:00Z" };
+    expect(recLetterReminderLedgerSubject({ ...base, tier: "final" })).toBe(
+      "rec_letter|r|2026-12-01T23:59:00Z",
+    );
+    expect(recLetterReminderLedgerSubject({ ...base, tier: "week" })).toBe(
+      "rec_letter_week|r|2026-12-01T23:59:00Z",
+    );
+  });
+
+  it("looks further ahead on a manual run, as a heads-up only", () => {
+    const later = letters({ id: "later", deadline_at: "2026-12-20T12:00:00Z" });
+    expect(recLetterRemindersDue([later], NOW)).toEqual([]);
+    expect(
+      recLetterRemindersDue([later], NOW, undefined, { withinDays: 30 }).map((e) => e.tier),
+    ).toEqual(["week"]);
+    expect(recLetterRemindersDue([later], NOW, undefined, { withinDays: 10 })).toEqual([]);
+    expect(
+      recLetterRemindersDue([later], NOW, undefined, {
+        withinDays: adminBotRecLetterReminderMaxWithinDays + 1,
+      }),
+    ).toEqual([]);
+  });
+
+  it("splits a mixed mail into the last calls and the heads-ups", () => {
+    const due = recLetterRemindersDue([ellisThenToronto], new Date("2026-11-25T12:00:00Z"));
+    expect(recLetterReminderSubject(due)).toBe("2 recommendation letters due within a week");
+    const body = recLetterReminderBody(due, "https://portal.example");
+    expect(body).toContain("Due within 2 business days:\n• Ada Lovelace — due 2026-11-25");
+    expect(body).toContain(
+      "Coming up later:\n• Ada Lovelace — due 2026-12-01 23:59 America/Toronto",
     );
   });
 });

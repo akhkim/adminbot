@@ -322,6 +322,8 @@ import {
 import { mergePublishedDeadlines } from "../workflows/deadlines/published-dataset.js";
 import {
   adminBotRecLetterReminderLeadDays,
+  adminBotRecLetterReminderMaxWithinDays,
+  type RecLetterReminderTier,
   recLetterReminderBody,
   recLetterReminderLedgerSubject,
   recLetterReminderSubject,
@@ -3892,6 +3894,9 @@ export class AdminBotService {
     const papersAcceptanceMpiEmails = settings.papers_acceptance_mpi_emails
       ?.map((address) => address.trim())
       .filter(Boolean);
+    const recLetterReminderCcEmails = settings.rec_letter_reminder_cc_emails
+      ?.map((address) => address.trim())
+      .filter(Boolean);
     const applicantLastReviewedAt = normalizeOptionalString(settings.applicant_last_reviewed_at);
     const groupMeetingTime = normalizeOptionalString(settings.group_meeting_time);
     const groupMeetingTimezone = normalizeOptionalString(settings.group_meeting_timezone);
@@ -3922,6 +3927,9 @@ export class AdminBotService {
       ...(papersAcceptanceMpiEmails === undefined
         ? {}
         : { papers_acceptance_mpi_emails: papersAcceptanceMpiEmails }),
+      ...(recLetterReminderCcEmails === undefined
+        ? {}
+        : { rec_letter_reminder_cc_emails: recLetterReminderCcEmails }),
       ...(papersAcceptanceDcsEmail === undefined
         ? {}
         : { papers_acceptance_dcs_email: papersAcceptanceDcsEmail }),
@@ -16492,22 +16500,45 @@ export class AdminBotService {
    */
   async sweepRecLetterReminders(
     actor: string,
-    options: { nowIso?: string } = {},
+    options: { nowIso?: string; dryRun?: boolean; withinDays?: number } = {},
   ): Promise<
     AdminBotServiceResponse<{
       recipient?: string;
+      cc?: string[];
+      dry_run?: true;
+      subject?: string;
+      body?: string;
       reminded: Array<{
         request_id: string;
         member_id: string;
+        member_name: string;
         deadline_at: string;
         days_until: number;
+        tier: RecLetterReminderTier;
+        schools: string[];
       }>;
     }>
   > {
+    if (
+      options.withinDays !== undefined &&
+      (!Number.isInteger(options.withinDays) ||
+        options.withinDays < 1 ||
+        options.withinDays > adminBotRecLetterReminderMaxWithinDays)
+    ) {
+      return serviceError(
+        400,
+        `within_days must be a whole number from 1 to ${adminBotRecLetterReminderMaxWithinDays}`,
+      );
+    }
     const now = options.nowIso ? new Date(options.nowIso) : new Date();
     const nowIso = now.toISOString();
     const ledger = this.nudgeLedgerIndex();
-    const due = recLetterRemindersDue(this.store.listLogisticsRequests(), now).filter(
+    const due = recLetterRemindersDue(
+      this.store.listLogisticsRequests(),
+      now,
+      adminBotRecLetterReminderLeadDays,
+      { withinDays: options.withinDays },
+    ).filter(
       (entry) =>
         !this.hasNudgeBeenSaid(
           ledger,
@@ -16541,17 +16572,54 @@ export class AdminBotService {
       );
     }
 
+    // Extra inboxes from settings (a letters desk the head professor names, for one). Never the
+    // main address twice.
+    const cc = [
+      ...new Set(
+        (this.resolveSettings().rec_letter_reminder_cc_emails ?? [])
+          .map((address) => address.trim())
+          .filter((address) => address && address.toLowerCase() !== recipient.toLowerCase()),
+      ),
+    ];
+    const subject = recLetterReminderSubject(due);
+    const body = recLetterReminderBody(due, resolveAdminBotControlUiUrl());
+    const reminded = due.map((entry) => ({
+      request_id: entry.request_id,
+      member_id: entry.member_id,
+      member_name: entry.member_name,
+      deadline_at: entry.deadline_at,
+      days_until: entry.days_until,
+      tier: entry.tier,
+      schools: entry.schools,
+    }));
+    if (options.dryRun) {
+      // The mail as it would go, with nothing sent and nothing stamped.
+      return {
+        ok: true,
+        status: 200,
+        payload: {
+          recipient,
+          ...(cc.length ? { cc } : {}),
+          dry_run: true,
+          subject,
+          body,
+          reminded,
+        },
+      };
+    }
+
     const proposed = this.createProposal({
       type: "logistics.rec_letter_reminder",
       summary:
         due.length === 1
           ? `Remind ${headProfessor.name}: ${due[0]?.member_name}'s letter is due ${due[0]?.deadline_label ?? due[0]?.deadline_at.slice(0, 10)}`
-          : `Remind ${headProfessor.name} of ${due.length} letters due within ${adminBotRecLetterReminderLeadDays} business days`,
+          : `Remind ${headProfessor.name} of ${due.length} upcoming letter deadlines`,
       target: { service: "email", channel: "email", target: recipient },
       proposed_payload: {
         to: recipient,
-        subject: recLetterReminderSubject(due),
-        body: recLetterReminderBody(due, resolveAdminBotControlUiUrl()),
+        ...(cc.length ? { cc } : {}),
+        subject,
+        body,
       },
       undo_plan: "Send an email follow-up correcting or retracting the reminder.",
     });
@@ -16579,23 +16647,19 @@ export class AdminBotService {
       actor,
       details: {
         to: recipient,
+        ...(cc.length ? { cc } : {}),
         lead_days: adminBotRecLetterReminderLeadDays,
         reminded: due.length,
+        final: due.filter((entry) => entry.tier === "final").length,
+        week: due.filter((entry) => entry.tier === "week").length,
+        ...(options.withinDays !== undefined ? { within_days: options.withinDays } : {}),
         proposal_id: proposed.payload.id,
       },
     });
     return {
       ok: true,
       status: 200,
-      payload: {
-        recipient,
-        reminded: due.map((entry) => ({
-          request_id: entry.request_id,
-          member_id: entry.member_id,
-          deadline_at: entry.deadline_at,
-          days_until: entry.days_until,
-        })),
-      },
+      payload: { recipient, ...(cc.length ? { cc } : {}), reminded },
     };
   }
 
@@ -19466,6 +19530,17 @@ function validateSettings(settings: AdminBotSettingsInput): string | undefined {
       settings.cv_recency_window_months > 60)
   ) {
     return "cv recency window months must be a whole number between 1 and 60";
+  }
+  if (settings.rec_letter_reminder_cc_emails !== undefined) {
+    if (!Array.isArray(settings.rec_letter_reminder_cc_emails)) {
+      return "rec letter reminder cc emails must be a list";
+    }
+    for (const address of settings.rec_letter_reminder_cc_emails) {
+      const problem = validateEmailFormat(address, "rec letter reminder cc email");
+      if (problem) {
+        return problem;
+      }
+    }
   }
   const applicantLastReviewedAt = normalizeOptionalString(settings.applicant_last_reviewed_at);
   if (applicantLastReviewedAt && Number.isNaN(Date.parse(applicantLastReviewedAt))) {
