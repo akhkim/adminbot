@@ -155,9 +155,13 @@ export const userAgent = `adminbot-cli/${
 
 /** Typed for SDK consumers by client.d.ts and the generated OpenAPI declarations. */
 export function createAdminBotClient(options = {}) {
+  // A caller may pass a plain object, a Headers or a list of pairs; spreading the last two drops
+  // them, auth included. The User-Agent is set last so a caller cannot pass itself off as the CLI.
+  const headers = new Headers(options.headers);
+  headers.set("User-Agent", userAgent);
   return createClient({
     ...options,
-    headers: { "User-Agent": userAgent, ...options.headers },
+    headers,
     baseUrl: serviceOrigin(options.baseUrl ?? document.servers[0].url),
     redirect: "error",
   });

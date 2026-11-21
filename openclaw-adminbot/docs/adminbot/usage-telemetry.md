@@ -102,20 +102,27 @@ A non-admin token, including a `power_user` pilot token, gets 403 on all four.
 
 The page makes three reads: summary, adoption and automation.
 
-- Summary and adoption read the daily rollup.
+- Summary and adoption read the daily rollup through a covering index in their grouping order,
+  so the scan needs no sort and no table read.
 - Automation reads service rows from the request log through an `(auth, at)` index, and only the
   heartbeats inside the window from the audit log, through its timestamp index.
 - All totals and groupings are computed in SQLite, so nothing loads every row into JavaScript.
 
+Summary and adoption share one scan when nothing was written in between. On a real page load the
+first GET's own usage row is flushed before the second read, so in practice each one scans. The
+index is what keeps two scans inside the budget.
+
 **Supported ceiling.** The page is built for up to 324,000 rollup cells in the 90-day window (60
 active members each calling 60 operations every day), 50,000 service runs and an audit log of
-200,000 events, 26,000 of them heartbeats. That is far busier than the lab. At that size the three
-reads take about 600 ms together on a laptop, inside the 1-second page budget.
+200,000 events, 26,000 of them heartbeats. That is far busier than the lab. At that size the
+page's three authenticated GETs, sent together as the Control UI sends them, take about 530 ms on
+a laptop, inside the 1-second page budget.
 
-`persistence/api-usage.test.ts` seeds this ceiling and checks the budget. It times three cold
-loads, each after a fresh write so no cached answer is reused, and asserts that the fastest is
-under 1 second. One slow attempt on a busy CI machine does not fail it; three in a row do. If the
-lab outgrows the ceiling, rerun that test at the new size before raising it.
+`api/server.usage.test.ts` seeds this ceiling in a SQLite-backed server and times the real
+`/usage/summary`, `/usage/adoption` and `/usage/automation` requests. It times three cold loads
+and asserts that the fastest is under 1 second. Each load follows a write, so no cached answer is
+reused. One slow attempt on a busy CI machine does not fail it; three in a row do. If the lab
+outgrows the ceiling, rerun that test at the new size before raising it.
 
 In the Control UI, **Lab overview → API Usage** shows these numbers for a 7-, 30- or 90-day
 window, with CLI adoption, power users and drop-off above the request breakdowns. Members do not

@@ -56,6 +56,13 @@ const API_USAGE_SCHEMA = `
     last_at TEXT NOT NULL,
     PRIMARY KEY (day, member_id, auth, token_id, client, client_version, operation, method)
   );
+  -- The summary and adoption reads group the window's cells by everything but day and token. In
+  -- that order, and holding every summed column, this index answers them without a sort or a table
+  -- read: 324k cells (the documented ceiling) take about 70 ms instead of 335.
+  CREATE INDEX IF NOT EXISTS adminbot_api_usage_daily_group_idx ON adminbot_api_usage_daily(
+    member_id, auth, client, client_version, method, operation, day,
+    requests, client_errors, server_errors, total_ms, max_ms, last_at
+  );
   -- First and last use per member and client. Not pruned: it is what keeps "first used the CLI"
   -- true after the request rows are gone, and it holds two timestamps and nothing else.
   CREATE TABLE IF NOT EXISTS adminbot_api_usage_members (
@@ -726,9 +733,11 @@ export function createApiUsageLogFromDatabase(db: DatabaseSync): ApiUsageLog {
     SELECT member_id, auth, client, client_version, method, operation, ${COUNTS}
     FROM adminbot_api_usage_daily WHERE day >= ?
     GROUP BY member_id, auth, client, client_version, method, operation`);
-  // The summary and adoption reads of one page load want the same cells, so the second reuses
-  // the first's scan. Keyed on total_changes(): any write on this connection, a flush or a
-  // member merge alike, makes the next read scan again, so a cached answer is never stale.
+  // The summary and adoption reads want the same cells, so the second reuses the first's scan when
+  // nothing was written in between. Keyed on total_changes(): any write on this connection, a
+  // flush or a member merge alike, makes the next read scan again, so a cached answer is never
+  // stale. On a real page load the first GET's own row is usually flushed before the second read,
+  // so this is a bonus; the covering index is what keeps two scans inside the page budget.
   const changes = db.prepare(`SELECT total_changes() AS n`);
   let cellCache: { from: string; version: number; rows: ApiUsageRollupRow[] } | undefined;
   const cells = (from: string): ApiUsageRollupRow[] => {

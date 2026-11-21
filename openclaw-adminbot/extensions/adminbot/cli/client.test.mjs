@@ -7,7 +7,7 @@ import { Readable } from "node:stream";
 import { test } from "node:test";
 import { run } from "./adminbot.mjs";
 import { aliases } from "./aliases.mjs";
-import { callOperation, document, operations, userAgent } from "./client.mjs";
+import { callOperation, createAdminBotClient, document, operations, userAgent } from "./client.mjs";
 
 async function invoke(args, options = {}) {
   let out = "",
@@ -698,4 +698,27 @@ await test("every request names the CLI and its version in the User-Agent", asyn
     },
   });
   assert.equal(seen, userAgent);
+});
+
+await test("an SDK caller's Headers or header pairs reach the server, under the CLI User-Agent", async () => {
+  for (const headers of [
+    new Headers({ Authorization: "Bearer abt_sample", "User-Agent": "curl/8" }),
+    [
+      ["Authorization", "Bearer abt_sample"],
+      ["User-Agent", "curl/8"],
+    ],
+    { Authorization: "Bearer abt_sample", "User-Agent": "curl/8" },
+  ]) {
+    let seen;
+    const client = createAdminBotClient({
+      headers,
+      fetch: async (request) => {
+        seen = request.headers;
+        return new Response("{}", { headers: { "Content-Type": "application/json" } });
+      },
+    });
+    await client.GET("/auth/session");
+    assert.equal(seen.get("authorization"), "Bearer abt_sample");
+    assert.equal(seen.get("user-agent"), userAgent);
+  }
 });

@@ -1,8 +1,13 @@
 // API usage telemetry over HTTP: which requests become rows, what a row says, and who may read them.
 import { EventEmitter } from "node:events";
+import { mkdtempSync, rmSync } from "node:fs";
 import { createServer, request, type IncomingMessage, type ServerResponse } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import { createMemoryApiUsageLog } from "../persistence/api-usage.js";
+import type { AdminBotSqliteStore } from "../persistence/sqlite.js";
 import { hashPassword } from "../workflows/identity/auth.js";
 import { noteUsagePrincipal, trackApiUsage } from "./routes/usage.js";
 import { createAdminBotMockService } from "./server.js";
@@ -367,4 +372,102 @@ describe("API usage telemetry", () => {
     // The heartbeat is the cron wrapper reporting the run above, not a sweep of its own.
     expect(report.body.sweeps).toEqual([]);
   });
+});
+
+describe("api usage page latency", () => {
+  // The supported ceiling, written down in docs/adminbot/usage-telemetry.md: 324k rollup cells
+  // (60 members x 60 operations x 90 days, far busier than the lab), 50k service runs and an audit
+  // log of 200k events, 26k of them cron heartbeats. Timed through the real authenticated routes
+  // the page calls, against a SQLite store, so routing, auth and serialization are in the number.
+  it("answers the page's three GETs within the budget at the supported ceiling", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "adminbot-usage-latency-"));
+    const mock = createAdminBotMockService({
+      serviceToken: SERVICE,
+      databasePath: join(dir, "adminbot.sqlite"),
+    });
+    running.push(mock);
+    try {
+      await new Promise<void>((resolve) => {
+        mock.server.listen(0, "127.0.0.1", resolve);
+      });
+      const { port } = mock.server.address() as { port: number };
+      const baseUrl = `http://127.0.0.1:${port}`;
+      const store = mock.store as AdminBotSqliteStore;
+      const db = (store as unknown as { db: DatabaseSync }).db;
+      const now = Date.now();
+      // Seeded in SQL: the write path is not what is being timed.
+      db.exec("BEGIN");
+      const cell = db.prepare(`INSERT INTO adminbot_api_usage_daily
+        (day, member_id, auth, token_id, client, client_version, operation, method,
+         requests, client_errors, server_errors, total_ms, max_ms, last_at)
+        VALUES (?, ?, 'api_token', 'tok', ?, '', ?, 'GET', 3, 0, 0, 30, 15, ?)`);
+      for (let d = 0; d < 90; d += 1) {
+        const day = new Date(now - d * 86_400_000).toISOString().slice(0, 10);
+        for (let m = 0; m < 60; m += 1) {
+          for (let o = 0; o < 60; o += 1) {
+            cell.run(day, `m${m}`, o % 2 ? "cli" : "website", `op${o}`, `${day}T10:00:00.000Z`);
+          }
+        }
+      }
+      const run = db.prepare(`INSERT INTO adminbot_api_usage
+        (at, auth, client, operation, method, status, duration_ms, metrics_json)
+        VALUES (?, 'service', 'other', ?, 'POST', 200, 50, '{"errors":1}')`);
+      for (let i = 0; i < 50_000; i += 1) {
+        run.run(new Date(now - (i % 89) * 86_400_000 - 60_000).toISOString(), `sweep${i % 12}`);
+      }
+      const audit = db.prepare(`INSERT INTO adminbot_audit_events
+        (id, action_id, event_type, timestamp, actor, event_json) VALUES (?, NULL, ?, ?, 'system', ?)`);
+      for (let i = 0; i < 200_000; i += 1) {
+        // A heartbeat every 5 minutes across 12 jobs for 90 days, the rest ordinary events spread
+        // over the year the audit log keeps.
+        const heartbeat = i < 26_000;
+        const at = new Date(
+          now - 60_000 - (heartbeat ? i * 300_000 : (i % 365) * 86_400_000 + i),
+        ).toISOString();
+        const type = heartbeat ? "automation_health.heartbeat" : "member.updated";
+        const event = {
+          id: `ev${i}`,
+          type,
+          timestamp: at,
+          actor: "system",
+          details: heartbeat
+            ? { job: `job${i % 12}`, ok: i % 50 !== 0, duration_ms: 1000, metrics: { errors: 0 } }
+            : { member_id: `m${i % 60}` },
+        };
+        audit.run(event.id, type, at, JSON.stringify(event));
+      }
+      db.exec("COMMIT");
+
+      const page = async () => {
+        const [summary, adoption, automation] = await Promise.all(
+          ["summary", "adoption", "automation"].map((name) =>
+            call(baseUrl, "GET", `/usage/${name}?days=90`, { bearer: SERVICE }),
+          ),
+        );
+        return { summary, adoption, automation };
+      };
+      // Best of three cold loads. Each GET is itself a service request, so every load follows a
+      // write and no cached answer is reused. One slow attempt on a busy CI machine is noise;
+      // three in a row is a regression.
+      const timings: number[] = [];
+      let result: Awaited<ReturnType<typeof page>> | undefined;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        store.apiUsageLog().flush();
+        const started = performance.now();
+        result = await page();
+        timings.push(performance.now() - started);
+      }
+
+      for (const response of Object.values(result!)) {
+        expect(response.status).toBe(200);
+      }
+      expect(result!.summary.body.by_member).toHaveLength(60);
+      expect(result!.adoption.body.power_users[0]?.top_operations).toHaveLength(3);
+      expect(result!.automation.body.sweeps).toHaveLength(12);
+      expect(result!.automation.body.jobs).toHaveLength(12);
+      expect(Math.min(...timings)).toBeLessThan(1000);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 180_000);
 });
