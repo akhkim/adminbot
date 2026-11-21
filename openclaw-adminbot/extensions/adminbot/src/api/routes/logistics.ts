@@ -213,11 +213,20 @@ export const logisticsRoutes: readonly Route[] = [
       sendServiceResult(res, await service.syncRecLetterChannel(principalActor(principal)));
     }),
   ),
+  // The head professor's letter-deadline reminder (scripts/adminbot-rec-letter-reminder-cron.sh,
+  // daily). Maintainers can run it by hand: `?dry_run=1` returns the mail it would send without
+  // sending or stamping; `?within_days=N` also counts any deadline within N days as a heads-up now.
   post(
     "/logistics/rec-letter-reminders/run",
-    privilegedOnly(async ({ res, principal, ctx }) => {
-      const { service } = ctx;
-      sendServiceResult(res, await service.sweepRecLetterReminders(principalActor(principal)));
+    privilegedOnly(async ({ res, url, principal, ctx }) => {
+      const within = url.searchParams.get("within_days")?.trim();
+      sendServiceResult(
+        res,
+        await ctx.service.sweepRecLetterReminders(principalActor(principal), {
+          dryRun: url.searchParams.get("dry_run") === "1",
+          ...(within ? { withinDays: Number(within) } : {}),
+        }),
+      );
     }),
   ),
   // The after-deadline "did your letter go in?" mail to students

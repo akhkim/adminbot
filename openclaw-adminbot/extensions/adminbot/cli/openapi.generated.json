@@ -14779,6 +14779,22 @@
           "logistics"
         ],
         "x-source": "src/api/routes/logistics.ts",
+        "parameters": [
+          {
+            "name": "dry_run",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "within_days",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "2XX": {
             "description": "Successful service result",
@@ -14788,6 +14804,22 @@
                   "type": "object",
                   "properties": {
                     "recipient": {
+                      "type": "string"
+                    },
+                    "cc": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "dry_run": {
+                      "type": "boolean",
+                      "const": true
+                    },
+                    "subject": {
+                      "type": "string"
+                    },
+                    "body": {
                       "type": "string"
                     },
                     "reminded": {
@@ -14801,18 +14833,37 @@
                           "member_id": {
                             "type": "string"
                           },
+                          "member_name": {
+                            "type": "string"
+                          },
                           "deadline_at": {
                             "type": "string"
                           },
                           "days_until": {
                             "type": "number"
+                          },
+                          "tier": {
+                            "type": "string",
+                            "enum": [
+                              "final",
+                              "week"
+                            ]
+                          },
+                          "schools": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
                           }
                         },
                         "required": [
                           "request_id",
                           "member_id",
+                          "member_name",
                           "deadline_at",
-                          "days_until"
+                          "days_until",
+                          "tier",
+                          "schools"
                         ],
                         "additionalProperties": true
                       }
@@ -32122,6 +32173,12 @@
                       "type": "string"
                     }
                   },
+                  "rec_letter_reminder_cc_emails": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
                   "papers_acceptance_dcs_email": {
                     "type": "string"
                   },
@@ -48990,6 +49047,12 @@
               "type": "string"
             }
           },
+          "rec_letter_reminder_cc_emails": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "papers_acceptance_dcs_email": {
             "type": "string"
           },
@@ -49093,6 +49156,12 @@
             "type": "string"
           },
           "papers_acceptance_mpi_emails": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "rec_letter_reminder_cc_emails": {
             "type": "array",
             "items": {
               "type": "string"
