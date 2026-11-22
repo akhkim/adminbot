@@ -681,15 +681,21 @@ import {
 } from "./service.reminder-replies.js";
 import {
   autoApplyReminderReply,
-  canAutoApplyReminderReply,
+  bareAddress,
   executeReminderReplyApply,
   executeReminderReplyUndo,
+  expectedReceipt,
   findUndoableApply,
-  reminderReplyUndoBody,
-  resolutionTarget,
+  parseApplyPayload,
+  parseSenderEvidence,
+  reminderReplyConfirmationBody,
+  reminderReplyReceiptSubject,
+  safeAutoVerdict,
   sendReminderReplyNote,
+  undoneBy,
   type ReminderReplyAutoDeps,
   type ReminderReplyAutoOutcome,
+  type ReminderReplySenderEvidence,
 } from "./service.reminder-reply-auto.js";
 import { ScheduledMemberChangeService } from "./service.scheduled-member-changes.js";
 import { runSlackRosterSync, type SlackRosterSyncOptions } from "./service.slack-roster-sync.js";
@@ -1583,12 +1589,13 @@ const DEFAULT_ACTION_POLICIES = {
   // what `isSlackApprovalAuthorizedSender` tests. See deploy/aurora/adminbot.env.example.
   "email_review.resolve": approvalPolicy("T3", ["admin"]),
   // The three reminder-reply actions run without an approval, and T1 because resolvePolicy only
-  // honors auto_allowed below T2. Nothing a caller types reaches them: the only creator is
-  // autoApplyReminderReply / undoReminderReply, which build the payload from a reminder this
-  // service sent, a sender that matched the nudged member's roster address, and a reading at or
-  // above reminderReplyAutoMinConfidence. Anything less goes to email_review.resolve above. The
-  // apply is reversible by construction -- its artifacts hold the prior state the undo restores --
-  // and the confirmation tells the member so, which is what makes skipping the reviewer safe.
+  // honors auto_allowed below T2. Nothing a caller types reaches them: createProposal refuses the
+  // types outright, and the only creator is the service's own keyed path for a reply that passed
+  // safeAutoVerdict -- authenticated From on the member's roster address, the reminder's own
+  // thread, not forwarded, a plain "done" for one open PaperFlow stage. The execute arms re-check
+  // all of it rather than trusting the creator, the confirm may only mail the fixed receipt to the
+  // roster address, and the undo only runs for the member. Everything else is email_review.resolve
+  // above, which changes nothing until a named admin approves it.
   "reminder_reply.apply": autoPolicy("T1"),
   "reminder_reply.undo": autoPolicy("T1"),
   "reminder_reply.confirm": autoPolicy("T1"),
@@ -2094,6 +2101,12 @@ export class AdminBotService {
     if (typeof proposal.summary !== "string" || !proposal.summary.trim()) {
       return serviceError(400, "summary is required");
     }
+    if (proposal.type.startsWith("reminder_reply.")) {
+      // These run with no approver, so nobody may file one: not a tool call, not the HTTP API, not
+      // another sweep. The service makes them itself, from a reply it checked, through
+      // createKeyedInternalProposal.
+      return serviceError(403, "reminder_reply actions are created only by AdminBot from a reply");
+    }
     const blocked = this.slackInviteBlock(proposal);
     if (blocked) {
       // Refused rather than proposed: T1 auto-approves, so a proposal here is an execution, and an
@@ -2581,6 +2594,35 @@ export class AdminBotService {
       joined.push({ channel: theme.meetingChannel, theme: theme.id, member_id: member.id });
     }
     return { joined, skipped };
+  }
+
+  /**
+   * A proposal the service files for itself, at most once per key, whatever became of the first.
+   *
+   * The key is enforced in storage (the same join deadline submissions use), so two mail passes
+   * over one message at once, or a pass after the first was approved but not yet run, get the
+   * existing proposal back with `created: false` and run nothing new.
+   */
+  private createKeyedInternalProposal(
+    proposal: AdminBotActionProposal,
+    scope: "reminder_reply" | "email_review",
+    key: string,
+  ): AdminBotServiceResponse<{ proposal: AdminBotStoredProposal; created: boolean }> {
+    if (!(adminBotActionTypes as readonly string[]).includes(proposal.type)) {
+      return serviceError(400, "unsupported action type");
+    }
+    if (typeof proposal.summary !== "string" || !proposal.summary.trim()) {
+      return serviceError(400, "summary is required");
+    }
+    const saved = this.store.saveDeadlineProposalSubmission(
+      this.prepareProposal(proposal),
+      scope,
+      key,
+    );
+    if (saved.created) {
+      this.auditProposalCreation(saved.proposal);
+    }
+    return { ok: true, status: 200, payload: saved };
   }
 
   private prepareProposal(proposal: AdminBotActionProposal): AdminBotStoredProposal {
@@ -3429,18 +3471,28 @@ export class AdminBotService {
       if (!applied.ok) {
         return this.executionFailure(proposal, applied.status, applied.error.message);
       }
+      // A reminder reply's proposal carries the nudges it answers. They are quieted only now, once
+      // an admin has approved: a rejected proposal leaves the member's reminders exactly as they were.
+      const snoozed = this.snoozeReminderReplyTargets(proposal);
       artifacts = {
         resolution: applied.payload.resolution,
         evidence_recorded: String(applied.payload.evidence_recorded),
+        ...(snoozed > 0 ? { snoozed: String(snoozed) } : {}),
       };
       handled = true;
     } else if (
       proposal.type === "reminder_reply.apply" ||
       proposal.type === "reminder_reply.undo"
     ) {
-      // In-service like `email_review.resolve`: the write is to this store. No approver, because
-      // the only creators are the member's own reply (apply, undo) and an admin's undo; the
-      // member is the actor, read from the payload the service itself built.
+      // In-service like `email_review.resolve`: the write is to this store. No approver: only the
+      // service creates these (createProposal refuses them), and the apply is re-checked here
+      // against the live match and the safe-auto rule before anything is written.
+      if (proposal.type === "reminder_reply.apply") {
+        const why = this.reminderReplyApplyProblem(proposal);
+        if (why) {
+          return this.executionFailure(proposal, 409, why);
+        }
+      }
       const outcome =
         proposal.type === "reminder_reply.apply"
           ? executeReminderReplyApply(this.reminderReplyAutoDeps(), proposal)
@@ -3490,6 +3542,14 @@ export class AdminBotService {
       artifacts = { deleted_id: deleted.payload.deleted_id };
       handled = true;
     } else {
+      if (proposal.type === "reminder_reply.confirm") {
+        // The connector sends whatever the payload says, so the payload is checked first: the
+        // fixed receipt, for an apply that ran, to that member's roster address. Nothing else.
+        const why = this.reminderReplyConfirmProblem(proposal);
+        if (why) {
+          return this.executionFailure(proposal, 409, why);
+        }
+      }
       if (!this.options.executor) {
         return this.executionFailure(proposal, 501, "no live connector is configured");
       }
@@ -11556,11 +11616,12 @@ export class AdminBotService {
   }
 
   /**
-   * Hold a reply to a reminder for one-click approval, and quiet the reminder meanwhile.
+   * Hold a reply to a reminder for one-click approval. Changes nothing until an admin approves.
    *
-   * Never closes anything itself. The reply is filed in the review queue, the reminder it answers is
-   * snoozed so the member is not asked again while an admin decides, and one `email_review.resolve`
-   * proposal carries the resolution the reading supports. The approval is what writes.
+   * The reply is filed in the review queue and one `email_review.resolve` proposal carries the
+   * resolution the reading supports, plus the nudges to quiet. Nothing is snoozed here: the
+   * approval's execution does that, so a rejection leaves the member's reminders as they were.
+   * Keyed on the Gmail message id in storage, so the same mail is never proposed twice.
    */
   proposeReminderReply(params: {
     messageId: string;
@@ -11569,13 +11630,14 @@ export class AdminBotService {
     subject?: string;
     receivedAt?: string;
     reading: AdminBotReminderReplyReading;
+    senderEvidence?: ReminderReplySenderEvidence;
     actor: string;
     nowIso?: string;
   }): AdminBotServiceResponse<{
     proposal_id?: string;
     already_proposed: boolean;
     resolution: AdminBotEmailReviewResolution["kind"];
-    snoozed: string[];
+    snooze_on_approval: string[];
   }> {
     if (!isReminderReplyReading(params.reading)) {
       return serviceError(400, "reminder reply reading is malformed");
@@ -11595,11 +11657,21 @@ export class AdminBotService {
       return serviceError(404, "this email does not answer an AdminBot reminder from its sender");
     }
     const { resolution, summary, undo_plan } = reminderReplyResolution(match, params.reading, now);
+    const snoozeTargets = match.targets
+      .filter((target) => target.open && target.domain !== "rec_letter_reminder")
+      .map((target) => ({
+        domain: target.domain,
+        subject_id: target.subject_id,
+        member_id: target.member_id,
+      }));
+    const snoozeKeys = snoozeTargets.map(
+      (target) => `${target.domain}|${target.subject_id}|${target.member_id}`,
+    );
     if (this.pendingEmailReviewProposals().has(params.messageId)) {
       return {
         ok: true,
         status: 200,
-        payload: { already_proposed: true, resolution: resolution.kind, snoozed: [] },
+        payload: { already_proposed: true, resolution: resolution.kind, snooze_on_approval: [] },
       };
     }
     const review: AdminBotEmailReviewItem = {
@@ -11612,48 +11684,46 @@ export class AdminBotService {
       ...(params.receivedAt ? { received_at: params.receivedAt } : {}),
       updated_at: nowIso,
     };
-    this.store.saveEmailReview(review);
-
-    // Quiet first, then ask. Bounded by the real clock as well as `now`, because the snooze cap is.
-    const until = new Date(
-      Math.min(now.getTime(), Date.now()) + reminderReplySnoozeDays * 24 * 60 * 60 * 1000,
-    ).toISOString();
-    const snoozed: string[] = [];
-    for (const target of match.targets) {
-      if (!target.open || target.domain === "rec_letter_reminder") {
-        continue;
-      }
-      const result = this.snoozeNudge({
-        domain: target.domain,
-        subjectId: target.subject_id,
-        memberId: target.member_id,
-        until,
-      });
-      if (result.ok) {
-        snoozed.push(`${target.domain}|${target.subject_id}|${target.member_id}`);
-      }
-    }
-
-    const created = this.createProposal({
-      type: "email_review.resolve",
-      summary,
-      target: { service: "adminbot", channel: "adminbot", target: params.messageId },
-      proposed_payload: {
-        message_id: params.messageId,
-        thread_id: params.threadId,
-        sender: params.sender,
-        ...(params.subject ? { subject: params.subject } : {}),
-        held_because: review.reason,
-        reminder_action_id: match.reminder_action_id,
-        reading: params.reading,
-        resolution,
+    const created = this.createKeyedInternalProposal(
+      {
+        type: "email_review.resolve",
+        summary,
+        target: { service: "adminbot", channel: "adminbot", target: params.messageId },
+        proposed_payload: {
+          message_id: params.messageId,
+          thread_id: params.threadId,
+          sender: params.sender,
+          ...(params.subject ? { subject: params.subject } : {}),
+          held_because: review.reason,
+          reminder_action_id: match.reminder_action_id,
+          reading: params.reading,
+          resolution,
+          snooze_targets: snoozeTargets,
+          ...(params.senderEvidence ? { sender_evidence: params.senderEvidence } : {}),
+        },
+        rationale: `${match.member_name} replied to the reminder "${match.reminder_subject}" (matched by ${match.matched_by}).`,
+        undo_plan,
+        idempotency_key: `email_review.resolve:${params.messageId}`,
       },
-      rationale: `${match.member_name} replied to the reminder "${match.reminder_subject}" (matched by ${match.matched_by}).`,
-      undo_plan,
-    });
+      "email_review",
+      `email_review.resolve:${params.messageId}`,
+    );
     if (!created.ok) {
       return serviceError(created.status, created.error.message);
     }
+    if (!created.payload.created) {
+      return {
+        ok: true,
+        status: 200,
+        payload: {
+          proposal_id: created.payload.proposal.id,
+          already_proposed: true,
+          resolution: resolution.kind,
+          snooze_on_approval: [],
+        },
+      };
+    }
+    this.store.saveEmailReview(review);
     // The hourly pass keys on the same stamp, so it does not ask about this message a second time.
     this.markNudgeSaid(
       "email_review",
@@ -11664,26 +11734,125 @@ export class AdminBotService {
     this.recordAudit({
       type: "email_review.reminder_reply",
       actor: params.actor,
-      action_id: created.payload.id,
+      action_id: created.payload.proposal.id,
       details: {
         message_id: params.messageId,
         reminder_action_id: match.reminder_action_id,
         member_id: match.member_id,
         intent: params.reading.intent,
         resolution: resolution.kind,
-        snoozed: snoozed.length,
+        snooze_on_approval: snoozeKeys.length,
       },
     });
     return {
       ok: true,
       status: 200,
       payload: {
-        proposal_id: created.payload.id,
+        proposal_id: created.payload.proposal.id,
         already_proposed: false,
         resolution: resolution.kind,
-        snoozed,
+        snooze_on_approval: snoozeKeys,
       },
     };
+  }
+
+  /** Quiet the nudges an approved reminder-reply proposal answers. Returns how many it quieted. */
+  private snoozeReminderReplyTargets(proposal: AdminBotStoredProposal): number {
+    const targets = (proposal.proposed_payload as { snooze_targets?: unknown } | undefined)
+      ?.snooze_targets;
+    if (!Array.isArray(targets)) {
+      return 0;
+    }
+    const until = new Date(
+      Date.now() + reminderReplySnoozeDays * 24 * 60 * 60 * 1000,
+    ).toISOString();
+    let count = 0;
+    for (const raw of targets) {
+      const target = raw as { domain?: unknown; subject_id?: unknown; member_id?: unknown };
+      if (
+        typeof target?.domain !== "string" ||
+        typeof target.subject_id !== "string" ||
+        typeof target.member_id !== "string"
+      ) {
+        continue;
+      }
+      const result = this.snoozeNudge({
+        domain: target.domain,
+        subjectId: target.subject_id,
+        memberId: target.member_id,
+        until,
+      });
+      count += result.ok ? 1 : 0;
+    }
+    return count;
+  }
+
+  /** Why an apply must not run now, re-derived from the store rather than read from the payload. */
+  private reminderReplyApplyProblem(proposal: AdminBotStoredProposal): string | undefined {
+    const payload = parseApplyPayload(proposal);
+    if (!payload) {
+      return "reminder reply payload is invalid";
+    }
+    const member = this.store.getLabMember(payload.member_id);
+    const roster = member ? memberAddresses(member).map((address) => address.toLowerCase()) : [];
+    const match = this.matchReminderReply({
+      sender: payload.review.sender,
+      ...(payload.review.subject ? { subject: payload.review.subject } : {}),
+      threadId: payload.review.thread_id,
+    });
+    if (
+      !match ||
+      match.reminder_action_id !== payload.reminder_action_id ||
+      match.member_id !== payload.member_id
+    ) {
+      return "the reply no longer matches the reminder it was applied for";
+    }
+    const verdict = safeAutoVerdict({
+      match,
+      reading: payload.reading,
+      evidence: payload.sender_evidence,
+      sender: payload.review.sender,
+      rosterAddresses: roster,
+    });
+    if (!verdict.ok) {
+      return `not safe to apply without an admin: ${verdict.why}`;
+    }
+    if (JSON.stringify(verdict.resolution) !== JSON.stringify(payload.resolution)) {
+      return "the stored resolution is not the one the safe path builds";
+    }
+    if (
+      payload.receipt_to !== bareAddress(payload.review.sender) ||
+      !roster.includes(payload.receipt_to)
+    ) {
+      return "the receipt address is not the member's roster address";
+    }
+    return undefined;
+  }
+
+  /** Why a receipt must not be sent: anything but the fixed text, to the roster address, for an apply. */
+  private reminderReplyConfirmProblem(proposal: AdminBotStoredProposal): string | undefined {
+    const row = proposal.proposed_payload as Record<string, unknown> | undefined;
+    const sourceId = typeof row?.source_action_id === "string" ? row.source_action_id : "";
+    const kind = row?.kind === "applied" || row?.kind === "undone" ? row.kind : undefined;
+    const apply = sourceId ? this.store.getProposal(sourceId) : undefined;
+    const payload = apply ? parseApplyPayload(apply) : undefined;
+    const result = sourceId ? this.store.getExecutionResult(sourceId) : undefined;
+    if (!kind || !payload || result?.status !== "executed" || result.dry_run) {
+      return "a receipt is only sent for a reminder reply that was applied";
+    }
+    if (kind === "undone" && !undoneBy(this.store, sourceId)) {
+      return "an undo receipt is only sent once the reply was undone";
+    }
+    const member = this.store.getLabMember(payload.member_id);
+    const roster = member ? memberAddresses(member).map((address) => address.toLowerCase()) : [];
+    const expected = expectedReceipt(payload, kind);
+    if (row?.to !== expected.to || !roster.includes(expected.to)) {
+      return "a receipt only goes to the member's roster address";
+    }
+    if (row?.subject !== expected.subject || row?.body !== expected.body) {
+      return "a receipt must be the fixed template";
+    }
+    return undefined;
   }
 
   /** The writes behind the resolutions a reminder reply can propose. Each checks it still applies. */
@@ -11798,7 +11967,8 @@ export class AdminBotService {
   private reminderReplyAutoDeps(): ReminderReplyAutoDeps {
     return {
       store: this.store,
-      createProposal: (proposal) => this.createProposal(proposal),
+      createKeyedProposal: (proposal, key) =>
+        this.createKeyedInternalProposal(proposal, "reminder_reply", key),
       execute: (actionId, request) => this.execute(actionId, request),
       resolveEmailReview: (params) => this.resolveEmailReview(params),
       undoLetterConfirmation: (requestId, memberId) =>
@@ -11811,12 +11981,15 @@ export class AdminBotService {
    * What one reminder reply would do, without doing it: apply and confirm, or hold for review.
    *
    * The dry run and the backfill both read this, so what they print is what the live path does.
+   * Only safeAutoVerdict decides "apply"; the model's reading can send a reply to review but can
+   * never widen what an apply writes.
    */
   planReminderReply(params: {
     sender: string;
     threadId: string;
     subject?: string;
     reading: AdminBotReminderReplyReading;
+    senderEvidence?: ReminderReplySenderEvidence;
     nowIso?: string;
   }): AdminBotServiceResponse<{
     mode: "apply" | "review";
@@ -11825,6 +11998,7 @@ export class AdminBotService {
     resolution: AdminBotEmailReviewResolution;
     summary: string;
     label?: string;
+    receipt?: { to: string; subject: string; body: string };
     why_review?: string;
   }> {
     if (!isReminderReplyReading(params.reading)) {
@@ -11840,43 +12014,60 @@ export class AdminBotService {
     if (!match) {
       return serviceError(404, "this email does not answer an AdminBot reminder from its sender");
     }
-    const { resolution, summary } = reminderReplyResolution(
+    const member = this.store.getLabMember(match.member_id);
+    const verdict = safeAutoVerdict({
       match,
-      params.reading,
-      new Date(nowIso),
-    );
-    const target = resolutionTarget(match, resolution);
-    const confident = canAutoApplyReminderReply(params.reading, resolution);
-    const whyReview = !confident
-      ? params.reading.intent === "question"
-        ? "the member asked a question"
-        : resolution.kind === "dismissed"
-          ? "no single open item this reply can settle"
-          : `only ${Math.round(params.reading.confidence * 100)}% confident`
-      : !target
-        ? "the item it answers is no longer open"
-        : undefined;
+      reading: params.reading,
+      evidence: params.senderEvidence,
+      sender: params.sender,
+      rosterAddresses: member ? memberAddresses(member) : [],
+    });
+    if (!verdict.ok) {
+      const { resolution, summary } = reminderReplyResolution(
+        match,
+        params.reading,
+        new Date(nowIso),
+      );
+      return {
+        ok: true,
+        status: 200,
+        payload: {
+          mode: "review",
+          member_id: match.member_id,
+          member_name: match.member_name,
+          resolution,
+          summary,
+          why_review: verdict.why,
+        },
+      };
+    }
+    const label = verdict.target.label;
     return {
       ok: true,
       status: 200,
       payload: {
-        mode: whyReview ? "review" : "apply",
+        mode: "apply",
         member_id: match.member_id,
         member_name: match.member_name,
-        resolution,
-        summary,
-        ...(target ? { label: target.label } : {}),
-        ...(whyReview ? { why_review: whyReview } : {}),
+        resolution: verdict.resolution,
+        summary: `Mark ${label} done: ${match.member_name} replied to the reminder`,
+        label,
+        receipt: {
+          to: bareAddress(params.sender),
+          subject: reminderReplyReceiptSubject(match.reminder_subject),
+          body: reminderReplyConfirmationBody({ memberName: match.member_name, label }),
+        },
       },
     };
   }
 
   /**
-   * A reminder reply, applied when the member's answer is clear and held for review when not.
+   * A reminder reply: applied only when it passes the safe-auto rule, held for an admin otherwise.
    *
-   * The confident path closes or snoozes the one thing the reminder asked, as the member, and
-   * mails them a receipt they can answer "undo" to. Everything else -- and an apply that fails its
-   * own checks -- goes through `proposeReminderReply`, unchanged.
+   * The safe path marks one PaperFlow stage done, as the member, and mails the fixed receipt to
+   * their roster address. Everything else -- and an apply that fails its own checks -- goes through
+   * `proposeReminderReply`, which changes nothing until approved. A successful apply withdraws any
+   * proposal still waiting on the same message, so a stale approval cannot write it a second time.
    */
   async autoApplyReminderReply(params: {
     messageId: string;
@@ -11885,13 +12076,15 @@ export class AdminBotService {
     subject?: string;
     receivedAt?: string;
     reading: AdminBotReminderReplyReading;
+    senderEvidence?: ReminderReplySenderEvidence;
     actor: string;
     /** The bot mailbox the receipt goes from. */
     account?: string;
     nowIso?: string;
   }): Promise<
     AdminBotServiceResponse<
-      | ({ mode: "applied" } & ReminderReplyAutoOutcome)
+      | ({ mode: "applied" } & ReminderReplyAutoOutcome & { superseded: string[] })
+      | { mode: "duplicate"; apply_action_id?: string }
       | {
           mode: "proposed";
           proposal_id?: string;
@@ -11901,26 +12094,38 @@ export class AdminBotService {
         }
     >
   > {
+    // A reply already applied (by another pass, or a backfill) is settled: never re-file it.
+    const applied = this.store
+      .listProposalsByType("reminder_reply.apply")
+      .find(
+        (proposal) =>
+          proposal.target?.target === params.messageId && proposal.status !== "rejected",
+      );
+    if (applied) {
+      return { ok: true, status: 200, payload: { mode: "duplicate", apply_action_id: applied.id } };
+    }
     const plan = this.planReminderReply(params);
     if (!plan.ok) {
       return plan;
     }
-    const alreadyApplied = this.store
-      .listProposalsByType("reminder_reply.apply")
-      .some(
-        (proposal) =>
-          (proposal.proposed_payload as { review?: { message_id?: unknown } } | undefined)?.review
-            ?.message_id === params.messageId,
-      );
     let applyError: string | undefined;
-    if (plan.payload.mode === "apply" && !alreadyApplied) {
-      const nowIso = params.nowIso ?? new Date().toISOString();
-      const match = this.matchReminderReply({
-        sender: params.sender,
-        ...(params.subject ? { subject: params.subject } : {}),
-        threadId: params.threadId,
-        nowIso,
-      })!;
+    const nowIso = params.nowIso ?? new Date().toISOString();
+    const match =
+      plan.payload.mode === "apply"
+        ? this.matchReminderReply({
+            sender: params.sender,
+            ...(params.subject ? { subject: params.subject } : {}),
+            threadId: params.threadId,
+            nowIso,
+          })
+        : undefined;
+    if (
+      plan.payload.mode === "apply" &&
+      match &&
+      params.senderEvidence &&
+      plan.payload.resolution.kind === "paperflow_evidence" &&
+      plan.payload.receipt
+    ) {
       const outcome = await autoApplyReminderReply(this.reminderReplyAutoDeps(), {
         review: {
           message_id: params.messageId,
@@ -11928,20 +12133,32 @@ export class AdminBotService {
           sender: params.sender,
           ...(params.subject ? { subject: params.subject } : {}),
           category: "reminder_reply",
-          reason: `reply to "${match.reminder_subject}": ${params.reading.intent}`,
+          reason: `reply to "${match.reminder_subject}": done`,
           ...(params.receivedAt ? { received_at: params.receivedAt } : {}),
           updated_at: nowIso,
         },
         match,
         reading: params.reading,
         resolution: plan.payload.resolution,
+        evidence: params.senderEvidence,
         summary: plan.payload.summary,
-        label: plan.payload.label ?? "this reminder",
-        to: params.sender,
+        label: plan.payload.label ?? "this stage",
+        receiptTo: plan.payload.receipt.to,
         ...(params.account ? { account: params.account } : {}),
       });
+      if (outcome.outcome === "duplicate") {
+        return {
+          ok: true,
+          status: 200,
+          payload: {
+            mode: "duplicate",
+            ...(outcome.apply_action_id ? { apply_action_id: outcome.apply_action_id } : {}),
+          },
+        };
+      }
       if (outcome.outcome === "applied") {
-        return { ok: true, status: 200, payload: { mode: "applied", ...outcome } };
+        const superseded = this.withdrawReviewProposals(params.messageId, params.actor);
+        return { ok: true, status: 200, payload: { mode: "applied", ...outcome, superseded } };
       }
       applyError = outcome.error;
     }
@@ -11962,39 +12179,59 @@ export class AdminBotService {
     };
   }
 
-  /**
-   * Take back one applied reply. `requestedBy` is the member (from their "undo" mail) or an admin.
-   */
-  async undoReminderReply(
+  /** Reject every review proposal still waiting on this message; an apply has settled it. */
+  private withdrawReviewProposals(messageId: string, actor: string): string[] {
+    const withdrawn: string[] = [];
+    for (const proposal of this.store.listProposalsByType("email_review.resolve")) {
+      const payload = proposal.proposed_payload as { message_id?: unknown } | undefined;
+      if (
+        payload?.message_id !== messageId ||
+        (proposal.status !== "pending" && proposal.status !== "approved") ||
+        this.store.getExecutionResult(proposal.id)?.status === "executed"
+      ) {
+        continue;
+      }
+      const removed = this.removePending(proposal.id, {
+        actor,
+        note: "superseded by reminder_reply.apply",
+      });
+      if (removed.ok) {
+        withdrawn.push(proposal.id);
+      }
+    }
+    return withdrawn;
+  }
+
+  /** Take back one applied reply, for the member it was applied for. Only reached from their mail. */
+  private async undoReminderReply(
     applyActionId: string,
     requestedBy: string,
   ): Promise<AdminBotServiceResponse<{ undo_action_id: string; reverted: string }>> {
     const key = `reminder_reply.undo:${applyActionId}`;
-    const created = this.createProposal({
-      type: "reminder_reply.undo",
-      summary: `Undo reminder reply ${applyActionId}`,
-      target: { service: "adminbot", channel: "adminbot", target: applyActionId },
-      proposed_payload: { apply_action_id: applyActionId, requested_by: requestedBy },
-      undo_plan: "Resolve the reply again from the review queue.",
-      idempotency_key: key,
-    });
+    const created = this.createKeyedInternalProposal(
+      {
+        type: "reminder_reply.undo",
+        summary: `Undo reminder reply ${applyActionId}`,
+        target: { service: "adminbot", channel: "adminbot", target: applyActionId },
+        proposed_payload: { apply_action_id: applyActionId, requested_by: requestedBy },
+        undo_plan: "Resolve the reply again from the review queue.",
+        idempotency_key: key,
+      },
+      "reminder_reply",
+      key,
+    );
     if (!created.ok) {
       return serviceError(created.status, created.error.message);
     }
-    const executed = await this.execute(created.payload.id, {
-      dry_run: false,
-      idempotency_key: key,
-    });
+    const undoId = created.payload.proposal.id;
+    const executed = await this.execute(undoId, { dry_run: false, idempotency_key: key });
     if (!executed.ok) {
       return serviceError(executed.status, executed.error.message);
     }
     return {
       ok: true,
       status: 200,
-      payload: {
-        undo_action_id: created.payload.id,
-        reverted: executed.payload.artifacts?.reverted ?? "",
-      },
+      payload: { undo_action_id: undoId, reverted: executed.payload.artifacts?.reverted ?? "" },
     };
   }
 
@@ -12057,12 +12294,14 @@ export class AdminBotService {
 
   /**
    * A member's "undo" on the thread of a receipt: revert the newest applied reply there that was
-   * applied for them, and tell them it is back. 404 when there is nothing of theirs to undo.
+   * applied for them, and tell them it is back. 403 unless the mail is authenticated from their own
+   * roster address; 404 when there is nothing of theirs to undo.
    */
   async undoReminderReplyFromEmail(params: {
     threadId: string;
     sender: string;
     messageId: string;
+    senderEvidence?: ReminderReplySenderEvidence;
     account?: string;
   }): Promise<
     AdminBotServiceResponse<{
@@ -12072,6 +12311,16 @@ export class AdminBotService {
       confirm_error?: string;
     }>
   > {
+    const evidence = parseSenderEvidence(params.senderEvidence);
+    const sender = bareAddress(params.sender);
+    if (
+      !evidence?.authenticated ||
+      evidence.from !== sender ||
+      (evidence.reply_to && evidence.reply_to !== sender) ||
+      evidence.forwarded
+    ) {
+      return serviceError(403, "an undo must come authenticated from the member's own address");
+    }
     const found = this.findUndoableReminderReply(params);
     if (!found) {
       return serviceError(404, "no applied reminder reply of this sender's on this thread");
@@ -12081,13 +12330,9 @@ export class AdminBotService {
       return undone;
     }
     const note = await sendReminderReplyNote(this.reminderReplyAutoDeps(), {
-      messageId: params.messageId,
-      threadId: params.threadId,
-      to: params.sender,
-      body: reminderReplyUndoBody({
-        memberName: found.payload.member_name,
-        label: found.payload.label,
-      }),
+      sourceActionId: found.proposal.id,
+      kind: "undone",
+      ...expectedReceipt(found.payload, "undone"),
       summary: `Tell ${found.payload.member_name} their reply was undone`,
       ...(params.account ? { account: params.account } : {}),
       key: `reminder_reply.confirm:${params.messageId}`,

@@ -719,17 +719,20 @@ function buildEmailArgs(proposal: AdminBotStoredProposal, draft: boolean): strin
 }
 
 /**
- * The short "I've marked it" note, sent as a reply on the member's own thread.
+ * The fixed "I've marked it" receipt, sent as a fresh mail to the member's roster address.
  *
- * A reply rather than a fresh send so it lands under the message it answers and the member can
- * answer "undo" in place; the undo is matched by that thread. No quote: the member just wrote it.
+ * A send, never a `gmail reply`: a reply goes wherever the inbound mail's Reply-To pointed, and
+ * that header is the sender's to set. The service has already checked `to` against the roster and
+ * the body against the fixed template before this runs. The undo is matched by the thread this
+ * send lands in, which gog reports back as `gmail_thread_id`.
  */
 function buildReminderReplyConfirmArgs(proposal: AdminBotStoredProposal): string[] {
   const payload = requirePayload(proposal);
-  const messageId = requireString(payload, "message_id");
+  const to = requireString(payload, "to");
+  const subject = requireString(payload, "subject");
   const body = requireString(payload, "body");
-  const args = rootArgs("gmail.reply", optionalString(payload, "account"));
-  args.push("gmail", "reply", messageId, "--body", body, "--no-quote");
+  const args = rootArgs("gmail.send", optionalString(payload, "account"));
+  args.push("gmail", "send", "--to", to, "--subject", subject, "--body", body);
   return args;
 }
 

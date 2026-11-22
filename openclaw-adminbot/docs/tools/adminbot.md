@@ -1754,28 +1754,44 @@ the send by Gmail thread, falling back to the subject. It only does this when th
 member who was nudged. The model then reads the reply as done, not applicable, needs time,
 submitted or a question.
 
-**With `ADMINBOT_REMINDER_REPLY_AUTO_ENABLED=1`**, a clear answer is applied without an admin.
-A clear answer is one that is not a question, has confidence at least 0.8, and maps to one open
-item.
+**With `ADMINBOT_REMINDER_REPLY_AUTO_ENABLED=1`**, a reply is applied without an admin only when
+all of these hold:
 
-- `reminder_reply.apply` (T1) closes or skips the stage, waives the slot, marks the letters
-  submitted, or snoozes the chase.
-  - It records the change as `recorded_by: "reply"`, with the reply's message id and the member's
-    own reason.
-  - Its audit row is `reminder_reply.applied`.
-- `reminder_reply.confirm` (T1) then sends one short receipt from the bot mailbox
-  (`ADMINBOT_BOT_EMAIL`), as an unquoted `gmail reply` on the member's thread. The receipt ends
-  "Reply "undo" if that's wrong".
-- A reply whose first own line starts with "undo" runs `reminder_reply.undo` (T1) and sends a
-  second receipt. The undo:
-  - removes only the evidence rows this reply wrote, so a row an admin recorded since is kept;
-  - restores the slot, letter statuses or snooze exactly as they were;
-  - puts the reply back in Needs Review;
-  - is audited as `reminder_reply.undone`.
-- A question, a low-confidence reading, or a reply that settles no single open item goes to Needs
-  Review as an `email_review.resolve` proposal, as before, with no receipt.
+- Gmail's own `Authentication-Results` header (from `mx.google.com`) shows an aligned SPF, DKIM or
+  DMARC pass for the From domain, and From is the nudged member's roster address.
+- It is a direct reply on the reminder's own Gmail thread, with an `In-Reply-To` header. A match by
+  subject alone never qualifies.
+- It is not forwarded, there is no Reply-To pointing elsewhere, and only the text the member wrote
+  above the quote is read.
+- The model reads it as a plain "done" for that one open PaperFlow stage, at confidence at least
+  0.8, with no later stages and no "moved elsewhere".
 
-With the flag off, every reply takes that review path.
+The model only chooses between this path and an admin proposal. Nothing it writes, neither a note
+nor a URL, goes into the record.
+
+- `reminder_reply.apply` (T1) closes that one stage as `recorded_by: "reply"`, with the reply's
+  message id and a fixed note. Its audit row is `reminder_reply.applied`. It is keyed on the Gmail
+  message id across all statuses, so the same reply is applied and mailed at most once, even when
+  two passes run at the same time. It also rejects any review proposal still pending for the same
+  reply.
+- `reminder_reply.confirm` (T1) then sends one receipt from the bot mailbox (`ADMINBOT_BOT_EMAIL`).
+  The receipt is a fresh `gmail send` to the roster address, never a reply. It uses a fixed
+  template naming the stage and ends with how to undo it.
+- An authenticated reply from the same member whose first own line starts with "undo" runs
+  `reminder_reply.undo` (T1) and sends a second fixed receipt. Anyone else gets a 403 or a 404.
+  The undo removes only the evidence row this reply wrote, so a row an admin recorded since is
+  kept. It puts the reply back in Needs Review and is audited as `reminder_reply.undone`.
+- All three types are internal: `createProposal` refuses them, and each execute re-checks the
+  match, the authentication and the receipt against the record.
+
+Every other reply becomes an `email_review.resolve` proposal (T3) and changes nothing until a named
+admin approves it. That includes questions, low-confidence readings, "not applicable" or "moved
+elsewhere", and unauthenticated, forwarded or subject-matched mail. The proposal sends no receipt
+and does not quiet the nudge: the chase is snoozed only when the approved proposal executes, so a
+rejection leaves the reminders as they were.
+
+With the flag off, every reply takes that review path. This covers email only; Slack replies to
+reminders are not read.
 
 Once an accepted paper's conference has been held, the conference stage and its attendance
 roll-call are no longer asked about. The same applies once the deadline dataset lists only a later
@@ -1793,8 +1809,9 @@ For each reply it prints either:
 - "would apply", with the exact receipt and its recipient; or
 - "stays in review", with the reason.
 
-It then lists the papers whose conference questions stop. `--apply` runs the same actions as the
-live path.
+A held reply with no recorded sender authentication stays in review. The output then lists the
+papers whose conference questions stop. `--apply` runs the same checks and actions as the live
+path, and rejects the stale review proposal of any reply it applies.
 
 ## Scheduled passes
 

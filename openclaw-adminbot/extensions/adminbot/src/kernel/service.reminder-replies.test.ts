@@ -158,7 +158,7 @@ describe("matchReminderReply", () => {
 });
 
 describe("proposeReminderReply", () => {
-  it("files the reply, snoozes the chase and asks an admin, without closing anything", async () => {
+  it("files the reply and asks an admin, without closing or snoozing anything", async () => {
     const { service } = await nudged();
     const proposed = unwrap(
       service.proposeReminderReply({
@@ -173,7 +173,7 @@ describe("proposeReminderReply", () => {
     expect(proposed).toMatchObject({
       already_proposed: false,
       resolution: "paperflow_skipped",
-      snoozed: ["paperflow_stage|p1:camera_ready|xq"],
+      snooze_on_approval: ["paperflow_stage|p1:camera_ready|xq"],
     });
 
     const [proposal] = unwrap(service.listPending()).proposals;
@@ -181,8 +181,9 @@ describe("proposeReminderReply", () => {
     expect(proposal?.summary).toContain("Close camera_ready as skipped with every later stage");
     expect(proposal?.summary).toContain("moved to a Springer journal");
 
+    // The nudge keeps going until an admin approves; a rejection must leave it as it was.
     const [ledger] = service.listNudgeLedgerForTest("paperflow_stage");
-    expect(Date.parse(ledger?.snoozed_until ?? "")).toBeGreaterThan(Date.now());
+    expect(ledger?.snoozed_until).toBeUndefined();
     // Still open: the stage has not been touched until somebody approves.
     const { items } = unwrap(service.collectPaperflowStageNudges());
     expect(items[0]?.stage).toBe("camera_ready");

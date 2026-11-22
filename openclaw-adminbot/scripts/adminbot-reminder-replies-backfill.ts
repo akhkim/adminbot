@@ -9,12 +9,22 @@
 // roll-call are no longer asked about because the conference has been held or the venue moved on.
 // That second list needs no --apply: it is computed on read, and is printed so the change is seen.
 //
+// "Apply" is the same safe-auto rule as the live pass: Gmail authenticated the member's roster
+// address, it is a direct reply on the reminder's thread, not forwarded, and a plain "done" for one
+// PaperFlow stage. A proposal filed before sender authentication was recorded has none on record,
+// so it stays in review for an admin.
+//
 // With --apply, each "apply" row goes through the same `reminder_reply.apply` action as a live
-// reply -- audited, undoable by the member replying "undo" -- and the receipt is sent from the bot
-// mailbox (ADMINBOT_BOT_EMAIL) through gog. Rows that would stay in review are left untouched.
+// reply -- audited, undoable by the member replying "undo" -- and the fixed receipt is sent from the
+// bot mailbox (ADMINBOT_BOT_EMAIL) through gog to the member's roster address. The pending review
+// proposal for that message is then rejected, so a later approval cannot write it a second time.
+// Rows that would stay in review are left untouched.
 import { createGogAdminBotExecutor } from "../extensions/adminbot/src/connectors/gog.js";
 import type { AdminBotReminderReplyReading } from "../extensions/adminbot/src/contracts/email-review.js";
-import { reminderReplyConfirmationBody } from "../extensions/adminbot/src/kernel/service.reminder-reply-auto.js";
+import {
+  parseSenderEvidence,
+  type ReminderReplySenderEvidence,
+} from "../extensions/adminbot/src/kernel/service.reminder-reply-auto.js";
 import { createAdminBotSqliteService } from "../extensions/adminbot/src/persistence/sqlite.js";
 import { adminbotServiceDatabasePath } from "./adminbot-service-database.js";
 
@@ -39,6 +49,7 @@ type HeldReply = {
   sender: string;
   subject?: string;
   reading: AdminBotReminderReplyReading;
+  sender_evidence?: ReminderReplySenderEvidence;
 };
 
 async function main(): Promise<void> {
@@ -72,11 +83,13 @@ async function main(): Promise<void> {
     console.log(`${args.apply ? "APPLY" : "DRY RUN"}: ${held.length} reminder repl(ies) in review`);
     let applied = 0;
     for (const reply of held) {
+      const senderEvidence = parseSenderEvidence(reply.sender_evidence);
       const plan = service.planReminderReply({
         sender: reply.sender,
         threadId: reply.thread_id,
         ...(reply.subject ? { subject: reply.subject } : {}),
         reading: reply.reading,
+        ...(senderEvidence ? { senderEvidence } : {}),
       });
       if (!plan.ok) {
         console.log(
@@ -84,18 +97,14 @@ async function main(): Promise<void> {
         );
         continue;
       }
-      const { mode, member_name, resolution, label, why_review } = plan.payload;
-      if (mode === "review") {
+      const { mode, member_name, resolution, label, why_review, receipt } = plan.payload;
+      if (mode === "review" || !receipt) {
         console.log(`- ${reply.message_id} ${member_name}: stays in review (${why_review})`);
         continue;
       }
       console.log(`- ${reply.message_id} ${member_name}: would ${resolution.kind} on ${label}`);
-      console.log(`  receipt to ${reply.sender}:`);
-      for (const line of reminderReplyConfirmationBody({
-        memberName: member_name,
-        label: label ?? "this reminder",
-        resolution,
-      }).split("\n")) {
+      console.log(`  receipt to ${receipt.to}, subject "${receipt.subject}":`);
+      for (const line of receipt.body.split("\n")) {
         console.log(`    | ${line}`);
       }
       if (!args.apply) {
@@ -107,6 +116,7 @@ async function main(): Promise<void> {
         sender: reply.sender,
         ...(reply.subject ? { subject: reply.subject } : {}),
         reading: reply.reading,
+        ...(senderEvidence ? { senderEvidence } : {}),
         actor: "adminbot-reminder-replies-backfill",
         ...(args.account ? { account: args.account } : {}),
       });
@@ -115,9 +125,18 @@ async function main(): Promise<void> {
         console.log(
           `  applied ${result.payload.apply_action_id}${result.payload.confirm_error ? `; receipt NOT sent: ${result.payload.confirm_error}` : ""}`,
         );
+        if (result.payload.superseded.length > 0) {
+          console.log(
+            `  rejected stale review proposal(s): ${result.payload.superseded.join(", ")}`,
+          );
+        }
+      } else if (result.ok && result.payload.mode === "duplicate") {
+        console.log(
+          `  already applied as ${result.payload.apply_action_id ?? "an earlier action"}`,
+        );
       } else {
         console.log(
-          `  not applied: ${result.ok ? (result.payload.mode === "proposed" ? (result.payload.apply_error ?? "held") : "") : result.error.message}`,
+          `  not applied: ${result.ok ? ((result.payload.mode === "proposed" ? result.payload.apply_error : undefined) ?? "held") : result.error.message}`,
         );
       }
     }

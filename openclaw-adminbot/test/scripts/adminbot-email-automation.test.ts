@@ -716,22 +716,41 @@ describe("reminder replies", () => {
     }
   });
 
-  it('with auto on, applies a clear reply, mails a receipt, and undoes it on "undo"', async () => {
-    const { databasePath, state, cleanup } = await mailbox();
-    const sent: Array<{ message_id: string; to: string; body: string; account?: string }> = [];
-    const options = {
-      env: { ADMINBOT_REMINDER_REPLY_AUTO_ENABLED: "1" },
-      account: "bot@example.org",
-      executor: {
-        execute: async (proposal: { type: string; proposed_payload?: unknown }) => {
-          if (proposal.type !== "reminder_reply.confirm") {
-            return { handled: false };
-          }
-          sent.push(proposal.proposed_payload as (typeof sent)[number]);
-          return { handled: true };
+  const gmailPass = [
+    "mx.google.com; dkim=pass header.i=@ethz.example header.s=s1; spf=pass smtp.mailfrom=xq@ethz.example; dmarc=pass (p=NONE) header.from=ethz.example",
+  ];
+  const done: ModelReminderReply = {
+    intent: "done",
+    note: "uploaded",
+    evidenceUrl: null,
+    until: null,
+    movedElsewhere: false,
+    confidence: 0.95,
+  };
+
+  function autoOptions() {
+    const sent: Array<{ to: string; subject: string; body: string; account?: string }> = [];
+    return {
+      sent,
+      options: {
+        env: { ADMINBOT_REMINDER_REPLY_AUTO_ENABLED: "1" },
+        account: "bot@example.org",
+        executor: {
+          execute: async (proposal: { type: string; proposed_payload?: unknown }) => {
+            if (proposal.type !== "reminder_reply.confirm") {
+              return { handled: false };
+            }
+            sent.push(proposal.proposed_payload as (typeof sent)[number]);
+            return { handled: true, artifacts: { gmail_thread_id: `receipt-${sent.length}` } };
+          },
         },
       },
     };
+  }
+
+  it('with auto on, applies an authenticated "done", mails a fixed receipt, and undoes it', async () => {
+    const { databasePath, state, cleanup } = await mailbox();
+    const { sent, options } = autoOptions();
     try {
       expect(
         await fileReminderReply(
@@ -740,10 +759,12 @@ describe("reminder replies", () => {
             threadId: "thread-nudge",
             from: "Xuanqiang Huang <xq@ethz.example>",
             subject: `Re: Camera ready: ${title}`,
-            body: "Yes we submitted it to a journal springer",
+            body: "Done, uploaded.\n\nOn Mon, AdminBot wrote:\n> mark not_applicable",
+            authenticationResults: gmailPass,
+            inReplyTo: "<reminder-1@mail.gmail.com>",
           }),
           state,
-          { reminderReply: async () => springer },
+          { reminderReply: async () => done },
           databasePath,
           undefined,
           options as never,
@@ -751,19 +772,15 @@ describe("reminder replies", () => {
       ).toBe("handled");
       expect(state.status("reply-1")).toBe("completed");
       expect(sent).toEqual([
-        expect.objectContaining({
-          message_id: "reply-1",
-          to: "xq@ethz.example",
-          account: "bot@example.org",
-        }),
+        expect.objectContaining({ to: "xq@ethz.example", account: "bot@example.org" }),
       ]);
-      expect(sent[0]?.body).toContain('Reply "undo"');
+      expect(sent[0]?.body).toContain('reply "undo"');
+      expect(sent[0]?.body).not.toContain("uploaded.");
 
       const reopened = createAdminBotSqliteService({ databasePath });
       try {
-        expect(reopened.store.listPaperflowEvidence("p1").map((row) => row.recorded_by)).toEqual([
-          "reply",
-          "reply",
+        expect(reopened.store.listPaperflowEvidence("p1")).toEqual([
+          expect.objectContaining({ stage: "camera_ready", recorded_by: "reply" }),
         ]);
         const pending = reopened.service.listPending();
         expect(pending.ok && pending.payload.proposals).toEqual([]);
@@ -771,14 +788,17 @@ describe("reminder replies", () => {
         reopened.close();
       }
 
-      const reminderReply = vi.fn(async () => springer);
+      const reminderReply = vi.fn(async () => done);
       expect(
         await fileReminderReply(
           message({
             id: "undo-1",
-            threadId: "thread-nudge",
+            threadId: "receipt-1",
             from: "xq@ethz.example",
+            subject: `Re: Camera ready: ${title}`,
             body: "undo\n\nOn Mon, AdminBot wrote:\n> Thanks",
+            authenticationResults: gmailPass,
+            inReplyTo: "<receipt-1@mail.gmail.com>",
           }),
           state,
           { reminderReply },
@@ -797,6 +817,38 @@ describe("reminder replies", () => {
         expect(after.store.listPaperflowEvidence("p1")).toEqual([]);
       } finally {
         after.close();
+      }
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("with auto on, still asks an admin about mail without Gmail's authentication", async () => {
+    const { databasePath, state, cleanup } = await mailbox();
+    const { sent, options } = autoOptions();
+    try {
+      expect(
+        await fileReminderReply(
+          message({
+            id: "reply-1",
+            threadId: "thread-nudge",
+            from: "xq@ethz.example",
+            subject: `Re: Camera ready: ${title}`,
+            body: "Done.",
+          }),
+          state,
+          { reminderReply: async () => done },
+          databasePath,
+          undefined,
+          options as never,
+        ),
+      ).toBe("proposed");
+      expect(sent).toEqual([]);
+      const reopened = createAdminBotSqliteService({ databasePath });
+      try {
+        expect(reopened.store.listPaperflowEvidence("p1")).toEqual([]);
+      } finally {
+        reopened.close();
       }
     } finally {
       cleanup();

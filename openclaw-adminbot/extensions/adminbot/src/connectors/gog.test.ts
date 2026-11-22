@@ -87,33 +87,38 @@ describe("createGogAdminBotExecutor", () => {
     ]);
   });
 
-  it("sends a reminder-reply receipt as an unquoted reply from the bot mailbox", async () => {
+  it("sends a reminder-reply receipt to the roster address as a fresh send, never a reply", async () => {
     const run = vi.fn(async () => {});
     const executor = createGogAdminBotExecutor({ run });
     await expect(
-      executor.execute(
-        proposal("reminder_reply.confirm", {
+      executor.execute({
+        // Only the kernel files reminder_reply actions (createProposal refuses them), so this test
+        // takes a stored proposal and relabels it: the mapping is what is under test here.
+        ...proposal("email.send", {
           account: "bot@example.org",
-          message_id: "msg-1",
-          thread_id: "thread-1",
+          source_action_id: "act_apply",
           to: "member@example.org",
+          subject: "Re: Camera ready",
           body: "Thanks.",
         }),
-      ),
+        type: "reminder_reply.confirm",
+      }),
     ).resolves.toMatchObject({ handled: true });
     expect(run).toHaveBeenCalledWith([
       "--json",
       "--no-input",
       "--enable-commands-exact",
-      "gmail.reply",
+      "gmail.send",
       "--account",
       "bot@example.org",
       "gmail",
-      "reply",
-      "msg-1",
+      "send",
+      "--to",
+      "member@example.org",
+      "--subject",
+      "Re: Camera ready",
       "--body",
       "Thanks.",
-      "--no-quote",
     ]);
   });
 
