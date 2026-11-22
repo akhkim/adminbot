@@ -1,4 +1,3 @@
-#!/usr/bin/env -S node --import tsx
 // Settle the reminder replies already waiting in Needs Review, the way the hourly pass now would.
 //
 //   node --import tsx scripts/adminbot-reminder-replies-backfill.ts --database <path> [--apply]
@@ -12,7 +11,8 @@
 // "Apply" is the same safe-auto rule as the live pass: Gmail authenticated the member's roster
 // address, it is a direct reply on the reminder's thread, not forwarded, and a plain "done" for one
 // PaperFlow stage. A proposal filed before sender authentication was recorded has none on record,
-// so it stays in review for an admin.
+// so it stays in review for an admin, and so does one not filed by the service itself under its
+// internal key: its evidence is whatever its author wrote, and is not read.
 //
 // With --apply, each "apply" row goes through the same `reminder_reply.apply` action as a live
 // reply -- audited, undoable by the member replying "undo" -- and the fixed receipt is sent from the
@@ -21,12 +21,14 @@
 // Rows that would stay in review are left untouched.
 import { createGogAdminBotExecutor } from "../extensions/adminbot/src/connectors/gog.js";
 import type { AdminBotReminderReplyReading } from "../extensions/adminbot/src/contracts/email-review.js";
+import type { AdminBotServiceStore } from "../extensions/adminbot/src/kernel/service.js";
 import {
   parseSenderEvidence,
   type ReminderReplySenderEvidence,
 } from "../extensions/adminbot/src/kernel/service.reminder-reply-auto.js";
 import { createAdminBotSqliteService } from "../extensions/adminbot/src/persistence/sqlite.js";
 import { adminbotServiceDatabasePath } from "./adminbot-service-database.js";
+import { isMainModule } from "./lib/is-main-module.mjs";
 
 type Args = { databasePath: string; apply: boolean; account?: string };
 
@@ -42,7 +44,7 @@ function parseArgs(argv: string[]): Args {
   };
 }
 
-type HeldReply = {
+export type HeldReply = {
   proposal_id: string;
   message_id: string;
   thread_id: string;
@@ -51,6 +53,52 @@ type HeldReply = {
   reading: AdminBotReminderReplyReading;
   sender_evidence?: ReminderReplySenderEvidence;
 };
+
+type HeldReplyStore = Pick<
+  AdminBotServiceStore,
+  "listProposalsByType" | "getEmailReview" | "getDeadlineProposalSubmission"
+>;
+
+/**
+ * The reminder replies still waiting for an admin.
+ *
+ * Sender evidence is kept only from a proposal the service filed itself: the one stored under the
+ * internal key `email_review.resolve:<message id>`. Anyone with the propose tool can file an
+ * `email_review.resolve` whose payload claims an authenticated sender; such a row keeps its place in
+ * review but loses the evidence, so the backfill can never apply it.
+ */
+export function heldReminderReplies(store: HeldReplyStore): HeldReply[] {
+  const held: HeldReply[] = [];
+  for (const proposal of store.listProposalsByType("email_review.resolve")) {
+    const payload = proposal.proposed_payload as Partial<HeldReply> | undefined;
+    if (
+      proposal.status !== "pending" ||
+      !payload?.reading ||
+      typeof payload.message_id !== "string" ||
+      typeof payload.thread_id !== "string" ||
+      typeof payload.sender !== "string" ||
+      !store.getEmailReview(payload.message_id)
+    ) {
+      continue;
+    }
+    const internal =
+      store.getDeadlineProposalSubmission?.(
+        "email_review",
+        `email_review.resolve:${payload.message_id}`,
+      )?.id === proposal.id;
+    const senderEvidence = internal ? parseSenderEvidence(payload.sender_evidence) : undefined;
+    held.push({
+      proposal_id: proposal.id,
+      message_id: payload.message_id,
+      thread_id: payload.thread_id,
+      sender: payload.sender,
+      ...(typeof payload.subject === "string" ? { subject: payload.subject } : {}),
+      reading: payload.reading,
+      ...(senderEvidence ? { sender_evidence: senderEvidence } : {}),
+    });
+  }
+  return held;
+}
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
@@ -64,26 +112,12 @@ async function main(): Promise<void> {
     ...(args.apply ? { executor: createGogAdminBotExecutor() } : {}),
   });
   try {
-    const held: HeldReply[] = [];
-    for (const proposal of store.listProposalsByType("email_review.resolve")) {
-      const payload = proposal.proposed_payload as Partial<HeldReply> | undefined;
-      if (
-        proposal.status !== "pending" ||
-        !payload?.reading ||
-        typeof payload.message_id !== "string" ||
-        typeof payload.thread_id !== "string" ||
-        typeof payload.sender !== "string" ||
-        !store.getEmailReview(payload.message_id)
-      ) {
-        continue;
-      }
-      held.push({ ...(payload as HeldReply), proposal_id: proposal.id });
-    }
+    const held = heldReminderReplies(store);
 
     console.log(`${args.apply ? "APPLY" : "DRY RUN"}: ${held.length} reminder repl(ies) in review`);
     let applied = 0;
     for (const reply of held) {
-      const senderEvidence = parseSenderEvidence(reply.sender_evidence);
+      const senderEvidence = reply.sender_evidence;
       const plan = service.planReminderReply({
         sender: reply.sender,
         threadId: reply.thread_id,
@@ -156,7 +190,9 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exitCode = 1;
-});
+if (isMainModule(import.meta.url)) {
+  main().catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  });
+}

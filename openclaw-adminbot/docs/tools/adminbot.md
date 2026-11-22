@@ -1757,14 +1757,21 @@ submitted or a question.
 **With `ADMINBOT_REMINDER_REPLY_AUTO_ENABLED=1`**, a reply is applied without an admin only when
 all of these hold:
 
-- Gmail's own `Authentication-Results` header (from `mx.google.com`) shows an aligned SPF, DKIM or
-  DMARC pass for the From domain, and From is the nudged member's roster address.
-- It is a direct reply on the reminder's own Gmail thread, with an `In-Reply-To` header. A match by
+- Gmail's own `Authentication-Results` header shows an aligned SPF, DKIM or DMARC pass for the
+  From domain, and From is the nudged member's roster address. Only the first header in the
+  message's ordered header list is read, and only when its authserv-id is `mx.google.com`. The
+  parser respects quoted strings and comments, so a `dmarc=pass` hidden inside one does not count.
+- It is a direct reply on the reminder's own Gmail thread, and its `In-Reply-To` or `References`
+  header contains exactly the Message-ID AdminBot stored when it sent that reminder. A match by
   subject alone never qualifies.
 - It is not forwarded, there is no Reply-To pointing elsewhere, and only the text the member wrote
-  above the quote is read.
+  above the quote is read. Forward and quote markers are recognized in English, French, German,
+  Spanish, Italian, Portuguese and Chinese. A quote whose structure is not recognized makes the
+  reply a proposal.
 - The model reads it as a plain "done" for that one open PaperFlow stage, at confidence at least
-  0.8, with no later stages and no "moved elsewhere".
+  0.8, with no later stages and no "moved elsewhere". A fixed check must agree: the member's own
+  text is only a short "done" phrase, an optional greeting and thanks, and a sign-off. If the model
+  and the check disagree, the reply becomes a proposal.
 
 The model only chooses between this path and an admin proposal. Nothing it writes, neither a note
 nor a URL, goes into the record.
@@ -1772,8 +1779,10 @@ nor a URL, goes into the record.
 - `reminder_reply.apply` (T1) closes that one stage as `recorded_by: "reply"`, with the reply's
   message id and a fixed note. Its audit row is `reminder_reply.applied`. It is keyed on the Gmail
   message id across all statuses, so the same reply is applied and mailed at most once, even when
-  two passes run at the same time. It also rejects any review proposal still pending for the same
-  reply.
+  two passes run at the same time. In the same transaction as the stage write, it withdraws any
+  review proposal still pending for the same reply, and a review approval for a reply that was
+  already applied is refused. An apply filed but never executed (for example, the process stopped
+  in between) is executed by the next pass rather than treated as a duplicate.
 - `reminder_reply.confirm` (T1) then sends one receipt from the bot mailbox (`ADMINBOT_BOT_EMAIL`).
   The receipt is a fresh `gmail send` to the roster address, never a reply. It uses a fixed
   template naming the stage and ends with how to undo it.
@@ -1788,7 +1797,9 @@ Every other reply becomes an `email_review.resolve` proposal (T3) and changes no
 admin approves it. That includes questions, low-confidence readings, "not applicable" or "moved
 elsewhere", and unauthenticated, forwarded or subject-matched mail. The proposal sends no receipt
 and does not quiet the nudge: the chase is snoozed only when the approved proposal executes, so a
-rejection leaves the reminders as they were.
+rejection leaves the reminders as they were. Approving a resolution that dismisses the reply (for
+example, a question) does not snooze anything, and the snooze leaves alone any target the resolution
+itself already set as `reminder_snoozed`, so a member's own "until" date is kept.
 
 With the flag off, every reply takes that review path. This covers email only; Slack replies to
 reminders are not read.
@@ -1809,7 +1820,9 @@ For each reply it prints either:
 - "would apply", with the exact receipt and its recipient; or
 - "stays in review", with the reason.
 
-A held reply with no recorded sender authentication stays in review. The output then lists the
+A held reply with no recorded sender authentication stays in review. Sender authentication is read
+only from the review proposal the service filed itself under its internal key; a proposal filed by
+anyone else for the same reply stays in review whatever it claims. The output then lists the
 papers whose conference questions stop. `--apply` runs the same checks and actions as the live
 path, and rejects the stale review proposal of any reply it applies.
 

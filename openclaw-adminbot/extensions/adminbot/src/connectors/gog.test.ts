@@ -521,14 +521,71 @@ describe("createGogAdminBotExecutor", () => {
     });
     const printed = createGogAdminBotExecutor({
       run: async () => JSON.stringify({ id: "msg-1", threadId: "thread-1" }),
+      capture: async () => {
+        throw new Error("gog raw failed");
+      },
     });
     await expect(printed.execute(send)).resolves.toEqual({
       handled: true,
       artifacts: { gmail_thread_id: "thread-1", gmail_message_id: "msg-1" },
     });
 
-    const garbled = createGogAdminBotExecutor({ run: async () => "sent!" });
+    const garbled = createGogAdminBotExecutor({
+      run: async () => "sent!",
+      capture: async () => {
+        throw new Error("never called");
+      },
+    });
     await expect(garbled.execute(send)).resolves.toEqual({ handled: true });
+  });
+
+  // A reply is tied to the exact reminder by the Message-ID it names in In-Reply-To or References,
+  // and gog's send prints only Gmail's API ids, so the header is read back from the sent mail.
+  it("reads the sent reminder's Message-ID header back from Gmail", async () => {
+    const send = proposal("member_nudge.send", {
+      channel: "email",
+      to: "person@example.test",
+      subject: "Camera ready: Paper",
+      body: "Has the camera ready gone in?",
+    });
+    const reads: string[][] = [];
+    const executor = createGogAdminBotExecutor({
+      run: async () => JSON.stringify({ id: "msg-1", threadId: "thread-1" }),
+      capture: async (args) => {
+        reads.push(args);
+        return JSON.stringify({
+          id: "msg-1",
+          payload: {
+            headers: [
+              { name: "From", value: "AdminBot <bot@example.test>" },
+              { name: "Message-ID", value: "<CAB123@mail.gmail.com>" },
+            ],
+          },
+        });
+      },
+    });
+    await expect(executor.execute(send)).resolves.toEqual({
+      handled: true,
+      artifacts: {
+        gmail_thread_id: "thread-1",
+        gmail_message_id: "msg-1",
+        rfc_message_id: "<CAB123@mail.gmail.com>",
+      },
+    });
+    expect(reads).toEqual([
+      [
+        "--json",
+        "--no-input",
+        "--enable-commands-exact",
+        "gmail.raw",
+        "gmail",
+        "raw",
+        "msg-1",
+        "--format",
+        "metadata",
+        "--results-only",
+      ],
+    ]);
   });
 });
 

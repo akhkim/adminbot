@@ -770,6 +770,11 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
     submitterMemberId: string,
     idempotencyKey: string,
   ): { proposal: AdminBotStoredProposal; created: boolean };
+  /** The proposal saved under this key by `saveDeadlineProposalSubmission`, if any. Read only. */
+  getDeadlineProposalSubmission?(
+    submitterMemberId: string,
+    idempotencyKey: string,
+  ): AdminBotStoredProposal | undefined;
   replaceDeadlineProposalRevision(
     previous: AdminBotStoredProposal,
     next: AdminBotStoredProposal,
@@ -3460,6 +3465,16 @@ export class AdminBotService {
           "email review resolution has no named approver",
         );
       }
+      // A reply the safe path already applied is settled. A stale proposal for it may have been
+      // approved before the apply withdrew it; it must not write the reply a second time.
+      const appliedBy = this.liveReminderReplyApply(settlement.message_id);
+      if (appliedBy) {
+        return this.executionFailure(
+          proposal,
+          409,
+          `this reply was already applied by ${appliedBy}`,
+        );
+      }
       const applied = this.resolveEmailReview({
         messageId: settlement.message_id,
         resolution: settlement.resolution,
@@ -3473,7 +3488,7 @@ export class AdminBotService {
       }
       // A reminder reply's proposal carries the nudges it answers. They are quieted only now, once
       // an admin has approved: a rejected proposal leaves the member's reminders exactly as they were.
-      const snoozed = this.snoozeReminderReplyTargets(proposal);
+      const snoozed = this.snoozeReminderReplyTargets(proposal, settlement.resolution);
       artifacts = {
         resolution: applied.payload.resolution,
         evidence_recorded: String(applied.payload.evidence_recorded),
@@ -3508,6 +3523,15 @@ export class AdminBotService {
         return this.executionFailure(proposal, outcome.status, outcome.error.message);
       }
       artifacts = outcome.payload;
+      if (proposal.type === "reminder_reply.apply") {
+        // Same tick as the stage write, before any await: no review proposal for this reply can be
+        // approved and executed in between and write it a second time.
+        const messageId = parseApplyPayload(proposal)?.review.message_id;
+        const superseded = messageId ? this.withdrawReviewProposals(messageId, "adminbot") : [];
+        if (superseded.length) {
+          artifacts = { ...artifacts, superseded: superseded.join(",") };
+        }
+      }
       handled = true;
     } else if (proposal.type === "lab_member.remove") {
       // In-service for the same reason as the two arms above: deleting a roster record is a write
@@ -11611,6 +11635,7 @@ export class AdminBotService {
       member_id: send.member_id,
       member_name: this.store.getLabMember(send.member_id)?.name ?? send.member_id,
       matched_by,
+      ...(send.message_id_header ? { reminder_message_id: send.message_id_header } : {}),
       targets,
     };
   }
@@ -11757,7 +11782,14 @@ export class AdminBotService {
   }
 
   /** Quiet the nudges an approved reminder-reply proposal answers. Returns how many it quieted. */
-  private snoozeReminderReplyTargets(proposal: AdminBotStoredProposal): number {
+  private snoozeReminderReplyTargets(
+    proposal: AdminBotStoredProposal,
+    resolution: AdminBotEmailReviewResolution,
+  ): number {
+    // A dismissal says the reply settles nothing, so the reminders keep running.
+    if (resolution.kind === "dismissed") {
+      return 0;
+    }
     const targets = (proposal.proposed_payload as { snooze_targets?: unknown } | undefined)
       ?.snooze_targets;
     if (!Array.isArray(targets)) {
@@ -11773,6 +11805,16 @@ export class AdminBotService {
         typeof target?.domain !== "string" ||
         typeof target.subject_id !== "string" ||
         typeof target.member_id !== "string"
+      ) {
+        continue;
+      }
+      // The resolution already set this one to the member's own date; a 14-day snooze would
+      // overwrite it.
+      if (
+        resolution.kind === "reminder_snoozed" &&
+        resolution.domain === target.domain &&
+        resolution.subject_id === target.subject_id &&
+        resolution.member_id === target.member_id
       ) {
         continue;
       }
@@ -11816,6 +11858,17 @@ export class AdminBotService {
     });
     if (!verdict.ok) {
       return `not safe to apply without an admin: ${verdict.why}`;
+    }
+    const resolved = this.store
+      .listProposalsByType("email_review.resolve")
+      .find(
+        (review) =>
+          (review.proposed_payload as { message_id?: unknown } | undefined)?.message_id ===
+            payload.review.message_id &&
+          this.store.getExecutionResult(review.id)?.status === "executed",
+      );
+    if (resolved) {
+      return `an admin already resolved this reply (${resolved.id})`;
     }
     if (JSON.stringify(verdict.resolution) !== JSON.stringify(payload.resolution)) {
       return "the stored resolution is not the one the safe path builds";
@@ -12094,13 +12147,15 @@ export class AdminBotService {
         }
     >
   > {
-    // A reply already applied (by another pass, or a backfill) is settled: never re-file it.
-    const applied = this.store
-      .listProposalsByType("reminder_reply.apply")
-      .find(
-        (proposal) =>
-          proposal.target?.target === params.messageId && proposal.status !== "rejected",
+    // A reply already applied (by another pass, or a backfill) is settled: never re-file it. An
+    // apply that was filed but never executed (the pass stopped in between) is not settled; it
+    // falls through and is run, or goes to an admin.
+    const applied = this.store.listProposalsByType("reminder_reply.apply").find((proposal) => {
+      const ran = this.store.getExecutionResult(proposal.id);
+      return (
+        proposal.target?.target === params.messageId && ran?.status === "executed" && !ran.dry_run
       );
+    });
     if (applied) {
       return { ok: true, status: 200, payload: { mode: "duplicate", apply_action_id: applied.id } };
     }
@@ -12157,7 +12212,19 @@ export class AdminBotService {
         };
       }
       if (outcome.outcome === "applied") {
-        const superseded = this.withdrawReviewProposals(params.messageId, params.actor);
+        // The apply's execute withdraws the pending review proposals in the same write; this second
+        // sweep only catches one filed after that write.
+        const withdrawn = outcome.apply_action_id
+          ? String(
+              this.store.getExecutionResult(outcome.apply_action_id)?.artifacts?.superseded ?? "",
+            )
+          : "";
+        const superseded = [
+          ...new Set([
+            ...withdrawn.split(",").filter(Boolean),
+            ...this.withdrawReviewProposals(params.messageId, params.actor),
+          ]),
+        ];
         return { ok: true, status: 200, payload: { mode: "applied", ...outcome, superseded } };
       }
       applyError = outcome.error;
@@ -12177,6 +12244,18 @@ export class AdminBotService {
         ...(applyError ? { apply_error: applyError } : {}),
       },
     };
+  }
+
+  /** The executed, not undone, apply that settled this reply, if any. */
+  private liveReminderReplyApply(messageId: string): string | undefined {
+    return this.store
+      .listProposalsByType("reminder_reply.apply")
+      .find(
+        (apply) =>
+          apply.target?.target === messageId &&
+          this.store.getExecutionResult(apply.id)?.status === "executed" &&
+          !undoneBy(this.store, apply.id),
+      )?.id;
   }
 
   /** Reject every review proposal still waiting on this message; an apply has settled it. */

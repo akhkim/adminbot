@@ -399,9 +399,60 @@ export function createGogAdminBotExecutor(
         return { handled: true, artifacts: { event_id: id } };
       }
       const output = await run(args);
-      return { handled: true, ...gmailSendArtifacts(args, output) };
+      const sent = gmailSendArtifacts(args, output);
+      if (proposal.type === "member_nudge.send" && sent.artifacts?.gmail_message_id) {
+        const header = await sentMessageIdHeader(
+          capture,
+          sent.artifacts.gmail_message_id,
+          optionalString(requirePayload(proposal), "account"),
+        );
+        if (header) {
+          sent.artifacts.rfc_message_id = header;
+        }
+      }
+      return { handled: true, ...sent };
     },
   };
+}
+
+/**
+ * The RFC 5322 Message-ID Gmail stamped on a reminder it just sent.
+ *
+ * A reply names it in In-Reply-To and References, which is what lets a reply be tied to this exact
+ * mail rather than to whatever else shares its thread. gog's send prints only the Gmail API ids,
+ * so it is read back from the sent message. Best-effort like the ids themselves: the mail is out,
+ * and a reminder without it only means its replies go to an admin instead of being applied.
+ */
+async function sentMessageIdHeader(
+  capture: GogCapture,
+  gmailMessageId: string,
+  account: string | undefined,
+): Promise<string | undefined> {
+  try {
+    const args = rootArgs("gmail.raw", account);
+    args.push("gmail", "raw", gmailMessageId, "--format", "metadata", "--results-only");
+    const parsed = JSON.parse(await capture(args)) as {
+      payload?: { headers?: unknown };
+      message?: { payload?: { headers?: unknown } };
+    };
+    const headers = parsed?.payload?.headers ?? parsed?.message?.payload?.headers;
+    if (!Array.isArray(headers)) {
+      return undefined;
+    }
+    for (const header of headers as Array<{ name?: unknown; value?: unknown }>) {
+      if (
+        typeof header?.name === "string" &&
+        header.name.toLowerCase() === "message-id" &&
+        typeof header.value === "string" &&
+        /^<[^<>\s]+@[^<>\s]+>$/u.test(header.value.trim())
+      ) {
+        return header.value.trim();
+      }
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /**

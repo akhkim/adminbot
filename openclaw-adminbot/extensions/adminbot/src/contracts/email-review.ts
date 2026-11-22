@@ -109,6 +109,11 @@ export type AdminBotReminderReplyMatch = {
   member_name: string;
   /** How the reply was tied to the reminder. Thread is exact; subject is the fallback for old sends. */
   matched_by: "thread" | "subject";
+  /**
+   * The reminder's own RFC Message-ID, when Gmail's copy of it was read back after the send. A
+   * reply is applied without an admin only when its In-Reply-To or References names exactly this.
+   */
+  reminder_message_id?: string;
   targets: AdminBotReminderReplyTarget[];
 };
 

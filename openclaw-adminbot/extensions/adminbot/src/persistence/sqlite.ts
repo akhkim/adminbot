@@ -1333,6 +1333,21 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     }
   }
 
+  getDeadlineProposalSubmission(
+    submitterMemberId: string,
+    idempotencyKey: string,
+  ): AdminBotStoredProposal | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT p.payload_json
+          FROM adminbot_deadline_submission_keys k
+          JOIN adminbot_proposals p ON p.id = k.action_id
+          WHERE k.submitter_member_id = ? AND k.idempotency_key = ?`,
+      )
+      .get(submitterMemberId, idempotencyKey) as { payload_json?: string } | undefined;
+    return row?.payload_json ? parseJson<AdminBotStoredProposal>(row.payload_json) : undefined;
+  }
+
   replaceDeadlineProposalRevision(
     previous: AdminBotStoredProposal,
     next: AdminBotStoredProposal,

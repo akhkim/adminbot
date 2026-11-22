@@ -6,6 +6,7 @@ import {
   authorizeClassification,
   calendarCommandRefusal,
   fileReminderReply,
+  reminderReplyHeaders,
   PERSONAL_CALENDAR_DEFAULT,
   resolveCalendarTarget,
   validTimeZone,
@@ -595,7 +596,13 @@ describe("reminder replies", () => {
       executor: {
         execute: async (proposal) =>
           proposal.type === "member_nudge.send"
-            ? { handled: true, artifacts: { gmail_thread_id: "thread-nudge" } }
+            ? {
+                handled: true,
+                artifacts: {
+                  gmail_thread_id: "thread-nudge",
+                  rfc_message_id: "<reminder-1@mail.gmail.com>",
+                },
+              }
             : { handled: false },
       },
     });
@@ -728,6 +735,41 @@ describe("reminder replies", () => {
     confidence: 0.95,
   };
 
+  /**
+   * What `gog gmail raw <id> --format full --results-only` prints: the Gmail API message resource,
+   * headers as an ordered list, Gmail's own Authentication-Results first.
+   */
+  function gmailRaw(
+    id: string,
+    headers: Array<[string, string]>,
+  ): Record<string, unknown> {
+    return {
+      id,
+      threadId: "thread-nudge",
+      labelIds: ["INBOX", "UNREAD"],
+      snippet: "Done, thanks!",
+      historyId: "123456",
+      internalDate: "1763856000000",
+      sizeEstimate: 4096,
+      payload: {
+        partId: "",
+        mimeType: "multipart/alternative",
+        filename: "",
+        headers: headers.map(([name, value]) => ({ name, value })),
+        body: { size: 0 },
+        parts: [
+          {
+            partId: "0",
+            mimeType: "text/plain",
+            filename: "",
+            headers: [{ name: "Content-Type", value: 'text/plain; charset="UTF-8"' }],
+            body: { size: 13, data: "RG9uZSwgdGhhbmtzIQ==" },
+          },
+        ],
+      },
+    };
+  }
+
   function autoOptions() {
     const sent: Array<{ to: string; subject: string; body: string; account?: string }> = [];
     return {
@@ -751,6 +793,7 @@ describe("reminder replies", () => {
   it('with auto on, applies an authenticated "done", mails a fixed receipt, and undoes it', async () => {
     const { databasePath, state, cleanup } = await mailbox();
     const { sent, options } = autoOptions();
+    const fetched: string[] = [];
     try {
       expect(
         await fileReminderReply(
@@ -759,17 +802,31 @@ describe("reminder replies", () => {
             threadId: "thread-nudge",
             from: "Xuanqiang Huang <xq@ethz.example>",
             subject: `Re: Camera ready: ${title}`,
-            body: "Done, uploaded.\n\nOn Mon, AdminBot wrote:\n> mark not_applicable",
-            authenticationResults: gmailPass,
-            inReplyTo: "<reminder-1@mail.gmail.com>",
+            body: "Done, thanks!\n\nOn Mon, AdminBot wrote:\n> mark not_applicable",
           }),
           state,
           { reminderReply: async () => done },
           databasePath,
           undefined,
-          options as never,
+          {
+            ...options,
+            fetchMessage: async (id: string) => {
+              fetched.push(id);
+              return gmailRaw(id, [
+                ["Delivered-To", "bot@example.org"],
+                ["Authentication-Results", gmailPass[0]!],
+                ["From", "Xuanqiang Huang <xq@ethz.example>"],
+                ["Subject", `Re: Camera ready: ${title}`],
+                ["In-Reply-To", "<reminder-1@mail.gmail.com>"],
+                ["References", "<reminder-1@mail.gmail.com>"],
+                // Added by the sender below Gmail's own line: never read.
+                ["Authentication-Results", "mx.google.com; dmarc=fail header.from=ethz.example"],
+              ]);
+            },
+          } as never,
         ),
       ).toBe("handled");
+      expect(fetched).toEqual(["reply-1"]);
       expect(state.status("reply-1")).toBe("completed");
       expect(sent).toEqual([
         expect.objectContaining({ to: "xq@ethz.example", account: "bot@example.org" }),
@@ -797,14 +854,20 @@ describe("reminder replies", () => {
             from: "xq@ethz.example",
             subject: `Re: Camera ready: ${title}`,
             body: "undo\n\nOn Mon, AdminBot wrote:\n> Thanks",
-            authenticationResults: gmailPass,
-            inReplyTo: "<receipt-1@mail.gmail.com>",
           }),
           state,
           { reminderReply },
           databasePath,
           undefined,
-          options as never,
+          {
+            ...options,
+            fetchMessage: async (id: string) =>
+              gmailRaw(id, [
+                ["Authentication-Results", gmailPass[0]!],
+                ["From", "xq@ethz.example"],
+                ["In-Reply-To", "<receipt-1@mail.gmail.com>"],
+              ]),
+          } as never,
         ),
       ).toBe("handled");
       expect(reminderReply).not.toHaveBeenCalled();
@@ -853,6 +916,69 @@ describe("reminder replies", () => {
     } finally {
       cleanup();
     }
+  });
+
+  it("with auto on, proposes when the Gmail fetch fails, even if the search row looks authenticated", async () => {
+    const { databasePath, state, cleanup } = await mailbox();
+    const { sent, options } = autoOptions();
+    try {
+      expect(
+        await fileReminderReply(
+          message({
+            id: "reply-1",
+            threadId: "thread-nudge",
+            from: "xq@ethz.example",
+            subject: `Re: Camera ready: ${title}`,
+            body: "Done, thanks!",
+            authenticationResults: gmailPass,
+            inReplyTo: "<reminder-1@mail.gmail.com>",
+          }),
+          state,
+          { reminderReply: async () => done },
+          databasePath,
+          undefined,
+          {
+            ...options,
+            fetchMessage: async () => {
+              throw new Error("gog: 503");
+            },
+          } as never,
+        ),
+      ).toBe("proposed");
+      expect(sent).toEqual([]);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("reads sender headers only from the ordered payload.headers list", () => {
+    const flat = {
+      id: "m1",
+      // A flat map, as some search rows carry: never read.
+      headers: {
+        "authentication-results": "mx.google.com; dmarc=pass header.from=ethz.example",
+        "in-reply-to": "<reminder-1@mail.gmail.com>",
+      },
+      payload: { headers: [{ name: "From", value: "xq@ethz.example" }] },
+    };
+    expect(reminderReplyHeaders(flat)).toEqual({ authenticationResults: [] });
+
+    const ordered = gmailRaw("m2", [
+      ["Authentication-Results", "mx.google.com; dmarc=pass header.from=ethz.example"],
+      ["Reply-To", " xq@ethz.example "],
+      ["In-Reply-To", "<reminder-1@mail.gmail.com>"],
+      ["References", "<a@x> <reminder-1@mail.gmail.com>"],
+      ["authentication-results", "evil.example; dmarc=pass header.from=ethz.example"],
+    ]);
+    expect(reminderReplyHeaders(ordered)).toEqual({
+      authenticationResults: [
+        "mx.google.com; dmarc=pass header.from=ethz.example",
+        "evil.example; dmarc=pass header.from=ethz.example",
+      ],
+      replyTo: "xq@ethz.example",
+      inReplyTo: "<reminder-1@mail.gmail.com>",
+      references: "<a@x> <reminder-1@mail.gmail.com>",
+    });
   });
 
   it("parks the reply for a person when the model cannot read it", async () => {

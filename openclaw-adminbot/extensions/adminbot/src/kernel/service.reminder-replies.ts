@@ -46,6 +46,8 @@ export type ReminderSend = {
   sent_at: string;
   member_id: string;
   thread_id?: string;
+  /** The RFC Message-ID Gmail gave the reminder, which a direct reply names in In-Reply-To. */
+  message_id_header?: string;
 };
 
 /**
@@ -123,6 +125,7 @@ export function listReminderSends(
         continue;
       }
       const threadId = result.artifacts?.gmail_thread_id;
+      const messageIdHeader = result.artifacts?.rfc_message_id;
       sends.push({
         action_id: proposal.id,
         type,
@@ -131,6 +134,7 @@ export function listReminderSends(
         sent_at: result.executed_at,
         member_id: memberId,
         ...(threadId ? { thread_id: threadId } : {}),
+        ...(messageIdHeader ? { message_id_header: messageIdHeader } : {}),
       });
     }
   }

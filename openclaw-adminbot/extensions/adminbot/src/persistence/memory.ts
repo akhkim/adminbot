@@ -419,6 +419,14 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     return { proposal, created: true };
   }
 
+  getDeadlineProposalSubmission(
+    submitterMemberId: string,
+    idempotencyKey: string,
+  ): AdminBotStoredProposal | undefined {
+    const id = this.deadlineSubmissionActions.get(`${submitterMemberId}\u0000${idempotencyKey}`);
+    return id ? this.proposals.get(id) : undefined;
+  }
+
   replaceDeadlineProposalRevision(
     previous: AdminBotStoredProposal,
     next: AdminBotStoredProposal,

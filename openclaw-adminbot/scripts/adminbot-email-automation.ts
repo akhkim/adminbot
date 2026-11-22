@@ -158,6 +158,7 @@ export type EmailMessage = {
   authenticationResults?: string[];
   replyTo?: string;
   inReplyTo?: string;
+  references?: string;
 };
 
 export type OnboardingDecision = "trial" | "direct" | "decline";
@@ -1055,6 +1056,7 @@ function normalizeMessage(value: unknown): EmailMessage | undefined {
     authenticationResults: headerValues(row, "Authentication-Results"),
     ...optionalHeader(row, "replyTo", "Reply-To"),
     ...optionalHeader(row, "inReplyTo", "In-Reply-To"),
+    ...optionalHeader(row, "references", "References"),
   };
 }
 
@@ -1063,40 +1065,44 @@ function headerValue(row: Record<string, unknown>, name: string): unknown {
 }
 
 /**
- * Every value of one header, in message order. Reads Gmail's `payload.headers` list and a flat
- * `headers` list or map, so a reply from either shape of gog output is judged on what Gmail saw.
+ * Every value of one header, in message order, from Gmail's ordered `payload.headers` list only.
+ *
+ * Order is what makes Authentication-Results trustworthy: the top one is the one Gmail added on
+ * receipt. A flat map of header names loses that order (and which copy is whose), so it is not
+ * read; a message in that shape has no headers, and so reads as unauthenticated.
  */
 function headerValues(row: Record<string, unknown>, name: string): string[] {
   const wanted = name.toLowerCase();
-  const lists = [
-    (row.payload as { headers?: unknown } | undefined)?.headers,
-    row.headers,
-  ];
+  const list = (row.payload as { headers?: unknown } | undefined)?.headers;
+  if (!Array.isArray(list)) {
+    return [];
+  }
   const values: string[] = [];
-  for (const list of lists) {
-    if (Array.isArray(list)) {
-      for (const header of list as Array<{ name?: unknown; value?: unknown }>) {
-        if (
-          typeof header?.name === "string" &&
-          header.name.toLowerCase() === wanted &&
-          typeof header.value === "string"
-        ) {
-          values.push(header.value);
-        }
-      }
-    } else if (list && typeof list === "object") {
-      for (const [key, value] of Object.entries(list as Record<string, unknown>)) {
-        if (key.toLowerCase() !== wanted) continue;
-        for (const item of Array.isArray(value) ? value : [value]) {
-          if (typeof item === "string") values.push(item);
-        }
-      }
+  for (const header of list as Array<{ name?: unknown; value?: unknown }>) {
+    if (
+      typeof header?.name === "string" &&
+      header.name.toLowerCase() === wanted &&
+      typeof header.value === "string"
+    ) {
+      values.push(header.value);
     }
   }
   return values;
 }
 
-function optionalHeader<K extends "replyTo" | "inReplyTo">(
+/** The headers sender evidence is built from, read from a Gmail API message. */
+export function reminderReplyHeaders(
+  row: Record<string, unknown>,
+): Pick<EmailMessage, "authenticationResults" | "replyTo" | "inReplyTo" | "references"> {
+  return {
+    authenticationResults: headerValues(row, "Authentication-Results"),
+    ...optionalHeader(row, "replyTo", "Reply-To"),
+    ...optionalHeader(row, "inReplyTo", "In-Reply-To"),
+    ...optionalHeader(row, "references", "References"),
+  };
+}
+
+function optionalHeader<K extends "replyTo" | "inReplyTo" | "references">(
   row: Record<string, unknown>,
   key: K,
   name: string,
@@ -1838,7 +1844,17 @@ export async function fileReminderReply(
   model: Pick<AdminBotEmailModel, "reminderReply">,
   databasePath: string,
   nowIso?: string,
-  options: { env?: NodeJS.ProcessEnv; executor?: AdminBotActionExecutor; account?: string } = {},
+  options: {
+    env?: NodeJS.ProcessEnv;
+    executor?: AdminBotActionExecutor;
+    account?: string;
+    /**
+     * Fetch the message from Gmail (`gog gmail raw --format full`) for its ordered headers. In auto
+     * mode the sender evidence is read from this, not from the search row; a failed fetch reads as
+     * unauthenticated, so the reply can only be proposed.
+     */
+    fetchMessage?: (messageId: string) => Promise<Record<string, unknown>>;
+  } = {},
 ): Promise<"none" | "skipped" | "proposed" | "handled"> {
   const auto = resolveReminderReplyAutoConfig(options.env ?? process.env).enabled;
   const { service, close } = createAdminBotSqliteService({
@@ -1850,11 +1866,23 @@ export async function fileReminderReply(
     const sender = normalizeAddress(message.from);
     // What Gmail saw about who sent this. A mail without the headers reads as unauthenticated, so
     // it can still be proposed to an admin but never applies on its own.
+    let headers: Pick<
+      EmailMessage,
+      "authenticationResults" | "replyTo" | "inReplyTo" | "references"
+    > = message;
+    if (auto && options.fetchMessage) {
+      try {
+        headers = reminderReplyHeaders(await options.fetchMessage(message.id));
+      } catch {
+        headers = { authenticationResults: [] };
+      }
+    }
     const senderEvidence = reminderReplySenderEvidence({
       from: sender,
-      ...(message.replyTo ? { replyTo: message.replyTo } : {}),
-      ...(message.inReplyTo ? { inReplyTo: message.inReplyTo } : {}),
-      authenticationResults: message.authenticationResults ?? [],
+      ...(headers.replyTo ? { replyTo: headers.replyTo } : {}),
+      ...(headers.inReplyTo ? { inReplyTo: headers.inReplyTo } : {}),
+      ...(headers.references ? { references: headers.references } : {}),
+      authenticationResults: headers.authenticationResults ?? [],
       subject: message.subject,
       body: message.body,
     });
@@ -1943,7 +1971,8 @@ export async function fileReminderReply(
           return "handled";
         }
         if (handled.ok && handled.payload.mode === "duplicate") {
-          // The store already holds an apply keyed on this message: a re-run, not a new answer.
+          // The store holds an apply of this message that executed: a re-run, not a new answer.
+          // (One filed but never executed is run again by the service and reports "applied".)
           state.finish(
             message.id,
             "completed",
@@ -2104,7 +2133,9 @@ export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
       // A reply to one of AdminBot's own reminders: matched by thread or subject and sender, read
       // by the model, and turned into a held proposal rather than a guess at a category.
       try {
-        const replied = await fileReminderReply(message, state, model, databasePath);
+        const replied = await fileReminderReply(message, state, model, databasePath, undefined, {
+          fetchMessage: (id) => google.raw(id),
+        });
         if (replied !== "none") {
           if (replied === "skipped") {
             summary.skipped += 1;
