@@ -176,6 +176,8 @@ export function createAdminBotClient(options = {}) {
  * through untouched, so openapi-fetch keeps its own rules: an undefined value is skipped, null
  * removes the header and an array value is sent once per item. A list of pairs is the one form it
  * misreads (as headers named "0", "1", ...), so it becomes a Headers here, repeated names appended.
+ * A pair whose value is null or undefined is skipped, as openapi-fetch skips one in an object, so
+ * it never becomes the string "null" or "undefined".
  */
 function clientHeaders(headers) {
   if (!Array.isArray(headers)) {
@@ -183,6 +185,9 @@ function clientHeaders(headers) {
   }
   const normalized = new Headers();
   for (const [name, value] of headers) {
+    if (value === null || value === undefined) {
+      continue;
+    }
     normalized.append(name, value);
   }
   return normalized;

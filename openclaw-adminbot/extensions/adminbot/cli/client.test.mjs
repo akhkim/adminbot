@@ -736,6 +736,15 @@ await test("an SDK caller's headers reach the server as openapi-fetch merges the
   assert.equal(blanks.has("x-trace"), false);
   assert.equal(blanks.has("x-empty"), false);
   assert.equal(blanks.has("authorization"), false);
+  // The same goes for pairs: a null or undefined value is skipped, the other pairs are kept.
+  const blankPairs = await sent([
+    ["Authorization", "Bearer abt_sample"],
+    ["X-Empty", null],
+    ["X-Trace", undefined],
+  ]);
+  assert.equal(blankPairs.get("authorization"), "Bearer abt_sample");
+  assert.equal(blankPairs.has("x-empty"), false);
+  assert.equal(blankPairs.has("x-trace"), false);
   // An array value, and a name repeated in pairs, send every value.
   assert.equal(
     (await sent({ Accept: ["application/json", "text/plain"] })).get("accept"),
