@@ -2664,13 +2664,16 @@ class AdminbotDeadlinesView extends LitElement {
     const note =
       venue.stale || status === "source_unavailable"
         ? "Source not observed in the latest sweep."
-        : status.includes("disagree") || status.includes("conflict")
-          ? "Sources disagree. Showing the matched OpenReview deadline."
-          : status === "portal_unverified" || status === "openreview_final_submission"
-            ? "Announced date; the matching submission portal cutoff has not been verified."
-            : status === "administrator_approved"
-              ? "Date corrected after administrator review."
-              : "";
+        : status === "official_sources_disagree"
+          ? "Official sources list different dates. Showing the venue's own call."
+          : status.includes("disagree") || status.includes("conflict")
+            ? "Sources disagree. Showing the matched OpenReview deadline."
+            : this.accessRole === "admin" &&
+                (status === "portal_unverified" || status === "openreview_final_submission")
+              ? "Announced date; the matching submission portal cutoff has not been verified."
+              : status === "administrator_approved"
+                ? "Date corrected after administrator review."
+                : "";
     const scheduleNote = ["source_unavailable", "extraction_unavailable"].includes(
       venue.schedule_status ?? "",
     )

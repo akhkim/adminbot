@@ -195,6 +195,11 @@ export type PreRegistrationVenue = {
 
 /** The deadline-board rows that describe one venue. An id can name several (abstract, paper). */
 function deadlineRowsFor(venueId: string) {
+  // ARR cycles share a family and year; a fuzzy match can pull August into October's deadline.
+  const exact = DEADLINE_SUMMARIES.filter((venue) => venue.id === venueId);
+  if (exact.length) {
+    return exact;
+  }
   return DEADLINE_SUMMARIES.filter((venue) =>
     venueTargetMatches({ venue_id: venue.id, label: venue.name, confidence: 0 }, venueId),
   );

@@ -1680,6 +1680,20 @@ whether somebody was ever told.
 | Workshop matches               | admin presses Nudge | Slack          | no        |
 | Ad-hoc admin nudge             | admin types it      | Slack or email | no        |
 
+### Keeping the paper reminder short
+
+The paper evidence reminder is one Slack DM per person, and it is bounded:
+
+- **At most two papers and three items per paper** per message, nearest deadline first and
+  deadline-bearing items first. Anything cut is named ("…and 2 more", "1 other paper will come up
+  next time") and is **not** stamped in the nudge ledger, so it is still due on the next run.
+- **No repeated how-to.** Once a person has been nudged about an item, the generic "how to" text is
+  dropped; refusals and review findings are kept because they are specific.
+- **Quieter when nothing changes.** After two nudges on the same item the interval doubles from 7
+  to 14 days, unless the item is deadline-bearing and the paper's deadline is within 14 days.
+- **Progress is said first.** "Thanks, already in: ..." lists what the author has done (four names,
+  then a count) before what is still open.
+
 The profile photo nudge runs through the shared campaign module (filter, dry run, confirm guard,
 ledger, pacing, audit). See [Nudge campaigns](/tools/adminbot-nudges).
 

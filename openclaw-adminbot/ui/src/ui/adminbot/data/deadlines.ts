@@ -266,17 +266,17 @@ export const DEADLINE_VENUES: DeadlineVenue[] = [
     "milestone": "direct_submission",
     "schedule": [
       {
+        "milestone": "rebuttal",
+        "label": "Author response period",
+        "starts": "2026-07-08",
+        "ends": "2026-07-14",
+        "kind": "period"
+      },
+      {
         "milestone": "reviews",
         "label": "Reviews due",
         "date": "2026-07-02",
         "kind": "date"
-      },
-      {
-        "milestone": "rebuttal",
-        "label": "Author response",
-        "starts": "2026-07-08",
-        "ends": "2026-07-14",
-        "kind": "period"
       },
       {
         "milestone": "notification",
@@ -291,6 +291,7 @@ export const DEADLINE_VENUES: DeadlineVenue[] = [
         "kind": "date"
       }
     ],
+    "schedule_status": "verified",
     "deadline_label": "ARR submission",
     "deadline_aoe": "2026-05-25 23:59:00",
     "notification_aoe": "",
@@ -299,9 +300,9 @@ export const DEADLINE_VENUES: DeadlineVenue[] = [
     "cfp_url": "",
     "openreview_url": "",
     "source_url": "https://aclrollingreview.org/dates",
-    "source_checked_at": "2026-09-11T00:00:00Z",
+    "source_checked_at": "2026-11-23T00:00:00Z",
     "deadline_source_kind": "official_cfp",
-    "deadline_source_status": "portal_unverified",
+    "deadline_source_status": "official_date_matches_openreview",
     "deadline_source_precision": "date_only",
     "deadline_official_url": "https://aclrollingreview.org/dates",
     "deadline_extended": false,
@@ -318,9 +319,24 @@ export const DEADLINE_VENUES: DeadlineVenue[] = [
         "notification_aoe": "",
         "deadline_label": "ARR submission",
         "link": "https://aclrollingreview.org/dates"
+      },
+      {
+        "observed_at": "2026-11-23T00:00:00Z",
+        "deadline_aoe": "2026-05-25 23:59:00",
+        "notification_aoe": "",
+        "deadline_label": "ARR submission",
+        "link": "https://aclrollingreview.org/dates",
+        "deadline_at": "2026-05-26T11:59:00Z",
+        "deadline_date": "2026-05-26",
+        "deadline_timezone": "UTC",
+        "deadline_time_precision": "exact"
       }
     ],
-    "stale": false
+    "stale": false,
+    "deadline_at": "2026-05-26T11:59:00Z",
+    "deadline_date": "2026-05-26",
+    "deadline_timezone": "UTC",
+    "deadline_time_precision": "exact"
   },
   {
     "id": "aacl2026_demo",
@@ -421,6 +437,10 @@ export const DEADLINE_VENUES: DeadlineVenue[] = [
         "kind": "period"
       }
     ],
+    "schedule_status": "extraction_unavailable",
+    "schedule_issues": [
+      "extracted schedule failed evidence validation"
+    ],
     "deadline_label": "commitment",
     "deadline_aoe": "2026-08-02 23:59:00",
     "notification_aoe": "2026-08-20 23:59:59",
@@ -429,10 +449,10 @@ export const DEADLINE_VENUES: DeadlineVenue[] = [
     "cfp_url": "",
     "openreview_url": "",
     "source_url": "https://2026.emnlp.org/calls/main_conference_papers/",
-    "source_checked_at": "2026-09-11T00:00:00Z",
+    "source_checked_at": "2026-11-23T00:00:00Z",
     "deadline_source_kind": "official_cfp",
-    "deadline_source_status": "portal_unverified",
-    "deadline_source_precision": "date_only",
+    "deadline_source_status": "official_date_matches_openreview",
+    "deadline_source_precision": "exact",
     "deadline_official_url": "https://2026.emnlp.org/calls/main_conference_papers/",
     "deadline_extended": false,
     "deadline_history_status": "not_extended",
@@ -449,9 +469,24 @@ export const DEADLINE_VENUES: DeadlineVenue[] = [
         "notification_aoe": "2026-08-20 23:59:59",
         "deadline_label": "commitment",
         "link": "https://2026.emnlp.org/calls/main_conference_papers/"
+      },
+      {
+        "observed_at": "2026-11-23T00:00:00Z",
+        "deadline_aoe": "2026-08-02 23:59:00",
+        "notification_aoe": "2026-08-20 23:59:59",
+        "deadline_label": "commitment",
+        "link": "https://2026.emnlp.org/calls/main_conference_papers/",
+        "deadline_at": "2026-08-03T11:59:00Z",
+        "deadline_date": "2026-08-03",
+        "deadline_timezone": "UTC",
+        "deadline_time_precision": "exact"
       }
     ],
-    "stale": false
+    "stale": false,
+    "deadline_at": "2026-08-03T11:59:00Z",
+    "deadline_date": "2026-08-03",
+    "deadline_timezone": "UTC",
+    "deadline_time_precision": "exact"
   },
   {
     "id": "arr_2026_august",
@@ -470,22 +505,16 @@ export const DEADLINE_VENUES: DeadlineVenue[] = [
     "milestone": "direct_submission",
     "schedule": [
       {
-        "milestone": "reviews",
-        "label": "Reviews due",
-        "date": "2026-09-07",
-        "kind": "date"
-      },
-      {
         "milestone": "rebuttal",
-        "label": "Author response",
+        "label": "Author response period",
         "starts": "2026-09-14",
         "ends": "2026-09-24",
         "kind": "period"
       },
       {
-        "milestone": "rebuttal",
-        "label": "Initial author response due",
-        "date": "2026-09-19",
+        "milestone": "reviews",
+        "label": "Reviews due",
+        "date": "2026-09-07",
         "kind": "date"
       },
       {
@@ -501,6 +530,7 @@ export const DEADLINE_VENUES: DeadlineVenue[] = [
         "kind": "date"
       }
     ],
+    "schedule_status": "verified",
     "deadline_label": "ARR submission",
     "deadline_aoe": "2026-08-03 23:59:00",
     "notification_aoe": "",
@@ -509,9 +539,9 @@ export const DEADLINE_VENUES: DeadlineVenue[] = [
     "cfp_url": "",
     "openreview_url": "",
     "source_url": "https://aclrollingreview.org/dates",
-    "source_checked_at": "2026-09-11T00:00:00Z",
+    "source_checked_at": "2026-11-23T00:00:00Z",
     "deadline_source_kind": "official_cfp",
-    "deadline_source_status": "portal_unverified",
+    "deadline_source_status": "official_date_matches_openreview",
     "deadline_source_precision": "date_only",
     "deadline_official_url": "https://aclrollingreview.org/dates",
     "deadline_extended": false,
@@ -528,9 +558,24 @@ export const DEADLINE_VENUES: DeadlineVenue[] = [
         "notification_aoe": "",
         "deadline_label": "ARR submission",
         "link": "https://aclrollingreview.org/dates"
+      },
+      {
+        "observed_at": "2026-11-23T00:00:00Z",
+        "deadline_aoe": "2026-08-03 23:59:00",
+        "notification_aoe": "",
+        "deadline_label": "ARR submission",
+        "link": "https://aclrollingreview.org/dates",
+        "deadline_at": "2026-08-04T11:59:00Z",
+        "deadline_date": "2026-08-04",
+        "deadline_timezone": "UTC",
+        "deadline_time_precision": "exact"
       }
     ],
-    "stale": false
+    "stale": false,
+    "deadline_at": "2026-08-04T11:59:00Z",
+    "deadline_date": "2026-08-04",
+    "deadline_timezone": "UTC",
+    "deadline_time_precision": "exact"
   },
   {
     "id": "emnlp2026_ws_nlp4pi",
@@ -707,6 +752,10 @@ export const DEADLINE_VENUES: DeadlineVenue[] = [
         "kind": "period"
       }
     ],
+    "schedule_status": "extraction_unavailable",
+    "schedule_issues": [
+      "extracted schedule failed evidence validation"
+    ],
     "deadline_label": "commitment",
     "deadline_aoe": "2026-08-07 23:59:00",
     "notification_aoe": "2026-09-07 23:59:59",
@@ -715,10 +764,10 @@ export const DEADLINE_VENUES: DeadlineVenue[] = [
     "cfp_url": "",
     "openreview_url": "",
     "source_url": "https://2026.aaclnet.org/calls/main_conference_papers/",
-    "source_checked_at": "2026-09-11T00:00:00Z",
+    "source_checked_at": "2026-11-23T00:00:00Z",
     "deadline_source_kind": "official_cfp",
-    "deadline_source_status": "portal_unverified",
-    "deadline_source_precision": "date_only",
+    "deadline_source_status": "official_sources_disagree",
+    "deadline_source_precision": "exact",
     "deadline_official_url": "https://2026.aaclnet.org/calls/main_conference_papers/",
     "deadline_extended": false,
     "deadline_history_status": "not_extended",
@@ -734,10 +783,18 @@ export const DEADLINE_VENUES: DeadlineVenue[] = [
         "deadline_aoe": "2026-08-07 23:59:59",
         "notification_aoe": "2026-09-07 23:59:59",
         "deadline_label": "commitment",
-        "link": "https://2026.aaclnet.org/calls/main_conference_papers/"
+        "link": "https://2026.aaclnet.org/calls/main_conference_papers/",
+        "deadline_at": "2026-08-08T11:59:59Z",
+        "deadline_date": "2026-08-07",
+        "deadline_timezone": "AoE",
+        "deadline_time_precision": "exact"
       }
     ],
-    "stale": false
+    "stale": false,
+    "deadline_at": "2026-08-08T11:59:00Z",
+    "deadline_date": "2026-08-07",
+    "deadline_timezone": "AoE",
+    "deadline_time_precision": "exact"
   },
   {
     "id": "emnlp2026_ws_GroundLM_Shared_Tasks",
@@ -9721,6 +9778,12 @@ export const DEADLINE_VENUES: DeadlineVenue[] = [
         "kind": "period"
       },
       {
+        "milestone": "reviews",
+        "label": "Reviews due",
+        "date": "2026-09-07",
+        "kind": "date"
+      },
+      {
         "milestone": "notification",
         "label": "Meta-reviews released",
         "date": "2026-10-08",
@@ -9733,15 +9796,16 @@ export const DEADLINE_VENUES: DeadlineVenue[] = [
         "kind": "date"
       }
     ],
+    "schedule_status": "verified",
     "deadline_label": "initial author response",
-    "deadline_aoe": "2026-09-19 23:59:59",
+    "deadline_aoe": "2026-09-22 22:00:00",
     "notification_aoe": "",
     "link": "https://aclrollingreview.org/dates",
     "homepage_url": "",
     "cfp_url": "",
     "openreview_url": "",
     "source_url": "https://aclrollingreview.org/dates",
-    "source_checked_at": "2026-09-20T00:00:00Z",
+    "source_checked_at": "2026-11-23T00:00:00Z",
     "deadline_source_kind": "official_cfp",
     "deadline_source_status": "portal_unverified",
     "deadline_source_precision": "date_only",
@@ -9760,9 +9824,24 @@ export const DEADLINE_VENUES: DeadlineVenue[] = [
         "notification_aoe": "",
         "deadline_label": "initial author response",
         "link": "https://aclrollingreview.org/dates"
+      },
+      {
+        "observed_at": "2026-11-23T00:00:00Z",
+        "deadline_aoe": "2026-09-22 22:00:00",
+        "notification_aoe": "",
+        "deadline_label": "initial author response",
+        "link": "https://aclrollingreview.org/dates",
+        "deadline_at": "",
+        "deadline_date": "2026-09-24",
+        "deadline_timezone": "",
+        "deadline_time_precision": "date_only"
       }
     ],
-    "stale": false
+    "stale": false,
+    "deadline_at": "",
+    "deadline_date": "2026-09-24",
+    "deadline_timezone": "",
+    "deadline_time_precision": "date_only"
   },
   {
     "id": "eacl2027_demo",
@@ -10165,12 +10244,32 @@ export const DEADLINE_VENUES: DeadlineVenue[] = [
     "milestone": "direct_submission",
     "schedule": [
       {
+        "milestone": "rebuttal",
+        "label": "Author response period",
+        "starts": "2026-11-24",
+        "ends": "2026-11-30",
+        "kind": "period"
+      },
+      {
+        "milestone": "reviews",
+        "label": "Reviews due",
+        "date": "2026-11-16",
+        "kind": "date"
+      },
+      {
+        "milestone": "notification",
+        "label": "Meta-reviews released",
+        "date": "2026-12-17",
+        "kind": "date"
+      },
+      {
         "milestone": "cycle_end",
         "label": "Cycle ends",
         "date": "2026-12-20",
         "kind": "date"
       }
     ],
+    "schedule_status": "verified",
     "deadline_label": "ARR submission",
     "deadline_aoe": "2026-10-12 23:59:00",
     "notification_aoe": "",
@@ -10179,9 +10278,9 @@ export const DEADLINE_VENUES: DeadlineVenue[] = [
     "cfp_url": "",
     "openreview_url": "",
     "source_url": "https://aclrollingreview.org/dates",
-    "source_checked_at": "2026-09-11T00:00:00Z",
+    "source_checked_at": "2026-11-23T00:00:00Z",
     "deadline_source_kind": "official_cfp",
-    "deadline_source_status": "portal_unverified",
+    "deadline_source_status": "official_date_matches_openreview",
     "deadline_source_precision": "date_only",
     "deadline_official_url": "https://aclrollingreview.org/dates",
     "deadline_extended": false,
@@ -10198,9 +10297,24 @@ export const DEADLINE_VENUES: DeadlineVenue[] = [
         "notification_aoe": "",
         "deadline_label": "ARR submission",
         "link": "https://aclrollingreview.org/dates"
+      },
+      {
+        "observed_at": "2026-11-23T00:00:00Z",
+        "deadline_aoe": "2026-10-12 23:59:00",
+        "notification_aoe": "",
+        "deadline_label": "ARR submission",
+        "link": "https://aclrollingreview.org/dates",
+        "deadline_at": "2026-10-13T11:59:00Z",
+        "deadline_date": "2026-10-13",
+        "deadline_timezone": "UTC",
+        "deadline_time_precision": "exact"
       }
     ],
-    "stale": false
+    "stale": false,
+    "deadline_at": "2026-10-13T11:59:00Z",
+    "deadline_date": "2026-10-13",
+    "deadline_timezone": "UTC",
+    "deadline_time_precision": "exact"
   },
   {
     "id": "naacl2027_paper",
@@ -10226,6 +10340,10 @@ export const DEADLINE_VENUES: DeadlineVenue[] = [
         "kind": "period"
       }
     ],
+    "schedule_status": "extraction_unavailable",
+    "schedule_issues": [
+      "extracted schedule failed evidence validation"
+    ],
     "deadline_label": "paper submission (ARR)",
     "deadline_aoe": "2026-10-12 23:59:00",
     "notification_aoe": "",
@@ -10234,10 +10352,10 @@ export const DEADLINE_VENUES: DeadlineVenue[] = [
     "cfp_url": "",
     "openreview_url": "",
     "source_url": "https://2027.naacl.org/calls/main_conference_papers/",
-    "source_checked_at": "2026-09-11T00:00:00Z",
+    "source_checked_at": "2026-11-23T00:00:00Z",
     "deadline_source_kind": "official_cfp",
-    "deadline_source_status": "portal_unverified",
-    "deadline_source_precision": "date_only",
+    "deadline_source_status": "official_date_matches_openreview",
+    "deadline_source_precision": "exact",
     "deadline_official_url": "https://2027.naacl.org/calls/main_conference_papers/",
     "deadline_extended": false,
     "deadline_history_status": "not_extended",
@@ -10254,9 +10372,24 @@ export const DEADLINE_VENUES: DeadlineVenue[] = [
         "notification_aoe": "",
         "deadline_label": "paper submission (ARR)",
         "link": "https://2027.naacl.org/calls/main_conference_papers/"
+      },
+      {
+        "observed_at": "2026-11-23T00:00:00Z",
+        "deadline_aoe": "2026-10-12 23:59:00",
+        "notification_aoe": "",
+        "deadline_label": "paper submission (ARR)",
+        "link": "https://2027.naacl.org/calls/main_conference_papers/",
+        "deadline_at": "2026-10-13T11:59:00Z",
+        "deadline_date": "2026-10-13",
+        "deadline_timezone": "UTC",
+        "deadline_time_precision": "exact"
       }
     ],
-    "stale": false
+    "stale": false,
+    "deadline_at": "2026-10-13T11:59:00Z",
+    "deadline_date": "2026-10-13",
+    "deadline_timezone": "UTC",
+    "deadline_time_precision": "exact"
   },
   {
     "id": "neurips2026_ws_VERICODEGEN_Competition",
@@ -10370,6 +10503,88 @@ export const DEADLINE_VENUES: DeadlineVenue[] = [
     "deadline_date": "2026-11-17",
     "deadline_timezone": "UTC",
     "deadline_time_precision": "exact"
+  },
+  {
+    "id": "arr_2026_october_rebuttal",
+    "name": "ARR October 2026 cycle (author response)",
+    "venue_type": "rebuttal",
+    "venue_group": "ARR October 2026",
+    "track": "rebuttal",
+    "venue_family": "ARR",
+    "conference_location": "",
+    "workshop_location": "",
+    "entry_type": "rebuttal",
+    "archival_status": "unknown",
+    "venue_priority": "standard",
+    "archival": false,
+    "submission_type": "",
+    "milestone": "rebuttal",
+    "schedule": [
+      {
+        "milestone": "rebuttal",
+        "label": "Author response period",
+        "starts": "2026-11-24",
+        "ends": "2026-11-30",
+        "kind": "period"
+      },
+      {
+        "milestone": "reviews",
+        "label": "Reviews due",
+        "date": "2026-11-16",
+        "kind": "date"
+      },
+      {
+        "milestone": "notification",
+        "label": "Meta-reviews released",
+        "date": "2026-12-17",
+        "kind": "date"
+      },
+      {
+        "milestone": "cycle_end",
+        "label": "Cycle ends",
+        "date": "2026-12-20",
+        "kind": "date"
+      }
+    ],
+    "schedule_status": "verified",
+    "deadline_label": "initial author response",
+    "deadline_aoe": "2026-11-28 22:00:00",
+    "notification_aoe": "",
+    "link": "https://aclrollingreview.org/dates",
+    "homepage_url": "",
+    "cfp_url": "",
+    "openreview_url": "",
+    "source_url": "https://aclrollingreview.org/dates",
+    "source_checked_at": "2026-11-23T00:00:00Z",
+    "deadline_source_kind": "official_cfp",
+    "deadline_source_status": "portal_unverified",
+    "deadline_source_precision": "date_only",
+    "deadline_official_url": "https://aclrollingreview.org/dates",
+    "deadline_extended": false,
+    "deadline_history_status": "not_extended",
+    "deadline_id": "arr_2026_october_rebuttal",
+    "venue_id": "arr_2026_october_rebuttal",
+    "venue_aliases": [
+      "arr_2026_october_rebuttal"
+    ],
+    "revisions": [
+      {
+        "observed_at": "2026-11-23T00:00:00Z",
+        "deadline_aoe": "2026-11-28 22:00:00",
+        "notification_aoe": "",
+        "deadline_label": "initial author response",
+        "link": "https://aclrollingreview.org/dates",
+        "deadline_at": "",
+        "deadline_date": "2026-11-30",
+        "deadline_timezone": "",
+        "deadline_time_precision": "date_only"
+      }
+    ],
+    "stale": false,
+    "deadline_at": "",
+    "deadline_date": "2026-11-30",
+    "deadline_timezone": "",
+    "deadline_time_precision": "date_only"
   },
   {
     "id": "community_207f3047-46da-4ce9-9805-ccccd048cb56",
