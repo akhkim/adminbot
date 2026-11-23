@@ -293,6 +293,80 @@ describe("personal API tokens over HTTP", () => {
     },
   );
 
+  it("keeps an admin's pilot token from changing anyone's access or sign-in email", async () => {
+    const { baseUrl, mock } = await start();
+    const admin = await signIn(baseUrl, "admin-a");
+    expect(
+      (await call(baseUrl, "PUT", "/lab/members/admin-a", {
+        bearer: admin,
+        body: { cli_role: "power_user" },
+      })).status,
+    ).toBe(200);
+    const started = await call(baseUrl, "POST", "/auth/device/start", {
+      body: { name: "pilot", token_role: "power_user" },
+    });
+    await call(baseUrl, "POST", "/auth/device/approve", {
+      bearer: admin,
+      body: { user_code: started.body.user_code },
+    });
+    const polled = await call(baseUrl, "POST", "/auth/device/poll", {
+      body: { device_code: started.body.device_code },
+    });
+    const pilot = polled.body.token as string;
+    expect(pilot).toMatch(/^abt_p1_/u);
+
+    for (const body of [
+      { member_type: "adminbot-admin" },
+      { privilege_level: "admin" },
+      { cli_role: "power_user" },
+      { access_overrides: { compute: true } },
+      { email: "attacker@example.invalid" },
+      { correspondence_email: "attacker@example.invalid" },
+    ]) {
+      const refused = await call(baseUrl, "PUT", "/lab/members/plain-c", { bearer: pilot, body });
+      expect(refused.status, JSON.stringify(body)).toBe(403);
+    }
+    expect(mock.store.getLabMember("plain-c")).toMatchObject({
+      privilege_level: "member",
+      email: "plain-c@example.invalid",
+    });
+    const created = await call(baseUrl, "POST", "/lab/members", {
+      bearer: pilot,
+      body: { name: "New Person", email: "new@example.invalid", privilege_level: "admin" },
+    });
+    expect(created.status).toBe(403);
+    const scheduled = await call(baseUrl, "POST", "/lab/scheduled-member-changes", {
+      bearer: pilot,
+      body: { member_id: "plain-c", member_type: "adminbot-admin", effective_on: "2099-01-01" },
+    });
+    expect(scheduled.status).toBe(403);
+    // Other ways to hand out access or a reset address are browser-only for a pilot token too.
+    for (const [method, path, body] of [
+      ["POST", "/lab/members/merge", { survivor_id: "admin-a", duplicate_id: "plain-c" }],
+      ["POST", "/lab/members/plain-c/id", { id: "plain-z" }],
+      ["POST", "/membership/sheet/onboard", { rows: [2] }],
+      ["PUT", "/settings", { head_professor_member_id: "admin-a" }],
+      ["POST", "/proposals", { type: "lab_member.enroll", summary: "x", payload: {} }],
+    ] as const) {
+      const refused = await call(baseUrl, method, path, { bearer: pilot, body });
+      expect(refused.status, `${method} ${path}`).toBe(403);
+    }
+
+    // Restating a value that does not change, and ordinary edits, still go through.
+    const unchanged = await call(baseUrl, "PUT", "/lab/members/plain-c", {
+      bearer: pilot,
+      body: { email: "plain-c@example.invalid", privilege_level: "member" },
+    });
+    expect(unchanged.status).toBe(200);
+    // The browser session is untouched by any of this.
+    expect(
+      (await call(baseUrl, "PUT", "/lab/members/plain-c", {
+        bearer: admin,
+        body: { cli_role: "power_user" },
+      })).status,
+    ).toBe(200);
+  });
+
   it("authenticates as the owner by bearer only", async () => {
     const { baseUrl } = await start();
     const token = await mint(baseUrl, await signIn(baseUrl, "admin-a"));

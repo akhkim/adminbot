@@ -12,13 +12,17 @@ import { createHash, randomBytes, randomInt } from "node:crypto";
 export const DEVICE_LOGIN_TTL_MS = 10 * 60 * 1000;
 export const DEVICE_LOGIN_POLL_SECONDS = 5;
 // A bound on memory, not a rate limit (that is per IP, in the service). Past it, new requests are
-// refused until old ones expire rather than evicting somebody's in-progress sign-in.
-const MAX_PENDING_DEVICE_LOGINS = 500;
+// refused until old ones expire rather than evicting somebody's in-progress sign-in. Each entry is a
+// few hundred bytes; the bound is high enough that a few addresses at the per-IP limit cannot fill
+// it and lock out everyone else.
+const MAX_PENDING_DEVICE_LOGINS = 5000;
 
 // No vowels (so no words), and none of 0/O, 1/I/L, 5/S, 2/Z that are misread off a screen.
 const USER_CODE_ALPHABET = "BCDFGHJKMNPQRTVWXY";
 
-export type DeviceLoginStatus = "pending" | "approved" | "denied";
+// "approving" holds the request while the approval audit is written, so a second approver who
+// typed the same code is refused instead of overwriting the first.
+export type DeviceLoginStatus = "pending" | "approving" | "approved" | "denied";
 
 export type DeviceLogin = {
   device_code_hash: string;

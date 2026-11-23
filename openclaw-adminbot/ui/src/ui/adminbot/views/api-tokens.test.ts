@@ -113,7 +113,7 @@ it("revokes a token only after confirmation", async () => {
   );
 });
 
-it("approves a CLI login with one click and reports back", async () => {
+it("approves a CLI login only after the terminal's code is typed, and reports back", async () => {
   saveStoredMemberSession({ sessionToken: "synthetic-session", expiresAt: "2099-01-01T00:00:00Z" });
   const calls = stubService((path) =>
     path === "/auth/device/lookup"
@@ -129,36 +129,62 @@ it("approves a CLI login with one click and reports back", async () => {
       : { approved: true },
   );
   const element = document.createElement("adminbot-cli-login") as CliLoginApproval;
-  element.code = "BCDF-GHJK";
   document.body.append(element);
   const root = element.shadowRoot!;
+  await element.updateComplete;
+  // Nothing is looked up until the member types the code: the link carries none.
+  expect(calls).toHaveLength(0);
+  expect(root.querySelector('[name="password"]')).toBeNull();
+  const button = (label: string) =>
+    [...root.querySelectorAll("button")].find((b) => b.textContent?.trim() === label);
+  const input = root.querySelector<HTMLInputElement>('[data-testid="cli-login-code"]')!;
+  const type = async (value: string) => {
+    input.value = value;
+    input.dispatchEvent(new Event("input"));
+    await element.updateComplete;
+  };
+  expect(button("Continue")!.disabled).toBe(true);
+  await type("BCDF-GH");
+  expect(button("Continue")!.disabled).toBe(true);
+  await type("bcdf ghjk");
+  expect(button("Continue")!.disabled).toBe(false);
+  expect(button("Approve")).toBeUndefined();
+  root.querySelector("form")!.requestSubmit();
   await vi.waitFor(() => expect(root.textContent).toContain("adminbot CLI on laptop"));
+  expect(JSON.parse(calls[0]!.init!.body as string)).toEqual({ user_code: "BCDF-GHJK" });
   expect(root.textContent).toContain("203.0.113.7");
   expect(root.textContent).toContain("CLI access with your admin permissions");
+  expect(root.textContent!.replace(/\s+/gu, " ")).toContain(
+    "If someone sent you a code or this link, deny it.",
+  );
 
-  expect(root.querySelector('[name="password"]')).toBeNull();
   const done = vi.fn();
   element.addEventListener("cli-login-done", done);
-  [...root.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Approve")!.click();
+  button("Approve")!.click();
   await vi.waitFor(() =>
     expect(root.querySelector('[data-testid="cli-login-outcome"]')).not.toBeNull(),
   );
   expect(calls.at(-1)!.path).toBe("/auth/device/approve");
   expect(JSON.parse(calls.at(-1)!.init!.body as string)).toEqual({ user_code: "BCDF-GHJK" });
-  root.querySelector("button")!.click();
+  button("Close")!.click();
   expect(done).toHaveBeenCalledOnce();
 });
 
-it("explains an expired or foreign code instead of offering approval", async () => {
+it("explains a wrong or expired code instead of offering approval", async () => {
   saveStoredMemberSession({ sessionToken: "synthetic-session", expiresAt: "2099-01-01T00:00:00Z" });
   stubService(
     () => new Response(JSON.stringify({ error: { message: "not found" } }), { status: 404 }),
   );
   const element = document.createElement("adminbot-cli-login") as CliLoginApproval;
-  element.code = "BCDF-GHJK";
   document.body.append(element);
   const root = element.shadowRoot!;
-  await vi.waitFor(() => expect(root.textContent).toContain("expired"));
+  await element.updateComplete;
+  const input = root.querySelector<HTMLInputElement>('[data-testid="cli-login-code"]')!;
+  input.value = "BCDFGHJK";
+  input.dispatchEvent(new Event("input"));
+  await element.updateComplete;
+  root.querySelector("form")!.requestSubmit();
+  await vi.waitFor(() => expect(root.textContent).toContain("No sign-in is waiting with that code"));
   expect(
     [...root.querySelectorAll("button")].some((b) => b.textContent?.trim() === "Approve"),
   ).toBe(false);

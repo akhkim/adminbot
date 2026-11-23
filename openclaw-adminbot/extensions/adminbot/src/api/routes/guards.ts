@@ -97,7 +97,13 @@ export function isHeadProfessorAtKeyboard(
   ctx: AdminBotRouteContext,
   principal: AdminBotPrincipal,
 ): boolean {
-  if (principal.kind !== "member" || principal.impersonator) {
+  // A CLI pilot token is not hands on the keyboard either: deciding who joins (sign-ups, claims)
+  // creates an account with a password the token holder chooses, so it stays in the browser.
+  if (
+    principal.kind !== "member" ||
+    principal.impersonator ||
+    principal.apiToken?.role === "power_user"
+  ) {
     return false;
   }
   const head = ctx.service.headProfessorMemberId();

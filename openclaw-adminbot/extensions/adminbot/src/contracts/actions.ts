@@ -995,7 +995,8 @@ export const adminBotConfidentialMemberFields = [
  */
 export function adminBotMemberFieldVisibility(key: string): "lab" | "self" {
   return (adminBotConfidentialMemberFields as readonly string[]).includes(key) ||
-    (adminBotScheduleMemberFields as readonly string[]).includes(key)
+    (adminBotScheduleMemberFields as readonly string[]).includes(key) ||
+    (adminBotStaffOnlyMemberFields as readonly string[]).includes(key)
     ? "self"
     : "lab";
 }
@@ -1049,6 +1050,34 @@ export const adminBotInferredLocationMemberFields = [
   "device_located_at",
 ] as const;
 
+/**
+ * Record fields that are for the member and the admins, not for other members' sessions.
+ *
+ * None of these is something a member wrote for the lab to read: free-text admin `notes`, the
+ * other addresses and Slack accounts a merge folded in, the facts pulled from a CV scan, when
+ * somebody last signed in or used AdminBot, which machines they can reach, and the switches that
+ * govern their own access. The roster is read whole and a CLI token can page through all of it,
+ * so these are stripped from every other member's view. The AdminBot service keeps them: it is the
+ * one doing the work these fields exist for.
+ */
+export const adminBotStaffOnlyMemberFields = [
+  "notes",
+  "alternate_emails",
+  "alternate_slack_user_ids",
+  "former_member_ids",
+  "cv_snapshot",
+  "last_login_at",
+  "last_seen_at",
+  "compute_access",
+  "access_overrides",
+  "cli_role",
+  "receives_nudges",
+  "test_onboard_batch",
+  // The photo moderation verdict and the reviewer opt-out are about the person, for admins.
+  "profile_photo_review",
+  "reviewer_exempt",
+] as const;
+
 /** What a browser said about the location permission. See `AdminBotLabMember.location_permission`. */
 export const adminBotLocationPermissions = ["granted", "denied", "dismissed"] as const;
 export type AdminBotLocationPermission = (typeof adminBotLocationPermissions)[number];
@@ -1090,6 +1119,9 @@ export function redactConfidentialMemberFields<T extends { id?: string }>(
       delete copy[field];
     }
     for (const field of adminBotInferredLocationMemberFields) {
+      delete copy[field];
+    }
+    for (const field of adminBotStaffOnlyMemberFields) {
       delete copy[field];
     }
   }
@@ -3029,6 +3061,7 @@ export type AdminBotAuditEvent = {
     | "auth.api_token.revoked_all"
     | "auth.api_token.new_ip"
     | "auth.api_token.cli_login_started"
+    | "auth.api_token.cli_login_approved"
     | "auth.api_token.cli_login_denied"
     // Where members are. An observation is a fact about a person's whereabouts, and the answer to
     // the prompt is the only thing that turns one into a profile change, so both are recorded.

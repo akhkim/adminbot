@@ -49,7 +49,7 @@ improvise another client. `operations` and `schema` are offline. Start with
 `adminbot whoami`; exit 3 means you're not signed in.
 
 Not signed in → run `adminbot login --no-browser` in the background, show the user the
-printed link and code, and tell them it is one click to approve. The login then lasts until
+printed link and code, and tell them to open the link and type the code there. The login then lasts until
 revoked or unused for 90 days, so this happens once per machine.
 
 Every error is one JSON line on stderr: `{"error":{code, message, exit_code, retryable,

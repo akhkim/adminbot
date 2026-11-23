@@ -6,10 +6,15 @@ import { askGuidebook } from "../../guidebook/ask.js";
 import { localChatMessages } from "../../privacy/local-chat.js";
 import { isTravelHistorySubject } from "../../workflows/members/travel-history.js";
 import { readJson, sendJson } from "../server.http.js";
+import { privilegedOnly } from "./guards.js";
 import { post, route, type Route } from "./router.js";
 
 export const assistantRoutes: readonly Route[] = [
-  post("/guidebook/ask", async ({ req, res }) => {
+  // Admins and the AdminBot service only. The guidebook is written for the people who run the lab
+  // and holds shared credentials; the answer may quote it word for word, so a member session or a
+  // member's CLI token must never reach it. Members ask through /lab-sharing/ask instead, which
+  // answers from a separately approved member corpus.
+  post("/guidebook/ask", privilegedOnly(async ({ req, res }) => {
     const body = (await readJson(req)) as { question?: unknown; maxResults?: unknown };
     const question = typeof body.question === "string" ? body.question : "";
     if (!question.trim()) {
@@ -27,15 +32,11 @@ export const assistantRoutes: readonly Route[] = [
       });
       sendJson(res, 200, result);
     } catch (error) {
-      sendJson(res, 502, {
-        error: {
-          message: `the guidebook gate failed: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        },
-      });
+      // The cause names local paths and model endpoints; keep it in the server log only.
+      console.error("guidebook ask failed", error);
+      sendJson(res, 502, { error: { message: "the guidebook gate failed" } });
     }
-  }),
+  })),
   route(["GET", "POST"], "/local-chat", async ({ req, res, ctx, principal }) => {
     const { service } = ctx;
     const settings = service.getSettings();

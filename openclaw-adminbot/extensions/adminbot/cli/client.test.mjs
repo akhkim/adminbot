@@ -546,6 +546,28 @@ await test("gh-style shortcuts: login falls back to a private file, auth token p
   assert.equal(JSON.parse(after.err).error.hint, "adminbot login");
 });
 
+await test("auth token keeps a pilot token out of pipes and agent transcripts", async (t) => {
+  const pilot = `abt_p1_${"B".repeat(43)}_0badc0de`;
+  const dir = await mkdtemp(join(tmpdir(), "adminbot-cli-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const env = { ADMINBOT_TOKEN: pilot, ADMINBOT_CREDENTIALS_FILE: join(dir, "c.json") };
+  const piped = await invoke(["auth", "token", "--reveal"], { env });
+  assert.equal(piped.code, 3, piped.err);
+  assert.equal(piped.out, "");
+  assert.ok(!piped.err.includes(pilot));
+  let out = "";
+  const tty = await run(["auth", "token", "--reveal"], {
+    env,
+    stdin: Readable.from([]),
+    stdout: { isTTY: true, write: (value) => (out += String(value)) },
+    stderr: { write: () => {} },
+  });
+  assert.equal(tty, 0);
+  assert.equal(out, `${pilot}\n`);
+  const bad = await invoke(["auth", "token", "--nope"], { env });
+  assert.equal(JSON.parse(bad.err).error.code, "INVALID_ARGUMENTS");
+});
+
 await test("browser login slows down when asked and stops on denial", async (t) => {
   const { deviceLogin } = await import("./login.mjs");
   const { baseUrl } = await deviceService(t, [

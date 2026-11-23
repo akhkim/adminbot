@@ -41,8 +41,9 @@ import type { AdminBotAuthResponse, AdminBotAuthStore, AdminBotMemberPrincipal }
 
 /**
  * Where the Control UI asks the member to approve a CLI login: My Profile, which already sends a
- * signed-out visitor through sign-in and back. The code rides in ?cliLogin=, like ?passwordReset=,
- * and the UI strips it from the address bar as soon as it has read it.
+ * signed-out visitor through sign-in and back. `?cliLogin` opens the approval card and carries no
+ * code: the member types the code from their own terminal, and only that code finds and approves
+ * the request (RFC 8628 without a "complete" link). A link someone else sent approves nothing.
  */
 export const ADMINBOT_CLI_LOGIN_PATH = "/profile";
 
@@ -52,8 +53,11 @@ const SEEN_IPS_MAX = 50;
 // somebody guessing at codes from a session they have taken over.
 const FAILURE_LIMIT = 5;
 const FAILURE_WINDOW_MS = 15 * 60 * 1000;
-// Anonymous `adminbot login` starts, per IP.
-const DEVICE_STARTS_PER_IP = 10;
+// Anonymous `adminbot login` starts, per IP. The whole lab can sit behind one campus NAT address,
+// so this is set for a room full of people signing in after the same nudge, not for one laptop:
+// at 10, one person retrying could lock everyone on the network out. A request lives as long as
+// the window, so this is also the most pending requests one address can hold.
+export const DEVICE_STARTS_PER_IP = 60;
 const DEVICE_START_WINDOW_MS = 10 * 60 * 1000;
 
 type Place = { city?: string; country?: string };
@@ -451,7 +455,8 @@ export class AdminBotApiTokenService {
         ...(input.token_role === "power_user" ? { token_role: "power_user" as const } : {}),
         user_code: shown,
         verification_uri: base,
-        verification_uri_complete: `${base}?${new URLSearchParams({ cliLogin: shown })}`,
+        // No code in the link: see ADMINBOT_CLI_LOGIN_PATH.
+        verification_uri_complete: `${base}?cliLogin`,
         expires_in: DEVICE_LOGIN_TTL_MS / 1000,
         interval: DEVICE_LOGIN_POLL_SECONDS,
       },
@@ -514,8 +519,8 @@ export class AdminBotApiTokenService {
   }
 
   /**
-   * One click in a signed-in browser, like `gh auth login`: the code on screen matching the one in
-   * the terminal is the check, so there is no password prompt.
+   * Approval in a signed-in browser, like `gh auth login`, with no password prompt. The code is the
+   * only key: the link carries none, so the member has to type the one their terminal shows.
    */
   async approveDeviceLogin(
     principal: AdminBotMemberPrincipal,
@@ -532,9 +537,25 @@ export class AdminBotApiTokenService {
     if (found.payload.power_user && !this.isPowerUser(principal.member)) {
       return fail(403, "this account is not enrolled in the CLI pilot");
     }
+    const powerUser = this.isPowerUser(principal.member);
+    // Who approved, and the address that asked: if the approval was a mistake, this is the trail.
+    // Written before the login flips to approved, so a failed audit write cannot leave a token
+    // ready to mint with no record of who allowed it. The request is reserved first (synchronously,
+    // before the await), so a second approver with the same code finds nothing pending.
+    found.payload.status = "approving";
+    try {
+      await this.audit("auth.api_token.cli_login_approved", principal.member.id, {
+        name: found.payload.name,
+        power_user: powerUser,
+        ...(found.payload.requested_ip ? { ip: found.payload.requested_ip } : {}),
+      });
+    } catch (error) {
+      found.payload.status = "pending";
+      throw error;
+    }
     found.payload.status = "approved";
     found.payload.member_id = principal.member.id;
-    found.payload.power_user = this.isPowerUser(principal.member);
+    found.payload.power_user = powerUser;
     return { ok: true, status: 200, payload: { approved: true } };
   }
 
@@ -580,7 +601,7 @@ export class AdminBotApiTokenService {
       this.deviceLogins.remove(hash);
       return ok({ status: "access_denied" });
     }
-    if (login.status === "pending") {
+    if (login.status === "pending" || login.status === "approving") {
       const nowMs = this.now().getTime();
       const tooSoon =
         login.last_polled_ms !== undefined &&

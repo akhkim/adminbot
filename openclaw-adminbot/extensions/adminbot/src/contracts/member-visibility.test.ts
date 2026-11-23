@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import {
   adminBotConfidentialMemberFields,
+  adminBotStaffOnlyMemberFields,
   adminBotMemberFieldVisibility,
   redactConfidentialMemberFields,
 } from "./actions.js";
@@ -119,5 +120,42 @@ describe("owner-only member bookkeeping", () => {
       expect(seen.field_provenance).toEqual(record.field_provenance);
       expect(seen.access).toEqual(record.access);
     }
+  });
+
+  it("keeps admin notes, other addresses, login times and access switches off other members' view", () => {
+    const record = {
+      ...member,
+      notes: "Admin note",
+      alternate_emails: ["mei@old.example.com"],
+      cv_snapshot: { hash: "x" },
+      last_login_at: "2026-11-20T10:00:00Z",
+      last_seen_at: "2026-11-20",
+      compute_access: ["H100"],
+      cli_role: "power_user",
+      merch_requests: "M hoodie",
+    };
+    const seen = redactConfidentialMemberFields(record, {
+      memberId: "ada",
+      isAdmin: false,
+      isMemberSession: true,
+    }) as Record<string, unknown>;
+    for (const key of adminBotStaffOnlyMemberFields) {
+      expect(key in seen, key).toBe(false);
+      expect(adminBotMemberFieldVisibility(key), key).toBe("self");
+    }
+    // Written for the lab to read, so it stays.
+    expect(seen.merch_requests).toBe("M hoodie");
+    // The AdminBot service still gets them: it does the work they exist for.
+    const service = redactConfidentialMemberFields(record, { isAdmin: false }) as Record<
+      string,
+      unknown
+    >;
+    expect(service.notes).toBe("Admin note");
+    const own = redactConfidentialMemberFields(record, {
+      memberId: "mei",
+      isAdmin: false,
+      isMemberSession: true,
+    }) as Record<string, unknown>;
+    expect(own.notes).toBe("Admin note");
   });
 });

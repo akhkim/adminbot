@@ -48,11 +48,10 @@ export function renderProfileSurface(state: AppViewState, scope: AdminBotSurface
       })
     : nothing}${state.tab === "profile"
     ? html`
-        ${state.cliLoginCode && !profileBlocked
+        ${state.cliLoginOpen && !profileBlocked
           ? html`<adminbot-cli-login
-              .code=${state.cliLoginCode}
               @cli-login-done=${() => {
-                state.cliLoginCode = "";
+                state.cliLoginOpen = false;
                 requestHostUpdate?.();
               }}
             ></adminbot-cli-login>`

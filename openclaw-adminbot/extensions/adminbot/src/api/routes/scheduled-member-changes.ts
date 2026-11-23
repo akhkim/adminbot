@@ -111,6 +111,14 @@ export const scheduledMemberChangeRoutes: readonly Route[] = [
         sendServiceResult(res, changes.list(url.searchParams.get("status") ?? undefined));
         return;
       }
+      // The sweep replays this later as the service, past the CLI-token guard in
+      // saveLabMemberAsAdmin, so a pilot token cannot schedule a tier change at all.
+      if (principal.kind === "member" && principal.apiToken?.role === "power_user") {
+        sendJson(res, 403, {
+          error: { message: "Use your browser to change email addresses or access rights" },
+        });
+        return;
+      }
       const body = await readJsonOrEmpty(req);
       const actor = principalActor(principal);
       const created = changes.create(body, actor);
