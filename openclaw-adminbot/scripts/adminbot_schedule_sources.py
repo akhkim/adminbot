@@ -22,9 +22,6 @@ MAX_ENTRIES = 60
 SOURCE_URLS = {
     'emnlp2026_ws_nlp4pi': ['https://sites.google.com/view/nlp4positiveimpact/call-for-papers-2026'],
     'NeurIPS 2026 workshop contributions': ['https://neurips.cc/Conferences/2026/CallForWorkshops'],
-    'ARR May 2026': ['https://aclrollingreview.org/dates'],
-    'ARR August 2026': ['https://aclrollingreview.org/dates', 'https://2027.eacl.org/calls/papers/'],
-    'ARR October 2026': ['https://aclrollingreview.org/dates'],
     'AACL-IJCNLP 2026:main': ['https://2026.aaclnet.org/calls/main_conference_papers/'],
     'AACL-IJCNLP 2026:demo': ['https://2026.aaclnet.org/calls/demos/'],
     'EMNLP 2026': ['https://2026.emnlp.org/calls/main_conference_papers/'],

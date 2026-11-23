@@ -545,7 +545,9 @@ describe("sendPaperSlotNudges", () => {
     expect(message).toMatch(
       /\*Causal abstraction\* — <https:\/\/[^|]+\/my-work\/p1[^|]*\|open it in AdminBot>/u,
     );
-    expect(message).toContain("Already in: <https://docs.google.com/document/d/x|project folder>");
+    expect(message).toContain(
+      "Thanks, already in: <https://docs.google.com/document/d/x|project folder>",
+    );
     expect(message).toContain("Overleaf edit link");
     expect(message).not.toContain(SHARE_URL);
     expect(message).toContain("/time-availability|Time availability>");

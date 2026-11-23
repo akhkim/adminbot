@@ -2689,7 +2689,10 @@ describe("AdminBotService", () => {
 
   it("accepts board-linked milestones, refreshes their copy and rejects unknown ids", () => {
     const service = new AdminBotService();
-    const deadline = DEADLINE_VENUES.find((entry) => entry.link)!;
+    // An exact-time row: a date-only row is labelled "(time unknown)", so the copy would differ.
+    const deadline = DEADLINE_VENUES.find(
+      (entry) => entry.link && entry.deadline_time_precision !== "date_only",
+    )!;
     unwrap(
       service.upsertLabMember({
         receives_nudges: true,

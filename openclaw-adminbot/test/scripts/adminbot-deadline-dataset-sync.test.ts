@@ -265,13 +265,15 @@ describe("AdminBot deadline dataset generation", () => {
   });
 
   it("keeps conference policy separate from source-established workshop policy", () => {
-    const ARR = ["ACL", "EMNLP", "NAACL", "EACL", "AACL", "COLING"];
+    // An ARR cycle's direct submission counts as archival, so its rows carry the ARR family and the
+    // "cycle" track.
+    const ARR = ["ARR", "ACL", "EMNLP", "NAACL", "EACL", "AACL", "COLING"];
     const ML = ["NeurIPS", "ICML", "ICLR", "COLM", "CLeaR", "AISTATS"];
     for (const venue of controlUiVenues.filter(
       (candidate) => candidate.archival && candidate.track !== "workshop",
     )) {
       expect([...ARR, ...ML]).toContain(venue.venue_family);
-      expect(["main", "demo"]).toContain(venue.track);
+      expect(["main", "demo", "cycle"]).toContain(venue.track);
     }
     const workshops = controlUiVenues.filter((candidate) => candidate.track === "workshop");
     for (const venue of workshops) {

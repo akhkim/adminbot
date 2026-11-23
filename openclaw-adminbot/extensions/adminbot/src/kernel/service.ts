@@ -305,8 +305,8 @@ import type { AdminBotReimbursementFunder } from "../contracts/reimbursement-rul
 import type { ScheduledMemberChangeStore } from "../contracts/scheduled-member-changes.js";
 import { paperTargetsVenue } from "../contracts/venue-targets.js";
 import type { createCollaboratorChatRequestStore } from "../persistence/collaborator-chat-requests.js";
-import type { AdminBotPosterPrintStore } from "../persistence/poster-printing.js";
 import type { DiscoveredHelpRequest } from "../persistence/lab-sharing-discovery.js";
+import type { AdminBotPosterPrintStore } from "../persistence/poster-printing.js";
 import type { CalendarEventsReader } from "../workflows/calendar/events.js";
 import { resolveLabCalendar } from "../workflows/calendar/lab-calendar.js";
 import { memberAddresses } from "../workflows/calendar/standing-meetings.js";
@@ -374,6 +374,7 @@ import {
 import { hasCurrentOrUpcomingAvailability } from "../workflows/members/availability.js";
 import { validateBirthday } from "../workflows/members/birthday.js";
 import { collaboratorSubgroupAccess } from "../workflows/members/collaborator-subgroups.js";
+import { travelConferenceSites } from "../workflows/members/lab-travel.js";
 import {
   localEventAudience,
   remainingAttendees,
@@ -477,6 +478,7 @@ import {
   summarizeProject,
   type AdminBotMyProjectSummary,
 } from "../workflows/papers/my-projects.js";
+import { nudgeIntervalMs, trimNudgeBatch } from "../workflows/papers/nudge-policy.js";
 import {
   memberRelevanceNeedles,
   textMatchesNeedles,
@@ -496,6 +498,11 @@ import {
   openReviewUpdatesFor,
   type OpenReviewUpdate,
 } from "../workflows/papers/openreview-updates.js";
+import {
+  buildOutreachReadyMessage,
+  outreachReadyVenues,
+  type OutreachReadyVenue,
+} from "../workflows/papers/outreach-ready.js";
 import {
   type AcceptanceRow,
   type OutreachConfig,
@@ -520,11 +527,6 @@ import {
   rankPaperQueue,
 } from "../workflows/papers/paper-queue.js";
 import { duePaperNudges } from "../workflows/papers/paper-reminder-nudges.js";
-import {
-  buildOutreachReadyMessage,
-  outreachReadyVenues,
-  type OutreachReadyVenue,
-} from "../workflows/papers/outreach-ready.js";
 import {
   paperForResponse,
   withheldArtifactWriteError,
@@ -644,8 +646,6 @@ import { LabSharingService } from "./service.lab-sharing.js";
 import { LabTravelService } from "./service.lab-travel.js";
 import { inviteLocalLunches } from "./service.local-lunches.js";
 import { type IntroRunResult, MeetupService } from "./service.meetups.js";
-import { PosterPrintingService } from "./service.poster-printing.js";
-import { travelConferenceSites } from "../workflows/members/lab-travel.js";
 import {
   paperImpactSlotWrite,
   piApprovalImpactDenial,
@@ -653,6 +653,7 @@ import {
   piReviewSlotDenial,
   writePiReviewAck,
 } from "./service.pi-review.js";
+import { PosterPrintingService } from "./service.poster-printing.js";
 import {
   sweepProfessorDigest,
   type ProfessorDigestSweepResult,
@@ -8628,7 +8629,8 @@ export class AdminBotService {
           paper_ids: venue.papers.map((paper) => paper.id),
         },
         rationale: `OpenReview recorded ${venue.newly_accepted} new acceptance${venue.newly_accepted === 1 ? "" : "s"} at ${venue.label}.`,
-        undo_plan: "A Slack message cannot be unsent by AdminBot; it only points at drafts, so nothing else to undo.",
+        undo_plan:
+          "A Slack message cannot be unsent by AdminBot; it only points at drafts, so nothing else to undo.",
         idempotency_key: idempotencyKey,
       });
       if (!proposal.ok) {
@@ -10539,6 +10541,8 @@ export class AdminBotService {
         ...(group.venue ? { venue: group.venue } : {}),
         ...(group.deadline ? { deadline: group.deadline } : {}),
         ...(group.done?.length ? { done: group.done } : {}),
+        ...(group.moreItems ? { moreItems: group.moreItems } : {}),
+        ...(group.morePapers ? { morePapers: group.morePapers } : {}),
         ...(group.paperId
           ? { url: paperNudgeUrl({ controlUiUrl, paperId: group.paperId, items: group.items }) }
           : {}),
@@ -10601,7 +10605,17 @@ export class AdminBotService {
       const entry = ledger.get(key);
       if (
         recentlyMessaged.has(memberId) ||
-        !isNudgeDue(entry, now, PAPER_SLOT_NUDGE_INTERVAL_MS) ||
+        !isNudgeDue(
+          entry,
+          now,
+          nudgeIntervalMs({
+            baseMs: PAPER_SLOT_NUDGE_INTERVAL_MS,
+            nudgeCount: entry?.nudge_count ?? 0,
+            deadlineBearing: item.deadlineBearing,
+            ...(paper.deadline ? { paperDeadline: paper.deadline } : {}),
+            now,
+          }),
+        ) ||
         // Said once: a reminder with nothing to check off would otherwise repeat forever.
         (options.once && Boolean(entry?.last_nudged_at))
       ) {
@@ -10615,7 +10629,7 @@ export class AdminBotService {
         done: paperDone(),
         items: [],
       };
-      group.items.push(item);
+      group.items.push((entry?.nudge_count ?? 0) > 0 ? { ...item, repeat: true } : item);
       forMember.set(paper.title, group);
       byRecipient.set(memberId, forMember);
       stamped.push({ item, memberId });
@@ -10801,7 +10815,23 @@ export class AdminBotService {
       }
     }
 
-    return { byRecipient, stamped, papersConsidered: papers.length };
+    // Keep each message short: the cap leaves cut items unstamped so they are still due next time.
+    const said = new Set<string>();
+    for (const [memberId, groups] of byRecipient) {
+      const trimmed = trimNudgeBatch(groups, now);
+      const kept = [...trimmed.groups.values()];
+      for (const group of kept) {
+        for (const item of group.items) {
+          said.add(`${memberId}|${item.domain}|${item.subjectId}`);
+        }
+      }
+      byRecipient.set(memberId, trimmed.groups);
+    }
+    const stampedKept = stamped.filter(({ item, memberId }) =>
+      said.has(`${memberId}|${item.domain}|${item.subjectId}`),
+    );
+
+    return { byRecipient, stamped: stampedKept, papersConsidered: papers.length };
   }
 
   /**
@@ -18394,6 +18424,8 @@ type NudgeGroup = {
   paperId?: string;
   /** What the paper already has, so the message says what was seen as well as what is missing. */
   done?: NudgeDoneItem[];
+  moreItems?: number;
+  morePapers?: number;
 };
 
 /** Map key for the availability group. A paper title never starts with NUL, so it cannot collide. */

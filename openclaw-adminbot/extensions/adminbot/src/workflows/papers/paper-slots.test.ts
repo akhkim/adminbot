@@ -935,7 +935,7 @@ describe("buildNudgeMessage with what is already in", () => {
       "*Causal abstraction* — <https://portal.test/my-work/p1|open it in AdminBot>",
     );
     expect(message).toContain(
-      "Already in: <https://drive.google.com/x|project folder>, Overleaf edit link",
+      "Thanks, already in: <https://drive.google.com/x|project folder>, Overleaf edit link",
     );
     expect(message).toContain("Still needs:");
     expect(message).not.toContain("Fill these in on My Projects");

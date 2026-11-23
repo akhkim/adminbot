@@ -147,9 +147,9 @@ print(json.dumps(confirm_with_openreview([item], read, checked)[0]))`);
   it("keeps an exact cutoff when the official table repeats its date without a clock", () => {
     const refresh = (cell: string) =>
       runPython(`
-item = dict(id='arr_2026_october', venue_group='ARR October 2026', deadline_aoe='2026-10-12 23:59:00',
+item = dict(id='aistats2027_paper', venue_group='AISTATS 2027', deadline_aoe='2026-10-12 23:59:00',
             deadline_time_precision='exact', source_checked_at='')
-page = '<table><tr><td>October 2026</td><td>${cell}</td></tr></table>'
+page = '<table><tr><td>Full paper submission deadline (including all supplementary material)</td><td>${cell}</td></tr></table>'
 refresh_conference_tables([item], {}, clock, True, lambda url: (url, page), checked)
 print(json.dumps(item))`);
     expect(refresh("October 12")).toMatchObject({

@@ -427,6 +427,10 @@ export type NudgeItem = {
   priority: number;
   /** Deadline-bearing and nudged past the limit -- the PI hears about this one too. */
   deadlineBearing: boolean;
+  /** This person was already nudged about this item, so the how-to line is not repeated. */
+  repeat?: boolean;
+  /** The detail is a refusal or review finding, not generic help, so it is kept on repeats. */
+  essentialDetail?: boolean;
   /** Only set for slot items, so the card can point at the field. */
   slot?: AdminBotPaperSlot;
   definition?: AdminBotPaperSlotDefinition;
@@ -574,6 +578,7 @@ export function actionablePaperSlots(
       owner: definition.owner,
       label: definition.label,
       ...(detail ? { detail } : {}),
+      ...(detail && detail !== NUDGE_HOW[slot] ? { essentialDetail: true } : {}),
       priority: adminBotPaperSlotBranchPriority[definition.branch],
       deadlineBearing: definition.deadlineBearing,
       slot,
@@ -878,6 +883,10 @@ export function buildNudgeMessage(params: {
     done?: NudgeDoneItem[];
     /** This paper on the Control UI, from `paperNudgeUrl`. */
     url?: string;
+    /** Items cut from this paper's list to keep the message short; named, not listed. */
+    moreItems?: number;
+    /** Papers cut from the whole message, named once on the last group. */
+    morePapers?: number;
   }>;
   now: Date;
 }): string {
@@ -895,16 +904,23 @@ export function buildNudgeMessage(params: {
       } else {
         lines.push(url ? `*${group.title}* — <${url}|open it in AdminBot>` : `*${group.title}*`);
         if (group.done?.length) {
-          const done = group.done.map((item) =>
-            item.url ? `<${item.url}|${item.label}>` : item.label,
+          const shown = group.done
+            .slice(0, 4)
+            .map((item) => (item.url ? `<${item.url}|${item.label}>` : item.label));
+          const rest = group.done.length - shown.length;
+          lines.push(
+            `Thanks, already in: ${shown.join(", ")}${rest > 0 ? ` and ${rest} more` : ""}`,
           );
-          lines.push(`Already in: ${done.join(", ")}`);
         }
         lines.push("Still needs:");
       }
     }
     for (const item of group.items) {
-      lines.push(item.detail ? `• ${item.label} — ${item.detail}` : `• ${item.label}`);
+      const detail = item.repeat && !item.essentialDetail ? undefined : item.detail;
+      lines.push(detail ? `• ${item.label} — ${detail}` : `• ${item.label}`);
+    }
+    if (group.moreItems) {
+      lines.push(`…and ${group.moreItems} more on the page, after these.`);
     }
     const deadline = group.deadline ? Date.parse(group.deadline) : Number.NaN;
     if (Number.isFinite(deadline)) {
@@ -919,6 +935,10 @@ export function buildNudgeMessage(params: {
       );
     }
     lines.push("");
+  }
+  const morePapers = params.groups.reduce((sum, group) => sum + (group.morePapers ?? 0), 0);
+  if (morePapers > 0) {
+    lines.push(`${morePapers} other paper${morePapers === 1 ? "" : "s"} will come up next time.`);
   }
   lines.push(
     linked

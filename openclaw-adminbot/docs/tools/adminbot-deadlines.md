@@ -46,6 +46,27 @@ An exact deadline carries `deadline_at` as a UTC instant; the Control UI default
 
 A date-only deadline has a planning cutoff instead of an exact one. It is not stored: consumers compute it from `deadline_date` and `deadline_timezone` as the start of that day in the known zone, or in UTC+14 when the zone is unknown, so it cannot disagree with the published date. The compatibility field `deadline_aoe` represents the same planning instant for existing scheduled consumers. This boundary is an early planning target, not evidence that submissions close then. The board shows the source day with “time unknown”, uses the normal countdown style, and explains the boundary in the deadline details. Reminder messages, calendar entries and copied member milestones identify these as planning cutoffs. Passing one does not trigger a missed-submission escalation. A matched exact OpenReview cutoff remains authoritative when the website supplies only a date.
 
+### ARR cycles and venue cross-checks
+
+ARR cycles are not configured in code. `adminbot_arr_dates.py` parses both tables on
+`https://aclrollingreview.org/dates` (the cycle table and the participating-venue table) on every
+sweep, with no model call. Each cycle still listed, or ended within the last 30 days, becomes a
+`arr_<year>_<month>` submission row and an `arr_<year>_<month>_rebuttal` row whose deadline is the end of the
+published author-response window. The rest of the cycle (author-response window, reviews due,
+meta-review release, cycle end) is stored as the row's schedule. A new cycle therefore appears the
+day ARR lists it. A cycle that leaves the page keeps its stored row and goes stale; it is never deleted.
+
+Each ARR row records `source_url`, the table row as `deadline_source_evidence`, and
+`source_checked_at`. A date-only table value is upgraded to the exact cutoff, and its status becomes
+`official_date_matches_openreview`, when the public `aclweb.org/ACL/ARR/<year>/<Month>/-/Submission`
+invitation closes on the same day. If that invitation does not exist yet the row stays
+`portal_unverified`; that note is shown to administrators, not to members.
+
+The venue table is a second official source for each commitment date (EMNLP, AACL, EACL, NAACL,
+COLING). The venue's own CFP stays authoritative for its row. When the two dates differ, the row's status
+becomes `official_sources_disagree` and `deadline_conflict_evidence` records both values; neither
+is picked silently. A month-only entry such as "January, 2027" supplies no day and is ignored.
+
 Conference schedules are collected from configured official CFP and schedule pages, including
 surrounding prose and footnotes. The collector retains venue/track identities in code, not their
 dates. Existing dataset observations remain the fallback when a page or extractor is unavailable.
@@ -296,7 +317,6 @@ and title-only papers. It requires the configured local model
 - The scripts are validated in **dry-run**; live sending needs the AdminBot
   service + Slack/`gog`/OpenReview credentials on the host.
 
-
 ## Member deadline recommendations
 
 Signed-in members can recommend a deadline to another active member from the board. The form searches members in pages and loads linked papers only after choosing the recipient. Several papers may be included in one recommendation. Search and member selection share a row; paper choices and long message previews scroll inside the form. A recommendation points at a published deadline, so a newly proposed one can be recommended only after an administrator publishes it; the notice shown after a member submits a new deadline says so and names the **Recommend** button.
@@ -317,7 +337,6 @@ Paper rows distinguish `abstract_requirement` values `required`, `not_required`,
 
 The collector recognizes explicit registration requirements, explicit absence or optional registration, and matched abstract/paper stages. A matching abstract date is displayed without inferring that registration is mandatory. Silence is unknown. Separate tracks and conference editions are not linked; stale rows and later abstract dates cannot supply a prerequisite. An optional abstract can have a published date without becoming mandatory. Conflicting website statements remain unknown and retain a conflict marker. Website requirements travel with cached website evidence, so a skipped or failed page read does not silently erase them.
 
-
 ### Workshop schedule display
 
 In Upcoming, each workshop's displayed date, stage label, countdown, and urgency refer to its next published stage. A workshop with a passed submission can remain Upcoming while decisions or camera-ready dates are ahead. Once all stages have passed, Past shows the submission date. Cards, Groups, and Table share an expandable schedule, and switching views preserves which workshop schedules are open. A shared organizer notification cutoff is not a workshop decision date.
@@ -329,7 +348,6 @@ Workshop reconciliation retains `deadline_observations` in the canonical dataset
 A page whose title or main heading explicitly identifies a different edition cannot supply the current deadline. Crossed-out dates can support extension history but cannot be selected as the current deadline. Explicit abstract and full-paper targets reject evidence for the other milestone. These guards do not prove that every unlabeled page or script belongs to the requested track; those cases still need source review.
 
 Script assets remain a bounded fallback when the page supplies no deadline candidates. Their observations identify the actual asset separately from the workshop URL. Historical recovery remains limited to forced refreshes with extension evidence and insufficient date history. These observations describe submission deadlines; conference-wide notification policy and notification-date precedence are unchanged.
-
 
 ## Workshops without a submission date
 
