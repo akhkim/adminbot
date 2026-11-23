@@ -14,6 +14,7 @@ import { sendJson } from "../server.http.js";
 import type { AdminBotRouteContext, AdminBotPrincipal } from "./context.js";
 import { deviceClock, remoteIp } from "./origin.js";
 import { pilotOperation } from "./pilot-access.js";
+import { noteUsagePrincipal } from "./usage.js";
 
 export const SESSION_COOKIE = "adminbot_session";
 
@@ -127,6 +128,17 @@ export async function authorizePersonalTokenRequest(
 }
 
 export async function resolvePrincipal(
+  req: IncomingMessage,
+  ctx: AdminBotRouteContext,
+): Promise<AdminBotPrincipal | undefined> {
+  const principal = await findPrincipal(req, ctx);
+  // Every authenticated route, the /auth ones included, comes through here, which makes it the one
+  // place usage telemetry can learn who a request was without each route telling it.
+  noteUsagePrincipal(req, principal);
+  return principal;
+}
+
+async function findPrincipal(
   req: IncomingMessage,
   ctx: AdminBotRouteContext,
 ): Promise<AdminBotPrincipal | undefined> {

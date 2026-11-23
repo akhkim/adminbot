@@ -124,6 +124,8 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   adminbotTabUsage: "admin",
   // Everybody's errors, with the names of who hit them. The service gates the read as well.
   adminbotErrorLog: "admin",
+  // Every member's requests, and the automation runs. The service gates the reads as well.
+  adminbotApiUsage: "admin",
   // Everything on it is an admin read already -- the letter queue, the roster's adoption, everyone's
   // timelines. It is the same data with the "what is waiting on me" question asked of it.
   adminbotProfessor: "admin",

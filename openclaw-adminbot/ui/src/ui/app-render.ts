@@ -175,6 +175,7 @@ import {
   renderAdminBotTabUsage,
   renderChat,
   renderConfig,
+  renderApiUsagePage,
   renderErrorLogPage,
   renderGettingStarted,
   renderGuestReimbursements,
@@ -3411,6 +3412,7 @@ export function renderApp(state: AppViewState) {
         ${renderCollaborateSurface(state, adminBotSurfaces)}
         ${renderEventsSurface(state, adminBotSurfaces)}
         ${state.tab === "adminbotErrorLog" ? renderErrorLogPage() : nothing}
+        ${state.tab === "adminbotApiUsage" ? renderApiUsagePage() : nothing}
         ${state.tab === "adminbotTabUsage"
           ? renderAdminBotTabUsage({
               report: state.adminBotTabUsage,

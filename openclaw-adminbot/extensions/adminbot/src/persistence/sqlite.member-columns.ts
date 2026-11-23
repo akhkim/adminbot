@@ -11,6 +11,9 @@
 export const MEMBER_REFERENCE_COLUMNS: ReadonlyArray<[string, string]> = [
   ["adminbot_account_registrations", "member_id"],
   ["adminbot_tab_visits", "member_id"],
+  // The usage rollup and first/last table are keyed by member, so they merge by adding
+  // colliding cells together (mergeApiUsageMember), not through this loop's drop-on-collision.
+  ["adminbot_api_usage", "member_id"],
   ["adminbot_badge_assignments", "member_id"],
   ["adminbot_badge_nominations", "member_id"],
   ["adminbot_cv_changes", "member_id"],
@@ -75,6 +78,9 @@ export const MEMBER_REFERENCE_COLUMNS: ReadonlyArray<[string, string]> = [
 export const MEMBER_OWNED_COLUMNS: ReadonlyArray<[string, string]> = [
   ["adminbot_account_registrations", "member_id"],
   ["adminbot_tab_visits", "member_id"],
+  ["adminbot_api_usage", "member_id"],
+  ["adminbot_api_usage_daily", "member_id"],
+  ["adminbot_api_usage_members", "member_id"],
   ["adminbot_badge_assignments", "member_id"],
   ["adminbot_badge_nominations", "member_id"],
   ["adminbot_cv_changes", "member_id"],

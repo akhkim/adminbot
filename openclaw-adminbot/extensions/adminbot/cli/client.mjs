@@ -145,13 +145,52 @@ export function validate(schema, value, label = "input") {
   }
 }
 
+/**
+ * Sent on every request so an admin can see which CLI versions are in use. It names the program and
+ * its version, nothing about the machine or the person; the CLI keeps no usage record of its own.
+ */
+export const userAgent = `adminbot-cli/${
+  JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")).version
+}`;
+
 /** Typed for SDK consumers by client.d.ts and the generated OpenAPI declarations. */
 export function createAdminBotClient(options = {}) {
-  return createClient({
+  const client = createClient({
     ...options,
+    headers: clientHeaders(options.headers),
     baseUrl: serviceOrigin(options.baseUrl ?? document.servers[0].url),
     redirect: "error",
   });
+  // Last, after the client's headers and any a single call passes, so nothing can pass itself off
+  // as the CLI (or hide that it is one) in the usage telemetry.
+  client.use({
+    onRequest({ request }) {
+      request.headers.set("User-Agent", userAgent);
+    },
+  });
+  return client;
+}
+
+/**
+ * The caller's headers in a form openapi-fetch merges correctly. A plain object and a Headers go
+ * through untouched, so openapi-fetch keeps its own rules: an undefined value is skipped, null
+ * removes the header and an array value is sent once per item. A list of pairs is the one form it
+ * misreads (as headers named "0", "1", ...), so it becomes a Headers here, repeated names appended.
+ * A pair whose value is null or undefined is skipped, as openapi-fetch skips one in an object, so
+ * it never becomes the string "null" or "undefined".
+ */
+function clientHeaders(headers) {
+  if (!Array.isArray(headers)) {
+    return headers;
+  }
+  const normalized = new Headers();
+  for (const [name, value] of headers) {
+    if (value === null || value === undefined) {
+      continue;
+    }
+    normalized.append(name, value);
+  }
+  return normalized;
 }
 
 /** The service's `{ error: { code, message } }`, when it sent one. */

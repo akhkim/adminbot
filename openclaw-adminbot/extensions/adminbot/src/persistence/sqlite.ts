@@ -85,6 +85,7 @@ import type {
 } from "../contracts/scheduled-member-changes.js";
 import type { AdminBotTabVisit } from "../contracts/tab-visits.js";
 import { MemberRenameBlockedError } from "../kernel/member-rename.js";
+import { countNudgeLedgerWrite } from "../kernel/run-metrics.js";
 import {
   AdminBotService,
   type AdminBotLabMemberSummary,
@@ -102,8 +103,12 @@ import {
   toStoredLabMember,
 } from "../workflows/onboarding/onboarding-storage.js";
 import { parseTalkMaterialsConfig } from "../workflows/papers/talk-materials.js";
+import {
+  createApiUsageLogFromDatabase,
+  mergeApiUsageMember,
+  type ApiUsageLog,
+} from "./api-usage.js";
 import { createCollaboratorChatRequestStore } from "./collaborator-chat-requests.js";
-import { createPosterPrintStore } from "./poster-printing.js";
 import {
   adminBotEmailReviewFromRow,
   adminBotResolvedEmailReviewFromRow,
@@ -147,6 +152,7 @@ import {
   listPaperAiTextChecks,
   savePaperAiTextCheck,
 } from "./paper-ai-text-checks.js";
+import { createPosterPrintStore } from "./poster-printing.js";
 import {
   ensureReferenceScanSchema,
   getReferenceScan,
@@ -317,6 +323,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   private readonly db: DatabaseSync;
   private readonly failedRequests: FailedExternalRequestLedger;
   private readonly errors: ErrorLog;
+  private readonly apiUsage: ApiUsageLog;
   private readonly venueIndex: SqliteVenuePaperIndex;
   private readonly members: SqliteLabMemberCache;
   private readonly versions: SqliteTableVersions;
@@ -411,6 +418,9 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
       CREATE INDEX IF NOT EXISTS adminbot_audit_events_timestamp_idx
         ON adminbot_audit_events(timestamp);
+      -- One event type since a time: the automation report's cron heartbeats.
+      CREATE INDEX IF NOT EXISTS adminbot_audit_events_type_idx
+        ON adminbot_audit_events(event_type, timestamp);
 
       CREATE TABLE IF NOT EXISTS adminbot_openreview_cycles (
         venue_id TEXT NOT NULL,
@@ -1049,6 +1059,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     migrateSocialDraftColumns(this.db);
     this.failedRequests = createFailedRequestLedgerFromDatabase(this.db);
     this.errors = createErrorLogFromDatabase(this.db);
+    this.apiUsage = createApiUsageLogFromDatabase(this.db);
     this.migrateWorkshopMatchRuns();
     this.migrateSessionColumns();
     this.migrateBadgeNominationColumns();
@@ -1169,6 +1180,10 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
   errorLog(): ErrorLog {
     return this.errors;
+  }
+
+  apiUsageLog(): ApiUsageLog {
+    return this.apiUsage;
   }
 
   failedRequestLedger(): FailedExternalRequestLedger {
@@ -2013,6 +2028,9 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
   purgeMemberReferences(memberId: string): Record<string, number> {
     const removed: Record<string, number> = {};
+    // Buffered usage rows are written first, or the next flush would bring the member back. The
+    // flush is its own transaction, so it cannot run inside the one below.
+    this.apiUsage.flush();
     // One transaction, for the reason the merge gives: a half-purged member leaves rows naming an
     // id nothing can resolve, which is worse than a member who is still there.
     this.db.exec("BEGIN");
@@ -2098,6 +2116,8 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
   reassignMemberReferences(fromMemberId: string, toMemberId: string): Record<string, number> {
     const moved: Record<string, number> = {};
+    // Buffered usage rows first: written after the merge, they would recreate the duplicate.
+    this.apiUsage.flush();
     // One transaction: a half-repointed member is worse than an unmerged one, because the rows
     // that did move no longer name a record anybody can find their way back from. Written as an
     // explicit BEGIN/COMMIT for the same reason replaceVenueIndex is -- node:sqlite's DatabaseSync
@@ -2118,6 +2138,15 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         }
         // Whatever the UPDATE could not move is a collision with a row the survivor already owns.
         this.db.prepare(`DELETE FROM "${table}" WHERE ${column} = ?`).run(fromMemberId);
+      }
+      {
+        const merged = mergeApiUsageMember(this.db, fromMemberId, toMemberId);
+        if (merged.daily > 0) {
+          moved["adminbot_api_usage_daily.member_id"] = merged.daily;
+        }
+        if (merged.members > 0) {
+          moved["adminbot_api_usage_members.member_id"] = merged.members;
+        }
       }
       // Badge suggestions are repointed here rather than from MEMBER_REFERENCE_COLUMNS because
       // that loop moves the column and leaves `payload_json` alone -- and payload_json is what is
@@ -2146,6 +2175,9 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
   renameMemberId(fromMemberId: string, toMemberId: string): Record<string, number> {
     const changed: Record<string, number> = {};
+    // Buffered usage rows first, so they are renamed with the rest rather than written later
+    // under the old id.
+    this.apiUsage.flush();
     // Every table, discovered rather than listed: a member id lives in dedicated columns and inside
     // payload_json (paper author links, the head-professor setting, attendee maps keyed by id), and
     // a hand-kept list is how the merge ended up moving the column a page reads from but not the
@@ -2475,6 +2507,18 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   }
 
   saveNudgeLedgerEntry(record: AdminBotNudgeLedgerRecord): void {
+    const previous = this.db
+      .prepare(
+        `SELECT nudge_count FROM adminbot_nudge_ledger
+         WHERE domain = ? AND subject_id = ? AND member_id = ?`,
+      )
+      .get(record.domain, record.subject_id, record.member_id) as
+      | { nudge_count?: unknown }
+      | undefined;
+    countNudgeLedgerWrite(
+      previous === undefined ? undefined : Number(previous.nudge_count) || 0,
+      record,
+    );
     this.db
       .prepare(
         `INSERT INTO adminbot_nudge_ledger
@@ -3517,6 +3561,10 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     return this.audit.list();
   }
 
+  listAuditEventsSince(type: string, fromIso: string): AdminBotAuditEvent[] {
+    return this.audit.listSince(type, fromIso);
+  }
+
   pruneAuditEventsBefore(cutoffIso: string): number {
     return this.audit.pruneBefore(cutoffIso);
   }
@@ -4255,6 +4303,8 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   }
 
   close(): void {
+    // Queued usage rows go out before the handle does; after close they would have nowhere to go.
+    this.apiUsage.close();
     this.db.close();
   }
 }

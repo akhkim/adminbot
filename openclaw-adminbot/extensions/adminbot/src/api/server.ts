@@ -34,6 +34,7 @@ import {
   type AdminBotServiceOptions,
   type AdminBotServiceStore,
 } from "../kernel/service.js";
+import { createMemoryApiUsageLog } from "../persistence/api-usage.js";
 import { createCollaboratorChatRequestStore } from "../persistence/collaborator-chat-requests.js";
 import { createMemoryErrorLog } from "../persistence/error-log.js";
 import { createMemoryFailedRequestLedger } from "../persistence/failed-requests.js";
@@ -99,6 +100,7 @@ import { DEFAULT_ALLOWED_ORIGINS, applyCors, parseOrigins, remoteIp } from "./ro
 import { createOpenReviewCitationWatch, createIclrIntegrityWatch } from "./routes/reviews.js";
 import { dispatchRoute } from "./routes/router.js";
 import { ApiTokenRateLimitedError, authorizePersonalTokenRequest, resolvePrincipal } from "./routes/session.js";
+import { trackApiUsage } from "./routes/usage.js";
 import { PayloadTooLargeError, sendJson } from "./server.http.js";
 import { executeMemberEnrollment } from "./server.member-onboarding.js";
 import {
@@ -221,6 +223,9 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
   const errorLog =
     options.errorLog ??
     (store instanceof AdminBotSqliteStore ? store.errorLog() : createMemoryErrorLog());
+  const apiUsage =
+    options.apiUsage ??
+    (store instanceof AdminBotSqliteStore ? store.apiUsageLog() : createMemoryApiUsageLog());
   const llmRouter =
     options.llmRouter ??
     createLlmLoadRouter({
@@ -627,6 +632,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     llmRouter,
     failedRequestLedger,
     errorLog,
+    apiUsage,
   };
   // Needs the route context -- the member sheet, the Monday meeting reader -- so it is bound last.
   onboardingArms.enroll = (proposal) =>
@@ -688,7 +694,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
   cvSweepFirstCheck?.unref();
   const server = createServer(async (req, res) => {
     try {
-      await routeRequest(req, res, ctx);
+      await trackApiUsage(req, res, apiUsage, () => routeRequest(req, res, ctx));
     } catch (error) {
       if (error instanceof PayloadTooLargeError) {
         sendJson(res, 413, { error: { message: error.message } });
@@ -733,6 +739,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       if (cvSweepTimer) {
         clearInterval(cvSweepTimer);
       }
+      apiUsage.flush();
       closeDurable();
     },
   };

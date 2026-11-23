@@ -48,7 +48,7 @@ const PAGES = [
     "Settings, automation and ops",
     "/settings",
     "admin",
-    /^\/(settings|automation|ops|slack|ui\/tab-visits|ui\/errors)/u,
+    /^\/(settings|automation|ops|slack|usage|ui\/tab-visits|ui\/errors)/u,
   ],
   [
     "Notification drafts",

@@ -7,7 +7,7 @@ import { Readable } from "node:stream";
 import { test } from "node:test";
 import { run } from "./adminbot.mjs";
 import { aliases } from "./aliases.mjs";
-import { callOperation, document, operations } from "./client.mjs";
+import { callOperation, createAdminBotClient, document, operations, userAgent } from "./client.mjs";
 
 async function invoke(args, options = {}) {
   let out = "",
@@ -704,4 +704,83 @@ await test("pilot permissions show commands and PaperMentor uploads the original
     },
   );
   assert.equal(upload.code, 0, upload.err);
+});
+
+await test("every request names the CLI and its version in the User-Agent", async () => {
+  const version = JSON.parse(
+    await readFile(new URL("./package.json", import.meta.url), "utf8"),
+  ).version;
+  assert.equal(userAgent, `adminbot-cli/${version}`);
+  let seen;
+  await callOperation("get-auth-session", {
+    token: "abt_sample",
+    fetchImpl: async (request) => {
+      seen = request.headers.get("user-agent");
+      return new Response("{}", { headers: { "Content-Type": "application/json" } });
+    },
+  });
+  assert.equal(seen, userAgent);
+});
+
+await test("an SDK caller's headers reach the server as openapi-fetch merges them, under the CLI User-Agent", async () => {
+  const sent = async (headers, callHeaders) => {
+    let seen;
+    const client = createAdminBotClient({
+      headers,
+      fetch: async (request) => {
+        seen = request.headers;
+        return new Response("{}", { headers: { "Content-Type": "application/json" } });
+      },
+    });
+    await client.GET("/auth/session", callHeaders ? { headers: callHeaders } : {});
+    return seen;
+  };
+  // Every form keeps the caller's auth, and none can replace the CLI User-Agent.
+  for (const headers of [
+    new Headers({ Authorization: "Bearer abt_sample", "User-Agent": "curl/8" }),
+    [
+      ["Authorization", "Bearer abt_sample"],
+      ["User-Agent", "curl/8"],
+    ],
+    { Authorization: "Bearer abt_sample", "User-Agent": "curl/8" },
+  ]) {
+    const seen = await sent(headers);
+    assert.equal(seen.get("authorization"), "Bearer abt_sample");
+    assert.equal(seen.get("user-agent"), userAgent);
+  }
+  // Nor can a header passed on a single call.
+  assert.equal((await sent({}, { "User-Agent": "curl/8" })).get("user-agent"), userAgent);
+  // undefined is skipped and null removes the header, never the strings "undefined" or "null".
+  const blanks = await sent(
+    { Authorization: "Bearer abt_sample", "X-Trace": undefined, "X-Empty": null },
+    { Authorization: null },
+  );
+  assert.equal(blanks.has("x-trace"), false);
+  assert.equal(blanks.has("x-empty"), false);
+  assert.equal(blanks.has("authorization"), false);
+  // The same goes for pairs: a null or undefined value is skipped, the other pairs are kept.
+  const blankPairs = await sent([
+    ["Authorization", "Bearer abt_sample"],
+    ["X-Empty", null],
+    ["X-Trace", undefined],
+  ]);
+  assert.equal(blankPairs.get("authorization"), "Bearer abt_sample");
+  assert.equal(blankPairs.has("x-empty"), false);
+  assert.equal(blankPairs.has("x-trace"), false);
+  // An array value, and a name repeated in pairs, send every value.
+  assert.equal(
+    (await sent({ Accept: ["application/json", "text/plain"] })).get("accept"),
+    "application/json, text/plain",
+  );
+  assert.equal(
+    (
+      await sent([
+        ["Accept", "application/json"],
+        ["Accept", "text/plain"],
+      ])
+    ).get("accept"),
+    "application/json, text/plain",
+  );
+  // No headers at all is fine too.
+  assert.equal((await sent(undefined)).get("user-agent"), userAgent);
 });

@@ -46,6 +46,12 @@ const lazyTabUsage = createLazyView(
   notifyLazyViewHost,
   { tabs: ["adminbotTabUsage"] },
 );
+// The API usage page is one too.
+const lazyApiUsage = createLazyView(
+  () => import("./adminbot/views/api-usage.ts"),
+  notifyLazyViewHost,
+  { tabs: ["adminbotApiUsage"] },
+);
 // The error log is an element that defines itself on import.
 const lazyErrorLog = createLazyView(
   () => import("./adminbot/views/error-log.ts"),
@@ -65,6 +71,8 @@ export const renderGettingStarted = (state: AppViewState) =>
   renderLazyView(lazyGettingStarted, (m) => m.renderGettingStarted(state));
 export const renderAdminBotTabUsage = (props: TabUsageViewProps) =>
   renderLazyView(lazyTabUsage, (m) => m.renderAdminBotTabUsage(props));
+export const renderApiUsagePage = () =>
+  renderLazyView(lazyApiUsage, () => html`<adminbot-api-usage></adminbot-api-usage>`);
 export const renderErrorLogPage = () =>
   renderLazyView(lazyErrorLog, () => html`<adminbot-error-log></adminbot-error-log>`);
 export const renderOverview = (props: OverviewProps) =>
