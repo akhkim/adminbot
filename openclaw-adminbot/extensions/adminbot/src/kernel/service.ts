@@ -743,6 +743,11 @@ export type AdminBotMeetingArtifactRecord = {
 };
 
 export type AdminBotServiceStore = AdminBotCitationCheckStores & {
+  /**
+   * Run `fn` as one write transaction: everything it writes commits together or not at all, and
+   * no other connection writes in between. Optional: a store without it runs `fn` directly.
+   */
+  runInTransaction?<T>(fn: () => T): T;
   saveHelpInterest(interest: LabHelpInterest): void;
   listHelpInterests(): LabHelpInterest[];
   saveDirectorStatus(status: LabDirectorStatus | null): void;
@@ -3465,35 +3470,52 @@ export class AdminBotService {
           "email review resolution has no named approver",
         );
       }
-      // A reply the safe path already applied is settled. A stale proposal for it may have been
-      // approved before the apply withdrew it; it must not write the reply a second time.
-      const appliedBy = this.liveReminderReplyApply(settlement.message_id);
-      if (appliedBy) {
-        return this.executionFailure(
-          proposal,
-          409,
-          `this reply was already applied by ${appliedBy}`,
-        );
+      // One store transaction from the checks to the last write. The safe path's apply writes the
+      // stage and withdraws this proposal in a transaction of its own, so with SQLite's writer lock
+      // the two run one after the other, even from two processes: whichever runs second sees the
+      // other's writes and fails here, instead of both reading "not settled" and both writing.
+      const settled = this.inStoreTransaction(
+        (): AdminBotServiceResponse<Record<string, string>> => {
+          // The apply may have withdrawn this proposal after it was approved and before this ran.
+          if (this.store.getProposal(proposal.id)?.status === "rejected") {
+            return serviceError(409, "this proposal was withdrawn before it executed");
+          }
+          // A reply the safe path already applied is settled. A stale proposal for it may have
+          // been approved before the apply withdrew it; it must not write the reply twice.
+          const appliedBy = this.liveReminderReplyApply(settlement.message_id);
+          if (appliedBy) {
+            return serviceError(409, `this reply was already applied by ${appliedBy}`);
+          }
+          const applied = this.resolveEmailReview({
+            messageId: settlement.message_id,
+            resolution: settlement.resolution,
+            actor: resolvedBy,
+          });
+          // Its own guards decide this: the item may have been settled in the Control UI while
+          // the approval sat in Slack, or the stage it would close may have shut since. Either
+          // way the execution fails with that reason instead of reporting a resolution that did
+          // not happen.
+          if (!applied.ok) {
+            return applied;
+          }
+          // A reminder reply's proposal carries the nudges it answers. They are quieted only
+          // now, once an admin has approved: a rejected proposal leaves the reminders as they were.
+          const snoozed = this.snoozeReminderReplyTargets(proposal, settlement.resolution);
+          return {
+            ok: true as const,
+            status: 200,
+            payload: {
+              resolution: applied.payload.resolution,
+              evidence_recorded: String(applied.payload.evidence_recorded),
+              ...(snoozed > 0 ? { snoozed: String(snoozed) } : {}),
+            },
+          };
+        },
+      );
+      if (!settled.ok) {
+        return this.executionFailure(proposal, settled.status, settled.error.message);
       }
-      const applied = this.resolveEmailReview({
-        messageId: settlement.message_id,
-        resolution: settlement.resolution,
-        actor: resolvedBy,
-      });
-      // Its own guards decide this: the item may have been settled in the Control UI while the
-      // approval sat in Slack, or the stage it would close may have shut since. Either way the
-      // execution fails with that reason instead of reporting a resolution that did not happen.
-      if (!applied.ok) {
-        return this.executionFailure(proposal, applied.status, applied.error.message);
-      }
-      // A reminder reply's proposal carries the nudges it answers. They are quieted only now, once
-      // an admin has approved: a rejected proposal leaves the member's reminders exactly as they were.
-      const snoozed = this.snoozeReminderReplyTargets(proposal, settlement.resolution);
-      artifacts = {
-        resolution: applied.payload.resolution,
-        evidence_recorded: String(applied.payload.evidence_recorded),
-        ...(snoozed > 0 ? { snoozed: String(snoozed) } : {}),
-      };
+      artifacts = settled.payload;
       handled = true;
     } else if (
       proposal.type === "reminder_reply.apply" ||
@@ -3502,15 +3524,32 @@ export class AdminBotService {
       // In-service like `email_review.resolve`: the write is to this store. No approver: only the
       // service creates these (createProposal refuses them), and the apply is re-checked here
       // against the live match and the safe-auto rule before anything is written.
-      if (proposal.type === "reminder_reply.apply") {
-        const why = this.reminderReplyApplyProblem(proposal);
-        if (why) {
-          return this.executionFailure(proposal, 409, why);
-        }
-      }
       const outcome =
         proposal.type === "reminder_reply.apply"
-          ? executeReminderReplyApply(this.reminderReplyAutoDeps(), proposal)
+          ? // One store transaction for the re-check, the stage write and the withdrawal of every
+            // review proposal still open for this reply. A crash in between leaves none of it, and
+            // a resolve execute in another process waits for the commit and then sees both.
+            this.inStoreTransaction((): AdminBotServiceResponse<Record<string, string>> => {
+              const why = this.reminderReplyApplyProblem(proposal);
+              if (why) {
+                return serviceError(409, why);
+              }
+              const applied = executeReminderReplyApply(this.reminderReplyAutoDeps(), proposal);
+              if (!applied.ok) {
+                return applied;
+              }
+              const messageId = parseApplyPayload(proposal)?.review.message_id;
+              const superseded = messageId
+                ? this.withdrawReviewProposals(messageId, "adminbot")
+                : [];
+              this.afterReminderReplyStageWrite?.();
+              return {
+                ...applied,
+                payload: superseded.length
+                  ? { ...applied.payload, superseded: superseded.join(",") }
+                  : applied.payload,
+              };
+            })
           : executeReminderReplyUndo(
               this.reminderReplyAutoDeps(),
               proposal,
@@ -3523,15 +3562,6 @@ export class AdminBotService {
         return this.executionFailure(proposal, outcome.status, outcome.error.message);
       }
       artifacts = outcome.payload;
-      if (proposal.type === "reminder_reply.apply") {
-        // Same tick as the stage write, before any await: no review proposal for this reply can be
-        // approved and executed in between and write it a second time.
-        const messageId = parseApplyPayload(proposal)?.review.message_id;
-        const superseded = messageId ? this.withdrawReviewProposals(messageId, "adminbot") : [];
-        if (superseded.length) {
-          artifacts = { ...artifacts, superseded: superseded.join(",") };
-        }
-      }
       handled = true;
     } else if (proposal.type === "lab_member.remove") {
       // In-service for the same reason as the two arms above: deleting a roster record is a write
@@ -12259,6 +12289,39 @@ export class AdminBotService {
   }
 
   /** Reject every review proposal still waiting on this message; an apply has settled it. */
+  /**
+   * Test seam: runs inside the apply's transaction, after the stage write and the withdrawals. A
+   * throw here stands in for a crash between them and must leave neither behind.
+   */
+  afterReminderReplyStageWrite?: () => void;
+
+  /**
+   * Run `fn` as one store transaction where the store has them (SQLite), rolling back when it
+   * returns a failure or throws. The memory store is synchronous and single-process, so a plain
+   * call is already atomic there.
+   */
+  private inStoreTransaction<T extends { ok: boolean }>(fn: () => T): T {
+    if (!this.store.runInTransaction) {
+      return fn();
+    }
+    let failed: T | undefined;
+    try {
+      return this.store.runInTransaction<T>(() => {
+        const result = fn();
+        if (!result.ok) {
+          failed = result;
+          throw new Error("adminbot: store transaction rolled back");
+        }
+        return result;
+      });
+    } catch (error) {
+      if (failed) {
+        return failed;
+      }
+      throw error;
+    }
+  }
+
   private withdrawReviewProposals(messageId: string, actor: string): string[] {
     const withdrawn: string[] = [];
     for (const proposal of this.store.listProposalsByType("email_review.resolve")) {

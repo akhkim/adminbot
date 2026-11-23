@@ -1767,7 +1767,9 @@ all of these hold:
 - It is not forwarded, there is no Reply-To pointing elsewhere, and only the text the member wrote
   above the quote is read. Forward and quote markers are recognized in English, French, German,
   Spanish, Italian, Portuguese and Chinese. A quote whose structure is not recognized makes the
-  reply a proposal.
+  reply a proposal. So does anything left below a signature ("--", "Sent from my iPhone" and its
+  translations) other than sign-offs and a name, such as a quote header in another language or more
+  text.
 - The model reads it as a plain "done" for that one open PaperFlow stage, at confidence at least
   0.8, with no later stages and no "moved elsewhere". A fixed check must agree: the member's own
   text is only a short "done" phrase, an optional greeting and thanks, and a sign-off. If the model
@@ -1779,9 +1781,11 @@ nor a URL, goes into the record.
 - `reminder_reply.apply` (T1) closes that one stage as `recorded_by: "reply"`, with the reply's
   message id and a fixed note. Its audit row is `reminder_reply.applied`. It is keyed on the Gmail
   message id across all statuses, so the same reply is applied and mailed at most once, even when
-  two passes run at the same time. In the same transaction as the stage write, it withdraws any
-  review proposal still pending for the same reply, and a review approval for a reply that was
-  already applied is refused. An apply filed but never executed (for example, the process stopped
+  two passes run at the same time. In one store transaction with the stage write, it withdraws
+  any review proposal still pending or approved for the same reply. On SQLite this is a single
+  `BEGIN IMMEDIATE` transaction, so a crash between the two leaves neither, and another process
+  executing an approved review proposal for the reply either waits for the commit and is refused,
+  or runs first, after which the apply is refused. An apply filed but never executed (for example, the process stopped
   in between) is executed by the next pass rather than treated as a duplicate.
 - `reminder_reply.confirm` (T1) then sends one receipt from the bot mailbox (`ADMINBOT_BOT_EMAIL`).
   The receipt is a fresh `gmail send` to the roster address, never a reply. It uses a fixed

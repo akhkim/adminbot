@@ -2801,6 +2801,28 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     return rows.map(paperMentorRunFromRow);
   }
 
+  private transactionDepth = 0;
+
+  runInTransaction<T>(fn: () => T): T {
+    // Nested calls join the open transaction. BEGIN IMMEDIATE takes the writer lock up front, so a
+    // second connection waits (busy_timeout) rather than reading state this one is about to change.
+    if (this.transactionDepth > 0) {
+      return fn();
+    }
+    this.db.exec("BEGIN IMMEDIATE");
+    this.transactionDepth += 1;
+    try {
+      const result = fn();
+      this.db.exec("COMMIT");
+      return result;
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    } finally {
+      this.transactionDepth -= 1;
+    }
+  }
+
   savePaperflowEvidence(record: AdminBotPaperflowEvidenceRecord): void {
     // First sighting wins. A stage that already closed stays closed with the mail that closed it:
     // a later bcc on the same decision is the author forwarding the thread again, and letting it

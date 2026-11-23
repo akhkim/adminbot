@@ -375,6 +375,49 @@ const signOff = new Set([
   "br",
 ]);
 
+/** A signature delimiter ("-- ") or a mail client's own sign line ("Sent from my iPhone"). */
+const signatureMarker =
+  /^(--|sent from my\b.*|sent from outlook\b.*|get outlook for\b.*|envoyé de mon\b.*|von meinem\b.*\bgesendet|enviado desde mi\b.*|inviato da\b.*|verstuurd vanaf mijn\b.*|verzonden met\b.*)\s*$/iu;
+
+/**
+ * Whether everything below the first signature marker is plainly signature: blank lines, other
+ * markers and sign-offs, plus at most three name lines. Under a "--" block a name line may be any
+ * capitalized words ("Xuanqiang Huang", "ETH Zurich": no digits, colons, quotes or addresses).
+ * Under a phone line ("Sent from my iPhone") it must be one of `names` when those are given. A
+ * text with no marker is clean.
+ *
+ * The plain-done check stops reading at the signature, so whatever a client put under it (a quote
+ * header in a language the cut does not know, a forwarded block, more prose) must not ride along
+ * unread. A tail that is not clean marks the reply as unrecognized structure, for an admin.
+ */
+export function hasCleanSignatureTail(text: string, names?: ReadonlySet<string>): boolean {
+  const lines = text.split(/\r?\n/u).map((line) => line.trim());
+  const start = lines.findIndex((line) => signatureMarker.test(line));
+  if (start < 0) {
+    return true;
+  }
+  let block = lines[start] === "--";
+  let nameLines = 0;
+  for (const line of lines.slice(start + 1)) {
+    if (line.length === 0 || signOff.has(plainWords(line))) {
+      continue;
+    }
+    if (signatureMarker.test(line)) {
+      block ||= line === "--";
+      continue;
+    }
+    nameLines += 1;
+    const named =
+      block || !names
+        ? /^\p{Lu}[\p{L}.'’-]*( \p{Lu}[\p{L}.'’-]*){0,3}$/u.test(line)
+        : names.has(plainWords(line));
+    if (!named || nameLines > 3) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function plainWords(line: string): string {
   return line
     .toLowerCase()
@@ -394,11 +437,9 @@ function plainWords(line: string): string {
  * longer than a plain done and its words are not on the list.
  */
 export function isPlainDoneReply(text: string, memberName: string): boolean {
-  const signature = text.split(/\r?\n/u).findIndex((line) => {
-    const trimmed = line.trim();
-    return /^--\s*$/u.test(trimmed) || /^sent from my\b/iu.test(trimmed);
-  });
-  const own = (signature >= 0 ? text.split(/\r?\n/u).slice(0, signature).join("\n") : text).trim();
+  const all = text.split(/\r?\n/u);
+  const signature = all.findIndex((line) => signatureMarker.test(line.trim()));
+  const own = (signature >= 0 ? all.slice(0, signature).join("\n") : text).trim();
   if (!own || own.length > 200 || /\?/u.test(own) || /(https?:|www\.|\b\S+\.\S+\/)/iu.test(own)) {
     return false;
   }
@@ -434,7 +475,7 @@ export function isPlainDoneReply(text: string, memberName: string): boolean {
       return false;
     }
   }
-  return true;
+  return hasCleanSignatureTail(text, names);
 }
 
 /** Every `<id@host>` token in In-Reply-To and References, in order, without duplicates. */
@@ -472,7 +513,9 @@ export function reminderReplySenderEvidence(params: {
     ...(inReplyTo ? { in_reply_to: inReplyTo } : {}),
     ...(references.length ? { references } : {}),
     forwarded: isForwardedReply(params.subject ?? "", params.body),
-    ...(hasUnrecognizedQuote(authored) ? { unrecognized_structure: true } : {}),
+    ...(hasUnrecognizedQuote(authored) || !hasCleanSignatureTail(authored)
+      ? { unrecognized_structure: true }
+      : {}),
     authored_text: authored.slice(0, authoredTextCap),
   };
 }
