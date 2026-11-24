@@ -18,6 +18,12 @@ import {
 } from "./client.mjs";
 import { deviceLogin } from "./login.mjs";
 import { installSkill } from "./skill.mjs";
+import {
+  checkForCliUpdate,
+  cliUpdateNotice,
+  cliUpdateStateFile,
+  markCliUpdateNotified,
+} from "./updates.mjs";
 
 const commandIndex = new Map();
 for (const operation of Object.values(operations)) {
@@ -39,6 +45,7 @@ adminbot call OPERATION_ID [flags]            Call any documented operation
 adminbot <generated command> [IDs] [flags]    Same API with readable command names
 adminbot <command> --help                     Show generated parameters and flags
 adminbot skill install                        Install the agent skill for Claude Code and Codex
+adminbot update check                         Check for a newer CLI release
 
 Sign-in (type the code in the browser, like gh):
   adminbot login                              Approve access in your browser
@@ -330,6 +337,28 @@ export async function run(
       stdout.write(`adminbot ${version}\n`);
       return 0;
     }
+    if (argv[0] === "update") {
+      if (argv.length !== 2 || argv[1] !== "check") {
+        throw new ApiError("INVALID_ARGUMENTS", "Usage: adminbot update check");
+      }
+      const { version } = JSON.parse(
+        await readFile(new URL("package.json", import.meta.url), "utf8"),
+      );
+      const result = await checkForCliUpdate({
+        currentVersion: version,
+        fetchImpl,
+        stateFile: cliUpdateStateFile(env),
+        force: true,
+      });
+      stdout.write(
+        result.update
+          ? cliUpdateNotice(result.update)
+          : result.unavailable
+            ? "Could not check GitHub releases right now.\n"
+            : `AdminBot CLI ${version} is current.\n`,
+      );
+      return 0;
+    }
     if (argv[0] === "schema") {
       if (argv.length > 2) {
         throw new ApiError("INVALID_ARGUMENTS", "Usage: adminbot schema [OPERATION_ID]");
@@ -403,7 +432,9 @@ export async function run(
           reveal = true;
         } else if (flag === "--url" && url === undefined) {
           url = inline ?? argv[++i];
-          if (!url) throw new ApiError("INVALID_ARGUMENTS", usage);
+          if (!url) {
+            throw new ApiError("INVALID_ARGUMENTS", usage);
+          }
         } else {
           throw new ApiError("INVALID_ARGUMENTS", usage);
         }
@@ -443,8 +474,9 @@ export async function run(
     const timeout = requestTimeout(values.timeout);
     let body = parsed.body;
     if (operation.requestBody?.content["application/zip"]) {
-      if (!values.file || values.file === "-")
+      if (!values.file || values.file === "-") {
         throw new ApiError("INPUT_REQUIRED", "Pass the ZIP file with --file PATH");
+      }
       try {
         body = await readFile(values.file);
       } catch {
@@ -584,6 +616,21 @@ export async function run(
       );
     } else {
       stdout.write(typeof result === "string" ? result : `${JSON.stringify(result, null, 2)}\n`);
+    }
+    if (baseUrl === "https://admin.safe.eu" && env.ADMINBOT_NO_UPDATE_CHECK !== "1") {
+      const { version } = JSON.parse(
+        await readFile(new URL("package.json", import.meta.url), "utf8"),
+      );
+      const stateFile = cliUpdateStateFile(env);
+      const updateCheck = await checkForCliUpdate({
+        currentVersion: version,
+        fetchImpl,
+        stateFile,
+      });
+      if (updateCheck.notify) {
+        stderr.write(cliUpdateNotice(updateCheck.update));
+        await markCliUpdateNotified(stateFile, updateCheck.update.version);
+      }
     }
     return 0;
   } catch (caught) {

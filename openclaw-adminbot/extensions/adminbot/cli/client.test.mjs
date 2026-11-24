@@ -264,6 +264,49 @@ await test("--version prints the version, and a bare flag says where flags go", 
   assert.equal(error.hint, "adminbot --help");
 });
 
+await test("successful production commands show a release notice once without changing JSON output", async (t) => {
+  const folder = await mkdtemp(join(tmpdir(), "pilot-cli-update-"));
+  t.after(() => rm(folder, { recursive: true, force: true }));
+  const env = {
+    ADMINBOT_TOKEN: "test",
+    ADMINBOT_UPDATE_STATE_FILE: join(folder, "update-check.json"),
+  };
+  let releaseCalls = 0;
+  const fetchImpl = async (request) => {
+    if (typeof request !== "string") {
+      return Response.json({ member: { id: "test" } });
+    }
+    releaseCalls += 1;
+    return Response.json([
+      {
+        tag_name: "adminbot-cli-v0.2.0",
+        html_url: "https://github.com/akhkim/adminbot/releases/tag/adminbot-cli-v0.2.0",
+        assets: [
+          {
+            name: "adminbot-cli-0.2.0.tgz",
+            browser_download_url:
+              "https://github.com/akhkim/adminbot/releases/download/adminbot-cli-v0.2.0/adminbot-cli-0.2.0.tgz",
+          },
+        ],
+      },
+    ]);
+  };
+  const first = await invoke(["whoami"], { env, fetchImpl });
+  assert.equal(first.code, 0, first.err);
+  assert.equal(JSON.parse(first.out).member.id, "test");
+  assert.match(first.err, /AdminBot CLI 0\.2\.0 is available/u);
+  const second = await invoke(["whoami"], { env, fetchImpl });
+  assert.equal(second.code, 0, second.err);
+  assert.equal(second.err, "");
+  assert.equal(releaseCalls, 1);
+  const manual = await invoke(["update", "check"], { env, fetchImpl });
+  assert.equal(manual.code, 0);
+  assert.match(
+    manual.out,
+    /Changes: https:\/\/github\.com\/akhkim\/adminbot\/releases\/tag\/adminbot-cli-v0\.2\.0/u,
+  );
+});
+
 await test("input errors come before sign-in, and logout without a login succeeds", async () => {
   const offline = { ADMINBOT_URL: "http://127.0.0.1:9", ADMINBOT_TOKEN: "" };
   const bad = await invoke(["papers", "progress", "p1", "--step", "invented"], { env: offline });

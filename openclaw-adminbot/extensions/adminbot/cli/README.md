@@ -8,6 +8,9 @@ operation IDs and alternate flag names.
 ## Power-user pilot
 
 Install with Node 22.19 or newer, then approve the matching code in your own browser.
+Use the newest `adminbot-cli-*.tgz` asset on the
+[AdminBot releases page](https://github.com/akhkim/adminbot/releases). The URL below is the
+original pilot package; replace it with the newest asset URL when a newer version is published.
 
 ```sh
 npm install --global https://github.com/akhkim/adminbot/releases/download/adminbot-cli-pilot-v2/adminbot-cli-0.1.0.tgz
@@ -18,20 +21,26 @@ adminbot my projects
 ```
 
 The permissions response gives your website role, token expiry, request limit and commands.
+After a successful command, the CLI checks the official GitHub release feed at most once a day.
+If a newer CLI package is published, it prints a short notice at most once a week with release
+changes and the exact install command. It never installs anything automatically, and release-feed
+errors do not block work. Run `adminbot update check` to check now, or set
+`ADMINBOT_NO_UPDATE_CHECK=1` to turn off automatic notices.
+
 Members can create projects and edit those they own or coauthor. Admins keep their existing
 admin permissions. The API still checks the target record, fields, approver and workflow state.
 
-| Task | Command |
-| --- | --- |
-| Find the project ID | `adminbot my projects` |
-| Inspect its checklist | `adminbot tasks list PAPER_ID` |
-| Write your weekly note | `adminbot work update PAPER_ID --note "Finished the ablation runs"` |
-| Mark a checklist item complete | `adminbot tasks update PAPER_ID fixes_merged --done` |
-| Change the stage | `adminbot papers progress PAPER_ID --step overleaf_writing` |
-| Read a project’s poster-print options | `adminbot call get-papers-by-papers-id-poster-print PAPER_ID` |
-| List your logistics requests | `adminbot call get-logistics-requests` |
-| Inspect your profile | `adminbot call get-lab-members-self` |
-| Look up any permitted operation's inputs | `adminbot call OPERATION_ID --help` |
+| Task                                     | Command                                                             |
+| ---------------------------------------- | ------------------------------------------------------------------- |
+| Find the project ID                      | `adminbot my projects`                                              |
+| Inspect its checklist                    | `adminbot tasks list PAPER_ID`                                      |
+| Write your weekly note                   | `adminbot work update PAPER_ID --note "Finished the ablation runs"` |
+| Mark a checklist item complete           | `adminbot tasks update PAPER_ID fixes_merged --done`                |
+| Change the stage                         | `adminbot papers progress PAPER_ID --step overleaf_writing`         |
+| Read a project’s poster-print options    | `adminbot call get-papers-by-papers-id-poster-print PAPER_ID`       |
+| List your logistics requests             | `adminbot call get-logistics-requests`                              |
+| Inspect your profile                     | `adminbot call get-lab-members-self`                                |
+| Look up any permitted operation's inputs | `adminbot call OPERATION_ID --help`                                 |
 
 The same login works for member-visible collaboration, meetings, travel, deadlines,
 opportunities and PaperMentor. Use `adminbot permissions` for the live list and
