@@ -167,9 +167,9 @@ columns = direct['data'][0]['values'][0]
 rows = [dict(zip(columns, row)) for row in direct['data'][0]['values'][1:]]
 new = next(row for row in rows if row['id'] == 'new')
 assert len(columns) == len(set(columns)) == len(exporter.PEOPLE_COLUMNS)
-# 1:1 folders are private Drive links; the link-shared sheet must never carry them.
-assert not any("one_on_one" in c for c in columns)
-assert not {"preferred_name", "birthday", "slack_active"} & set(columns)
+# The 1:1 Drive folder is exported on request (2026-11-26); the folders keep their own Drive sharing.
+assert "one_on_one_folder_url" in columns
+assert {"preferred_name", "birthday"} <= set(columns) and "slack_active" not in columns
 assert columns[:len(exporter.PEOPLE_PRIORITY)] == list(exporter.PEOPLE_PRIORITY)
 assert len(rows) == 2
 assert new['join_date'] == '2026-09' and new['join_date_basis'] == 'joined_month'
@@ -187,7 +187,7 @@ print('PASS: direct database roster, all approved columns, explicit-ID aggregate
 refresh_spec = importlib.util.spec_from_file_location('refresh', Path(__file__).with_name('adminbot-sheet-refresh.py'))
 refresh = importlib.util.module_from_spec(refresh_spec)
 refresh_spec.loader.exec_module(refresh)
-properties = {title: {'sheetId': sid, 'gridProperties': {'rowCount': 1000, 'columnCount': 131}}
+properties = {title: {'sheetId': sid, 'gridProperties': {'rowCount': 1000, 'columnCount': 400}}
               for title, sid in [('PeopleList', 1), ('PaperList', 2)]}
 requests = refresh.refresh_requests(direct, properties)
 clears = [r['repeatCell'] for r in requests if r.get('repeatCell', {}).get('fields', '').startswith('userEnteredValue')]
@@ -197,6 +197,10 @@ people_width = len(next(i for i in direct['data'] if 'PeopleList' in i['range'])
 assert [c['range'] for c in stale_headers] == [{'sheetId': 1, 'startRowIndex': 0, 'endRowIndex': 1, 'startColumnIndex': people_width}]
 clears = [c for c in clears if c not in stale_headers]
 assert len(clears) == 2
+# A tab exactly as wide as the export has no stale headers; a range starting past the grid is rejected by Sheets.
+exact = {**properties, 'PeopleList': {'sheetId': 1, 'gridProperties': {'rowCount': 1000, 'columnCount': people_width}}}
+assert not [r for r in refresh.refresh_requests(direct, exact)
+            if r.get('repeatCell', {}).get('range', {}).get('startColumnIndex') == people_width]
 assert {r['range']['sheetId'] for r in clears} == {1, 2}
 assert len([r for r in requests if 'addTable' in r]) == 2
 assert [r['range']['startRowIndex'] for r in clears] == [1, 0]
