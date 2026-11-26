@@ -443,7 +443,7 @@ describe("Aurora deploy workflow", () => {
     expect(workflow).toContain(
       "github.event.workflow_run.head_repository.full_name == github.repository",
     );
-    expect(workflow).toContain("runs-on: [aurora-deploy]");
+    expect(workflow).toContain("runs-on: [adminbot-ec2-deploy]");
     expect(workflow).toContain("cancel-in-progress: false");
     expect(workflow).toContain("persist-credentials: false");
     expect(workflow).not.toMatch(/\$\{\{\s*secrets\./);
@@ -455,5 +455,11 @@ describe("Aurora deploy workflow", () => {
     const label = installer.match(/^RUNNER_LABEL="([^"]+)"$/m)?.[1];
     expect(installer).toContain("--no-default-labels");
     expect(workflow).toContain(`runs-on: [${label}]`);
+  });
+
+  it("lets a host register under a different label without editing the installer", () => {
+    const installer = fs.readFileSync(installerScript, "utf8");
+    expect(installer).toMatch(/--label\)\n/);
+    expect(installer).toContain('unsafe runner label');
   });
 });
