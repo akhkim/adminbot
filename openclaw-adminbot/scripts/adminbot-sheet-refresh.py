@@ -56,7 +56,7 @@ PEOPLE_SECTION_COLOURS = {
     'Search': {'red': .40, 'green': .45, 'blue': .51},
     exporter.PEOPLE_RECORDS_SECTION: {'red': .45, 'green': .49, 'blue': .54}}
 PEOPLE_EMAILS = ('email', 'calendar_email', 'correspondence_email')
-PEOPLE_URLS = ('personal_website', 'linkedin_url', 'twitter_url', 'github_url', 'scholar_url',
+PEOPLE_URLS = ('one_on_one_folder_url', 'personal_website', 'linkedin_url', 'twitter_url', 'github_url', 'scholar_url',
                'acl_anthology_url', 'lesswrong_url', 'cv_url', 'intake_form_url', 'availability_doc_url')
 
 
@@ -391,9 +391,11 @@ def refresh_requests(batch, properties):
                 requests.append({'addFilterView': {'filter': {**specification, 'title': view_title}}})
         if title == 'PeopleList':
             # The header row is kept for the table; headers of columns a narrower export dropped are blanked
-            # here, once the table no longer spans them.
-            requests.append({'repeatCell': {'range': {'sheetId': sid, 'startRowIndex': 0, 'endRowIndex': 1,
-                'startColumnIndex': len(headers)}, 'cell': {}, 'fields': 'userEnteredValue,userEnteredFormat,note'}})
+            # here, once the table no longer spans them. A grid exactly as wide as the export has none, and
+            # Sheets rejects a range that starts past the last column.
+            if grid['columnCount'] > len(headers):
+                requests.append({'repeatCell': {'range': {'sheetId': sid, 'startRowIndex': 0, 'endRowIndex': 1,
+                    'startColumnIndex': len(headers)}, 'cell': {}, 'fields': 'userEnteredValue,userEnteredFormat,note'}})
             requests.extend(people_style_requests(p, values, field_names))
         if title == 'PaperList':
             requests.extend(paper_style_requests(p, values, batch['paperLinks'], batch.get('statusCounts')))

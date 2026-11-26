@@ -277,7 +277,7 @@ next_position personal_circumstances slack_messages_7d slack_activity_checked_at
 privilege_level collaborator_subgroup access_overrides notes role status research_branch
 research_topics elevator_pitch projects hours_per_week location current_city
 city_channel_invited_at city_channels_invited affiliation timezone personal_website
-openreview_id cv_url intake_form_url intake_form_unavailable
+openreview_id cv_url intake_form_url intake_form_unavailable one_on_one_folder_url
 linkedin_url linkedin_urn twitter_url github_url scholar_url reviewer_exempt joined_month
 graduated_month whatsapp correspondence_email dcs_username at_uoft compute_access
 vector_role lesswrong_url other_socials avatar_url slack_channels slack_location
@@ -299,7 +299,11 @@ papers_authored_count papers_authored papers_submitted_count papers_submitted
 audit_events_as_actor update_events_as_actor update_events_as_subject calendar_group acl_anthology_url
 arr_reviewer_qualified arr_review_capacity map_visibility location_permission linkedin_followers
 twitter_followers recommendation_letter_window financial_support_needs
-financial_support_totals search'''.split())
+financial_support_totals search
+preferred_name birthday alternate_emails alternate_slack_user_ids former_member_ids cli_role
+slack_deactivated_at last_seen_at last_login_region last_device_tz last_device_tz_at device_city
+device_region device_country device_located_at location_permission_at last_ip_observed_at
+last_ip_suspected_vpn'''.split())
 
 
 # PeopleList, left to right. Name is frozen first: it is what people scan and search for, on a phone
@@ -307,7 +311,7 @@ financial_support_totals search'''.split())
 # Each section gets its own header colour; columns no section lists sit behind one collapsed [+] group.
 PEOPLE_SECTIONS = (
     ('Contact', ('name', 'calendar_email', 'whatsapp', 'email', 'correspondence_email',
-                 'timezone', 'current_city')),
+                 'timezone', 'current_city', 'preferred_name', 'alternate_emails', 'birthday')),
     ('Lab', ('active_member', 'status', 'member_type', 'role', 'collaborator_subgroup', 'privilege_level', 'join_date',
              'affiliation', 'at_uoft', 'hours_per_week', 'membership_review', 'receives_nudges',
              'compute_access', 'calendar_group', 'next_position', 'graduated_month')),
@@ -315,7 +319,7 @@ PEOPLE_SECTIONS = (
                   'papers_authored', 'arr_reviewer_qualified', 'arr_review_capacity', 'recommendation_letter_window')),
     ('Links & socials', ('personal_website', 'linkedin_url', 'twitter_url', 'github_url', 'scholar_url',
                          'openreview_id', 'acl_anthology_url', 'lesswrong_url', 'other_socials', 'cv_url',
-                         'linkedin_followers', 'twitter_followers')),
+                         'linkedin_followers', 'twitter_followers', 'one_on_one_folder_url')),
     ('Location & availability', ('location', 'map_visibility', 'availability', 'availability_notes', 'time_off',
                                  'trips', 'milestones', 'last_login_at', 'slack_messages_7d')),
     ('Funding', ('financial_support_needs', 'financial_support_totals')),
@@ -327,7 +331,8 @@ PEOPLE_RECORDS_SECTION = 'AdminBot records'
 PEOPLE_LABELS = {
     'recommendation_letter_window': 'Recommendation letters (last 6 months / upcoming)',
     'name': 'Name', 'calendar_email': 'Calendar email', 'whatsapp': 'WhatsApp',
-    'email': 'Email', 'correspondence_email': 'Correspondence email',
+    'email': 'Email', 'correspondence_email': 'Correspondence email', 'one_on_one_folder_url': '1:1 Drive folder',
+    'preferred_name': 'Preferred name', 'birthday': 'Birthday', 'alternate_emails': 'Other emails',
     'timezone': 'Time zone', 'current_city': 'City', 'member_type': 'Membership', 'collaborator_subgroup': 'Subgroup',
     'privilege_level': 'Access level', 'active_member': 'Active (1/0)', 'join_date': 'Joined', 'at_uoft': 'At UofT', 'hours_per_week': 'Hours / week',
     'receives_nudges': 'Gets nudges', 'compute_access': 'Compute',
