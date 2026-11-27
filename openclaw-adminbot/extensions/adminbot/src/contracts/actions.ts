@@ -123,6 +123,15 @@ export const adminBotActionTypes = [
    * What is being approved is the resolution, not merely the reading.
    */
   "email_review.resolve",
+  // A member's reply to a reminder, applied without a reviewer because the reading was confident
+  // and the sender is the member who was nudged. In-service (the write is to this store); its
+  // artifacts carry what the store looked like before, which is what `reminder_reply.undo` puts
+  // back. Separate types so the audit log can answer "what did a reply change, and was it undone".
+  "reminder_reply.apply",
+  "reminder_reply.undo",
+  // The one-line confirmation on the member's own thread ("I've marked ... Reply 'undo' if that's
+  // wrong"). A Gmail reply from the bot mailbox, so a connector performs it.
+  "reminder_reply.confirm",
   "member_nudge.send",
   // The three-way Slack DM that asks the head professor to chase what AdminBot could not. Its own
   // type rather than a member_nudge.send with two targets: the audit trail should be able to
@@ -2877,6 +2886,10 @@ export type AdminBotAuditEvent = {
     | "automation_health.alerted"
     | "paperflow_stage.evidenced"
     | "email_review.resolved"
+    // A reminder reply applied without a reviewer, and the member's "undo" taking it back.
+    | "reminder_reply.applied"
+    | "reminder_reply.undone"
+    | "email_review.reminder_reply"
     | "paper_social_draft.saved"
     | "paper_social_draft.circulated"
     | "paper_social_consent.recorded"

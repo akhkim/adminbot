@@ -41,10 +41,11 @@ import type {
 } from "../contracts/badges.js";
 import type { AdminBotConferenceTripRecord } from "../contracts/conference-trips.js";
 import type { PublishedDeadlineRecord } from "../contracts/deadline-proposals.js";
-import type {
-  AdminBotEmailReviewItem,
-  AdminBotEmailReviewResolution,
-  AdminBotResolvedEmailReviewItem,
+import {
+  adminBotEmailReviewResolutionKinds,
+  type AdminBotEmailReviewItem,
+  type AdminBotEmailReviewResolution,
+  type AdminBotResolvedEmailReviewItem,
 } from "../contracts/email-review.js";
 import type { AdminBotFeedbackEntry } from "../contracts/feedback.js";
 import type { DiscoveryPosition } from "../contracts/lab-sharing-discovery-cursor.js";
@@ -666,6 +667,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         recorded_at TEXT NOT NULL,
         recorded_by TEXT NOT NULL,
         confidence REAL,
+        note TEXT,
         PRIMARY KEY (paper_id, stage)
       );
 
@@ -1062,6 +1064,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     this.apiUsage = createApiUsageLogFromDatabase(this.db);
     this.migrateWorkshopMatchRuns();
     this.migrateSessionColumns();
+    this.migratePaperflowEvidenceColumns();
     this.migrateBadgeNominationColumns();
     this.migrateLoginEventColumns();
   }
@@ -1084,6 +1087,20 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
    * -- which is what they all are. Nothing else about the row changes, so live sessions survive
    * the upgrade rather than everybody being signed out by a migration.
    */
+  /** Evidence written before an admin could close a stage from a member's reply has no `note`. */
+  private migratePaperflowEvidenceColumns(): void {
+    const columns = new Set(
+      (
+        this.db.prepare("PRAGMA table_info(adminbot_paperflow_evidence)").all() as Array<{
+          name: string;
+        }>
+      ).map((row) => row.name),
+    );
+    if (!columns.has("note")) {
+      this.db.exec("ALTER TABLE adminbot_paperflow_evidence ADD COLUMN note TEXT");
+    }
+  }
+
   private migrateSessionColumns(): void {
     const columns = new Set(
       (
@@ -1329,6 +1346,21 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       this.db.exec("ROLLBACK");
       throw error;
     }
+  }
+
+  getDeadlineProposalSubmission(
+    submitterMemberId: string,
+    idempotencyKey: string,
+  ): AdminBotStoredProposal | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT p.payload_json
+          FROM adminbot_deadline_submission_keys k
+          JOIN adminbot_proposals p ON p.id = k.action_id
+          WHERE k.submitter_member_id = ? AND k.idempotency_key = ?`,
+      )
+      .get(submitterMemberId, idempotencyKey) as { payload_json?: string } | undefined;
+    return row?.payload_json ? parseJson<AdminBotStoredProposal>(row.payload_json) : undefined;
   }
 
   replaceDeadlineProposalRevision(
@@ -2813,6 +2845,28 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     return rows.map(paperMentorRunFromRow);
   }
 
+  private transactionDepth = 0;
+
+  runInTransaction<T>(fn: () => T): T {
+    // Nested calls join the open transaction. BEGIN IMMEDIATE takes the writer lock up front, so a
+    // second connection waits (busy_timeout) rather than reading state this one is about to change.
+    if (this.transactionDepth > 0) {
+      return fn();
+    }
+    this.db.exec("BEGIN IMMEDIATE");
+    this.transactionDepth += 1;
+    try {
+      const result = fn();
+      this.db.exec("COMMIT");
+      return result;
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    } finally {
+      this.transactionDepth -= 1;
+    }
+  }
+
   savePaperflowEvidence(record: AdminBotPaperflowEvidenceRecord): void {
     // First sighting wins. A stage that already closed stays closed with the mail that closed it:
     // a later bcc on the same decision is the author forwarding the thread again, and letting it
@@ -2820,8 +2874,9 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     this.db
       .prepare(
         `INSERT INTO adminbot_paperflow_evidence
-          (paper_id, stage, message_id, subject, sender, recorded_at, recorded_by, confidence)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          (paper_id, stage, message_id, subject, sender, recorded_at, recorded_by, confidence,
+           note)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(paper_id, stage) DO NOTHING`,
       )
       .run(
@@ -2833,7 +2888,17 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         record.recorded_at,
         record.recorded_by,
         record.confidence ?? null,
+        record.note ?? null,
       );
+  }
+
+  /** Reopen one stage. Only an undo calls this, for a row it can show it wrote. */
+  deletePaperflowEvidence(paperId: string, stage: string): boolean {
+    return (
+      this.db
+        .prepare("DELETE FROM adminbot_paperflow_evidence WHERE paper_id = ? AND stage = ?")
+        .run(paperId, stage).changes > 0
+    );
   }
 
   listPaperflowEvidence(paperId?: string): AdminBotPaperflowEvidenceRecord[] {
@@ -2858,6 +2923,7 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         optionalText(row, "message_id"),
         optionalText(row, "subject"),
         optionalText(row, "sender"),
+        optionalText(row, "note"),
       );
       if (row.confidence !== null && row.confidence !== undefined) {
         record.confidence = Number(row.confidence);
@@ -3012,13 +3078,13 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
                 resolution, resolved_at, resolved_by
            FROM adminbot_email_messages
           WHERE status = 'reviewed'
-            AND resolution IN ('paperflow_evidence', 'dismissed')
+            AND resolution IN (${adminBotEmailReviewResolutionKinds.map(() => "?").join(", ")})
             AND resolved_at IS NOT NULL
             AND resolved_by IS NOT NULL
           ORDER BY resolved_at DESC
           LIMIT ?`,
       )
-      .all(limit) as Array<Record<string, unknown>>;
+      .all(...adminBotEmailReviewResolutionKinds, limit) as Array<Record<string, unknown>>;
     return rows.map(adminBotResolvedEmailReviewFromRow);
   }
 

@@ -1,8 +1,9 @@
 import type { Pool } from "pg";
-import type {
-  AdminBotEmailReviewItem,
-  AdminBotEmailReviewResolution,
-  AdminBotResolvedEmailReviewItem,
+import {
+  adminBotEmailReviewResolutionKinds,
+  type AdminBotEmailReviewItem,
+  type AdminBotEmailReviewResolution,
+  type AdminBotResolvedEmailReviewItem,
 } from "../contracts/email-review.js";
 import { adminBotEmailReviewFromRow, adminBotResolvedEmailReviewFromRow } from "./email-review.js";
 
@@ -71,10 +72,10 @@ export class AdminBotPostgresEmailReviews {
               COALESCE(NULLIF(TRIM(last_error), ''), reason) AS reason, received_at, updated_at,
               resolution, resolved_at, resolved_by
        FROM ${this.table}
-       WHERE status = 'reviewed' AND resolution IN ('paperflow_evidence', 'dismissed')
+       WHERE status = 'reviewed' AND resolution = ANY($2::text[])
          AND resolved_at IS NOT NULL AND resolved_by IS NOT NULL
        ORDER BY resolved_at DESC LIMIT $1`,
-      [limit],
+      [limit, [...adminBotEmailReviewResolutionKinds]],
     );
     return result.rows.map(adminBotResolvedEmailReviewFromRow);
   }

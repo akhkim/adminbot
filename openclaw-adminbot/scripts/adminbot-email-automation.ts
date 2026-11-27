@@ -8,13 +8,19 @@ import { DatabaseSync } from "node:sqlite";
 import { promisify } from "node:util";
 import {
   adminBotPaperflowEvidenceMinConfidence,
+  authoredReplyText,
   createAdminBotSqliteService,
+  createGogAdminBotExecutor,
   ensureAdminBotEmailReviewSchema,
   isAdminBotPaperflowStage,
+  isUndoReply,
   looksLikeZoomRecordingNotice,
   noticeToMeeting,
+  reminderReplySenderEvidence,
   renderEmailBodyHtml,
+  resolveReminderReplyAutoConfig,
 } from "../extensions/adminbot/api.js";
+import type { AdminBotActionExecutor } from "../extensions/adminbot/api.js";
 import {
   getSlackWriteClient,
   resolveSlackAccount,
@@ -149,6 +155,11 @@ export type EmailMessage = {
   subject: string;
   body: string;
   internalDate?: string;
+  /** Every Authentication-Results header, top (the receiving server's) first. Empty when absent. */
+  authenticationResults?: string[];
+  replyTo?: string;
+  inReplyTo?: string;
+  references?: string;
 };
 
 export type OnboardingDecision = "trial" | "direct" | "decline";
@@ -1043,17 +1054,64 @@ function normalizeMessage(value: unknown): EmailMessage | undefined {
     subject: String(row.subject ?? headerValue(row, "Subject") ?? ""),
     body: String(row.body ?? row.text ?? row.snippet ?? ""),
     internalDate: row.internalDate ? String(row.internalDate) : undefined,
+    authenticationResults: headerValues(row, "Authentication-Results"),
+    ...optionalHeader(row, "replyTo", "Reply-To"),
+    ...optionalHeader(row, "inReplyTo", "In-Reply-To"),
+    ...optionalHeader(row, "references", "References"),
   };
 }
 
 function headerValue(row: Record<string, unknown>, name: string): unknown {
-  const headers = (
-    row.payload as
-      { headers?: Array<{ name?: string; value?: string }> } | undefined
-  )?.headers;
-  return headers?.find(
-    (header) => header.name?.toLowerCase() === name.toLowerCase(),
-  )?.value;
+  return headerValues(row, name)[0];
+}
+
+/**
+ * Every value of one header, in message order, from Gmail's ordered `payload.headers` list only.
+ *
+ * Order is what makes Authentication-Results trustworthy: the top one is the one Gmail added on
+ * receipt. A flat map of header names loses that order (and which copy is whose), so it is not
+ * read; a message in that shape has no headers, and so reads as unauthenticated.
+ */
+function headerValues(row: Record<string, unknown>, name: string): string[] {
+  const wanted = name.toLowerCase();
+  const list = (row.payload as { headers?: unknown } | undefined)?.headers;
+  if (!Array.isArray(list)) {
+    return [];
+  }
+  const values: string[] = [];
+  for (const header of list as Array<{ name?: unknown; value?: unknown }>) {
+    if (
+      typeof header?.name === "string" &&
+      header.name.toLowerCase() === wanted &&
+      typeof header.value === "string"
+    ) {
+      values.push(header.value);
+    }
+  }
+  return values;
+}
+
+/** The headers sender evidence is built from, read from a Gmail API message. */
+export function reminderReplyHeaders(
+  row: Record<string, unknown>,
+): Pick<EmailMessage, "authenticationResults" | "replyTo" | "inReplyTo" | "references"> {
+  return {
+    authenticationResults: headerValues(row, "Authentication-Results"),
+    ...optionalHeader(row, "replyTo", "Reply-To"),
+    ...optionalHeader(row, "inReplyTo", "In-Reply-To"),
+    ...optionalHeader(row, "references", "References"),
+  };
+}
+
+function optionalHeader<K extends "replyTo" | "inReplyTo" | "references">(
+  row: Record<string, unknown>,
+  key: K,
+  name: string,
+): Partial<Record<K, string>> {
+  const value = headerValue(row, name);
+  return typeof value === "string" && value.trim()
+    ? ({ [key]: value.trim() } as Partial<Record<K, string>>)
+    : {};
 }
 
 const IMAGE_MIME_TYPES = new Set([
@@ -1762,6 +1820,201 @@ async function fileRecordingNotice(
   return true;
 }
 
+/**
+ * Turn a member's reply to an AdminBot reminder into a proposal an admin approves in one click.
+ *
+ * Runs before the classifier, which has no category for "yes, we submitted it" and would park it as
+ * an opaque unknown while the reminder kept firing. The match itself is deterministic -- the Gmail
+ * thread of the send, else the reminder's subject from the same sender -- so the model only reads
+ * what the reply says, never who it is about. Nothing closes here: the service files a held review
+ * and proposes `email_review.resolve`; the reminder is quiet only once an admin approves it.
+ *
+ * With ADMINBOT_REMINDER_REPLY_AUTO_ENABLED=1, a reply that passes the safe-auto rule is applied
+ * instead (service.reminder-reply-auto.ts): Gmail authenticated the member's own roster address,
+ * it is an In-Reply-To on the reminder's own thread, it is not forwarded, and it is a plain "done"
+ * for one PaperFlow stage. That stage closes, the member gets a fixed receipt at their roster
+ * address, and an authenticated "undo" from them puts it back. Everything else waits for an admin.
+ *
+ * Returns "none" when the mail does not answer a reminder, so the caller falls through to the
+ * normal path; "skipped" when an earlier pass already claimed it; "handled" when it was applied or
+ * undone; "proposed" otherwise, with the message left in needs_review.
+ */
+export async function fileReminderReply(
+  message: EmailMessage,
+  state: Pick<StateStore, "begin" | "finish">,
+  model: Pick<AdminBotEmailModel, "reminderReply">,
+  databasePath: string,
+  nowIso?: string,
+  options: {
+    env?: NodeJS.ProcessEnv;
+    executor?: AdminBotActionExecutor;
+    account?: string;
+    /**
+     * Fetch the message from Gmail (`gog gmail raw --format full`) for its ordered headers. In auto
+     * mode the sender evidence is read from this, not from the search row; a failed fetch reads as
+     * unauthenticated, so the reply can only be proposed.
+     */
+    fetchMessage?: (messageId: string) => Promise<Record<string, unknown>>;
+  } = {},
+): Promise<"none" | "skipped" | "proposed" | "handled"> {
+  const auto = resolveReminderReplyAutoConfig(options.env ?? process.env).enabled;
+  const { service, close } = createAdminBotSqliteService({
+    databasePath,
+    ...(auto ? { executor: options.executor ?? createGogAdminBotExecutor() } : {}),
+  });
+  const account = auto ? (options.account ?? botEmail()) : undefined;
+  try {
+    const sender = normalizeAddress(message.from);
+    // What Gmail saw about who sent this. A mail without the headers reads as unauthenticated, so
+    // it can still be proposed to an admin but never applies on its own.
+    let headers: Pick<
+      EmailMessage,
+      "authenticationResults" | "replyTo" | "inReplyTo" | "references"
+    > = message;
+    if (auto && options.fetchMessage) {
+      try {
+        headers = reminderReplyHeaders(await options.fetchMessage(message.id));
+      } catch {
+        headers = { authenticationResults: [] };
+      }
+    }
+    const senderEvidence = reminderReplySenderEvidence({
+      from: sender,
+      ...(headers.replyTo ? { replyTo: headers.replyTo } : {}),
+      ...(headers.inReplyTo ? { inReplyTo: headers.inReplyTo } : {}),
+      ...(headers.references ? { references: headers.references } : {}),
+      authenticationResults: headers.authenticationResults ?? [],
+      subject: message.subject,
+      body: message.body,
+    });
+    // An "undo" answers AdminBot's receipt, not the reminder, so it is checked first. Only a
+    // member's own applied reply on this thread can be undone; anything else falls through.
+    if (
+      auto &&
+      isUndoReply(message.body) &&
+      service.findUndoableReminderReply({ threadId: message.threadId, sender })
+    ) {
+      if (
+        !state.begin(message, { category: "reminder_reply", reason: "undo of an applied reply" })
+      ) {
+        return "skipped";
+      }
+      const undone = await service.undoReminderReplyFromEmail({
+        threadId: message.threadId,
+        sender,
+        messageId: message.id,
+        senderEvidence,
+        ...(account ? { account } : {}),
+      });
+      if (undone.ok) {
+        state.finish(
+          message.id,
+          "completed",
+          `undid ${undone.payload.apply_action_id}${undone.payload.confirm_error ? `; receipt not sent: ${undone.payload.confirm_error}` : ""}`,
+        );
+        return "handled";
+      }
+      state.finish(message.id, "needs_review", `undo request: ${undone.error.message}`);
+      return "proposed";
+    }
+    const match = service.matchReminderReply({
+      sender,
+      subject: message.subject,
+      threadId: message.threadId,
+      ...(nowIso ? { nowIso } : {}),
+    });
+    if (!match) {
+      return "none";
+    }
+    const asked = `reply to AdminBot reminder "${match.reminder_subject}"`;
+    if (!state.begin(message, { category: "reminder_reply", reason: asked })) {
+      return "skipped";
+    }
+    try {
+      // Only what the member wrote this time is read: quoted history and a forwarded original are
+      // someone else's words and must not steer the reading.
+      const read = await model.reminderReply({ ...message, body: authoredReplyText(message.body) }, {
+        subject: match.reminder_subject,
+        body: match.reminder_body,
+        asks: match.targets.map((target) => target.label),
+      });
+      const params = {
+        messageId: message.id,
+        threadId: message.threadId,
+        sender,
+        subject: message.subject,
+        ...(message.internalDate
+          ? { receivedAt: new Date(Number(message.internalDate)).toISOString() }
+          : {}),
+        reading: {
+          intent: read.intent,
+          note: read.note,
+          ...(read.evidenceUrl ? { evidence_url: read.evidenceUrl } : {}),
+          ...(read.until ? { until: read.until } : {}),
+          moved_elsewhere: read.movedElsewhere,
+          confidence: read.confidence,
+        },
+        senderEvidence,
+        actor: "adminbot-email-automation",
+        ...(nowIso ? { nowIso } : {}),
+      };
+      if (auto) {
+        const handled = await service.autoApplyReminderReply({
+          ...params,
+          ...(account ? { account } : {}),
+        });
+        if (handled.ok && handled.payload.mode === "applied") {
+          state.finish(
+            message.id,
+            "completed",
+            `${asked}: applied ${handled.payload.apply_action_id}${handled.payload.confirm_error ? `; receipt not sent: ${handled.payload.confirm_error}` : ""}`,
+          );
+          return "handled";
+        }
+        if (handled.ok && handled.payload.mode === "duplicate") {
+          // The store holds an apply of this message that executed: a re-run, not a new answer.
+          // (One filed but never executed is run again by the service and reports "applied".)
+          state.finish(
+            message.id,
+            "completed",
+            `${asked}: already applied as ${handled.payload.apply_action_id ?? "an earlier action"}`,
+          );
+          return "handled";
+        }
+        state.finish(
+          message.id,
+          "needs_review",
+          handled.ok
+            ? handled.payload.mode === "proposed"
+              ? `${asked}: ${read.intent}; proposed ${handled.payload.resolution} for admin approval${handled.payload.apply_error ? ` (apply failed: ${handled.payload.apply_error})` : ""}`
+              : `${asked}: ${read.intent}; held for admin review`
+            : `${asked}: ${handled.error.message}`,
+        );
+        return "proposed";
+      }
+      const proposed = service.proposeReminderReply(params);
+      state.finish(
+        message.id,
+        "needs_review",
+        proposed.ok
+          ? `${asked}: ${read.intent}; proposed ${proposed.payload.resolution} for admin approval`
+          : `${asked}: ${proposed.error.message}`,
+      );
+    } catch (error) {
+      // The claim is held, so a failed read must still land somewhere a person looks rather than
+      // staying "processing" and blocking the watermark.
+      state.finish(
+        message.id,
+        "needs_review",
+        `${asked}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    return "proposed";
+  } finally {
+    close();
+  }
+}
+
 export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
   loadDotEnv(path.join(os.homedir(), ".openclaw", ".env"));
   process.env.GOG_ACCOUNT = botEmail();
@@ -1876,6 +2129,32 @@ export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
           );
           await file(message.id, "failed");
         }
+        continue;
+      }
+      // A reply to one of AdminBot's own reminders: matched by thread or subject and sender, read
+      // by the model, and turned into a held proposal rather than a guess at a category.
+      try {
+        const replied = await fileReminderReply(message, state, model, databasePath, undefined, {
+          fetchMessage: (id) => google.raw(id),
+        });
+        if (replied !== "none") {
+          if (replied === "skipped") {
+            summary.skipped += 1;
+          } else if (replied === "handled") {
+            summary.completed += 1;
+            await file(message.id, "completed");
+          } else {
+            summary.needs_review += 1;
+            await file(message.id, "needs_review");
+          }
+          continue;
+        }
+      } catch (error) {
+        summary.failed += 1;
+        summary.errors.push(
+          `${message.id}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        await file(message.id, "failed");
         continue;
       }
       const onboarding =

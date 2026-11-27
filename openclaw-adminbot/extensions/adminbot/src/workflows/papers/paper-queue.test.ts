@@ -13,6 +13,7 @@ import {
   daysLeft,
   isConferenceHeld,
   isPaperConferenceOver,
+  isVenueSuperseded,
   isSlotObsoleteAfterConference,
   nextArxivStep,
   openReviewPaperHistory,
@@ -840,5 +841,34 @@ describe("camera-readies for a conference that has been held", () => {
     const history = piReviewHistory(rows);
     expect(history).toHaveLength(PI_REVIEW_HISTORY_LIMIT);
     expect(history[0]?.paper_id).toBe(`p${PI_REVIEW_HISTORY_LIMIT + 4}`);
+  });
+});
+
+describe("isVenueSuperseded", () => {
+  const icml2027 = [
+    { name: "ICML 2027", venue_group: "ICML 2027", venue_family: "ICML", venue_type: "conference" },
+  ];
+  const now = new Date("2026-11-21T12:00:00Z");
+
+  it("is over once the dataset lists only a later edition of the venue", () => {
+    expect(isVenueSuperseded("ICML 2026 Workshop AI4GOOD", icml2027)).toBe(true);
+    expect(isVenueSuperseded("ICML 2027", icml2027)).toBe(false);
+    expect(isVenueSuperseded("NeurIPS 2026", icml2027)).toBe(false);
+    expect(isVenueSuperseded(undefined, icml2027)).toBe(false);
+  });
+
+  it("closes the conference for an accepted workshop paper whose dates were never listed", () => {
+    const paper = {
+      id: "p",
+      title: "t",
+      venue: "ICML 2026 Workshop AI4GOOD",
+      venue_decision: "accept",
+      accepted_year: 2026,
+    } as unknown as AdminBotPaperRecord;
+    expect(isPaperConferenceOver(paper, icml2027, now)).toBe(true);
+    expect(isPaperConferenceOver({ ...paper, venue_decision: undefined }, icml2027, now)).toBe(
+      false,
+    );
+    expect(isPaperConferenceOver(paper, [], now)).toBe(false);
   });
 });

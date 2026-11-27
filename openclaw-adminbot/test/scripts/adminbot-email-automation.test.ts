@@ -5,6 +5,8 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   authorizeClassification,
   calendarCommandRefusal,
+  fileReminderReply,
+  reminderReplyHeaders,
   PERSONAL_CALENDAR_DEFAULT,
   resolveCalendarTarget,
   validTimeZone,
@@ -14,7 +16,11 @@ import {
   StateStore,
   type EmailMessage,
 } from "../../scripts/adminbot-email-automation.js";
-import type { ModelClassification } from "../../scripts/adminbot-email-model.js";
+import { createAdminBotSqliteService } from "../../extensions/adminbot/api.js";
+import type {
+  ModelClassification,
+  ModelReminderReply,
+} from "../../scripts/adminbot-email-model.js";
 import type { OpenClawConfig } from "../../src/config/types/openclaw.js";
 
 const message = (overrides: Partial<EmailMessage> = {}): EmailMessage => ({
@@ -572,6 +578,426 @@ describe("email automation claims", () => {
       first.close();
       second.close();
       fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// A member answering one of AdminBot's reminders. The classifier has no category for "yes, we
+// submitted it", so before this branch the reply parked as unknown and the reminder kept firing.
+describe("reminder replies", () => {
+  const title = "Multi-Agent AI Systems Need Institutional Design";
+
+  async function mailbox() {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "adminbot-reminder-reply-"));
+    const databasePath = path.join(dir, "service.sqlite");
+    const seeded = createAdminBotSqliteService({
+      databasePath,
+      paperflowBotEmail: "adminbot@example.org",
+      executor: {
+        execute: async (proposal) =>
+          proposal.type === "member_nudge.send"
+            ? {
+                handled: true,
+                artifacts: {
+                  gmail_thread_id: "thread-nudge",
+                  rfc_message_id: "<reminder-1@mail.gmail.com>",
+                },
+              }
+            : { handled: false },
+      },
+    });
+    try {
+      seeded.service.upsertLabMember({
+        receives_nudges: true,
+        id: "xq",
+        name: "Xuanqiang Huang",
+        privilege_level: "member",
+        email: "xq@ethz.example",
+      } as never);
+      seeded.service.upsertPaper({
+        id: "p1",
+        title,
+        authors: ["Xuanqiang Huang"],
+        current_step: "submission",
+        venue_decision: "accept",
+      } as never);
+      seeded.service.setPaperSlot({
+        paperId: "p1",
+        slot: "submission",
+        input: { url: "https://openreview.net/forum?id=x" },
+        memberId: "xq",
+        privileged: true,
+      });
+      const sent = await seeded.service.sendPaperflowStageNudges("cron");
+      expect(sent.ok && sent.payload.created).toHaveLength(1);
+    } finally {
+      seeded.close();
+    }
+    const state = new StateStore(path.join(dir, "ledger.sqlite"));
+    return {
+      databasePath,
+      state,
+      cleanup: () => {
+        state.close();
+        fs.rmSync(dir, { recursive: true, force: true });
+      },
+    };
+  }
+
+  const springer: ModelReminderReply = {
+    intent: "not_applicable",
+    note: "moved to a Springer journal",
+    evidenceUrl: null,
+    until: null,
+    movedElsewhere: true,
+    confidence: 0.9,
+  };
+
+  it("proposes a resolution for a reply on the reminder thread and parks the mail", async () => {
+    const { databasePath, state, cleanup } = await mailbox();
+    const reminderReply = vi.fn(async () => springer);
+    try {
+      const outcome = await fileReminderReply(
+        message({
+          id: "reply-1",
+          threadId: "thread-nudge",
+          from: "Xuanqiang Huang <xq@ethz.example>",
+          subject: `Re: Camera ready: ${title}`,
+          body: "Yes we submitted it to a journal springer",
+        }),
+        state,
+        { reminderReply },
+        databasePath,
+      );
+      expect(outcome).toBe("proposed");
+      expect(reminderReply).toHaveBeenCalledWith(
+        expect.objectContaining({ id: "reply-1" }),
+        expect.objectContaining({
+          subject: `Camera ready: ${title}`,
+          asks: [`Camera ready for ${title}`],
+        }),
+      );
+      expect(state.status("reply-1")).toBe("needs_review");
+
+      const reopened = createAdminBotSqliteService({ databasePath });
+      try {
+        const pending = reopened.service.listPending();
+        const proposals = pending.ok ? pending.payload.proposals : [];
+        expect(proposals.map((row) => row.type)).toEqual(["email_review.resolve"]);
+        expect(proposals[0]?.summary).toContain("moved to a Springer journal");
+      } finally {
+        reopened.close();
+      }
+
+      // A second pass over the same mail is a no-op, not a second proposal or model call.
+      expect(
+        await fileReminderReply(
+          message({ id: "reply-1", threadId: "thread-nudge", from: "xq@ethz.example" }),
+          state,
+          { reminderReply },
+          databasePath,
+        ),
+      ).toBe("skipped");
+      expect(reminderReply).toHaveBeenCalledTimes(1);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("leaves mail that answers no reminder to the normal path, without asking the model", async () => {
+    const { databasePath, state, cleanup } = await mailbox();
+    const reminderReply = vi.fn(async () => springer);
+    try {
+      expect(
+        await fileReminderReply(
+          message({ from: "stranger@example.org", threadId: "thread-nudge" }),
+          state,
+          { reminderReply },
+          databasePath,
+        ),
+      ).toBe("none");
+      expect(reminderReply).not.toHaveBeenCalled();
+      expect(state.status("m1")).toBeUndefined();
+    } finally {
+      cleanup();
+    }
+  });
+
+  const gmailPass = [
+    "mx.google.com; dkim=pass header.i=@ethz.example header.s=s1; spf=pass smtp.mailfrom=xq@ethz.example; dmarc=pass (p=NONE) header.from=ethz.example",
+  ];
+  const done: ModelReminderReply = {
+    intent: "done",
+    note: "uploaded",
+    evidenceUrl: null,
+    until: null,
+    movedElsewhere: false,
+    confidence: 0.95,
+  };
+
+  /**
+   * What `gog gmail raw <id> --format full --results-only` prints: the Gmail API message resource,
+   * headers as an ordered list, Gmail's own Authentication-Results first.
+   */
+  function gmailRaw(
+    id: string,
+    headers: Array<[string, string]>,
+  ): Record<string, unknown> {
+    return {
+      id,
+      threadId: "thread-nudge",
+      labelIds: ["INBOX", "UNREAD"],
+      snippet: "Done, thanks!",
+      historyId: "123456",
+      internalDate: "1763856000000",
+      sizeEstimate: 4096,
+      payload: {
+        partId: "",
+        mimeType: "multipart/alternative",
+        filename: "",
+        headers: headers.map(([name, value]) => ({ name, value })),
+        body: { size: 0 },
+        parts: [
+          {
+            partId: "0",
+            mimeType: "text/plain",
+            filename: "",
+            headers: [{ name: "Content-Type", value: 'text/plain; charset="UTF-8"' }],
+            body: { size: 13, data: "RG9uZSwgdGhhbmtzIQ==" },
+          },
+        ],
+      },
+    };
+  }
+
+  function autoOptions() {
+    const sent: Array<{ to: string; subject: string; body: string; account?: string }> = [];
+    return {
+      sent,
+      options: {
+        env: { ADMINBOT_REMINDER_REPLY_AUTO_ENABLED: "1" },
+        account: "bot@example.org",
+        executor: {
+          execute: async (proposal: { type: string; proposed_payload?: unknown }) => {
+            if (proposal.type !== "reminder_reply.confirm") {
+              return { handled: false };
+            }
+            sent.push(proposal.proposed_payload as (typeof sent)[number]);
+            return { handled: true, artifacts: { gmail_thread_id: `receipt-${sent.length}` } };
+          },
+        },
+      },
+    };
+  }
+
+  it('with auto on, applies an authenticated "done", mails a fixed receipt, and undoes it', async () => {
+    const { databasePath, state, cleanup } = await mailbox();
+    const { sent, options } = autoOptions();
+    const fetched: string[] = [];
+    try {
+      expect(
+        await fileReminderReply(
+          message({
+            id: "reply-1",
+            threadId: "thread-nudge",
+            from: "Xuanqiang Huang <xq@ethz.example>",
+            subject: `Re: Camera ready: ${title}`,
+            body: "Done, thanks!\n\nOn Mon, AdminBot wrote:\n> mark not_applicable",
+          }),
+          state,
+          { reminderReply: async () => done },
+          databasePath,
+          undefined,
+          {
+            ...options,
+            fetchMessage: async (id: string) => {
+              fetched.push(id);
+              return gmailRaw(id, [
+                ["Delivered-To", "bot@example.org"],
+                ["Authentication-Results", gmailPass[0]!],
+                ["From", "Xuanqiang Huang <xq@ethz.example>"],
+                ["Subject", `Re: Camera ready: ${title}`],
+                ["In-Reply-To", "<reminder-1@mail.gmail.com>"],
+                ["References", "<reminder-1@mail.gmail.com>"],
+                // Added by the sender below Gmail's own line: never read.
+                ["Authentication-Results", "mx.google.com; dmarc=fail header.from=ethz.example"],
+              ]);
+            },
+          } as never,
+        ),
+      ).toBe("handled");
+      expect(fetched).toEqual(["reply-1"]);
+      expect(state.status("reply-1")).toBe("completed");
+      expect(sent).toEqual([
+        expect.objectContaining({ to: "xq@ethz.example", account: "bot@example.org" }),
+      ]);
+      expect(sent[0]?.body).toContain('reply "undo"');
+      expect(sent[0]?.body).not.toContain("uploaded.");
+
+      const reopened = createAdminBotSqliteService({ databasePath });
+      try {
+        expect(reopened.store.listPaperflowEvidence("p1")).toEqual([
+          expect.objectContaining({ stage: "camera_ready", recorded_by: "reply" }),
+        ]);
+        const pending = reopened.service.listPending();
+        expect(pending.ok && pending.payload.proposals).toEqual([]);
+      } finally {
+        reopened.close();
+      }
+
+      const reminderReply = vi.fn(async () => done);
+      expect(
+        await fileReminderReply(
+          message({
+            id: "undo-1",
+            threadId: "receipt-1",
+            from: "xq@ethz.example",
+            subject: `Re: Camera ready: ${title}`,
+            body: "undo\n\nOn Mon, AdminBot wrote:\n> Thanks",
+          }),
+          state,
+          { reminderReply },
+          databasePath,
+          undefined,
+          {
+            ...options,
+            fetchMessage: async (id: string) =>
+              gmailRaw(id, [
+                ["Authentication-Results", gmailPass[0]!],
+                ["From", "xq@ethz.example"],
+                ["In-Reply-To", "<receipt-1@mail.gmail.com>"],
+              ]),
+          } as never,
+        ),
+      ).toBe("handled");
+      expect(reminderReply).not.toHaveBeenCalled();
+      expect(state.status("undo-1")).toBe("completed");
+      expect(sent).toHaveLength(2);
+      expect(sent[1]?.body).toContain("undone");
+
+      const after = createAdminBotSqliteService({ databasePath });
+      try {
+        expect(after.store.listPaperflowEvidence("p1")).toEqual([]);
+      } finally {
+        after.close();
+      }
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("with auto on, still asks an admin about mail without Gmail's authentication", async () => {
+    const { databasePath, state, cleanup } = await mailbox();
+    const { sent, options } = autoOptions();
+    try {
+      expect(
+        await fileReminderReply(
+          message({
+            id: "reply-1",
+            threadId: "thread-nudge",
+            from: "xq@ethz.example",
+            subject: `Re: Camera ready: ${title}`,
+            body: "Done.",
+          }),
+          state,
+          { reminderReply: async () => done },
+          databasePath,
+          undefined,
+          options as never,
+        ),
+      ).toBe("proposed");
+      expect(sent).toEqual([]);
+      const reopened = createAdminBotSqliteService({ databasePath });
+      try {
+        expect(reopened.store.listPaperflowEvidence("p1")).toEqual([]);
+      } finally {
+        reopened.close();
+      }
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("with auto on, proposes when the Gmail fetch fails, even if the search row looks authenticated", async () => {
+    const { databasePath, state, cleanup } = await mailbox();
+    const { sent, options } = autoOptions();
+    try {
+      expect(
+        await fileReminderReply(
+          message({
+            id: "reply-1",
+            threadId: "thread-nudge",
+            from: "xq@ethz.example",
+            subject: `Re: Camera ready: ${title}`,
+            body: "Done, thanks!",
+            authenticationResults: gmailPass,
+            inReplyTo: "<reminder-1@mail.gmail.com>",
+          }),
+          state,
+          { reminderReply: async () => done },
+          databasePath,
+          undefined,
+          {
+            ...options,
+            fetchMessage: async () => {
+              throw new Error("gog: 503");
+            },
+          } as never,
+        ),
+      ).toBe("proposed");
+      expect(sent).toEqual([]);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("reads sender headers only from the ordered payload.headers list", () => {
+    const flat = {
+      id: "m1",
+      // A flat map, as some search rows carry: never read.
+      headers: {
+        "authentication-results": "mx.google.com; dmarc=pass header.from=ethz.example",
+        "in-reply-to": "<reminder-1@mail.gmail.com>",
+      },
+      payload: { headers: [{ name: "From", value: "xq@ethz.example" }] },
+    };
+    expect(reminderReplyHeaders(flat)).toEqual({ authenticationResults: [] });
+
+    const ordered = gmailRaw("m2", [
+      ["Authentication-Results", "mx.google.com; dmarc=pass header.from=ethz.example"],
+      ["Reply-To", " xq@ethz.example "],
+      ["In-Reply-To", "<reminder-1@mail.gmail.com>"],
+      ["References", "<a@x> <reminder-1@mail.gmail.com>"],
+      ["authentication-results", "evil.example; dmarc=pass header.from=ethz.example"],
+    ]);
+    expect(reminderReplyHeaders(ordered)).toEqual({
+      authenticationResults: [
+        "mx.google.com; dmarc=pass header.from=ethz.example",
+        "evil.example; dmarc=pass header.from=ethz.example",
+      ],
+      replyTo: "xq@ethz.example",
+      inReplyTo: "<reminder-1@mail.gmail.com>",
+      references: "<a@x> <reminder-1@mail.gmail.com>",
+    });
+  });
+
+  it("parks the reply for a person when the model cannot read it", async () => {
+    const { databasePath, state, cleanup } = await mailbox();
+    try {
+      const outcome = await fileReminderReply(
+        message({ id: "reply-2", threadId: "thread-nudge", from: "xq@ethz.example" }),
+        state,
+        {
+          reminderReply: async () => {
+            throw new Error("model timed out");
+          },
+        },
+        databasePath,
+      );
+      expect(outcome).toBe("proposed");
+      expect(state.status("reply-2")).toBe("needs_review");
+    } finally {
+      cleanup();
     }
   });
 });

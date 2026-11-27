@@ -172,6 +172,8 @@ export function openPaperflowStage(params: {
   slots: readonly AdminBotPaperSlotRecord[];
   evidence: readonly AdminBotPaperflowEvidenceRecord[];
   now: Date;
+  /** The venue's conference has been held (paper-queue.ts `isPaperConferenceOver`). */
+  conferenceOver?: boolean;
 }): OpenPaperflowStage | undefined {
   const { paper, slots, evidence, now } = params;
   if (isPaperDormant(paper, now) || isPaperClosed(paper)) {
@@ -222,7 +224,15 @@ export function openPaperflowStage(params: {
   if (!seen.has("camera_ready")) {
     return open("camera_ready", "accepted and the camera ready has not been confirmed");
   }
-  if (!seen.has("conference")) {
+  // A conference already held is not one anybody is travelling to; asking is the mail that tells
+  // an author these reminders are not reading the calendar. The year rule needs nothing but the
+  // record; `conferenceOver` is the caller's read of the deadline dataset, which also knows when
+  // a venue earlier this year has been held.
+  if (
+    !seen.has("conference") &&
+    !params.conferenceOver &&
+    !(typeof paper.accepted_year === "number" && paper.accepted_year < now.getUTCFullYear())
+  ) {
     return open("conference", "accepted and conference travel has not been confirmed");
   }
   return undefined;

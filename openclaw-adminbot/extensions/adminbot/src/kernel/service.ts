@@ -174,6 +174,8 @@ import type {
   AdminBotEmailReviewItem,
   AdminBotEmailReviewPaperflowCandidate,
   AdminBotEmailReviewResolution,
+  AdminBotReminderReplyMatch,
+  AdminBotReminderReplyReading,
   AdminBotResolvedEmailReviewItem,
 } from "../contracts/email-review.js";
 import {
@@ -332,6 +334,7 @@ import {
 import {
   byUrgency,
   deadlineInstant,
+  isLetterStatusSubmitted,
   prepareLogisticsRequest,
   withoutAttachmentBytes,
   withCurrentLogisticsDeadline,
@@ -669,6 +672,33 @@ import {
   sweepRecLetterOverdueConfirmations,
   undoLetterConfirmation,
 } from "./service.rec-letter-overdue.js";
+import {
+  isReminderReplyReading,
+  listReminderSends,
+  matchReminderSend,
+  parseEmailReviewResolution,
+  reminderReplyResolution,
+  reminderReplySnoozeDays,
+  reminderTargets,
+} from "./service.reminder-replies.js";
+import {
+  autoApplyReminderReply,
+  bareAddress,
+  executeReminderReplyApply,
+  executeReminderReplyUndo,
+  expectedReceipt,
+  findUndoableApply,
+  parseApplyPayload,
+  parseSenderEvidence,
+  reminderReplyConfirmationBody,
+  reminderReplyReceiptSubject,
+  safeAutoVerdict,
+  sendReminderReplyNote,
+  undoneBy,
+  type ReminderReplyAutoDeps,
+  type ReminderReplyAutoOutcome,
+  type ReminderReplySenderEvidence,
+} from "./service.reminder-reply-auto.js";
 import { ScheduledMemberChangeService } from "./service.scheduled-member-changes.js";
 import { runSlackRosterSync, type SlackRosterSyncOptions } from "./service.slack-roster-sync.js";
 import {
@@ -715,6 +745,11 @@ export type AdminBotMeetingArtifactRecord = {
 };
 
 export type AdminBotServiceStore = AdminBotCitationCheckStores & {
+  /**
+   * Run `fn` as one write transaction: everything it writes commits together or not at all, and
+   * no other connection writes in between. Optional: a store without it runs `fn` directly.
+   */
+  runInTransaction?<T>(fn: () => T): T;
   saveHelpInterest(interest: LabHelpInterest): void;
   listHelpInterests(): LabHelpInterest[];
   saveDirectorStatus(status: LabDirectorStatus | null): void;
@@ -742,6 +777,11 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
     submitterMemberId: string,
     idempotencyKey: string,
   ): { proposal: AdminBotStoredProposal; created: boolean };
+  /** The proposal saved under this key by `saveDeadlineProposalSubmission`, if any. Read only. */
+  getDeadlineProposalSubmission?(
+    submitterMemberId: string,
+    idempotencyKey: string,
+  ): AdminBotStoredProposal | undefined;
   replaceDeadlineProposalRevision(
     previous: AdminBotStoredProposal,
     next: AdminBotStoredProposal,
@@ -896,6 +936,7 @@ export type AdminBotServiceStore = AdminBotCitationCheckStores & {
   listPaperMentorRuns(paperId?: string): AdminBotPaperMentorRun[];
   /** First sighting wins: a stage that already closed keeps the mail that closed it. */
   savePaperflowEvidence(record: AdminBotPaperflowEvidenceRecord): void;
+  deletePaperflowEvidence(paperId: string, stage: string): boolean;
   /** One paper's stage evidence, or every paper's when the id is omitted. */
   listPaperflowEvidence(paperId?: string): AdminBotPaperflowEvidenceRecord[];
   /** Messages the hourly mailbox pass refused to automate, newest first. */
@@ -1561,6 +1602,17 @@ const DEFAULT_ACTION_POLICIES = {
   // is not done here (a role is not a person); it is the Slack account's allowFrom list, which is
   // what `isSlackApprovalAuthorizedSender` tests. See deploy/aurora/adminbot.env.example.
   "email_review.resolve": approvalPolicy("T3", ["admin"]),
+  // The three reminder-reply actions run without an approval, and T1 because resolvePolicy only
+  // honors auto_allowed below T2. Nothing a caller types reaches them: createProposal refuses the
+  // types outright, and the only creator is the service's own keyed path for a reply that passed
+  // safeAutoVerdict -- authenticated From on the member's roster address, the reminder's own
+  // thread, not forwarded, a plain "done" for one open PaperFlow stage. The execute arms re-check
+  // all of it rather than trusting the creator, the confirm may only mail the fixed receipt to the
+  // roster address, and the undo only runs for the member. Everything else is email_review.resolve
+  // above, which changes nothing until a named admin approves it.
+  "reminder_reply.apply": autoPolicy("T1"),
+  "reminder_reply.undo": autoPolicy("T1"),
+  "reminder_reply.confirm": autoPolicy("T1"),
   "deadline.recommend": approvalPolicy("T1", ["recommender"]),
   "member_nudge.send": autoPolicy("T1"),
   // Auto-approved on the same reasoning as member_nudge.send, and T1 for the same mechanical
@@ -2063,6 +2115,12 @@ export class AdminBotService {
     if (typeof proposal.summary !== "string" || !proposal.summary.trim()) {
       return serviceError(400, "summary is required");
     }
+    if (proposal.type.startsWith("reminder_reply.")) {
+      // These run with no approver, so nobody may file one: not a tool call, not the HTTP API, not
+      // another sweep. The service makes them itself, from a reply it checked, through
+      // createKeyedInternalProposal.
+      return serviceError(403, "reminder_reply actions are created only by AdminBot from a reply");
+    }
     const blocked = this.slackInviteBlock(proposal);
     if (blocked) {
       // Refused rather than proposed: T1 auto-approves, so a proposal here is an execution, and an
@@ -2550,6 +2608,35 @@ export class AdminBotService {
       joined.push({ channel: theme.meetingChannel, theme: theme.id, member_id: member.id });
     }
     return { joined, skipped };
+  }
+
+  /**
+   * A proposal the service files for itself, at most once per key, whatever became of the first.
+   *
+   * The key is enforced in storage (the same join deadline submissions use), so two mail passes
+   * over one message at once, or a pass after the first was approved but not yet run, get the
+   * existing proposal back with `created: false` and run nothing new.
+   */
+  private createKeyedInternalProposal(
+    proposal: AdminBotActionProposal,
+    scope: "reminder_reply" | "email_review",
+    key: string,
+  ): AdminBotServiceResponse<{ proposal: AdminBotStoredProposal; created: boolean }> {
+    if (!(adminBotActionTypes as readonly string[]).includes(proposal.type)) {
+      return serviceError(400, "unsupported action type");
+    }
+    if (typeof proposal.summary !== "string" || !proposal.summary.trim()) {
+      return serviceError(400, "summary is required");
+    }
+    const saved = this.store.saveDeadlineProposalSubmission(
+      this.prepareProposal(proposal),
+      scope,
+      key,
+    );
+    if (saved.created) {
+      this.auditProposalCreation(saved.proposal);
+    }
+    return { ok: true, status: 200, payload: saved };
   }
 
   private prepareProposal(proposal: AdminBotActionProposal): AdminBotStoredProposal {
@@ -3387,21 +3474,98 @@ export class AdminBotService {
           "email review resolution has no named approver",
         );
       }
-      const applied = this.resolveEmailReview({
-        messageId: settlement.message_id,
-        resolution: settlement.resolution,
-        actor: resolvedBy,
-      });
-      // Its own guards decide this: the item may have been settled in the Control UI while the
-      // approval sat in Slack, or the stage it would close may have shut since. Either way the
-      // execution fails with that reason instead of reporting a resolution that did not happen.
-      if (!applied.ok) {
-        return this.executionFailure(proposal, applied.status, applied.error.message);
+      // One store transaction from the checks to the last write. The safe path's apply writes the
+      // stage and withdraws this proposal in a transaction of its own, so with SQLite's writer lock
+      // the two run one after the other, even from two processes: whichever runs second sees the
+      // other's writes and fails here, instead of both reading "not settled" and both writing.
+      const settled = this.inStoreTransaction(
+        (): AdminBotServiceResponse<Record<string, string>> => {
+          // The apply may have withdrawn this proposal after it was approved and before this ran.
+          if (this.store.getProposal(proposal.id)?.status === "rejected") {
+            return serviceError(409, "this proposal was withdrawn before it executed");
+          }
+          // A reply the safe path already applied is settled. A stale proposal for it may have
+          // been approved before the apply withdrew it; it must not write the reply twice.
+          const appliedBy = this.liveReminderReplyApply(settlement.message_id);
+          if (appliedBy) {
+            return serviceError(409, `this reply was already applied by ${appliedBy}`);
+          }
+          const applied = this.resolveEmailReview({
+            messageId: settlement.message_id,
+            resolution: settlement.resolution,
+            actor: resolvedBy,
+          });
+          // Its own guards decide this: the item may have been settled in the Control UI while
+          // the approval sat in Slack, or the stage it would close may have shut since. Either
+          // way the execution fails with that reason instead of reporting a resolution that did
+          // not happen.
+          if (!applied.ok) {
+            return applied;
+          }
+          // A reminder reply's proposal carries the nudges it answers. They are quieted only
+          // now, once an admin has approved: a rejected proposal leaves the reminders as they were.
+          const snoozed = this.snoozeReminderReplyTargets(proposal, settlement.resolution);
+          return {
+            ok: true as const,
+            status: 200,
+            payload: {
+              resolution: applied.payload.resolution,
+              evidence_recorded: String(applied.payload.evidence_recorded),
+              ...(snoozed > 0 ? { snoozed: String(snoozed) } : {}),
+            },
+          };
+        },
+      );
+      if (!settled.ok) {
+        return this.executionFailure(proposal, settled.status, settled.error.message);
       }
-      artifacts = {
-        resolution: applied.payload.resolution,
-        evidence_recorded: String(applied.payload.evidence_recorded),
-      };
+      artifacts = settled.payload;
+      handled = true;
+    } else if (
+      proposal.type === "reminder_reply.apply" ||
+      proposal.type === "reminder_reply.undo"
+    ) {
+      // In-service like `email_review.resolve`: the write is to this store. No approver: only the
+      // service creates these (createProposal refuses them), and the apply is re-checked here
+      // against the live match and the safe-auto rule before anything is written.
+      const outcome =
+        proposal.type === "reminder_reply.apply"
+          ? // One store transaction for the re-check, the stage write and the withdrawal of every
+            // review proposal still open for this reply. A crash in between leaves none of it, and
+            // a resolve execute in another process waits for the commit and then sees both.
+            this.inStoreTransaction((): AdminBotServiceResponse<Record<string, string>> => {
+              const why = this.reminderReplyApplyProblem(proposal);
+              if (why) {
+                return serviceError(409, why);
+              }
+              const applied = executeReminderReplyApply(this.reminderReplyAutoDeps(), proposal);
+              if (!applied.ok) {
+                return applied;
+              }
+              const messageId = parseApplyPayload(proposal)?.review.message_id;
+              const superseded = messageId
+                ? this.withdrawReviewProposals(messageId, "adminbot")
+                : [];
+              this.afterReminderReplyStageWrite?.();
+              return {
+                ...applied,
+                payload: superseded.length
+                  ? { ...applied.payload, superseded: superseded.join(",") }
+                  : applied.payload,
+              };
+            })
+          : executeReminderReplyUndo(
+              this.reminderReplyAutoDeps(),
+              proposal,
+              String(
+                (proposal.proposed_payload as { requested_by?: unknown } | undefined)
+                  ?.requested_by ?? "",
+              ) || "unknown",
+            );
+      if (!outcome.ok) {
+        return this.executionFailure(proposal, outcome.status, outcome.error.message);
+      }
+      artifacts = outcome.payload;
       handled = true;
     } else if (proposal.type === "lab_member.remove") {
       // In-service for the same reason as the two arms above: deleting a roster record is a write
@@ -3436,6 +3600,14 @@ export class AdminBotService {
       artifacts = { deleted_id: deleted.payload.deleted_id };
       handled = true;
     } else {
+      if (proposal.type === "reminder_reply.confirm") {
+        // The connector sends whatever the payload says, so the payload is checked first: the
+        // fixed receipt, for an apply that ran, to that member's roster address. Nothing else.
+        const why = this.reminderReplyConfirmProblem(proposal);
+        if (why) {
+          return this.executionFailure(proposal, 409, why);
+        }
+      }
       if (!this.options.executor) {
         return this.executionFailure(proposal, 501, "no live connector is configured");
       }
@@ -7767,7 +7939,14 @@ export class AdminBotService {
     slots: AdminBotPaperSlotRecord[],
   ): AdminBotPaperflowStageView[] {
     const evidence = this.store.listPaperflowEvidence(paper.id);
-    const open = openPaperflowStage({ paper, slots, evidence, now: new Date() });
+    const now = new Date();
+    const open = openPaperflowStage({
+      paper,
+      slots,
+      evidence,
+      now,
+      conferenceOver: isPaperConferenceOver(paper, this.deadlineReadModel(DEADLINE_VENUES), now),
+    });
     return adminBotPaperflowStages.map((stage) => {
       const closed = evidence.find((row) => row.stage === stage);
       const definition = adminBotPaperflowStageRegistry[stage];
@@ -10568,6 +10747,7 @@ export class AdminBotService {
     stamped: Array<{ item: NudgeItem; memberId: string }>;
     papersConsidered: number;
   } {
+    let dataset: unknown[] | undefined;
     const ledger = this.nudgeLedgerIndex();
     const papers = this.store.listPapers();
     const byRecipient = new Map<string, Map<string, NudgeGroup>>();
@@ -10730,10 +10910,12 @@ export class AdminBotService {
       // The whole roll-call, not the rows somebody remembered to add. This is what makes "tell us
       // who is attending" mandatory rather than optional: an accepted paper nobody has answered
       // for produces one line per author here, and keeps producing them until it is answered.
-      for (const attendee of mergeConferenceAttendance(
-        paper,
-        this.paperRows().listConferenceAttendees(paper.id),
-      )) {
+      // Unless the conference has been held: who went is history, not a question.
+      dataset ??= this.deadlineReadModel(DEADLINE_VENUES);
+      const roll = isPaperConferenceOver(paper, dataset, now)
+        ? []
+        : mergeConferenceAttendance(paper, this.paperRows().listConferenceAttendees(paper.id));
+      for (const attendee of roll) {
         if (attendee.attending !== "unknown") {
           continue;
         }
@@ -10944,6 +11126,7 @@ export class AdminBotService {
     const roster = this.store.listLabMembers();
     const priorityMemberId = this.options.paperflowPriorityMemberId;
     const items: AdminBotPaperflowStageNudge[] = [];
+    const dataset = this.deadlineReadModel(DEADLINE_VENUES);
 
     for (const paper of this.store.listPapers()) {
       const evidence = this.paperRows().listPaperflowEvidence(paper.id);
@@ -10952,6 +11135,7 @@ export class AdminBotService {
         slots: this.paperRows().listPaperSlots(paper.id),
         evidence,
         now,
+        conferenceOver: isPaperConferenceOver(paper, dataset, now),
       });
       if (!open) {
         continue;
@@ -11143,6 +11327,8 @@ export class AdminBotService {
     sender?: string;
     confidence?: number;
     recordedBy?: AdminBotPaperflowEvidenceRecord["recorded_by"];
+    /** Why, in a person's words: "moved to a Springer journal". Shown with the record. */
+    note?: string;
     actor: string;
   }): AdminBotServiceResponse<{ recorded: boolean; record: AdminBotPaperflowEvidenceRecord }> {
     if (!isAdminBotPaperflowStage(params.stage)) {
@@ -11177,6 +11363,7 @@ export class AdminBotService {
       ...(params.subject ? { subject: params.subject } : {}),
       ...(params.sender ? { sender: params.sender } : {}),
       ...(typeof params.confidence === "number" ? { confidence: params.confidence } : {}),
+      ...(params.note?.trim() ? { note: params.note.trim() } : {}),
     };
     this.store.savePaperflowEvidence(record);
     this.recordAudit({
@@ -11276,9 +11463,16 @@ export class AdminBotService {
     }
     const { reviews, paperflow_candidates: candidates } = queue.payload;
     const ledger = this.nudgeLedgerIndex();
+    const pending = this.pendingEmailReviewProposals({ remindersOnly: true });
     const proposed: string[] = [];
     const alreadyAsked: string[] = [];
     for (const review of reviews) {
+      // A reply to a reminder is proposed the moment it arrives, with the resolution it actually
+      // supports. A second, generic dismissal beside it would be two approvals for one email.
+      if (pending.has(review.message_id)) {
+        alreadyAsked.push(review.message_id);
+        continue;
+      }
       // The updated stamp is part of the subject so a message the pass re-examines and holds again
       // is asked about again, while one sitting untouched is asked exactly once.
       const subject = `${review.message_id}|${review.updated_at}`;
@@ -11327,6 +11521,8 @@ export class AdminBotService {
     messageId: string;
     resolution: AdminBotEmailReviewResolution;
     actor: string;
+    /** `reply` when the member's own answer is applied without a reviewer; see reminder-reply-auto. */
+    recordedBy?: "admin" | "reply";
   }): AdminBotServiceResponse<{
     resolution: AdminBotEmailReviewResolution["kind"];
     evidence_recorded: boolean;
@@ -11354,13 +11550,25 @@ export class AdminBotService {
         messageId: review.message_id,
         ...(review.subject ? { subject: review.subject } : {}),
         sender: review.sender,
-        recordedBy: "admin",
+        recordedBy: params.recordedBy ?? "admin",
+        ...(resolution.note ? { note: resolution.note } : {}),
         actor: params.actor,
       });
       if (!evidence.ok) {
         return evidence;
       }
       evidenceRecorded = evidence.payload.recorded;
+    } else if (resolution.kind !== "dismissed") {
+      const applied = this.applyReminderReplyResolution(
+        review,
+        resolution,
+        params.actor,
+        params.recordedBy ?? "admin",
+      );
+      if (!applied.ok) {
+        return applied;
+      }
+      evidenceRecorded = applied.payload.evidence_recorded;
     }
     const resolvedAt = new Date().toISOString();
     if (
@@ -11379,15 +11587,954 @@ export class AdminBotService {
       details: {
         message_id: review.message_id,
         resolution: resolution.kind,
-        ...(resolution.kind === "paperflow_evidence"
+        ...(resolution.kind === "paperflow_evidence" || resolution.kind === "paperflow_skipped"
           ? { paper_id: resolution.paper_id, stage: resolution.stage }
           : {}),
+        ...(resolution.kind === "paperflow_skipped" && resolution.later_stages
+          ? { later_stages: true }
+          : {}),
+        ...(resolution.kind === "paper_slot_waived"
+          ? { paper_id: resolution.paper_id, slot: resolution.slot }
+          : {}),
+        ...(resolution.kind === "rec_letter_submitted"
+          ? { request_id: resolution.request_id, schools: resolution.schools }
+          : {}),
+        ...(resolution.kind === "rec_letter_confirmed"
+          ? { request_id: resolution.request_id, member_id: resolution.member_id }
+          : {}),
+        ...(params.recordedBy === "reply" ? { recorded_by: "reply" } : {}),
+        ...(resolution.kind === "reminder_snoozed"
+          ? {
+              domain: resolution.domain,
+              subject_id: resolution.subject_id,
+              member_id: resolution.member_id,
+              until: resolution.until,
+            }
+          : {}),
+        ...("note" in resolution && resolution.note ? { note: resolution.note } : {}),
       },
     });
     return {
       ok: true,
       status: 200,
       payload: { resolution: resolution.kind, evidence_recorded: evidenceRecorded },
+    };
+  }
+
+  /** Message ids that already have an `email_review.resolve` waiting on somebody. */
+  /**
+   * Message ids with an `email_review.resolve` still waiting on an admin. `remindersOnly` keeps it
+   * to the ones a reminder reply proposed (they carry the model's reading): the hourly pass still
+   * re-asks about its own proposals once it has touched the message again.
+   */
+  private pendingEmailReviewProposals(options: { remindersOnly?: boolean } = {}): Set<string> {
+    const ids = new Set<string>();
+    for (const proposal of this.store.listProposalsByType("email_review.resolve")) {
+      const payload = proposal.proposed_payload as
+        | { message_id?: unknown; reading?: unknown }
+        | undefined;
+      if (
+        proposal.status === "pending" &&
+        typeof payload?.message_id === "string" &&
+        (!options.remindersOnly || payload.reading !== undefined)
+      ) {
+        ids.add(payload.message_id);
+      }
+    }
+    return ids;
+  }
+
+  /**
+   * The AdminBot reminder an inbound email answers, and what that reminder asked about.
+   *
+   * Undefined when it answers none -- including when it looks like a reply but came from somebody
+   * other than the person the reminder went to. The open-stage walk only runs once a reminder has
+   * matched, so the inbox pass can ask this of every message.
+   */
+  matchReminderReply(params: {
+    sender: string;
+    subject?: string;
+    threadId?: string;
+    nowIso?: string;
+  }): AdminBotReminderReplyMatch | undefined {
+    const now = params.nowIso ? new Date(params.nowIso) : new Date();
+    if (Number.isNaN(now.getTime())) {
+      return undefined;
+    }
+    const found = matchReminderSend(
+      listReminderSends(this.store, now),
+      {
+        sender: params.sender,
+        ...(params.subject ? { subject: params.subject } : {}),
+        ...(params.threadId ? { threadId: params.threadId } : {}),
+      },
+      (memberId) => {
+        const member = this.store.getLabMember(memberId);
+        return member ? memberAddresses(member) : [];
+      },
+    );
+    if (!found) {
+      return undefined;
+    }
+    const { send, matched_by } = found;
+    const targets = this.withPaperTables(() =>
+      reminderTargets(send, {
+        papers: this.store.listPapers(),
+        openStages: this.sweepPaperflowStages(now).items,
+        openSlots: (paper, memberId) => {
+          if (isPaperDormant(paper, now) || isPaperClosed(paper)) {
+            return [];
+          }
+          const stored = this.paperRows().listPaperSlots(paper.id);
+          return actionablePaperSlots(
+            paper,
+            stored,
+            now,
+            this.paperRows().listSocialDrafts(paper.id),
+            this.paperMentorContext(paper, stored),
+          )
+            .filter(
+              (item) =>
+                item.slot !== undefined &&
+                this.resolvePaperSlotOwner(paper, item.owner).includes(memberId),
+            )
+            .map((item) => ({ slot: item.slot as string, label: item.label }));
+        },
+        ledger: this.store.listNudgeLedger(),
+        getLogisticsRequest: (requestId) => this.store.getLogisticsRequest(requestId),
+      }),
+    );
+    return {
+      reminder_action_id: send.action_id,
+      reminder_type: send.type,
+      reminder_subject: send.subject,
+      reminder_body: send.body,
+      reminder_sent_at: send.sent_at,
+      member_id: send.member_id,
+      member_name: this.store.getLabMember(send.member_id)?.name ?? send.member_id,
+      matched_by,
+      ...(send.message_id_header ? { reminder_message_id: send.message_id_header } : {}),
+      targets,
+    };
+  }
+
+  /**
+   * Hold a reply to a reminder for one-click approval. Changes nothing until an admin approves.
+   *
+   * The reply is filed in the review queue and one `email_review.resolve` proposal carries the
+   * resolution the reading supports, plus the nudges to quiet. Nothing is snoozed here: the
+   * approval's execution does that, so a rejection leaves the member's reminders as they were.
+   * Keyed on the Gmail message id in storage, so the same mail is never proposed twice.
+   */
+  proposeReminderReply(params: {
+    messageId: string;
+    threadId: string;
+    sender: string;
+    subject?: string;
+    receivedAt?: string;
+    reading: AdminBotReminderReplyReading;
+    senderEvidence?: ReminderReplySenderEvidence;
+    actor: string;
+    nowIso?: string;
+  }): AdminBotServiceResponse<{
+    proposal_id?: string;
+    already_proposed: boolean;
+    resolution: AdminBotEmailReviewResolution["kind"];
+    snooze_on_approval: string[];
+  }> {
+    if (!isReminderReplyReading(params.reading)) {
+      return serviceError(400, "reminder reply reading is malformed");
+    }
+    const nowIso = params.nowIso ?? new Date().toISOString();
+    const now = new Date(nowIso);
+    if (Number.isNaN(now.getTime())) {
+      return serviceError(400, "now must be a date");
+    }
+    const match = this.matchReminderReply({
+      sender: params.sender,
+      ...(params.subject ? { subject: params.subject } : {}),
+      threadId: params.threadId,
+      nowIso,
+    });
+    if (!match) {
+      return serviceError(404, "this email does not answer an AdminBot reminder from its sender");
+    }
+    const { resolution, summary, undo_plan } = reminderReplyResolution(match, params.reading, now);
+    const snoozeTargets = match.targets
+      .filter((target) => target.open && target.domain !== "rec_letter_reminder")
+      .map((target) => ({
+        domain: target.domain,
+        subject_id: target.subject_id,
+        member_id: target.member_id,
+      }));
+    const snoozeKeys = snoozeTargets.map(
+      (target) => `${target.domain}|${target.subject_id}|${target.member_id}`,
+    );
+    if (this.pendingEmailReviewProposals().has(params.messageId)) {
+      return {
+        ok: true,
+        status: 200,
+        payload: { already_proposed: true, resolution: resolution.kind, snooze_on_approval: [] },
+      };
+    }
+    const review: AdminBotEmailReviewItem = {
+      message_id: params.messageId,
+      thread_id: params.threadId,
+      sender: params.sender,
+      ...(params.subject ? { subject: params.subject } : {}),
+      category: "reminder_reply",
+      reason: `reply to "${match.reminder_subject}": ${params.reading.intent}`,
+      ...(params.receivedAt ? { received_at: params.receivedAt } : {}),
+      updated_at: nowIso,
+    };
+    const created = this.createKeyedInternalProposal(
+      {
+        type: "email_review.resolve",
+        summary,
+        target: { service: "adminbot", channel: "adminbot", target: params.messageId },
+        proposed_payload: {
+          message_id: params.messageId,
+          thread_id: params.threadId,
+          sender: params.sender,
+          ...(params.subject ? { subject: params.subject } : {}),
+          held_because: review.reason,
+          reminder_action_id: match.reminder_action_id,
+          reading: params.reading,
+          resolution,
+          snooze_targets: snoozeTargets,
+          ...(params.senderEvidence ? { sender_evidence: params.senderEvidence } : {}),
+        },
+        rationale: `${match.member_name} replied to the reminder "${match.reminder_subject}" (matched by ${match.matched_by}).`,
+        undo_plan,
+        idempotency_key: `email_review.resolve:${params.messageId}`,
+      },
+      "email_review",
+      `email_review.resolve:${params.messageId}`,
+    );
+    if (!created.ok) {
+      return serviceError(created.status, created.error.message);
+    }
+    if (!created.payload.created) {
+      return {
+        ok: true,
+        status: 200,
+        payload: {
+          proposal_id: created.payload.proposal.id,
+          already_proposed: true,
+          resolution: resolution.kind,
+          snooze_on_approval: [],
+        },
+      };
+    }
+    this.store.saveEmailReview(review);
+    // The hourly pass keys on the same stamp, so it does not ask about this message a second time.
+    this.markNudgeSaid(
+      "email_review",
+      `${review.message_id}|${review.updated_at}`,
+      params.actor,
+      nowIso,
+    );
+    this.recordAudit({
+      type: "email_review.reminder_reply",
+      actor: params.actor,
+      action_id: created.payload.proposal.id,
+      details: {
+        message_id: params.messageId,
+        reminder_action_id: match.reminder_action_id,
+        member_id: match.member_id,
+        intent: params.reading.intent,
+        resolution: resolution.kind,
+        snooze_on_approval: snoozeKeys.length,
+      },
+    });
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        proposal_id: created.payload.proposal.id,
+        already_proposed: false,
+        resolution: resolution.kind,
+        snooze_on_approval: snoozeKeys,
+      },
+    };
+  }
+
+  /** Quiet the nudges an approved reminder-reply proposal answers. Returns how many it quieted. */
+  private snoozeReminderReplyTargets(
+    proposal: AdminBotStoredProposal,
+    resolution: AdminBotEmailReviewResolution,
+  ): number {
+    // A dismissal says the reply settles nothing, so the reminders keep running.
+    if (resolution.kind === "dismissed") {
+      return 0;
+    }
+    const targets = (proposal.proposed_payload as { snooze_targets?: unknown } | undefined)
+      ?.snooze_targets;
+    if (!Array.isArray(targets)) {
+      return 0;
+    }
+    const until = new Date(
+      Date.now() + reminderReplySnoozeDays * 24 * 60 * 60 * 1000,
+    ).toISOString();
+    let count = 0;
+    for (const raw of targets) {
+      const target = raw as { domain?: unknown; subject_id?: unknown; member_id?: unknown };
+      if (
+        typeof target?.domain !== "string" ||
+        typeof target.subject_id !== "string" ||
+        typeof target.member_id !== "string"
+      ) {
+        continue;
+      }
+      // The resolution already set this one to the member's own date; a 14-day snooze would
+      // overwrite it.
+      if (
+        resolution.kind === "reminder_snoozed" &&
+        resolution.domain === target.domain &&
+        resolution.subject_id === target.subject_id &&
+        resolution.member_id === target.member_id
+      ) {
+        continue;
+      }
+      const result = this.snoozeNudge({
+        domain: target.domain,
+        subjectId: target.subject_id,
+        memberId: target.member_id,
+        until,
+      });
+      count += result.ok ? 1 : 0;
+    }
+    return count;
+  }
+
+  /** Why an apply must not run now, re-derived from the store rather than read from the payload. */
+  private reminderReplyApplyProblem(proposal: AdminBotStoredProposal): string | undefined {
+    const payload = parseApplyPayload(proposal);
+    if (!payload) {
+      return "reminder reply payload is invalid";
+    }
+    const member = this.store.getLabMember(payload.member_id);
+    const roster = member ? memberAddresses(member).map((address) => address.toLowerCase()) : [];
+    const match = this.matchReminderReply({
+      sender: payload.review.sender,
+      ...(payload.review.subject ? { subject: payload.review.subject } : {}),
+      threadId: payload.review.thread_id,
+    });
+    if (
+      !match ||
+      match.reminder_action_id !== payload.reminder_action_id ||
+      match.member_id !== payload.member_id
+    ) {
+      return "the reply no longer matches the reminder it was applied for";
+    }
+    const verdict = safeAutoVerdict({
+      match,
+      reading: payload.reading,
+      evidence: payload.sender_evidence,
+      sender: payload.review.sender,
+      rosterAddresses: roster,
+    });
+    if (!verdict.ok) {
+      return `not safe to apply without an admin: ${verdict.why}`;
+    }
+    const resolved = this.store
+      .listProposalsByType("email_review.resolve")
+      .find(
+        (review) =>
+          (review.proposed_payload as { message_id?: unknown } | undefined)?.message_id ===
+            payload.review.message_id &&
+          this.store.getExecutionResult(review.id)?.status === "executed",
+      );
+    if (resolved) {
+      return `an admin already resolved this reply (${resolved.id})`;
+    }
+    if (JSON.stringify(verdict.resolution) !== JSON.stringify(payload.resolution)) {
+      return "the stored resolution is not the one the safe path builds";
+    }
+    if (
+      payload.receipt_to !== bareAddress(payload.review.sender) ||
+      !roster.includes(payload.receipt_to)
+    ) {
+      return "the receipt address is not the member's roster address";
+    }
+    return undefined;
+  }
+
+  /** Why a receipt must not be sent: anything but the fixed text, to the roster address, for an apply. */
+  private reminderReplyConfirmProblem(proposal: AdminBotStoredProposal): string | undefined {
+    const row = proposal.proposed_payload as Record<string, unknown> | undefined;
+    const sourceId = typeof row?.source_action_id === "string" ? row.source_action_id : "";
+    const kind = row?.kind === "applied" || row?.kind === "undone" ? row.kind : undefined;
+    const apply = sourceId ? this.store.getProposal(sourceId) : undefined;
+    const payload = apply ? parseApplyPayload(apply) : undefined;
+    const result = sourceId ? this.store.getExecutionResult(sourceId) : undefined;
+    if (!kind || !payload || result?.status !== "executed" || result.dry_run) {
+      return "a receipt is only sent for a reminder reply that was applied";
+    }
+    if (kind === "undone" && !undoneBy(this.store, sourceId)) {
+      return "an undo receipt is only sent once the reply was undone";
+    }
+    const member = this.store.getLabMember(payload.member_id);
+    const roster = member ? memberAddresses(member).map((address) => address.toLowerCase()) : [];
+    const expected = expectedReceipt(payload, kind);
+    if (row?.to !== expected.to || !roster.includes(expected.to)) {
+      return "a receipt only goes to the member's roster address";
+    }
+    if (row?.subject !== expected.subject || row?.body !== expected.body) {
+      return "a receipt must be the fixed template";
+    }
+    return undefined;
+  }
+
+  /** The writes behind the resolutions a reminder reply can propose. Each checks it still applies. */
+  private applyReminderReplyResolution(
+    review: AdminBotEmailReviewItem,
+    resolution: Exclude<
+      AdminBotEmailReviewResolution,
+      { kind: "dismissed" | "paperflow_evidence" }
+    >,
+    actor: string,
+    recordedBy: "admin" | "reply",
+  ): AdminBotServiceResponse<{ evidence_recorded: boolean }> {
+    switch (resolution.kind) {
+      case "paperflow_skipped": {
+        if (!isAdminBotPaperflowStage(resolution.stage)) {
+          return serviceError(400, `${resolution.stage} is not a PaperFlow stage`);
+        }
+        const openStages = this.collectPaperflowStageNudges();
+        if (!openStages.ok) {
+          return openStages;
+        }
+        if (
+          !openStages.payload.items.some(
+            (item) => item.paper_id === resolution.paper_id && item.stage === resolution.stage,
+          )
+        ) {
+          return serviceError(409, "that paper stage is no longer open");
+        }
+        // A paper that left this venue's track will not reach its later stages either. Each gets
+        // the same admin record, so the chase does not step onto the next one tomorrow.
+        const stages = resolution.later_stages
+          ? adminBotPaperflowStages.slice(adminBotPaperflowStages.indexOf(resolution.stage))
+          : [resolution.stage];
+        let recorded = false;
+        for (const stage of stages) {
+          const evidence = this.recordPaperflowEvidence({
+            paperId: resolution.paper_id,
+            stage,
+            messageId: review.message_id,
+            ...(review.subject ? { subject: review.subject } : {}),
+            sender: review.sender,
+            recordedBy,
+            note: `skipped: ${resolution.note}`,
+            actor,
+          });
+          if (!evidence.ok) {
+            return evidence;
+          }
+          recorded ||= evidence.payload.recorded;
+        }
+        return { ok: true, status: 200, payload: { evidence_recorded: recorded } };
+      }
+      case "paper_slot_waived": {
+        const waived = this.waivePaperSlot({
+          paperId: resolution.paper_id,
+          slot: resolution.slot,
+          reason: resolution.note,
+          memberId: actor,
+        });
+        return waived.ok
+          ? { ok: true, status: 200, payload: { evidence_recorded: false } }
+          : serviceError(waived.status, waived.error.message);
+      }
+      case "rec_letter_submitted": {
+        const request = this.store.getLogisticsRequest(resolution.request_id);
+        if (!request) {
+          return serviceError(404, "letter request not found");
+        }
+        const named = new Set(resolution.schools);
+        let changed = false;
+        const schools = (request.schools ?? []).map((school) => {
+          if (!named.has(school.school) || isLetterStatusSubmitted(school.letter_status)) {
+            return school;
+          }
+          changed = true;
+          return { ...school, letter_status: "submitted" };
+        });
+        if (!changed) {
+          return serviceError(409, "those letters are already marked submitted");
+        }
+        this.store.saveLogisticsRequest({
+          ...request,
+          schools,
+          updated_at: new Date().toISOString(),
+        });
+        return { ok: true, status: 200, payload: { evidence_recorded: false } };
+      }
+      case "rec_letter_confirmed": {
+        const confirmed = confirmLetterSubmitted(
+          this.letterConfirmDeps(),
+          resolution.request_id,
+          resolution.member_id,
+        );
+        return confirmed.ok
+          ? { ok: true, status: 200, payload: { evidence_recorded: false } }
+          : serviceError(confirmed.status, confirmed.error.message);
+      }
+      case "reminder_snoozed": {
+        const snoozed = this.snoozeNudge({
+          domain: resolution.domain,
+          subjectId: resolution.subject_id,
+          memberId: resolution.member_id,
+          until: resolution.until,
+        });
+        return snoozed.ok
+          ? { ok: true, status: 200, payload: { evidence_recorded: false } }
+          : serviceError(snoozed.status, snoozed.error.message);
+      }
+    }
+  }
+
+  private reminderReplyAutoDeps(): ReminderReplyAutoDeps {
+    return {
+      store: this.store,
+      createKeyedProposal: (proposal, key) =>
+        this.createKeyedInternalProposal(proposal, "reminder_reply", key),
+      execute: (actionId, request) => this.execute(actionId, request),
+      resolveEmailReview: (params) => this.resolveEmailReview(params),
+      undoLetterConfirmation: (requestId, memberId) =>
+        undoLetterConfirmation(this.letterConfirmDeps(), requestId, memberId),
+      recordAudit: (event) => this.recordAudit(event),
+    };
+  }
+
+  /**
+   * What one reminder reply would do, without doing it: apply and confirm, or hold for review.
+   *
+   * The dry run and the backfill both read this, so what they print is what the live path does.
+   * Only safeAutoVerdict decides "apply"; the model's reading can send a reply to review but can
+   * never widen what an apply writes.
+   */
+  planReminderReply(params: {
+    sender: string;
+    threadId: string;
+    subject?: string;
+    reading: AdminBotReminderReplyReading;
+    senderEvidence?: ReminderReplySenderEvidence;
+    nowIso?: string;
+  }): AdminBotServiceResponse<{
+    mode: "apply" | "review";
+    member_id: string;
+    member_name: string;
+    resolution: AdminBotEmailReviewResolution;
+    summary: string;
+    label?: string;
+    receipt?: { to: string; subject: string; body: string };
+    why_review?: string;
+  }> {
+    if (!isReminderReplyReading(params.reading)) {
+      return serviceError(400, "reminder reply reading is malformed");
+    }
+    const nowIso = params.nowIso ?? new Date().toISOString();
+    const match = this.matchReminderReply({
+      sender: params.sender,
+      ...(params.subject ? { subject: params.subject } : {}),
+      threadId: params.threadId,
+      nowIso,
+    });
+    if (!match) {
+      return serviceError(404, "this email does not answer an AdminBot reminder from its sender");
+    }
+    const member = this.store.getLabMember(match.member_id);
+    const verdict = safeAutoVerdict({
+      match,
+      reading: params.reading,
+      evidence: params.senderEvidence,
+      sender: params.sender,
+      rosterAddresses: member ? memberAddresses(member) : [],
+    });
+    if (!verdict.ok) {
+      const { resolution, summary } = reminderReplyResolution(
+        match,
+        params.reading,
+        new Date(nowIso),
+      );
+      return {
+        ok: true,
+        status: 200,
+        payload: {
+          mode: "review",
+          member_id: match.member_id,
+          member_name: match.member_name,
+          resolution,
+          summary,
+          why_review: verdict.why,
+        },
+      };
+    }
+    const label = verdict.target.label;
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        mode: "apply",
+        member_id: match.member_id,
+        member_name: match.member_name,
+        resolution: verdict.resolution,
+        summary: `Mark ${label} done: ${match.member_name} replied to the reminder`,
+        label,
+        receipt: {
+          to: bareAddress(params.sender),
+          subject: reminderReplyReceiptSubject(match.reminder_subject),
+          body: reminderReplyConfirmationBody({ memberName: match.member_name, label }),
+        },
+      },
+    };
+  }
+
+  /**
+   * A reminder reply: applied only when it passes the safe-auto rule, held for an admin otherwise.
+   *
+   * The safe path marks one PaperFlow stage done, as the member, and mails the fixed receipt to
+   * their roster address. Everything else -- and an apply that fails its own checks -- goes through
+   * `proposeReminderReply`, which changes nothing until approved. A successful apply withdraws any
+   * proposal still waiting on the same message, so a stale approval cannot write it a second time.
+   */
+  async autoApplyReminderReply(params: {
+    messageId: string;
+    threadId: string;
+    sender: string;
+    subject?: string;
+    receivedAt?: string;
+    reading: AdminBotReminderReplyReading;
+    senderEvidence?: ReminderReplySenderEvidence;
+    actor: string;
+    /** The bot mailbox the receipt goes from. */
+    account?: string;
+    nowIso?: string;
+  }): Promise<
+    AdminBotServiceResponse<
+      | ({ mode: "applied" } & ReminderReplyAutoOutcome & { superseded: string[] })
+      | { mode: "duplicate"; apply_action_id?: string }
+      | {
+          mode: "proposed";
+          proposal_id?: string;
+          already_proposed: boolean;
+          resolution: AdminBotEmailReviewResolution["kind"];
+          apply_error?: string;
+        }
+    >
+  > {
+    // A reply already applied (by another pass, or a backfill) is settled: never re-file it. An
+    // apply that was filed but never executed (the pass stopped in between) is not settled; it
+    // falls through and is run, or goes to an admin.
+    const applied = this.store.listProposalsByType("reminder_reply.apply").find((proposal) => {
+      const ran = this.store.getExecutionResult(proposal.id);
+      return (
+        proposal.target?.target === params.messageId && ran?.status === "executed" && !ran.dry_run
+      );
+    });
+    if (applied) {
+      return { ok: true, status: 200, payload: { mode: "duplicate", apply_action_id: applied.id } };
+    }
+    const plan = this.planReminderReply(params);
+    if (!plan.ok) {
+      return plan;
+    }
+    let applyError: string | undefined;
+    const nowIso = params.nowIso ?? new Date().toISOString();
+    const match =
+      plan.payload.mode === "apply"
+        ? this.matchReminderReply({
+            sender: params.sender,
+            ...(params.subject ? { subject: params.subject } : {}),
+            threadId: params.threadId,
+            nowIso,
+          })
+        : undefined;
+    if (
+      plan.payload.mode === "apply" &&
+      match &&
+      params.senderEvidence &&
+      plan.payload.resolution.kind === "paperflow_evidence" &&
+      plan.payload.receipt
+    ) {
+      const outcome = await autoApplyReminderReply(this.reminderReplyAutoDeps(), {
+        review: {
+          message_id: params.messageId,
+          thread_id: params.threadId,
+          sender: params.sender,
+          ...(params.subject ? { subject: params.subject } : {}),
+          category: "reminder_reply",
+          reason: `reply to "${match.reminder_subject}": done`,
+          ...(params.receivedAt ? { received_at: params.receivedAt } : {}),
+          updated_at: nowIso,
+        },
+        match,
+        reading: params.reading,
+        resolution: plan.payload.resolution,
+        evidence: params.senderEvidence,
+        summary: plan.payload.summary,
+        label: plan.payload.label ?? "this stage",
+        receiptTo: plan.payload.receipt.to,
+        ...(params.account ? { account: params.account } : {}),
+      });
+      if (outcome.outcome === "duplicate") {
+        return {
+          ok: true,
+          status: 200,
+          payload: {
+            mode: "duplicate",
+            ...(outcome.apply_action_id ? { apply_action_id: outcome.apply_action_id } : {}),
+          },
+        };
+      }
+      if (outcome.outcome === "applied") {
+        // The apply's execute withdraws the pending review proposals in the same write; this second
+        // sweep only catches one filed after that write.
+        const withdrawn = outcome.apply_action_id
+          ? String(
+              this.store.getExecutionResult(outcome.apply_action_id)?.artifacts?.superseded ?? "",
+            )
+          : "";
+        const superseded = [
+          ...new Set([
+            ...withdrawn.split(",").filter(Boolean),
+            ...this.withdrawReviewProposals(params.messageId, params.actor),
+          ]),
+        ];
+        return { ok: true, status: 200, payload: { mode: "applied", ...outcome, superseded } };
+      }
+      applyError = outcome.error;
+    }
+    const proposed = this.proposeReminderReply(params);
+    if (!proposed.ok) {
+      return proposed;
+    }
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        mode: "proposed",
+        ...(proposed.payload.proposal_id ? { proposal_id: proposed.payload.proposal_id } : {}),
+        already_proposed: proposed.payload.already_proposed,
+        resolution: proposed.payload.resolution,
+        ...(applyError ? { apply_error: applyError } : {}),
+      },
+    };
+  }
+
+  /** The executed, not undone, apply that settled this reply, if any. */
+  private liveReminderReplyApply(messageId: string): string | undefined {
+    return this.store
+      .listProposalsByType("reminder_reply.apply")
+      .find(
+        (apply) =>
+          apply.target?.target === messageId &&
+          this.store.getExecutionResult(apply.id)?.status === "executed" &&
+          !undoneBy(this.store, apply.id),
+      )?.id;
+  }
+
+  /** Reject every review proposal still waiting on this message; an apply has settled it. */
+  /**
+   * Test seam: runs inside the apply's transaction, after the stage write and the withdrawals. A
+   * throw here stands in for a crash between them and must leave neither behind.
+   */
+  afterReminderReplyStageWrite?: () => void;
+
+  /**
+   * Run `fn` as one store transaction where the store has them (SQLite), rolling back when it
+   * returns a failure or throws. The memory store is synchronous and single-process, so a plain
+   * call is already atomic there.
+   */
+  private inStoreTransaction<T extends { ok: boolean }>(fn: () => T): T {
+    if (!this.store.runInTransaction) {
+      return fn();
+    }
+    let failed: T | undefined;
+    try {
+      return this.store.runInTransaction<T>(() => {
+        const result = fn();
+        if (!result.ok) {
+          failed = result;
+          throw new Error("adminbot: store transaction rolled back");
+        }
+        return result;
+      });
+    } catch (error) {
+      if (failed) {
+        return failed;
+      }
+      throw error;
+    }
+  }
+
+  private withdrawReviewProposals(messageId: string, actor: string): string[] {
+    const withdrawn: string[] = [];
+    for (const proposal of this.store.listProposalsByType("email_review.resolve")) {
+      const payload = proposal.proposed_payload as { message_id?: unknown } | undefined;
+      if (
+        payload?.message_id !== messageId ||
+        (proposal.status !== "pending" && proposal.status !== "approved") ||
+        this.store.getExecutionResult(proposal.id)?.status === "executed"
+      ) {
+        continue;
+      }
+      const removed = this.removePending(proposal.id, {
+        actor,
+        note: "superseded by reminder_reply.apply",
+      });
+      if (removed.ok) {
+        withdrawn.push(proposal.id);
+      }
+    }
+    return withdrawn;
+  }
+
+  /** Take back one applied reply, for the member it was applied for. Only reached from their mail. */
+  private async undoReminderReply(
+    applyActionId: string,
+    requestedBy: string,
+  ): Promise<AdminBotServiceResponse<{ undo_action_id: string; reverted: string }>> {
+    const key = `reminder_reply.undo:${applyActionId}`;
+    const created = this.createKeyedInternalProposal(
+      {
+        type: "reminder_reply.undo",
+        summary: `Undo reminder reply ${applyActionId}`,
+        target: { service: "adminbot", channel: "adminbot", target: applyActionId },
+        proposed_payload: { apply_action_id: applyActionId, requested_by: requestedBy },
+        undo_plan: "Resolve the reply again from the review queue.",
+        idempotency_key: key,
+      },
+      "reminder_reply",
+      key,
+    );
+    if (!created.ok) {
+      return serviceError(created.status, created.error.message);
+    }
+    const undoId = created.payload.proposal.id;
+    const executed = await this.execute(undoId, { dry_run: false, idempotency_key: key });
+    if (!executed.ok) {
+      return serviceError(executed.status, executed.error.message);
+    }
+    return {
+      ok: true,
+      status: 200,
+      payload: { undo_action_id: undoId, reverted: executed.payload.artifacts?.reverted ?? "" },
+    };
+  }
+
+  /**
+   * Accepted papers whose conference has been held (or whose venue moved on), so their conference
+   * stage and attendance roll-call are no longer asked about. Read-only; for the backfill report.
+   */
+  conferencesClosedByVenue(nowIso?: string): Array<{
+    paper_id: string;
+    title: string;
+    venue?: string;
+    unanswered_attendance: number;
+  }> {
+    const now = nowIso ? new Date(nowIso) : new Date();
+    const dataset = this.deadlineReadModel(DEADLINE_VENUES);
+    const rows: Array<{
+      paper_id: string;
+      title: string;
+      venue?: string;
+      unanswered_attendance: number;
+    }> = [];
+    for (const paper of this.store.listPapers()) {
+      if (isPaperClosed(paper) || !isConferenceBranchOpen(paper)) {
+        continue;
+      }
+      if (!isPaperConferenceOver(paper, dataset, now)) {
+        continue;
+      }
+      if (this.store.listPaperflowEvidence(paper.id).some((row) => row.stage === "conference")) {
+        continue;
+      }
+      const venue = paper.accepted_venue ?? paper.venue;
+      rows.push({
+        paper_id: paper.id,
+        title: paper.title,
+        ...(venue ? { venue } : {}),
+        unanswered_attendance: mergeConferenceAttendance(
+          paper,
+          this.paperRows().listConferenceAttendees(paper.id),
+        ).filter((row) => row.attending === "unknown").length,
+      });
+    }
+    return rows;
+  }
+
+  /** The applied reply an "undo" from this sender on this thread would take back, if any. Read-only. */
+  findUndoableReminderReply(params: {
+    threadId: string;
+    sender: string;
+  }): ReturnType<typeof findUndoableApply> {
+    return findUndoableApply(this.store, {
+      threadId: params.threadId,
+      sender: params.sender,
+      addressesOf: (memberId) => {
+        const member = this.store.getLabMember(memberId);
+        return member ? memberAddresses(member).map((address) => address.toLowerCase()) : [];
+      },
+    });
+  }
+
+  /**
+   * A member's "undo" on the thread of a receipt: revert the newest applied reply there that was
+   * applied for them, and tell them it is back. 403 unless the mail is authenticated from their own
+   * roster address; 404 when there is nothing of theirs to undo.
+   */
+  async undoReminderReplyFromEmail(params: {
+    threadId: string;
+    sender: string;
+    messageId: string;
+    senderEvidence?: ReminderReplySenderEvidence;
+    account?: string;
+  }): Promise<
+    AdminBotServiceResponse<{
+      undo_action_id: string;
+      apply_action_id: string;
+      confirm_action_id?: string;
+      confirm_error?: string;
+    }>
+  > {
+    const evidence = parseSenderEvidence(params.senderEvidence);
+    const sender = bareAddress(params.sender);
+    if (
+      !evidence?.authenticated ||
+      evidence.from !== sender ||
+      (evidence.reply_to && evidence.reply_to !== sender) ||
+      evidence.forwarded
+    ) {
+      return serviceError(403, "an undo must come authenticated from the member's own address");
+    }
+    const found = this.findUndoableReminderReply(params);
+    if (!found) {
+      return serviceError(404, "no applied reminder reply of this sender's on this thread");
+    }
+    const undone = await this.undoReminderReply(found.proposal.id, found.payload.member_id);
+    if (!undone.ok) {
+      return undone;
+    }
+    const note = await sendReminderReplyNote(this.reminderReplyAutoDeps(), {
+      sourceActionId: found.proposal.id,
+      kind: "undone",
+      ...expectedReceipt(found.payload, "undone"),
+      summary: `Tell ${found.payload.member_name} their reply was undone`,
+      ...(params.account ? { account: params.account } : {}),
+      key: `reminder_reply.confirm:${params.messageId}`,
+    });
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        undo_action_id: undone.payload.undo_action_id,
+        apply_action_id: found.proposal.id,
+        ...note,
+      },
     };
   }
 
@@ -18086,31 +19233,8 @@ function emailReviewResolutionPayload(
   }
   const row = payload as Record<string, unknown>;
   const messageId = typeof row.message_id === "string" ? row.message_id.trim() : "";
-  const resolution = row.resolution;
-  if (!messageId || !resolution || typeof resolution !== "object") {
-    return undefined;
-  }
-  const kind = (resolution as Record<string, unknown>).kind;
-  if (kind === "dismissed") {
-    return { message_id: messageId, resolution: { kind: "dismissed" } };
-  }
-  if (kind !== "paperflow_evidence") {
-    return undefined;
-  }
-  const paperId = (resolution as Record<string, unknown>).paper_id;
-  const stage = (resolution as Record<string, unknown>).stage;
-  if (
-    typeof paperId !== "string" ||
-    !paperId.trim() ||
-    typeof stage !== "string" ||
-    !stage.trim()
-  ) {
-    return undefined;
-  }
-  return {
-    message_id: messageId,
-    resolution: { kind: "paperflow_evidence", paper_id: paperId, stage },
-  };
+  const resolution = parseEmailReviewResolution(row.resolution);
+  return messageId && resolution ? { message_id: messageId, resolution } : undefined;
 }
 
 function deadlinePayload(proposal: AdminBotStoredProposal): DeadlinePublicationPayload | undefined {

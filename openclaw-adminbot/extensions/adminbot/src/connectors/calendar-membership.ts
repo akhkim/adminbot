@@ -129,7 +129,7 @@ export function calendarMembershipReader(capture: Capture): CalendarMembershipRe
 export async function removeFilteredCalendarAttendees(
   payload: Record<string, unknown>,
   capture: Capture,
-  run: (args: string[]) => Promise<void>,
+  run: (args: string[]) => Promise<unknown>,
 ) {
   const calendarId = payload.calendar_id;
   const eventId = payload.event_id;
@@ -258,7 +258,7 @@ export function calendarAccessReader(capture: Capture): CalendarAccessReader {
 export async function revokeCalendarAccess(
   payload: Record<string, unknown>,
   capture: Capture,
-  run: (args: string[]) => Promise<void>,
+  run: (args: string[]) => Promise<unknown>,
 ) {
   const { calendar_id: calendarId, rule_id: ruleId, email } = payload;
   if (

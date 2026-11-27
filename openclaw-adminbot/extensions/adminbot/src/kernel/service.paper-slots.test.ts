@@ -697,7 +697,8 @@ describe("the conference roll-call", () => {
         first_author_member_id: "ada",
         venue_decision: "accept",
         accepted_venue: "EMNLP",
-        accepted_year: 2026,
+        // A year still ahead: once the conference has been held there is no roll-call to take.
+        accepted_year: new Date().getUTCFullYear() + 1,
         is_archival: true,
         presentation_type: "poster",
       }),
@@ -870,6 +871,18 @@ describe("the conference roll-call", () => {
     );
   });
 
+  it("stops asking once the conference has been held", () => {
+    const service = acceptedService();
+    unwrap(
+      service.upsertPaper({
+        ...unwrap(service.getPaper("p1")),
+        accepted_year: new Date().getUTCFullYear() - 1,
+      }),
+    );
+    const { batches } = unwrap(service.collectPaperNudgeBatches());
+    expect(batches.map((batch) => batch.message).join("\n")).not.toContain("is attending");
+  });
+
   it("stops asking once the answer is recorded", () => {
     const service = acceptedService();
     for (const name of ["Ada Lovelace", "Bob Coauthor"]) {
@@ -918,7 +931,7 @@ describe("the conference roll-call", () => {
         venue_decision: "accept",
         // A different spelling of the same conference, which the roster has to fold together.
         accepted_venue: "emnlp",
-        accepted_year: 2026,
+        accepted_year: new Date().getUTCFullYear() + 1,
         is_archival: true,
         presentation_type: "oral",
       }),
@@ -935,7 +948,7 @@ describe("the conference roll-call", () => {
     const { conferences } = unwrap(service.listConferenceRosters());
     expect(conferences).toHaveLength(1);
     expect(conferences[0]).toMatchObject({
-      label: "EMNLP 2026",
+      label: `EMNLP ${new Date().getUTCFullYear() + 1}`,
       paper_count: 2,
       going_count: 1,
       unanswered_count: 2,

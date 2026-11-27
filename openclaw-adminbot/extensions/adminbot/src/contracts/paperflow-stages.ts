@@ -123,9 +123,15 @@ export type AdminBotPaperflowEvidenceRecord = {
   /** Who the bcc came from, normalized. */
   sender?: string;
   recorded_at: string;
-  recorded_by: "email_bcc" | "admin" | "openreview";
+  /** `reply`: the member answered the reminder itself and AdminBot applied it (undoable). */
+  recorded_by: "email_bcc" | "admin" | "openreview" | "reply";
   /** The classifier's confidence, for the admin reviewing a stage that closed itself. */
   confidence?: number;
+  /**
+   * Why an admin closed it, when the close came from a member's reply rather than venue mail --
+   * "skipped: moved to a Springer journal". Absent on a close the venue mail itself proves.
+   */
+  note?: string;
 };
 
 /** The ledger id for one chased stage. */

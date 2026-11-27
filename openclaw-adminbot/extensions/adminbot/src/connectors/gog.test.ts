@@ -87,6 +87,41 @@ describe("createGogAdminBotExecutor", () => {
     ]);
   });
 
+  it("sends a reminder-reply receipt to the roster address as a fresh send, never a reply", async () => {
+    const run = vi.fn(async () => {});
+    const executor = createGogAdminBotExecutor({ run });
+    await expect(
+      executor.execute({
+        // Only the kernel files reminder_reply actions (createProposal refuses them), so this test
+        // takes a stored proposal and relabels it: the mapping is what is under test here.
+        ...proposal("email.send", {
+          account: "bot@example.org",
+          source_action_id: "act_apply",
+          to: "member@example.org",
+          subject: "Re: Camera ready",
+          body: "Thanks.",
+        }),
+        type: "reminder_reply.confirm",
+      }),
+    ).resolves.toMatchObject({ handled: true });
+    expect(run).toHaveBeenCalledWith([
+      "--json",
+      "--no-input",
+      "--enable-commands-exact",
+      "gmail.send",
+      "--account",
+      "bot@example.org",
+      "gmail",
+      "send",
+      "--to",
+      "member@example.org",
+      "--subject",
+      "Re: Camera ready",
+      "--body",
+      "Thanks.",
+    ]);
+  });
+
   it("maps calendar invites and cancellations without emailing anyone", async () => {
     const run = vi.fn(async () => {});
     const executor = createGogAdminBotExecutor({ run });
@@ -472,6 +507,85 @@ describe("createGogAdminBotExecutor", () => {
         }),
       ),
     ).resolves.toEqual({ handled: false });
+  });
+
+  // A reply to a reminder is tied back to it by the Gmail thread, so the send has to keep the ids
+  // gog prints. Output it cannot read is not a failed send: the mail went, and the reply falls back
+  // to matching by subject.
+  it("keeps the Gmail thread and message ids a send prints", async () => {
+    const send = proposal("member_nudge.send", {
+      channel: "email",
+      to: "person@example.test",
+      subject: "Camera ready: Paper",
+      body: "Has the camera ready gone in?",
+    });
+    const printed = createGogAdminBotExecutor({
+      run: async () => JSON.stringify({ id: "msg-1", threadId: "thread-1" }),
+      capture: async () => {
+        throw new Error("gog raw failed");
+      },
+    });
+    await expect(printed.execute(send)).resolves.toEqual({
+      handled: true,
+      artifacts: { gmail_thread_id: "thread-1", gmail_message_id: "msg-1" },
+    });
+
+    const garbled = createGogAdminBotExecutor({
+      run: async () => "sent!",
+      capture: async () => {
+        throw new Error("never called");
+      },
+    });
+    await expect(garbled.execute(send)).resolves.toEqual({ handled: true });
+  });
+
+  // A reply is tied to the exact reminder by the Message-ID it names in In-Reply-To or References,
+  // and gog's send prints only Gmail's API ids, so the header is read back from the sent mail.
+  it("reads the sent reminder's Message-ID header back from Gmail", async () => {
+    const send = proposal("member_nudge.send", {
+      channel: "email",
+      to: "person@example.test",
+      subject: "Camera ready: Paper",
+      body: "Has the camera ready gone in?",
+    });
+    const reads: string[][] = [];
+    const executor = createGogAdminBotExecutor({
+      run: async () => JSON.stringify({ id: "msg-1", threadId: "thread-1" }),
+      capture: async (args) => {
+        reads.push(args);
+        return JSON.stringify({
+          id: "msg-1",
+          payload: {
+            headers: [
+              { name: "From", value: "AdminBot <bot@example.test>" },
+              { name: "Message-ID", value: "<CAB123@mail.gmail.com>" },
+            ],
+          },
+        });
+      },
+    });
+    await expect(executor.execute(send)).resolves.toEqual({
+      handled: true,
+      artifacts: {
+        gmail_thread_id: "thread-1",
+        gmail_message_id: "msg-1",
+        rfc_message_id: "<CAB123@mail.gmail.com>",
+      },
+    });
+    expect(reads).toEqual([
+      [
+        "--json",
+        "--no-input",
+        "--enable-commands-exact",
+        "gmail.raw",
+        "gmail",
+        "raw",
+        "msg-1",
+        "--format",
+        "metadata",
+        "--results-only",
+      ],
+    ]);
   });
 });
 

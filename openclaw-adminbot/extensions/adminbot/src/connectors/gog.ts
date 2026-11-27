@@ -41,7 +41,11 @@ export function resolveGogExecutable(env?: NodeJS.ProcessEnv): string {
   return "gog";
 }
 
-type GogRun = (args: string[]) => Promise<void>;
+/**
+ * Runs one gog command. The real runner hands back gog's stdout so a send can report what Gmail
+ * created; a test double may return nothing, and nothing is then reported.
+ */
+type GogRun = (args: string[]) => Promise<string | void>;
 type GogCapture = (args: string[]) => Promise<string>;
 
 export type GogAdminBotExecutorOptions = {
@@ -394,10 +398,100 @@ export function createGogAdminBotExecutor(
         }
         return { handled: true, artifacts: { event_id: id } };
       }
-      await run(args);
-      return { handled: true };
+      const output = await run(args);
+      const sent = gmailSendArtifacts(args, output);
+      if (proposal.type === "member_nudge.send" && sent.artifacts?.gmail_message_id) {
+        const header = await sentMessageIdHeader(
+          capture,
+          sent.artifacts.gmail_message_id,
+          optionalString(requirePayload(proposal), "account"),
+        );
+        if (header) {
+          sent.artifacts.rfc_message_id = header;
+        }
+      }
+      return { handled: true, ...sent };
     },
   };
+}
+
+/**
+ * The RFC 5322 Message-ID Gmail stamped on a reminder it just sent.
+ *
+ * A reply names it in In-Reply-To and References, which is what lets a reply be tied to this exact
+ * mail rather than to whatever else shares its thread. gog's send prints only the Gmail API ids,
+ * so it is read back from the sent message. Best-effort like the ids themselves: the mail is out,
+ * and a reminder without it only means its replies go to an admin instead of being applied.
+ */
+async function sentMessageIdHeader(
+  capture: GogCapture,
+  gmailMessageId: string,
+  account: string | undefined,
+): Promise<string | undefined> {
+  try {
+    const args = rootArgs("gmail.raw", account);
+    args.push("gmail", "raw", gmailMessageId, "--format", "metadata", "--results-only");
+    const parsed = JSON.parse(await capture(args)) as {
+      payload?: { headers?: unknown };
+      message?: { payload?: { headers?: unknown } };
+    };
+    const headers = parsed?.payload?.headers ?? parsed?.message?.payload?.headers;
+    if (!Array.isArray(headers)) {
+      return undefined;
+    }
+    for (const header of headers as Array<{ name?: unknown; value?: unknown }>) {
+      if (
+        typeof header?.name === "string" &&
+        header.name.toLowerCase() === "message-id" &&
+        typeof header.value === "string" &&
+        /^<[^<>\s]+@[^<>\s]+>$/u.test(header.value.trim())
+      ) {
+        return header.value.trim();
+      }
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The Gmail ids of a mail that has just gone out, for matching the replies it gets.
+ *
+ * Best-effort by design. The send has already happened by the time this runs, so an output gog
+ * printed in some other shape must cost the ids, never the execution -- reporting a delivered mail
+ * as failed is how it gets sent twice.
+ */
+function gmailSendArtifacts(
+  args: string[],
+  output: string | void,
+): { artifacts?: Record<string, string> } {
+  if (!args.includes("gmail.send") || typeof output !== "string" || !output.trim()) {
+    return {};
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(output);
+  } catch {
+    return {};
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return {};
+  }
+  const row = parsed as Record<string, unknown>;
+  const nested =
+    row.message && typeof row.message === "object" && !Array.isArray(row.message)
+      ? (row.message as Record<string, unknown>)
+      : {};
+  const pick = (...values: unknown[]) =>
+    values.find((value): value is string => typeof value === "string" && Boolean(value.trim()));
+  const threadId = pick(row.threadId, row.thread_id, nested.threadId, nested.thread_id);
+  const messageId = pick(row.id, row.messageId, row.message_id, nested.id);
+  const artifacts: Record<string, string> = {
+    ...(threadId ? { gmail_thread_id: threadId } : {}),
+    ...(messageId ? { gmail_message_id: messageId } : {}),
+  };
+  return Object.keys(artifacts).length ? { artifacts } : {};
 }
 
 /**
@@ -515,6 +609,8 @@ function buildGogArgs(proposal: AdminBotStoredProposal): string[] | undefined {
       return buildCalendarDeleteArgs(proposal);
     case "sheet.update_cells":
       return buildSheetUpdateArgs(proposal);
+    case "reminder_reply.confirm":
+      return buildReminderReplyConfirmArgs(proposal);
     case "sheet.append_rows":
       return buildSheetAppendArgs(proposal);
     case "paper_integrity.sheet_scores":
@@ -670,6 +766,24 @@ function buildEmailArgs(proposal: AdminBotStoredProposal, draft: boolean): strin
   appendOptional(args, "--cc", recipients(payload.cc));
   appendOptional(args, "--bcc", recipients(payload.bcc));
   appendOptional(args, "--reply-to", optionalString(payload, "reply_to"));
+  return args;
+}
+
+/**
+ * The fixed "I've marked it" receipt, sent as a fresh mail to the member's roster address.
+ *
+ * A send, never a `gmail reply`: a reply goes wherever the inbound mail's Reply-To pointed, and
+ * that header is the sender's to set. The service has already checked `to` against the roster and
+ * the body against the fixed template before this runs. The undo is matched by the thread this
+ * send lands in, which gog reports back as `gmail_thread_id`.
+ */
+function buildReminderReplyConfirmArgs(proposal: AdminBotStoredProposal): string[] {
+  const payload = requirePayload(proposal);
+  const to = requireString(payload, "to");
+  const subject = requireString(payload, "subject");
+  const body = requireString(payload, "body");
+  const args = rootArgs("gmail.send", optionalString(payload, "account"));
+  args.push("gmail", "send", "--to", to, "--subject", subject, "--body", body);
   return args;
 }
 
@@ -1224,10 +1338,7 @@ export function runGogPaced(
 }
 
 function createGogRunner(env: NodeJS.ProcessEnv | undefined): GogRun {
-  const capture = createGogCapture(env);
-  return async (args) => {
-    await capture(args);
-  };
+  return createGogCapture(env);
 }
 
 type GogExec = (
