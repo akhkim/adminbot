@@ -92,7 +92,12 @@ ROOT="${ROOT%/}"
 [[ "$ROOT" == /* && "$ROOT" != *".."* && "$ROOT" != "$HOME" ]] || die "unsafe deployment root: $ROOT"
 depth="${ROOT#/}"
 depth="${depth//[!\/]/}"
-((${#depth} >= 2)) || die "deployment root is too shallow: $ROOT"
+# Two levels deep (/w/406/adminbot on Aurora), or one named directory under /srv (/srv/adminbot on
+# the AWS host, docs/operations/aws-host.md). Never /, /srv itself, or another top-level directory:
+# the prune step below deletes inside $ROOT/releases, so a typo here must not reach a system path.
+if ((${#depth} < 2)) && ! [[ "$ROOT" =~ ^/srv/[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+  die "deployment root is too shallow: $ROOT"
+fi
 
 CURRENT="$ROOT/current"
 STATE="$ROOT/state"

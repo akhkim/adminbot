@@ -150,6 +150,19 @@ describe("Aurora auto-deploy", () => {
     }
   });
 
+  it("accepts one named directory under /srv as the root, and no other shallow root", () => {
+    const f = fixture();
+    // Gets past the depth check and stops at the first thing a missing root lacks.
+    const srv = deploy(f, "HEAD", { AURORA_DEPLOY_ROOT: "/srv/adminbot-test-missing" });
+    expect(srv.status).not.toBe(0);
+    expect(srv.stderr).not.toContain("too shallow");
+    for (const root of ["/srv", "/etc", "/var/adminbot", "/srv/.hidden"]) {
+      const result = deploy(f, "HEAD", { AURORA_DEPLOY_ROOT: root });
+      expect(result.status, root).not.toBe(0);
+      expect(result.stderr, root).toContain("too shallow");
+    }
+  });
+
   it("builds beside the live release, swaps every unit to it, and keeps the old one", () => {
     const f = fixture();
     const result = deploy(f, f.next);
