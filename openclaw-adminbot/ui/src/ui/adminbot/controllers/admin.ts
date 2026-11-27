@@ -95,6 +95,7 @@ export type AdminBotLabMember = {
   /** Owner-only, and absent from the summary and paged roster reads. */
   access?: AdminBotAccessGrant[];
   role?: string;
+  annotation_languages?: string;
   status?: AdminBotMemberStatus;
   research_branch?: string;
   research_topics?: string[];

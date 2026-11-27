@@ -1171,6 +1171,37 @@ describe("renderProfile field types", () => {
     expect(legacy?.checked).toBe(true);
   });
 
+  it("offers annotation languages as tick-all-that-apply and saves them in list order", () => {
+    vi.useFakeTimers();
+    try {
+      const onSave = vi.fn();
+      const container = renderPage(createState(createMember({ role: "" })), onSave);
+      const boxes = [
+        ...container.querySelectorAll<HTMLInputElement>(
+          '[data-testid="profile-multi-annotation_languages"] input',
+        ),
+      ];
+      const values = boxes.map((box) => box.value);
+      expect(values).toContain("English");
+      expect(values).toContain("Mandarin Chinese");
+      expect(values).toContain("Hindi");
+      expect(boxes.every((box) => !box.checked)).toBe(true);
+
+      const hindi = boxes.find((box) => box.value === "Hindi")!;
+      const english = boxes.find((box) => box.value === "English")!;
+      hindi.checked = true;
+      hindi.dispatchEvent(new Event("input", { bubbles: true }));
+      english.checked = true;
+      english.dispatchEvent(new Event("input", { bubbles: true }));
+      vi.advanceTimersByTime(1000);
+
+      const saved = onSave.mock.calls.at(-1)?.[1] as { annotation_languages?: string };
+      expect(saved.annotation_languages).toBe("English, Hindi");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("saves every ticked role, in the vocabulary's order", () => {
     vi.useFakeTimers();
     try {

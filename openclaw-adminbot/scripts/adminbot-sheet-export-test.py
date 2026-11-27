@@ -142,7 +142,7 @@ print('PASS: PeopleList sorts active first, then joined month, undated rows by r
 
 # Direct database export must include new members and aggregate only explicit IDs.
 c.execute('INSERT INTO adminbot_lab_members VALUES (?,?)', ('new', json.dumps({
-    'id': 'new', 'name': 'New person', 'joined_month': '2026-09',
+    'id': 'new', 'name': 'New person', 'joined_month': '2026-09', 'annotation_languages': 'English, Hindi',
     'avatar_url': 'data:image/png;base64,' + 'x' * 50000,
     'onboarding': {'steps': [{'id': 'a'}, {'id': 'b'}], 'completed': [{'id': 'a'}],
                    'remaining': [{'id': 'b'}], 'current_step': {'id': 'b'}}})))
@@ -173,6 +173,8 @@ assert {"preferred_name", "birthday"} <= set(columns) and "slack_active" not in 
 assert columns[:len(exporter.PEOPLE_PRIORITY)] == list(exporter.PEOPLE_PRIORITY)
 assert len(rows) == 2
 assert new['join_date'] == '2026-09' and new['join_date_basis'] == 'joined_month'
+assert new['annotation_languages'] == 'English, Hindi'
+assert exporter.people_section('annotation_languages') == 'Research'
 assert new['onboarding_completed_count'] == '1' and new['onboarding_current_step'] == 'b'
 assert new['papers_authored_count'] == '1' and new['papers_submitted_count'] == '1'
 assert new['active_sessions'] == '1'

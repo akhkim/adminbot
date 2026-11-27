@@ -19,6 +19,7 @@ import {
   adminBotMemberRoles,
   ADMINBOT_ELEVATOR_PITCH_MAX,
 } from "../../../../extensions/adminbot/src/contracts/actions.js";
+import { ANNOTATION_LANGUAGE_OPTIONS } from "../../../../extensions/adminbot/src/contracts/member-profile-values.js";
 import type { icons } from "../icons.ts";
 
 // The answer type a field takes, which decides both which control renders it (select vs
@@ -202,6 +203,18 @@ const PROFILE_FIELD_DEFINITIONS: ProfileField[] = [
     labelKey: "profile.fields.researchTopics",
     example: "causal inference, NLP",
     type: "list",
+    group: "research",
+  },
+  {
+    // Which languages this person could annotate data in, for staffing multilingual annotation and
+    // evaluation work. Tick-all-that-apply over a closed list so a search finds everyone; optional,
+    // because many members never annotate and a blank must not read as "speaks nothing".
+    key: "annotation_languages",
+    labelKey: "profile.fields.annotationLanguages",
+    example: "English",
+    type: "multi_dropdown",
+    options: [...ANNOTATION_LANGUAGE_OPTIONS],
+    hintKey: "profile.hints.annotationLanguages",
     group: "research",
   },
   {

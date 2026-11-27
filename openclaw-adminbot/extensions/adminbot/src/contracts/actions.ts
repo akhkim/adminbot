@@ -1732,6 +1732,12 @@ export type AdminBotLabMemberInput = {
   arr_reviewer_qualified?: boolean | null;
   arr_review_capacity?: number | null;
   /**
+   * Languages the member is fluent enough to annotate data in, comma-joined from the closed
+   * ANNOTATION_LANGUAGE_OPTIONS list (contracts/member-profile-values.ts). Lab-visible: its point
+   * is that whoever is staffing an annotation job can find the people who read the language.
+   */
+  annotation_languages?: string;
+  /**
    * The Google Drive folder holding this member's one-on-one notes.
    *
    * A folder and never a document: the notes accumulate one file per meeting, so the stable thing

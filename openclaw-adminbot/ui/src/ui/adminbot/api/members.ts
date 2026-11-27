@@ -33,6 +33,7 @@ export type MemberProfileUpdate = {
   calendar_email?: string;
   slack_user_id?: string;
   role?: string;
+  annotation_languages?: string;
   research_topics?: string[];
   projects?: string[];
   hours_per_week?: number;
@@ -85,6 +86,7 @@ export type AdminLabMemberUpdate = {
   collaborator_subgroup?: string;
   status?: string;
   role?: string;
+  annotation_languages?: string;
   research_topics?: string[];
   projects?: string[];
   hours_per_week?: number;

@@ -3037,6 +3037,7 @@ export const en: TranslationMap = {
       aclAnthology: "ACL Anthology profile",
       openreviewId: "OpenReview ID",
       researchTopics: "Research topics",
+      annotationLanguages: "Languages you can annotate in",
       elevatorPitch:
         "Elevator pitch that Zhijing can use when recommending you to other prof/recruiter",
       projects: "Projects",
@@ -3085,6 +3086,8 @@ export const en: TranslationMap = {
     // The shapes the service accepts, stated where the answer is typed. Each one mirrors a rule in
     // SOCIAL_URL_FIELDS or validateOpenReviewId; keep them in step if those change.
     hints: {
+      annotationLanguages:
+        "Tick every language you read and write well enough to annotate data in: judging model outputs, labeling text, or checking a translation. Leave it blank if you would rather not annotate.",
       calendarEmail:
         "Your Gmail (or other Google account). The lab calendar is shared with this address; without it AdminBot uses any Gmail on your profile.",
       correspondenceEmail:

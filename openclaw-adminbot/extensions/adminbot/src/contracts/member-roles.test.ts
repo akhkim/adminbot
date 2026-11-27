@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { formatAdminBotMemberRoles, parseAdminBotMemberRoles } from "./member-roles.js";
+import {
+  formatAdminBotMemberRoles,
+  formatAdminBotMultiAnswer,
+  parseAdminBotMemberRoles,
+} from "./member-roles.js";
 
 describe("parseAdminBotMemberRoles", () => {
   it("splits the stored string into the roles held", () => {
@@ -67,5 +71,20 @@ describe("formatAdminBotMemberRoles", () => {
 
   it("does not repeat a role picked twice under different casing", () => {
     expect(formatAdminBotMemberRoles(["Postdoc", "postdoc"])).toBe("Postdoc");
+  });
+});
+
+describe("formatAdminBotMultiAnswer", () => {
+  const vocabulary = ["Arabic", "English", "Hindi", "Mandarin Chinese"];
+
+  it("stores the vocabulary's order, not click order, with repeats dropped", () => {
+    expect(formatAdminBotMultiAnswer(["Hindi", "english", "English", "Arabic"], vocabulary)).toBe(
+      "Arabic, English, Hindi",
+    );
+  });
+
+  it("is empty when nothing is ticked, and keeps an unknown answer last", () => {
+    expect(formatAdminBotMultiAnswer([], vocabulary)).toBe("");
+    expect(formatAdminBotMultiAnswer(["Klingon", "English"], vocabulary)).toBe("English, Klingon");
   });
 });

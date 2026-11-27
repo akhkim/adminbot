@@ -10601,6 +10601,9 @@
                       }
                     ]
                   },
+                  "annotation_languages": {
+                    "type": "string"
+                  },
                   "one_on_one_folder_url": {
                     "type": "string"
                   },
@@ -13195,6 +13198,9 @@
                                 "type": "number"
                               }
                             ]
+                          },
+                          "annotation_languages": {
+                            "type": "string"
                           },
                           "one_on_one_folder_url": {
                             "type": "string"
@@ -36532,6 +36538,9 @@
               }
             ]
           },
+          "annotation_languages": {
+            "type": "string"
+          },
           "one_on_one_folder_url": {
             "type": "string"
           },
@@ -39290,6 +39299,9 @@
               }
             ]
           },
+          "annotation_languages": {
+            "type": "string"
+          },
           "one_on_one_folder_url": {
             "type": "string"
           },
@@ -39786,6 +39798,9 @@
               }
             ]
           },
+          "annotation_languages": {
+            "type": "string"
+          },
           "one_on_one_folder_url": {
             "type": "string"
           },
@@ -40278,6 +40293,9 @@
                 "type": "number"
               }
             ]
+          },
+          "annotation_languages": {
+            "type": "string"
           },
           "one_on_one_folder_url": {
             "type": "string"
