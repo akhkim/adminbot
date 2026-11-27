@@ -212,7 +212,10 @@ import {
   adminBotCalendarShareEmail,
   adminBotOutreachEmail,
 } from "../contracts/member-outreach-email.js";
-import { normalizeMemberProfileValues } from "../contracts/member-profile-values.js";
+import {
+  ANNOTATION_LANGUAGE_OPTIONS,
+  normalizeMemberProfileValues,
+} from "../contracts/member-profile-values.js";
 import {
   type AdminBotMemberRequest,
   type AdminBotMemberRequestStatus,
@@ -18192,6 +18195,8 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
   // What the member wants from the next merch order. Theirs to state and theirs to change, right
   // up until somebody places it.
   "merch_requests",
+  // Which languages the member can annotate in. Theirs to state; checked against the closed list.
+  "annotation_languages",
   "next_position",
   // Confidential on read (see adminBotConfidentialMemberFields); self-editable like any other
   // field a member writes about themselves.
@@ -18802,6 +18807,21 @@ function validateLabMember(
     );
     if (!roles.length || unknown) {
       return `member role must be one of: ${adminBotMemberRoles.join(", ")}`;
+    }
+  }
+  // Annotation languages are a closed list for the same reason roles are: the point of the field is
+  // finding every Hindi annotator, and "hindi" / "Hindi " / "Hindustani" as three values would hide
+  // some of them. Empty is legal -- not every member annotates.
+  if (member.annotation_languages !== undefined && member.annotation_languages !== "") {
+    if (typeof member.annotation_languages !== "string") {
+      return "annotation_languages must be a comma-separated string";
+    }
+    const languages = parseAdminBotMemberRoles(member.annotation_languages);
+    const unknown = languages.find(
+      (language) => !(ANNOTATION_LANGUAGE_OPTIONS as readonly string[]).includes(language),
+    );
+    if (!languages.length || unknown) {
+      return `annotation language "${unknown ?? member.annotation_languages}" is not in the list; ask an admin to add it`;
     }
   }
   for (const field of ["twitter_followers", "linkedin_followers"] as const) {

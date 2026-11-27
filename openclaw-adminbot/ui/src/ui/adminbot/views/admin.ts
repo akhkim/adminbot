@@ -20,6 +20,7 @@ import {
 import "./interview-invite.ts";
 import {
   formatAdminBotMemberRoles,
+  formatAdminBotMultiAnswer,
   parseAdminBotMemberRoles,
 } from "../../../../../extensions/adminbot/src/contracts/member-roles.js";
 import type { MemberRosterFilters } from "../../../../../extensions/adminbot/src/contracts/member-roster.js";
@@ -423,9 +424,13 @@ export function collectRegistryFields(data: FormData): Record<string, unknown> {
       // Read before the blank check below, and with getAll rather than get: several boxes share
       // one name, so `get` would keep only the first answer. An empty result is still skipped --
       // an admin who touched nothing must not clear the roles already on the record.
-      const roles = formatAdminBotMemberRoles(data.getAll(field.key).map((entry) => String(entry)));
-      if (roles) {
-        patch[field.key] = roles;
+      const picked = data.getAll(field.key).map((entry) => String(entry));
+      const answer =
+        field.key === "role"
+          ? formatAdminBotMemberRoles(picked)
+          : formatAdminBotMultiAnswer(picked, field.options ?? []);
+      if (answer) {
+        patch[field.key] = answer;
       }
       continue;
     }

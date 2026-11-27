@@ -6006,6 +6006,7 @@ export interface components {
       intake_form_unavailable?: boolean;
       arr_reviewer_qualified?: null | false | true;
       arr_review_capacity?: null | number;
+      annotation_languages?: string;
       one_on_one_folder_url?: string;
       linkedin_url?: string;
       linkedin_urn?: string;
@@ -6865,6 +6866,7 @@ export interface components {
       intake_form_unavailable?: boolean;
       arr_reviewer_qualified?: null | false | true;
       arr_review_capacity?: null | number;
+      annotation_languages?: string;
       one_on_one_folder_url?: string;
       linkedin_url?: string;
       linkedin_urn?: string;
@@ -7012,6 +7014,7 @@ export interface components {
       intake_form_unavailable?: boolean;
       arr_reviewer_qualified?: null | false | true;
       arr_review_capacity?: null | number;
+      annotation_languages?: string;
       one_on_one_folder_url?: string;
       linkedin_url?: string;
       linkedin_urn?: string;
@@ -7161,6 +7164,7 @@ export interface components {
       intake_form_unavailable?: boolean;
       arr_reviewer_qualified?: null | false | true;
       arr_review_capacity?: null | number;
+      annotation_languages?: string;
       one_on_one_folder_url?: string;
       linkedin_url?: string;
       linkedin_urn?: string;
@@ -17323,6 +17327,7 @@ export interface operations {
           intake_form_unavailable?: boolean;
           arr_reviewer_qualified?: null | false | true;
           arr_review_capacity?: null | number;
+          annotation_languages?: string;
           one_on_one_folder_url?: string;
           linkedin_url?: string;
           linkedin_urn?: string;
@@ -18782,6 +18787,7 @@ export interface operations {
               intake_form_unavailable?: boolean;
               arr_reviewer_qualified?: null | false | true;
               arr_review_capacity?: null | number;
+              annotation_languages?: string;
               one_on_one_folder_url?: string;
               linkedin_url?: string;
               linkedin_urn?: string;

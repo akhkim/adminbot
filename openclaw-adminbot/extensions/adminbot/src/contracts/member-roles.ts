@@ -37,6 +37,25 @@ export function parseAdminBotMemberRoles(value: string | null | undefined): stri
   return roles;
 }
 
+/**
+ * The stored string for any closed multiple-choice answer: the vocabulary's own order rather than
+ * click order, repeats dropped, and anything outside the vocabulary kept last in its own spelling.
+ * The same shape as roles, so every multi-answer field parses with parseAdminBotMemberRoles.
+ */
+export function formatAdminBotMultiAnswer(
+  values: readonly string[],
+  vocabulary: readonly string[],
+): string {
+  const held = new Set(values.map((value) => value.trim().toLowerCase()).filter(Boolean));
+  const known = vocabulary.filter((entry) => held.has(entry.toLowerCase()));
+  const unknown = values
+    .map((value) => value.trim())
+    .filter(
+      (value) => value && !vocabulary.some((entry) => entry.toLowerCase() === value.toLowerCase()),
+    );
+  return [...known, ...new Set(unknown)].join(ADMINBOT_MEMBER_ROLE_SEPARATOR);
+}
+
 /** The stored string for a set of roles, in the vocabulary's own order rather than click order. */
 export function formatAdminBotMemberRoles(roles: readonly string[]): string {
   const held = new Set(roles.map((role) => role.trim().toLowerCase()).filter(Boolean));

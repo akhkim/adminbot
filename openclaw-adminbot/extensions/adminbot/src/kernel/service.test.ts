@@ -1817,6 +1817,19 @@ describe("AdminBotService", () => {
 
     const updated = unwrap(service.updateOwnProfile("self-edit", { role: "Industry Researcher" }));
     expect(updated.role).toBe("Industry Researcher");
+
+    // Annotation languages are the member's own answer, over a closed list.
+    expect(
+      unwrap(service.updateOwnProfile("self-edit", { annotation_languages: "English, Hindi" }))
+        .annotation_languages,
+    ).toBe("English, Hindi");
+    expect(
+      service.updateOwnProfile("self-edit", { annotation_languages: "English, Elvish" }),
+    ).toMatchObject({ ok: false });
+    expect(
+      unwrap(service.updateOwnProfile("self-edit", { annotation_languages: "" }))
+        .annotation_languages,
+    ).toBe("");
     expect(updated.privilege_level).toBe("member");
 
     for (const governed of [

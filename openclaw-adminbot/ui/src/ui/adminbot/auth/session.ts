@@ -206,6 +206,7 @@ export type LabMember = {
   privilege_level?: string | null;
   status?: string | null;
   role?: string | null;
+  annotation_languages?: string | null;
   research_branch?: string | null;
   research_topics?: string[] | null;
   projects?: string[] | null;

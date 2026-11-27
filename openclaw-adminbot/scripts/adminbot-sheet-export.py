@@ -297,7 +297,7 @@ tab_visits_count logistics_requests paper_weekly_updates conference_attendances 
 password_resets feedback_submitted active_sessions paper_slots_provided paper_slots_waived
 papers_authored_count papers_authored papers_submitted_count papers_submitted
 audit_events_as_actor update_events_as_actor update_events_as_subject calendar_group acl_anthology_url
-arr_reviewer_qualified arr_review_capacity map_visibility location_permission linkedin_followers
+arr_reviewer_qualified arr_review_capacity annotation_languages map_visibility location_permission linkedin_followers
 twitter_followers recommendation_letter_window financial_support_needs
 financial_support_totals search
 preferred_name birthday alternate_emails alternate_slack_user_ids former_member_ids cli_role
@@ -316,7 +316,8 @@ PEOPLE_SECTIONS = (
              'affiliation', 'at_uoft', 'hours_per_week', 'membership_review', 'receives_nudges',
              'compute_access', 'calendar_group', 'next_position', 'graduated_month')),
     ('Research', ('research_branch', 'research_topics', 'elevator_pitch', 'projects', 'papers_authored_count',
-                  'papers_authored', 'arr_reviewer_qualified', 'arr_review_capacity', 'recommendation_letter_window')),
+                  'papers_authored', 'arr_reviewer_qualified', 'arr_review_capacity', 'annotation_languages',
+                  'recommendation_letter_window')),
     ('Links & socials', ('personal_website', 'linkedin_url', 'twitter_url', 'github_url', 'scholar_url',
                          'openreview_id', 'acl_anthology_url', 'lesswrong_url', 'other_socials', 'cv_url',
                          'linkedin_followers', 'twitter_followers', 'one_on_one_folder_url')),
@@ -329,6 +330,7 @@ PEOPLE_PRIORITY = tuple(field for _, fields in PEOPLE_SECTIONS for field in fiel
 PEOPLE_RECORDS_SECTION = 'AdminBot records'
 # Header text people read; any field not listed gets its name with underscores turned into spaces.
 PEOPLE_LABELS = {
+    'annotation_languages': 'Annotation languages',
     'recommendation_letter_window': 'Recommendation letters (last 6 months / upcoming)',
     'name': 'Name', 'calendar_email': 'Calendar email', 'whatsapp': 'WhatsApp',
     'email': 'Email', 'correspondence_email': 'Correspondence email', 'one_on_one_folder_url': '1:1 Drive folder',

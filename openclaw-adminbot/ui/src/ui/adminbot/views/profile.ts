@@ -22,6 +22,7 @@ import {
 } from "../../../../../extensions/adminbot/src/contracts/member-profile-values.js";
 import {
   formatAdminBotMemberRoles,
+  formatAdminBotMultiAnswer,
   parseAdminBotMemberRoles,
 } from "../../../../../extensions/adminbot/src/contracts/member-roles.js";
 import { t } from "../../../i18n/index.ts";
@@ -596,10 +597,13 @@ function collectBasics(form: HTMLFormElement): MemberProfileUpdate {
     } else if (field.type === "multi_dropdown") {
       // getAll, not get: every checked box shares the field's name, and `get` would keep only the
       // first -- which is the single-answer limit this field exists to undo.
+      const picked = data.getAll(field.key).map((entry) => String(entry));
       setField(
         fields,
         field.key,
-        formatAdminBotMemberRoles(data.getAll(field.key).map((entry) => String(entry))),
+        field.key === "role"
+          ? formatAdminBotMemberRoles(picked)
+          : formatAdminBotMultiAnswer(picked, field.options ?? []),
       );
     } else if (field.type === "list") {
       setField(
