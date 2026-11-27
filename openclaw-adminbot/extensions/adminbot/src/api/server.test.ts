@@ -357,6 +357,42 @@ describe("AdminBot mock service", () => {
     });
   });
 
+  it("opens one project channel for an admin and refuses other names", async () => {
+    const executed: string[] = [];
+    const { baseUrl } = await startService({
+      executor: {
+        execute: async (proposal) => {
+          executed.push(`${proposal.type}:${JSON.stringify(proposal.proposed_payload)}`);
+          return { handled: true };
+        },
+      },
+    });
+    const open = await fetch(`${baseUrl}/slack/channels/open`, {
+      method: "POST",
+      headers: serviceHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ name: "#proj-moralgym" }),
+    });
+    expect(open.status).toBe(200);
+    await expect(open.json()).resolves.toMatchObject({ channel: "proj-moralgym" });
+    expect(executed).toEqual(['slack.create_channel:{"name":"proj-moralgym"}']);
+
+    const refused = await fetch(`${baseUrl}/slack/channels/open`, {
+      method: "POST",
+      headers: serviceHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ name: "lab-secret" }),
+    });
+    expect(refused.status).toBe(400);
+    expect(executed).toHaveLength(1);
+
+    const anonymous = await fetch(`${baseUrl}/slack/channels/open`, {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({ name: "proj-moralgym" }),
+    });
+    expect(anonymous.status).toBe(401);
+    expect(executed).toHaveLength(1);
+  });
+
   it("claim queues a pending registration, login is blocked until approval", async () => {
     const { baseUrl } = await startService();
     await seedMember(baseUrl, "ada", {

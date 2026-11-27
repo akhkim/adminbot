@@ -16884,6 +16884,48 @@ export class AdminBotService {
   }
 
   /**
+   * Open (or reopen) one project channel on an admin's request, without the roster sweep.
+   *
+   * The sweep also invites every owed collaborator on every paper; an admin clearing a
+   * "channel missing" alert wants the room and nothing else. Same `slack.create_channel` action and
+   * same proj- guard in the connector, so this widens who can ask, not what can be opened.
+   */
+  async openProjectChannel(
+    rawName: string,
+    actor: string,
+  ): Promise<AdminBotServiceResponse<{ channel: string; proposal_id: string }>> {
+    const name = rawName.trim().replace(/^#/u, "").toLowerCase();
+    if (!/^proj-[a-z0-9][a-z0-9-]*$/u.test(name)) {
+      return {
+        ok: false,
+        status: 400,
+        error: { message: "only proj-<alias> channels can be opened here" },
+      };
+    }
+    const created = this.createProposal({
+      type: "slack.create_channel",
+      summary: `Open #${name} (requested by an admin)`,
+      target: { service: "slack", channel: "slack", target: name },
+      proposed_payload: { name },
+      undo_plan: "Archive the channel in Slack.",
+    });
+    if (!created.ok) {
+      return created;
+    }
+    const opened = await this.execute(created.payload.id, { dry_run: false });
+    if (!opened.ok) {
+      return opened;
+    }
+    this.recordAudit({
+      type: "project_channel.opened",
+      actor,
+      action_id: created.payload.id,
+      details: { channel: name },
+    });
+    return { ok: true, status: 200, payload: { channel: name, proposal_id: created.payload.id } };
+  }
+
+  /**
    * Who belongs in which topic channel, given the channels Slack actually has.
    *
    * The channel list is passed in rather than read here: the service has no Slack client, and the

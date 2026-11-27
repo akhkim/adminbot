@@ -33129,6 +33129,71 @@
         }
       }
     },
+    "/slack/channels/open": {
+      "post": {
+        "operationId": "post-slack-channels-open",
+        "summary": "POST /slack/channels/open",
+        "tags": [
+          "slack"
+        ],
+        "x-source": "src/api/routes/directory.ts",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true,
+                "x-schema-coverage": "inferred from property access or downstream casts; semantic validation remains server-side"
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Successful service result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "channel": {
+                      "type": "string"
+                    },
+                    "proposal_id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "channel",
+                    "proposal_id"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, validation, policy, or connector error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/slides/working-groups/apply": {
       "post": {
         "operationId": "post-slides-working-groups-apply",
@@ -36021,6 +36086,7 @@
               "roster_sync.completed",
               "slack_roster_sync.completed",
               "project_channels.swept",
+              "project_channel.opened",
               "topic_channels.swept",
               "themed_meeting_invites.swept",
               "research_theme_invites.swept",
