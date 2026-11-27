@@ -14,7 +14,7 @@ export PATH="$HOME/.local/bin:$PATH"
 
 RUNNER_VERSION="2.337.0"
 RUNNER_SHA256="70920811a4f8ad4328818682bca5c6469c1c942fab52448868071d0063816613"
-RUNNER_LABEL="aurora-deploy"
+RUNNER_LABEL="adminbot-ec2-deploy"
 WORKFLOW_PATH=".github/workflows/deploy-aurora.yaml"
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -56,6 +56,13 @@ while (($# > 0)); do
       ACCEPT_NETWORK_STATE="1"
       shift
       ;;
+    --label)
+      # The runner is registered under exactly one label, and the deploy workflow's runs-on names
+      # it. A host that should not take deploys any more keeps its old label and simply goes idle.
+      (($# >= 2)) || die "--label requires a value"
+      RUNNER_LABEL="$2"
+      shift 2
+      ;;
     *)
       die "unknown argument: $1"
       ;;
@@ -63,6 +70,7 @@ while (($# > 0)); do
 done
 
 [[ "$REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || die "--repo <owner>/<repo> is required"
+[[ "$RUNNER_LABEL" =~ ^[a-z0-9][a-z0-9-]*$ ]] || die "unsafe runner label: $RUNNER_LABEL"
 [[ "$DEPLOY_ROOT" == /* ]] || die "--root <absolute path> is required"
 # The runner's checkout is the whole repository; keep it off the routinely full home volume.
 WORK_DIR="${WORK_DIR:-$DEPLOY_ROOT/runner-work}"

@@ -45,7 +45,12 @@ jobs:
        github.event.workflow_run.head_repository.full_name == github.repository)
     # Only the installer's label: it registers with --no-default-labels, so the runner has no
     # `self-hosted` label and a job that asks for one queues forever.
-    runs-on: [aurora-deploy]
+    #
+    # AdminBot moved off Aurora to the AWS host on 2026-11-26 (docs/operations/aws-host.md); only
+    # the local model stays on Aurora. The AWS runner registers as `adminbot-ec2-deploy` (the installer's
+    # default now); Aurora's runner was registered as `aurora-deploy`, so it takes no more deploys. The file keeps its name
+    # because each runner's job guard pins this exact workflow path.
+    runs-on: [adminbot-ec2-deploy]
     environment: aurora
     timeout-minutes: 45
     steps:
